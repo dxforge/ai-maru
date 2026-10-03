@@ -157,16 +157,21 @@ impl Conn {
     }
 
     fn frame(&mut self) -> Option<(u8, Vec<u8>)> {
+        self.try_frame()
+            .unwrap_or_else(|e| panic!("프레임을 읽지 못했다: {e}"))
+    }
+
+    fn try_frame(&mut self) -> std::io::Result<Option<(u8, Vec<u8>)>> {
         let mut head = [0u8; 5];
         match self.0.read_exact(&mut head) {
             Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return None,
-            Err(e) => panic!("프레임을 읽지 못했다: {e}"),
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+            Err(e) => return Err(e),
         }
         let (tag, len) = decode_header(&head).unwrap();
         let mut payload = vec![0u8; len];
-        self.0.read_exact(&mut payload).unwrap();
-        Some((tag, payload))
+        self.0.read_exact(&mut payload)?;
+        Ok(Some((tag, payload)))
     }
 
     fn text(&mut self) -> Value {
@@ -180,10 +185,11 @@ impl Conn {
         let mut out = Vec::new();
         let mut texts = Vec::new();
         loop {
-            let Some((tag, payload)) = self.frame() else {
+            let frame = self.try_frame();
+            let Ok(Some((tag, payload))) = frame else {
                 let tail = &out[out.len().saturating_sub(2000)..];
                 panic!(
-                    "{:?} 가 나오기 전에 끊겼다. 마지막 출력: {:?}, Text: {texts:?}",
+                    "{:?} 가 나오기 전에 끊겼다({frame:?}). 마지막 출력: {:?}, Text: {texts:?}",
                     String::from_utf8_lossy(want),
                     String::from_utf8_lossy(tail)
                 );
