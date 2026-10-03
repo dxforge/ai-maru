@@ -610,16 +610,21 @@ fn a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs() {
     flood.input("yes 0123456789\n");
     drop(flood);
 
+    // 쉬지 않고 읽으면 밀리지 않으므로, 처음과 resync 마다 한 번씩 멈춰 밀리게 한다.
+    let pause = Duration::from_secs(1);
+    std::thread::sleep(pause);
     let mut resyncs = 0;
     loop {
         let (tag, payload) = slow.frame().expect("한도 에러 없이 끊겼다");
         if tag != TAG_TEXT {
-            std::thread::sleep(Duration::from_millis(500));
             continue;
         }
         let v: Value = serde_json::from_slice(&payload).unwrap();
         match v["type"].as_str() {
-            Some("resync") => resyncs += 1,
+            Some("resync") => {
+                resyncs += 1;
+                std::thread::sleep(pause);
+            }
             Some("error") => {
                 assert_eq!(v["code"], "resync_limit_exceeded", "{v}");
                 break;
