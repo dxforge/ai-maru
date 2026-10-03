@@ -603,6 +603,50 @@ fn a_client_that_falls_behind_is_resynced() {
 }
 
 #[test]
+fn a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs() {
+    let p = start();
+    let (mut slow, _, _) = p.attach("observer", 80, 24);
+    let (mut flood, _, _) = p.attach("primary", 80, 24);
+    flood.input("yes 0123456789\n");
+    drop(flood);
+
+    let mut resyncs = 0;
+    loop {
+        let (tag, payload) = slow.frame().expect("한도 에러 없이 끊겼다");
+        if tag != TAG_TEXT {
+            std::thread::sleep(Duration::from_millis(500));
+            continue;
+        }
+        let v: Value = serde_json::from_slice(&payload).unwrap();
+        match v["type"].as_str() {
+            Some("resync") => resyncs += 1,
+            Some("error") => {
+                assert_eq!(v["code"], "resync_limit_exceeded", "{v}");
+                break;
+            }
+            _ => panic!("{v}"),
+        }
+    }
+    assert_eq!(resyncs, 5);
+    assert!(slow.frame().is_none(), "한도 에러 뒤에도 연결이 남았다");
+    assert_eq!(p.request(json!({ "type": "kill" }))["type"], "killed");
+}
+
+#[test]
+fn concurrent_kills_all_get_an_answer() {
+    let mut p = start();
+    let mut a = p.connect();
+    let mut b = p.connect();
+    // accept 는 들어온 순서대로라, 뒤에 붙은 연결이 답을 받았으면 a·b 도 이미 받아들여졌다.
+    assert_eq!(p.request(json!({ "type": "version" }))["type"], "version");
+    a.send_text(json!({ "type": "kill" }));
+    b.send_text(json!({ "type": "kill" }));
+    assert_eq!(a.text()["type"], "killed");
+    assert_eq!(b.text()["type"], "killed");
+    assert!(p.wait().success());
+}
+
+#[test]
 fn a_failed_bind_removes_the_record_it_wrote() {
     let tmp = tmpdir();
     let dir = tmp.path().join("s");
