@@ -560,8 +560,9 @@ fn nobody_sets_the_size_after_the_primary_leaves() {
     let (mut primary, h, _) = p.attach("primary", 100, 30);
     assert_eq!(h["role"], "primary");
     // observer 의 입력은 셸에 가지 않으므로 떠나기 전에 걸어 둔다.
+    primary.input("echo ready-$((1+1))\n");
+    primary.output_until("ready-2");
     primary.input("sleep 1; stty size; echo sz-$((1+2))\n");
-    // 입력이 셸에 닿기 전에 끊기지 않게.
     primary.output_until("stty size");
     drop(primary);
 
