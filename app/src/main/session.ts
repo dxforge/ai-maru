@@ -113,6 +113,16 @@ export async function killSessions(dir: string): Promise<void> {
   )
 }
 
+/**
+ * AI Maru 터미널 안에서 띄운 앱이 그 터미널의 환경을 물려주면, 새 셸은 사용자의 dotfile 대신
+ * 그 터미널의 ZDOTDIR 을 읽고 거기서 띄운 claude 는 hook 을 그 터미널의 앱으로 보낸다.
+ */
+export function sessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(env).filter(([k]) => k !== 'ZDOTDIR' && !k.startsWith('AI_MARU_'))
+  )
+}
+
 export async function spawnSession(bin: string, dir: string): Promise<string> {
   const id = `s-${randomBytes(4).toString('hex')}`
   // 준비 전에 끝나면 이유가 stderr 에만 있다. 파이프로 받으면 앱이 끝난 뒤 세션의 쓰기가 실패한다.
@@ -122,6 +132,7 @@ export async function spawnSession(bin: string, dir: string): Promise<string> {
   // detached 는 자식을 setsid 로 띄워 앱이 끝날 때 같이 시그널을 받지 않게 한다.
   const child = spawn(bin, ['--dir', dir, '--id', id, '--cwd', homedir()], {
     detached: true,
+    env: sessionEnv(process.env),
     stdio: ['ignore', 'ignore', log]
   })
   closeSync(log)

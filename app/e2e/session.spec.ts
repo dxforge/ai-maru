@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { expect, gridRows, resizeBy, rows, sessionFiles, sockets, test } from './app'
 
 // 산술 확장을 쓰면 화면에 찍힌 입력과 셸의 출력이 구별된다.
@@ -80,4 +82,25 @@ test('셸이 끝나면 창이 닫히고 앱이 끝난다', async ({ launch }) =>
 test('maru-session 을 띄울 수 없으면 터미널에 이유를 보인다', async ({ launch }) => {
   const { page } = await launch({ MARU_SESSION_BIN: '/nonexistent/maru-session' })
   await expect(rows(page)).toContainText('open_failed')
+})
+
+test('앱을 띄운 터미널의 ZDOTDIR·AI_MARU_* 는 셸에 넘기지 않는다', async ({ launch, dataDir }) => {
+  test.skip(!existsSync('/bin/zsh'), 'zsh 가 없다')
+  const home = join(dataDir, 'home')
+  const zdotdir = join(dataDir, 'zdotdir')
+  mkdirSync(home)
+  mkdirSync(zdotdir)
+  writeFileSync(join(home, '.zshrc'), 'echo rc-from-home\n')
+  writeFileSync(join(zdotdir, '.zshrc'), 'echo rc-from-zdotdir\n')
+
+  const { page } = await launch({
+    SHELL: '/bin/zsh',
+    HOME: home,
+    ZDOTDIR: zdotdir,
+    AI_MARU_TTY: 'ttys-outer'
+  })
+  await expect(rows(page)).toContainText('rc-from-home')
+  await page.keyboard.type('echo "tty=[$AI_MARU_TTY]" done-$((1+1))\n')
+  await expect(rows(page)).toContainText('tty=[] done-2')
+  await expect(rows(page)).not.toContainText('rc-from-zdotdir')
 })
