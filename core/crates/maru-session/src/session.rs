@@ -4,6 +4,7 @@ use anyhow::Result;
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
@@ -28,23 +29,30 @@ pub struct ReplayState {
     pub rows: u16,
     pub cursor_x: u16,
     pub cursor_y: u16,
-    pub trailing_blank_rows: u64,
 }
 
 pub enum Recv {
     Data(Vec<u8>),
+    Size {
+        cols: u16,
+        rows: u16,
+    },
     /// 밀린 출력을 버렸다. 화면이 어긋났으니 `subscribe_with_replay` 로 다시 받아야 한다.
     Lagged,
 }
 
 pub struct Output {
+    /// 자기가 바꾼 크기는 알리지 않으려고 둔다.
+    conn: u64,
     backlog: Mutex<Backlog>,
     notify: Notify,
 }
 
+/// 크기 변경을 출력과 같은 큐에 넣는다. 따로 보내면 새 크기로 나온 출력이 먼저 닿을 수 있다.
 #[derive(Default)]
 struct Backlog {
-    data: Vec<u8>,
+    queue: VecDeque<Recv>,
+    bytes: usize,
     lagged: bool,
 }
 
@@ -54,12 +62,31 @@ impl Output {
         if b.lagged {
             return;
         }
-        if b.data.len() + bytes.len() > OUTPUT_BACKLOG {
+        if b.bytes + bytes.len() > OUTPUT_BACKLOG {
             b.lagged = true;
-            b.data = Vec::new();
+            b.queue.clear();
+            b.bytes = 0;
         } else {
-            b.data.extend_from_slice(bytes);
+            b.bytes += bytes.len();
+            match b.queue.back_mut() {
+                Some(Recv::Data(data)) => data.extend_from_slice(bytes),
+                _ => b.queue.push_back(Recv::Data(bytes.to_vec())),
+            }
         }
+        drop(b);
+        self.notify.notify_one();
+    }
+
+    fn push_size(&self, cols: u16, rows: u16) {
+        let mut b = self.backlog.lock().unwrap();
+        // 밀렸으면 resync 헤더가 크기를 싣는다.
+        if b.lagged {
+            return;
+        }
+        if let Some(Recv::Size { .. }) = b.queue.back() {
+            b.queue.pop_back();
+        }
+        b.queue.push_back(Recv::Size { cols, rows });
         drop(b);
         self.notify.notify_one();
     }
@@ -67,12 +94,13 @@ impl Output {
     pub fn try_recv(&self) -> Option<Recv> {
         let mut b = self.backlog.lock().unwrap();
         if b.lagged {
-            Some(Recv::Lagged)
-        } else if b.data.is_empty() {
-            None
-        } else {
-            Some(Recv::Data(std::mem::take(&mut b.data)))
+            return Some(Recv::Lagged);
         }
+        let r = b.queue.pop_front()?;
+        if let Recv::Data(data) = &r {
+            b.bytes -= data.len();
+        }
+        Some(r)
     }
 
     pub async fn recv(&self) -> Recv {
@@ -186,7 +214,7 @@ impl Session {
         let mut screen = self.screen.lock().unwrap();
         self.primary.send_replace(Some(conn));
         match size {
-            Some((cols, rows)) => self.resize_locked(&mut screen, cols, rows),
+            Some((cols, rows)) => self.resize_locked(&mut screen, conn, cols, rows),
             None => Ok(()),
         }
     }
@@ -196,15 +224,28 @@ impl Session {
         if !self.is_primary(conn) {
             return Ok(());
         }
-        self.resize_locked(&mut screen, cols, rows)
+        self.resize_locked(&mut screen, conn, cols, rows)
     }
 
-    fn resize_locked(&self, screen: &mut Screen, cols: u16, rows: u16) -> Result<()> {
+    fn resize_locked(&self, screen: &mut Screen, conn: u64, cols: u16, rows: u16) -> Result<()> {
+        let changed = (screen.cols, screen.rows) != (cols, rows);
         // VT 가 먼저 거절해야 PTY 가 그대로 남는다.
         screen.vt.resize(cols, rows)?;
         self.pty.resize(cols, rows)?;
         screen.cols = cols;
         screen.rows = rows;
+        if !changed {
+            return Ok(());
+        }
+        screen.outputs.retain(|o| {
+            o.upgrade()
+                .inspect(|o| {
+                    if o.conn != conn {
+                        o.push_size(cols, rows)
+                    }
+                })
+                .is_some()
+        });
         Ok(())
     }
 
@@ -212,18 +253,18 @@ impl Session {
         self.screen.lock().unwrap().vt.format(VtFormat::Plain)
     }
 
-    pub fn subscribe_with_replay(&self) -> Result<(Vec<u8>, ReplayState, Arc<Output>)> {
+    pub fn subscribe_with_replay(&self, conn: u64) -> Result<(Vec<u8>, ReplayState, Arc<Output>)> {
         let mut screen = self.screen.lock().unwrap();
-        let replay = screen.vt.format(VtFormat::Vt)?;
+        let replay = screen.vt.replay()?;
         let (cursor_x, cursor_y) = screen.vt.cursor()?;
         let state = ReplayState {
             cols: screen.cols,
             rows: screen.rows,
             cursor_x,
             cursor_y,
-            trailing_blank_rows: screen.vt.trailing_blank_rows(&replay)?,
         };
         let output = Arc::new(Output {
+            conn,
             backlog: Mutex::default(),
             notify: Notify::new(),
         });

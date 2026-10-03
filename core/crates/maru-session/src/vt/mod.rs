@@ -5,6 +5,8 @@ use std::ffi::c_void;
 use std::ptr;
 
 const SCROLLBACK_MAX_BYTES: usize = 4 * 1024 * 1024;
+/// 끝나지 않은 시퀀스를 이만큼 들고 있어야 그 사이에도 스냅샷을 뜰 수 있다.
+const CONTINUATION_MAX_BYTES: usize = 64 * 1024;
 const MAX_DIM: u16 = 4096;
 
 fn check_size(cols: u16, rows: u16) -> Result<()> {
@@ -38,18 +40,113 @@ impl VtTerminal {
             bail!("ghostty_terminal_new rc={rc}");
         }
         let t = VtTerminal { raw };
-        // SAFETY: 이 옵션의 입력 타입은 `size_t*` 다. 포인터는 호출 동안만 읽힌다.
-        let rc = unsafe {
-            ffi::ghostty_terminal_set(
-                t.raw,
+        for (opt, value) in [
+            (
                 ffi::GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES,
-                &SCROLLBACK_MAX_BYTES as *const usize as *const c_void,
+                &SCROLLBACK_MAX_BYTES,
+            ),
+            (
+                ffi::GHOSTTY_TERMINAL_OPT_CONTINUATION_MAX_BYTES,
+                &CONTINUATION_MAX_BYTES,
+            ),
+        ] {
+            // SAFETY: 두 옵션의 입력 타입은 `size_t*` 다. 포인터는 호출 동안만 읽힌다.
+            let rc = unsafe {
+                ffi::ghostty_terminal_set(t.raw, opt, value as *const usize as *const c_void)
+            };
+            if rc != ffi::GHOSTTY_SUCCESS {
+                bail!("ghostty_terminal_set(opt={opt}) rc={rc}");
+            }
+        }
+        Ok(t)
+    }
+
+    fn alternate_active(&self) -> Result<bool> {
+        let mut screen: i32 = 0;
+        // SAFETY: 이 데이터의 출력 타입은 int 크기의 `GhosttyTerminalScreen*` 다.
+        let rc = unsafe {
+            ffi::ghostty_terminal_get(
+                self.raw,
+                ffi::GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN,
+                &mut screen as *mut i32 as *mut c_void,
             )
         };
         if rc != ffi::GHOSTTY_SUCCESS {
-            bail!("ghostty_terminal_set(SCROLLBACK_MAX_BYTES) rc={rc}");
+            bail!("ghostty_terminal_get(ACTIVE_SCREEN) rc={rc}");
         }
-        Ok(t)
+        Ok(screen == ffi::GHOSTTY_TERMINAL_SCREEN_ALTERNATE)
+    }
+
+    fn snapshot_copy(&self) -> Result<VtTerminal> {
+        let mut out_ptr: *mut u8 = ptr::null_mut();
+        let mut out_len: usize = 0;
+        // SAFETY: `&self` 동안 다른 쓰기가 없다. out 은 지역 변수다.
+        let rc = unsafe {
+            ffi::ghostty_snapshot_encode_alloc(self.raw, ptr::null(), &mut out_ptr, &mut out_len)
+        };
+        if rc != ffi::GHOSTTY_SUCCESS || out_ptr.is_null() {
+            bail!("ghostty_snapshot_encode_alloc rc={rc}");
+        }
+        let mut decoder: ffi::GhosttySnapshotDecoder = ptr::null_mut();
+        let mut raw: ffi::GhosttyTerminal = ptr::null_mut();
+        // SAFETY: (out_ptr, out_len) 은 decode 가 끝날 때까지 살아 있고, 그 뒤 같은 할당자·길이로
+        // 해제한다. decoder 는 decode 뒤 바로 해제하고 터미널의 소유는 호출자에게 남는다.
+        let rc = unsafe {
+            let mut rc =
+                ffi::ghostty_snapshot_decoder_new_buf(ptr::null(), &mut decoder, out_ptr, out_len);
+            if rc == ffi::GHOSTTY_SUCCESS {
+                rc = ffi::ghostty_snapshot_decoder_decode(decoder, &mut raw);
+            }
+            ffi::ghostty_snapshot_decoder_free(decoder);
+            ffi::ghostty_free(ptr::null(), out_ptr, out_len);
+            rc
+        };
+        if rc != ffi::GHOSTTY_SUCCESS || raw.is_null() {
+            bail!("ghostty snapshot decode rc={rc}");
+        }
+        Ok(VtTerminal { raw })
+    }
+
+    /// 붙는 클라이언트에 보낼 재생. 그리드 높이·스크롤 리전·커서까지 이 세션과 같게 맞춰 끝난다.
+    ///
+    /// 대체 화면이 떠 있으면 일반 화면과 스크롤백을 먼저 싣는다 — 대체 화면만 보내면 그
+    /// 프로그램이 끝난 뒤 클라이언트에 빈 화면이 남는다. 포맷은 활성 화면만 내보내므로 복제본을
+    /// 일반 화면으로 되돌려 포맷한다.
+    pub fn replay(&self) -> Result<Vec<u8>> {
+        let active = self.format(VtFormat::Vt)?;
+        if !self.alternate_active()? {
+            return self.with_trailing_blank_rows(active);
+        }
+        // 끝나지 않은 시퀀스가 상한을 넘으면 복제할 수 없다.
+        let Ok(mut primary) = self.snapshot_copy() else {
+            return self.with_trailing_blank_rows(active);
+        };
+        primary.write(b"\x1b[?1049l\x1b[?1047l\x1b[?47l");
+        let mut out = primary.format(VtFormat::Vt)?;
+        out = primary.with_trailing_blank_rows(out)?;
+        // 대체 화면 포맷은 빈 화면의 홈에서 그리기 시작한다고 보고, `?1049h` 는 커서를 옮기지
+        // 않으면서 나갈 때 돌아올 자리로 저장한다.
+        out.extend_from_slice(b"\x1b[?1049h\x1b[H");
+        out.extend_from_slice(&drop_modes(&active, SCREEN_MODES));
+        Ok(out)
+    }
+
+    /// 포맷은 꼬리의 빈 행을 잘라 내므로, 그만큼 개행으로 되살려야 뷰포트 원점이 같아진다.
+    /// 커서 한 점만 맞추면 그 뒤 프로그램이 자기 좌표로 그리는 것이 모두 어긋난다.
+    fn with_trailing_blank_rows(&self, mut out: Vec<u8>) -> Result<Vec<u8>> {
+        let rows = self.scrollbar()?.len;
+        let pad = self.trailing_blank_rows(&out)?.min(rows);
+        if pad == 0 {
+            return Ok(out);
+        }
+        // 마지막 행이 스크롤 리전 밖이면 개행이 스크롤하지 않으므로 리전을 풀었다가 다시 세운다.
+        let region = scroll_region(&out).map(<[u8]>::to_vec);
+        out.extend_from_slice(format!("\x1b[r\x1b[{rows};1H").as_bytes());
+        out.extend(std::iter::repeat_n(b'\n', pad as usize));
+        out.extend_from_slice(&region.unwrap_or_default());
+        let (x, y) = self.cursor()?;
+        out.extend_from_slice(format!("\x1b[{};{}H", y + 1, x + 1).as_bytes());
+        Ok(out)
     }
 
     pub fn write(&mut self, bytes: &[u8]) {
@@ -101,10 +198,9 @@ impl VtTerminal {
         Ok(bar)
     }
 
-    /// 클라이언트가 이만큼 빈 행을 더해야 뷰포트 원점이 서버와 같아진다.
     /// 개행으로 행을 세는 건 `unwrap: false` 라 그리드 행 하나가 페이로드 줄 하나여서다.
     /// 활성 영역 높이가 하한인 건 클라이언트 그리드가 늘 `rows` 행이어서다.
-    pub fn trailing_blank_rows(&self, payload: &[u8]) -> Result<u64> {
+    fn trailing_blank_rows(&self, payload: &[u8]) -> Result<u64> {
         let emitted = if payload.is_empty() {
             0
         } else {
@@ -131,14 +227,15 @@ impl VtTerminal {
         // 커서와 어긋난다.
         // SAFETY: out 은 `size` 를 채운 지역 sized struct 다.
         let rc = unsafe { ffi::ghostty_terminal_select_all(self.raw, &mut sel) };
-        if rc == ffi::GHOSTTY_NO_VALUE {
+        let vt = fmt == VtFormat::Vt;
+        // 내용이 없어도 VT 는 모드(대체 화면·커서 숨김·bracketed paste)를 실어야 한다.
+        if rc == ffi::GHOSTTY_NO_VALUE && !vt {
             return Ok(Vec::new());
         }
-        if rc != ffi::GHOSTTY_SUCCESS {
+        if rc != ffi::GHOSTTY_SUCCESS && rc != ffi::GHOSTTY_NO_VALUE {
             bail!("ghostty_terminal_select_all rc={rc}");
         }
 
-        let vt = fmt == VtFormat::Vt;
         let opts = ffi::GhosttyFormatterTerminalOptions {
             size: size_of::<ffi::GhosttyFormatterTerminalOptions>(),
             emit: if vt {
@@ -199,7 +296,7 @@ impl VtTerminal {
         // SAFETY: 성공 시 (out_ptr, out_len) 은 유효하다. 복사한 뒤 같은 할당자·길이로 해제한다.
         let raw = unsafe { std::slice::from_raw_parts(out_ptr, out_len) };
         let mut bytes = if vt {
-            keep_replayable_modes(raw)
+            drop_modes(raw, UNREPLAYABLE_MODES)
         } else {
             raw.to_vec()
         };
@@ -217,19 +314,20 @@ impl VtTerminal {
     }
 }
 
-/// 복원했을 때 터미널이 스스로 pty 로 바이트를 흘리는 모드는 뺀다(`?1004` focus, 마우스).
-/// `?2004` 는 아무것도 안 보내고, 꺼 두면 여러 줄 붙여넣기가 첫 줄에서 제출된다.
-/// `?6`(DECOM)은 끝의 CUP 을 마진 기준으로 바꾸고, `?5`(반전)는 틀리면 화면이 반전된 채 남아 뺀다.
-/// allowlist 라 뺀 모드는 프로그램이 다시 켤 때까지 꺼진 채 남는다.
-fn keep_replayable_modes(bytes: &[u8]) -> Vec<u8> {
-    const KEEP: &[&[u8]] = &[b"1049", b"1047", b"47", b"25", b"7", b"2004"];
+/// 프로그램은 켠 모드를 다시 그릴 때 다시 보내지 않으므로(vim 의 `?1` 등) 빠진 모드는 프로그램이
+/// 다시 켤 때까지 꺼진 채 남는다. 그래서 다 싣고 재생을 망치는 것만 뺀다. `?6`(DECOM)은 끝의
+/// CUP 을 마진 기준으로 바꾸고, `?2026` 은 그리는 도중의 상태라 그 프로그램이 죽었으면 화면이 멈춘다.
+const UNREPLAYABLE_MODES: &[&[u8]] = &[b"6", b"2026"];
+/// 이미 들어간 대체 화면에 다시 쓰면 나갈 때 돌아올 커서 자리를 덮는다.
+const SCREEN_MODES: &[&[u8]] = &[b"47", b"1047", b"1049"];
 
+fn drop_modes(bytes: &[u8], drop: &[&[u8]]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
         match dec_mode_seq(&bytes[i..]) {
             Some((len, params, terminator)) => {
-                let kept: Vec<&[u8]> = params.into_iter().filter(|p| KEEP.contains(p)).collect();
+                let kept: Vec<&[u8]> = params.into_iter().filter(|p| !drop.contains(p)).collect();
                 if !kept.is_empty() {
                     out.extend_from_slice(b"\x1b[?");
                     out.extend_from_slice(&kept.join(&b';'));
@@ -244,6 +342,24 @@ fn keep_replayable_modes(bytes: &[u8]) -> Vec<u8> {
         }
     }
     out
+}
+
+/// 포맷이 실은 DECSTBM. 셀 내용에는 ESC 가 들어가지 않아 이 모양은 리전 extra 에서만 나온다.
+fn scroll_region(bytes: &[u8]) -> Option<&[u8]> {
+    let mut i = 0;
+    while let Some(at) = bytes[i..].windows(2).position(|w| w == b"\x1b[") {
+        let start = i + at;
+        let body = bytes[start + 2..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit() || **b == b';')
+            .count();
+        let end = start + 2 + body;
+        if body > 0 && bytes.get(end) == Some(&b'r') {
+            return Some(&bytes[start..=end]);
+        }
+        i = start + 2;
+    }
+    None
 }
 
 fn dec_mode_seq(bytes: &[u8]) -> Option<(usize, Vec<&[u8]>, u8)> {
@@ -374,6 +490,216 @@ mod tests {
         assert_eq!(t.trailing_blank_rows(&out).unwrap(), 0);
     }
 
+    fn replayed(t: &VtTerminal) -> VtTerminal {
+        let payload = t.replay().unwrap();
+        let mut c = term();
+        c.write(&payload);
+        c
+    }
+
+    #[test]
+    fn replay_on_the_alternate_screen_leaves_the_primary_screen_behind_it() {
+        let mut t = term();
+        for i in 0..50 {
+            t.write(format!("history{i}\r\n").as_bytes());
+        }
+        t.write(b"$ vim\r\n\x1b[?1049h\x1b[H~ TUI ~");
+        let mut c = replayed(&t);
+        assert!(plain(&c).contains("~ TUI ~"));
+        c.write(b"\x1b[?1049l");
+        let out = plain(&c);
+        assert!(out.contains("history0") && out.contains("$ vim"), "{out:?}");
+        assert!(!out.contains("~ TUI ~"), "{out:?}");
+    }
+
+    #[test]
+    fn primary_cursor_and_grid_survive_leaving_the_replayed_alternate_screen() {
+        let mut t = term();
+        for i in 0..100 {
+            t.write(format!("line{i}\r\n").as_bytes());
+        }
+        t.write(b"$ ");
+        t.write(b"\x1b[?1049h\x1b[H~ TUI ~");
+        let mut c = replayed(&t);
+        c.write(b"\x1b[?1049l");
+        t.write(b"\x1b[?1049l");
+        assert_eq!(c.cursor().unwrap(), t.cursor().unwrap());
+        assert_eq!(c.scrollbar().unwrap().total, t.scrollbar().unwrap().total);
+    }
+
+    fn dec_modes(t: &VtTerminal) -> Vec<(String, u8)> {
+        let out = t.format(VtFormat::Vt).unwrap();
+        let mut modes = Vec::new();
+        let mut i = 0;
+        while i < out.len() {
+            match dec_mode_seq(&out[i..]) {
+                Some((len, params, term)) => {
+                    for p in params {
+                        modes.push((String::from_utf8_lossy(p).into_owned(), term));
+                    }
+                    i += len;
+                }
+                None => i += 1,
+            }
+        }
+        modes.sort();
+        modes
+    }
+
+    fn assert_alternate_replay_matches(t: &mut VtTerminal, leave: &[u8]) {
+        let mut c = replayed(t);
+        assert!(c.alternate_active().unwrap());
+        assert_eq!(plain(&c), plain(t));
+        assert_eq!(c.cursor().unwrap(), t.cursor().unwrap());
+        t.write(leave);
+        c.write(leave);
+        t.write(b"MARK");
+        c.write(b"MARK");
+        assert_eq!(plain(&c), plain(t));
+        assert_eq!(c.cursor().unwrap(), t.cursor().unwrap());
+        assert_eq!(c.scrollbar().unwrap().total, t.scrollbar().unwrap().total);
+    }
+
+    #[test]
+    fn alternate_screen_content_keeps_its_rows_when_the_bottom_is_empty() {
+        let mut t = term();
+        t.write(b"seq\r\n1\r\n2\r\n$ \x1b[?1049h\x1b[H\x1b[2Jtop\x1b[5;5Hxx");
+        assert_alternate_replay_matches(&mut t, b"\x1b[?1049l");
+    }
+
+    #[test]
+    fn alternate_screens_entered_with_47_or_1047_replay_like_1049() {
+        for (enter, leave) in [
+            (&b"\x1b[?47h"[..], &b"\x1b[?47l"[..]),
+            (b"\x1b[?1047h", b"\x1b[?1047l"),
+        ] {
+            let mut t = term();
+            for i in 0..30 {
+                t.write(format!("line{i}\r\n").as_bytes());
+            }
+            t.write(b"$ ");
+            t.write(enter);
+            t.write(b"\x1b[5;5Hxx");
+            assert_alternate_replay_matches(&mut t, leave);
+        }
+    }
+
+    #[test]
+    fn primary_rows_line_up_under_a_scroll_region_set_on_the_alternate_screen() {
+        let mut t = term();
+        for i in 0..100 {
+            t.write(format!("{i}\r\n").as_bytes());
+        }
+        t.write(b"\x1b[H\x1b[2Jtop\r\n$ \x1b[?1049h\x1b[1;22r\x1b[Hvim");
+        assert_alternate_replay_matches(&mut t, b"\x1b[r\x1b[?1049l");
+    }
+
+    #[test]
+    fn an_unfinished_sequence_too_long_to_copy_still_replays_the_alternate_screen() {
+        let mut t = term();
+        t.write(b"$ \x1b[?1049h\x1b[Hin-alt\x1b]52;c;");
+        t.write(&vec![b'A'; 2 * CONTINUATION_MAX_BYTES]);
+        let c = replayed(&t);
+        assert!(c.alternate_active().unwrap());
+        assert!(plain(&c).contains("in-alt"), "{:?}", plain(&c));
+    }
+
+    #[test]
+    fn replay_carries_the_input_modes_a_program_set_once() {
+        let mut t = term();
+        t.write(b"\x1b[?1049h\x1b[?1h\x1b[?66h\x1b[?1002h\x1b[?1006h\x1b[?1004h\x1b[?1007l~ vim ~");
+        let want = dec_modes(&t);
+        for mode in ["1", "66", "1002", "1006", "1004"] {
+            assert!(want.contains(&(mode.to_string(), b'h')), "{want:?}");
+        }
+        // 기본값이 켜짐이라 끈 것도 실려야 한다.
+        assert!(want.contains(&("1007".to_string(), b'l')), "{want:?}");
+        assert_eq!(dec_modes(&replayed(&t)), want);
+    }
+
+    #[test]
+    fn replay_of_an_alternate_screen_with_nothing_drawn_still_carries_its_modes() {
+        let mut t = term();
+        t.write(b"$ prompt\r\n\x1b[?2004h\x1b[?1049h\x1b[?25l");
+        let mut c = replayed(&t);
+        assert!(c.alternate_active().unwrap());
+        let want = dec_modes(&t);
+        for mode in [("1049", b'h'), ("2004", b'h'), ("25", b'l')] {
+            assert!(want.contains(&(mode.0.to_string(), mode.1)), "{want:?}");
+        }
+        assert_eq!(dec_modes(&c), want);
+        c.write(b"\x1b[?1049l");
+        assert!(plain(&c).contains("$ prompt"));
+    }
+
+    #[test]
+    fn replay_of_an_empty_primary_screen_still_carries_its_modes() {
+        let mut t = term();
+        t.write(b"\x1b[?25l");
+        let want = dec_modes(&t);
+        assert_eq!(want, [("25".to_string(), b'l')]);
+        assert_eq!(dec_modes(&replayed(&t)), want);
+    }
+
+    #[test]
+    fn replay_of_a_primary_screen_filled_to_the_bottom_is_the_plain_vt_format() {
+        let mut t = term();
+        for i in 0..100 {
+            t.write(format!("line{i}\r\n").as_bytes());
+        }
+        t.write(b"$ ");
+        assert_eq!(t.replay().unwrap(), t.format(VtFormat::Vt).unwrap());
+    }
+
+    fn assert_primary_replay_matches(t: &mut VtTerminal) {
+        let mut c = replayed(t);
+        assert_eq!(plain(&c), plain(t));
+        assert_eq!(c.cursor().unwrap(), t.cursor().unwrap());
+        assert_eq!(c.scrollbar().unwrap().total, t.scrollbar().unwrap().total);
+        // 리전 안에서 스크롤할 만큼 이어 써야 리전이 같은지 드러난다.
+        for i in 0..30 {
+            let line = format!("after{i}\r\n");
+            t.write(line.as_bytes());
+            c.write(line.as_bytes());
+        }
+        assert_eq!(plain(&c), plain(t));
+        assert_eq!(c.cursor().unwrap(), t.cursor().unwrap());
+        assert_eq!(c.scrollbar().unwrap().total, t.scrollbar().unwrap().total);
+    }
+
+    #[test]
+    fn primary_replay_brings_back_the_blank_rows_below_the_content() {
+        for region in [&b""[..], b"\x1b[1;20r", b"\x1b[3;24r"] {
+            let mut t = term();
+            for i in 0..200 {
+                t.write(format!("{i}\r\n").as_bytes());
+            }
+            t.write(b"\x1b[H\x1b[2J");
+            t.write(region);
+            t.write(b"top\r\n$ ");
+            assert_primary_replay_matches(&mut t);
+        }
+    }
+
+    #[test]
+    fn scroll_region_is_found_only_as_decstbm() {
+        assert_eq!(
+            scroll_region(b"a\x1b[0m\x1b[3;2H\x1b[1;5r\x1b[3;2H"),
+            Some(&b"\x1b[1;5r"[..])
+        );
+        assert_eq!(scroll_region(b"\x1b[3;2H\x1b[?2004h r"), None);
+        assert_eq!(scroll_region(b"\x1b[r"), None);
+    }
+
+    #[test]
+    fn replay_works_with_an_unfinished_sequence_pending() {
+        let mut t = term();
+        t.write(b"base\r\n\x1b[?1049h\x1b[Halt\x1b[3");
+        let mut c = replayed(&t);
+        c.write(b"\x1b[?1049l");
+        assert!(plain(&c).contains("base"));
+    }
+
     #[test]
     fn vt_restores_the_alternate_screen_before_its_content() {
         let mut t = term();
@@ -405,18 +731,15 @@ mod tests {
     }
 
     #[test]
-    fn vt_drops_modes_that_would_make_the_terminal_send_bytes() {
+    fn vt_drops_origin_mode_and_synchronized_output() {
         let mut t = term();
-        t.write(b"\x1b[?1h\x1b[?1000h\x1b[?1003h\x1b[?1006h\x1b[?1004h\x1b[?2004h\x1b[?25l");
+        t.write(b"\x1b[?6h\x1b[?2026h\x1b[?1h\x1b[?2004h");
         t.write(b"prompt> ");
         let s = vt(&t);
-        for mode in ["?1h", "?1000h", "?1003h", "?1006h", "?1004h"] {
+        for mode in ["?6h", "?2026h"] {
             assert!(!s.contains(&format!("\x1b[{mode}")), "{mode}: {s:?}");
         }
-        assert!(
-            s.contains("\x1b[?2004h") && s.contains("\x1b[?25l"),
-            "{s:?}"
-        );
+        assert!(s.contains("\x1b[?1h") && s.contains("\x1b[?2004h"), "{s:?}");
     }
 
     #[test]
@@ -430,17 +753,13 @@ mod tests {
     }
 
     #[test]
-    fn keep_replayable_modes_splits_combined_params() {
+    fn drop_modes_splits_combined_params() {
         assert_eq!(
-            keep_replayable_modes(b"\x1b[?1;1049;1004h x"),
-            b"\x1b[?1049h x"
+            drop_modes(b"\x1b[?1;6;1049;2026h x", UNREPLAYABLE_MODES),
+            b"\x1b[?1;1049h x"
         );
-        assert_eq!(
-            keep_replayable_modes(b"\x1b[?1004;1049;2004h x"),
-            b"\x1b[?1049;2004h x"
-        );
-        assert_eq!(keep_replayable_modes(b"\x1b[?1;1004h x"), b" x");
-        assert_eq!(keep_replayable_modes(b"\x1b[?h x"), b"\x1b[?h x");
-        assert_eq!(keep_replayable_modes(b"\x1b[2004h x"), b"\x1b[2004h x");
+        assert_eq!(drop_modes(b"\x1b[?6;2026h x", UNREPLAYABLE_MODES), b" x");
+        assert_eq!(drop_modes(b"\x1b[?h x", UNREPLAYABLE_MODES), b"\x1b[?h x");
+        assert_eq!(drop_modes(b"\x1b[6h x", UNREPLAYABLE_MODES), b"\x1b[6h x");
     }
 }

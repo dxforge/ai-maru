@@ -1,0 +1,76 @@
+import type { Terminal } from '@xterm/xterm'
+import { PROTOCOL_VERSION } from '../../../shared/protocol'
+import type { SessionConnection } from './connection'
+
+export type AttachHandlers = {
+  onExit(): void
+}
+
+export type Attachment = {
+  readonly primary: boolean
+}
+
+export function attach(
+  term: Terminal,
+  conn: SessionConnection,
+  handlers: AttachHandlers
+): Attachment {
+  const encoder = new TextEncoder()
+  let primary = true
+
+  conn.onMessage((msg) => {
+    if (typeof msg !== 'string') {
+      term.write(msg)
+      return
+    }
+    const m = JSON.parse(msg)
+    switch (m.type) {
+      case 'attached':
+      case 'resync':
+        if (!primary) term.resize(m.cols, m.rows)
+        break
+      case 'size':
+        term.resize(m.cols, m.rows)
+        break
+      case 'role':
+        if (m.role === 'observer') {
+          primary = false
+          term.write('\r\n[다른 클라이언트가 이 세션의 입력과 크기를 가져갔다]\r\n')
+        }
+        break
+      case 'exit':
+        handlers.onExit()
+        break
+      case 'error':
+        term.write(`\r\n[maru-session: ${m.code}] ${m.message ?? ''}\r\n`)
+        break
+    }
+  })
+  conn.onClose(() => term.write('\r\n[세션 연결이 끊겼다]\r\n'))
+
+  term.onData((data) => {
+    if (primary) conn.send(encoder.encode(data))
+  })
+  // 일부 마우스 보고는 UTF-8 이 아닌 바이트 문자열로 나온다.
+  term.onBinary((data) => {
+    if (primary) conn.send(Uint8Array.from(data, (c) => c.charCodeAt(0)))
+  })
+  term.onResize(({ cols, rows }) => {
+    if (primary) conn.send(JSON.stringify({ type: 'resize', cols, rows }))
+  })
+
+  conn.send(
+    JSON.stringify({
+      type: 'attach',
+      protocol_version: PROTOCOL_VERSION,
+      role: 'primary',
+      cols: term.cols,
+      rows: term.rows
+    })
+  )
+  return {
+    get primary() {
+      return primary
+    }
+  }
+}
