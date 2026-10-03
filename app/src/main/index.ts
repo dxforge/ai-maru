@@ -82,6 +82,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {
+    if (unobtrusive) return
     const win = BrowserWindow.getAllWindows()[0]
     if (win?.isMinimized()) win.restore()
     win?.focus()

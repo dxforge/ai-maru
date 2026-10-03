@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { createConnection, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,6 +30,7 @@ export const test = base.extend<Fixtures>({
     await use(dir)
     // 앱을 강제로 끝낸 테스트는 세션을 남긴다.
     await killSessions(sessionDir(dir))
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3 })
   },
   launch: async ({ dataDir }, use) => {
     const apps: ElectronApplication[] = []
