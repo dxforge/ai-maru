@@ -6,7 +6,9 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
 use tokio::net::unix::OwnedWriteHalf;
 
-const VT_RESET: &[u8] = b"\x1b[H\x1b[2J\x1b[3J";
+/// RIS. 화면만 지우면 밀린 사이 프로그램이 기본값으로 되돌린 모드(대체 화면·숨긴 커서·스크롤
+/// 리전)가 클라이언트에 남는다. 전부 기본값으로 돌린 뒤 재생이 필요한 것만 다시 세운다.
+const VT_RESET: &[u8] = b"\x1bc";
 /// 성공해도 되돌리지 않는다 — 못 따라잡는 소비자에게 덤프를 계속 보내며 부하를 키우지 않게.
 const MAX_RESYNCS: u32 = 5;
 
@@ -63,7 +65,8 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
             },
 
             incoming = in_rx.recv() => match incoming {
-                Some((TAG_BINARY, bytes)) => {
+                // observer 의 입력을 받으면 질의(`ESC[6n` 등)에 붙은 클라이언트마다 답한다.
+                Some((TAG_BINARY, bytes)) if session.is_primary(conn) => {
                     let s = session.clone();
                     let _ = tokio::task::spawn_blocking(move || s.write(&bytes)).await;
                 }
@@ -124,6 +127,11 @@ async fn forward(
 ) -> bool {
     match r {
         Recv::Data(bytes) => write_frame(wr, TAG_BINARY, &bytes).await.is_ok(),
+        Recv::Size { cols, rows } => {
+            write_json(wr, &json!({ "type": "size", "cols": cols, "rows": rows }))
+                .await
+                .is_ok()
+        }
         Recv::Lagged => match resync(wr, session, conn, resyncs).await {
             Some(new) => {
                 *output = new;
@@ -140,7 +148,7 @@ async fn replay(
     conn: u64,
     resync: bool,
 ) -> Option<Arc<Output>> {
-    let (payload, st, output) = match session.subscribe_with_replay() {
+    let (payload, st, output) = match session.subscribe_with_replay(conn) {
         Ok(v) => v,
         Err(e) => {
             let _ = write_json(wr, &error("capture_failed", &format!("{e:#}"))).await;

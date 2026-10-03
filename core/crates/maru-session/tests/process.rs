@@ -305,7 +305,7 @@ fn every_attached_client_sees_the_output() {
     let p = start();
     let (mut a, _, _) = p.attach("primary", 80, 24);
     let (mut b, _, _) = p.attach("observer", 80, 24);
-    b.input("echo both-$((1+1))\n");
+    a.input("echo both-$((1+1))\n");
     a.output_until("both-2");
     b.output_until("both-2");
 }
@@ -344,9 +344,14 @@ fn only_one_primary_sets_the_size() {
         (h["cols"].as_u64(), h["rows"].as_u64()),
         (Some(120), Some(40))
     );
+    let mut texts = vec![first.next_text(), first.next_text()];
+    texts.sort_by_key(|v| v["type"].to_string());
     assert_eq!(
-        first.next_text(),
-        json!({ "type": "role", "role": "observer" })
+        texts,
+        [
+            json!({ "type": "role", "role": "observer" }),
+            json!({ "type": "size", "cols": 120, "rows": 40 }),
+        ]
     );
     first.send_text(json!({ "type": "resize", "cols": 70, "rows": 10 }));
 
@@ -552,14 +557,15 @@ fn malformed_requests_get_an_error_instead_of_a_hang() {
 #[test]
 fn nobody_sets_the_size_after_the_primary_leaves() {
     let p = start();
-    let (primary, h, _) = p.attach("primary", 100, 30);
+    let (mut primary, h, _) = p.attach("primary", 100, 30);
     assert_eq!(h["role"], "primary");
+    // observer 의 입력은 셸에 가지 않으므로 떠나기 전에 걸어 둔다.
+    primary.input("sleep 1; stty size; echo sz-$((1+2))\n");
     drop(primary);
 
     let (mut obs, h, _) = p.attach("observer", 80, 24);
     assert_eq!(h["role"], "observer");
     obs.send_text(json!({ "type": "resize", "cols": 50, "rows": 10 }));
-    obs.input("stty size; echo sz-$((1+2))\n");
     obs.output_until("sz-3");
     let cap = p.request(json!({ "type": "capture", "protocol_version": PROTOCOL_VERSION }));
     assert!(cap["text"].as_str().unwrap().contains("30 100"), "{cap}");
@@ -596,10 +602,7 @@ fn a_client_that_falls_behind_is_resynced() {
     }
     let (tag, replay) = slow.frame().unwrap();
     assert_eq!(tag, TAG_BINARY);
-    assert!(
-        replay.starts_with(b"\x1b[H\x1b[2J\x1b[3J"),
-        "리셋으로 시작하지 않는다"
-    );
+    assert!(replay.starts_with(b"\x1bc"), "리셋으로 시작하지 않는다");
 }
 
 #[test]
@@ -789,4 +792,49 @@ fn a_closed_stderr_does_not_end_the_process() {
     assert_eq!(r["type"], "killed");
     assert!(!p.socket().exists() && !p.record_path().exists());
     assert!(p.wait().success());
+}
+
+#[test]
+fn input_from_an_observer_does_not_reach_the_shell() {
+    let p = start();
+    let (mut primary, _, _) = p.attach("primary", 80, 24);
+    let (mut obs, _, _) = p.attach("observer", 80, 24);
+    obs.input("echo obs-$((1+1))\n");
+    // 두 연결의 입력은 순서가 정해져 있지 않아, observer 의 입력이 먼저 처리될 틈을 둔다.
+    primary.input("sleep 0.5; echo pri-$((2+2))\n");
+    primary.output_until("pri-4");
+    let cap = p.request(json!({ "type": "capture", "protocol_version": PROTOCOL_VERSION }));
+    assert!(!cap["text"].as_str().unwrap().contains("obs-2"), "{cap}");
+}
+
+#[test]
+fn other_clients_learn_the_size_the_primary_sets() {
+    let p = start();
+    let (mut primary, _, _) = p.attach("primary", 80, 24);
+    let (mut obs, _, _) = p.attach("observer", 80, 24);
+    primary.send_text(json!({ "type": "resize", "cols": 100, "rows": 30 }));
+    primary.input("echo mid-$((1+2))\n");
+    let texts = obs.output_until("mid-3");
+    assert_eq!(texts, [json!({ "type": "size", "cols": 100, "rows": 30 })]);
+    let own = primary.output_until("mid-3");
+    assert!(own.is_empty(), "자기가 바꾼 크기를 돌려받았다: {own:?}");
+
+    primary.send_text(json!({ "type": "resize", "cols": 100, "rows": 30 }));
+    primary.input("echo after-$((3+4))\n");
+    let texts = obs.output_until("after-7");
+    assert!(texts.is_empty(), "같은 크기를 다시 알렸다: {texts:?}");
+}
+
+#[test]
+fn attaching_on_the_alternate_screen_replays_the_primary_screen_first() {
+    let p = start();
+    let (mut primary, _, _) = p.attach("primary", 80, 24);
+    primary.input("echo main-$((1+1)); printf '\\033[?1049h\\033[Halt-%s' $((2+2))\n");
+    primary.output_until("alt-4");
+    let (_obs, _, replay) = p.attach("observer", 80, 24);
+    let replay = String::from_utf8_lossy(&replay);
+    let main = replay.find("main-2").expect("일반 화면이 없다");
+    let enter = replay.rfind("\x1b[?1049h").expect("대체 화면 진입이 없다");
+    let alt = replay.rfind("alt-4").expect("대체 화면이 없다");
+    assert!(main < enter && enter < alt, "{replay:?}");
 }
