@@ -1,5 +1,6 @@
-export const TAG_TEXT = 1
-export const TAG_BINARY = 2
+import { TAG_BINARY, TAG_TEXT } from '../shared/protocol'
+
+export { TAG_BINARY, TAG_TEXT }
 
 const HEADER_LEN = 5
 const MAX_FRAME_LEN = 16 * 1024 * 1024
@@ -24,7 +25,10 @@ export class FrameDecoder {
     this.pending.push(chunk)
     this.pendingLen += chunk.length
     if (this.buf.length + this.pendingLen < this.need) return []
-    this.buf = Buffer.concat([this.buf, ...this.pending])
+    this.buf =
+      this.buf.length === 0 && this.pending.length === 1
+        ? chunk
+        : Buffer.concat([this.buf, ...this.pending])
     this.pending = []
     this.pendingLen = 0
     const frames: Frame[] = []

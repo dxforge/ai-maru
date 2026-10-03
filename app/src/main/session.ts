@@ -7,7 +7,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
-export const PROTOCOL_VERSION = 1
+import { PROTOCOL_VERSION } from '../shared/protocol'
 
 const SPAWN_TIMEOUT_MS = 5000
 const SPAWN_POLL_MS = 50
@@ -63,15 +63,16 @@ export async function findLiveSession(dir: string): Promise<string | null> {
   } catch {
     return null
   }
-  const records: SessionRecord[] = []
-  for (const name of names) {
-    if (!name.endsWith('.json')) continue
-    try {
-      records.push(JSON.parse(await readFile(join(dir, name), 'utf8')))
-    } catch {
-      continue
-    }
-  }
+  const parsed = await Promise.all(
+    names
+      .filter((name) => name.endsWith('.json'))
+      .map((name) =>
+        readFile(join(dir, name), 'utf8')
+          .then((body) => JSON.parse(body) as SessionRecord)
+          .catch(() => null)
+      )
+  )
+  const records = parsed.filter((r): r is SessionRecord => r !== null)
   records.sort((a, b) => b.created_at_ms - a.created_at_ms)
   for (const rec of records) {
     if (await isLive(socketPath(dir, rec.id))) {

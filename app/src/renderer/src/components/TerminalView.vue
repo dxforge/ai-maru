@@ -3,16 +3,16 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue'
-import { attach } from '../session/attach'
+import { attach, type Attachment } from '../session/attach'
 import { openSession } from '../session/connection'
 
 const host = useTemplateRef<HTMLDivElement>('host')
 const term = new Terminal({ theme: { background: '#1e1e1e' } })
 const fit = new FitAddon()
 term.loadAddon(fit)
-let primary = true
+let session: Attachment | null = null
 const observer = new ResizeObserver(() => {
-  if (primary) fit.fit()
+  if (session?.primary !== false) fit.fit()
 })
 
 onMounted(async () => {
@@ -20,10 +20,7 @@ onMounted(async () => {
   fit.fit()
   observer.observe(host.value!)
   term.focus()
-  attach(term, await openSession(), {
-    onExit: () => window.close(),
-    onDemoted: () => (primary = false)
-  })
+  session = attach(term, await openSession(), { onExit: () => window.close() })
 })
 
 onBeforeUnmount(() => {

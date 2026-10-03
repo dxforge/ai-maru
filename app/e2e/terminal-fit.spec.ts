@@ -1,20 +1,7 @@
-import { expect, test, type ElectronApplication } from '@playwright/test'
-import { killSessions, launch, newDataDir } from './app'
+import type { ElectronApplication } from '@playwright/test'
+import { expect, resizeBy, test } from './app'
 
-let app: ElectronApplication
-let dataDir: string
-
-test.beforeEach(async () => {
-  dataDir = newDataDir()
-  ;({ app } = await launch(dataDir))
-})
-
-test.afterEach(async () => {
-  await app.close()
-  await killSessions(dataDir)
-})
-
-async function measure() {
+async function measure(app: ElectronApplication) {
   return (await app.firstWindow()).evaluate(() => {
     const screen = document.querySelector('.xterm-screen')!.getBoundingClientRect()
     const rows = document.querySelector('.xterm-rows')!.children.length
@@ -29,32 +16,27 @@ async function measure() {
   })
 }
 
-async function setContentSize(width: number, height: number) {
-  await app.evaluate(
-    ({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setContentSize(w, h),
-    [width, height]
-  )
-}
-
 function expectFilled(m: Awaited<ReturnType<typeof measure>>) {
   expect(m.width).toBeLessThanOrEqual(m.winWidth)
   expect(m.height).toBeLessThanOrEqual(m.winHeight)
   expect(m.winHeight - m.height).toBeLessThan(m.cellHeight)
 }
 
-test('창을 열면 터미널이 창의 높이를 줄 단위로 채운다', async () => {
-  expectFilled(await measure())
+test('창을 열면 터미널이 창의 높이를 줄 단위로 채운다', async ({ launch }) => {
+  const { app } = await launch()
+  expectFilled(await measure(app))
 })
 
 for (const [label, dw, dh] of [
   ['키우면', 200, 180],
   ['줄이면', -200, -180]
 ] as const) {
-  test(`창을 ${label} 터미널이 같은 만큼 따라간다`, async () => {
-    const before = await measure()
-    await setContentSize(before.winWidth + dw, before.winHeight + dh)
-    await expect.poll(async () => (await measure()).rows).not.toBe(before.rows)
-    const after = await measure()
+  test(`창을 ${label} 터미널이 같은 만큼 따라간다`, async ({ launch }) => {
+    const { app } = await launch()
+    const before = await measure(app)
+    await resizeBy(app, dw, dh)
+    await expect.poll(async () => (await measure(app)).rows).not.toBe(before.rows)
+    const after = await measure(app)
 
     expect(after.winWidth).toBe(before.winWidth + dw)
     expectFilled(after)

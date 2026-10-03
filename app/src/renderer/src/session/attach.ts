@@ -1,7 +1,6 @@
 import type { Terminal } from '@xterm/xterm'
+import { PROTOCOL_VERSION } from '../../../shared/protocol'
 import type { SessionConnection } from './connection'
-
-export const PROTOCOL_VERSION = 1
 
 export type ReplayState = {
   rows: number
@@ -26,24 +25,32 @@ export function replayAlignment(state: ReplayState, rows: number): string {
 
 export type AttachHandlers = {
   onExit(): void
-  /** 다른 연결이 primary 를 가져갔다. 이 뒤로 크기는 서버가 알리는 대로 따르고, 입력은 버려진다. */
-  onDemoted(): void
 }
 
-export function attach(term: Terminal, conn: SessionConnection, handlers: AttachHandlers): void {
+export type Attachment = {
+  /**
+   * 크기를 정하는 연결인가. 다른 연결이 자리를 가져가면 false 가 되고, 그 뒤로 크기는 서버가
+   * 알리는 대로 따르며 입력과 resize 는 보내지 않는다(서버가 버린다).
+   */
+  readonly primary: boolean
+}
+
+export function attach(
+  term: Terminal,
+  conn: SessionConnection,
+  handlers: AttachHandlers
+): Attachment {
   const encoder = new TextEncoder()
   let replay: ReplayState | null = null
+  let primary = true
 
   conn.onMessage((msg) => {
     if (typeof msg !== 'string') {
+      term.write(msg)
       if (replay) {
-        const state = replay
-        replay = null
         // 콜백 안에서 쓰면 그 사이 큐에 들어온 출력 뒤로 밀려 정렬 전 그리드에 그려진다.
-        term.write(msg)
-        term.write(replayAlignment(state, term.rows))
-      } else {
-        term.write(msg)
+        term.write(replayAlignment(replay, term.rows))
+        replay = null
       }
       return
     }
@@ -63,7 +70,7 @@ export function attach(term: Terminal, conn: SessionConnection, handlers: Attach
         break
       case 'role':
         if (m.role === 'observer') {
-          handlers.onDemoted()
+          primary = false
           term.write('\r\n[다른 클라이언트가 이 세션의 입력과 크기를 가져갔다]\r\n')
         }
         break
@@ -77,10 +84,16 @@ export function attach(term: Terminal, conn: SessionConnection, handlers: Attach
   })
   conn.onClose(() => term.write('\r\n[세션 연결이 끊겼다]\r\n'))
 
-  term.onData((data) => conn.send(encoder.encode(data)))
+  term.onData((data) => {
+    if (primary) conn.send(encoder.encode(data))
+  })
   // 일부 마우스 보고는 UTF-8 이 아닌 바이트 문자열로 나온다.
-  term.onBinary((data) => conn.send(Uint8Array.from(data, (c) => c.charCodeAt(0))))
-  term.onResize(({ cols, rows }) => conn.send(JSON.stringify({ type: 'resize', cols, rows })))
+  term.onBinary((data) => {
+    if (primary) conn.send(Uint8Array.from(data, (c) => c.charCodeAt(0)))
+  })
+  term.onResize(({ cols, rows }) => {
+    if (primary) conn.send(JSON.stringify({ type: 'resize', cols, rows }))
+  })
 
   conn.send(
     JSON.stringify({
@@ -91,4 +104,9 @@ export function attach(term: Terminal, conn: SessionConnection, handlers: Attach
       rows: term.rows
     })
   )
+  return {
+    get primary() {
+      return primary
+    }
+  }
 }

@@ -73,6 +73,7 @@ function start(): void {
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
+      owner: event.sender.id,
       dir: join(app.getPath('userData'), 's'),
       bin: sessionBin()
     }

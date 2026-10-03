@@ -1,24 +1,11 @@
-import { expect, test, type ElectronApplication } from '@playwright/test'
-import { killSessions, launch, newDataDir, rows } from './app'
-
-let dataDir: string
-let app: ElectronApplication | undefined
-
-test.beforeEach(() => {
-  dataDir = newDataDir()
-})
-
-test.afterEach(async () => {
-  await app?.close().catch(() => {})
-  app = undefined
-  await killSessions(dataDir)
-})
+import { expect, rows, test } from './app'
 
 const FLOOD_MS = 3000
 
-test('출력이 쏟아지는 동안에도 main 과 renderer 가 막히지 않고 Ctrl-C 가 먹는다', async () => {
-  const { app: a, page } = await launch(dataDir)
-  app = a
+test('출력이 쏟아지는 동안에도 main 과 renderer 가 막히지 않고 Ctrl-C 가 먹는다', async ({
+  launch
+}) => {
+  const { app: a, page } = await launch()
   await page.keyboard.type('echo ready-$((1+1))\n')
   await expect(rows(page)).toContainText('ready-2')
 

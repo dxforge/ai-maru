@@ -9,5 +9,5 @@
     "lib": ["ESNext"],
     "types": ["electron-vite/node"]
   },
-  "include": ["electron.vite.config.ts", "src/main/**/*"]
+  "include": ["src/shared/**/*", "electron.vite.config.ts", "src/main/**/*"]
 }
