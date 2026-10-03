@@ -22,7 +22,7 @@ test('두 번째 실행은 세션을 더 띄우지 않고 끝난다', async ({ l
   await expect(rows(page)).toContainText('one-1')
 
   const second = spawnSync(electronBin as unknown as string, ['.', `--user-data-dir=${dataDir}`], {
-    env: { ...process.env, MARU_SHOW_INACTIVE: '1' },
+    env: { ...process.env, MARU_UNOBTRUSIVE: '1' },
     timeout: 15_000
   })
   // timeout 의 SIGTERM 에도 Electron 은 0 으로 끝나므로 스스로 끝났는지를 함께 본다.

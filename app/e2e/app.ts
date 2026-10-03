@@ -54,7 +54,7 @@ async function launchApp(dataDir: string, env: Record<string, string>): Promise<
     args: ['.', `--user-data-dir=${dataDir}`],
     env: {
       ...process.env,
-      MARU_SHOW_INACTIVE: '1',
+      MARU_UNOBTRUSIVE: '1',
       SHELL: '/bin/bash',
       BASH_SILENCE_DEPRECATION_WARNING: '1',
       ...env

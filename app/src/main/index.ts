@@ -13,19 +13,28 @@ function sessionBin(): string {
   return process.env.MARU_SESSION_BIN ?? join(app.getAppPath(), '../core/target/debug/maru-session')
 }
 
+/**
+ * e2e 가 띄운 앱이 쓰고 있는 사람의 화면과 키 입력에 끼어들지 않게 한다. 숨기지(`show: false`)
+ * 않고 투명하게 띄운다 — 숨긴 창은 컴포지터가 멈춰 스크린샷이 빈다.
+ */
+const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
+
 function createWindow(): void {
-  // e2e 가 띄운 창이 쓰고 있는 사람의 키 입력을 가로채지 않게.
-  const inactive = Boolean(process.env.MARU_SHOW_INACTIVE)
   const win = new BrowserWindow({
     width: 1000,
     height: 700,
-    show: !inactive,
+    show: !unobtrusive,
+    focusable: !unobtrusive,
     backgroundColor: '#1e1e1e',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js')
     }
   })
-  if (inactive) win.showInactive()
+  if (unobtrusive) {
+    win.setOpacity(0)
+    win.setIgnoreMouseEvents(true)
+    win.showInactive()
+  }
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -69,6 +78,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 function start(): void {
+  if (unobtrusive) app.dock?.hide()
   ipcMain.on('session:open', (event) => {
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
