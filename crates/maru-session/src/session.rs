@@ -182,8 +182,26 @@ impl Session {
         w.flush()
     }
 
-    pub fn resize(&self, cols: u16, rows: u16) -> Result<()> {
+    /// primary 를 바꾸는 것과 크기를 맞추는 것을 screen 락 하나로 묶는다. 따로 잡으면 그 사이에
+    /// 다른 연결이 자리와 크기를 가져간 뒤 이 연결이 자기 크기로 덮는다.
+    pub fn claim_primary(&self, conn: u64, size: Option<(u16, u16)>) -> Result<()> {
         let mut screen = self.screen.lock().unwrap();
+        self.primary.send_replace(Some(conn));
+        match size {
+            Some((cols, rows)) => self.resize_locked(&mut screen, cols, rows),
+            None => Ok(()),
+        }
+    }
+
+    pub fn resize_if_primary(&self, conn: u64, cols: u16, rows: u16) -> Result<()> {
+        let mut screen = self.screen.lock().unwrap();
+        if !self.is_primary(conn) {
+            return Ok(());
+        }
+        self.resize_locked(&mut screen, cols, rows)
+    }
+
+    fn resize_locked(&self, screen: &mut Screen, cols: u16, rows: u16) -> Result<()> {
         // VT 가 먼저 거절해야 PTY 가 그대로 남는다.
         screen.vt.resize(cols, rows)?;
         self.pty.resize(cols, rows)?;
@@ -221,10 +239,6 @@ impl Session {
 
     pub fn next_conn_id(&self) -> u64 {
         self.next_conn.fetch_add(1, Ordering::Relaxed)
-    }
-
-    pub fn claim_primary(&self, conn: u64) {
-        self.primary.send_replace(Some(conn));
     }
 
     pub fn release_primary(&self, conn: u64) {
@@ -271,5 +285,75 @@ impl Session {
             let _ = killpg(g, Signal::SIGKILL);
         }
         wait_exit(&mut exit_rx).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Barrier;
+
+    fn size(s: &Session) -> (u16, u16) {
+        let screen = s.screen.lock().unwrap();
+        (screen.cols, screen.rows)
+    }
+
+    fn race(a: impl FnOnce() + Send + 'static, b: impl FnOnce() + Send + 'static) {
+        let barrier = Arc::new(Barrier::new(2));
+        let (ba, bb) = (barrier.clone(), barrier);
+        let ta = std::thread::spawn(move || {
+            ba.wait();
+            a();
+        });
+        let tb = std::thread::spawn(move || {
+            bb.wait();
+            b();
+        });
+        ta.join().unwrap();
+        tb.join().unwrap();
+    }
+
+    fn with_session(f: impl FnOnce(&Arc<Session>)) {
+        let s = Session::spawn(Path::new("/bin/sh"), None, 80, 24).unwrap();
+        f(&s);
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(s.terminate(Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn the_size_follows_whichever_primary_claimed_last() {
+        with_session(|s| {
+            for i in 0..5000 {
+                let (a, b) = (s.next_conn_id(), s.next_conn_id());
+                let (sa, sb) = (s.clone(), s.clone());
+                race(
+                    move || sa.claim_primary(a, Some((100, 30))).unwrap(),
+                    move || sb.claim_primary(b, Some((120, 40))).unwrap(),
+                );
+                let want = if s.is_primary(a) {
+                    (100, 30)
+                } else {
+                    (120, 40)
+                };
+                assert_eq!(size(s), want, "{i}번째");
+            }
+        });
+    }
+
+    #[test]
+    fn a_primary_that_lost_its_seat_does_not_resize() {
+        with_session(|s| {
+            for i in 0..5000 {
+                let (a, b) = (s.next_conn_id(), s.next_conn_id());
+                s.claim_primary(a, Some((80, 24))).unwrap();
+                let (sa, sb) = (s.clone(), s.clone());
+                race(
+                    move || sa.resize_if_primary(a, 100, 30).unwrap(),
+                    move || sb.claim_primary(b, Some((120, 40))).unwrap(),
+                );
+                assert_eq!(size(s), (120, 40), "{i}번째");
+            }
+        });
     }
 }

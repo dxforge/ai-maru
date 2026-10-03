@@ -28,11 +28,12 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
     let conn = session.next_conn_id();
     let mut primary_rx = session.primary_rx();
     if primary {
-        session.claim_primary(conn);
+        let size = match (dim(&req["cols"]), dim(&req["rows"])) {
+            (Some(c @ 1..), Some(r @ 1..)) => Some((c, r)),
+            _ => None,
+        };
         // 스냅샷 전에 맞춘다. 뒤에 하면 옛 격자로 뜬 재생을 새 격자로 그리게 된다.
-        if let (Some(c @ 1..), Some(r @ 1..)) = (dim(&req["cols"]), dim(&req["rows"]))
-            && let Err(e) = session.resize(c, r)
-        {
+        if let Err(e) = session.claim_primary(conn, size) {
             eprintln!("maru-session: attach resize 실패: {e:#}");
         }
     }
@@ -69,10 +70,9 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
                 Some((TAG_TEXT, text)) => {
                     if let Ok(v) = serde_json::from_slice::<Value>(&text)
                         && v["type"] == "resize"
-                        && session.is_primary(conn)
                         && let (Some(c @ 1..), Some(r @ 1..)) = (dim(&v["cols"]), dim(&v["rows"]))
                     {
-                        let _ = session.resize(c, r);
+                        let _ = session.resize_if_primary(conn, c, r);
                     }
                 }
                 Some(_) => {}
