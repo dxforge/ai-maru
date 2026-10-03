@@ -65,6 +65,7 @@ pub async fn run(opts: Options) -> Result<()> {
         Ok(l) => l,
         Err(e) => {
             session.terminate(TERMINATE_GRACE).await;
+            std::fs::remove_file(&paths.record).ok();
             return Err(e);
         }
     };

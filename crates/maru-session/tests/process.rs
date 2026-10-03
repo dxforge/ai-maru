@@ -601,3 +601,16 @@ fn a_client_that_falls_behind_is_resynced() {
         "리셋으로 시작하지 않는다"
     );
 }
+
+#[test]
+fn a_failed_bind_removes_the_record_it_wrote() {
+    let tmp = tmpdir();
+    let dir = tmp.path().join("s");
+    let paths = Paths::new(&dir, "sess-test").unwrap();
+    std::fs::create_dir_all(&paths.socket).unwrap();
+    let mut child = spawn(&dir, "sess-test");
+    assert!(!child.wait().unwrap().success());
+    let err = stderr(&mut child);
+    assert!(err.contains("bind"), "{err}");
+    assert!(!paths.record.exists(), "죽은 pid 의 레코드가 남았다");
+}
