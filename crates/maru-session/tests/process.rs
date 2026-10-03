@@ -614,3 +614,36 @@ fn a_failed_bind_removes_the_record_it_wrote() {
     assert!(err.contains("bind"), "{err}");
     assert!(!paths.record.exists(), "죽은 pid 의 레코드가 남았다");
 }
+
+#[test]
+fn sizes_beyond_the_limit_are_refused() {
+    let p = start();
+    for (cols, rows) in [(4097, 24), (80, 4097), (65535, 1)] {
+        let (_c, h, _) = p.attach("primary", cols, rows);
+        assert_eq!(
+            (h["cols"].as_u64(), h["rows"].as_u64()),
+            (Some(80), Some(24)),
+            "{cols}x{rows}"
+        );
+    }
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.send_text(json!({ "type": "resize", "cols": 4097, "rows": 24 }));
+    c.input("stty size; echo sz-$((2+2))\n");
+    c.output_until("sz-4");
+    let cap = p.request(json!({ "type": "capture", "protocol_version": PROTOCOL_VERSION }));
+    assert!(cap["text"].as_str().unwrap().contains("24 80"), "{cap}");
+
+    let tmp = tmpdir();
+    let dir = tmp.path().join("s");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+        .args(["--id", "sess-test", "--shell", "/bin/sh", "--cols", "4097"])
+        .arg("--dir")
+        .arg(&dir)
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    assert!(!child.wait().unwrap().success());
+    let err = stderr(&mut child);
+    assert!(err.contains("4097"), "{err}");
+    assert!(!Paths::new(&dir, "sess-test").unwrap().record.exists());
+}

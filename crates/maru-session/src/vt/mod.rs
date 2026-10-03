@@ -5,6 +5,14 @@ use std::ffi::c_void;
 use std::ptr;
 
 const SCROLLBACK_MAX_BYTES: usize = 4 * 1024 * 1024;
+const MAX_DIM: u16 = 4096;
+
+fn check_size(cols: u16, rows: u16) -> Result<()> {
+    if !(1..=MAX_DIM).contains(&cols) || !(1..=MAX_DIM).contains(&rows) {
+        bail!("cols/rows 는 1~{MAX_DIM} 이어야 한다 ({cols}x{rows})");
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VtFormat {
@@ -22,9 +30,7 @@ unsafe impl Send for VtTerminal {}
 
 impl VtTerminal {
     pub fn new(cols: u16, rows: u16) -> Result<Self> {
-        if cols == 0 || rows == 0 {
-            bail!("cols/rows 는 0 보다 커야 한다 ({cols}x{rows})");
-        }
+        check_size(cols, rows)?;
         let mut raw: ffi::GhosttyTerminal = ptr::null_mut();
         // SAFETY: NULL allocator 는 기본 할당자다. out 은 지역 포인터다.
         let rc = unsafe { ffi::ghostty_terminal_new(ptr::null(), &mut raw, cols, rows) };
@@ -52,9 +58,7 @@ impl VtTerminal {
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {
-        if cols == 0 || rows == 0 {
-            bail!("cols/rows 는 0 보다 커야 한다 ({cols}x{rows})");
-        }
+        check_size(cols, rows)?;
         // SAFETY: 인자는 모두 스칼라다. 헤드리스라 셀 픽셀 크기는 0 이다.
         let rc = unsafe { ffi::ghostty_terminal_resize(self.raw, cols, rows, 0, 0) };
         if rc != ffi::GHOSTTY_SUCCESS {
