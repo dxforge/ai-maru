@@ -5,8 +5,7 @@ use std::ffi::c_void;
 use std::ptr;
 
 const SCROLLBACK_MAX_BYTES: usize = 4 * 1024 * 1024;
-/// 끝나지 않은 시퀀스를 이만큼 들고 있어야 그 사이에도 스냅샷을 뜰 수 있다. 이보다 긴 시퀀스가
-/// 끝나지 않은 동안에는 대체 화면 재생에 일반 화면이 빠진다.
+/// 끝나지 않은 시퀀스를 이만큼 들고 있어야 그 사이에도 스냅샷을 뜰 수 있다.
 const CONTINUATION_MAX_BYTES: usize = 64 * 1024;
 const MAX_DIM: u16 = 4096;
 
@@ -522,8 +521,6 @@ mod tests {
         modes
     }
 
-    /// 재생을 받은 터미널이 원본과 같은 대체 화면을 보이고, 프로그램이 `leave` 로 나간 뒤에도
-    /// 같은 일반 화면을 보이는지.
     fn assert_alternate_replay_matches(t: &mut VtTerminal, leave: &[u8]) {
         let mut c = replayed(t);
         assert!(c.alternate_active().unwrap());

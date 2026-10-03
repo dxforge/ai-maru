@@ -46,7 +46,8 @@
 //! - `{"type":"size","cols","rows"}` — primary 가 크기를 바꿨다. 이 뒤의 출력은 새 크기로 나온
 //!   것이다. 바꾼 연결에는 보내지 않는다.
 //! - `{"type":"resync",…}` + RIS(`ESC c`)로 시작하는 재생 — 출력을 못 따라잡아 건너뛴 것이 있다.
-//!   한 연결에 다섯 번을 넘으면 `resync_limit_exceeded` 로 끊는다.
+//!   밀린 동안의 크기 변경은 `size` 로 오지 않고 이 헤더의 `cols`·`rows` 에 실린다. 한 연결에
+//!   다섯 번을 넘으면 `resync_limit_exceeded` 로 끊는다.
 //! - `{"type":"exit","code","signal"}` — 셸이 끝났다. 남은 출력을 다 보낸 뒤에 온다.
 
 // 띄운 쪽이 stderr 를 닫고 먼저 끝나면 쓰기가 EPIPE 로 실패하는데, `eprintln!` 은 거기서 패닉한다.
