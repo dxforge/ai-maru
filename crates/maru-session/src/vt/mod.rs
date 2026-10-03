@@ -267,14 +267,12 @@ struct FormatterHandle(ffi::GhosttyFormatter);
 
 impl Drop for FormatterHandle {
     fn drop(&mut self) {
-        // SAFETY: 유일한 소유자이고 Drop 은 한 번만 돈다.
         unsafe { ffi::ghostty_formatter_free(self.0) };
     }
 }
 
 impl Drop for VtTerminal {
     fn drop(&mut self) {
-        // SAFETY: 유일한 소유자이고 Drop 은 한 번만 돈다.
         unsafe { ffi::ghostty_terminal_free(self.raw) };
     }
 }

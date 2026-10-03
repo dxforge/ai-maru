@@ -32,7 +32,7 @@
 //! |---|---|
 //! | `version` | `{"type":"version","protocol_version":…}` |
 //! | `kill` | 셸을 끝내고 소켓·레코드를 지운 뒤 `{"type":"killed"}` |
-//! | `capture` | `{"type":"capture","text":…}` — 화면의 평문 |
+//! | `capture` | `{"type":"capture","text":…}` |
 //! | `attach` (`role`: `primary`·`observer`, primary 면 `cols`·`rows`) | 아래 |
 //!
 //! `attach` 의 응답은 헤더 `{"type":"attached","protocol_version","tty","role","cols","rows",
