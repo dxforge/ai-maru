@@ -113,7 +113,6 @@ pub struct GhosttyFormatterTerminalOptions {
     pub selection: *const GhosttySelection,
 }
 
-/// `total` 은 스크롤백을 포함한 전체 행수, `len` 은 활성 영역 행수.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct GhosttyTerminalScrollbar {

@@ -100,7 +100,6 @@ fn build(script: &Path, pin_file: &Path, out: &Path) -> PathBuf {
         if dest.join("lib/libghostty-vt.a").exists() {
             std::fs::remove_dir_all(&tmp).ok();
         } else {
-            // CI 캐시(rust-cache)는 target 아래 파일만 지우고 디렉토리는 남긴 채 복원한다.
             std::fs::remove_dir_all(&dest).unwrap();
             std::fs::rename(&tmp, &dest).unwrap();
         }
