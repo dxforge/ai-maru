@@ -1,0 +1,55 @@
+//! 터미널 하나의 PTY·로그인 셸·화면 상태를 들고, 유닉스 도메인 소켓으로 여러 클라이언트를 받는
+//! 세션 프로세스.
+//!
+//! 띄우거나 붙는 쪽이 알아야 할 것:
+//!
+//! - `--dir` 의 권한(0700·본인 소유)이 인증 경계다. 소켓에는 인증이 없어 붙으면 셸에 키를 보낼 수
+//!   있다. 남과 공유하는 디렉토리를 넘기지 않는다.
+//! - 소켓 경로 `<dir>/<id>.sock` 은 103 바이트까지다. 넘으면 셸을 띄우기 전에 실패한다.
+//! - 소켓이 connect 를 받으면 레코드 `<dir>/<id>.json` 도 읽힌다. 둘 다 프로세스가 죽어도 남을 수
+//!   있어서, 살아 있는지는 connect 로 판정한다.
+//! - id 는 띄울 때마다 새로 만든다. 같은 id 를 동시에 띄우면 막지 못한다. 소켓이 늦게 열려
+//!   재시도할 때도 새 id 를 쓰고, 그 전에 먼저 띄운 pid 에 SIGTERM 을 보내 끝난 것을 확인한다.
+//! - 이 프로세스는 시작할 때 `setsid` 로 띄운 쪽의 세션에서 떨어진다. 프로세스 그룹 리더로 띄우면
+//!   이게 실패해 띄운 쪽이 끝날 때 같이 시그널을 받을 수 있다.
+//! - `version`·`kill` 은 `protocol_version` 과 상관없이 받고, 이 두 요청과 응답의 모양은 버전을
+//!   올려도 바꾸지 않는다. 나머지 요청은 버전이 다르면 `protocol_mismatch` 로 거절한다.
+//! - SIGHUP 을 무시한 작업(`nohup … &`)은 이 프로세스가 끝난 뒤에도 남는다.
+//! - 크기는 `role: "primary"` 로 붙은 연결 하나가 정한다. 나중에 붙은 primary 가 자리를 가져가고,
+//!   primary 가 떨어져도 다른 연결을 승격하지 않는다.
+//! - 재생은 스크롤백을 포함한 화면·스타일·스크롤 리전·커서와 일부 DEC 모드까지다. 키 인코딩 같은
+//!   입력 상태는 싣지 않으므로 완전 복원이 아니다.
+//!
+//! # 프로토콜
+//!
+//! 프레임은 `[tag 1B][길이 u32 BE][페이로드]` 이다. tag 1 은 JSON(Text), 2 는 바이트(Binary)다.
+//! 연결의 첫 프레임은 `type`·`protocol_version` 이 든 JSON 요청이다. 실패는
+//! `{"type":"error","code":…}` 로 돌아온다.
+//!
+//! | 요청 | 응답 |
+//! |---|---|
+//! | `version` | `{"type":"version","protocol_version":…}` |
+//! | `kill` | 셸을 끝내고 소켓·레코드를 지운 뒤 `{"type":"killed"}` |
+//! | `capture` | `{"type":"capture","text":…}` — 화면의 평문 |
+//! | `attach` (`role`: `primary`·`observer`, primary 면 `cols`·`rows`) | 아래 |
+//!
+//! `attach` 의 응답은 헤더 `{"type":"attached","protocol_version","tty","role","cols","rows",
+//! "cursor_x","cursor_y","trailing_blank_rows"}` 와 재생(Binary, 비어 있어도 보낸다)이고, 그 뒤로
+//! PTY 출력이 Binary 로 이어진다. 클라이언트가 보내는 Binary 는 셸 입력이고, primary 는
+//! `{"type":"resize","cols","rows"}` 를 보낼 수 있다. 서버는 그 밖에 다음을 보낸다.
+//!
+//! - `{"type":"role","role":"observer"}` — 다른 연결이 primary 를 가져갔다.
+//! - `{"type":"resync",…}` + 화면을 지우고 다시 그리는 재생 — 출력을 못 따라잡아 건너뛴 것이 있다.
+//!   한 연결에 다섯 번을 넘으면 `resync_limit_exceeded` 로 끊는다.
+//! - `{"type":"exit","code","signal"}` — 셸이 끝났다. 남은 출력을 다 보낸 뒤에 온다.
+
+mod attach;
+pub mod frame;
+pub mod paths;
+mod pty;
+pub mod record;
+pub mod server;
+mod session;
+mod vt;
+
+pub const PROTOCOL_VERSION: u32 = 1;
