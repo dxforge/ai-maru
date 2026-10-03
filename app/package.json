@@ -1,0 +1,45 @@
+{
+  "name": "ai-maru",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AI 코딩 통합 워크스페이스",
+  "license": "MIT",
+  "main": "./out/main/index.js",
+  "packageManager": "pnpm@10.24.0",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json && vue-tsc --noEmit -p tsconfig.e2e.json",
+    "test:e2e": "electron-vite build && playwright test"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.12.0-beta.301",
+    "@xterm/xterm": "6.1.0-beta.304",
+    "vue": "^3.5.43"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^24.19.1",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "electron": "^44.5.1",
+    "electron-vite": "^5.0.0",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.11.1",
+    "prettier": "^3.9.9",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vite": "^7.3.6",
+    "vue-tsc": "^3.3.12"
+  }
+}

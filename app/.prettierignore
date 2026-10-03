@@ -1,0 +1,4 @@
+out/
+pnpm-lock.yaml
+test-results/
+playwright-report/
