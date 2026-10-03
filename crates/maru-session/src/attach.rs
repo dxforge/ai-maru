@@ -34,7 +34,7 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
         };
         // 스냅샷 전에 맞춘다. 뒤에 하면 옛 격자로 뜬 재생을 새 격자로 그리게 된다.
         if let Err(e) = session.claim_primary(conn, size) {
-            eprintln!("maru-session: attach resize 실패: {e:#}");
+            log!("maru-session: attach resize 실패: {e:#}");
         }
     }
 

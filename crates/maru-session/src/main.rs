@@ -1,5 +1,6 @@
 use clap::Parser;
 use maru_session::server::{self, Options};
+use std::io::Write;
 use std::process::ExitCode;
 
 /// 터미널 하나를 들고 있는 세션 프로세스.
@@ -22,7 +23,7 @@ fn main() -> ExitCode {
     match runtime.block_on(server::run(opts)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("maru-session: {e:#}");
+            let _ = writeln!(std::io::stderr(), "maru-session: {e:#}");
             ExitCode::FAILURE
         }
     }

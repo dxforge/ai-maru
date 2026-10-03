@@ -710,8 +710,7 @@ fn cpu_seconds(pid: u32) -> f64 {
         .fold(0.0, |acc, part| acc * 60.0 + part.parse::<f64>().unwrap())
 }
 
-#[test]
-fn running_out_of_fds_does_not_spin_the_accept_loop() {
+fn start_with_few_fds(stderr: Stdio) -> Proc {
     let tmp = tmpdir();
     let dir = tmp.path().join("s");
     let id = "sess-test".to_string();
@@ -723,7 +722,7 @@ fn running_out_of_fds_does_not_spin_the_accept_loop() {
         .arg(&dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(stderr)
         .spawn()
         .unwrap();
     let mut p = Proc {
@@ -734,25 +733,60 @@ fn running_out_of_fds_does_not_spin_the_accept_loop() {
         id,
     };
     p.wait_ready();
+    p
+}
 
-    let conns: Vec<UnixStream> = (0..100)
+fn exhaust_fds(p: &Proc) -> Vec<UnixStream> {
+    let conns = (0..100)
         .map(|_| UnixStream::connect(p.socket()).unwrap())
         .collect();
     std::thread::sleep(Duration::from_millis(200));
+    conns
+}
+
+fn wait_until_answering(p: &Proc) {
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let mut c = p.connect();
+        c.send_text(json!({ "type": "version" }));
+        if c.frame().is_some() {
+            return;
+        }
+        assert!(Instant::now() < deadline, "fd 가 풀린 뒤에도 받지 못한다");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn running_out_of_fds_does_not_spin_the_accept_loop() {
+    let p = start_with_few_fds(Stdio::null());
+
+    let conns = exhaust_fds(&p);
     let before = cpu_seconds(p.child.id());
     std::thread::sleep(Duration::from_secs(2));
     let used = cpu_seconds(p.child.id()) - before;
     assert!(used < 0.5, "fd 가 바닥난 2초 동안 CPU 를 {used}초 썼다");
 
     drop(conns);
-    let deadline = Instant::now() + WAIT;
-    loop {
-        let mut c = p.connect();
-        c.send_text(json!({ "type": "version" }));
-        if c.frame().is_some() {
-            break;
-        }
-        assert!(Instant::now() < deadline, "fd 가 풀린 뒤에도 받지 못한다");
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    wait_until_answering(&p);
+}
+
+#[test]
+fn a_closed_stderr_does_not_end_the_process() {
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let mut p = start_with_few_fds(writer.into());
+
+    let conns = exhaust_fds(&p);
+    assert!(
+        p.child.try_wait().unwrap().is_none(),
+        "accept 실패를 로그로 남기다 끝났다"
+    );
+
+    drop(conns);
+    wait_until_answering(&p);
+    let r = p.request(json!({ "type": "kill" }));
+    assert_eq!(r["type"], "killed");
+    assert!(!p.socket().exists() && !p.record_path().exists());
+    assert!(p.wait().success());
 }

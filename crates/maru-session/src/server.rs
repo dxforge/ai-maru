@@ -70,7 +70,7 @@ pub async fn run(opts: Options) -> Result<()> {
             return Err(e);
         }
     };
-    eprintln!(
+    log!(
         "maru-session {}: {} 에서 듣는다",
         opts.id,
         paths.socket.display()
@@ -88,7 +88,7 @@ pub async fn run(opts: Options) -> Result<()> {
                 }
                 Err(e) => {
                     // fd 가 바닥나면 Linux 는 연결을 큐에 남겨 accept 가 같은 에러로 곧바로 다시 깨어난다.
-                    eprintln!("maru-session: accept 실패: {e}");
+                    log!("maru-session: accept 실패: {e}");
                     tokio::time::sleep(ACCEPT_BACKOFF).await;
                 }
             },

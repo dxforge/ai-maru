@@ -45,6 +45,14 @@
 //!   한 연결에 다섯 번을 넘으면 `resync_limit_exceeded` 로 끊는다.
 //! - `{"type":"exit","code","signal"}` — 셸이 끝났다. 남은 출력을 다 보낸 뒤에 온다.
 
+// 띄운 쪽이 stderr 를 닫고 먼저 끝나면 쓰기가 EPIPE 로 실패하는데, `eprintln!` 은 거기서 패닉한다.
+macro_rules! log {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+
 mod attach;
 pub mod frame;
 pub mod paths;
