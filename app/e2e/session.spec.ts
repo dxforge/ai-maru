@@ -36,6 +36,22 @@ test('앱을 다시 켜면 같은 셸에 다시 붙어 화면을 이어 받는�
   await expect(rows(page)).toContainText('kept-42')
 })
 
+test('대체 화면 위에서 앱을 다시 켜도, 그 프로그램이 끝나면 일반 화면이 돌아온다', async () => {
+  let { app: a, page } = await launch(dataDir)
+  await page.keyboard.type(
+    "echo main-$((1+1)); printf '\\033[?1049h\\033[Halt-%s' $((2+2)); read; printf '\\033[?1049l'\n"
+  )
+  await expect(rows(page)).toContainText('alt-4')
+  await a.close()
+
+  ;({ app: a, page } = await launch(dataDir))
+  app = a
+  await expect(rows(page)).toContainText('alt-4')
+  await page.keyboard.press('Enter')
+  await expect(rows(page)).toContainText('main-2')
+  await expect(rows(page)).not.toContainText('alt-4')
+})
+
 test('창 크기를 바꾸면 셸이 보는 크기도 바뀐다', async () => {
   const { app: a, page } = await launch(dataDir)
   app = a
