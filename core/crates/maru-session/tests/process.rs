@@ -290,7 +290,7 @@ fn reattaching_replays_earlier_output() {
     let (mut c, header, _) = p.attach("primary", 80, 24);
     assert_eq!(header["protocol_version"], PROTOCOL_VERSION);
     assert_eq!(header["tty"], p.record().tty);
-    for k in ["cursor_x", "cursor_y", "trailing_blank_rows"] {
+    for k in ["cursor_x", "cursor_y"] {
         assert!(header[k].is_u64(), "{k}: {header}");
     }
     // 셸이 입력을 그대로 되돌려 보여 주므로 결과는 입력에 없는 문자열이어야 한다.
@@ -601,10 +601,7 @@ fn a_client_that_falls_behind_is_resynced() {
             panic!("resync 없이 바로 한도 에러가 왔다");
         }
         assert_eq!(v["type"], "resync", "{v}");
-        assert!(
-            v["cursor_x"].is_u64() && v["trailing_blank_rows"].is_u64(),
-            "{v}"
-        );
+        assert!(v["cursor_x"].is_u64(), "{v}");
         break;
     }
     let (tag, replay) = slow.frame().unwrap();

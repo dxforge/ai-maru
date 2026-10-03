@@ -160,7 +160,6 @@ async fn replay(
         "rows": st.rows,
         "cursor_x": st.cursor_x,
         "cursor_y": st.cursor_y,
-        "trailing_blank_rows": st.trailing_blank_rows,
     });
     if !resync {
         header["protocol_version"] = json!(crate::PROTOCOL_VERSION);

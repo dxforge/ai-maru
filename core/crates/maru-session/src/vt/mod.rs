@@ -107,37 +107,46 @@ impl VtTerminal {
         Ok(VtTerminal { raw })
     }
 
-    /// 붙는 클라이언트에 보낼 재생과, 그 뒤 클라이언트가 더할 꼬리 빈 행 수.
+    /// 붙는 클라이언트에 보낼 재생. 그리드 높이·스크롤 리전·커서까지 이 세션과 같게 맞춰 끝난다.
     ///
     /// 대체 화면이 떠 있으면 일반 화면과 스크롤백을 먼저 싣는다 — 대체 화면만 보내면 그
     /// 프로그램이 끝난 뒤 클라이언트에 빈 화면이 남는다. 포맷은 활성 화면만 내보내므로 복제본을
-    /// 일반 화면으로 되돌려 포맷하고, 그 그리드는 여기서 맞춘다.
-    pub fn replay(&self) -> Result<(Vec<u8>, u64)> {
+    /// 일반 화면으로 되돌려 포맷한다.
+    pub fn replay(&self) -> Result<Vec<u8>> {
         let active = self.format(VtFormat::Vt)?;
-        let blanks = self.trailing_blank_rows(&active)?;
         if !self.alternate_active()? {
-            return Ok((active, blanks));
+            return self.with_trailing_blank_rows(active);
         }
         // 끝나지 않은 시퀀스가 상한을 넘으면 복제할 수 없다.
         let Ok(mut primary) = self.snapshot_copy() else {
-            return Ok((active, blanks));
+            return self.with_trailing_blank_rows(active);
         };
         primary.write(b"\x1b[?1049l\x1b[?1047l\x1b[?47l");
         let mut out = primary.format(VtFormat::Vt)?;
-        let rows = primary.scrollbar()?.len;
-        let pad = primary.trailing_blank_rows(&out)?.min(rows);
-        if pad > 0 {
-            // 마지막 행이 스크롤 리전 밖이면 개행이 스크롤하지 않는다. 리전은 대체 화면 포맷이
-            // 다시 세운다.
-            out.extend_from_slice(format!("\x1b[r\x1b[{rows};1H").as_bytes());
-            out.extend(std::iter::repeat_n(b'\n', pad as usize));
-        }
+        out = primary.with_trailing_blank_rows(out)?;
         // 대체 화면 포맷은 빈 화면의 홈에서 그리기 시작한다고 보고, `?1049h` 는 커서를 옮기지
         // 않으면서 나갈 때 돌아올 자리로 저장한다.
-        let (x, y) = primary.cursor()?;
-        out.extend_from_slice(format!("\x1b[{};{}H\x1b[?1049h\x1b[H", y + 1, x + 1).as_bytes());
+        out.extend_from_slice(b"\x1b[?1049h\x1b[H");
         out.extend_from_slice(&drop_modes(&active, SCREEN_MODES));
-        Ok((out, blanks))
+        Ok(out)
+    }
+
+    /// 포맷은 꼬리의 빈 행을 잘라 내므로, 그만큼 개행으로 되살려야 뷰포트 원점이 같아진다.
+    /// 커서 한 점만 맞추면 그 뒤 프로그램이 자기 좌표로 그리는 것이 모두 어긋난다.
+    fn with_trailing_blank_rows(&self, mut out: Vec<u8>) -> Result<Vec<u8>> {
+        let rows = self.scrollbar()?.len;
+        let pad = self.trailing_blank_rows(&out)?.min(rows);
+        if pad == 0 {
+            return Ok(out);
+        }
+        // 마지막 행이 스크롤 리전 밖이면 개행이 스크롤하지 않으므로 리전을 풀었다가 다시 세운다.
+        let region = scroll_region(&out).map(<[u8]>::to_vec);
+        out.extend_from_slice(format!("\x1b[r\x1b[{rows};1H").as_bytes());
+        out.extend(std::iter::repeat_n(b'\n', pad as usize));
+        out.extend_from_slice(&region.unwrap_or_default());
+        let (x, y) = self.cursor()?;
+        out.extend_from_slice(format!("\x1b[{};{}H", y + 1, x + 1).as_bytes());
+        Ok(out)
     }
 
     pub fn write(&mut self, bytes: &[u8]) {
@@ -189,10 +198,9 @@ impl VtTerminal {
         Ok(bar)
     }
 
-    /// 클라이언트가 이만큼 빈 행을 더해야 뷰포트 원점이 서버와 같아진다.
     /// 개행으로 행을 세는 건 `unwrap: false` 라 그리드 행 하나가 페이로드 줄 하나여서다.
     /// 활성 영역 높이가 하한인 건 클라이언트 그리드가 늘 `rows` 행이어서다.
-    pub fn trailing_blank_rows(&self, payload: &[u8]) -> Result<u64> {
+    fn trailing_blank_rows(&self, payload: &[u8]) -> Result<u64> {
         let emitted = if payload.is_empty() {
             0
         } else {
@@ -336,6 +344,24 @@ fn drop_modes(bytes: &[u8], drop: &[&[u8]]) -> Vec<u8> {
     out
 }
 
+/// 포맷이 실은 DECSTBM. 셀 내용에는 ESC 가 들어가지 않아 이 모양은 리전 extra 에서만 나온다.
+fn scroll_region(bytes: &[u8]) -> Option<&[u8]> {
+    let mut i = 0;
+    while let Some(at) = bytes[i..].windows(2).position(|w| w == b"\x1b[") {
+        let start = i + at;
+        let body = bytes[start + 2..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit() || **b == b';')
+            .count();
+        let end = start + 2 + body;
+        if body > 0 && bytes.get(end) == Some(&b'r') {
+            return Some(&bytes[start..=end]);
+        }
+        i = start + 2;
+    }
+    None
+}
+
 fn dec_mode_seq(bytes: &[u8]) -> Option<(usize, Vec<&[u8]>, u8)> {
     let rest = bytes.strip_prefix(b"\x1b[?")?;
     let body_len = rest
@@ -465,7 +491,7 @@ mod tests {
     }
 
     fn replayed(t: &VtTerminal) -> VtTerminal {
-        let (payload, _) = t.replay().unwrap();
+        let payload = t.replay().unwrap();
         let mut c = term();
         c.write(&payload);
         c
@@ -617,11 +643,53 @@ mod tests {
     }
 
     #[test]
-    fn replay_on_the_primary_screen_is_the_plain_vt_format() {
+    fn replay_of_a_primary_screen_filled_to_the_bottom_is_the_plain_vt_format() {
         let mut t = term();
-        t.write(b"hello\r\nworld");
-        let (payload, _) = t.replay().unwrap();
-        assert_eq!(payload, t.format(VtFormat::Vt).unwrap());
+        for i in 0..100 {
+            t.write(format!("line{i}\r\n").as_bytes());
+        }
+        t.write(b"$ ");
+        assert_eq!(t.replay().unwrap(), t.format(VtFormat::Vt).unwrap());
+    }
+
+    fn assert_primary_replay_matches(t: &mut VtTerminal) {
+        let mut c = replayed(t);
+        assert_eq!(plain(&c), plain(t));
+        assert_eq!(c.cursor().unwrap(), t.cursor().unwrap());
+        assert_eq!(c.scrollbar().unwrap().total, t.scrollbar().unwrap().total);
+        // 리전 안에서 스크롤할 만큼 이어 써야 리전이 같은지 드러난다.
+        for i in 0..30 {
+            let line = format!("after{i}\r\n");
+            t.write(line.as_bytes());
+            c.write(line.as_bytes());
+        }
+        assert_eq!(plain(&c), plain(t));
+        assert_eq!(c.cursor().unwrap(), t.cursor().unwrap());
+        assert_eq!(c.scrollbar().unwrap().total, t.scrollbar().unwrap().total);
+    }
+
+    #[test]
+    fn primary_replay_brings_back_the_blank_rows_below_the_content() {
+        for region in [&b""[..], b"\x1b[1;20r", b"\x1b[3;24r"] {
+            let mut t = term();
+            for i in 0..200 {
+                t.write(format!("{i}\r\n").as_bytes());
+            }
+            t.write(b"\x1b[H\x1b[2J");
+            t.write(region);
+            t.write(b"top\r\n$ ");
+            assert_primary_replay_matches(&mut t);
+        }
+    }
+
+    #[test]
+    fn scroll_region_is_found_only_as_decstbm() {
+        assert_eq!(
+            scroll_region(b"a\x1b[0m\x1b[3;2H\x1b[1;5r\x1b[3;2H"),
+            Some(&b"\x1b[1;5r"[..])
+        );
+        assert_eq!(scroll_region(b"\x1b[3;2H\x1b[?2004h r"), None);
+        assert_eq!(scroll_region(b"\x1b[r"), None);
     }
 
     #[test]

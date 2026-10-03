@@ -29,7 +29,6 @@ pub struct ReplayState {
     pub rows: u16,
     pub cursor_x: u16,
     pub cursor_y: u16,
-    pub trailing_blank_rows: u64,
 }
 
 pub enum Recv {
@@ -256,14 +255,13 @@ impl Session {
 
     pub fn subscribe_with_replay(&self, conn: u64) -> Result<(Vec<u8>, ReplayState, Arc<Output>)> {
         let mut screen = self.screen.lock().unwrap();
-        let (replay, trailing_blank_rows) = screen.vt.replay()?;
+        let replay = screen.vt.replay()?;
         let (cursor_x, cursor_y) = screen.vt.cursor()?;
         let state = ReplayState {
             cols: screen.cols,
             rows: screen.rows,
             cursor_x,
             cursor_y,
-            trailing_blank_rows,
         };
         let output = Arc::new(Output {
             conn,

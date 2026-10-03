@@ -2,27 +2,6 @@ import type { Terminal } from '@xterm/xterm'
 import { PROTOCOL_VERSION } from '../../../shared/protocol'
 import type { SessionConnection } from './connection'
 
-export type ReplayState = {
-  rows: number
-  cursorX: number
-  cursorY: number
-  trailingBlankRows: number
-}
-
-/**
- * 재생을 쓴 뒤 그리드를 세션과 같게 맞추는 시퀀스. 재생은 꼬리의 빈 행을 잘라 보내므로,
- * 그만큼 개행으로 되살려야 뷰포트 원점이 세션과 같아진다. 커서 한 점만 맞추면 그 뒤 프로그램이
- * 자기 좌표로 그리는 것이 모두 어긋난다. 그리드 높이가 다르면 세 값이 다른 것을 가리키므로
- * 손대지 않는다.
- */
-export function replayAlignment(state: ReplayState, rows: number): string {
-  if (state.rows !== rows || state.cursorY >= rows) return ''
-  const pad = Math.min(state.trailingBlankRows, rows)
-  // 개행은 뷰포트 맨 아래에서 해야 스크롤되어 행이 는다.
-  const grid = pad > 0 ? `\x1b[${rows};1H${'\n'.repeat(pad)}` : ''
-  return `${grid}\x1b[${state.cursorY + 1};${state.cursorX + 1}H`
-}
-
 export type AttachHandlers = {
   onExit(): void
 }
@@ -37,17 +16,11 @@ export function attach(
   handlers: AttachHandlers
 ): Attachment {
   const encoder = new TextEncoder()
-  let replay: ReplayState | null = null
   let primary = true
 
   conn.onMessage((msg) => {
     if (typeof msg !== 'string') {
       term.write(msg)
-      if (replay) {
-        // 콜백 안에서 쓰면 그 사이 큐에 들어온 출력 뒤로 밀려 정렬 전 그리드에 그려진다.
-        term.write(replayAlignment(replay, term.rows))
-        replay = null
-      }
       return
     }
     const m = JSON.parse(msg)
@@ -55,12 +28,6 @@ export function attach(
       case 'attached':
       case 'resync':
         if (!primary) term.resize(m.cols, m.rows)
-        replay = {
-          rows: m.rows,
-          cursorX: m.cursor_x,
-          cursorY: m.cursor_y,
-          trailingBlankRows: m.trailing_blank_rows
-        }
         break
       case 'size':
         term.resize(m.cols, m.rows)

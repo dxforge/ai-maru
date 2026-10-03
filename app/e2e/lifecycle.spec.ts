@@ -151,22 +151,26 @@ test('남은 세션은 프로토콜 버전이 달라도 kill 로 끝낸다', asy
   expect(sockets(dataDir)).not.toContain(join(dir, 's-old.sock'))
 })
 
-test('다시 붙을 때 화면 아래의 빈 행까지 맞춰 이어 그린다', async ({ launch }) => {
-  const { page } = await launch()
-  // 스크롤백을 남긴 채 화면만 지워, 맨 위 몇 줄 아래로 빈 행이 남게 한다.
-  await page.keyboard.type("seq 1 200; printf '\\033[H\\033[2J'; echo top-$((1+1))\n")
-  await expect(rows(page)).toContainText('top-2')
-  await page.reload()
+for (const [label, region] of [
+  ['', ''],
+  [' 스크롤 리전이 걸려 있어도', '\\033[1;20r']
+] as const) {
+  test(`다시 붙을 때${label} 화면 아래의 빈 행까지 맞춰 이어 그린다`, async ({ launch }) => {
+    const { page } = await launch()
+    await page.keyboard.type(`seq 1 200; printf '\\033[H\\033[2J${region}'; echo top-$((1+1))\n`)
+    await expect(rows(page)).toContainText('top-2')
+    await page.reload()
 
-  await expect(rows(page)).toContainText('top-2')
-  await page.keyboard.type('echo next-$((2+2))\n')
-  await expect(rows(page)).toContainText('next-4')
-  const lines = await gridRows(page).allInnerTexts()
-  const top = lines.findIndex((l) => l.includes('top-2'))
-  const next = lines.findIndex((l) => l.includes('next-4') && !l.includes('echo'))
-  expect(top).toBeGreaterThanOrEqual(0)
-  expect(next - top).toBe(2)
-})
+    await expect(rows(page)).toContainText('top-2')
+    await page.keyboard.type('echo next-$((2+2))\n')
+    await expect(rows(page)).toContainText('next-4')
+    const lines = await gridRows(page).allInnerTexts()
+    const top = lines.findIndex((l) => l.includes('top-2'))
+    const next = lines.findIndex((l) => l.includes('next-4') && !l.includes('echo'))
+    expect(top).toBeGreaterThanOrEqual(0)
+    expect(next - top).toBe(2)
+  })
+}
 
 test('세션이 뜨는 동안 다시 연결을 청해도 세션은 하나만 뜬다', async ({ launch, dataDir }) => {
   const { page } = await launch()

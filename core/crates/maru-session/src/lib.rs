@@ -18,7 +18,8 @@
 //! - 크기는 `role: "primary"` 로 붙은 연결 하나가 정한다. 나중에 붙은 primary 가 자리를 가져가고,
 //!   primary 가 떨어져도 다른 연결을 승격하지 않는다. `cols`·`rows` 는 1~4096 이고, 벗어난 크기는
 //!   attach·resize 에서는 무시되고 `--cols`·`--rows` 로 넘기면 셸을 띄우기 전에 실패한다.
-//! - 재생은 스크롤백을 포함한 화면·스타일·스크롤 리전·커서와 DEC 모드까지다. DEC 모드 가운데
+//! - 재생은 스크롤백을 포함한 화면·스타일·스크롤 리전·커서와 DEC 모드까지이고, 헤더의 `rows`
+//!   높이인 빈 그리드에 쓰면 꼬리 빈 행까지 세션과 같은 그리드가 된다. DEC 모드 가운데
 //!   `?6`(DECOM)·`?2026`(동기 출력)은 싣지 않는다. 대체 화면이 떠 있으면 일반 화면과 스크롤백을
 //!   먼저 싣고 그 뒤에 대체 화면을 싣는다. kitty 키보드 플래그 같은 입력 상태는 싣지 않으므로 완전
 //!   복원이 아니다.
@@ -37,7 +38,7 @@
 //! | `attach` (`role`: `primary`·`observer`, primary 면 `cols`·`rows`) | 아래 |
 //!
 //! `attach` 의 응답은 헤더 `{"type":"attached","protocol_version","tty","role","cols","rows",
-//! "cursor_x","cursor_y","trailing_blank_rows"}` 와 재생(Binary, 비어 있어도 보낸다)이고, 그 뒤로
+//! "cursor_x","cursor_y"}` 와 재생(Binary, 비어 있어도 보낸다)이고, 그 뒤로
 //! PTY 출력이 Binary 로 이어진다. primary 가 보내는 Binary 는 셸 입력이고 observer 가 보내는 것은
 //! 버린다 — 터미널 질의(`ESC[6n` 등)에 primary 만 답하게. primary 는 `{"type":"resize","cols",
 //! "rows"}` 를 보낼 수 있다. 서버는 그 밖에 다음을 보낸다.
