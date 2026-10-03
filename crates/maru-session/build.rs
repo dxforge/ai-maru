@@ -24,7 +24,14 @@ fn main() {
     println!("cargo:rerun-if-changed={}", script.display());
 
     let src = match std::env::var_os("MARU_GHOSTTY_VT_DIR") {
-        Some(dir) => PathBuf::from(dir),
+        Some(dir) => {
+            let dir = PathBuf::from(dir);
+            println!(
+                "cargo:rerun-if-changed={}",
+                dir.join("lib/libghostty-vt.a").display()
+            );
+            dir
+        }
         None => build(&script, &pin_file, &out),
     };
 
