@@ -15,6 +15,7 @@ use tokio::task::JoinSet;
 
 const TERMINATE_GRACE: Duration = Duration::from_secs(2);
 const FLUSH_GRACE: Duration = Duration::from_secs(1);
+const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 
 #[derive(clap::Args)]
 pub struct Options {
@@ -81,11 +82,16 @@ pub async fn run(opts: Options) -> Result<()> {
     let mut ack = None;
     loop {
         tokio::select! {
-            accepted = listener.accept() => {
-                if let Ok((stream, _)) = accepted {
+            accepted = listener.accept() => match accepted {
+                Ok((stream, _)) => {
                     conns.spawn(handle(stream, session.clone(), kill_tx.clone()));
                 }
-            }
+                Err(e) => {
+                    // fd 가 바닥나면 Linux 는 연결을 큐에 남겨 accept 가 같은 에러로 곧바로 다시 깨어난다.
+                    eprintln!("maru-session: accept 실패: {e}");
+                    tokio::time::sleep(ACCEPT_BACKOFF).await;
+                }
+            },
             Some(_) = conns.join_next(), if !conns.is_empty() => {}
             _ = wait_exit(&mut exit_rx) => break,
             Some(a) = kill_rx.recv() => {
