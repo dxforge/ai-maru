@@ -72,7 +72,6 @@ async function readRecords(dir: string): Promise<SessionRecord[]> {
   return parsed.filter((r): r is SessionRecord => r !== null)
 }
 
-/** 레코드는 프로세스가 죽어도 남을 수 있어서, 살아 있는지는 connect 로 가린다. */
 export async function findLiveSession(dir: string): Promise<string | null> {
   const records = await readRecords(dir)
   records.sort((a, b) => b.created_at_ms - a.created_at_ms)
@@ -96,8 +95,8 @@ function requestKill(path: string): Promise<void> {
 }
 
 /**
- * 디렉토리의 세션을 모두 끝낸다. 프로세스까지 없는 레코드는 지운다 — 띄우는 중인 세션은 소켓이
- * 아직 안 열렸어도 프로세스는 있다.
+ * 프로세스까지 없는 레코드는 지운다 — 띄우는 중인 세션은 소켓이 아직 안 열렸어도 프로세스는
+ * 있다.
  */
 export async function killSessions(dir: string): Promise<void> {
   await Promise.all(
@@ -123,7 +122,6 @@ export function sessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   )
 }
 
-/** `ko-KR` 같은 지역 태그를 셸이 쓸 UTF-8 로케일 이름으로 바꾼다. 없는 조합이면 C.UTF-8 이다. */
 export function utf8Locale(
   tag: string,
   exists = (name: string) => existsSync(join('/usr/share/locale', name))

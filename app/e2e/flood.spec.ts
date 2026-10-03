@@ -33,7 +33,6 @@ test('출력이 쏟아지는 동안에도 main 과 renderer 가 막히지 않고
   })
 
   await page.keyboard.type('yes\n')
-  // 출력이 쏟아지는 동안 main 이 창 이동을 처리하는지 — 드래그 대신 위치를 거듭 옮긴다.
   const moves: number[] = []
   const end = Date.now() + FLOOD_MS
   while (Date.now() < end) {

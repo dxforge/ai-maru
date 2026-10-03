@@ -65,7 +65,6 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
             },
 
             incoming = in_rx.recv() => match incoming {
-                // observer 의 입력을 받으면 질의(`ESC[6n` 등)에 붙은 클라이언트마다 답한다.
                 Some((TAG_BINARY, bytes)) if session.is_primary(conn) => {
                     let s = session.clone();
                     let _ = tokio::task::spawn_blocking(move || s.write(&bytes)).await;

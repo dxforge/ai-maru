@@ -34,7 +34,6 @@ pub struct ReplayState {
 
 pub enum Recv {
     Data(Vec<u8>),
-    /// 다른 연결이 크기를 바꿨다. 이 뒤의 출력은 새 크기로 나온 것이다.
     Size {
         cols: u16,
         rows: u16,

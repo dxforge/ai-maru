@@ -48,7 +48,7 @@ let host: UtilityProcess | null = null
 
 /**
  * Dock 에서 띄운 앱은 LANG 을 받지 못해, 로케일을 스스로 정하지 않는 셸(bash 등)이 US-ASCII 로 떠
- * 한글 입력을 버린다. Terminal.app 처럼 지역 설정으로 채운다.
+ * 한글 입력을 버린다. 지역 설정으로 채운다.
  */
 function hostEnv(): NodeJS.ProcessEnv {
   const env = process.env

@@ -163,7 +163,6 @@ test('다시 붙을 때 화면 아래의 빈 행까지 맞춰 이어 그린다',
   const top = lines.findIndex((l) => l.includes('top-2'))
   const next = lines.findIndex((l) => l.includes('next-4') && !l.includes('echo'))
   expect(top).toBeGreaterThanOrEqual(0)
-  // top-2, 프롬프트+입력, next-4 순서로 붙어 있어야 한다.
   expect(next - top).toBe(2)
 })
 
