@@ -85,7 +85,13 @@ fn build(script: &Path, commit: &str, out: &Path) -> PathBuf {
         panic!("scripts/build-ghostty-vt.sh 가 실패했다 — zig 버전은 ghostty-vt.env 를 보라");
     }
     if std::fs::rename(&tmp, &dest).is_err() {
-        std::fs::remove_dir_all(&tmp).ok();
+        if dest.join("lib/libghostty-vt.a").exists() {
+            std::fs::remove_dir_all(&tmp).ok();
+        } else {
+            // CI 캐시(rust-cache)는 target 아래 파일만 지우고 디렉토리는 남긴 채 복원한다.
+            std::fs::remove_dir_all(&dest).unwrap();
+            std::fs::rename(&tmp, &dest).unwrap();
+        }
     }
     dest
 }
