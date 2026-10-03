@@ -1,14 +1,17 @@
-import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test'
+import { expect, test, type ElectronApplication } from '@playwright/test'
+import { killSessions, launch, newDataDir } from './app'
 
 let app: ElectronApplication
+let dataDir: string
 
 test.beforeEach(async () => {
-  app = await electron.launch({ args: ['.'] })
-  await (await app.firstWindow()).waitForSelector('.xterm-screen')
+  dataDir = newDataDir()
+  ;({ app } = await launch(dataDir))
 })
 
 test.afterEach(async () => {
   await app.close()
+  await killSessions(dataDir)
 })
 
 async function measure() {
