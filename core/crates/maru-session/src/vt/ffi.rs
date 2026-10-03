@@ -3,6 +3,7 @@ use std::ffi::c_void;
 pub type GhosttyTerminal = *mut c_void;
 pub type GhosttyFormatter = *mut c_void;
 pub type GhosttyAllocator = c_void;
+pub type GhosttySnapshotDecoder = *mut c_void;
 
 include!(concat!(env!("OUT_DIR"), "/ghostty_enums.rs"));
 
@@ -56,6 +57,27 @@ unsafe extern "C" {
     pub fn ghostty_formatter_free(formatter: GhosttyFormatter);
 
     pub fn ghostty_free(allocator: *const GhosttyAllocator, ptr: *mut u8, len: usize);
+
+    pub fn ghostty_snapshot_encode_alloc(
+        terminal: GhosttyTerminal,
+        allocator: *const GhosttyAllocator,
+        out_ptr: *mut *mut u8,
+        out_len: *mut usize,
+    ) -> i32;
+
+    pub fn ghostty_snapshot_decoder_new_buf(
+        allocator: *const GhosttyAllocator,
+        decoder: *mut GhosttySnapshotDecoder,
+        ptr: *const u8,
+        len: usize,
+    ) -> i32;
+
+    pub fn ghostty_snapshot_decoder_decode(
+        decoder: GhosttySnapshotDecoder,
+        terminal: *mut GhosttyTerminal,
+    ) -> i32;
+
+    pub fn ghostty_snapshot_decoder_free(decoder: GhosttySnapshotDecoder);
 }
 
 /// 필드는 안 읽지만 `node` 포인터의 8바이트 정렬을 맞추려고 바이트 배열 대신 그대로 옮긴다.
