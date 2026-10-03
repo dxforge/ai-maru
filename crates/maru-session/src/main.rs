@@ -3,10 +3,6 @@ use maru_session::server::{self, Options};
 use std::process::ExitCode;
 
 /// 터미널 하나를 들고 있는 세션 프로세스.
-///
-/// 소켓 `<dir>/<id>.sock` 과 레코드 `<dir>/<id>.json` 을 만든다. 소켓이 connect 를 받기
-/// 시작하면 준비된 것이다. 셸이 끝나거나, kill 요청이나 SIGTERM·SIGINT·SIGHUP 을 받으면
-/// 셸을 정리하고 두 파일을 지운 뒤 끝난다.
 #[derive(Parser)]
 #[command(version)]
 struct Args {
