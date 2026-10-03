@@ -1,17 +1,14 @@
 use crate::frame::{TAG_BINARY, TAG_TEXT, error, read_frame, write_frame, write_json};
-use crate::session::{Chunk, Session, wait_exit};
+use crate::session::{Output, Recv, Session, wait_exit};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
 use tokio::net::unix::OwnedWriteHalf;
-use tokio::sync::broadcast::Receiver;
-use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 
 const VT_RESET: &[u8] = b"\x1b[H\x1b[2J\x1b[3J";
 /// 성공해도 되돌리지 않는다 — 못 따라잡는 소비자에게 덤프를 계속 보내며 부하를 키우지 않게.
 const MAX_RESYNCS: u32 = 5;
-const MAX_BATCH: usize = 64 * 1024;
 
 pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
     let (mut rd, mut wr) = stream.into_split();
@@ -40,7 +37,7 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
         }
     }
 
-    let Some(mut rx) = replay(&mut wr, &session, conn, false).await else {
+    let Some(mut output) = replay(&mut wr, &session, conn, false).await else {
         session.release_primary(conn);
         return;
     };
@@ -58,13 +55,8 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
     let mut resyncs = 0;
     loop {
         tokio::select! {
-            chunk = rx.recv() => {
-                let chunk = match chunk {
-                    Ok(bytes) => Ok(bytes),
-                    Err(RecvError::Lagged(_)) => Err(()),
-                    Err(RecvError::Closed) => break,
-                };
-                if !forward(&mut wr, &session, conn, &mut rx, &mut resyncs, chunk).await {
+            r = output.recv() => {
+                if !forward(&mut wr, &session, conn, &mut output, &mut resyncs, r).await {
                     break;
                 }
             },
@@ -100,13 +92,8 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
                 let Some(exit) = exit else { break };
                 // select! 는 준비된 갈래를 무작위로 고르므로 남은 출력을 먼저 내보낸다.
                 let mut flushed = true;
-                while flushed {
-                    let chunk = match rx.try_recv() {
-                        Ok(bytes) => Ok(bytes),
-                        Err(TryRecvError::Lagged(_)) => Err(()),
-                        Err(_) => break,
-                    };
-                    flushed = forward(&mut wr, &session, conn, &mut rx, &mut resyncs, chunk).await;
+                while flushed && let Some(r) = output.try_recv() {
+                    flushed = forward(&mut wr, &session, conn, &mut output, &mut resyncs, r).await;
                 }
                 if flushed {
                     let mut body = serde_json::to_value(exit).unwrap();
@@ -131,42 +118,15 @@ async fn forward(
     wr: &mut OwnedWriteHalf,
     session: &Session,
     conn: u64,
-    rx: &mut Receiver<Chunk>,
+    output: &mut Arc<Output>,
     resyncs: &mut u32,
-    chunk: Result<Chunk, ()>,
+    r: Recv,
 ) -> bool {
-    match chunk {
-        Ok(first) => {
-            // 청크마다 프레임을 쓰면 대량 출력에서 쉬지 않고 읽는 클라이언트도 방송 버퍼에서 밀려난다.
-            let mut batch = first.to_vec();
-            let mut lagged = false;
-            while batch.len() < MAX_BATCH {
-                match rx.try_recv() {
-                    Ok(more) => batch.extend_from_slice(&more),
-                    Err(TryRecvError::Lagged(_)) => {
-                        lagged = true;
-                        break;
-                    }
-                    Err(_) => break,
-                }
-            }
-            if write_frame(wr, TAG_BINARY, &batch).await.is_err() {
-                return false;
-            }
-            if !lagged {
-                return true;
-            }
-            match resync(wr, session, conn, resyncs).await {
-                Some(new_rx) => {
-                    *rx = new_rx;
-                    true
-                }
-                None => false,
-            }
-        }
-        Err(()) => match resync(wr, session, conn, resyncs).await {
-            Some(new_rx) => {
-                *rx = new_rx;
+    match r {
+        Recv::Data(bytes) => write_frame(wr, TAG_BINARY, &bytes).await.is_ok(),
+        Recv::Lagged => match resync(wr, session, conn, resyncs).await {
+            Some(new) => {
+                *output = new;
                 true
             }
             None => false,
@@ -179,8 +139,8 @@ async fn replay(
     session: &Session,
     conn: u64,
     resync: bool,
-) -> Option<Receiver<Chunk>> {
-    let (payload, st, rx) = match session.subscribe_with_replay() {
+) -> Option<Arc<Output>> {
+    let (payload, st, output) = match session.subscribe_with_replay() {
         Ok(v) => v,
         Err(e) => {
             let _ = write_json(wr, &error("capture_failed", &format!("{e:#}"))).await;
@@ -212,7 +172,7 @@ async fn replay(
         payload
     };
     write_frame(wr, TAG_BINARY, &body).await.ok()?;
-    Some(rx)
+    Some(output)
 }
 
 async fn resync(
@@ -220,7 +180,7 @@ async fn resync(
     session: &Session,
     conn: u64,
     count: &mut u32,
-) -> Option<Receiver<Chunk>> {
+) -> Option<Arc<Output>> {
     *count += 1;
     if *count > MAX_RESYNCS {
         let _ = write_json(

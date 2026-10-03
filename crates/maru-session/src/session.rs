@@ -8,13 +8,15 @@ use std::io::{Read, Write};
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{Notify, watch};
 
 const READ_CHUNK: usize = 8192;
-const BROADCAST_CAP: usize = 1024;
-/// 셸이 나간 뒤 남은 출력이 다 방송되길 기다리되, EOF 에 종료를 묶지 않으려는 상한.
+/// 바이트로 센다. 대량 출력 중 PTY 읽기는 한 번에 스무 바이트도 안 되게 끊겨 와서, 청크
+/// 개수로 세면 쉬지 않고 읽는 클라이언트도 밀린다.
+const OUTPUT_BACKLOG: usize = 4 * 1024 * 1024;
+/// 셸이 나간 뒤 남은 출력이 다 전달되길 기다리되, EOF 에 종료를 묶지 않으려는 상한.
 const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -31,7 +33,59 @@ pub struct ReplayState {
     pub trailing_blank_rows: u64,
 }
 
-pub type Chunk = Arc<Vec<u8>>;
+pub enum Recv {
+    Data(Vec<u8>),
+    /// 밀린 출력을 버렸다. 화면이 어긋났으니 `subscribe_with_replay` 로 다시 받아야 한다.
+    Lagged,
+}
+
+pub struct Output {
+    backlog: Mutex<Backlog>,
+    notify: Notify,
+}
+
+#[derive(Default)]
+struct Backlog {
+    data: Vec<u8>,
+    lagged: bool,
+}
+
+impl Output {
+    fn push(&self, bytes: &[u8]) {
+        let mut b = self.backlog.lock().unwrap();
+        if b.lagged {
+            return;
+        }
+        if b.data.len() + bytes.len() > OUTPUT_BACKLOG {
+            b.lagged = true;
+            b.data = Vec::new();
+        } else {
+            b.data.extend_from_slice(bytes);
+        }
+        drop(b);
+        self.notify.notify_one();
+    }
+
+    pub fn try_recv(&self) -> Option<Recv> {
+        let mut b = self.backlog.lock().unwrap();
+        if b.lagged {
+            Some(Recv::Lagged)
+        } else if b.data.is_empty() {
+            None
+        } else {
+            Some(Recv::Data(std::mem::take(&mut b.data)))
+        }
+    }
+
+    pub async fn recv(&self) -> Recv {
+        loop {
+            if let Some(r) = self.try_recv() {
+                return r;
+            }
+            self.notify.notified().await;
+        }
+    }
+}
 
 pub async fn wait_exit(rx: &mut watch::Receiver<Option<Exit>>) -> Option<Exit> {
     rx.wait_for(|e| e.is_some()).await.ok().and_then(|e| *e)
@@ -43,7 +97,6 @@ pub struct Session {
     pty: Pty,
     writer: Mutex<std::fs::File>,
     screen: Arc<Mutex<Screen>>,
-    data_tx: broadcast::Sender<Chunk>,
     exit_rx: watch::Receiver<Option<Exit>>,
     primary: watch::Sender<Option<u64>>,
     next_conn: AtomicU64,
@@ -54,6 +107,7 @@ struct Screen {
     vt: VtTerminal,
     cols: u16,
     rows: u16,
+    outputs: Vec<Weak<Output>>,
 }
 
 impl Session {
@@ -63,16 +117,15 @@ impl Session {
             vt: VtTerminal::new(cols, rows)?,
             cols,
             rows,
+            outputs: Vec::new(),
         }));
         let spawned = pty::spawn(shell, cwd, cols, rows)?;
         let shell_pid = spawned.child.id();
-        let (data_tx, _) = broadcast::channel::<Chunk>(BROADCAST_CAP);
         let (exit_tx, exit_rx) = watch::channel(None);
         let (drained_tx, drained_rx) = std::sync::mpsc::channel::<()>();
 
         let mut reader = spawned.reader;
         let screen_r = screen.clone();
-        let tx_r = data_tx.clone();
         std::thread::spawn(move || {
             let mut buf = vec![0u8; READ_CHUNK];
             loop {
@@ -82,12 +135,14 @@ impl Session {
                     Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                     Err(_) => break,
                 };
-                let chunk = Arc::new(buf[..n].to_vec());
-                // `subscribe_with_replay` 와 같은 락 안에서 반영·방송해야 청크가 스냅샷과 방송 중
+                let bytes = &buf[..n];
+                // `subscribe_with_replay` 와 같은 락 안에서 반영·전달해야 출력이 스냅샷과 구독 중
                 // 정확히 한쪽에만 들어간다.
                 let mut screen = screen_r.lock().unwrap();
-                screen.vt.write(&chunk);
-                let _ = tx_r.send(chunk);
+                screen.vt.write(bytes);
+                screen
+                    .outputs
+                    .retain(|o| o.upgrade().inspect(|o| o.push(bytes)).is_some());
             }
             let _ = drained_tx.send(());
         });
@@ -114,7 +169,6 @@ impl Session {
             pty: spawned.pty,
             writer: Mutex::new(spawned.writer),
             screen,
-            data_tx,
             exit_rx,
             primary: watch::channel(None).0,
             next_conn: AtomicU64::new(1),
@@ -142,11 +196,8 @@ impl Session {
         self.screen.lock().unwrap().vt.format(VtFormat::Plain)
     }
 
-    /// Lagged 를 받은 구독자는 화면이 어긋난 것이라 이걸 다시 불러 재동기화해야 한다.
-    pub fn subscribe_with_replay(
-        &self,
-    ) -> Result<(Vec<u8>, ReplayState, broadcast::Receiver<Chunk>)> {
-        let screen = self.screen.lock().unwrap();
+    pub fn subscribe_with_replay(&self) -> Result<(Vec<u8>, ReplayState, Arc<Output>)> {
+        let mut screen = self.screen.lock().unwrap();
         let replay = screen.vt.format(VtFormat::Vt)?;
         let (cursor_x, cursor_y) = screen.vt.cursor()?;
         let state = ReplayState {
@@ -156,7 +207,12 @@ impl Session {
             cursor_y,
             trailing_blank_rows: screen.vt.trailing_blank_rows(&replay)?,
         };
-        Ok((replay, state, self.data_tx.subscribe()))
+        let output = Arc::new(Output {
+            backlog: Mutex::default(),
+            notify: Notify::new(),
+        });
+        screen.outputs.push(Arc::downgrade(&output));
+        Ok((replay, state, output))
     }
 
     pub fn exit_rx(&self) -> watch::Receiver<Option<Exit>> {
