@@ -9,7 +9,6 @@ test('출력이 쏟아지는 동안에도 main 과 renderer 가 막히지 않고
   await page.keyboard.type('echo ready-$((1+1))\n')
   await expect(rows(page)).toContainText('ready-2')
 
-  // main 의 이벤트 루프 지연: 10ms 타이머가 얼마나 늦게 깨는지.
   await a.evaluate(() => {
     const g = globalThis as unknown as { lag: number[]; lagTimer: NodeJS.Timeout }
     g.lag = []
@@ -20,7 +19,6 @@ test('출력이 쏟아지는 동안에도 main 과 renderer 가 막히지 않고
       last = now
     }, 10)
   })
-  // renderer 의 프레임 간격.
   await page.evaluate(() => {
     const w = window as unknown as { frames_: number[]; stopFrames: boolean }
     w.frames_ = []
@@ -35,7 +33,7 @@ test('출력이 쏟아지는 동안에도 main 과 renderer 가 막히지 않고
   })
 
   await page.keyboard.type('yes\n')
-  // 창을 끄는 동안 main 이 창 이동을 처리하는지 — 드래그 대신 위치를 거듭 옮긴다.
+  // 출력이 쏟아지는 동안 main 이 창 이동을 처리하는지 — 드래그 대신 위치를 거듭 옮긴다.
   const moves: number[] = []
   const end = Date.now() + FLOOD_MS
   while (Date.now() < end) {

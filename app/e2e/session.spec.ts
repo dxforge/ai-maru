@@ -1,4 +1,4 @@
-import { expect, gridRows, resizeBy, rows, test } from './app'
+import { expect, gridRows, resizeBy, rows, sessionFiles, sockets, test } from './app'
 
 // 산술 확장을 쓰면 화면에 찍힌 입력과 셸의 출력이 구별된다.
 
@@ -8,29 +8,41 @@ test('키 입력이 셸에 가고 셸의 출력이 터미널에 뜬다', async (
   await expect(rows(page)).toContainText('out-3')
 })
 
-test('앱을 다시 켜면 같은 셸에 다시 붙어 화면을 이어 받는다', async ({ launch }) => {
+test('앱을 끄면 세션도 끝나고, 다시 켜면 새 셸이 뜬다', async ({ launch, dataDir }) => {
   const first = await launch()
-  await first.page.keyboard.type('X=kept-$((40+2)); echo before-$((1+1))\n')
+  await first.page.keyboard.type('X=gone-$((40+2)); echo before-$((1+1))\n')
   await expect(rows(first.page)).toContainText('before-2')
+  const [before] = sockets(dataDir)
   await first.app.close()
+  expect(sessionFiles(dataDir)).toEqual([])
 
   const { page } = await launch()
-  await expect(rows(page)).toContainText('before-2')
-  await page.keyboard.type('echo $X\n')
-  await expect(rows(page)).toContainText('kept-42')
+  await page.keyboard.type('echo "x=$X" after-$((2+2))\n')
+  await expect(rows(page)).toContainText('after-4')
+  await expect(rows(page)).toContainText('x= after-4')
+  expect(sockets(dataDir)).not.toContain(before)
 })
 
-test('대체 화면 위에서 앱을 다시 켜도, 그 프로그램이 끝나면 일반 화면이 돌아온다', async ({
+test('창을 닫으면 세션도 끝난다', async ({ launch, dataDir }) => {
+  const { app, page } = await launch()
+  await page.keyboard.type('echo open-$((1+1))\n')
+  await expect(rows(page)).toContainText('open-2')
+  const closed = new Promise<void>((resolve) => app.once('close', () => resolve()))
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await closed
+  expect(sessionFiles(dataDir)).toEqual([])
+})
+
+test('대체 화면 위에서 새로 고쳐도, 그 프로그램이 끝나면 일반 화면이 돌아온다', async ({
   launch
 }) => {
-  const first = await launch()
-  await first.page.keyboard.type(
+  const { page } = await launch()
+  await page.keyboard.type(
     "echo main-$((1+1)); printf '\\033[?1049h\\033[Halt-%s' $((2+2)); read; printf '\\033[?1049l'\n"
   )
-  await expect(rows(first.page)).toContainText('alt-4')
-  await first.app.close()
+  await expect(rows(page)).toContainText('alt-4')
+  await page.reload()
 
-  const { page } = await launch()
   await expect(rows(page)).toContainText('alt-4')
   await page.keyboard.press('Enter')
   await expect(rows(page)).toContainText('main-2')

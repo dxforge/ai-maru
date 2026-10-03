@@ -7,7 +7,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
-import { PROTOCOL_VERSION } from '../shared/protocol'
+import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
+import { encodeFrame } from './frame'
 
 const SPAWN_TIMEOUT_MS = 5000
 const SPAWN_POLL_MS = 50
@@ -52,16 +53,12 @@ function processExists(pid: number): boolean {
   }
 }
 
-/**
- * 레코드는 프로세스가 죽어도 남을 수 있어서, 살아 있는지는 connect 로 가린다. 프로세스까지 없는
- * 레코드는 지운다 — 띄우는 중인 세션은 소켓이 아직 안 열렸어도 프로세스는 있다.
- */
-export async function findLiveSession(dir: string): Promise<string | null> {
+async function readRecords(dir: string): Promise<SessionRecord[]> {
   let names: string[]
   try {
     names = await readdir(dir)
   } catch {
-    return null
+    return []
   }
   const parsed = await Promise.all(
     names
@@ -72,17 +69,48 @@ export async function findLiveSession(dir: string): Promise<string | null> {
           .catch(() => null)
       )
   )
-  const records = parsed.filter((r): r is SessionRecord => r !== null)
+  return parsed.filter((r): r is SessionRecord => r !== null)
+}
+
+/** 레코드는 프로세스가 죽어도 남을 수 있어서, 살아 있는지는 connect 로 가린다. */
+export async function findLiveSession(dir: string): Promise<string | null> {
+  const records = await readRecords(dir)
   records.sort((a, b) => b.created_at_ms - a.created_at_ms)
   for (const rec of records) {
-    if (await isLive(socketPath(dir, rec.id))) {
-      if (rec.protocol_version === PROTOCOL_VERSION) return rec.id
-    } else if (!processExists(rec.pid)) {
-      await rm(join(dir, `${rec.id}.json`), { force: true })
-      await rm(socketPath(dir, rec.id), { force: true })
-    }
+    if (await isLive(socketPath(dir, rec.id))) return rec.id
   }
   return null
+}
+
+/** 셸을 정리하고 소켓·레코드를 지운 뒤에 연결을 닫으므로 닫힐 때까지 기다린다. */
+function requestKill(path: string): Promise<void> {
+  return new Promise((resolve) => {
+    const sock = createConnection(path, () => {
+      const body = JSON.stringify({ type: 'kill', protocol_version: PROTOCOL_VERSION })
+      sock.write(encodeFrame(TAG_TEXT, Buffer.from(body)))
+    })
+    sock.on('data', () => sock.end())
+    sock.on('close', () => resolve())
+    sock.on('error', () => resolve())
+  })
+}
+
+/**
+ * 디렉토리의 세션을 모두 끝낸다. 프로세스까지 없는 레코드는 지운다 — 띄우는 중인 세션은 소켓이
+ * 아직 안 열렸어도 프로세스는 있다.
+ */
+export async function killSessions(dir: string): Promise<void> {
+  await Promise.all(
+    (await readRecords(dir)).map(async (rec) => {
+      const sock = socketPath(dir, rec.id)
+      if (await isLive(sock)) {
+        await requestKill(sock)
+      } else if (!processExists(rec.pid)) {
+        await rm(join(dir, `${rec.id}.json`), { force: true })
+        await rm(sock, { force: true })
+      }
+    })
+  )
 }
 
 export async function spawnSession(bin: string, dir: string): Promise<string> {

@@ -7,16 +7,18 @@ import {
   utilityProcess,
   type UtilityProcess
 } from 'electron'
+import { killSessions } from './session'
 import type { OpenRequest } from './session-host'
+
+function sessionDir(): string {
+  return join(app.getPath('userData'), 's')
+}
 
 function sessionBin(): string {
   return process.env.MARU_SESSION_BIN ?? join(app.getAppPath(), '../core/target/debug/maru-session')
 }
 
-/**
- * e2e 가 띄운 앱이 쓰고 있는 사람의 화면과 키 입력에 끼어들지 않게 한다. 숨기지(`show: false`)
- * 않고 투명하게 띄운다 — 숨긴 창은 컴포지터가 멈춰 스크린샷이 빈다.
- */
+/** e2e 가 띄운 앱이 쓰고 있는 사람의 화면과 키 입력에 끼어들지 않게 한다. */
 const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
 
 function createWindow(): void {
@@ -79,19 +81,31 @@ if (!app.requestSingleInstanceLock()) {
 
 function start(): void {
   if (unobtrusive) app.dock?.hide()
+  // 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.
+  const leftovers = killSessions(sessionDir())
   ipcMain.on('session:open', (event) => {
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
       owner: event.sender.id,
-      dir: join(app.getPath('userData'), 's'),
+      dir: sessionDir(),
       bin: sessionBin()
     }
-    sessionHost().postMessage(req, [port1])
+    void leftovers.then(() => sessionHost().postMessage(req, [port1]))
     event.sender.postMessage('session:port', null, [port2])
+  })
+
+  app.on('window-all-closed', () => app.quit())
+  // 세션은 앱과 따로 떠 있는 프로세스라 앱이 끝나도 남는다.
+  let sessionsKilled = false
+  app.on('will-quit', (event) => {
+    if (sessionsKilled) return
+    event.preventDefault()
+    void killSessions(sessionDir()).finally(() => {
+      sessionsKilled = true
+      app.quit()
+    })
   })
 
   createWindow()
 }
-
-app.on('window-all-closed', () => app.quit())

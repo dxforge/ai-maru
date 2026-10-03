@@ -3,7 +3,6 @@ import type { MessagePortMain } from 'electron'
 import { bridge } from './bridge'
 import { connect, findLiveSession, socketPath, spawnSession } from './session'
 
-/** `owner` 는 연결을 청한 창(webContents)의 id 다. */
 export type OpenRequest = { type: 'open'; owner: number; dir: string; bin: string }
 
 /** 찾기와 띄우기 사이에 다른 요청이 끼면 둘 다 세션이 없다고 보고 하나씩 띄운다. */

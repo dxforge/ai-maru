@@ -28,10 +28,6 @@ export type AttachHandlers = {
 }
 
 export type Attachment = {
-  /**
-   * 크기를 정하는 연결인가. 다른 연결이 자리를 가져가면 false 가 되고, 그 뒤로 크기는 서버가
-   * 알리는 대로 따르며 입력과 resize 는 보내지 않는다(서버가 버린다).
-   */
   readonly primary: boolean
 }
 

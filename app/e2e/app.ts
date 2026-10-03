@@ -9,6 +9,7 @@ import {
   type Page
 } from '@playwright/test'
 import { encodeFrame, TAG_TEXT } from '../src/main/frame'
+import { killSessions } from '../src/main/session'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 
 export { expect } from '@playwright/test'
@@ -16,21 +17,19 @@ export { expect } from '@playwright/test'
 export type Launched = { app: ElectronApplication; page: Page }
 
 type Fixtures = {
-  /** 테스트마다 새 userData. 세션 디렉토리는 그 아래 `s` 다. */
   dataDir: string
-  /** 이 테스트의 dataDir 로 앱을 띄운다. 띄운 앱은 테스트가 끝나면 닫는다. */
   launch: (env?: Record<string, string>) => Promise<Launched>
-  /** 테스트가 끝나면 부를 정리. */
   defer: (fn: () => void) => void
 }
 
 export const test = base.extend<Fixtures>({
+  // playwright 는 첫 인자가 객체 분해 패턴인지 보고 주입할 fixture 를 정하므로 `{}` 를 지우면 안 된다.
   // eslint-disable-next-line no-empty-pattern
   dataDir: async ({}, use) => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-e2e-'))
     await use(dir)
-    // 앱을 닫아도 세션은 남으므로 테스트가 띄운 것을 kill 요청으로 끝낸다.
-    await killSessions(dir)
+    // 앱을 강제로 끝낸 테스트는 세션을 남긴다.
+    await killSessions(sessionDir(dir))
   },
   launch: async ({ dataDir }, use) => {
     const apps: ElectronApplication[] = []
@@ -83,16 +82,11 @@ export function sockets(dataDir: string): string[] {
     .map((n) => join(sessionDir(dataDir), n))
 }
 
-async function killSessions(dataDir: string): Promise<void> {
-  await Promise.all(sockets(dataDir).map(kill))
-}
-
 function request(v: object): Buffer {
   const body = JSON.stringify({ ...v, protocol_version: PROTOCOL_VERSION })
   return encodeFrame(TAG_TEXT, Buffer.from(body))
 }
 
-/** 앱 밖의 클라이언트로 세션에 primary 로 붙는다. 받는 출력은 버린다. */
 export function attachFromOutside(sockPath: string, cols: number, rows: number): Promise<Socket> {
   return new Promise((resolve, reject) => {
     const sock = createConnection(sockPath, () => {
@@ -104,20 +98,10 @@ export function attachFromOutside(sockPath: string, cols: number, rows: number):
   })
 }
 
-function kill(path: string): Promise<void> {
-  return new Promise((resolve) => {
-    const sock = createConnection(path, () => sock.write(request({ type: 'kill' })))
-    sock.on('data', () => sock.end())
-    sock.on('close', () => resolve())
-    sock.on('error', () => resolve())
-  })
-}
-
 export function rows(page: Page) {
   return page.locator('.xterm-rows')
 }
 
-/** xterm 그리드의 행들. 행 수가 곧 터미널의 rows 다. */
 export function gridRows(page: Page) {
   return page.locator('.xterm-rows > div')
 }

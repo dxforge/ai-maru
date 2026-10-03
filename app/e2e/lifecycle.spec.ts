@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import electronBin from 'electron'
@@ -100,11 +100,35 @@ test('프로세스가 없는 세션의 레코드는 지우고 새 세션을 띄�
   expect(existsSync(join(dir, 's-dead.sock'))).toBe(false)
 })
 
-test('프로토콜 버전이 다른 세션에는 붙지 않는다', async ({ launch, dataDir, defer }) => {
+test('앱이 강제로 끝나 남은 세션은 다음에 켤 때 끝낸다', async ({ launch, dataDir }) => {
+  const first = await launch()
+  await first.page.keyboard.type('echo left-$((1+1))\n')
+  await expect(rows(first.page)).toContainText('left-2')
+  const [left] = sockets(dataDir)
+  const closed = new Promise<void>((resolve) => first.app.once('close', () => resolve()))
+  first.app.process().kill('SIGKILL')
+  await closed
+  expect(sockets(dataDir)).toEqual([left])
+
+  const { page } = await launch()
+  await page.keyboard.type('echo fresh-$((2+2))\n')
+  await expect(rows(page)).toContainText('fresh-4')
+  expect(sockets(dataDir)).toHaveLength(1)
+  expect(sockets(dataDir)).not.toContain(left)
+})
+
+test('남은 세션은 프로토콜 버전이 달라도 kill 로 끝낸다', async ({ launch, dataDir, defer }) => {
   const dir = sessionDir(dataDir)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const received: Buffer[] = []
-  const server = createServer((s: Socket) => s.on('data', (d) => received.push(d)))
+  const server = createServer((s: Socket) =>
+    s.on('data', (d) => {
+      received.push(d)
+      rmSync(join(dir, 's-old.json'))
+      server.close()
+      s.end()
+    })
+  )
   await new Promise<void>((r) => server.listen(join(dir, 's-old.sock'), r))
   defer(() => server.close())
   writeFileSync(
@@ -120,18 +144,18 @@ test('프로토콜 버전이 다른 세션에는 붙지 않는다', async ({ lau
   const { page } = await launch()
   await page.keyboard.type('echo other-$((4+4))\n')
   await expect(rows(page)).toContainText('other-8')
-  expect(received).toEqual([])
-  expect(existsSync(join(dir, 's-old.json'))).toBe(true)
+  expect(JSON.parse(Buffer.concat(received).subarray(5).toString())).toMatchObject({ type: 'kill' })
+  expect(sockets(dataDir)).toHaveLength(1)
+  expect(sockets(dataDir)).not.toContain(join(dir, 's-old.sock'))
 })
 
 test('다시 붙을 때 화면 아래의 빈 행까지 맞춰 이어 그린다', async ({ launch }) => {
-  const first = await launch()
-  // 스크롤백을 남긴 채 화면만 지워, 맨 위 몇 줄 아래로 빈 행이 남게 한다.
-  await first.page.keyboard.type("seq 1 200; printf '\\033[H\\033[2J'; echo top-$((1+1))\n")
-  await expect(rows(first.page)).toContainText('top-2')
-  await first.app.close()
-
   const { page } = await launch()
+  // 스크롤백을 남긴 채 화면만 지워, 맨 위 몇 줄 아래로 빈 행이 남게 한다.
+  await page.keyboard.type("seq 1 200; printf '\\033[H\\033[2J'; echo top-$((1+1))\n")
+  await expect(rows(page)).toContainText('top-2')
+  await page.reload()
+
   await expect(rows(page)).toContainText('top-2')
   await page.keyboard.type('echo next-$((2+2))\n')
   await expect(rows(page)).toContainText('next-4')
