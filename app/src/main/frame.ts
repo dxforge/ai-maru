@@ -15,16 +15,29 @@ export function encodeFrame(tag: number, payload: Uint8Array): Buffer {
 
 export class FrameDecoder {
   private buf: Buffer = Buffer.alloc(0)
+  /** 프레임이 다 올 때까지 조각을 모은다 — 조각마다 합치면 큰 프레임에서 비용이 제곱으로 는다. */
+  private pending: Buffer[] = []
+  private pendingLen = 0
+  private need = HEADER_LEN
 
   push(chunk: Buffer): Frame[] {
-    this.buf = this.buf.length === 0 ? chunk : Buffer.concat([this.buf, chunk])
+    this.pending.push(chunk)
+    this.pendingLen += chunk.length
+    if (this.buf.length + this.pendingLen < this.need) return []
+    this.buf = Buffer.concat([this.buf, ...this.pending])
+    this.pending = []
+    this.pendingLen = 0
     const frames: Frame[] = []
+    this.need = HEADER_LEN
     while (this.buf.length >= HEADER_LEN) {
       const len = this.buf.readUInt32BE(1)
       if (len > MAX_FRAME_LEN) {
         throw new Error(`프레임 길이 ${len} 이 한도 ${MAX_FRAME_LEN} 을 넘는다`)
       }
-      if (this.buf.length < HEADER_LEN + len) break
+      if (this.buf.length < HEADER_LEN + len) {
+        this.need = HEADER_LEN + len
+        break
+      }
       frames.push({
         tag: this.buf.readUInt8(0),
         payload: this.buf.subarray(HEADER_LEN, HEADER_LEN + len)

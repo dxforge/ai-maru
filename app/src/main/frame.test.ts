@@ -24,6 +24,22 @@ describe('FrameDecoder', () => {
     expect(d.push(c.subarray(4)).map((f) => f.payload.toString())).toEqual(['{}'])
   })
 
+  it('여러 조각에 걸친 큰 프레임과 그 뒤 프레임을 온전히 낸다', () => {
+    const big = Buffer.alloc(1_000_003)
+    for (let i = 0; i < big.length; i++) big[i] = i % 251
+    const whole = Buffer.concat([
+      encodeFrame(TAG_BINARY, big),
+      encodeFrame(TAG_TEXT, Buffer.from('{}'))
+    ])
+    const d = new FrameDecoder()
+    const frames = []
+    for (let i = 0; i < whole.length; i += 65536)
+      frames.push(...d.push(whole.subarray(i, i + 65536)))
+    expect(frames.length).toBe(2)
+    expect(frames[0].payload.equals(big)).toBe(true)
+    expect(frames[1].payload.toString()).toBe('{}')
+  })
+
   it('빈 페이로드도 프레임 하나다', () => {
     const [frame] = new FrameDecoder().push(encodeFrame(TAG_BINARY, new Uint8Array()))
     expect(frame.payload.length).toBe(0)

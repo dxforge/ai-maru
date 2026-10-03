@@ -29,7 +29,19 @@ export function openSession(): Promise<SessionConnection> {
 function portConnection(port: MessagePort): SessionConnection {
   let onMessage: (msg: SessionMessage) => void = () => {}
   let onClose: () => void = () => {}
-  port.onmessage = ({ data }) => (data === null ? onClose() : onMessage(data))
+  let closed = false
+  const close = (): void => {
+    if (closed) return
+    closed = true
+    window.removeEventListener('message', onLost)
+    port.close()
+    onClose()
+  }
+  const onLost = (e: MessageEvent): void => {
+    if (e.source === window && e.data === 'session:lost') close()
+  }
+  window.addEventListener('message', onLost)
+  port.onmessage = ({ data }) => (data === null ? close() : onMessage(data))
   return {
     send: (msg) => port.postMessage(msg),
     onMessage: (cb) => (onMessage = cb),

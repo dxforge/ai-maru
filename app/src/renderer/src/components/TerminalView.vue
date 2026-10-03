@@ -10,7 +10,10 @@ const host = useTemplateRef<HTMLDivElement>('host')
 const term = new Terminal({ theme: { background: '#1e1e1e' } })
 const fit = new FitAddon()
 term.loadAddon(fit)
-const observer = new ResizeObserver(() => fit.fit())
+let primary = true
+const observer = new ResizeObserver(() => {
+  if (primary) fit.fit()
+})
 
 onMounted(async () => {
   term.open(host.value!)
@@ -21,7 +24,15 @@ onMounted(async () => {
   const buffering = term.onData((data) => early.push(data))
   const conn = await openSession()
   buffering.dispose()
-  attach(term, conn, { onExit: () => window.close() }, early)
+  attach(
+    term,
+    conn,
+    {
+      onExit: () => window.close(),
+      onDemoted: () => (primary = false)
+    },
+    early
+  )
 })
 
 onBeforeUnmount(() => {

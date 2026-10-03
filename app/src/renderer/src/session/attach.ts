@@ -26,6 +26,8 @@ export function replayAlignment(state: ReplayState, rows: number): string {
 
 export type AttachHandlers = {
   onExit(): void
+  /** 다른 연결이 primary 를 가져갔다. 이 뒤로 크기는 서버가 알리는 대로 따르고, 입력은 버려진다. */
+  onDemoted(): void
 }
 
 /** `pendingInput` 은 연결이 열리기 전에 들어온 입력이다. attach 요청 뒤에 보낸다. */
@@ -43,7 +45,9 @@ export function attach(
       if (replay) {
         const state = replay
         replay = null
-        term.write(msg, () => term.write(replayAlignment(state, term.rows)))
+        // 콜백 안에서 쓰면 그 사이 큐에 들어온 출력 뒤로 밀려 정렬 전 그리드에 그려진다.
+        term.write(msg)
+        term.write(replayAlignment(state, term.rows))
       } else {
         term.write(msg)
       }
@@ -62,6 +66,12 @@ export function attach(
         break
       case 'size':
         term.resize(m.cols, m.rows)
+        break
+      case 'role':
+        if (m.role === 'observer') {
+          handlers.onDemoted()
+          term.write('\r\n[다른 클라이언트가 이 세션의 입력과 크기를 가져갔다]\r\n')
+        }
         break
       case 'exit':
         handlers.onExit()

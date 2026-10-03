@@ -5,6 +5,10 @@ ipcRenderer.on('session:port', (event) => {
   window.postMessage('session:port', '*', event.ports)
 })
 
+ipcRenderer.on('session:lost', () => {
+  window.postMessage('session:lost', '*')
+})
+
 contextBridge.exposeInMainWorld('maru', {
   openSession: (): void => ipcRenderer.send('session:open')
 })
