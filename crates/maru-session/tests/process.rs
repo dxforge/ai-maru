@@ -691,3 +691,63 @@ fn sizes_beyond_the_limit_are_refused() {
     assert!(err.contains("4097"), "{err}");
     assert!(!Paths::new(&dir, "sess-test").unwrap().record.exists());
 }
+
+fn cpu_seconds(pid: u32) -> f64 {
+    let out = Command::new("ps")
+        .args(["-o", "time=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    // macOS 는 `M:SS.ss`, Linux 는 `HH:MM:SS` 로 찍는다.
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .trim()
+        .split(':')
+        .fold(0.0, |acc, part| acc * 60.0 + part.parse::<f64>().unwrap())
+}
+
+#[test]
+fn running_out_of_fds_does_not_spin_the_accept_loop() {
+    let tmp = tmpdir();
+    let dir = tmp.path().join("s");
+    let id = "sess-test".to_string();
+    let child = Command::new("/bin/sh")
+        .args(["-c", "ulimit -n 64 && exec \"$0\" \"$@\""])
+        .arg(env!("CARGO_BIN_EXE_maru-session"))
+        .args(["--id", &id, "--shell", "/bin/sh"])
+        .arg("--dir")
+        .arg(&dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut p = Proc {
+        child,
+        paths: Paths::new(&dir, &id).unwrap(),
+        _tmp: tmp,
+        dir,
+        id,
+    };
+    p.wait_ready();
+
+    let conns: Vec<UnixStream> = (0..100)
+        .map(|_| UnixStream::connect(p.socket()).unwrap())
+        .collect();
+    std::thread::sleep(Duration::from_millis(200));
+    let before = cpu_seconds(p.child.id());
+    std::thread::sleep(Duration::from_secs(2));
+    let used = cpu_seconds(p.child.id()) - before;
+    assert!(used < 0.5, "fd 가 바닥난 2초 동안 CPU 를 {used}초 썼다");
+
+    drop(conns);
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let mut c = p.connect();
+        c.send_text(json!({ "type": "version" }));
+        if c.frame().is_some() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "fd 가 풀린 뒤에도 받지 못한다");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
