@@ -25,7 +25,7 @@ fn main() {
 
     let src = match std::env::var_os("MARU_GHOSTTY_VT_DIR") {
         Some(dir) => PathBuf::from(dir),
-        None => build(&script, &read_commit(&pin_file), &out),
+        None => build(&script, &pin_file, &out),
     };
 
     write_enums(
@@ -57,13 +57,18 @@ fn read_commit(pin_file: &Path) -> String {
         .expect("ghostty-vt.env 에 GHOSTTY_COMMIT 이 없다")
 }
 
-fn build(script: &Path, commit: &str, out: &Path) -> PathBuf {
+fn build(script: &Path, pin_file: &Path, out: &Path) -> PathBuf {
     let target = env("TARGET");
+    let commit = read_commit(pin_file);
+    // 커밋만으로 키를 잡으면 빌드 옵션이나 zig 버전을 바꿔도 옛 라이브러리를 그대로 링크한다.
+    let mut hasher = std::hash::DefaultHasher::new();
+    std::hash::Hash::hash(&(read(script), read(pin_file)), &mut hasher);
+    let inputs = std::hash::Hasher::finish(&hasher);
     // OUT_DIR 은 <target 디렉토리>[/<triple>]/<profile>/build/<crate-hash>/out 이다.
     let cache_root = out.ancestors().nth(4).expect("OUT_DIR 이 예상보다 얕다");
     let dest = cache_root
         .join("ghostty-vt")
-        .join(format!("{}-{target}", &commit[..12]));
+        .join(format!("{}-{inputs:016x}-{target}", &commit[..12]));
     if dest.join("lib/libghostty-vt.a").exists() {
         return dest;
     }
