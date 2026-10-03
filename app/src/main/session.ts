@@ -153,7 +153,6 @@ export async function spawnSession(bin: string, dir: string): Promise<string> {
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const logPath = join(dir, `${id}.log`)
   const log = openSync(logPath, 'w', 0o600)
-  // detached 는 자식을 setsid 로 띄워 앱이 끝날 때 같이 시그널을 받지 않게 한다.
   const child = spawn(bin, ['--dir', dir, '--id', id, '--cwd', homedir()], {
     detached: true,
     env: sessionEnv(process.env),

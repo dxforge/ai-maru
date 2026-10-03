@@ -18,7 +18,6 @@ function sessionBin(): string {
   return process.env.MARU_SESSION_BIN ?? join(app.getAppPath(), '../core/target/debug/maru-session')
 }
 
-/** e2e 가 띄운 앱이 쓰고 있는 사람의 화면과 키 입력에 끼어들지 않게 한다. */
 const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
 
 function createWindow(): void {

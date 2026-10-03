@@ -527,7 +527,6 @@ mod tests {
         assert_eq!(c.scrollbar().unwrap().total, t.scrollbar().unwrap().total);
     }
 
-    /// 터미널이 VT 포맷에 싣는 DEC 모드. 기본값과 다른 것만 실린다.
     fn dec_modes(t: &VtTerminal) -> Vec<(String, u8)> {
         let out = t.format(VtFormat::Vt).unwrap();
         let mut modes = Vec::new();
