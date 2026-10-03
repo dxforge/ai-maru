@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { closeSync, mkdirSync, openSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { readdir, readFile, rm } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
 import { homedir } from 'node:os'
@@ -121,6 +121,15 @@ export function sessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(
     Object.entries(env).filter(([k]) => k !== 'ZDOTDIR' && !k.startsWith('AI_MARU_'))
   )
+}
+
+/** `ko-KR` 같은 지역 태그를 셸이 쓸 UTF-8 로케일 이름으로 바꾼다. 없는 조합이면 C.UTF-8 이다. */
+export function utf8Locale(
+  tag: string,
+  exists = (name: string) => existsSync(join('/usr/share/locale', name))
+): string {
+  const name = `${tag.replace('-', '_')}.UTF-8`
+  return exists(name) ? name : 'C.UTF-8'
 }
 
 export async function spawnSession(bin: string, dir: string): Promise<string> {

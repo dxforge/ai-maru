@@ -7,7 +7,7 @@ import {
   utilityProcess,
   type UtilityProcess
 } from 'electron'
-import { killSessions } from './session'
+import { killSessions, utf8Locale } from './session'
 import type { OpenRequest } from './session-host'
 
 function sessionDir(): string {
@@ -47,13 +47,24 @@ function createWindow(): void {
 let host: UtilityProcess | null = null
 
 /**
+ * Dock 에서 띄운 앱은 LANG 을 받지 못해, 로케일을 스스로 정하지 않는 셸(bash 등)이 US-ASCII 로 떠
+ * 한글 입력을 버린다. Terminal.app 처럼 지역 설정으로 채운다.
+ */
+function hostEnv(): NodeJS.ProcessEnv {
+  const env = process.env
+  if (process.platform !== 'darwin' || env.LANG || env.LC_ALL || env.LC_CTYPE) return env
+  return { ...env, LANG: utf8Locale(app.getSystemLocale()) }
+}
+
+/**
  * 세션 바이트는 이 프로세스와 renderer 사이를 오가고 main 을 지나지 않는다 — 출력이 쏟아질 때
  * main 이 막혀 창 조작까지 멈추지 않게.
  */
 function sessionHost(): UtilityProcess {
   if (!host) {
     const proc = utilityProcess.fork(join(__dirname, 'session-host.js'), [], {
-      serviceName: 'maru-session-host'
+      serviceName: 'maru-session-host',
+      env: hostEnv()
     })
     proc.once('exit', () => {
       host = null

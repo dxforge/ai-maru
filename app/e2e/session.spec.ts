@@ -104,3 +104,10 @@ test('앱을 띄운 터미널의 ZDOTDIR·AI_MARU_* 는 셸에 넘기지 않는�
   await expect(rows(page)).toContainText('tty=[] done-2')
   await expect(rows(page)).not.toContainText('rc-from-zdotdir')
 })
+
+test('LANG 없이 띄워도 셸은 UTF-8 로케일로 떠 한글을 받는다', async ({ launch }) => {
+  test.skip(process.platform !== 'darwin', 'macOS 의 지역 설정으로 채운다')
+  const { page } = await launch({ LANG: '', LC_ALL: '', LC_CTYPE: '' })
+  await page.keyboard.type('echo "charmap=[$(locale charmap)]" 한글-$((1+1))\n')
+  await expect(rows(page)).toContainText('charmap=[UTF-8] 한글-2')
+})
