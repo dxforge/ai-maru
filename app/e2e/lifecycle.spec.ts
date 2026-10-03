@@ -26,8 +26,10 @@ test('두 번째 실행은 세션을 더 띄우지 않고 끝난다', async ({ l
     timeout: 15_000
   })
   // timeout 의 SIGTERM 에도 Electron 은 0 으로 끝나므로 스스로 끝났는지를 함께 본다.
-  expect(second.error).toBeUndefined()
-  expect(second.status).toBe(0)
+  expect(
+    { status: second.status, signal: second.signal, error: second.error?.message },
+    second.stderr.toString()
+  ).toEqual({ status: 0, signal: null, error: undefined })
   expect(sockets(dataDir)).toHaveLength(1)
 })
 

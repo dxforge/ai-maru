@@ -79,11 +79,11 @@ test('창 크기를 바꾸면 셸이 보는 크기도 바뀐다', async ({ launc
   const before = await sttySize()
   expect(before.rows).toBe(await gridRows(page).count())
 
-  await resizeBy(app, 200, 180)
-  await expect.poll(async () => (await sttySize()).rows).toBeGreaterThan(before.rows)
+  await resizeBy(app, -200, -180)
+  await expect.poll(async () => (await sttySize()).rows).toBeLessThan(before.rows)
   const after = await sttySize()
   expect(after.rows).toBe(await gridRows(page).count())
-  expect(after.cols).toBeGreaterThan(before.cols)
+  expect(after.cols).toBeLessThan(before.cols)
 })
 
 test('셸이 끝나면 창이 닫히고 앱이 끝난다', async ({ launch }) => {

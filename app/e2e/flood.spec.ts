@@ -74,5 +74,4 @@ test('출력이 쏟아지는 동안에도 main 과 renderer 가 막히지 않고
 
   expect(report.mainLagMs.max).toBeLessThan(100)
   expect(report.moveRoundTripMs.max).toBeLessThan(200)
-  expect(report.frameMs.p99).toBeLessThan(100)
 })

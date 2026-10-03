@@ -33,6 +33,12 @@ for (const [label, dw, dh] of [
 ] as const) {
   test(`창을 ${label} 터미널이 같은 만큼 따라간다`, async ({ launch }) => {
     const { app } = await launch()
+    if (dw > 0) {
+      // 화면이 작은 머신에서는 처음 크기에서 더 키울 수 없다.
+      const opened = await measure(app)
+      await resizeBy(app, -dw, -dh)
+      await expect.poll(async () => (await measure(app)).rows).not.toBe(opened.rows)
+    }
     const before = await measure(app)
     await resizeBy(app, dw, dh)
     await expect.poll(async () => (await measure(app)).rows).not.toBe(before.rows)
