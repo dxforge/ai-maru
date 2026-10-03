@@ -75,7 +75,6 @@ pub async fn run(opts: Options) -> Result<()> {
         paths.socket.display()
     );
 
-    // 종료 이유와 상관없이 정리 경로는 하나다 — 갈라지면 한쪽에서 소켓·레코드가 남는다.
     let (kill_tx, mut kill_rx) = mpsc::channel::<KillAck>(1);
     let mut exit_rx = session.exit_rx();
     let mut conns = JoinSet::new();

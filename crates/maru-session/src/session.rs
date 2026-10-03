@@ -13,8 +13,6 @@ use std::time::Duration;
 use tokio::sync::{Notify, watch};
 
 const READ_CHUNK: usize = 8192;
-/// 바이트로 센다. 대량 출력 중 PTY 읽기는 한 번에 스무 바이트도 안 되게 끊겨 와서, 청크
-/// 개수로 세면 쉬지 않고 읽는 클라이언트도 밀린다.
 const OUTPUT_BACKLOG: usize = 4 * 1024 * 1024;
 /// 셸이 나간 뒤 남은 출력이 다 전달되길 기다리되, EOF 에 종료를 묶지 않으려는 상한.
 const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(500);
@@ -175,7 +173,7 @@ impl Session {
         }))
     }
 
-    /// 블로킹 쓰기여야 한다 — 커널의 역압이 캐노니컬 모드 한 줄 한도를 넘는 입력이 잘리지 않게 지킨다.
+    /// 블로킹 쓰기여야 한다 — 커널의 역압이 입력 큐를 넘는 여러 줄 입력이 잘리지 않게 지킨다.
     pub fn write(&self, bytes: &[u8]) -> std::io::Result<()> {
         let mut w = self.writer.lock().unwrap();
         w.write_all(bytes)?;
@@ -259,7 +257,6 @@ impl Session {
         self.primary.subscribe()
     }
 
-    /// 터미널을 닫을 때처럼 SIGHUP 으로 끝낸다.
     pub async fn terminate(&self, grace: Duration) {
         let mut exit_rx = self.exit_rx();
         if exit_rx.borrow().is_some() {

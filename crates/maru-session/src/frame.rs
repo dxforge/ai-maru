@@ -1,5 +1,3 @@
-//! 태그는 WebSocket 메시지 타입에 1:1 로 대응한다 — 데몬이 태그만 바꿔 WS 로 중계하게.
-
 use serde_json::{Value, json};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
