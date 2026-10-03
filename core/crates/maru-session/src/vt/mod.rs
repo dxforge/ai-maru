@@ -5,7 +5,8 @@ use std::ffi::c_void;
 use std::ptr;
 
 const SCROLLBACK_MAX_BYTES: usize = 4 * 1024 * 1024;
-/// 끝나지 않은 시퀀스를 이만큼 들고 있어야 그 사이에도 스냅샷을 뜰 수 있다.
+/// 끝나지 않은 시퀀스를 이만큼 들고 있어야 그 사이에도 스냅샷을 뜰 수 있다. 이보다 긴 시퀀스가
+/// 끝나지 않은 동안에는 대체 화면 재생에 일반 화면이 빠진다.
 const CONTINUATION_MAX_BYTES: usize = 64 * 1024;
 const MAX_DIM: u16 = 4096;
 
@@ -118,18 +119,25 @@ impl VtTerminal {
         if !self.alternate_active()? {
             return Ok((active, blanks));
         }
-        let mut primary = self.snapshot_copy()?;
-        primary.write(b"\x1b[?1049l");
+        // 끝나지 않은 시퀀스가 상한을 넘으면 복제할 수 없다.
+        let Ok(mut primary) = self.snapshot_copy() else {
+            return Ok((active, blanks));
+        };
+        primary.write(b"\x1b[?1049l\x1b[?1047l\x1b[?47l");
         let mut out = primary.format(VtFormat::Vt)?;
         let rows = primary.scrollbar()?.len;
         let pad = primary.trailing_blank_rows(&out)?.min(rows);
         if pad > 0 {
-            let (x, y) = primary.cursor()?;
-            out.extend_from_slice(format!("\x1b[{rows};1H").as_bytes());
+            // 마지막 행이 스크롤 리전 밖이면 개행이 스크롤하지 않는다. 리전은 대체 화면 포맷이
+            // 다시 세운다.
+            out.extend_from_slice(format!("\x1b[r\x1b[{rows};1H").as_bytes());
             out.extend(std::iter::repeat_n(b'\n', pad as usize));
-            out.extend_from_slice(format!("\x1b[{};{}H", y + 1, x + 1).as_bytes());
         }
-        out.extend_from_slice(&active);
+        // 대체 화면 포맷은 빈 화면의 홈에서 그리기 시작한다고 보고, `?1049h` 는 커서를 옮기지
+        // 않으면서 나갈 때 돌아올 자리로 저장한다.
+        let (x, y) = primary.cursor()?;
+        out.extend_from_slice(format!("\x1b[{};{}H\x1b[?1049h\x1b[H", y + 1, x + 1).as_bytes());
+        out.extend_from_slice(&drop_modes(&active, SCREEN_MODES));
         Ok((out, blanks))
     }
 
@@ -281,7 +289,7 @@ impl VtTerminal {
         // SAFETY: 성공 시 (out_ptr, out_len) 은 유효하다. 복사한 뒤 같은 할당자·길이로 해제한다.
         let raw = unsafe { std::slice::from_raw_parts(out_ptr, out_len) };
         let mut bytes = if vt {
-            drop_unreplayable_modes(raw)
+            drop_modes(raw, UNREPLAYABLE_MODES)
         } else {
             raw.to_vec()
         };
@@ -302,15 +310,17 @@ impl VtTerminal {
 /// 프로그램은 켠 모드를 다시 그릴 때 다시 보내지 않으므로(vim 의 `?1` 등) 빠진 모드는 프로그램이
 /// 다시 켤 때까지 꺼진 채 남는다. 그래서 다 싣고 재생을 망치는 것만 뺀다. `?6`(DECOM)은 끝의
 /// CUP 을 마진 기준으로 바꾸고, `?2026` 은 그리는 도중의 상태라 그 프로그램이 죽었으면 화면이 멈춘다.
-fn drop_unreplayable_modes(bytes: &[u8]) -> Vec<u8> {
-    const DROP: &[&[u8]] = &[b"6", b"2026"];
+const UNREPLAYABLE_MODES: &[&[u8]] = &[b"6", b"2026"];
+/// 이미 들어간 대체 화면에 다시 쓰면 나갈 때 돌아올 커서 자리를 덮는다.
+const SCREEN_MODES: &[&[u8]] = &[b"47", b"1047", b"1049"];
 
+fn drop_modes(bytes: &[u8], drop: &[&[u8]]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
         match dec_mode_seq(&bytes[i..]) {
             Some((len, params, terminator)) => {
-                let kept: Vec<&[u8]> = params.into_iter().filter(|p| !DROP.contains(p)).collect();
+                let kept: Vec<&[u8]> = params.into_iter().filter(|p| !drop.contains(p)).collect();
                 if !kept.is_empty() {
                     out.extend_from_slice(b"\x1b[?");
                     out.extend_from_slice(&kept.join(&b';'));
@@ -512,6 +522,66 @@ mod tests {
         modes
     }
 
+    /// 재생을 받은 터미널이 원본과 같은 대체 화면을 보이고, 프로그램이 `leave` 로 나간 뒤에도
+    /// 같은 일반 화면을 보이는지.
+    fn assert_alternate_replay_matches(t: &mut VtTerminal, leave: &[u8]) {
+        let mut c = replayed(t);
+        assert!(c.alternate_active().unwrap());
+        assert_eq!(plain(&c), plain(t));
+        assert_eq!(c.cursor().unwrap(), t.cursor().unwrap());
+        t.write(leave);
+        c.write(leave);
+        t.write(b"MARK");
+        c.write(b"MARK");
+        assert_eq!(plain(&c), plain(t));
+        assert_eq!(c.cursor().unwrap(), t.cursor().unwrap());
+        assert_eq!(c.scrollbar().unwrap().total, t.scrollbar().unwrap().total);
+    }
+
+    #[test]
+    fn alternate_screen_content_keeps_its_rows_when_the_bottom_is_empty() {
+        let mut t = term();
+        t.write(b"seq\r\n1\r\n2\r\n$ \x1b[?1049h\x1b[H\x1b[2Jtop\x1b[5;5Hxx");
+        assert_alternate_replay_matches(&mut t, b"\x1b[?1049l");
+    }
+
+    #[test]
+    fn alternate_screens_entered_with_47_or_1047_replay_like_1049() {
+        for (enter, leave) in [
+            (&b"\x1b[?47h"[..], &b"\x1b[?47l"[..]),
+            (b"\x1b[?1047h", b"\x1b[?1047l"),
+        ] {
+            let mut t = term();
+            for i in 0..30 {
+                t.write(format!("line{i}\r\n").as_bytes());
+            }
+            t.write(b"$ ");
+            t.write(enter);
+            t.write(b"\x1b[5;5Hxx");
+            assert_alternate_replay_matches(&mut t, leave);
+        }
+    }
+
+    #[test]
+    fn primary_rows_line_up_under_a_scroll_region_set_on_the_alternate_screen() {
+        let mut t = term();
+        for i in 0..100 {
+            t.write(format!("{i}\r\n").as_bytes());
+        }
+        t.write(b"\x1b[H\x1b[2Jtop\r\n$ \x1b[?1049h\x1b[1;22r\x1b[Hvim");
+        assert_alternate_replay_matches(&mut t, b"\x1b[r\x1b[?1049l");
+    }
+
+    #[test]
+    fn an_unfinished_sequence_too_long_to_copy_still_replays_the_alternate_screen() {
+        let mut t = term();
+        t.write(b"$ \x1b[?1049h\x1b[Hin-alt\x1b]52;c;");
+        t.write(&vec![b'A'; 2 * CONTINUATION_MAX_BYTES]);
+        let c = replayed(&t);
+        assert!(c.alternate_active().unwrap());
+        assert!(plain(&c).contains("in-alt"), "{:?}", plain(&c));
+    }
+
     #[test]
     fn replay_carries_the_input_modes_a_program_set_once() {
         let mut t = term();
@@ -619,13 +689,13 @@ mod tests {
     }
 
     #[test]
-    fn drop_unreplayable_modes_splits_combined_params() {
+    fn drop_modes_splits_combined_params() {
         assert_eq!(
-            drop_unreplayable_modes(b"\x1b[?1;6;1049;2026h x"),
+            drop_modes(b"\x1b[?1;6;1049;2026h x", UNREPLAYABLE_MODES),
             b"\x1b[?1;1049h x"
         );
-        assert_eq!(drop_unreplayable_modes(b"\x1b[?6;2026h x"), b" x");
-        assert_eq!(drop_unreplayable_modes(b"\x1b[?h x"), b"\x1b[?h x");
-        assert_eq!(drop_unreplayable_modes(b"\x1b[6h x"), b"\x1b[6h x");
+        assert_eq!(drop_modes(b"\x1b[?6;2026h x", UNREPLAYABLE_MODES), b" x");
+        assert_eq!(drop_modes(b"\x1b[?h x", UNREPLAYABLE_MODES), b"\x1b[?h x");
+        assert_eq!(drop_modes(b"\x1b[6h x", UNREPLAYABLE_MODES), b"\x1b[6h x");
     }
 }
