@@ -1,5 +1,7 @@
+import type { Terminal } from '@xterm/xterm'
 import { describe, expect, it } from 'vitest'
-import { replayAlignment } from './attach'
+import { attach, replayAlignment } from './attach'
+import type { SessionConnection, SessionMessage } from './connection'
 
 describe('replayAlignment', () => {
   it('잘린 꼬리 빈 행을 맨 아래에서 개행으로 되살리고 커서를 옮긴다', () => {
@@ -22,5 +24,51 @@ describe('replayAlignment', () => {
 
   it('세션과 그리드 높이가 다르면 손대지 않는다', () => {
     expect(replayAlignment({ rows: 30, cursorX: 0, cursorY: 0, trailingBlankRows: 2 }, 24)).toBe('')
+  })
+})
+
+function fakeTerminal(cols: number, rows: number) {
+  const term = {
+    cols,
+    rows,
+    write: () => {},
+    resize(c: number, r: number) {
+      term.cols = c
+      term.rows = r
+    },
+    onData: () => {},
+    onBinary: () => {},
+    onResize: () => {}
+  }
+  return term
+}
+
+function fakeConnection() {
+  let deliver: (msg: SessionMessage) => void = () => {}
+  const conn: SessionConnection = {
+    send: () => {},
+    onMessage: (cb) => (deliver = cb),
+    onClose: () => {}
+  }
+  return { conn, deliver: (msg: SessionMessage) => deliver(msg) }
+}
+
+describe('attach', () => {
+  it('자리를 내준 뒤 밀려 resync 를 받으면 그 크기를 따른다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, deliver } = fakeConnection()
+    attach(term as unknown as Terminal, conn, { onExit: () => {} })
+    deliver(JSON.stringify({ type: 'role', role: 'observer' }))
+    deliver(
+      JSON.stringify({
+        type: 'resync',
+        cols: 100,
+        rows: 30,
+        cursor_x: 0,
+        cursor_y: 0,
+        trailing_blank_rows: 0
+      })
+    )
+    expect([term.cols, term.rows]).toEqual([100, 30])
   })
 })

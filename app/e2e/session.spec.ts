@@ -46,6 +46,7 @@ test('대체 화면 위에서 새로 고쳐도, 그 프로그램이 끝나면 �
   await page.reload()
 
   await expect(rows(page)).toContainText('alt-4')
+  await expect(gridRows(page).first()).toContainText('alt-4')
   await page.keyboard.press('Enter')
   await expect(rows(page)).toContainText('main-2')
   await expect(rows(page)).not.toContainText('alt-4')

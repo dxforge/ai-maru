@@ -54,6 +54,8 @@ export function attach(
     switch (m.type) {
       case 'attached':
       case 'resync':
+        // 밀린 연결은 그 사이의 크기 변경을 이 헤더로만 받는다.
+        if (!primary) term.resize(m.cols, m.rows)
         replay = {
           rows: m.rows,
           cursorX: m.cursor_x,
