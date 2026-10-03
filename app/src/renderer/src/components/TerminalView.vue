@@ -20,19 +20,10 @@ onMounted(async () => {
   fit.fit()
   observer.observe(host.value!)
   term.focus()
-  const early: string[] = []
-  const buffering = term.onData((data) => early.push(data))
-  const conn = await openSession()
-  buffering.dispose()
-  attach(
-    term,
-    conn,
-    {
-      onExit: () => window.close(),
-      onDemoted: () => (primary = false)
-    },
-    early
-  )
+  attach(term, await openSession(), {
+    onExit: () => window.close(),
+    onDemoted: () => (primary = false)
+  })
 })
 
 onBeforeUnmount(() => {

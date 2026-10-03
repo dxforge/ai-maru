@@ -30,13 +30,7 @@ export type AttachHandlers = {
   onDemoted(): void
 }
 
-/** `pendingInput` 은 연결이 열리기 전에 들어온 입력이다. attach 요청 뒤에 보낸다. */
-export function attach(
-  term: Terminal,
-  conn: SessionConnection,
-  handlers: AttachHandlers,
-  pendingInput: string[] = []
-): void {
+export function attach(term: Terminal, conn: SessionConnection, handlers: AttachHandlers): void {
   const encoder = new TextEncoder()
   let replay: ReplayState | null = null
 
@@ -97,5 +91,4 @@ export function attach(
       rows: term.rows
     })
   )
-  for (const data of pendingInput) conn.send(encoder.encode(data))
 }
