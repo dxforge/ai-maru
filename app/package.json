@@ -15,36 +15,36 @@
     "format:check": "prettier --check .",
     "typecheck": "vue-tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json && vue-tsc --noEmit -p tsconfig.e2e.json",
     "test": "vitest run",
-    "test:e2e": "electron-vite build && playwright test"
+    "test:e2e": "electron-vite build && playwright test",
+    "test:e2e:packaged": "app=\"$(../scripts/package-app.sh)\" && MARU_PACKAGED_APP=\"$app\" playwright test --project packaged"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
     ]
   },
-  "dependencies": {
-    "@xterm/addon-fit": "0.12.0-beta.301",
-    "@xterm/xterm": "6.1.0-beta.304",
-    "dompurify": "^3.4.16",
-    "entities": "^7.0.1",
-    "marked": "^18.0.14",
-    "vue": "^3.5.43"
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^24.19.1",
     "@vitejs/plugin-vue": "^6.0.9",
+    "@xterm/addon-fit": "0.12.0-beta.301",
+    "@xterm/xterm": "6.1.0-beta.304",
+    "dompurify": "^3.4.16",
     "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "entities": "^7.0.1",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.11.1",
+    "marked": "^18.0.14",
     "prettier": "^3.9.9",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.0",
     "vite": "^7.3.6",
     "vitest": "^4.1.11",
+    "vue": "^3.5.43",
     "vue-tsc": "^3.3.12"
   }
 }
