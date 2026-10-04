@@ -478,7 +478,7 @@ fn a_second_process_does_not_take_over_a_live_socket() {
     let status = second.wait().unwrap();
     assert!(!status.success());
     let err = stderr(&mut second);
-    assert!(err.contains("살아 있는"), "{err}");
+    assert!(err.contains("already listening"), "{err}");
 
     assert_eq!(p.request(json!({ "type": "version" }))["type"], "version");
     assert_eq!(p.record().pid, p.child.id());
@@ -491,7 +491,7 @@ fn an_overlong_socket_path_fails_before_spawning_a_shell() {
     let mut child = spawn(&dir, "sess-test");
     assert!(!child.wait().unwrap().success());
     let err = stderr(&mut child);
-    assert!(err.contains("줄여야"), "{err}");
+    assert!(err.contains("shorten"), "{err}");
     assert!(!dir.exists(), "검사에 실패했는데 디렉토리를 만들었다");
 }
 

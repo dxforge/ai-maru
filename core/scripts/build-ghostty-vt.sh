@@ -6,11 +6,11 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 source "$root/ghostty-vt.env"
 
 if [ $# -lt 1 ]; then
-  echo "사용: $0 <출력 디렉토리> [zig target]" >&2
+  echo "usage: $0 <output dir> [zig target]" >&2
   exit 2
 fi
 if ! command -v zig >/dev/null; then
-  echo "zig $ZIG_VERSION 이 PATH 에 필요합니다." >&2
+  echo "zig $ZIG_VERSION must be on PATH" >&2
   exit 1
 fi
 mkdir -p "$1"

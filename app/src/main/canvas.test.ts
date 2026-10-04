@@ -65,7 +65,7 @@ describe('putCanvas', () => {
   it('이미지 확장자가 아니면 throw 하고 아무것도 보내지 않는다', async () => {
     const { win, sent } = fakeWindow()
     const path = file('notes.txt', [1])
-    await expect(putCanvas(win, { id: 'd', kind: 'image', path })).rejects.toThrow(/이미지/)
+    await expect(putCanvas(win, { id: 'd', kind: 'image', path })).rejects.toThrow(/not an image/)
     expect(sent).toEqual([])
   })
 })

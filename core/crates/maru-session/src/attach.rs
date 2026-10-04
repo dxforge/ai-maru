@@ -21,7 +21,7 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
         Some(_) => {
             let _ = write_json(
                 &mut wr,
-                &error("unknown_role", "role 은 primary 나 observer 다"),
+                &error("unknown_role", "role must be primary or observer"),
             )
             .await;
             return;
@@ -36,7 +36,7 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
         };
         // 스냅샷 전에 맞춘다. 뒤에 하면 옛 격자로 뜬 재생을 새 격자로 그리게 된다.
         if let Err(e) = session.claim_primary(conn, size) {
-            log!("maru-session: attach resize 실패: {e:#}");
+            log!("maru-session: attach resize failed: {e:#}");
         }
     }
 
@@ -191,7 +191,10 @@ async fn resync(
     if *count > MAX_RESYNCS {
         let _ = write_json(
             wr,
-            &error("resync_limit_exceeded", "클라이언트가 출력을 못 따라잡는다"),
+            &error(
+                "resync_limit_exceeded",
+                "the client cannot keep up with the output",
+            ),
         )
         .await;
         return None;
