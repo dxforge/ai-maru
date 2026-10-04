@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   test as base,
+  expect,
   _electron as electron,
   type ElectronApplication,
   type Page
@@ -12,7 +13,7 @@ import { encodeFrame, TAG_TEXT } from '../src/main/frame'
 import { killSessions } from '../src/main/session'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 
-export { expect } from '@playwright/test'
+export { expect }
 
 export type Launched = { app: ElectronApplication; page: Page }
 
@@ -101,6 +102,17 @@ export function attachFromOutside(sockPath: string, cols: number, rows: number):
 
 export function rows(page: Page) {
   return page.locator('.xterm-rows')
+}
+
+let sizeMarker = 0
+
+export async function shellSize(page: Page): Promise<{ rows: number; cols: number }> {
+  const marker = `size${++sizeMarker}`
+  await page.keyboard.type(`clear; echo ${marker}=$(stty size | tr ' ' x)\n`)
+  const re = new RegExp(`${marker}=(\\d+)x(\\d+)`)
+  let m: RegExpMatchArray | null = null
+  await expect.poll(async () => (m = (await rows(page).innerText()).match(re))).not.toBeNull()
+  return { rows: Number(m![1]), cols: Number(m![2]) }
 }
 
 export function gridRows(page: Page) {
