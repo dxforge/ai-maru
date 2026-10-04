@@ -22,7 +22,7 @@ watch(
   <aside v-show="canvas.open.value" class="canvas">
     <header class="bar">
       <span>Canvas</span>
-      <button class="close" title="닫기" @mousedown.prevent @click="canvas.close()">✕</button>
+      <button class="close" title="Close" @mousedown.prevent @click="canvas.close()">✕</button>
     </header>
     <ul class="list">
       <li v-for="d in canvas.docs.value" :key="d.id">
@@ -44,7 +44,7 @@ watch(
   <button
     v-if="!canvas.open.value && canvas.docs.value.length"
     class="reopen"
-    title="Canvas 열기"
+    title="Open Canvas"
     @mousedown.prevent
     @click="canvas.reopen()"
   >

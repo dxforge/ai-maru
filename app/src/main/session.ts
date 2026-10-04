@@ -183,7 +183,7 @@ export async function spawnSession(bin: string, dir: string, cli: CliAccess): Pr
     failure = e
   }
   const onExit = (code: number | null, signal: string | null): void => {
-    failure = new Error(`maru-session 이 준비 전에 끝났다 (code=${code}, signal=${signal})`)
+    failure = new Error(`maru-session exited before it was ready (code=${code}, signal=${signal})`)
   }
   child.once('error', onError)
   child.once('exit', onExit)
@@ -195,7 +195,7 @@ export async function spawnSession(bin: string, dir: string, cli: CliAccess): Pr
       await sleep(SPAWN_POLL_MS)
     }
     child.kill('SIGTERM')
-    throw new Error(`maru-session 이 ${SPAWN_TIMEOUT_MS}ms 안에 소켓을 열지 않았다`)
+    throw new Error(`maru-session did not open its socket within ${SPAWN_TIMEOUT_MS}ms`)
   } catch (err) {
     const stderr = (await readFile(logPath, 'utf8').catch(() => '')).trim()
     if (stderr && err instanceof Error) err.message += `: ${stderr}`

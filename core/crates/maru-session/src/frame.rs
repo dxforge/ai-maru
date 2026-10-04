@@ -37,7 +37,7 @@ pub fn decode_header(head: &[u8; 5]) -> std::io::Result<(u8, usize)> {
     if len > MAX_FRAME_LEN {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("프레임 길이 {len} 이 한도 {MAX_FRAME_LEN} 을 넘는다"),
+            format!("frame length {len} exceeds the limit of {MAX_FRAME_LEN}"),
         ));
     }
     Ok((head[0], len as usize))

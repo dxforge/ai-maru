@@ -19,7 +19,7 @@ fn main() -> ExitCode {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .expect("tokio 런타임을 만들 수 없다");
+        .expect("cannot create the tokio runtime");
     match runtime.block_on(server::run(opts)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

@@ -21,7 +21,7 @@ export async function putCanvas(win: BrowserWindow, doc: CanvasDoc): Promise<voi
 async function toItem(doc: CanvasDoc): Promise<CanvasItem> {
   if (doc.kind === 'markdown') return doc
   const mime = IMAGE_TYPES[extname(doc.path).toLowerCase()]
-  if (!mime) throw new Error(`이미지 파일이 아니다: ${doc.path}`)
+  if (!mime) throw new Error(`not an image file: ${doc.path}`)
   return {
     id: doc.id,
     kind: 'image',

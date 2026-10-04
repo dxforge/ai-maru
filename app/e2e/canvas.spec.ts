@@ -248,7 +248,7 @@ test('다른 클라이언트가 터미널을 넓게 잡고 있어도 패널을 �
   await expect(rows(page)).toContainText('ready-2')
   const other = await attachFromOutside(sockets(dataDir)[0], 300, 12)
   defer(() => other.destroy())
-  await expect(rows(page)).toContainText('입력과 크기를 가져갔다')
+  await expect(rows(page)).toContainText('took over input and size')
 
   await put(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
   await put(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })

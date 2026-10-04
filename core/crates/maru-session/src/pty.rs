@@ -29,14 +29,14 @@ fn winsize(cols: u16, rows: u16) -> nix::pty::Winsize {
 
 pub fn spawn(shell: &Path, cwd: Option<&Path>, cols: u16, rows: u16) -> Result<Spawned> {
     let ws = winsize(cols, rows);
-    let pair = nix::pty::openpty(Some(&ws), None).context("openpty 실패")?;
+    let pair = nix::pty::openpty(Some(&ws), None).context("openpty failed")?;
     // openpty 는 CLOEXEC 를 안 건다. 안 걸면 셸과 그 자식들이 master 를 물려받는다.
     for fd in [&pair.master, &pair.slave] {
         fcntl(fd.as_raw_fd(), FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC))
-            .context("FD_CLOEXEC 설정 실패")?;
+            .context("cannot set FD_CLOEXEC")?;
     }
 
-    let tty_path = nix::unistd::ttyname(&pair.slave).context("slave 이름을 얻을 수 없다")?;
+    let tty_path = nix::unistd::ttyname(&pair.slave).context("cannot get the slave name")?;
     let tty = tty_path
         .to_string_lossy()
         .trim_start_matches("/dev/")
@@ -68,7 +68,7 @@ pub fn spawn(shell: &Path, cwd: Option<&Path>, cols: u16, rows: u16) -> Result<S
     }
     let child = cmd
         .spawn()
-        .with_context(|| format!("{} 를 띄울 수 없다", shell.display()))?;
+        .with_context(|| format!("cannot spawn {}", shell.display()))?;
 
     let reader = File::from(pair.master.try_clone()?);
     let writer = File::from(pair.master.try_clone()?);
@@ -88,7 +88,7 @@ impl Pty {
         let ws = winsize(cols, rows);
         // SAFETY: master 는 살아 있고 TIOCSWINSZ 는 winsize 를 읽기만 한다.
         if unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ, &ws) } == -1 {
-            bail!("TIOCSWINSZ 실패: {}", std::io::Error::last_os_error());
+            bail!("TIOCSWINSZ failed: {}", std::io::Error::last_os_error());
         }
         Ok(())
     }
