@@ -11,6 +11,8 @@ const IDLE_MS = 10_000
 export type Handlers = Record<string, (params: Record<string, unknown>, session: string) => unknown>
 export type CliServer = { close: () => Promise<void> }
 
+export class InvalidParams extends Error {}
+
 type Id = string | number | null
 type Reply = { id: Id; result?: unknown; error?: object }
 
@@ -47,6 +49,7 @@ async function dispatch(
   try {
     return { id, result: (await handler(params, params.session)) ?? null }
   } catch (err) {
+    if (err instanceof InvalidParams) return failure(id, -32602, 'invalid_params', err.message)
     const message = err instanceof Error ? err.message : String(err)
     return failure(id, -32603, 'internal_error', message)
   }

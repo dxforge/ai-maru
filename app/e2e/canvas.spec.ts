@@ -280,3 +280,65 @@ test('보던 문서가 바뀌면 스크롤 자리를 지키고, 다른 문서를
   await expect(markdown(page)).toContainText('b line 0')
   await expect.poll(scrollTop).toBe(0)
 })
+
+test('터미널에서 maru canvas put 으로 보낸 마크다운이 패널에 렌더되고 id 가 찍힌다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await page.keyboard.type("printf '# From CLI\\n\\nbody' | maru canvas put; echo code-$?\n")
+  await expect(panel(page)).toBeVisible()
+  await expect(titles(page)).toHaveText(['From CLI'])
+  await expect(markdown(page).locator('h1')).toHaveText('From CLI')
+  await expect(rows(page)).toContainText(/[0-9a-f]{8}-[0-9a-f]{4}-/)
+  await expect(rows(page)).toContainText('code-0')
+})
+
+test('같은 --id 로 다시 보내면 목록 자리를 지킨 채 제목과 내용이 바뀐다', async ({ launch }) => {
+  const { page } = await launch()
+  await page.keyboard.type("echo '# one' | maru canvas put --id d >/dev/null\n")
+  await expect(titles(page)).toHaveText(['one'])
+  await page.keyboard.type("echo '# two' | maru canvas put --id e >/dev/null\n")
+  await expect(titles(page)).toHaveText(['two', 'one'])
+  await page.keyboard.type(
+    "echo '# three' | maru canvas put --id d --title Renamed; echo code-$?\n"
+  )
+  await expect(titles(page)).toHaveText(['two', 'Renamed'])
+  await expect(markdown(page).locator('h1')).toHaveText('three')
+  await expect(rows(page)).toContainText('code-0')
+})
+
+test('파일을 인자로 주면 셸의 현재 디렉토리 기준으로 읽어 보인다', async ({ launch, dataDir }) => {
+  const { page } = await launch()
+  await page.keyboard.type(
+    `cd '${dataDir}' && printf '# From file' > note.md && maru canvas put note.md; echo code-$?\n`
+  )
+  await expect(titles(page)).toHaveText(['From file'])
+  await expect(rows(page)).toContainText('code-0')
+})
+
+test('16 MiB 를 넘는 입력은 앱에 보내지 않고 실패한다', async ({ launch }) => {
+  const { page } = await launch()
+  await page.keyboard.type('yes | maru canvas put; echo code-$?\n')
+  await expect(rows(page)).toContainText('code-1', { timeout: 20_000 })
+  await expect(rows(page)).toContainText('larger than the 16 MiB')
+  await expect(panel(page)).toBeHidden()
+})
+
+test('입력이 16 MiB 아래여도 escape 한 요청 줄이 넘으면 앱의 이유와 함께 실패한다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await page.keyboard.type(
+    "head -c 9000000 /dev/zero | tr '\\0' '\"' | maru canvas put; echo code-$?\n"
+  )
+  await expect(rows(page)).toContainText('code-1', { timeout: 20_000 })
+  await expect(rows(page)).toContainText('request line exceeds')
+  await expect(panel(page)).toBeHidden()
+})
+
+test('FILE 없이 stdin 이 터미널이면 기다리지 않고 실패한다', async ({ launch }) => {
+  const { page } = await launch()
+  await page.keyboard.type('maru canvas put; echo code-$?\n')
+  await expect(rows(page)).toContainText('pipe markdown into stdin')
+  await expect(rows(page)).toContainText('code-1')
+})

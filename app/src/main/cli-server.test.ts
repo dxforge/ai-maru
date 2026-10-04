@@ -3,7 +3,13 @@ import { createConnection, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { CLI_PROTOCOL_VERSION, listenCli, type CliServer, type Handlers } from './cli-server'
+import {
+  CLI_PROTOCOL_VERSION,
+  InvalidParams,
+  listenCli,
+  type CliServer,
+  type Handlers
+} from './cli-server'
 
 let release: () => void = () => {}
 let recorded: unknown[] = []
@@ -12,6 +18,9 @@ const handlers: Handlers = {
   ping: (_params, session) => ({ session }),
   boom: () => {
     throw new Error('boom')
+  },
+  badParams: () => {
+    throw new InvalidParams('params.x must be a string')
   },
   later: async (params) => {
     await new Promise((r) => setTimeout(r, 20))
@@ -185,6 +194,14 @@ describe('listenCli', () => {
     const res = await call(path, req('boom', common))
     expect(res.error.code).toBe(-32603)
     expect(res.error.data.code).toBe('internal_error')
+  })
+
+  it('처리기가 InvalidParams 를 던지면 그 메시지로 invalid_params', async () => {
+    const path = await start()
+    const res = await call(path, req('badParams', common))
+    expect(res.error.code).toBe(-32602)
+    expect(res.error.message).toBe('params.x must be a string')
+    expect(res.error.data.code).toBe('invalid_params')
   })
 
   it('id 가 없으면 처리기를 실행하고 답 없이 닫는다', async () => {

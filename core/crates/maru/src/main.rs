@@ -38,17 +38,25 @@
 //! | 메서드 | `params`(공통 외) | `result` |
 //! |---|---|---|
 //! | `ping` | 없음 | `{"session":<받은 세션 id>}` |
+//! | `canvas.put` | `text`(문자열), `id`(빈 문자열이 아닌 문자열, 선택), `title`(문자열, 선택) | `{"id":<문서 id>}` |
+//!
+//! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
+//! `id` 가 없으면 앱이 새 id 를 만든다. id 는 형식 없는 문자열이다.
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use serde_json::{Map, Value, json};
-use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::fs::File;
+use std::io::{BufRead, BufReader, ErrorKind, IsTerminal, Read, Write};
 use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
 const PROTOCOL_VERSION: u64 = 1;
 const TIMEOUT: Duration = Duration::from_secs(10);
+// 앱이 받는 요청 한 줄의 상한이다. escape 하면 줄은 입력보다 길어지므로, 이보다 큰 입력은 보내도 거절된다.
+const MAX_LINE: u64 = 16 * 1024 * 1024;
 
 /// Send requests to the AI Maru app from one of its terminals.
 #[derive(Parser)]
@@ -62,6 +70,30 @@ struct Cli {
 enum Command {
     /// Check that the app answers.
     Ping,
+    /// Work with the Canvas panel.
+    Canvas {
+        #[command(subcommand)]
+        command: CanvasCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum CanvasCommand {
+    /// Show markdown in the Canvas panel. With --id, replaces the document with that id if
+    /// there is one.
+    ///
+    /// Reads FILE, or stdin when FILE is omitted or `-`. Prints the document's id; pass it
+    /// back with --id to replace that document.
+    Put {
+        /// Replace the document with this id, or add the document under this id.
+        #[arg(long)]
+        id: Option<String>,
+        /// Title in the panel's list, shown instead of the first heading.
+        #[arg(long)]
+        title: Option<String>,
+        /// Markdown file to show.
+        file: Option<PathBuf>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -89,31 +121,98 @@ fn main() -> ExitCode {
 fn run(command: Command) -> Result<()> {
     match command {
         Command::Ping => {
-            let result = call("ping", Map::new())?;
+            let result = call(&target()?, "ping", Map::new())?;
             let session = result["session"]
                 .as_str()
                 .ok_or_else(|| anyhow!("the app answered without a session: {result}"))?;
             writeln!(std::io::stdout(), "pong (session {session})")?;
         }
+        Command::Canvas {
+            command: CanvasCommand::Put { id, title, file },
+        } => {
+            let id = canvas_put(id, title, file)?;
+            writeln!(std::io::stdout(), "{id}")?;
+        }
     }
     Ok(())
+}
+
+fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) -> Result<String> {
+    if id.as_deref() == Some("") {
+        bail!("--id must not be empty");
+    }
+    // 앱 터미널 밖이면 끝나지 않는 입력을 읽기 전에 실패해야 한다.
+    let target = target()?;
+    let (source, input): (String, Box<dyn Read>) = match file.filter(|f| f.as_os_str() != "-") {
+        Some(path) => {
+            let source = path.display().to_string();
+            let input = File::open(&path).with_context(|| format!("cannot read {source}"))?;
+            (source, Box::new(input))
+        }
+        None => {
+            let stdin = std::io::stdin();
+            if stdin.is_terminal() {
+                bail!("give a FILE or pipe markdown into stdin, e.g. `maru canvas put note.md`");
+            }
+            ("stdin".to_owned(), Box::new(stdin))
+        }
+    };
+    let mut bytes = Vec::new();
+    input
+        .take(MAX_LINE + 1)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("cannot read {source}"))?;
+    if bytes.len() as u64 > MAX_LINE {
+        bail!("{source} is larger than the 16 MiB the app accepts");
+    }
+    let mut text = String::from_utf8(bytes).map_err(|_| anyhow!("{source} is not UTF-8"))?;
+    // marked 는 BOM 뒤의 `#` 을 제목으로 읽지 않는다.
+    if text.starts_with('\u{feff}') {
+        text.drain(..'\u{feff}'.len_utf8());
+    }
+    if text.trim().is_empty() {
+        bail!("{source} is empty");
+    }
+    let mut params = Map::new();
+    params.insert("text".into(), text.into());
+    if let Some(id) = id {
+        params.insert("id".into(), id.into());
+    }
+    if let Some(title) = title {
+        params.insert("title".into(), title.into());
+    }
+    let result = call(&target, "canvas.put", params)?;
+    match result["id"].as_str() {
+        Some(id) => Ok(id.to_owned()),
+        None => bail!("the app answered without a document id: {result}"),
+    }
 }
 
 fn env_var(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }
 
-fn call(method: &str, mut params: Map<String, Value>) -> Result<Value> {
+struct Target {
+    socket: String,
+    session: String,
+}
+
+fn target() -> Result<Target> {
     let (Some(socket), Some(session)) = (env_var("MARU_SOCKET"), env_var("MARU_SESSION_ID")) else {
         bail!("not inside an AI Maru terminal (MARU_SOCKET and MARU_SESSION_ID are not set)");
     };
-    let stream = UnixStream::connect(&socket)
-        .with_context(|| format!("cannot reach the app at {socket}"))?;
+    Ok(Target { socket, session })
+}
+
+fn call(target: &Target, method: &str, mut params: Map<String, Value>) -> Result<Value> {
+    let Target { socket, session } = target;
+    let stream =
+        UnixStream::connect(socket).with_context(|| format!("cannot reach the app at {socket}"))?;
     stream.set_read_timeout(Some(TIMEOUT))?;
     stream.set_write_timeout(Some(TIMEOUT))?;
 
     params.insert("protocol_version".into(), PROTOCOL_VERSION.into());
-    params.insert("session".into(), session.into());
+    params.insert("session".into(), session.as_str().into());
     let request = json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params });
     let mut line = request.to_string();
     line.push('\n');

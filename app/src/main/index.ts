@@ -8,6 +8,7 @@ import {
   utilityProcess,
   type UtilityProcess
 } from 'electron'
+import { canvasPut } from './canvas'
 import { listenCli, type Handlers } from './cli-server'
 import { appSocketPath, killSessions, utf8Locale, type CliAccess } from './session'
 import type { OpenRequest } from './session-host'
@@ -32,7 +33,8 @@ function cliAccess(): CliAccess {
 }
 
 const cliHandlers: Handlers = {
-  ping: (_params, session) => ({ session })
+  ping: (_params, session) => ({ session }),
+  'canvas.put': canvasPut(() => BrowserWindow.getAllWindows()[0])
 }
 
 const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
