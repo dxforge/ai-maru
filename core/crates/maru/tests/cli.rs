@@ -396,13 +396,37 @@ fn canvas_put_dash_reads_stdin() {
 }
 
 #[test]
+fn canvas_put_drops_one_leading_bom() {
+    let files = tmpdir();
+    let note = files.path().join("bom.md");
+    std::fs::write(&note, "\u{feff}\u{feff}# 제목\n").unwrap();
+    let from_file = ["canvas", "put", note.to_str().unwrap()];
+    let from_stdin = ["canvas", "put"];
+    for args in [&from_file[..], &from_stdin[..]] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, |req| result(req, json!({ "id": "b" })));
+        let out = maru_input(Some(&sock), args, "\u{feff}\u{feff}# 제목\n".as_bytes());
+        let req = server.join().unwrap();
+
+        assert!(out.status.success(), "{args:?}: {}", stderr(&out));
+        assert_eq!(req["params"]["text"], "\u{feff}# 제목\n", "{args:?}");
+    }
+}
+
+#[test]
 fn canvas_put_rejects_bad_input_without_reaching_the_app() {
     let tmp = tmpdir();
     // 소켓이 없어서, 연결을 시도했다면 "cannot reach the app" 이 나온다.
     let sock = sock_in(&tmp);
-    let cases: [(&[&str], &[u8], &str); 4] = [
+    let cases: [(&[&str], &[u8], &str); 5] = [
         (&["canvas", "put"], b"", "stdin is empty"),
         (&["canvas", "put"], b" \n\t\r\n", "stdin is empty"),
+        (
+            &["canvas", "put"],
+            "\u{feff}\n".as_bytes(),
+            "stdin is empty",
+        ),
         (
             &["canvas", "put"],
             &[0x23, 0x20, 0xff, 0xfe],

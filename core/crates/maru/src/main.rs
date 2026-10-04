@@ -165,7 +165,11 @@ fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) 
     if bytes.len() as u64 > MAX_LINE {
         bail!("{source} is larger than the 16 MiB the app accepts");
     }
-    let text = String::from_utf8(bytes).map_err(|_| anyhow!("{source} is not UTF-8"))?;
+    let mut text = String::from_utf8(bytes).map_err(|_| anyhow!("{source} is not UTF-8"))?;
+    // marked 는 BOM 뒤의 `#` 을 제목으로 읽지 않는다.
+    if text.starts_with('\u{feff}') {
+        text.drain(..'\u{feff}'.len_utf8());
+    }
     if text.trim().is_empty() {
         bail!("{source} is empty");
     }
