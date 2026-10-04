@@ -110,6 +110,12 @@ describe('문서 제목', () => {
     ).toBe('Tom & J <3> © & &amp; &amp;')
   })
 
+  it('세미콜론 없는 참조는 본문처럼 풀지 않고, 세미콜론까지의 이름은 본문처럼 앞부분을 푼다', () => {
+    expect(titleOf(md('a', '# &copy 2024 a &lt b &copyx; &notit;'))).toBe(
+      '&copy 2024 a &lt b ©x; ¬it;'
+    )
+  })
+
   it('밑줄 heading 도 heading 이다', () => {
     expect(titleOf(md('a', '머리\n===\n'))).toBe('머리')
   })
