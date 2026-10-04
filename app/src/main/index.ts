@@ -4,6 +4,7 @@ import {
   BrowserWindow,
   ipcMain,
   MessageChannelMain,
+  shell,
   utilityProcess,
   type UtilityProcess
 } from 'electron'
@@ -36,6 +37,10 @@ const cliHandlers: Handlers = {
 
 const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
 
+function openExternal(url: string): void {
+  if (/^(https?|mailto):/i.test(url)) void shell.openExternal(url)
+}
+
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1000,
@@ -46,6 +51,14 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js')
     }
+  })
+  win.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault()
+    openExternal(url)
+  })
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    openExternal(url)
+    return { action: 'deny' }
   })
   if (unobtrusive) {
     win.setOpacity(0)

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, gridRows, resizeBy, rows, sessionFiles, sockets, test } from './app'
+import { expect, gridRows, resizeBy, rows, sessionFiles, shellSize, sockets, test } from './app'
 
 // 산술 확장을 쓰면 화면에 찍힌 입력과 셸의 출력이 구별된다.
 
@@ -67,21 +67,12 @@ test('프로그램이 켠 커서 키 모드는 새로 고친 뒤에도 남는다
 
 test('창 크기를 바꾸면 셸이 보는 크기도 바뀐다', async ({ launch }) => {
   const { app, page } = await launch()
-  let n = 0
-  const sttySize = async () => {
-    const marker = `size${++n}`
-    await page.keyboard.type(`clear; echo ${marker}=$(stty size | tr ' ' x)\n`)
-    const re = new RegExp(`${marker}=(\\d+)x(\\d+)`)
-    let m: RegExpMatchArray | null = null
-    await expect.poll(async () => (m = (await rows(page).innerText()).match(re))).not.toBeNull()
-    return { rows: Number(m![1]), cols: Number(m![2]) }
-  }
-  const before = await sttySize()
+  const before = await shellSize(page)
   expect(before.rows).toBe(await gridRows(page).count())
 
   await resizeBy(app, -200, -180)
-  await expect.poll(async () => (await sttySize()).rows).toBeLessThan(before.rows)
-  const after = await sttySize()
+  await expect.poll(async () => (await shellSize(page)).rows).toBeLessThan(before.rows)
+  const after = await shellSize(page)
   expect(after.rows).toBe(await gridRows(page).count())
   expect(after.cols).toBeLessThan(before.cols)
 })
