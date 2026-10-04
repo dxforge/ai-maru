@@ -1,17 +1,17 @@
 import type { Socket } from 'node:net'
 import type { MessagePortMain } from 'electron'
 import { bridge } from './bridge'
-import { connect, findLiveSession, socketPath, spawnSession } from './session'
+import { connect, findLiveSession, socketPath, spawnSession, type CliAccess } from './session'
 
-export type OpenRequest = { type: 'open'; owner: number; dir: string; bin: string }
+export type OpenRequest = { type: 'open'; owner: number; dir: string; bin: string; cli: CliAccess }
 
 /** 찾기와 띄우기 사이에 다른 요청이 끼면 둘 다 세션이 없다고 보고 하나씩 띄운다. */
 const resolving = new Map<string, Promise<string>>()
 
-function resolveSession(dir: string, bin: string): Promise<string> {
+function resolveSession(dir: string, bin: string, cli: CliAccess): Promise<string> {
   let p = resolving.get(dir)
   if (!p) {
-    p = (async () => (await findLiveSession(dir)) ?? (await spawnSession(bin, dir)))()
+    p = (async () => (await findLiveSession(dir)) ?? (await spawnSession(bin, dir, cli)))()
     resolving.set(dir, p)
     p.finally(() => resolving.delete(dir)).catch(() => {})
   }
@@ -35,7 +35,7 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
   }
   owned.set(req.owner, drop)
   try {
-    const id = await resolveSession(req.dir, req.bin)
+    const id = await resolveSession(req.dir, req.bin, req.cli)
     if (superseded) return
     sock = await connect(socketPath(req.dir, id))
     if (superseded) {
