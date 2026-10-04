@@ -35,7 +35,7 @@ export function attach(
       case 'role':
         if (m.role === 'observer') {
           primary = false
-          term.write('\r\n[다른 클라이언트가 이 세션의 입력과 크기를 가져갔다]\r\n')
+          term.write('\r\n[another client took over input and size]\r\n')
         }
         break
       case 'exit':
@@ -46,7 +46,7 @@ export function attach(
         break
     }
   })
-  conn.onClose(() => term.write('\r\n[세션 연결이 끊겼다]\r\n'))
+  conn.onClose(() => term.write('\r\n[disconnected from the session]\r\n'))
 
   term.onData((data) => {
     if (primary) conn.send(encoder.encode(data))

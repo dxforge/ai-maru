@@ -50,13 +50,13 @@ fn main() {
         src.join("lib/libghostty-vt.a"),
         link_dir.join("libghostty-vt.a"),
     )
-    .unwrap_or_else(|e| panic!("{} 에 lib/libghostty-vt.a 가 없다: {e}", src.display()));
+    .unwrap_or_else(|e| panic!("{} has no lib/libghostty-vt.a: {e}", src.display()));
     println!("cargo:rustc-link-search=native={}", link_dir.display());
     println!("cargo:rustc-link-lib=static=ghostty-vt");
 }
 
 fn env(key: &str) -> String {
-    std::env::var(key).unwrap_or_else(|_| panic!("{key} 가 없다"))
+    std::env::var(key).unwrap_or_else(|_| panic!("{key} is not set"))
 }
 
 fn read_commit(pin_file: &Path) -> String {
@@ -64,7 +64,7 @@ fn read_commit(pin_file: &Path) -> String {
         .lines()
         .find_map(|l| l.strip_prefix("GHOSTTY_COMMIT="))
         .map(|c| c.trim().to_string())
-        .expect("ghostty-vt.env 에 GHOSTTY_COMMIT 이 없다")
+        .expect("ghostty-vt.env has no GHOSTTY_COMMIT")
 }
 
 fn build(script: &Path, pin_file: &Path, out: &Path) -> PathBuf {
@@ -75,7 +75,10 @@ fn build(script: &Path, pin_file: &Path, out: &Path) -> PathBuf {
     std::hash::Hash::hash(&(read(script), read(pin_file)), &mut hasher);
     let inputs = std::hash::Hasher::finish(&hasher);
     // OUT_DIR 은 <target 디렉토리>[/<triple>]/<profile>/build/<crate-hash>/out 이다.
-    let cache_root = out.ancestors().nth(4).expect("OUT_DIR 이 예상보다 얕다");
+    let cache_root = out
+        .ancestors()
+        .nth(4)
+        .expect("OUT_DIR is shallower than expected");
     let dest = cache_root
         .join("ghostty-vt")
         .join(format!("{}-{inputs:016x}-{target}", &commit[..12]));
@@ -91,13 +94,13 @@ fn build(script: &Path, pin_file: &Path, out: &Path) -> PathBuf {
         cmd.arg(zig_target(&target));
     }
     println!(
-        "cargo:warning=libghostty-vt 를 소스에서 빌드한다 (ghostty {}, 약 1분)",
+        "cargo:warning=building libghostty-vt from source (ghostty {}, about a minute)",
         &commit[..12]
     );
-    let status = cmd.status().expect("bash 를 실행할 수 없다");
+    let status = cmd.status().expect("cannot run bash");
     if !status.success() {
         std::fs::remove_dir_all(&tmp).ok();
-        panic!("scripts/build-ghostty-vt.sh 가 실패했다 — zig 버전은 ghostty-vt.env 를 보라");
+        panic!("scripts/build-ghostty-vt.sh failed — see ghostty-vt.env for the zig version");
     }
     if std::fs::rename(&tmp, &dest).is_err() {
         if dest.join("lib/libghostty-vt.a").exists() {
@@ -117,7 +120,7 @@ fn zig_target(rust_target: &str) -> &'static str {
         "x86_64-unknown-linux-gnu" => "x86_64-linux-gnu",
         "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu",
         other => {
-            panic!("{other} 를 zig 타깃으로 옮기는 법을 모른다 — build.rs 의 zig_target 에 더하라")
+            panic!("no zig target for {other} — add it to zig_target in build.rs")
         }
     }
 }
@@ -133,8 +136,12 @@ fn write_enums(include: &Path, out: &Path) {
     let consts: String = ENUMS
         .iter()
         .map(|name| {
-            let v = enum_value(&headers, name)
-                .unwrap_or_else(|| panic!("{} 의 헤더에서 {name} 을 못 찾았다", include.display()));
+            let v = enum_value(&headers, name).unwrap_or_else(|| {
+                panic!(
+                    "cannot find {name} in the headers under {}",
+                    include.display()
+                )
+            });
             format!("pub const {name}: i32 = {v};\n")
         })
         .collect();
@@ -182,6 +189,5 @@ fn enum_value(headers: &str, name: &str) -> Option<i64> {
 }
 
 fn read(path: &Path) -> String {
-    std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("{} 를 읽을 수 없다: {e}", path.display()))
+    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
 }

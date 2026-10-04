@@ -44,7 +44,7 @@ test('다른 클라이언트가 primary 를 가져가면 창은 그 크기를 �
 
   const other = await attachFromOutside(sockets(dataDir)[0], 60, 12)
   defer(() => other.destroy())
-  await expect(rows(page)).toContainText('입력과 크기를 가져갔다')
+  await expect(rows(page)).toContainText('took over input and size')
   await expect(gridRows(page)).toHaveCount(12)
 
   await resizeBy(app, 100, 100)
@@ -62,7 +62,7 @@ test('세션을 잇는 utilityProcess 가 죽으면 끊김을 보이고, 새로 
     ({ app }) => app.getAppMetrics().find((m) => m.name === 'maru-session-host')!.pid
   )
   process.kill(pid, 'SIGKILL')
-  await expect(rows(page)).toContainText('세션 연결이 끊겼다')
+  await expect(rows(page)).toContainText('disconnected from the session')
 
   await page.reload()
   await page.waitForSelector('.xterm-screen')

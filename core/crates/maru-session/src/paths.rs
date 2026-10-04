@@ -13,7 +13,7 @@ fn validate_id(id: &str) -> Result<()> {
             && id
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
-        "세션 id 는 1~64 자의 영숫자·'-'·'_' 여야 한다: {id:?}"
+        "session id must be 1-64 alphanumerics, '-' or '_': {id:?}"
     );
     Ok(())
 }
@@ -31,7 +31,7 @@ impl Paths {
         // bind 실패로는 무엇을 줄여야 하는지 알 수 없다.
         if len > MAX_SOCKET_PATH {
             bail!(
-                "소켓 경로가 {len} 바이트로 한도 {MAX_SOCKET_PATH} 를 {} 바이트 넘는다 — 디렉토리를 그만큼 줄여야 한다: {}",
+                "socket path is {len} bytes, {} over the limit of {MAX_SOCKET_PATH} — shorten the directory by that much: {}",
                 len - MAX_SOCKET_PATH,
                 socket.display()
             );
@@ -44,20 +44,20 @@ impl Paths {
 }
 
 pub fn prepare_dir(dir: &Path) -> Result<()> {
-    std::fs::create_dir_all(dir).with_context(|| format!("{} 를 만들 수 없다", dir.display()))?;
+    std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
     let meta = std::fs::symlink_metadata(dir)?;
     ensure!(
         meta.is_dir(),
-        "{} 가 디렉토리가 아니다(심볼릭 링크 포함)",
+        "{} is not a directory (or is a symlink)",
         dir.display()
     );
     ensure!(
         meta.uid() == nix::unistd::geteuid().as_raw(),
-        "{} 의 소유자가 이 사용자가 아니다",
+        "{} is not owned by this user",
         dir.display()
     );
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
-        .with_context(|| format!("{} 의 권한을 0700 으로 맞출 수 없다", dir.display()))
+        .with_context(|| format!("cannot set the permissions of {} to 0700", dir.display()))
 }
 
 #[cfg(test)]
@@ -76,7 +76,7 @@ mod tests {
     fn an_overlong_socket_path_says_how_much_to_cut() {
         let dir = PathBuf::from(format!("/{}", "x".repeat(100)));
         let err = Paths::new(&dir, "sess-1").err().unwrap().to_string();
-        assert!(err.contains("줄여야"), "{err}");
+        assert!(err.contains("shorten"), "{err}");
     }
 
     #[test]

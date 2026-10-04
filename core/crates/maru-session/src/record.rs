@@ -16,12 +16,12 @@ pub struct Record {
 pub fn write(path: &Path, rec: &Record) -> Result<()> {
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_vec_pretty(rec)?)
-        .with_context(|| format!("{} 를 쓸 수 없다", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| format!("{} 로 옮길 수 없다", path.display()))
+        .with_context(|| format!("cannot write {}", tmp.display()))?;
+    std::fs::rename(&tmp, path)
+        .with_context(|| format!("cannot rename {} to {}", tmp.display(), path.display()))
 }
 
 pub fn read(path: &Path) -> Result<Record> {
-    let body =
-        std::fs::read(path).with_context(|| format!("{} 를 읽을 수 없다", path.display()))?;
+    let body = std::fs::read(path).with_context(|| format!("cannot read {}", path.display()))?;
     Ok(serde_json::from_slice(&body)?)
 }

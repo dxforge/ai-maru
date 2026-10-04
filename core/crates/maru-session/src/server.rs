@@ -51,7 +51,7 @@ pub async fn run(opts: Options) -> Result<()> {
     // 셸을 띄운 뒤에 알면 그 셸이 고아가 되고 산 프로세스의 레코드를 덮는다.
     if UnixStream::connect(&paths.socket).await.is_ok() {
         bail!(
-            "살아 있는 세션 프로세스가 이미 {} 를 듣고 있다",
+            "a live session process is already listening on {}",
             paths.socket.display()
         );
     }
@@ -71,7 +71,7 @@ pub async fn run(opts: Options) -> Result<()> {
         }
     };
     log!(
-        "maru-session {}: {} 에서 듣는다",
+        "maru-session {}: listening on {}",
         opts.id,
         paths.socket.display()
     );
@@ -88,7 +88,7 @@ pub async fn run(opts: Options) -> Result<()> {
                 }
                 Err(e) => {
                     // fd 가 바닥나면 Linux 는 연결을 큐에 남겨 accept 가 같은 에러로 곧바로 다시 깨어난다.
-                    log!("maru-session: accept 실패: {e}");
+                    log!("maru-session: accept failed: {e}");
                     tokio::time::sleep(ACCEPT_BACKOFF).await;
                 }
             },
@@ -136,7 +136,7 @@ fn publish(id: &str, paths: &Paths, session: &Session) -> Result<UnixListener> {
         },
     )?;
     UnixListener::bind(&paths.socket)
-        .with_context(|| format!("{} 에 bind 할 수 없다", paths.socket.display()))
+        .with_context(|| format!("cannot bind {}", paths.socket.display()))
 }
 
 async fn handle(mut stream: UnixStream, session: Arc<Session>, kill_tx: mpsc::Sender<KillAck>) {
@@ -150,10 +150,12 @@ async fn handle(mut stream: UnixStream, session: Arc<Session>, kill_tx: mpsc::Se
     let req = match read_frame(&mut stream).await {
         Ok(Some((TAG_TEXT, payload))) => match serde_json::from_slice::<Value>(&payload) {
             Ok(v) => v,
-            Err(_) => return error(&mut stream, "bad_request", "첫 프레임이 JSON 이 아니다").await,
+            Err(_) => {
+                return error(&mut stream, "bad_request", "the first frame is not JSON").await;
+            }
         },
         Ok(Some(_)) => {
-            return error(&mut stream, "bad_request", "첫 프레임은 Text 여야 한다").await;
+            return error(&mut stream, "bad_request", "the first frame must be Text").await;
         }
         _ => return,
     };
@@ -191,7 +193,7 @@ async fn handle(mut stream: UnixStream, session: Arc<Session>, kill_tx: mpsc::Se
             }
             Err(e) => error(&mut stream, "capture_failed", &format!("{e:#}")).await,
         },
-        _ => error(&mut stream, "unknown_request", "모르는 type").await,
+        _ => error(&mut stream, "unknown_request", "unknown type").await,
     }
 }
 

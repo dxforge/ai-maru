@@ -11,7 +11,7 @@ const MAX_DIM: u16 = 4096;
 
 fn check_size(cols: u16, rows: u16) -> Result<()> {
     if !(1..=MAX_DIM).contains(&cols) || !(1..=MAX_DIM).contains(&rows) {
-        bail!("cols/rows 는 1~{MAX_DIM} 이어야 한다 ({cols}x{rows})");
+        bail!("cols/rows must be 1-{MAX_DIM} ({cols}x{rows})");
     }
     Ok(())
 }

@@ -36,7 +36,7 @@ export class FrameDecoder {
     while (this.buf.length >= HEADER_LEN) {
       const len = this.buf.readUInt32BE(1)
       if (len > MAX_FRAME_LEN) {
-        throw new Error(`프레임 길이 ${len} 이 한도 ${MAX_FRAME_LEN} 을 넘는다`)
+        throw new Error(`frame length ${len} exceeds the limit of ${MAX_FRAME_LEN}`)
       }
       if (this.buf.length < HEADER_LEN + len) {
         this.need = HEADER_LEN + len
