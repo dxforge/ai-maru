@@ -181,6 +181,25 @@ test('문서의 스타일은 패널 밖을 바꾸지 못한다', async ({ launch
   await expect(panel(page)).toBeHidden()
 })
 
+test('문서의 dialog·popover 는 패널 밖으로 떠오르지 않는다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await put(app, {
+    id: 'a',
+    kind: 'markdown',
+    text: [
+      '<dialog open>dialog-body</dialog>',
+      '<button popovertarget="p">show</button><div id="p" popover>popover-body</div>'
+    ].join('\n\n')
+  })
+
+  await expect(markdown(page)).toContainText('dialog-body')
+  await markdown(page).getByRole('button', { name: 'show' }).click()
+  expect(await page.evaluate(() => document.querySelectorAll(':popover-open').length)).toBe(0)
+  await expect(markdown(page).locator('dialog, [popover], [popovertarget]')).toHaveCount(0)
+  await page.locator('.canvas .close').click()
+  await expect(panel(page)).toBeHidden()
+})
+
 test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터미널로 간다', async ({ launch }) => {
   const { app, page } = await launch()
   let n = 0

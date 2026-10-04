@@ -13,9 +13,10 @@ const marked = new Marked({
 
 export function renderMarkdown(text: string): string {
   // 패널 안의 HTML 이지만 스타일은 문서 전체에 걸려 터미널을 가리거나 덮을 수 있다.
+  // dialog·popover 는 패널이 아니라 창을 기준으로 떠서 터미널 위에 겹친다.
   return DOMPurify.sanitize(marked.parse(text, { async: false }), {
-    FORBID_TAGS: ['style', 'img'],
-    FORBID_ATTR: ['style']
+    FORBID_TAGS: ['style', 'img', 'dialog'],
+    FORBID_ATTR: ['style', 'popover', 'popovertarget']
   })
 }
 
