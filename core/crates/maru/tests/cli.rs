@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output, Stdio};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -58,14 +58,54 @@ fn serve_once(
 }
 
 fn maru(sock: Option<&Path>, args: &[&str]) -> Output {
+    maru_with(sock, args, Stdio::null())
+        .wait_with_output()
+        .unwrap()
+}
+
+fn maru_with(sock: Option<&Path>, args: &[&str], stdin: Stdio) -> Child {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_maru"));
     cmd.args(args)
         .env_remove("MARU_SOCKET")
-        .env_remove("MARU_SESSION_ID");
+        .env_remove("MARU_SESSION_ID")
+        .stdin(stdin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     if let Some(sock) = sock {
         cmd.env("MARU_SOCKET", sock).env("MARU_SESSION_ID", SESSION);
     }
-    cmd.output().unwrap()
+    cmd.spawn().unwrap()
+}
+
+fn maru_input(sock: Option<&Path>, args: &[&str], input: &[u8]) -> Output {
+    let mut child = maru_with(sock, args, Stdio::piped());
+    let mut stdin = child.stdin.take().unwrap();
+    let input = input.to_vec();
+    // CLI 가 다 읽기 전에 끝나면 쓰기가 EPIPE 로 실패한다.
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(&input);
+    });
+    let out = wait_within(child);
+    writer.join().unwrap();
+    out
+}
+
+/// CLI 가 stdin 을 기다리며 멈춰도 테스트가 멈추지 않게.
+fn wait_within(mut child: Child) -> Output {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            panic!("CLI 가 끝나지 않았다");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    child.wait_with_output().unwrap()
+}
+
+fn assert_fails_with(out: &Output, expected: &str) {
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(out));
+    assert!(stderr(out).contains(expected), "{}", stderr(out));
 }
 
 fn stdout(out: &Output) -> String {
@@ -286,4 +326,219 @@ fn version_does_not_need_the_app() {
     let out = maru(None, &["--version"]);
     assert!(out.status.success());
     assert!(stdout(&out).starts_with("maru "), "{}", stdout(&out));
+}
+
+#[test]
+fn canvas_put_sends_stdin_unchanged_and_prints_the_id() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "id": "doc-1" })));
+    let text = "# 제목\r\n\nbody\n\n";
+
+    let out = maru_input(Some(&sock), &["canvas", "put"], text.as_bytes());
+    let req = server.join().unwrap();
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "doc-1\n");
+    assert_eq!(req["method"], "canvas.put");
+    assert_eq!(req["params"]["protocol_version"], 1);
+    assert_eq!(req["params"]["session"], SESSION);
+    assert_eq!(req["params"]["text"], text);
+    assert!(req["params"].get("id").is_none(), "{req}");
+    assert!(req["params"].get("title").is_none(), "{req}");
+}
+
+#[test]
+fn canvas_put_passes_id_and_title() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        result(req, json!({ "id": req["params"]["id"] }))
+    });
+
+    let args = ["canvas", "put", "--id", "plan", "--title", "Plan"];
+    let out = maru_input(Some(&sock), &args, b"x");
+    let req = server.join().unwrap();
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "plan\n");
+    assert_eq!(req["params"]["id"], "plan");
+    assert_eq!(req["params"]["title"], "Plan");
+}
+
+#[test]
+fn canvas_put_reads_a_file_and_ignores_stdin() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let note = tmp.path().join("note.md");
+    std::fs::write(&note, "# from file\n").unwrap();
+    let server = serve_once(&sock, |req| result(req, json!({ "id": "f" })));
+
+    let args = ["canvas", "put", note.to_str().unwrap()];
+    let out = maru_input(Some(&sock), &args, b"# from stdin");
+    let req = server.join().unwrap();
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(req["params"]["text"], "# from file\n");
+}
+
+#[test]
+fn canvas_put_dash_reads_stdin() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "id": "s" })));
+
+    let out = maru_input(Some(&sock), &["canvas", "put", "-"], b"# from stdin");
+    let req = server.join().unwrap();
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(req["params"]["text"], "# from stdin");
+}
+
+#[test]
+fn canvas_put_drops_one_leading_bom() {
+    let files = tmpdir();
+    let note = files.path().join("bom.md");
+    std::fs::write(&note, "\u{feff}\u{feff}# 제목\n").unwrap();
+    let from_file = ["canvas", "put", note.to_str().unwrap()];
+    let from_stdin = ["canvas", "put"];
+    for args in [&from_file[..], &from_stdin[..]] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, |req| result(req, json!({ "id": "b" })));
+        let out = maru_input(Some(&sock), args, "\u{feff}\u{feff}# 제목\n".as_bytes());
+        let req = server.join().unwrap();
+
+        assert!(out.status.success(), "{args:?}: {}", stderr(&out));
+        assert_eq!(req["params"]["text"], "\u{feff}# 제목\n", "{args:?}");
+    }
+}
+
+#[test]
+fn canvas_put_rejects_bad_input_without_reaching_the_app() {
+    let tmp = tmpdir();
+    // 소켓이 없어서, 연결을 시도했다면 "cannot reach the app" 이 나온다.
+    let sock = sock_in(&tmp);
+    let cases: [(&[&str], &[u8], &str); 5] = [
+        (&["canvas", "put"], b"", "stdin is empty"),
+        (&["canvas", "put"], b" \n\t\r\n", "stdin is empty"),
+        (
+            &["canvas", "put"],
+            "\u{feff}\n".as_bytes(),
+            "stdin is empty",
+        ),
+        (
+            &["canvas", "put"],
+            &[0x23, 0x20, 0xff, 0xfe],
+            "stdin is not UTF-8",
+        ),
+        (
+            &["canvas", "put", "--id", ""],
+            b"# x",
+            "--id must not be empty",
+        ),
+    ];
+    for (args, input, expected) in cases {
+        assert_fails_with(&maru_input(Some(&sock), args, input), expected);
+    }
+}
+
+#[test]
+fn canvas_put_rejects_unreadable_files_without_reaching_the_app() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let empty = tmp.path().join("empty.md");
+    std::fs::write(&empty, "\n").unwrap();
+    let binary = tmp.path().join("shot.png");
+    std::fs::write(&binary, [0x89, 0x50, 0x4e, 0x47, 0xff]).unwrap();
+    let missing = tmp.path().join("missing.md");
+    let cases = [
+        (
+            missing.clone(),
+            format!("cannot read {}", missing.display()),
+        ),
+        (
+            tmp.path().to_path_buf(),
+            format!("cannot read {}", tmp.path().display()),
+        ),
+        (empty.clone(), format!("{} is empty", empty.display())),
+        (binary.clone(), format!("{} is not UTF-8", binary.display())),
+    ];
+    for (path, expected) in cases {
+        let args = ["canvas", "put", path.to_str().unwrap()];
+        assert_fails_with(&maru_input(Some(&sock), &args, b""), &expected);
+    }
+}
+
+#[test]
+fn canvas_put_with_terminal_stdin_fails_without_waiting() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    for args in [&["canvas", "put"][..], &["canvas", "put", "-"]] {
+        let pty = nix::pty::openpty(None, None).unwrap();
+        let child = maru_with(Some(&sock), args, Stdio::from(pty.slave));
+        let out = wait_within(child);
+        drop(pty.master);
+        assert_fails_with(&out, "pipe markdown into stdin");
+    }
+}
+
+fn endless() -> (Child, Stdio) {
+    let mut yes = Command::new("yes").stdout(Stdio::piped()).spawn().unwrap();
+    let out = Stdio::from(yes.stdout.take().unwrap());
+    (yes, out)
+}
+
+#[test]
+fn canvas_put_stops_reading_past_what_the_app_accepts() {
+    let tmp = tmpdir();
+    // 소켓이 없어서, 연결을 시도했다면 "cannot reach the app" 이 나온다.
+    let sock = sock_in(&tmp);
+    let (mut yes, input) = endless();
+    let out = wait_within(maru_with(Some(&sock), &["canvas", "put"], input));
+    let _ = yes.kill();
+    let _ = yes.wait();
+    assert_fails_with(&out, "stdin is larger than the 16 MiB the app accepts");
+
+    let big = tmp.path().join("big.md");
+    std::fs::write(&big, vec![b'a'; 16 * 1024 * 1024 + 1]).unwrap();
+    let args = ["canvas", "put", big.to_str().unwrap()];
+    let out = maru_input(Some(&sock), &args, b"");
+    assert_fails_with(&out, "is larger than the 16 MiB the app accepts");
+}
+
+#[test]
+fn canvas_put_outside_an_app_terminal_fails_before_reading() {
+    let (mut yes, input) = endless();
+    let out = wait_within(maru_with(None, &["canvas", "put"], input));
+    let _ = yes.kill();
+    let _ = yes.wait();
+    assert_fails_with(&out, "not inside an AI Maru terminal");
+}
+
+#[test]
+fn canvas_put_shows_the_apps_reason() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        error(
+            req,
+            -32600,
+            "request line exceeds 16777216 bytes",
+            json!({ "code": "too_large" }),
+        )
+    });
+    let out = maru_input(Some(&sock), &["canvas", "put"], b"x");
+    server.join().unwrap();
+    assert_fails_with(&out, "request line exceeds");
+}
+
+#[test]
+fn canvas_put_needs_an_id_in_the_answer() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({})));
+    let out = maru_input(Some(&sock), &["canvas", "put"], b"x");
+    server.join().unwrap();
+    assert_fails_with(&out, "without a document id");
 }
