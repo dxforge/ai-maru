@@ -11,7 +11,9 @@ test('터미널에서 maru ping 이 그 세션의 id 를 돌려받는다', async
   await expect(rows(page)).toContainText(`pong (session ${basename(sock, '.sock')})`)
 })
 
-test('로그인 셸을 지난 뒤에도 maru 는 이 빌드의 CLI 다', async ({ launch }) => {
+test('시스템·rc 가 PATH 에 넣는 디렉토리에 다른 maru 가 없으면 로그인 셸을 지나도 maru 는 이 빌드의 CLI 다', async ({
+  launch
+}) => {
   const { app, page } = await launch()
   const appPath = await app.evaluate(({ app }) => app.getAppPath())
   const bin = resolve(appPath, '../core/target/debug/maru')

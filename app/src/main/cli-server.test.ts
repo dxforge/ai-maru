@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CLI_PROTOCOL_VERSION, listenCli, type CliServer, type Handlers } from './cli-server'
 
 let release: () => void = () => {}
+let recorded: unknown[] = []
 
 const handlers: Handlers = {
   ping: (_params, session) => ({ session }),
@@ -21,7 +22,11 @@ const handlers: Handlers = {
   },
   nothing: () => undefined,
   bigint: () => ({ n: 1n }),
-  hang: () => new Promise<void>((r) => (release = r))
+  hang: () => new Promise<void>((r) => (release = r)),
+  record: (params) => {
+    recorded.push(params.value)
+    return null
+  }
 }
 
 let dir: string
@@ -29,6 +34,7 @@ let server: CliServer | null = null
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'maru-cli-'))
+  recorded = []
 })
 
 afterEach(async () => {
@@ -181,15 +187,17 @@ describe('listenCli', () => {
     expect(res.error.data.code).toBe('internal_error')
   })
 
-  it('id 가 없으면 답 없이 닫는다', async () => {
+  it('id 가 없으면 처리기를 실행하고 답 없이 닫는다', async () => {
     const path = await start()
-    expect(await exchange(path, req('ping', common, null))).toBe('')
+    expect(await exchange(path, req('record', { ...common, value: 1 }, null))).toBe('')
+    expect(recorded).toEqual([1])
   })
 
   it('id 가 없으면 실패해도 답 없이 닫는다', async () => {
     const path = await start()
-    const notification = req('ping', { ...common, protocol_version: 999 }, null)
+    const notification = req('record', { ...common, protocol_version: 999, value: 1 }, null)
     expect(await exchange(path, notification)).toBe('')
+    expect(recorded).toEqual([])
   })
 
   it('async 처리기의 결과로 답한다', async () => {
