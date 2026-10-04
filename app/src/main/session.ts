@@ -4,7 +4,7 @@ import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { readdir, readFile, rm } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
@@ -24,6 +24,11 @@ type SessionRecord = {
 
 export function socketPath(dir: string, id: string): string {
   return join(dir, `${id}.sock`)
+}
+
+/** 세션 id 는 `s-` 로 시작하므로 세션 소켓과 겹치지 않는다. */
+export function appSocketPath(dir: string): string {
+  return join(dir, 'app.sock')
 }
 
 export function connect(path: string): Promise<Socket> {
@@ -137,6 +142,19 @@ export function sessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   )
 }
 
+export type CliAccess = { socket: string; bin: string }
+
+/** 계약은 core/crates/maru 의 모듈 doc 에 있다. */
+export function shellEnv(env: NodeJS.ProcessEnv, id: string, cli: CliAccess): NodeJS.ProcessEnv {
+  const base = sessionEnv(env)
+  return {
+    ...base,
+    MARU_SOCKET: cli.socket,
+    MARU_SESSION_ID: id,
+    PATH: [dirname(cli.bin), base.PATH].filter(Boolean).join(delimiter)
+  }
+}
+
 export function utf8Locale(
   tag: string,
   exists = (name: string) => existsSync(join('/usr/share/locale', name))
@@ -147,7 +165,7 @@ export function utf8Locale(
   return region && exists(name) ? name : 'C.UTF-8'
 }
 
-export async function spawnSession(bin: string, dir: string): Promise<string> {
+export async function spawnSession(bin: string, dir: string, cli: CliAccess): Promise<string> {
   const id = `s-${randomBytes(4).toString('hex')}`
   // 준비 전에 끝나면 이유가 stderr 에만 있다. 파이프로 받으면 앱이 끝난 뒤 세션의 쓰기가 실패한다.
   mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -155,7 +173,7 @@ export async function spawnSession(bin: string, dir: string): Promise<string> {
   const log = openSync(logPath, 'w', 0o600)
   const child = spawn(bin, ['--dir', dir, '--id', id, '--cwd', homedir()], {
     detached: true,
-    env: sessionEnv(process.env),
+    env: shellEnv(process.env, id, cli),
     stdio: ['ignore', 'ignore', log]
   })
   closeSync(log)

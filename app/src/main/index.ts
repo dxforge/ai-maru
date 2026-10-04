@@ -7,15 +7,31 @@ import {
   utilityProcess,
   type UtilityProcess
 } from 'electron'
-import { killSessions, utf8Locale } from './session'
+import { listenCli, type Handlers } from './cli-server'
+import { appSocketPath, killSessions, utf8Locale, type CliAccess } from './session'
 import type { OpenRequest } from './session-host'
 
 function sessionDir(): string {
   return join(app.getPath('userData'), 's')
 }
 
+function coreBin(override: string | undefined, name: string): string {
+  return override ?? join(app.getAppPath(), '../core/target/debug', name)
+}
+
 function sessionBin(): string {
-  return process.env.MARU_SESSION_BIN ?? join(app.getAppPath(), '../core/target/debug/maru-session')
+  return coreBin(process.env.MARU_SESSION_BIN, 'maru-session')
+}
+
+function cliAccess(): CliAccess {
+  return {
+    socket: appSocketPath(sessionDir()),
+    bin: coreBin(process.env.MARU_CLI_BIN, 'maru')
+  }
+}
+
+const cliHandlers: Handlers = {
+  ping: (_params, session) => ({ session })
 }
 
 const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
@@ -94,15 +110,24 @@ function start(): void {
   if (unobtrusive) app.dock?.hide()
   // 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.
   const leftovers = killSessions(sessionDir())
+  const cli = cliAccess()
+  // 터미널은 CLI 없이도 쓸 수 있어야 한다. env 는 그대로 넣어 CLI 가 앱에 닿지 않는다고 말하게 한다.
+  const cliServer = listenCli(cli.socket, cliHandlers).catch((err) => {
+    console.error(`maru: cannot listen on ${cli.socket}:`, err)
+    return null
+  })
+  // 셸이 뜨자마자 `maru` 를 불러도 닿게.
+  const ready = Promise.all([leftovers, cliServer])
   ipcMain.on('session:open', (event) => {
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
       owner: event.sender.id,
       dir: sessionDir(),
-      bin: sessionBin()
+      bin: sessionBin(),
+      cli
     }
-    void leftovers.then(() => sessionHost().postMessage(req, [port1]))
+    void ready.then(() => sessionHost().postMessage(req, [port1]))
     event.sender.postMessage('session:port', null, [port2])
   })
 
@@ -112,7 +137,10 @@ function start(): void {
   app.on('will-quit', (event) => {
     if (sessionsKilled) return
     event.preventDefault()
-    void killSessions(sessionDir()).finally(() => {
+    void Promise.all([
+      killSessions(sessionDir()),
+      cliServer.then((server) => server?.close())
+    ]).finally(() => {
       sessionsKilled = true
       app.quit()
     })

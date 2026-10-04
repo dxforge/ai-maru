@@ -9,7 +9,7 @@ import {
   type Page
 } from '@playwright/test'
 import { encodeFrame, TAG_TEXT } from '../src/main/frame'
-import { killSessions } from '../src/main/session'
+import { appSocketPath, killSessions } from '../src/main/session'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 
 export { expect } from '@playwright/test'
@@ -81,6 +81,7 @@ export function sockets(dataDir: string): string[] {
   return sessionFiles(dataDir)
     .filter((n) => n.endsWith('.sock'))
     .map((n) => join(sessionDir(dataDir), n))
+    .filter((p) => p !== appSocketPath(sessionDir(dataDir)))
 }
 
 function request(v: object): Buffer {
