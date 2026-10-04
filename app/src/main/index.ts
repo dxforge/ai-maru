@@ -36,7 +36,6 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js')
     }
   })
-  // 창이 다른 주소로 넘어가면 터미널이 사라진다.
   win.webContents.on('will-navigate', (event, url) => {
     event.preventDefault()
     openExternal(url)

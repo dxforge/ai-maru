@@ -14,7 +14,6 @@ const IMAGE_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml'
 }
 
-/** 같은 id 의 문서가 있으면 그 문서를 바꾼다. */
 export async function putCanvas(win: BrowserWindow, doc: CanvasDoc): Promise<void> {
   win.webContents.send('canvas:put', await toItem(doc))
 }
