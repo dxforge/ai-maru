@@ -7,12 +7,6 @@ export interface SessionConnection {
   onClose(cb: () => void): void
 }
 
-declare global {
-  interface Window {
-    maru: { openSession(): void }
-  }
-}
-
 /** 세션을 찾거나 띄우는 데 실패하면 연결로 `{"type":"error"}` 가 오고 닫힌다. */
 export function openSession(): Promise<SessionConnection> {
   return new Promise((resolve) => {
