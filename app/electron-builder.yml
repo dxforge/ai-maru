@@ -6,6 +6,9 @@ extraMetadata:
 directories:
   output: dist
   buildResources: build
+# package.json 의 dependencies 는 files 와 상관없이 node_modules 로 asar 에 실린다. renderer 가
+# 쓰는 패키지는 vite 가 out/ 에 묶으므로 devDependencies 에 둔다 — dependencies 에는 main 이
+# 런타임에 불러오는 것만.
 files:
   - out/**
 extraResources:
