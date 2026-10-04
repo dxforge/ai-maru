@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/maru-session"]
+members = ["crates/maru", "crates/maru-session"]
 
 [workspace.package]
 edition = "2024"
