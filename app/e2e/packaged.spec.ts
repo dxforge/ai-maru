@@ -41,7 +41,6 @@ function asarTopLevel(asar: string): string[] {
   return Object.keys(header.files)
 }
 
-// renderer 패키지는 vite 가 out/ 에 묶으므로 dependencies 에 두면 asar 에 한 번 더 실린다.
 // main 이 런타임에 불러오는 패키지가 생기면 이 테스트를 그 패키지만 허용하게 바꾼다.
 test('설치본의 app.asar 에 node_modules 가 없다', () => {
   expect(asarTopLevel(join(installed, 'Contents/Resources/app.asar'))).not.toContain('node_modules')
