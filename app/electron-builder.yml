@@ -1,0 +1,22 @@
+appId: com.dxforge.ai-maru
+# 런타임 앱 이름은 번들 안 package.json 에서 온다. app/package.json 에 넣으면 dev 와 설치본이
+# userData·단일 인스턴스 잠금을 같이 써서, 설치본이 떠 있는 동안 dev 가 뜨지 못한다.
+extraMetadata:
+  productName: AI Maru
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+extraResources:
+  - from: ../core/target/release/maru-session
+    to: bin/maru-session
+  - from: ../core/target/release/maru
+    to: bin/maru
+mac:
+  target: dir
+  category: public.app-category.developer-tools
+  # 머신에 서명 인증서가 있어도 집어 쓰지 않는다 — 공증하지 않으므로 어느 머신에서 빌드해도 같게.
+  identity: '-'
+  # ad-hoc 서명에 hardened runtime 을 켜면 library validation 에 걸려 앱이 안 뜰 수 있다고 electron-builder 가 경고한다. 공증하지 않으면 필요 없다.
+  hardenedRuntime: false
