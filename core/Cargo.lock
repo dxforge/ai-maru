@@ -191,6 +191,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "nix",
  "serde_json",
  "tempfile",
 ]

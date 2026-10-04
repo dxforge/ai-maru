@@ -3,14 +3,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { afterAll, describe, expect, it } from 'vitest'
-import { putCanvas } from './canvas'
+import { canvasPut, putCanvas } from './canvas'
+import { InvalidParams } from './cli-server'
 
 const dir = mkdtempSync(join(tmpdir(), 'maru-canvas-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
-function fakeWindow() {
+function fakeWindow(destroyed = false) {
   const sent: [string, unknown][] = []
-  const win = { webContents: { send: (ch: string, v: unknown) => sent.push([ch, v]) } }
+  const win = {
+    isDestroyed: () => destroyed,
+    webContents: { send: (ch: string, v: unknown) => sent.push([ch, v]) }
+  }
   return { win: win as unknown as BrowserWindow, sent }
 }
 
@@ -67,5 +71,47 @@ describe('putCanvas', () => {
     const path = file('notes.txt', [1])
     await expect(putCanvas(win, { id: 'd', kind: 'image', path })).rejects.toThrow(/not an image/)
     expect(sent).toEqual([])
+  })
+})
+
+describe('canvasPut', () => {
+  it('id 를 주면 그대로 쓰고, 제목과 함께 마크다운 문서로 넣는다', async () => {
+    const { win, sent } = fakeWindow()
+    const res = await canvasPut(() => win)({ text: '# hi', id: 'd', title: 't' })
+    expect(res).toEqual({ id: 'd' })
+    expect(sent).toEqual([['canvas:put', { id: 'd', kind: 'markdown', text: '# hi', title: 't' }]])
+  })
+
+  it('id 가 없으면 새로 만들어 돌려주고, 부를 때마다 다르다', async () => {
+    const { win, sent } = fakeWindow()
+    const put = canvasPut(() => win)
+    const a = await put({ text: 'a' })
+    const b = await put({ text: 'b' })
+    expect(a.id).toEqual(expect.any(String))
+    expect(a.id).not.toBe('')
+    expect(a.id).not.toBe(b.id)
+    expect(sent[0]).toEqual(['canvas:put', { id: a.id, kind: 'markdown', text: 'a' }])
+  })
+
+  it.each([
+    [{}],
+    [{ text: 1 }],
+    [{ text: 'x', id: '' }],
+    [{ text: 'x', id: 3 }],
+    [{ text: 'x', title: null }]
+  ])('params %j 는 InvalidParams 이고 아무것도 보내지 않는다', async (params) => {
+    const { win, sent } = fakeWindow()
+    await expect(canvasPut(() => win)(params)).rejects.toBeInstanceOf(InvalidParams)
+    expect(sent).toEqual([])
+  })
+
+  it('창이 없거나 파괴됐으면 InvalidParams 가 아닌 오류로 던진다', async () => {
+    const gone = fakeWindow(true)
+    for (const window of [() => undefined, () => gone.win]) {
+      const err = await canvasPut(window)({ text: 'x' }).catch((e: unknown) => e)
+      expect(err).toBeInstanceOf(Error)
+      expect(err).not.toBeInstanceOf(InvalidParams)
+    }
+    expect(gone.sent).toEqual([])
   })
 })
