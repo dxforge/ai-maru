@@ -18,7 +18,12 @@ function sessionDir(): string {
 }
 
 function coreBin(override: string | undefined, name: string): string {
-  return override ?? join(app.getAppPath(), '../core/target/debug', name)
+  return (
+    override ??
+    (app.isPackaged
+      ? join(process.resourcesPath, 'bin', name)
+      : join(app.getAppPath(), '../core/target/debug', name))
+  )
 }
 
 function sessionBin(): string {
