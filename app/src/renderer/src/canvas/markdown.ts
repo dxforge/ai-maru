@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify'
+import { decodeHTML } from 'entities'
 import { Marked, type Token, type Tokens } from 'marked'
 
 // 문서 안의 이미지는 띄우지 않고 대체 텍스트만 남긴다 — 원격 주소는 CSP 가 막아 깨진 그림이 되고,
@@ -29,7 +30,9 @@ function plainText(tokens: Token[]): string {
   return tokens
     .map((t) => {
       if ('tokens' in t && t.tokens) return plainText(t.tokens)
-      return t.type === 'text' || t.type === 'codespan' || t.type === 'escape' ? t.text : ''
+      // marked 는 text 토큰의 숫자 참조만 풀고 이름 있는 참조(&amp; 등)는 남긴다.
+      if (t.type === 'text') return decodeHTML(t.text)
+      return t.type === 'codespan' || t.type === 'escape' ? t.text : ''
     })
     .join('')
 }

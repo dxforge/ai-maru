@@ -104,6 +104,12 @@ describe('문서 제목', () => {
     )
   })
 
+  it('heading 의 문자 참조는 본문처럼 풀고, 코드 안의 것은 글자 그대로 둔다', () => {
+    expect(
+      titleOf(md('a', '# Tom &amp; *J &lt;3&gt;* [&copy;](https://x) &#38; `&amp;` \\&amp;'))
+    ).toBe('Tom & J <3> © & &amp; &amp;')
+  })
+
   it('밑줄 heading 도 heading 이다', () => {
     expect(titleOf(md('a', '머리\n===\n'))).toBe('머리')
   })

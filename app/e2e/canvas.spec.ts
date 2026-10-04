@@ -200,6 +200,19 @@ test('문서의 dialog·popover 는 패널 밖으로 떠오르지 않는다', as
   await expect(panel(page)).toBeHidden()
 })
 
+test('목록의 제목은 본문 heading 과 같은 글자로 보인다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await put(app, {
+    id: 'a',
+    kind: 'markdown',
+    text: '# Tom &amp; *J &lt;3&gt;* [&copy;](https://x) &#38; `&amp;` \\&amp;'
+  })
+
+  const body = await markdown(page).locator('h1').textContent()
+  expect(body).toBe('Tom & J <3> © & &amp; &amp;')
+  await expect(titles(page)).toHaveText(body!)
+})
+
 test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터미널로 간다', async ({ launch }) => {
   const { app, page } = await launch()
   let n = 0
