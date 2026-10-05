@@ -21,7 +21,7 @@ function spawnTracked({ dir, bin, cli }: Target): Promise<string> {
 
 /**
  * 새로 고친 창의 옛 포트에 남은 attach 가 늦게 닿으면 새 연결의 primary 를 빼앗고 곧 끊기는데,
- * 세션은 다른 연결을 primary 로 올리지 않는다. 그래서 restore 는 그 창의 옛 연결을 모두 끊는다.
+ * 세션은 다른 연결을 primary 로 올리지 않는다.
  */
 const owned = new Map<number, Set<() => void>>()
 

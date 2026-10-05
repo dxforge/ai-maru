@@ -268,7 +268,6 @@ test('되살리는 동안 누른 ⌘N 은 되살린 뒤에 연다', async ({ lau
   await pressNew(app)
   await page.reload()
   await page.waitForSelector('.sidebar')
-  // 되살리기는 띄우는 중인 세션을 기다리므로 아직 끝나지 않았다.
   await pressNew(app)
 
   await expect(workspaceItems(page)).toHaveCount(3, { timeout: 10_000 })
@@ -295,4 +294,32 @@ test('되살리는 중에 utilityProcess 가 죽어도 살아 있는 세션을 �
   await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(2)
   await page.waitForTimeout(2000)
   expect(sockets(dataDir)).toHaveLength(2)
+})
+
+test('다른 곳을 눌러 터미널의 포커스가 빠진 뒤 선택된 workspace 를 누르면 키 입력이 다시 터미널로 간다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.send('canvas:put', {
+      id: 'a',
+      kind: 'markdown',
+      text: '# 문서\n\n본문\n'
+    })
+  )
+  const sidebar = page.locator('.sidebar')
+  const blurs = [
+    () => page.locator('.canvas .markdown p').click(),
+    async () => {
+      const box = (await sidebar.boundingBox())!
+      await sidebar.click({ position: { x: box.width / 2, y: box.height - 10 } })
+    }
+  ]
+
+  for (const [i, blur] of blurs.entries()) {
+    await blur()
+    await expect(page.locator('.terminal-view.active .xterm-helper-textarea')).not.toBeFocused()
+    await workspaceItems(page).first().click()
+    await run(page, `echo back-$((${i}+10))`, `back-${i + 10}`)
+  }
 })

@@ -18,6 +18,8 @@ const observer = new ResizeObserver(() => {
   if (session?.primary !== false) fit.fit()
 })
 
+defineExpose({ focus: () => term.focus() })
+
 watch(
   () => active,
   (now) => now && term.focus(),

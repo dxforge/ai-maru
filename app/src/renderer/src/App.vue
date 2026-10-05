@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick } from 'vue'
 import { createCanvas } from './canvas/store'
 import CanvasPanel from './components/CanvasPanel.vue'
 import TerminalView from './components/TerminalView.vue'
@@ -26,11 +27,25 @@ void window.maru
     for (; pendingNew; pendingNew--) workspaces.open()
     pendingNew = null
   })
+
+type Terminal = InstanceType<typeof TerminalView>
+const terminals = new Map<number, Terminal>()
+function setTerminal(key: number, t: unknown): void {
+  if (t) terminals.set(key, t as Terminal)
+  else terminals.delete(key)
+}
+
+// 선택이 그대로인 클릭에서는 TerminalView 의 active watch 가 돌지 않아 여기서 포커스를 준다.
+// 보이지 않는 터미널은 포커스를 받지 못하므로 선택이 화면에 반영된 뒤에 준다.
+async function selectWorkspace(key: number): Promise<void> {
+  workspaces.select(key)
+  await nextTick()
+  terminals.get(key)?.focus()
+}
 </script>
 
 <template>
   <div class="app">
-    <!-- 사이드바의 버튼은 포커스를 가져가지 않는다 — 누른 뒤에도 키 입력은 터미널로 간다. -->
     <nav class="sidebar">
       <button
         v-for="w in workspaces.list.value"
@@ -38,7 +53,7 @@ void window.maru
         class="workspace"
         :class="{ selected: w.key === workspaces.selectedKey.value }"
         @mousedown.prevent
-        @click="workspaces.select(w.key)"
+        @click="selectWorkspace(w.key)"
       >
         Shell
       </button>
@@ -47,6 +62,7 @@ void window.maru
       <TerminalView
         v-for="w in workspaces.list.value"
         :key="w.key"
+        :ref="(t) => setTerminal(w.key, t)"
         :session-id="w.sessionId"
         :active="w.key === workspaces.selectedKey.value"
         @exit="workspaces.close(w.key)"
