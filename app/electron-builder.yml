@@ -18,6 +18,8 @@ extraResources:
     to: bin/maru
   - from: resources/zsh/.zshenv
     to: zsh/.zshenv
+  - from: resources/claude-plugin
+    to: claude-plugin
 mac:
   target: dir
   category: public.app-category.developer-tools

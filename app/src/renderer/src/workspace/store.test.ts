@@ -10,6 +10,15 @@ function opened(n: number) {
 const keys = (ws: ReturnType<typeof createWorkspaces>) => ws.list.value.map((w) => w.key)
 
 describe('workspaces', () => {
+  it('새로 띄운 세션의 id 를 그 workspace 에 단다', () => {
+    const ws = createWorkspaces()
+    ws.open()
+    ws.open()
+    const [first] = keys(ws)
+    ws.setSessionId(first, 's-9')
+    expect(ws.list.value.map((w) => w.sessionId)).toEqual(['s-9', undefined])
+  })
+
   it('연 workspace 는 목록 끝에 붙고 선택된다', () => {
     const ws = opened(2)
     ws.open()

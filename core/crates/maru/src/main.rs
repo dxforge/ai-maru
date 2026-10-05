@@ -5,6 +5,11 @@
 //! - `MARU_SOCKET` — 앱이 듣는 유닉스 도메인 소켓 경로
 //! - `MARU_SESSION_ID` — 그 터미널의 세션 id
 //!
+//! 앱의 zsh 함수와 claude plugin 이 쓰는 값도 넣는다.
+//!
+//! - `MARU_CLI` — 이 빌드의 `maru` 절대경로. PATH 에서 찾으면 이름이 같은 다른 CLI 가 불릴 수 있다.
+//! - `MARU_CLAUDE_PLUGIN` — claude 에 `--plugin-dir` 로 싣는 앱 plugin 디렉토리
+//!
 //! # 프로토콜
 //!
 //! 줄 단위 JSON-RPC 2.0 이다. 연결 하나에 요청 한 줄(`\n` 까지, 줄바꿈 없이 EOF 면 거기까지)을
@@ -39,9 +44,17 @@
 //! |---|---|---|
 //! | `ping` | 없음 | `{"session":<받은 세션 id>}` |
 //! | `canvas.put` | `text`(문자열), `id`(빈 문자열이 아닌 문자열, 선택), `title`(문자열, 선택) | `{"id":<문서 id>}` |
+//! | `claude.hook` | `event`(문자열), `claude_session`(빈 문자열이 아닌 문자열), `config_dir`(절대경로 문자열), `source`(문자열, 선택) | `null` |
+//! | `claude.exit` | 없음 | `null` |
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
 //! `id` 가 없으면 앱이 새 id 를 만든다. id 는 형식 없는 문자열이다.
+//!
+//! `claude.hook` 은 그 터미널에서 돌고 있는 claude 의 hook 을 알린다. `event` 는 hook 이름
+//! (`hook_event_name`)이고 앱은 모르는 이름을 받고 무시한다. `claude_session` 은 claude 의
+//! `session_id`, `config_dir` 은 claude 가 `sessions/` 를 두는 디렉토리다. `source` 는 hook 입력에
+//! `source`(`SessionStart` 의 `startup`·`compact` 등)가 있을 때만 그 값을 옮긴다. `claude.exit` 는 그
+//! 터미널의 claude 가 끝났다고 알린다.
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
@@ -75,6 +88,21 @@ enum Command {
         #[command(subcommand)]
         command: CanvasCommand,
     },
+    /// Report a claude running in this terminal. The app's zsh function and claude plugin
+    /// call these.
+    #[command(hide = true)]
+    Claude {
+        #[command(subcommand)]
+        command: ClaudeCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ClaudeCommand {
+    /// Forward the claude hook payload on stdin.
+    Hook,
+    /// Say that claude has exited.
+    Exit,
 }
 
 #[derive(Subcommand)]
@@ -133,8 +161,48 @@ fn run(command: Command) -> Result<()> {
             let id = canvas_put(id, title, file)?;
             writeln!(std::io::stdout(), "{id}")?;
         }
+        Command::Claude { command } => match command {
+            ClaudeCommand::Hook => claude_hook()?,
+            ClaudeCommand::Exit => {
+                call(&target()?, "claude.exit", Map::new())?;
+            }
+        },
     }
     Ok(())
+}
+
+fn claude_hook() -> Result<()> {
+    let target = target()?;
+    let payload: Value = serde_json::from_reader(std::io::stdin().lock())
+        .map_err(|e| anyhow!("stdin is not a hook payload: {e}"))?;
+    let field = |name: &str| -> Result<Value> {
+        match &payload[name] {
+            Value::String(s) if !s.is_empty() => Ok(s.as_str().into()),
+            _ => bail!("the hook payload has no {name}"),
+        }
+    };
+    let mut params = Map::new();
+    params.insert("event".into(), field("hook_event_name")?);
+    params.insert("claude_session".into(), field("session_id")?);
+    params.insert("config_dir".into(), claude_config_dir()?.into());
+    if let Some(source @ Value::String(_)) = payload.get("source") {
+        params.insert("source".into(), source.clone());
+    }
+    call(&target, "claude.hook", params)?;
+    Ok(())
+}
+
+fn claude_config_dir() -> Result<String> {
+    let dir = match env_var("CLAUDE_CONFIG_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => PathBuf::from(env_var("HOME").ok_or_else(|| anyhow!("HOME is not set"))?)
+            .join(".claude"),
+    };
+    let dir =
+        std::path::absolute(&dir).with_context(|| format!("cannot resolve {}", dir.display()))?;
+    dir.into_os_string()
+        .into_string()
+        .map_err(|_| anyhow!("the claude config directory is not UTF-8"))
 }
 
 fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) -> Result<String> {
