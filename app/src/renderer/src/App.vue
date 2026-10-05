@@ -14,8 +14,10 @@ const workspaces = createWorkspaces()
 // 되살린 뒤에 연다.
 let pendingNew: number | null = 0
 window.maru.onNewWorkspace(() => {
-  if (pendingNew === null) workspaces.open(undefined, workspaces.selected()?.cwd)
-  else pendingNew++
+  if (pendingNew === null) {
+    const w = workspaces.selected()
+    workspaces.open(undefined, w?.cwd ?? w?.startDir)
+  } else pendingNew++
 })
 // 거절은 session host 가 답하기 전에 죽었다는 뜻이다. 다시 청하면 새 host 가 답한다.
 void window.maru

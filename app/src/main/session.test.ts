@@ -2,9 +2,19 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { killSessions, sessionEnv, shellEnv, socketPath, startDir, utf8Locale } from './session'
+
+const hang = vi.hoisted(() => ({ path: undefined as string | undefined }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...real,
+    access: (path: string, mode?: number) =>
+      path === hang.path ? new Promise<void>(() => {}) : real.access(path, mode)
+  }
+})
 
 describe('utf8Locale', () => {
   it('지역 태그를 로케일 이름으로 바꾼다', () => {
@@ -85,27 +95,36 @@ describe('startDir', () => {
   const file = join(dir, 'f')
   writeFileSync(file, '')
 
-  it('있는 디렉토리면 그곳이다', () => {
-    expect(startDir(dir, '/home')).toBe(dir)
+  it('있는 디렉토리면 그곳이다', async () => {
+    expect(await startDir(dir, '/home')).toBe(dir)
   })
 
-  it('없거나 파일이거나 상대경로면 홈이다', () => {
-    expect(startDir(join(dir, 'gone'), '/home')).toBe('/home')
-    expect(startDir(file, '/home')).toBe('/home')
-    expect(startDir('.', '/home')).toBe('/home')
+  it('없거나 파일이거나 상대경로면 홈이다', async () => {
+    expect(await startDir(join(dir, 'gone'), '/home')).toBe('/home')
+    expect(await startDir(file, '/home')).toBe('/home')
+    expect(await startDir('.', '/home')).toBe('/home')
   })
 
-  it('주지 않으면 홈이다', () => {
-    expect(startDir(undefined, '/home')).toBe('/home')
+  it('응답하지 않는 디렉토리를 검사하는 동안에도 다른 일이 돈다', async () => {
+    hang.path = join(dir, 'stuck')
+    let settled = false
+    void startDir(hang.path, '/home').then(() => (settled = true))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(settled).toBe(false)
+    hang.path = undefined
   })
 
-  it('들어갈 권한이 없으면 홈이다', () => {
+  it('주지 않으면 홈이다', async () => {
+    expect(await startDir(undefined, '/home')).toBe('/home')
+  })
+
+  it('들어갈 권한이 없으면 홈이다', async () => {
     const locked = join(dir, 'locked')
     mkdirSync(join(locked, 'inner'), { recursive: true })
     chmodSync(locked, 0o000)
     try {
-      expect(startDir(join(locked, 'inner'), '/home')).toBe('/home')
-      expect(startDir(locked, '/home')).toBe('/home')
+      expect(await startDir(join(locked, 'inner'), '/home')).toBe('/home')
+      expect(await startDir(locked, '/home')).toBe('/home')
     } finally {
       chmodSync(locked, 0o755)
     }

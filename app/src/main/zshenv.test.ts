@@ -33,7 +33,7 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv', () => {
     const dir = join(h, 'a b', '한글')
     mkdirSync(dir, { recursive: true })
     const encoded = `${realpathSync(h)}/a%20b/%ED%95%9C%EA%B8%80`
-    expect(loginShell(h, '_maru_osc7', dir)).toBe(`\x1b]7;file://mac${encoded}\x07`)
+    expect(loginShell(h, '_maru_osc7', dir)).toBe(`\x1b]7;file://${encoded}\x07`)
   })
 
   it('프롬프트마다 돌도록 precmd 에 단다', () => {

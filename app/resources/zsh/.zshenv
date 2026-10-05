@@ -15,7 +15,8 @@ _maru_osc7() {
       out+=$hex
     fi
   done
-  printf '\e]7;file://%s%s\a' $HOST $out
+  # 호스트를 비워야 앱이 ssh 로 붙은 다른 머신의 OSC 7 과 가른다.
+  printf '\e]7;file://%s\a' $out
 }
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _maru_osc7

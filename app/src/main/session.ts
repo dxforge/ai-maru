@@ -1,15 +1,7 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import {
-  accessSync,
-  closeSync,
-  constants,
-  existsSync,
-  mkdirSync,
-  openSync,
-  statSync
-} from 'node:fs'
-import { readdir, readFile, rm } from 'node:fs/promises'
+import { closeSync, constants, existsSync, mkdirSync, openSync } from 'node:fs'
+import { access, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
@@ -163,11 +155,11 @@ export function shellEnv(env: NodeJS.ProcessEnv, id: string, setup: ShellSetup):
   }
 }
 
-export function startDir(cwd: string | undefined, home = homedir()): string {
+export async function startDir(cwd: string | undefined, home = homedir()): Promise<string> {
   if (!cwd || !isAbsolute(cwd)) return home
   try {
-    accessSync(cwd, constants.X_OK)
-    return statSync(cwd).isDirectory() ? cwd : home
+    await access(cwd, constants.X_OK)
+    return (await stat(cwd)).isDirectory() ? cwd : home
   } catch {
     return home
   }

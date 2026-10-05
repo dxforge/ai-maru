@@ -72,7 +72,6 @@ test('앱을 켜면 홈 디렉토리에서 workspace 하나를 연다', async ({
   expect(sockets(dataDir)).toHaveLength(1)
 })
 
-// bash 는 OSC 7 을 보내지 않아, cd 해도 workspace 의 디렉토리는 셸을 띄운 홈이다.
 test('bash 에서 ⌘N 은 cd 와 상관없이 홈 디렉토리에서 새 세션으로 새 workspace 를 열고 그것을 선택한다', async ({
   launch,
   dataDir
@@ -368,6 +367,52 @@ test('zsh 에서 ⌘N 은 선택된 workspace 의 디렉토리에서 연다', as
   await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
   await page.keyboard.type('cd ~\n')
   await expect(workspaceItems(page)).toHaveText(['proj', 'home'])
+})
+
+test('zsh 에서 ⌘N 을 연달아 눌러도 선택된 workspace 의 디렉토리에서 연다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'proj')
+  const { app, page } = await launch({
+    SHELL: '/bin/zsh',
+    HOME: home,
+    MARU_SESSION_BIN: slowSessionBin(dataDir)
+  })
+  await expect(rows(page)).toContainText('%', { timeout: 10_000 })
+  await page.keyboard.type('cd proj\n')
+  await expect(workspaceItems(page)).toHaveText(['proj'])
+
+  await pressNew(app)
+  await expect(workspaceItems(page)).toHaveCount(2)
+  await pressNew(app)
+
+  await expect(workspaceItems(page)).toHaveText(['proj', 'proj', 'proj'], { timeout: 10_000 })
+  await activeTerminal(page)
+  await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
+})
+
+test('zsh 에서 호스트가 실린 OSC 7 은 이름과 ⌘N 의 디렉토리에 쓰지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'proj', 'remote')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await page.keyboard.type('cd proj\n')
+  await expect(workspaceItems(page)).toHaveText(['proj'])
+
+  // ssh 로 붙은 원격 셸처럼, 이 앱의 zsh 가 다시 OSC 7 을 보내지 않게 bash 로 바꾼다.
+  await page.keyboard.type(
+    `printf '\\e]7;file://remote.example%s\\a' "$HOME/remote"; exec bash --norc --noprofile\n`
+  )
+  await run(page, 'echo in-bash-$((1+1))', 'in-bash-2')
+  await expect(workspaceItems(page)).toHaveText(['proj'])
+
+  await newWorkspace(launched, 2)
+
+  await expect(workspaceItems(page)).toHaveText(['proj', 'proj'])
+  await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
 })
 
 test('zsh 에서 선택된 workspace 의 디렉토리가 지워졌으면 ⌘N 은 홈에서 연다', async ({

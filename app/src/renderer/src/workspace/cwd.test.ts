@@ -2,25 +2,23 @@ import { describe, expect, it } from 'vitest'
 import { osc7Path, workspaceName } from './cwd'
 
 describe('osc7Path', () => {
-  it('호스트가 있는 file URL 에서 경로를 꺼낸다', () => {
-    expect(osc7Path('file://mac.local/tmp/a/src')).toBe('/tmp/a/src')
-  })
-
-  it('호스트가 없어도 경로를 꺼낸다', () => {
-    expect(osc7Path('file:///tmp')).toBe('/tmp')
+  it('호스트가 빈 file URL 에서 경로를 꺼낸다', () => {
+    expect(osc7Path('file:///tmp/a/src')).toBe('/tmp/a/src')
   })
 
   it('퍼센트 인코딩한 공백·한글을 푼다', () => {
-    expect(osc7Path('file://h/tmp/a%20b/%ED%95%9C%EA%B8%80')).toBe('/tmp/a b/한글')
+    expect(osc7Path('file:///tmp/a%20b/%ED%95%9C%EA%B8%80')).toBe('/tmp/a b/한글')
   })
 
-  it('URL 로는 읽히지 않는 호스트 이름이어도 경로를 꺼낸다', () => {
-    expect(osc7Path('file://foo.1/tmp')).toBe('/tmp')
+  it('호스트가 있으면 ssh 로 붙은 다른 머신의 경로일 수 있어 버린다', () => {
+    expect(osc7Path('file://remote.example/tmp')).toBeNull()
+    expect(osc7Path('file://foo.1/tmp')).toBeNull()
+    expect(osc7Path('file://localhost/tmp')).toBeNull()
   })
 
   it('file 이 아니거나 깨진 값은 버린다', () => {
     expect(osc7Path('http://h/tmp')).toBeNull()
-    expect(osc7Path('file://h/tmp/%E0%A4%A')).toBeNull()
+    expect(osc7Path('file:///tmp/%E0%A4%A')).toBeNull()
     expect(osc7Path('not a url')).toBeNull()
   })
 })

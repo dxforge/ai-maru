@@ -16,11 +16,16 @@ export type OpenRequest = Target & { type: 'open'; owner: number; id?: string; c
 export type RestoreRequest = { type: 'restore'; owner: number; dir: string }
 type HostRequest = OpenRequest | RestoreRequest
 
-/** 새로 고친 창이 띄우는 중이던 세션을 잃지도, 하나 더 띄우지도 않게 restore 가 기다린다. */
-const spawning = new Set<Promise<string>>()
+type Spawned = { id: string; cwd: string }
 
-function spawnTracked({ dir, bin, setup }: Target, cwd: string): Promise<string> {
-  const p = spawnSession(bin, dir, setup, cwd)
+/** 새로 고친 창이 띄우는 중이던 세션을 잃지도, 하나 더 띄우지도 않게 restore 가 기다린다. */
+const spawning = new Set<Promise<Spawned>>()
+
+function spawnTracked({ dir, bin, setup }: Target, requested?: string): Promise<Spawned> {
+  const p = startDir(requested).then(async (cwd) => ({
+    id: await spawnSession(bin, dir, setup, cwd),
+    cwd
+  }))
   spawning.add(p)
   p.finally(() => spawning.delete(p)).catch(() => {})
   return p
@@ -38,10 +43,10 @@ function dropOwned(owner: number): void {
 }
 
 async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
-  const spawnedIn = req.id ? undefined : startDir(req.cwd)
   // restore 가 기다릴 수 있게 await 전에 띄운다.
-  const resolving =
-    spawnedIn === undefined ? Promise.resolve(req.id!) : spawnTracked(req, spawnedIn)
+  const resolving: Promise<{ id: string; cwd?: string }> = req.id
+    ? Promise.resolve({ id: req.id })
+    : spawnTracked(req, req.cwd)
   let superseded = false
   let sock: Socket | undefined
   const drop = (): void => {
@@ -52,7 +57,7 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
   const mine = owned.get(req.owner) ?? new Set()
   owned.set(req.owner, mine.add(drop))
   try {
-    const id = await resolving
+    const { id, cwd } = await resolving
     if (superseded) return
     sock = await connect(socketPath(req.dir, id))
     if (superseded) {
@@ -60,8 +65,7 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
       return
     }
     sock.on('close', () => mine.delete(drop))
-    if (spawnedIn !== undefined)
-      port.postMessage(JSON.stringify({ type: 'spawned', cwd: spawnedIn }))
+    if (cwd !== undefined) port.postMessage(JSON.stringify({ type: 'spawned', cwd }))
     bridge(sock, port)
   } catch (err) {
     mine.delete(drop)
