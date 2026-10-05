@@ -44,7 +44,7 @@
 //! |---|---|---|
 //! | `ping` | 없음 | `{"session":<받은 세션 id>}` |
 //! | `canvas.put` | `text`(문자열), `id`(빈 문자열이 아닌 문자열, 선택), `title`(문자열, 선택) | `{"id":<문서 id>}` |
-//! | `claude.hook` | `event`(문자열), `claude_session`(빈 문자열이 아닌 문자열), `config_dir`(절대경로 문자열) | `null` |
+//! | `claude.hook` | `event`(문자열), `claude_session`(빈 문자열이 아닌 문자열), `config_dir`(절대경로 문자열), `source`(문자열, 선택) | `null` |
 //! | `claude.exit` | 없음 | `null` |
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
@@ -52,7 +52,8 @@
 //!
 //! `claude.hook` 은 그 터미널에서 돌고 있는 claude 의 hook 을 알린다. `event` 는 hook 이름
 //! (`hook_event_name`)이고 앱은 모르는 이름을 받고 무시한다. `claude_session` 은 claude 의
-//! `session_id`, `config_dir` 은 claude 가 `sessions/` 를 두는 디렉토리다. `claude.exit` 는 그
+//! `session_id`, `config_dir` 은 claude 가 `sessions/` 를 두는 디렉토리다. `source` 는 hook 입력에
+//! `source`(`SessionStart` 의 `startup`·`compact` 등)가 있을 때만 그 값을 옮긴다. `claude.exit` 는 그
 //! 터미널의 claude 가 끝났다고 알린다.
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -184,6 +185,9 @@ fn claude_hook() -> Result<()> {
     params.insert("event".into(), field("hook_event_name")?);
     params.insert("claude_session".into(), field("session_id")?);
     params.insert("config_dir".into(), claude_config_dir()?.into());
+    if let Some(source @ Value::String(_)) = payload.get("source") {
+        params.insert("source".into(), source.clone());
+    }
     call(&target, "claude.hook", params)?;
     Ok(())
 }

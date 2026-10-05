@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { expect, test, workspaceItems } from './app'
+import { expect, pressNew, test, workspaceItems } from './app'
 
 const dot = (page: Page) => workspaceItems(page).locator('.claude-dot')
 
@@ -34,7 +34,6 @@ test('hook 없이 claude 의 상태 파일이 idle 이 되면 쉬는 중으로 �
   const { page } = await launch({ CLAUDE_CONFIG_DIR: config })
   await page.keyboard.type(hook('UserPromptSubmit'))
   await expect(dot(page)).toHaveClass(/working/)
-  // 앱이 hook 을 받은 시각보다 뒤에 쓴 상태여야 받는다.
   writeFileSync(
     join(config, 'sessions', '1.json'),
     JSON.stringify({ sessionId: 'c-1', status: 'idle', statusUpdatedAt: Date.now() + 60_000 })
@@ -46,10 +45,7 @@ test('점은 그 터미널의 workspace 에만, 띠는 선택된 workspace 의 �
   launch
 }) => {
   const { app, page } = await launch()
-  // Playwright 의 키 입력은 macOS 메뉴를 거치지 않아 메뉴 항목을 직접 누른다.
-  await app.evaluate(({ Menu }) =>
-    Menu.getApplicationMenu()!.getMenuItemById('new-workspace')!.click()
-  )
+  await pressNew(app)
   await expect(workspaceItems(page)).toHaveCount(2)
   await page.waitForSelector('.terminal-view.active .xterm-screen')
   await page.keyboard.type(hook('UserPromptSubmit'))

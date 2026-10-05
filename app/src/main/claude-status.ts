@@ -111,7 +111,6 @@ export function createClaudeStatus({
 
   async function pollOne(session: string, e: Entry): Promise<void> {
     const s = await find(e)
-    // 읽는 동안 exit 나 idle 로 가는 hook 이 왔으면 이 결과를 버린다.
     if (entries.get(session) !== e || !e.polling || s === null) return
     if (s === 'gone') {
       e.polling = false
@@ -147,7 +146,8 @@ export function createClaudeStatus({
         throw new InvalidParams('params.config_dir must be an absolute path')
       }
       const state = HOOK_STATES.get(event)
-      if (!state) return null
+      // 자동 compact 는 턴 도중에도 SessionStart 를 보낸다. 상태는 폴링이 따라간다.
+      if (!state || (event === 'SessionStart' && params.source === 'compact')) return null
       const e = entries.get(session) ?? {
         state,
         claudeSession,

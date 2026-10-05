@@ -62,6 +62,17 @@ describe('claude-status 의 hook', () => {
     s.close()
   })
 
+  it.each(['startup', 'resume', 'clear'])('SessionStart 의 %s 는 idle', async (source) => {
+    const { s, hook } = setup()
+    await hook('UserPromptSubmit')
+    await s.handlers['claude.hook'](
+      { event: 'SessionStart', source, claude_session: 'c-1', config_dir: '/cfg' },
+      's-1'
+    )
+    expect(s.snapshot()).toEqual({ 's-1': 'idle' })
+    s.close()
+  })
+
   it('모르는 이벤트로는 항목을 만들지 않는다', async () => {
     const { s, sent, hook } = setup()
     await hook('PostToolUse')
@@ -248,6 +259,25 @@ describe('claude-status 의 상태 파일 폴링', () => {
     statusFile(dir, 10, { sessionId: 'c-2', status: 'idle', statusUpdatedAt: now() })
     await s.poll()
     expect(s.snapshot()).toEqual({ 's-1': 'idle' })
+    s.close()
+  })
+
+  it('턴 도중 compact 의 SessionStart 는 상태와 폴링을 그대로 둔다', async () => {
+    const { s, sent, hook, tick, now } = setup()
+    const dir = configDir()
+    await hook('UserPromptSubmit', 'c-1', dir)
+    tick(1)
+    const compact = { event: 'SessionStart', source: 'compact', claude_session: 'c-1' }
+    await s.handlers['claude.hook']({ ...compact, config_dir: dir }, 's-1')
+    expect(s.snapshot()).toEqual({ 's-1': 'working' })
+    tick(1)
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'idle', statusUpdatedAt: now() })
+    await s.poll()
+    expect(s.snapshot()).toEqual({ 's-1': 'idle' })
+    expect(sent).toEqual([
+      ['s-1', 'working'],
+      ['s-1', 'idle']
+    ])
     s.close()
   })
 

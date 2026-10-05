@@ -5,6 +5,7 @@ import {
   expect,
   type Launched,
   gridRows,
+  pressNew,
   resizeBy,
   rows,
   sessionFiles,
@@ -17,13 +18,6 @@ import {
 
 async function activeTerminal(page: Page): Promise<void> {
   await page.waitForSelector('.terminal-view.active .xterm-screen')
-}
-
-// Playwright 의 키 입력은 macOS 메뉴를 거치지 않아 메뉴 항목을 직접 누른다.
-async function pressNew(app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ Menu }) =>
-    Menu.getApplicationMenu()!.getMenuItemById('new-workspace')!.click()
-  )
 }
 
 async function newWorkspace({ app, page }: Launched, count: number): Promise<void> {

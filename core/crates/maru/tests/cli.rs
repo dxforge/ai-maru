@@ -583,6 +583,22 @@ fn claude_hook_forwards_the_event_and_session_silently() {
     assert_eq!(req["params"]["claude_session"], "c-1");
     assert_eq!(req["params"]["config_dir"], "/h/.claude");
     assert!(req["params"].get("prompt").is_none(), "{req}");
+    assert!(req["params"].get("source").is_none(), "{req}");
+}
+
+#[test]
+fn claude_hook_forwards_the_session_start_source() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, Value::Null));
+
+    let input = br#"{"session_id":"c-1","hook_event_name":"SessionStart","source":"compact"}"#;
+    let out = maru_claude(&sock, &["claude", "hook"], input, &[]);
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    let req = server.join().unwrap();
+    assert_eq!(req["params"]["event"], "SessionStart");
+    assert_eq!(req["params"]["source"], "compact");
 }
 
 #[test]
