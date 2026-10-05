@@ -79,13 +79,11 @@ async function readRecords(dir: string): Promise<SessionRecord[]> {
   return parsed.filter((r): r is SessionRecord => r !== null)
 }
 
-export async function findLiveSession(dir: string): Promise<string | null> {
+export async function liveSessions(dir: string): Promise<string[]> {
   const records = await readRecords(dir)
-  records.sort((a, b) => b.created_at_ms - a.created_at_ms)
-  for (const rec of records) {
-    if (await isLive(socketPath(dir, rec.id))) return rec.id
-  }
-  return null
+  records.sort((a, b) => a.created_at_ms - b.created_at_ms)
+  const live = await Promise.all(records.map((rec) => isLive(socketPath(dir, rec.id))))
+  return records.filter((_, i) => live[i]).map((rec) => rec.id)
 }
 
 /**

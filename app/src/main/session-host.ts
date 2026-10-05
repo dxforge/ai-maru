@@ -1,31 +1,38 @@
 import type { Socket } from 'node:net'
 import type { MessagePortMain } from 'electron'
 import { bridge } from './bridge'
-import { connect, findLiveSession, socketPath, spawnSession, type CliAccess } from './session'
+import { connect, liveSessions, socketPath, spawnSession, type CliAccess } from './session'
 
-export type OpenRequest = { type: 'open'; owner: number; dir: string; bin: string; cli: CliAccess }
+type Target = { dir: string; bin: string; cli: CliAccess }
 
-/** 찾기와 띄우기 사이에 다른 요청이 끼면 둘 다 세션이 없다고 보고 하나씩 띄운다. */
-const resolving = new Map<string, Promise<string>>()
+export type OpenRequest = Target & { type: 'open'; owner: number; id?: string }
+export type RestoreRequest = { type: 'restore'; owner: number; dir: string }
+type HostRequest = OpenRequest | RestoreRequest
 
-function resolveSession(dir: string, bin: string, cli: CliAccess): Promise<string> {
-  let p = resolving.get(dir)
-  if (!p) {
-    p = (async () => (await findLiveSession(dir)) ?? (await spawnSession(bin, dir, cli)))()
-    resolving.set(dir, p)
-    p.finally(() => resolving.delete(dir)).catch(() => {})
-  }
+/** 새로 고친 창이 띄우는 중이던 세션을 잃지도, 하나 더 띄우지도 않게 restore 가 기다린다. */
+const spawning = new Set<Promise<string>>()
+
+function spawnTracked({ dir, bin, cli }: Target): Promise<string> {
+  const p = spawnSession(bin, dir, cli)
+  spawning.add(p)
+  p.finally(() => spawning.delete(p)).catch(() => {})
   return p
 }
 
 /**
- * 창마다 연결을 하나만 둔다. 새로 고친 창의 옛 포트에 남은 attach 가 늦게 닿으면 새 연결의
- * primary 를 빼앗고 곧 끊기는데, 세션은 다른 연결을 primary 로 올리지 않는다.
+ * 새로 고친 창의 옛 포트에 남은 attach 가 늦게 닿으면 새 연결의 primary 를 빼앗고 곧 끊기는데,
+ * 세션은 다른 연결을 primary 로 올리지 않는다. 그래서 restore 는 그 창의 옛 연결을 모두 끊는다.
  */
-const owned = new Map<number, () => void>()
+const owned = new Map<number, Set<() => void>>()
+
+function dropOwned(owner: number): void {
+  for (const drop of owned.get(owner) ?? []) drop()
+  owned.delete(owner)
+}
 
 async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
-  owned.get(req.owner)?.()
+  // restore 가 기다릴 수 있게 await 전에 띄운다.
+  const resolving = req.id ? Promise.resolve(req.id) : spawnTracked(req)
   let superseded = false
   let sock: Socket | undefined
   const drop = (): void => {
@@ -33,20 +40,20 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
     sock?.destroy()
     port.close()
   }
-  owned.set(req.owner, drop)
+  const mine = owned.get(req.owner) ?? new Set()
+  owned.set(req.owner, mine.add(drop))
   try {
-    const id = await resolveSession(req.dir, req.bin, req.cli)
+    const id = await resolving
     if (superseded) return
     sock = await connect(socketPath(req.dir, id))
     if (superseded) {
       sock.destroy()
       return
     }
-    sock.on('close', () => {
-      if (owned.get(req.owner) === drop) owned.delete(req.owner)
-    })
+    sock.on('close', () => mine.delete(drop))
     bridge(sock, port)
   } catch (err) {
+    mine.delete(drop)
     if (superseded) return
     port.postMessage(
       JSON.stringify({
@@ -60,7 +67,15 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
   }
 }
 
+async function restore(req: RestoreRequest, reply: MessagePortMain): Promise<void> {
+  dropOwned(req.owner)
+  await Promise.allSettled(spawning)
+  reply.postMessage(await liveSessions(req.dir))
+  reply.close()
+}
+
 process.parentPort.on('message', (e) => {
-  const req = e.data as OpenRequest
+  const req = e.data as HostRequest
   if (req.type === 'open') void open(req, e.ports[0])
+  else if (req.type === 'restore') void restore(req, e.ports[0])
 })

@@ -24,12 +24,13 @@ function fakeTerminal(cols: number, rows: number) {
 
 function fakeConnection() {
   let deliver: (msg: SessionMessage) => void = () => {}
+  let close: () => void = () => {}
   const conn: SessionConnection = {
     send: () => {},
     onMessage: (cb) => (deliver = cb),
-    onClose: () => {}
+    onClose: (cb) => (close = cb)
   }
-  return { conn, deliver: (msg: SessionMessage) => deliver(msg) }
+  return { conn, deliver: (msg: SessionMessage) => deliver(msg), close: () => close() }
 }
 
 describe('attach', () => {
@@ -67,5 +68,24 @@ describe('attach', () => {
     const replayAndOutput = new TextEncoder().encode('replay\r\nmore output')
     deliver(replayAndOutput)
     expect(term.written).toEqual([replayAndOutput])
+  })
+
+  it('셸이 끝난 뒤 연결이 닫히면 끊김을 보이지 않는다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, deliver, close } = fakeConnection()
+    let exits = 0
+    attach(term as unknown as Terminal, conn, { onExit: () => exits++ })
+    deliver(JSON.stringify({ type: 'exit' }))
+    close()
+    expect(exits).toBe(1)
+    expect(term.written).toEqual([])
+  })
+
+  it('셸이 끝나지 않았는데 연결이 닫히면 끊김을 보인다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, close } = fakeConnection()
+    attach(term as unknown as Terminal, conn, { onExit: () => {} })
+    close()
+    expect(String(term.written)).toContain('disconnected from the session')
   })
 })

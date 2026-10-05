@@ -7,16 +7,17 @@ export interface SessionConnection {
   onClose(cb: () => void): void
 }
 
-/** 세션을 찾거나 띄우는 데 실패하면 연결로 `{"type":"error"}` 가 오고 닫힌다. */
-export function openSession(): Promise<SessionConnection> {
+/** 세션에 붙거나 띄우는 데 실패하면 연결로 `{"type":"error"}` 가 오고 닫힌다. */
+export function openSession(id?: string): Promise<SessionConnection> {
+  const key = crypto.randomUUID()
   return new Promise((resolve) => {
     const onPort = (e: MessageEvent): void => {
-      if (e.source !== window || e.data !== 'session:port') return
+      if (e.source !== window || e.data?.type !== 'session:port' || e.data.key !== key) return
       window.removeEventListener('message', onPort)
       resolve(portConnection(e.ports[0]))
     }
     window.addEventListener('message', onPort)
-    window.maru.openSession()
+    window.maru.openSession(key, id)
   })
 }
 
