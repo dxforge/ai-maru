@@ -1,10 +1,20 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PROTOCOL_VERSION } from '../shared/protocol'
-import { killSessions, sessionEnv, shellEnv, socketPath, utf8Locale } from './session'
+import { killSessions, sessionEnv, shellEnv, socketPath, startDir, utf8Locale } from './session'
+
+const hang = vi.hoisted(() => ({ path: undefined as string | undefined }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...real,
+    access: (path: string, mode?: number) =>
+      path === hang.path ? new Promise<void>(() => {}) : real.access(path, mode)
+  }
+})
 
 describe('utf8Locale', () => {
   it('지역 태그를 로케일 이름으로 바꾼다', () => {
@@ -29,7 +39,6 @@ describe('sessionEnv', () => {
     const env = sessionEnv({
       PATH: '/bin',
       CLAUDE_EFFORT: 'high',
-      ZDOTDIR: '/z',
       AI_MARU_TTY: 't',
       CLAUDECODE: '1',
       CLAUDE_PID: '1',
@@ -43,14 +52,16 @@ describe('sessionEnv', () => {
 
 describe('shellEnv', () => {
   const cli = { socket: '/data/s/app.sock', bin: '/build/bin/maru' }
+  const setup = { cli, zdotdir: '/res/zsh' }
 
   it('앱 소켓과 세션 id 를 넣고 CLI 의 디렉토리를 PATH 앞에 붙인다', () => {
-    const env = shellEnv({ PATH: '/usr/bin:/bin', HOME: '/h' }, 's-1', cli)
+    const env = shellEnv({ PATH: '/usr/bin:/bin', HOME: '/h' }, 's-1', setup)
     expect(env).toEqual({
       PATH: '/build/bin:/usr/bin:/bin',
       HOME: '/h',
       MARU_SOCKET: '/data/s/app.sock',
-      MARU_SESSION_ID: 's-1'
+      MARU_SESSION_ID: 's-1',
+      ZDOTDIR: '/res/zsh'
     })
   })
 
@@ -58,20 +69,65 @@ describe('shellEnv', () => {
     const env = shellEnv(
       { PATH: '/bin', MARU_SOCKET: '/outer.sock', MARU_SESSION_ID: 's-outer' },
       's-1',
-      cli
+      setup
     )
     expect(env.MARU_SOCKET).toBe('/data/s/app.sock')
     expect(env.MARU_SESSION_ID).toBe('s-1')
   })
 
+  it('물려받은 ZDOTDIR 대신 앱의 zsh 디렉토리를 넣는다', () => {
+    expect(shellEnv({ ZDOTDIR: '/outer' }, 's-1', setup).ZDOTDIR).toBe('/res/zsh')
+  })
+
   it('PATH 가 없으면 CLI 의 디렉토리만 둔다', () => {
-    expect(shellEnv({}, 's-1', cli).PATH).toBe('/build/bin')
+    expect(shellEnv({}, 's-1', setup).PATH).toBe('/build/bin')
   })
 
   it('띄운 쪽 세션의 값은 여기서도 뺀다', () => {
-    expect(shellEnv({ PATH: '/bin', AI_MARU_TTY: 't' }, 's-1', cli)).not.toHaveProperty(
+    expect(shellEnv({ PATH: '/bin', AI_MARU_TTY: 't' }, 's-1', setup)).not.toHaveProperty(
       'AI_MARU_TTY'
     )
+  })
+})
+
+describe('startDir', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'maru-start-'))
+  const file = join(dir, 'f')
+  writeFileSync(file, '')
+
+  it('있는 디렉토리면 그곳이다', async () => {
+    expect(await startDir(dir, '/home')).toBe(dir)
+  })
+
+  it('없거나 파일이거나 상대경로면 홈이다', async () => {
+    expect(await startDir(join(dir, 'gone'), '/home')).toBe('/home')
+    expect(await startDir(file, '/home')).toBe('/home')
+    expect(await startDir('.', '/home')).toBe('/home')
+  })
+
+  it('응답하지 않는 디렉토리를 검사하는 동안에도 다른 일이 돈다', async () => {
+    hang.path = join(dir, 'stuck')
+    let settled = false
+    void startDir(hang.path, '/home').then(() => (settled = true))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(settled).toBe(false)
+    hang.path = undefined
+  })
+
+  it('주지 않으면 홈이다', async () => {
+    expect(await startDir(undefined, '/home')).toBe('/home')
+  })
+
+  it('들어갈 권한이 없으면 홈이다', async () => {
+    const locked = join(dir, 'locked')
+    mkdirSync(join(locked, 'inner'), { recursive: true })
+    chmodSync(locked, 0o000)
+    try {
+      expect(await startDir(join(locked, 'inner'), '/home')).toBe('/home')
+      expect(await startDir(locked, '/home')).toBe('/home')
+    } finally {
+      chmodSync(locked, 0o755)
+    }
   })
 })
 

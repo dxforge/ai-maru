@@ -5,14 +5,24 @@ import '@xterm/xterm/css/xterm.css'
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { attach, type Attachment } from '../session/attach'
 import { openSession } from '../session/connection'
+import { osc7Path } from '../workspace/cwd'
 
-const { sessionId = undefined, active } = defineProps<{ sessionId?: string; active: boolean }>()
-const emit = defineEmits<{ exit: [] }>()
+const {
+  sessionId = undefined,
+  startDir = undefined,
+  active
+} = defineProps<{ sessionId?: string; startDir?: string; active: boolean }>()
+const emit = defineEmits<{ exit: []; cwd: [cwd: string] }>()
 
 const host = useTemplateRef<HTMLDivElement>('host')
 const term = new Terminal({ theme: { background: '#1e1e1e' } })
 const fit = new FitAddon()
 term.loadAddon(fit)
+term.parser.registerOscHandler(7, (data) => {
+  const path = osc7Path(data)
+  if (path) emit('cwd', path)
+  return true
+})
 let session: Attachment | null = null
 const observer = new ResizeObserver(() => {
   if (session?.primary !== false) fit.fit()
@@ -31,7 +41,10 @@ onMounted(async () => {
   fit.fit()
   observer.observe(host.value!)
   if (active) term.focus()
-  session = attach(term, await openSession(sessionId), { onExit: () => emit('exit') })
+  session = attach(term, await openSession(sessionId, startDir), {
+    onExit: () => emit('exit'),
+    onSpawned: (dir) => emit('cwd', dir)
+  })
 })
 
 onBeforeUnmount(() => {
