@@ -1,15 +1,16 @@
 import { readonly, ref } from 'vue'
 
-export type Workspace = { key: number; sessionId?: string }
+/** `startDir` 는 셸을 띄울 때 청한 디렉토리, `cwd` 는 세션이 알려 온 디렉토리다. */
+export type Workspace = { key: number; sessionId?: string; startDir?: string; cwd?: string }
 
 export function createWorkspaces() {
   const list = ref<Workspace[]>([])
   const selectedKey = ref<number | null>(null)
   let nextKey = 0
 
-  function open(sessionId?: string): void {
+  function open(sessionId?: string, startDir?: string): void {
     const key = nextKey++
-    list.value.push({ key, sessionId })
+    list.value.push({ key, sessionId, startDir })
     selectedKey.value = key
   }
 
@@ -22,11 +23,18 @@ export function createWorkspaces() {
     selectedKey.value = next?.key ?? null
   }
 
+  function setCwd(key: number, cwd: string): void {
+    const w = list.value.find((w) => w.key === key)
+    if (w) w.cwd = cwd
+  }
+
   return {
     list: readonly(list),
     selectedKey: readonly(selectedKey),
     open,
     close,
+    setCwd,
+    selected: (): Workspace | undefined => list.value.find((w) => w.key === selectedKey.value),
     select: (key: number): void => void (selectedKey.value = key)
   }
 }

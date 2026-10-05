@@ -33,11 +33,13 @@ function fakeConnection() {
   return { conn, deliver: (msg: SessionMessage) => deliver(msg), close: () => close() }
 }
 
+const handlers = { onExit: () => {}, onSpawned: () => {} }
+
 describe('attach', () => {
   it('자리를 내준 뒤 밀려 resync 를 받으면 그 크기를 따른다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver } = fakeConnection()
-    attach(term as unknown as Terminal, conn, { onExit: () => {} })
+    attach(term as unknown as Terminal, conn, handlers)
     deliver(JSON.stringify({ type: 'role', role: 'observer' }))
     deliver(
       JSON.stringify({
@@ -55,7 +57,7 @@ describe('attach', () => {
   it('재생이 든 메시지 뒤에 자기 시퀀스를 덧쓰지 않는다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver } = fakeConnection()
-    attach(term as unknown as Terminal, conn, { onExit: () => {} })
+    attach(term as unknown as Terminal, conn, handlers)
     deliver(
       JSON.stringify({
         type: 'attached',
@@ -74,7 +76,7 @@ describe('attach', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver, close } = fakeConnection()
     let exits = 0
-    attach(term as unknown as Terminal, conn, { onExit: () => exits++ })
+    attach(term as unknown as Terminal, conn, { ...handlers, onExit: () => exits++ })
     deliver(JSON.stringify({ type: 'exit' }))
     close()
     expect(exits).toBe(1)
@@ -84,8 +86,21 @@ describe('attach', () => {
   it('셸이 끝나지 않았는데 연결이 닫히면 끊김을 보인다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, close } = fakeConnection()
-    attach(term as unknown as Terminal, conn, { onExit: () => {} })
+    attach(term as unknown as Terminal, conn, handlers)
     close()
     expect(String(term.written)).toContain('disconnected from the session')
+  })
+
+  it('새로 띄운 세션의 디렉토리를 알리고 터미널에는 쓰지 않는다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, deliver } = fakeConnection()
+    const spawned: string[] = []
+    attach(term as unknown as Terminal, conn, {
+      ...handlers,
+      onSpawned: (cwd) => spawned.push(cwd)
+    })
+    deliver(JSON.stringify({ type: 'spawned', cwd: '/a b' }))
+    expect(spawned).toEqual(['/a b'])
+    expect(term.written).toEqual([])
   })
 })

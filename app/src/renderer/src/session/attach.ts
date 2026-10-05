@@ -4,6 +4,7 @@ import type { SessionConnection } from './connection'
 
 export type AttachHandlers = {
   onExit(): void
+  onSpawned(cwd: string): void
 }
 
 export type Attachment = {
@@ -38,6 +39,9 @@ export function attach(
           primary = false
           term.write('\r\n[another client took over input and size]\r\n')
         }
+        break
+      case 'spawned':
+        handlers.onSpawned(m.cwd)
         break
       case 'exit':
         exited = true

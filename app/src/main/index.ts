@@ -32,6 +32,12 @@ function sessionBin(): string {
   return coreBin(process.env.MARU_SESSION_BIN, 'maru-session')
 }
 
+function zshDir(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'zsh')
+    : join(app.getAppPath(), 'resources/zsh')
+}
+
 function cliAccess(): CliAccess {
   return {
     socket: appSocketPath(sessionDir()),
@@ -170,15 +176,17 @@ function start(): void {
       port2.start()
     })
   })
-  ipcMain.on('session:open', (event, key: string, id?: string) => {
+  const setup = { cli, zdotdir: zshDir() }
+  ipcMain.on('session:open', (event, key: string, id?: string, cwd?: string) => {
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
       owner: event.sender.id,
       id,
+      cwd,
       dir: sessionDir(),
       bin: sessionBin(),
-      cli
+      setup
     }
     void ready.then(() => sessionHost().postMessage(req, [port1]))
     event.sender.postMessage('session:port', key, [port2])

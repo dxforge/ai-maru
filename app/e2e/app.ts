@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createConnection, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -75,6 +75,15 @@ async function launchApp(
   const page = await app.firstWindow()
   await page.waitForSelector('.xterm-screen')
   return { app, page }
+}
+
+/** 셸의 `$PWD` 와 견줄 수 있게 심볼릭 링크를 푼 경로를 준다. */
+export function zshHome(dataDir: string, ...dirs: string[]): string {
+  const home = join(dataDir, 'home')
+  mkdirSync(home)
+  for (const dir of dirs) mkdirSync(join(home, dir), { recursive: true })
+  writeFileSync(join(home, '.zshrc'), "PS1='%# '\nMARK=rc-$((1+1))\n")
+  return realpathSync(home)
 }
 
 export function sessionDir(dataDir: string): string {

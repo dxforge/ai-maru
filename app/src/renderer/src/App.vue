@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import { createCanvas } from './canvas/store'
 import CanvasPanel from './components/CanvasPanel.vue'
 import TerminalView from './components/TerminalView.vue'
+import { workspaceName } from './workspace/cwd'
 import { createWorkspaces } from './workspace/store'
 
 const canvas = createCanvas()
@@ -13,8 +14,10 @@ const workspaces = createWorkspaces()
 // 되살린 뒤에 연다.
 let pendingNew: number | null = 0
 window.maru.onNewWorkspace(() => {
-  if (pendingNew === null) workspaces.open()
-  else pendingNew++
+  if (pendingNew === null) {
+    const w = workspaces.selected()
+    workspaces.open(undefined, w?.cwd ?? w?.startDir)
+  } else pendingNew++
 })
 // 거절은 session host 가 답하기 전에 죽었다는 뜻이다. 다시 청하면 새 host 가 답한다.
 void window.maru
@@ -55,7 +58,7 @@ async function selectWorkspace(key: number): Promise<void> {
         @mousedown.prevent
         @click="selectWorkspace(w.key)"
       >
-        Shell
+        {{ workspaceName(w.cwd) }}
       </button>
     </nav>
     <div class="terminals">
@@ -64,8 +67,10 @@ async function selectWorkspace(key: number): Promise<void> {
         :key="w.key"
         :ref="(t) => setTerminal(w.key, t)"
         :session-id="w.sessionId"
+        :start-dir="w.startDir"
         :active="w.key === workspaces.selectedKey.value"
         @exit="workspaces.close(w.key)"
+        @cwd="(dir) => workspaces.setCwd(w.key, dir)"
       />
     </div>
     <CanvasPanel :canvas="canvas" />
@@ -89,6 +94,9 @@ async function selectWorkspace(key: number): Promise<void> {
 
 .workspace {
   padding: 4px 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   border: 0;
   border-radius: 4px;
   background: none;

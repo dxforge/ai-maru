@@ -45,4 +45,23 @@ describe('workspaces', () => {
     expect(ws.list.value).toEqual([])
     expect(ws.selectedKey.value).toBeNull()
   })
+
+  it('open 에 준 시작 디렉토리는 cwd 가 아니고, cwd 는 setCwd 로 정한다', () => {
+    const ws = createWorkspaces()
+    ws.open(undefined, '/a')
+    expect(ws.list.value[0].startDir).toBe('/a')
+    expect(ws.list.value[0].cwd).toBeUndefined()
+    ws.setCwd(keys(ws)[0], '/b')
+    expect(ws.list.value[0].cwd).toBe('/b')
+  })
+
+  it('selected 는 선택된 workspace 이고, 없으면 undefined 다', () => {
+    const ws = opened(2)
+    const [first, last] = keys(ws)
+    ws.select(first)
+    expect(ws.selected()?.key).toBe(first)
+    ws.close(first)
+    ws.close(last)
+    expect(ws.selected()).toBeUndefined()
+  })
 })
