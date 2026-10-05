@@ -3,6 +3,8 @@ import {
   app,
   BrowserWindow,
   ipcMain,
+  Menu,
+  MenuItem,
   MessageChannelMain,
   shell,
   utilityProcess,
@@ -11,7 +13,7 @@ import {
 import { canvasPut } from './canvas'
 import { listenCli, type Handlers } from './cli-server'
 import { appSocketPath, killSessions, utf8Locale, type CliAccess } from './session'
-import type { OpenRequest } from './session-host'
+import type { OpenRequest, RestoreRequest } from './session-host'
 
 function sessionDir(): string {
   return join(app.getPath('userData'), 's')
@@ -126,6 +128,22 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(start)
 }
 
+function addNewWorkspaceItem(): void {
+  const menu = Menu.getApplicationMenu()
+  const file = menu?.items.find((item) => item.role?.toLowerCase() === 'filemenu')?.submenu
+  if (!menu || !file) return
+  file.insert(
+    0,
+    new MenuItem({
+      id: 'new-workspace',
+      label: 'New Workspace',
+      accelerator: 'Command+N',
+      click: () => BrowserWindow.getAllWindows()[0]?.webContents.send('workspace:new')
+    })
+  )
+  Menu.setApplicationMenu(menu)
+}
+
 function start(): void {
   if (unobtrusive) app.dock?.hide()
   // 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.
@@ -138,17 +156,32 @@ function start(): void {
   })
   // 셸이 뜨자마자 `maru` 를 불러도 닿게.
   const ready = Promise.all([leftovers, cliServer])
-  ipcMain.on('session:open', (event) => {
+  ipcMain.handle('session:restore', async (event) => {
+    await ready
+    const { port1, port2 } = new MessageChannelMain()
+    const req: RestoreRequest = { type: 'restore', owner: event.sender.id, dir: sessionDir() }
+    sessionHost().postMessage(req, [port1])
+    return new Promise<string[]>((resolve, reject) => {
+      port2.once('message', ({ data }) => {
+        resolve(data)
+        port2.close()
+      })
+      port2.once('close', () => reject(new Error('session host exited')))
+      port2.start()
+    })
+  })
+  ipcMain.on('session:open', (event, key: string, id?: string) => {
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
       owner: event.sender.id,
+      id,
       dir: sessionDir(),
       bin: sessionBin(),
       cli
     }
     void ready.then(() => sessionHost().postMessage(req, [port1]))
-    event.sender.postMessage('session:port', null, [port2])
+    event.sender.postMessage('session:port', key, [port2])
   })
 
   app.on('window-all-closed', () => app.quit())
@@ -166,5 +199,6 @@ function start(): void {
     })
   })
 
+  addNewWorkspaceItem()
   createWindow()
 }

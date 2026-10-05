@@ -113,7 +113,7 @@ export function attachFromOutside(sockPath: string, cols: number, rows: number):
 }
 
 export function rows(page: Page) {
-  return page.locator('.xterm-rows')
+  return page.locator('.terminal-view.active .xterm-rows')
 }
 
 let sizeMarker = 0
@@ -128,7 +128,11 @@ export async function shellSize(page: Page): Promise<{ rows: number; cols: numbe
 }
 
 export function gridRows(page: Page) {
-  return page.locator('.xterm-rows > div')
+  return rows(page).locator('> div')
+}
+
+export function workspaceItems(page: Page) {
+  return page.locator('.sidebar .workspace')
 }
 
 export async function resizeBy(app: ElectronApplication, dw: number, dh: number): Promise<void> {
