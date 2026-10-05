@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { CanvasItem } from '../shared/canvas'
+import type { ClaudeState } from '../shared/claude'
 
 // MessagePort 는 contextBridge 를 건너지 못해서 window.postMessage 로 넘긴다.
 ipcRenderer.on('session:port', (event, key: string) => {
@@ -20,6 +21,13 @@ const api = {
   },
   onCanvasPut: (cb: (item: CanvasItem) => void): void => {
     ipcRenderer.on('canvas:put', (_event, item: CanvasItem) => cb(item))
+  },
+  /** 터미널 세션 id → 그 터미널에서 돌고 있는 claude 의 상태. */
+  claudeStatuses: (): Promise<Record<string, ClaudeState>> => ipcRenderer.invoke('claude:statuses'),
+  onClaudeStatus: (cb: (session: string, state: ClaudeState | null) => void): void => {
+    ipcRenderer.on('claude:status', (_event, session: string, state: ClaudeState | null) =>
+      cb(session, state)
+    )
   }
 }
 

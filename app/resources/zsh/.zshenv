@@ -20,3 +20,18 @@ _maru_osc7() {
 }
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _maru_osc7
+
+# `name()` 꼴은 사용자 ~/.zshenv 의 claude alias 가 펼쳐져 parse error 가 난다.
+(( $+functions[claude] )) || function claude {
+  if [[ -z $MARU_CLI || -z $MARU_CLAUDE_PLUGIN ]]; then
+    command claude "$@"
+    return
+  fi
+  # claude 가 SessionEnd hook 없이 죽어도 앱이 표시를 지우게. Ctrl-C 로 셸도 SIGINT 를 받으면 함수의
+  # 남은 명령을 건너뛰므로 always 로 둔다.
+  {
+    command claude --plugin-dir "$MARU_CLAUDE_PLUGIN" "$@"
+  } always {
+    "$MARU_CLI" claude exit
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }
+    ],
+    "PermissionRequest": [
+      { "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }
+    ],
+    "Elicitation": [{ "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }],
+    "StopFailure": [{ "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }]
+  }
+}

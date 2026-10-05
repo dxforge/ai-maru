@@ -65,7 +65,7 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
       return
     }
     sock.on('close', () => mine.delete(drop))
-    if (cwd !== undefined) port.postMessage(JSON.stringify({ type: 'spawned', cwd }))
+    if (cwd !== undefined) port.postMessage(JSON.stringify({ type: 'spawned', id, cwd }))
     bridge(sock, port)
   } catch (err) {
     mine.delete(drop)

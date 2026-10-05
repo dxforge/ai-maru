@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { nextTick } from 'vue'
+import { computed, nextTick } from 'vue'
 import { createCanvas } from './canvas/store'
+import { createClaudeStatuses } from './claude/status'
 import CanvasPanel from './components/CanvasPanel.vue'
 import TerminalView from './components/TerminalView.vue'
 import { workspaceName } from './workspace/cwd'
@@ -10,6 +11,11 @@ const canvas = createCanvas()
 window.maru.onCanvasPut(canvas.put)
 
 const workspaces = createWorkspaces()
+
+const claude = createClaudeStatuses()
+window.maru.onClaudeStatus(claude.set)
+void window.maru.claudeStatuses().then(claude.replace)
+const selectedClaude = computed(() => claude.state(workspaces.selected()?.sessionId))
 // 되살리기 전에 띄운 세션은 되살릴 목록에도 들어가 workspace 가 둘 생길 수 있어, 그동안의 ⌘N 은
 // 되살린 뒤에 연다.
 let pendingNew: number | null = 0
@@ -58,10 +64,15 @@ async function selectWorkspace(key: number): Promise<void> {
         @mousedown.prevent
         @click="selectWorkspace(w.key)"
       >
-        {{ workspaceName(w.cwd) }}
+        <span
+          v-if="claude.state(w.sessionId)"
+          class="claude-dot"
+          :class="claude.state(w.sessionId)"
+          :title="`Claude: ${claude.state(w.sessionId)}`"
+        />{{ workspaceName(w.cwd) }}
       </button>
     </nav>
-    <div class="terminals">
+    <div class="terminals" :class="selectedClaude">
       <TerminalView
         v-for="w in workspaces.list.value"
         :key="w.key"
@@ -70,6 +81,7 @@ async function selectWorkspace(key: number): Promise<void> {
         :start-dir="w.startDir"
         :active="w.key === workspaces.selectedKey.value"
         @exit="workspaces.close(w.key)"
+        @spawned="(id) => workspaces.setSessionId(w.key, id)"
         @cwd="(dir) => workspaces.setCwd(w.key, dir)"
       />
     </div>
@@ -117,11 +129,35 @@ async function selectWorkspace(key: number): Promise<void> {
   color: #d4d4d4;
 }
 
+.working {
+  --claude: #3794ff;
+}
+
+.waiting {
+  --claude: #cca700;
+}
+
+.idle {
+  --claude: #89d185;
+}
+
+.claude-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--claude);
+  vertical-align: middle;
+}
+
 .terminals {
   position: relative;
   flex: 1;
   min-width: 0;
   /* 다른 클라이언트가 primary 면 fit 하지 않아, 터미널이 남은 폭보다 넓으면 패널을 덮는다. */
   overflow: hidden;
+  /* 상태가 없어도 자리를 차지해, 상태가 바뀔 때 터미널 크기가 변하지 않게. */
+  border-top: 2px solid var(--claude, transparent);
 }
 </style>

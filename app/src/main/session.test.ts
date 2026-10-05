@@ -52,27 +52,37 @@ describe('sessionEnv', () => {
 
 describe('shellEnv', () => {
   const cli = { socket: '/data/s/app.sock', bin: '/build/bin/maru' }
-  const setup = { cli, zdotdir: '/res/zsh' }
+  const setup = { cli, zdotdir: '/res/zsh', claudePlugin: '/res/claude-plugin' }
 
-  it('앱 소켓과 세션 id 를 넣고 CLI 의 디렉토리를 PATH 앞에 붙인다', () => {
+  it('앱 소켓과 세션 id, CLI 와 claude plugin 의 경로를 넣고 CLI 의 디렉토리를 PATH 앞에 붙인다', () => {
     const env = shellEnv({ PATH: '/usr/bin:/bin', HOME: '/h' }, 's-1', setup)
     expect(env).toEqual({
       PATH: '/build/bin:/usr/bin:/bin',
       HOME: '/h',
       MARU_SOCKET: '/data/s/app.sock',
       MARU_SESSION_ID: 's-1',
+      MARU_CLI: '/build/bin/maru',
+      MARU_CLAUDE_PLUGIN: '/res/claude-plugin',
       ZDOTDIR: '/res/zsh'
     })
   })
 
   it('앱을 띄운 터미널에서 물려받은 값을 덮는다', () => {
     const env = shellEnv(
-      { PATH: '/bin', MARU_SOCKET: '/outer.sock', MARU_SESSION_ID: 's-outer' },
+      {
+        PATH: '/bin',
+        MARU_SOCKET: '/outer.sock',
+        MARU_SESSION_ID: 's-outer',
+        MARU_CLI: '/outer/maru',
+        MARU_CLAUDE_PLUGIN: '/outer/plugin'
+      },
       's-1',
       setup
     )
     expect(env.MARU_SOCKET).toBe('/data/s/app.sock')
     expect(env.MARU_SESSION_ID).toBe('s-1')
+    expect(env.MARU_CLI).toBe('/build/bin/maru')
+    expect(env.MARU_CLAUDE_PLUGIN).toBe('/res/claude-plugin')
   })
 
   it('물려받은 ZDOTDIR 대신 앱의 zsh 디렉토리를 넣는다', () => {

@@ -144,6 +144,13 @@ export function workspaceItems(page: Page) {
   return page.locator('.sidebar .workspace')
 }
 
+// Playwright 의 키 입력은 macOS 메뉴를 거치지 않아 메뉴 항목을 직접 누른다.
+export async function pressNew(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu()!.getMenuItemById('new-workspace')!.click()
+  )
+}
+
 export async function resizeBy(app: ElectronApplication, dw: number, dh: number): Promise<void> {
   await app.evaluate(
     ({ BrowserWindow }, [dw, dh]) => {

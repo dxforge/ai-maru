@@ -23,6 +23,11 @@ export function createWorkspaces() {
     selectedKey.value = next?.key ?? null
   }
 
+  function setSessionId(key: number, id: string): void {
+    const w = list.value.find((w) => w.key === key)
+    if (w) w.sessionId = id
+  }
+
   function setCwd(key: number, cwd: string): void {
     const w = list.value.find((w) => w.key === key)
     if (w) w.cwd = cwd
@@ -33,6 +38,7 @@ export function createWorkspaces() {
     selectedKey: readonly(selectedKey),
     open,
     close,
+    setSessionId,
     setCwd,
     selected: (): Workspace | undefined => list.value.find((w) => w.key === selectedKey.value),
     select: (key: number): void => void (selectedKey.value = key)

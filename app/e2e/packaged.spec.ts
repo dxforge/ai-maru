@@ -55,6 +55,18 @@ test('설치본의 터미널에서 maru 는 번들 안의 CLI 다', async ({ lau
   await expect(rows(page)).toContainText('cli-2')
 })
 
+test('설치본의 터미널에서 MARU_CLI·MARU_CLAUDE_PLUGIN 은 번들 안을 가리킨다', async ({
+  launch
+}) => {
+  const { page } = await launch({}, executable())
+  const bin = join(installed, 'Contents/Resources/bin/maru')
+  const hooks = join(installed, 'Contents/Resources/claude-plugin/hooks/hooks.json')
+  await page.keyboard.type(
+    `test "$MARU_CLI" -ef '${bin}' && test "$MARU_CLAUDE_PLUGIN/hooks/hooks.json" -ef '${hooks}' && echo plugin-$((1+1)) || echo plugin-other\n`
+  )
+  await expect(rows(page)).toContainText('plugin-2')
+})
+
 test('설치본의 zsh 에서 workspace 이름이 cd 를 따른다', async ({ launch, dataDir }) => {
   const home = zshHome(dataDir, 'proj')
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home }, executable())
