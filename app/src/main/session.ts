@@ -1,10 +1,18 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs'
+import {
+  accessSync,
+  closeSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  openSync,
+  statSync
+} from 'node:fs'
 import { readdir, readFile, rm } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
 import { homedir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
@@ -125,11 +133,10 @@ export async function killSessions(dir: string, timeoutMs = KILL_TIMEOUT_MS): Pr
 }
 
 /**
- * 앱을 띄운 쪽의 세션에 속한 값들. AI Maru 터미널의 것을 물려주면 새 셸은 사용자의 dotfile 대신
- * 그 터미널의 ZDOTDIR 을 읽고 거기서 띄운 claude 는 hook 을 그 터미널의 앱으로 보낸다. 새 셸은
- * 띄운 쪽의 Claude Code 세션이나 tmux 안에 있지 않다.
+ * 앱을 띄운 쪽의 세션에 속한 값들. AI Maru 터미널의 것을 물려주면 거기서 띄운 claude 는 hook 을
+ * 그 터미널의 앱으로 보낸다. 새 셸은 띄운 쪽의 Claude Code 세션이나 tmux 안에 있지 않다.
  */
-const INHERITED = new Set(['ZDOTDIR', 'CLAUDECODE', 'CLAUDE_PID', 'TMUX', 'TMUX_PANE'])
+const INHERITED = new Set(['CLAUDECODE', 'CLAUDE_PID', 'TMUX', 'TMUX_PANE'])
 const INHERITED_PREFIXES = ['AI_MARU_', 'CLAUDE_CODE_']
 
 export function sessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -142,14 +149,27 @@ export function sessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 export type CliAccess = { socket: string; bin: string }
 
+export type ShellSetup = { cli: CliAccess; zdotdir: string }
+
 /** 계약은 core/crates/maru 의 모듈 doc 에 있다. */
-export function shellEnv(env: NodeJS.ProcessEnv, id: string, cli: CliAccess): NodeJS.ProcessEnv {
+export function shellEnv(env: NodeJS.ProcessEnv, id: string, setup: ShellSetup): NodeJS.ProcessEnv {
   const base = sessionEnv(env)
   return {
     ...base,
-    MARU_SOCKET: cli.socket,
+    MARU_SOCKET: setup.cli.socket,
     MARU_SESSION_ID: id,
-    PATH: [dirname(cli.bin), base.PATH].filter(Boolean).join(delimiter)
+    PATH: [dirname(setup.cli.bin), base.PATH].filter(Boolean).join(delimiter),
+    ZDOTDIR: setup.zdotdir
+  }
+}
+
+export function startDir(cwd: string | undefined, home = homedir()): string {
+  if (!cwd || !isAbsolute(cwd)) return home
+  try {
+    accessSync(cwd, constants.X_OK)
+    return statSync(cwd).isDirectory() ? cwd : home
+  } catch {
+    return home
   }
 }
 
@@ -163,15 +183,20 @@ export function utf8Locale(
   return region && exists(name) ? name : 'C.UTF-8'
 }
 
-export async function spawnSession(bin: string, dir: string, cli: CliAccess): Promise<string> {
+export async function spawnSession(
+  bin: string,
+  dir: string,
+  setup: ShellSetup,
+  cwd: string
+): Promise<string> {
   const id = `s-${randomBytes(4).toString('hex')}`
   // 준비 전에 끝나면 이유가 stderr 에만 있다. 파이프로 받으면 앱이 끝난 뒤 세션의 쓰기가 실패한다.
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const logPath = join(dir, `${id}.log`)
   const log = openSync(logPath, 'w', 0o600)
-  const child = spawn(bin, ['--dir', dir, '--id', id, '--cwd', homedir()], {
+  const child = spawn(bin, ['--dir', dir, '--id', id, '--cwd', cwd], {
     detached: true,
-    env: shellEnv(process.env, id, cli),
+    env: shellEnv(process.env, id, setup),
     stdio: ['ignore', 'ignore', log]
   })
   closeSync(log)

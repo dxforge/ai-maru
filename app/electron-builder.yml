@@ -16,6 +16,8 @@ extraResources:
     to: bin/maru-session
   - from: ../core/target/release/maru
     to: bin/maru
+  - from: resources/zsh/.zshenv
+    to: zsh/.zshenv
 mac:
   target: dir
   category: public.app-category.developer-tools

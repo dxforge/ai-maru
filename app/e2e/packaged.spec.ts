@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { expect, rows, test } from './app'
+import { expect, rows, test, workspaceItems, zshHome } from './app'
 
 let installed: string
 let installDir: string
@@ -53,4 +53,12 @@ test('설치본의 터미널에서 maru 는 번들 안의 CLI 다', async ({ lau
     `test "$(command -v maru)" -ef '${bin}' && echo cli-$((1+1)) || echo cli-other\n`
   )
   await expect(rows(page)).toContainText('cli-2')
+})
+
+test('설치본의 zsh 에서 workspace 이름이 cd 를 따른다', async ({ launch, dataDir }) => {
+  const home = zshHome(dataDir, 'proj')
+  const { page } = await launch({ SHELL: '/bin/zsh', HOME: home }, executable())
+  await expect(workspaceItems(page)).toHaveText(['home'])
+  await page.keyboard.type('cd proj\n')
+  await expect(workspaceItems(page)).toHaveText(['proj'])
 })

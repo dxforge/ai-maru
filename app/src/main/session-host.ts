@@ -1,19 +1,26 @@
 import type { Socket } from 'node:net'
 import type { MessagePortMain } from 'electron'
 import { bridge } from './bridge'
-import { connect, liveSessions, socketPath, spawnSession, type CliAccess } from './session'
+import {
+  connect,
+  liveSessions,
+  socketPath,
+  spawnSession,
+  startDir,
+  type ShellSetup
+} from './session'
 
-type Target = { dir: string; bin: string; cli: CliAccess }
+type Target = { dir: string; bin: string; setup: ShellSetup }
 
-export type OpenRequest = Target & { type: 'open'; owner: number; id?: string }
+export type OpenRequest = Target & { type: 'open'; owner: number; id?: string; cwd?: string }
 export type RestoreRequest = { type: 'restore'; owner: number; dir: string }
 type HostRequest = OpenRequest | RestoreRequest
 
 /** 새로 고친 창이 띄우는 중이던 세션을 잃지도, 하나 더 띄우지도 않게 restore 가 기다린다. */
 const spawning = new Set<Promise<string>>()
 
-function spawnTracked({ dir, bin, cli }: Target): Promise<string> {
-  const p = spawnSession(bin, dir, cli)
+function spawnTracked({ dir, bin, setup }: Target, cwd: string): Promise<string> {
+  const p = spawnSession(bin, dir, setup, cwd)
   spawning.add(p)
   p.finally(() => spawning.delete(p)).catch(() => {})
   return p
@@ -31,8 +38,10 @@ function dropOwned(owner: number): void {
 }
 
 async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
+  const spawnedIn = req.id ? undefined : startDir(req.cwd)
   // restore 가 기다릴 수 있게 await 전에 띄운다.
-  const resolving = req.id ? Promise.resolve(req.id) : spawnTracked(req)
+  const resolving =
+    spawnedIn === undefined ? Promise.resolve(req.id!) : spawnTracked(req, spawnedIn)
   let superseded = false
   let sock: Socket | undefined
   const drop = (): void => {
@@ -51,6 +60,8 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
       return
     }
     sock.on('close', () => mine.delete(drop))
+    if (spawnedIn !== undefined)
+      port.postMessage(JSON.stringify({ type: 'spawned', cwd: spawnedIn }))
     bridge(sock, port)
   } catch (err) {
     mine.delete(drop)

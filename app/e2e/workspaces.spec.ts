@@ -1,5 +1,5 @@
-import { chmodSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { chmodSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import {
   expect,
@@ -11,7 +11,8 @@ import {
   shellSize,
   sockets,
   test,
-  workspaceItems
+  workspaceItems,
+  zshHome
 } from './app'
 
 async function activeTerminal(page: Page): Promise<void> {
@@ -61,23 +62,28 @@ test('⌘N 은 File 메뉴의 New Workspace 다', async ({ launch }) => {
   expect(item).toEqual({ label: 'New Workspace', accelerator: 'Command+N' })
 })
 
+const homeName = basename(process.env.HOME!)
+
 test('앱을 켜면 홈 디렉토리에서 workspace 하나를 연다', async ({ launch, dataDir }) => {
   const { page } = await launch()
-  await expect(workspaceItems(page)).toHaveText(['Shell'])
+  await expect(workspaceItems(page)).toHaveText([homeName])
   await expect(workspaceItems(page).first()).toHaveClass(/selected/)
   await run(page, '[ "$PWD" = "$HOME" ] && echo home-$((1+1))', 'home-2')
   expect(sockets(dataDir)).toHaveLength(1)
 })
 
-test('⌘N 은 홈 디렉토리에서 새 세션으로 새 workspace 를 열고 그것을 선택한다', async ({
+// bash 는 OSC 7 을 보내지 않아, cd 해도 workspace 의 디렉토리는 셸을 띄운 홈이다.
+test('bash 에서 ⌘N 은 cd 와 상관없이 홈 디렉토리에서 새 세션으로 새 workspace 를 열고 그것을 선택한다', async ({
   launch,
   dataDir
 }) => {
   const launched = await launch()
   const { page } = launched
-  await page.keyboard.type('cd /tmp; X=first-$((1+1))\n')
+  await run(page, 'cd /tmp; X=first-$((1+1)); echo moved-$((5+5))', 'moved-10')
+  await expect(workspaceItems(page)).toHaveText([homeName])
 
   await newWorkspace(launched, 2)
+  await expect(workspaceItems(page)).toHaveText([homeName, homeName])
 
   await expect(workspaceItems(page).nth(1)).toHaveClass(/selected/)
   await run(page, 'echo "x=$X pwd=$PWD" new-$((2+2))', `x= pwd=${process.env.HOME} new-4`)
@@ -322,4 +328,61 @@ test('다른 곳을 눌러 터미널의 포커스가 빠진 뒤 선택된 worksp
     await workspaceItems(page).first().click()
     await run(page, `echo back-$((${i}+10))`, `back-${i + 10}`)
   }
+})
+
+test('zsh 에서 workspace 이름은 셸을 띄운 디렉토리에서 시작해 cd 를 따른다', async ({
+  launch,
+  dataDir
+}) => {
+  const long = 'a'.repeat(80)
+  const home = zshHome(dataDir, 'proj', join('a b', '한글 폴더'), long)
+  const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  await expect(workspaceItems(page)).toHaveText(['home'])
+  await run(page, 'echo "mark=$MARK"', 'mark=rc-2')
+
+  await page.keyboard.type('cd proj\n')
+  await expect(workspaceItems(page)).toHaveText(['proj'])
+  await page.keyboard.type("cd ~/'a b'\n")
+  await expect(workspaceItems(page)).toHaveText(['a b'])
+  await page.keyboard.type(
+    `cd "$(printf '\\355\\225\\234\\352\\270\\200 \\355\\217\\264\\353\\215\\224')"\n`
+  )
+  await expect(workspaceItems(page)).toHaveText(['한글 폴더'])
+
+  await page.keyboard.type(`cd ~/${long}\n`)
+  await expect(workspaceItems(page)).toHaveText([long])
+  const sidebar = page.locator('.sidebar')
+  expect(await sidebar.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0)
+})
+
+test('zsh 에서 ⌘N 은 선택된 workspace 의 디렉토리에서 연다', async ({ launch, dataDir }) => {
+  const home = zshHome(dataDir, 'proj')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await page.keyboard.type('cd proj\n')
+  await expect(workspaceItems(page)).toHaveText(['proj'])
+
+  await newWorkspace(launched, 2)
+
+  await expect(workspaceItems(page)).toHaveText(['proj', 'proj'])
+  await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
+  await page.keyboard.type('cd ~\n')
+  await expect(workspaceItems(page)).toHaveText(['proj', 'home'])
+})
+
+test('zsh 에서 선택된 workspace 의 디렉토리가 지워졌으면 ⌘N 은 홈에서 연다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'gone')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await page.keyboard.type('cd gone\n')
+  await expect(workspaceItems(page)).toHaveText(['gone'])
+  rmSync(join(home, 'gone'), { recursive: true })
+
+  await newWorkspace(launched, 2)
+
+  await expect(workspaceItems(page)).toHaveText(['gone', 'home'])
+  await run(page, '[ "$PWD" = "$HOME" ] && echo at-home-$((1+1))', 'at-home-2')
 })
