@@ -37,7 +37,8 @@ export function createCanvas() {
     put,
     select: (id: string): void => void (selectedId.value = id),
     close: (): void => void (open.value = false),
-    reopen: (): void => void (open.value = true)
+    reopen: (): void => void (open.value = true),
+    toggle: (): void => void (open.value = !open.value)
   }
 }
 

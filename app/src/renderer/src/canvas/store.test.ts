@@ -87,6 +87,20 @@ describe('createCanvas', () => {
     expect(c.open.value).toBe(true)
     expect(c.selected.value?.id).toBe('a')
   })
+
+  it('toggle 은 열린 패널을 닫고 닫힌 패널을 연다 — 문서가 없어도 연다', () => {
+    const c = createCanvas()
+    c.toggle()
+    expect(c.open.value).toBe(true)
+    c.toggle()
+    expect(c.open.value).toBe(false)
+    c.put(md('a', 'A'))
+    c.toggle()
+    expect(c.open.value).toBe(false)
+    c.toggle()
+    expect(c.selected.value?.id).toBe('a')
+    expect(c.open.value).toBe(true)
+  })
 })
 
 describe('문서 제목', () => {
