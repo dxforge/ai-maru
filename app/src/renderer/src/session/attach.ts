@@ -4,7 +4,7 @@ import type { SessionConnection } from './connection'
 
 export type AttachHandlers = {
   onExit(): void
-  onSpawned(cwd: string): void
+  onSpawned(id: string, cwd: string): void
 }
 
 export type Attachment = {
@@ -41,7 +41,7 @@ export function attach(
         }
         break
       case 'spawned':
-        handlers.onSpawned(m.cwd)
+        handlers.onSpawned(m.id, m.cwd)
         break
       case 'exit':
         exited = true

@@ -12,7 +12,7 @@ const {
   startDir = undefined,
   active
 } = defineProps<{ sessionId?: string; startDir?: string; active: boolean }>()
-const emit = defineEmits<{ exit: []; cwd: [cwd: string] }>()
+const emit = defineEmits<{ exit: []; cwd: [cwd: string]; spawned: [id: string] }>()
 
 const host = useTemplateRef<HTMLDivElement>('host')
 const term = new Terminal({ theme: { background: '#1e1e1e' } })
@@ -43,7 +43,10 @@ onMounted(async () => {
   if (active) term.focus()
   session = attach(term, await openSession(sessionId, startDir), {
     onExit: () => emit('exit'),
-    onSpawned: (dir) => emit('cwd', dir)
+    onSpawned: (id, dir) => {
+      emit('spawned', id)
+      emit('cwd', dir)
+    }
   })
 })
 

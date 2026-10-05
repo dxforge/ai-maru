@@ -141,7 +141,7 @@ export function sessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 export type CliAccess = { socket: string; bin: string }
 
-export type ShellSetup = { cli: CliAccess; zdotdir: string }
+export type ShellSetup = { cli: CliAccess; zdotdir: string; claudePlugin: string }
 
 /** 계약은 core/crates/maru 의 모듈 doc 에 있다. */
 export function shellEnv(env: NodeJS.ProcessEnv, id: string, setup: ShellSetup): NodeJS.ProcessEnv {
@@ -150,6 +150,8 @@ export function shellEnv(env: NodeJS.ProcessEnv, id: string, setup: ShellSetup):
     ...base,
     MARU_SOCKET: setup.cli.socket,
     MARU_SESSION_ID: id,
+    MARU_CLI: setup.cli.bin,
+    MARU_CLAUDE_PLUGIN: setup.claudePlugin,
     PATH: [dirname(setup.cli.bin), base.PATH].filter(Boolean).join(delimiter),
     ZDOTDIR: setup.zdotdir
   }

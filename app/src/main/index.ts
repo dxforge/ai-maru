@@ -11,6 +11,7 @@ import {
   type UtilityProcess
 } from 'electron'
 import { canvasPut } from './canvas'
+import { createClaudeStatus } from './claude-status'
 import { listenCli, type Handlers } from './cli-server'
 import { appSocketPath, killSessions, utf8Locale, type CliAccess } from './session'
 import type { OpenRequest, RestoreRequest } from './session-host'
@@ -32,10 +33,10 @@ function sessionBin(): string {
   return coreBin(process.env.MARU_SESSION_BIN, 'maru-session')
 }
 
-function zshDir(): string {
+function resourceDir(name: string): string {
   return app.isPackaged
-    ? join(process.resourcesPath, 'zsh')
-    : join(app.getAppPath(), 'resources/zsh')
+    ? join(process.resourcesPath, name)
+    : join(app.getAppPath(), 'resources', name)
 }
 
 function cliAccess(): CliAccess {
@@ -45,9 +46,18 @@ function cliAccess(): CliAccess {
   }
 }
 
+const claudeStatus = createClaudeStatus({
+  notify: (session, state) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('claude:status', session, state)
+    }
+  }
+})
+
 const cliHandlers: Handlers = {
   ping: (_params, session) => ({ session }),
-  'canvas.put': canvasPut(() => BrowserWindow.getAllWindows()[0])
+  'canvas.put': canvasPut(() => BrowserWindow.getAllWindows()[0]),
+  ...claudeStatus.handlers
 }
 
 const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
@@ -176,7 +186,8 @@ function start(): void {
       port2.start()
     })
   })
-  const setup = { cli, zdotdir: zshDir() }
+  ipcMain.handle('claude:statuses', () => claudeStatus.snapshot())
+  const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
   ipcMain.on('session:open', (event, key: string, id?: string, cwd?: string) => {
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
@@ -198,6 +209,7 @@ function start(): void {
   app.on('will-quit', (event) => {
     if (sessionsKilled) return
     event.preventDefault()
+    claudeStatus.close()
     void Promise.all([
       killSessions(sessionDir()),
       cliServer.then((server) => server?.close())

@@ -97,10 +97,10 @@ describe('attach', () => {
     const spawned: string[] = []
     attach(term as unknown as Terminal, conn, {
       ...handlers,
-      onSpawned: (cwd) => spawned.push(cwd)
+      onSpawned: (id, cwd) => spawned.push(`${id} ${cwd}`)
     })
-    deliver(JSON.stringify({ type: 'spawned', cwd: '/a b' }))
-    expect(spawned).toEqual(['/a b'])
+    deliver(JSON.stringify({ type: 'spawned', id: 's-1', cwd: '/a b' }))
+    expect(spawned).toEqual(['s-1 /a b'])
     expect(term.written).toEqual([])
   })
 })
