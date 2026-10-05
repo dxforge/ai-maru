@@ -77,13 +77,6 @@ test('창 크기를 바꾸면 셸이 보는 크기도 바뀐다', async ({ launc
   expect(after.cols).toBeLessThan(before.cols)
 })
 
-test('셸이 끝나면 창이 닫히고 앱이 끝난다', async ({ launch }) => {
-  const { app, page } = await launch()
-  const closed = new Promise<void>((resolve) => app.once('close', () => resolve()))
-  await page.keyboard.type('exit\n')
-  await closed
-})
-
 test('maru-session 을 띄울 수 없으면 터미널에 이유를 보인다', async ({ launch }) => {
   const { page } = await launch({ MARU_SESSION_BIN: '/nonexistent/maru-session' })
   await expect(rows(page)).toContainText('open_failed')

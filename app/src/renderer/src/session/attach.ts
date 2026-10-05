@@ -17,6 +17,7 @@ export function attach(
 ): Attachment {
   const encoder = new TextEncoder()
   let primary = true
+  let exited = false
 
   conn.onMessage((msg) => {
     if (typeof msg !== 'string') {
@@ -39,6 +40,7 @@ export function attach(
         }
         break
       case 'exit':
+        exited = true
         handlers.onExit()
         break
       case 'error':
@@ -46,7 +48,10 @@ export function attach(
         break
     }
   })
-  conn.onClose(() => term.write('\r\n[disconnected from the session]\r\n'))
+  // 셸이 끝나면 세션이 연결을 닫는다 — 그건 끊김이 아니다.
+  conn.onClose(() => {
+    if (!exited) term.write('\r\n[disconnected from the session]\r\n')
+  })
 
   term.onData((data) => {
     if (primary) conn.send(encoder.encode(data))
