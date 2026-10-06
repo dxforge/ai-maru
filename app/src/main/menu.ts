@@ -27,8 +27,9 @@ export function installCommandMenu(run: (id: CommandId) => void): void {
         })
       )
     }
-    if (items.length) submenu.append(new MenuItem({ type: 'separator' }))
-    for (const item of top.submenu.items) if (item.role !== 'close') submenu.append(item)
+    const kept = top.submenu.items.filter((i) => i.role !== 'close')
+    if (items.length && kept.length) submenu.append(new MenuItem({ type: 'separator' }))
+    for (const item of kept) submenu.append(item)
     rebuilt.append(new MenuItem({ role: top.role, label: top.label, submenu }))
   }
   Menu.setApplicationMenu(rebuilt)

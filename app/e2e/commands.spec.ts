@@ -34,14 +34,14 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     const roles = Menu.getApplicationMenu()!.items.flatMap(
       (top) => top.submenu?.items.map((i) => i.role ?? null) ?? []
     )
-    return { file: items('filemenu'), view: items('viewmenu'), roles }
+    const lastTypes = Menu.getApplicationMenu()!.items.map((top) => top.submenu?.items.at(-1)?.type)
+    return { file: items('filemenu'), view: items('viewmenu'), roles, lastTypes }
   })
-  expect(menus.file.slice(0, 5)).toEqual([
+  expect(menus.file).toEqual([
     ['new-workspace', 'New Workspace', 'Command+N'],
     ['split-right', 'Split Right', 'Command+D'],
     ['split-down', 'Split Down', 'Shift+Command+D'],
-    ['close-pane', 'Close Pane', 'Command+W'],
-    ['-', '', null]
+    ['close-pane', 'Close Pane', 'Command+W']
   ])
   expect(menus.view.slice(0, 7)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
@@ -52,6 +52,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['focus-pane-down', 'Focus Pane Down', 'Alt+Command+Down'],
     ['-', '', null]
   ])
+  expect(menus.lastTypes).not.toContain('separator')
   expect(menus.roles).not.toContain('close')
   expect(menus.roles).toContain('reload')
 })
