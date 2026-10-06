@@ -5,8 +5,19 @@ const titles = (query: string): string[] => filterCommands(query).map((c) => c.t
 
 describe('filterCommands', () => {
   it('빈 입력이면 팔레트에 보일 명령을 목록 순서대로 모두 준다', () => {
-    expect(titles('')).toEqual(['New Workspace', 'Toggle Canvas'])
-    expect(titles('   ')).toEqual(['New Workspace', 'Toggle Canvas'])
+    const all = [
+      'New Workspace',
+      'Split Right',
+      'Split Down',
+      'Close Pane',
+      'Toggle Canvas',
+      'Focus Pane Left',
+      'Focus Pane Right',
+      'Focus Pane Up',
+      'Focus Pane Down'
+    ]
+    expect(titles('')).toEqual(all)
+    expect(titles('   ')).toEqual(all)
   })
 
   it('팔레트를 여는 명령은 보이지 않는다', () => {
@@ -32,6 +43,13 @@ describe('formatAccelerator', () => {
     expect(formatAccelerator('CmdOrCtrl+K')).toBe('⌘K')
     expect(formatAccelerator('CommandOrControl+K')).toBe('⌘K')
     expect(formatAccelerator('Ctrl+Option+K')).toBe('⌃⌥K')
+  })
+
+  it('방향키는 화살표로 적는다', () => {
+    expect(formatAccelerator('Alt+Command+Left')).toBe('⌥⌘←')
+    expect(formatAccelerator('Alt+Command+Right')).toBe('⌥⌘→')
+    expect(formatAccelerator('Alt+Command+Up')).toBe('⌥⌘↑')
+    expect(formatAccelerator('Alt+Command+Down')).toBe('⌥⌘↓')
   })
 })
 

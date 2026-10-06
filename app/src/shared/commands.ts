@@ -1,4 +1,14 @@
-export type CommandId = 'new-workspace' | 'command-palette' | 'toggle-canvas'
+export type CommandId =
+  | 'new-workspace'
+  | 'split-right'
+  | 'split-down'
+  | 'close-pane'
+  | 'focus-pane-left'
+  | 'focus-pane-right'
+  | 'focus-pane-up'
+  | 'focus-pane-down'
+  | 'command-palette'
+  | 'toggle-canvas'
 
 export type Command = {
   id: CommandId
@@ -10,6 +20,9 @@ export type Command = {
 
 export const commands: readonly Command[] = [
   { id: 'new-workspace', title: 'New Workspace', menu: 'file', accelerator: 'Command+N' },
+  { id: 'split-right', title: 'Split Right', menu: 'file', accelerator: 'Command+D' },
+  { id: 'split-down', title: 'Split Down', menu: 'file', accelerator: 'Shift+Command+D' },
+  { id: 'close-pane', title: 'Close Pane', menu: 'file', accelerator: 'Command+W' },
   {
     id: 'command-palette',
     title: 'Command Palette…',
@@ -17,7 +30,21 @@ export const commands: readonly Command[] = [
     accelerator: 'Shift+Command+P',
     palette: false
   },
-  { id: 'toggle-canvas', title: 'Toggle Canvas', menu: 'view' }
+  { id: 'toggle-canvas', title: 'Toggle Canvas', menu: 'view' },
+  {
+    id: 'focus-pane-left',
+    title: 'Focus Pane Left',
+    menu: 'view',
+    accelerator: 'Alt+Command+Left'
+  },
+  {
+    id: 'focus-pane-right',
+    title: 'Focus Pane Right',
+    menu: 'view',
+    accelerator: 'Alt+Command+Right'
+  },
+  { id: 'focus-pane-up', title: 'Focus Pane Up', menu: 'view', accelerator: 'Alt+Command+Up' },
+  { id: 'focus-pane-down', title: 'Focus Pane Down', menu: 'view', accelerator: 'Alt+Command+Down' }
 ]
 
 export function filterCommands(query: string): Command[] {
@@ -34,9 +61,11 @@ const MODIFIERS: [string, string[]][] = [
   ['⌘', ['Command', 'Cmd', 'CommandOrControl', 'CmdOrCtrl']]
 ]
 
+const KEYS: Record<string, string> = { Left: '←', Right: '→', Up: '↑', Down: '↓' }
+
 export function formatAccelerator(accelerator: string): string {
   const parts = accelerator.split('+')
   const key = parts.pop()!
   const mods = MODIFIERS.filter(([, names]) => names.some((n) => parts.includes(n)))
-  return mods.map(([sign]) => sign).join('') + key
+  return mods.map(([sign]) => sign).join('') + (KEYS[key] ?? key)
 }
