@@ -34,7 +34,6 @@ const MODIFIERS: [string, string[]][] = [
   ['⌘', ['Command', 'Cmd', 'CommandOrControl', 'CmdOrCtrl']]
 ]
 
-/** macOS 메뉴처럼 ⌃⌥⇧⌘ 순서로 적는다. 예: `Shift+Command+P` → `⇧⌘P`. */
 export function formatAccelerator(accelerator: string): string {
   const parts = accelerator.split('+')
   const key = parts.pop()!

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { filterCommands, formatAccelerator, type CommandId } from '../../../shared/commands'
 
 const emit = defineEmits<{ run: [id: CommandId]; close: [] }>()
@@ -14,8 +14,18 @@ const focus = (): void => input.value?.focus()
 defineExpose({ focus })
 onMounted(focus)
 
+// 키는 입력창만 받으므로 포커스가 입력창을 떠나면 닫는다. 창이 포커스를 잃을 때도 입력창에 blur 가
+// 오는데, 그때는 닫지 않고 창이 돌아왔을 때 포커스가 입력창을 떠나 있으면 닫는다.
+function onBlur(): void {
+  if (document.hasFocus()) emit('close')
+}
+function onWindowFocus(): void {
+  if (document.activeElement !== input.value) emit('close')
+}
+onMounted(() => window.addEventListener('focus', onWindowFocus))
+onUnmounted(() => window.removeEventListener('focus', onWindowFocus))
+
 function onKeydown(e: KeyboardEvent): void {
-  // 한글을 조합하는 중의 Enter 는 조합을 끝내는 키다.
   if (e.isComposing) return
   const n = matches.value.length
   if (e.key === 'ArrowDown' && n) index.value = (index.value + 1) % n
@@ -28,7 +38,6 @@ function onKeydown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <!-- 키는 입력창만 받으므로, 포커스가 입력창을 떠나면(Tab, 터미널이 포커스를 가져감) 닫는다. -->
   <div class="backdrop" @mousedown.self.prevent="emit('close')">
     <div class="palette" @mousedown="(e) => e.target !== input && e.preventDefault()">
       <input
@@ -38,7 +47,7 @@ function onKeydown(e: KeyboardEvent): void {
         placeholder="Type a command"
         spellcheck="false"
         @keydown="onKeydown"
-        @blur="emit('close')"
+        @blur="onBlur"
       />
       <ul class="list">
         <li

@@ -167,6 +167,57 @@ test('팔레트가 열린 동안 선택된 workspace 의 셸이 끝나면 팔레
   await typesIntoTerminal(page, 'survivor')
 })
 
+// e2e 의 창은 OS 포커스를 받지 않으므로, 창이 포커스를 잃고 되찾는 것은 `document.hasFocus` 와
+// focus 이벤트로 흉내 낸다. 창이 비활성화될 때 포커스된 요소는 `activeElement` 로 남은 채 blur 를 받는다.
+async function windowLosesFocus(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    document.hasFocus = () => false
+    document.activeElement?.dispatchEvent(new FocusEvent('blur'))
+    window.dispatchEvent(new FocusEvent('blur'))
+  })
+}
+
+async function windowRegainsFocus(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    delete (document as { hasFocus?: unknown }).hasFocus
+    window.dispatchEvent(new FocusEvent('focus'))
+  })
+}
+
+test('창이 포커스를 잃었다 돌아와도 팔레트는 입력을 지닌 채 키를 받는다', async ({ launch }) => {
+  const launched = await launch()
+  const { page } = launched
+  await openPalette(launched)
+  await page.keyboard.type('can')
+  await windowLosesFocus(page)
+  await windowRegainsFocus(page)
+  await expect(palette(page).locator('.query')).toHaveValue('can')
+  await expect(palette(page).locator('.query')).toBeFocused()
+  await page.keyboard.type('v')
+  await expect(items(page)).toHaveText(['Toggle Canvas'])
+  await page.keyboard.press('Enter')
+  await expect(page.locator('aside.canvas')).toBeVisible()
+})
+
+test('창이 포커스를 잃은 동안 셸이 끝나 터미널이 포커스를 가져가면, 창이 돌아올 때 팔레트가 닫힌다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await clickMenu(app, 'new-workspace')
+  await expect(workspaceItems(page)).toHaveCount(2)
+  await activeTerminal(page)
+  await run(page, 'echo ready-$((1+1))', 'ready-2')
+  await page.keyboard.type('sleep 2; exit\n')
+  await openPalette(launched)
+  await windowLosesFocus(page)
+  await expect(workspaceItems(page)).toHaveCount(1)
+  await expect(page.locator('.xterm-helper-textarea:focus')).toHaveCount(1)
+  await windowRegainsFocus(page)
+  await expect(palette(page)).toHaveCount(0)
+  await typesIntoTerminal(page, 'returned')
+})
+
 test('Esc 나 바깥을 누르면 실행하지 않고 닫히며 키는 터미널로 간다', async ({ launch }) => {
   const launched = await launch()
   const { page } = launched
