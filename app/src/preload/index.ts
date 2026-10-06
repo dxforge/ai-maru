@@ -17,6 +17,8 @@ const api = {
   restoreSessions: (): Promise<string[]> => ipcRenderer.invoke('session:restore'),
   openSession: (key: string, id?: string, cwd?: string): void =>
     ipcRenderer.send('session:open', key, id, cwd),
+  /** `openSession` 에 준 key 로 그 연결의 세션을 끝낸다. */
+  killSession: (key: string): void => ipcRenderer.send('session:kill', key),
   onCommand: (cb: (id: CommandId) => void): void => {
     ipcRenderer.on('command:run', (_event, id: CommandId) => cb(id))
   },

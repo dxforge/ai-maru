@@ -1,4 +1,4 @@
-import { chmodSync, rmSync, writeFileSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { ElectronApplication } from '@playwright/test'
 import {
@@ -11,6 +11,7 @@ import {
   rows,
   run,
   sessionFiles,
+  slowSessionBin,
   shellSize,
   sockets,
   test,
@@ -22,15 +23,6 @@ async function newWorkspace({ app, page }: Launched, count: number): Promise<voi
   await pressNew(app)
   await expect(workspaceItems(page)).toHaveCount(count)
   await activeTerminal(page)
-}
-
-function slowSessionBin(dataDir: string): string {
-  const real =
-    process.env.MARU_SESSION_BIN ?? join(__dirname, '../../core/target/debug/maru-session')
-  const bin = join(dataDir, 'slow-session')
-  writeFileSync(bin, `#!/bin/sh\nsleep 1.5\nexec '${real}' "$@"\n`)
-  chmodSync(bin, 0o755)
-  return bin
 }
 
 function hostPid(app: ElectronApplication): Promise<number> {

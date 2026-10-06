@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { createConnection, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -86,6 +94,15 @@ export function zshHome(dataDir: string, ...dirs: string[]): string {
   return realpathSync(home)
 }
 
+export function slowSessionBin(dataDir: string): string {
+  const real =
+    process.env.MARU_SESSION_BIN ?? join(__dirname, '../../core/target/debug/maru-session')
+  const bin = join(dataDir, 'slow-session')
+  writeFileSync(bin, `#!/bin/sh\nsleep 1.5\nexec '${real}' "$@"\n`)
+  chmodSync(bin, 0o755)
+  return bin
+}
+
 export function sessionDir(dataDir: string): string {
   return join(dataDir, 's')
 }
@@ -119,6 +136,14 @@ export function attachFromOutside(sockPath: string, cols: number, rows: number):
     sock.on('data', () => {})
     sock.on('error', reject)
   })
+}
+
+export function panes(page: Page) {
+  return page.locator('.panes.selected .pane')
+}
+
+export function activePane(page: Page) {
+  return page.locator('.pane:has(> .terminal-view.active)')
 }
 
 export function rows(page: Page) {

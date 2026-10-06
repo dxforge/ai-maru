@@ -106,6 +106,10 @@ function requestKill(path: string, timeoutMs: number): Promise<void> {
   })
 }
 
+export function killSession(dir: string, id: string, timeoutMs = KILL_TIMEOUT_MS): Promise<void> {
+  return requestKill(socketPath(dir, id), timeoutMs)
+}
+
 /**
  * 프로세스까지 없는 레코드는 지운다 — 띄우는 중인 세션은 소켓이 아직 안 열렸어도 프로세스는
  * 있다.

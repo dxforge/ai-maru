@@ -28,7 +28,8 @@ function fakeConnection() {
   const conn: SessionConnection = {
     send: () => {},
     onMessage: (cb) => (deliver = cb),
-    onClose: (cb) => (close = cb)
+    onClose: (cb) => (close = cb),
+    kill: () => {}
   }
   return { conn, deliver: (msg: SessionMessage) => deliver(msg), close: () => close() }
 }

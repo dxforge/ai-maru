@@ -13,7 +13,7 @@ import { createClaudeStatus } from './claude-status'
 import { listenCli, type Handlers } from './cli-server'
 import { installCommandMenu } from './menu'
 import { appSocketPath, killSessions, utf8Locale, type CliAccess } from './session'
-import type { OpenRequest, RestoreRequest } from './session-host'
+import type { KillRequest, OpenRequest, RestoreRequest } from './session-host'
 
 function sessionDir(): string {
   return join(app.getPath('userData'), 's')
@@ -176,6 +176,7 @@ function start(): void {
     const req: OpenRequest = {
       type: 'open',
       owner: event.sender.id,
+      key,
       id,
       cwd,
       dir: sessionDir(),
@@ -184,6 +185,12 @@ function start(): void {
     }
     void ready.then(() => sessionHost().postMessage(req, [port1]))
     event.sender.postMessage('session:port', key, [port2])
+  })
+
+  // open 과 같은 `ready.then` 으로 보내야 host 가 그 open 을 먼저 받는다.
+  ipcMain.on('session:kill', (_event, key: string) => {
+    const req: KillRequest = { type: 'kill', key, dir: sessionDir() }
+    void ready.then(() => sessionHost().postMessage(req))
   })
 
   app.on('window-all-closed', () => app.quit())
