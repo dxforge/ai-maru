@@ -69,7 +69,6 @@ function closePane(): void {
   void focusSelected()
 }
 
-// 칸 사이의 1px 틈으로 뒤의 배경이 보여 경계가 된다.
 function paneStyles(layout: Layout): Map<number, Record<string, string>> {
   const styles = new Map<number, Record<string, string>>()
   for (const [pane, r] of rects(layout)) {

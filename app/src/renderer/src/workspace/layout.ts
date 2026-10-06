@@ -57,7 +57,6 @@ export function rects(layout: Layout, at: Rect = { x: 0, y: 0, w: 1, h: 1 }): Ma
 
 const EPSILON = 1e-9
 
-/** 그 방향으로 맞닿은 칸 가운데 `from` 과 가장 길게 맞닿은 칸. 같으면 `panes` 순서에서 앞선 칸이다. */
 export function neighbor(layout: Layout, from: number, dir: FocusDirection): number | undefined {
   const all = rects(layout)
   const cur = all.get(from)
