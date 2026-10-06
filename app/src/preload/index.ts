@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { CanvasItem } from '../shared/canvas'
 import type { ClaudeState } from '../shared/claude'
+import type { CommandId } from '../shared/commands'
 
 // MessagePort 는 contextBridge 를 건너지 못해서 window.postMessage 로 넘긴다.
 ipcRenderer.on('session:port', (event, key: string) => {
@@ -16,8 +17,8 @@ const api = {
   restoreSessions: (): Promise<string[]> => ipcRenderer.invoke('session:restore'),
   openSession: (key: string, id?: string, cwd?: string): void =>
     ipcRenderer.send('session:open', key, id, cwd),
-  onNewWorkspace: (cb: () => void): void => {
-    ipcRenderer.on('workspace:new', () => cb())
+  onCommand: (cb: (id: CommandId) => void): void => {
+    ipcRenderer.on('command:run', (_event, id: CommandId) => cb(id))
   },
   onCanvasPut: (cb: (item: CanvasItem) => void): void => {
     ipcRenderer.on('canvas:put', (_event, item: CanvasItem) => cb(item))

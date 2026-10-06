@@ -3,8 +3,6 @@ import {
   app,
   BrowserWindow,
   ipcMain,
-  Menu,
-  MenuItem,
   MessageChannelMain,
   shell,
   utilityProcess,
@@ -13,6 +11,7 @@ import {
 import { canvasPut } from './canvas'
 import { createClaudeStatus } from './claude-status'
 import { listenCli, type Handlers } from './cli-server'
+import { installCommandMenu } from './menu'
 import { appSocketPath, killSessions, utf8Locale, type CliAccess } from './session'
 import type { OpenRequest, RestoreRequest } from './session-host'
 
@@ -144,22 +143,6 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(start)
 }
 
-function addNewWorkspaceItem(): void {
-  const menu = Menu.getApplicationMenu()
-  const file = menu?.items.find((item) => item.role?.toLowerCase() === 'filemenu')?.submenu
-  if (!menu || !file) return
-  file.insert(
-    0,
-    new MenuItem({
-      id: 'new-workspace',
-      label: 'New Workspace',
-      accelerator: 'Command+N',
-      click: () => BrowserWindow.getAllWindows()[0]?.webContents.send('workspace:new')
-    })
-  )
-  Menu.setApplicationMenu(menu)
-}
-
 function start(): void {
   if (unobtrusive) app.dock?.hide()
   // 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.
@@ -219,6 +202,6 @@ function start(): void {
     })
   })
 
-  addNewWorkspaceItem()
+  installCommandMenu((id) => BrowserWindow.getAllWindows()[0]?.webContents.send('command:run', id))
   createWindow()
 }

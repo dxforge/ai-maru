@@ -136,6 +136,15 @@ export async function shellSize(page: Page): Promise<{ rows: number; cols: numbe
   return { rows: Number(m![1]), cols: Number(m![2]) }
 }
 
+export async function activeTerminal(page: Page): Promise<void> {
+  await page.waitForSelector('.terminal-view.active .xterm-screen')
+}
+
+export async function run(page: Page, command: string, expected: string): Promise<void> {
+  await page.keyboard.type(`${command}\n`)
+  await expect(rows(page)).toContainText(expected)
+}
+
 export function gridRows(page: Page) {
   return rows(page).locator('> div')
 }
@@ -145,10 +154,12 @@ export function workspaceItems(page: Page) {
 }
 
 // Playwright 의 키 입력은 macOS 메뉴를 거치지 않아 메뉴 항목을 직접 누른다.
+export async function clickMenu(app: ElectronApplication, id: string): Promise<void> {
+  await app.evaluate(({ Menu }, id) => Menu.getApplicationMenu()!.getMenuItemById(id)!.click(), id)
+}
+
 export async function pressNew(app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ Menu }) =>
-    Menu.getApplicationMenu()!.getMenuItemById('new-workspace')!.click()
-  )
+  await clickMenu(app, 'new-workspace')
 }
 
 export async function resizeBy(app: ElectronApplication, dw: number, dh: number): Promise<void> {

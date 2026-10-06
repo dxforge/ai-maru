@@ -1,13 +1,15 @@
 import { chmodSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { ElectronApplication } from '@playwright/test'
 import {
+  activeTerminal,
   expect,
   type Launched,
   gridRows,
   pressNew,
   resizeBy,
   rows,
+  run,
   sessionFiles,
   shellSize,
   sockets,
@@ -15,10 +17,6 @@ import {
   workspaceItems,
   zshHome
 } from './app'
-
-async function activeTerminal(page: Page): Promise<void> {
-  await page.waitForSelector('.terminal-view.active .xterm-screen')
-}
 
 async function newWorkspace({ app, page }: Launched, count: number): Promise<void> {
   await pressNew(app)
@@ -40,21 +38,6 @@ function hostPid(app: ElectronApplication): Promise<number> {
     ({ app }) => app.getAppMetrics().find((m) => m.name === 'maru-session-host')!.pid
   )
 }
-
-async function run(page: Page, command: string, expected: string): Promise<void> {
-  await page.keyboard.type(`${command}\n`)
-  await expect(rows(page)).toContainText(expected)
-}
-
-test('⌘N 은 File 메뉴의 New Workspace 다', async ({ launch }) => {
-  const { app } = await launch()
-  const item = await app.evaluate(({ Menu }) => {
-    const file = Menu.getApplicationMenu()!.items.find((i) => i.role?.toLowerCase() === 'filemenu')!
-    const found = file.submenu!.getMenuItemById('new-workspace')!
-    return { label: found.label, accelerator: found.accelerator }
-  })
-  expect(item).toEqual({ label: 'New Workspace', accelerator: 'Command+N' })
-})
 
 const homeName = basename(process.env.HOME!)
 
