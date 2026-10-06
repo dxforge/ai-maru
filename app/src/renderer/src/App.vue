@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick } from 'vue'
+import { computed, nextTick, ref, useTemplateRef } from 'vue'
+import type { CommandId } from '../../shared/commands'
 import { createCanvas } from './canvas/store'
 import { createClaudeStatuses } from './claude/status'
 import CanvasPanel from './components/CanvasPanel.vue'
+import CommandPalette from './components/CommandPalette.vue'
 import TerminalView from './components/TerminalView.vue'
 import { workspaceName } from './workspace/cwd'
 import { createWorkspaces } from './workspace/store'
@@ -19,12 +21,12 @@ const selectedClaude = computed(() => claude.state(workspaces.selected()?.sessio
 // 되살리기 전에 띄운 세션은 되살릴 목록에도 들어가 workspace 가 둘 생길 수 있어, 그동안의 ⌘N 은
 // 되살린 뒤에 연다.
 let pendingNew: number | null = 0
-window.maru.onNewWorkspace(() => {
+function newWorkspace(): void {
   if (pendingNew === null) {
     const w = workspaces.selected()
     workspaces.open(undefined, w?.cwd ?? w?.startDir)
   } else pendingNew++
-})
+}
 // 거절은 session host 가 답하기 전에 죽었다는 뜻이다. 다시 청하면 새 host 가 답한다.
 void window.maru
   .restoreSessions()
@@ -44,13 +46,42 @@ function setTerminal(key: number, t: unknown): void {
   else terminals.delete(key)
 }
 
-// 선택이 그대로인 클릭에서는 TerminalView 의 active watch 가 돌지 않아 여기서 포커스를 준다.
 // 보이지 않는 터미널은 포커스를 받지 못하므로 선택이 화면에 반영된 뒤에 준다.
-async function selectWorkspace(key: number): Promise<void> {
-  workspaces.select(key)
+async function focusSelected(): Promise<void> {
   await nextTick()
-  terminals.get(key)?.focus()
+  const key = workspaces.selectedKey.value
+  if (key !== null) terminals.get(key)?.focus()
 }
+
+// 선택이 그대로인 클릭에서는 TerminalView 의 active watch 가 돌지 않아 여기서 포커스를 준다.
+function selectWorkspace(key: number): void {
+  workspaces.select(key)
+  void focusSelected()
+}
+
+const paletteOpen = ref(false)
+const palette = useTemplateRef<InstanceType<typeof CommandPalette>>('palette')
+
+function closePalette(): void {
+  if (!paletteOpen.value) return
+  paletteOpen.value = false
+  void focusSelected()
+}
+
+const handlers: Record<CommandId, () => void> = {
+  'new-workspace': newWorkspace,
+  'command-palette': () => {
+    paletteOpen.value = true
+    palette.value?.focus()
+  },
+  'toggle-canvas': canvas.toggle
+}
+
+function runCommand(id: CommandId): void {
+  if (id !== 'command-palette') closePalette()
+  handlers[id]()
+}
+window.maru.onCommand(runCommand)
 </script>
 
 <template>
@@ -86,6 +117,7 @@ async function selectWorkspace(key: number): Promise<void> {
       />
     </div>
     <CanvasPanel :canvas="canvas" />
+    <CommandPalette v-if="paletteOpen" ref="palette" @run="runCommand" @close="closePalette" />
   </div>
 </template>
 
