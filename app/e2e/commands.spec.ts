@@ -18,32 +18,60 @@ async function typesIntoTerminal(page: Page, marker: string): Promise<void> {
   await run(page, `echo ${marker}-$((1+1))`, `${marker}-2`)
 }
 
-test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있다', async ({ launch }) => {
+test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W 는 Close Window 가 아니다', async ({
+  launch
+}) => {
   const { app } = await launch()
   const menus = await app.evaluate(({ Menu }) => {
-    const top = (role: string) =>
+    const items = (role: string) =>
       Menu.getApplicationMenu()!
         .items.find((i) => i.role?.toLowerCase() === role)!
-        .submenu!.items.slice(0, 3)
-        .map((i) => [i.type === 'separator' ? '-' : i.id, i.label, i.accelerator ?? null])
-    return { file: top('filemenu'), view: top('viewmenu') }
+        .submenu!.items.map((i) => [
+          i.type === 'separator' ? '-' : i.id,
+          i.label,
+          i.accelerator ?? null
+        ])
+    const roles = Menu.getApplicationMenu()!.items.flatMap(
+      (top) => top.submenu?.items.map((i) => i.role ?? null) ?? []
+    )
+    const lastTypes = Menu.getApplicationMenu()!.items.map((top) => top.submenu?.items.at(-1)?.type)
+    return { file: items('filemenu'), view: items('viewmenu'), roles, lastTypes }
   })
-  expect(menus.file.slice(0, 2)).toEqual([
+  expect(menus.file).toEqual([
     ['new-workspace', 'New Workspace', 'Command+N'],
-    ['-', '', null]
+    ['split-right', 'Split Right', 'Command+D'],
+    ['split-down', 'Split Down', 'Shift+Command+D'],
+    ['close-pane', 'Close Pane', 'Command+W']
   ])
-  expect(menus.view).toEqual([
+  expect(menus.view.slice(0, 7)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
     ['toggle-canvas', 'Toggle Canvas', null],
+    ['focus-pane-left', 'Focus Pane Left', 'Alt+Command+Left'],
+    ['focus-pane-right', 'Focus Pane Right', 'Alt+Command+Right'],
+    ['focus-pane-up', 'Focus Pane Up', 'Alt+Command+Up'],
+    ['focus-pane-down', 'Focus Pane Down', 'Alt+Command+Down'],
     ['-', '', null]
   ])
+  expect(menus.lastTypes).not.toContain('separator')
+  expect(menus.roles).not.toContain('close')
+  expect(menus.roles).toContain('reload')
 })
 
 test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력한 단어로 거른다', async ({ launch }) => {
   const launched = await launch()
   const { page } = launched
   await openPalette(launched)
-  await expect(items(page)).toHaveText(['New Workspace⌘N', 'Toggle Canvas'])
+  await expect(items(page)).toHaveText([
+    'New Workspace⌘N',
+    'Split Right⌘D',
+    'Split Down⇧⌘D',
+    'Close Pane⌘W',
+    'Toggle Canvas',
+    'Focus Pane Left⌥⌘←',
+    'Focus Pane Right⌥⌘→',
+    'Focus Pane Up⌥⌘↑',
+    'Focus Pane Down⌥⌘↓'
+  ])
   await expect(items(page).first()).toHaveClass(/selected/)
 
   await page.keyboard.type('canv')
@@ -74,7 +102,7 @@ test('팔레트에서 Enter 로 New Workspace 를 실행하면 팔레트가 닫�
   await typesIntoTerminal(page, 'new')
 })
 
-test('↓ 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 뒤 키는 터미널로 간다', async ({
+test('↓·↑ 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 뒤 키는 터미널로 간다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -83,18 +111,23 @@ test('↓ 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 뒤 �
   await expect(canvas).toBeHidden()
 
   await openPalette(launched)
+  await page.keyboard.type('le')
+  await expect(items(page)).toHaveText(['Toggle Canvas', 'Focus Pane Left⌥⌘←'])
   await page.keyboard.press('ArrowDown')
   await expect(items(page).nth(1)).toHaveClass(/selected/)
+  await page.keyboard.press('ArrowDown')
+  await expect(items(page).nth(0)).toHaveClass(/selected/)
   await page.keyboard.press('Enter')
   await expect(palette(page)).toHaveCount(0)
   await expect(canvas).toBeVisible()
   await typesIntoTerminal(page, 'shown')
 
   await openPalette(launched)
-  await page.keyboard.press('ArrowDown')
-  await page.keyboard.press('ArrowDown')
+  await page.keyboard.type('le')
   await page.keyboard.press('ArrowUp')
   await expect(items(page).nth(1)).toHaveClass(/selected/)
+  await page.keyboard.press('ArrowUp')
+  await expect(items(page).nth(0)).toHaveClass(/selected/)
   await page.keyboard.press('Enter')
   await expect(canvas).toBeHidden()
   await typesIntoTerminal(page, 'hidden')
@@ -114,7 +147,7 @@ test('항목을 누르거나, 마우스를 올린 항목에서 Enter 를 누르�
 
   await openPalette(launched)
   await items(page).filter({ hasText: 'Toggle Canvas' }).hover()
-  await expect(items(page).nth(1)).toHaveClass(/selected/)
+  await expect(items(page).filter({ hasText: 'Toggle Canvas' })).toHaveClass(/selected/)
   await page.keyboard.press('Enter')
   await expect(canvas).toBeHidden()
 })
