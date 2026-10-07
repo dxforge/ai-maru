@@ -55,9 +55,20 @@
 //! `session_id`, `config_dir` 은 claude 가 `sessions/` 를 두는 디렉토리다. `source` 는 hook 입력에
 //! `source`(`SessionStart` 의 `startup`·`compact` 등)가 있을 때만 그 값을 옮긴다. `claude.exit` 는 그
 //! 터미널의 claude 가 끝났다고 알린다.
+//!
+//! # claude monitor
+//!
+//! 앱 claude plugin 의 `monitors/monitors.json` 이 대화형 claude 마다 `maru claude monitor` 를 띄운다.
+//! Claude Code 는 이 프로세스의 stdout 한 줄마다 claude 에 알리고, 쉬는 claude 도 그 줄을 받아 새
+//! 응답을 시작한다. 그래서 알릴 것이 없으면 시작할 때도 stdout 에 아무것도 쓰지 않는다.
+//!
+//! 종료 신호를 받거나 stdout 의 상대가 닫히면 끝난다. claude 는 정상으로 끝날 때 SIGTERM 을 보내지만,
+//! 신호 없이 죽으면(SIGKILL 등) monitor 에 남는 흔적은 stdout 이 닫히는 것뿐이다.
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
+use nix::errno::Errno;
+use nix::sys::event::{EventFilter, EventFlag, FilterFlag, KEvent, Kqueue};
 use serde_json::{Map, Value, json};
 use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, IsTerminal, Read, Write};
@@ -103,6 +114,9 @@ enum ClaudeCommand {
     Hook,
     /// Say that claude has exited.
     Exit,
+    /// Wait without writing until stdout closes. The app's claude plugin runs this as a
+    /// monitor.
+    Monitor,
 }
 
 #[derive(Subcommand)]
@@ -166,6 +180,7 @@ fn run(command: Command) -> Result<()> {
             ClaudeCommand::Exit => {
                 call(&target()?, "claude.exit", Map::new())?;
             }
+            ClaudeCommand::Monitor => claude_monitor()?,
         },
     }
     Ok(())
@@ -190,6 +205,29 @@ fn claude_hook() -> Result<()> {
     }
     call(&target, "claude.hook", params)?;
     Ok(())
+}
+
+fn claude_monitor() -> Result<()> {
+    // macOS 의 poll 은 쓰기를 기다리지 않으면 pipe·socket 의 상대가 닫힌 것을 알리지 않는다.
+    let kq = Kqueue::new().context("cannot create a kqueue")?;
+    let stdout = KEvent::new(
+        1,
+        EventFilter::EVFILT_WRITE,
+        EventFlag::EV_ADD | EventFlag::EV_CLEAR,
+        FilterFlag::empty(),
+        0,
+        0,
+    );
+    kq.kevent(&[stdout], &mut [], None)
+        .context("cannot watch stdout")?;
+    let mut events = [stdout];
+    loop {
+        match kq.kevent(&[], &mut events, None) {
+            Ok(_) if events[0].flags().contains(EventFlag::EV_EOF) => return Ok(()),
+            Ok(_) | Err(Errno::EINTR) => {}
+            Err(e) => return Err(e).context("cannot watch stdout"),
+        }
+    }
 }
 
 fn claude_config_dir() -> Result<String> {
