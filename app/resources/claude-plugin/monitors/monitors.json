@@ -1,0 +1,7 @@
+[
+  {
+    "name": "maru",
+    "command": "\"$MARU_CLI\" claude monitor",
+    "description": "AI Maru notifications — safe to stop on exit"
+  }
+]
