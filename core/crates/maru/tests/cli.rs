@@ -1,6 +1,10 @@
+use nix::sys::signal::{Signal, kill};
+use nix::unistd::Pid;
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
+use std::os::fd::OwnedFd;
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread::JoinHandle;
@@ -694,4 +698,69 @@ fn claude_commands_are_hidden_from_help() {
     let out = maru(None, &["--help"]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(!stdout(&out).contains("claude"), "{}", stdout(&out));
+}
+
+fn monitor(stdout: Stdio) -> Child {
+    maru_cmd(None, &["claude", "monitor"])
+        .stdin(Stdio::null())
+        .stdout(stdout)
+        .spawn()
+        .unwrap()
+}
+
+fn assert_running(child: &mut Child) {
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "monitor 가 먼저 끝났다"
+    );
+}
+
+fn send(child: &Child, signal: Signal) {
+    kill(Pid::from_raw(child.id() as i32), signal).unwrap();
+}
+
+fn assert_ends_when_closed(mut child: Child, close: impl FnOnce(&mut Child)) {
+    assert_running(&mut child);
+    close(&mut child);
+    let out = wait_within(child);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+}
+
+#[test]
+fn claude_monitor_writes_nothing_and_ends_on_sigterm() {
+    let mut child = monitor(Stdio::piped());
+    assert_running(&mut child);
+    send(&child, Signal::SIGTERM);
+    let out = wait_within(child);
+    assert_eq!(out.status.signal(), Some(Signal::SIGTERM as i32));
+    assert!(out.stdout.is_empty(), "{:?}", out.stdout);
+}
+
+#[test]
+fn claude_monitor_ends_when_the_pipe_reader_closes() {
+    assert_ends_when_closed(monitor(Stdio::piped()), |child| drop(child.stdout.take()));
+}
+
+#[test]
+fn claude_monitor_ends_when_the_socket_peer_closes() {
+    // Claude Code 는 monitor 의 stdout 에 socket 을 준다.
+    let (ours, theirs) = UnixStream::pair().unwrap();
+    assert_ends_when_closed(monitor(Stdio::from(OwnedFd::from(theirs))), |_| drop(ours));
+}
+
+#[test]
+fn claude_monitor_still_ends_after_a_stop_and_continue() {
+    assert_ends_when_closed(monitor(Stdio::piped()), |child| {
+        send(child, Signal::SIGSTOP);
+        send(child, Signal::SIGCONT);
+        assert_running(child);
+        drop(child.stdout.take())
+    });
+}
+
+#[test]
+fn claude_monitor_on_dev_null_fails() {
+    let out = wait_within(monitor(Stdio::null()));
+    assert_fails_with(&out, "cannot watch stdout");
 }
