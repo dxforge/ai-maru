@@ -11,6 +11,7 @@ describe('filterCommands', () => {
       'Split Down',
       'Close Pane',
       'Toggle Canvas',
+      'Toggle View Mode',
       'Focus Pane Left',
       'Focus Pane Right',
       'Focus Pane Up',
@@ -26,6 +27,7 @@ describe('filterCommands', () => {
 
   it('단어가 이름에 모두 들어 있는 명령만 남기고 대소문자를 가리지 않는다', () => {
     expect(titles('CANV')).toEqual(['Toggle Canvas'])
+    expect(titles('view')).toEqual(['Toggle View Mode'])
     expect(titles('space new')).toEqual(['New Workspace'])
     expect(titles('new canvas')).toEqual([])
   })
@@ -50,6 +52,10 @@ describe('formatAccelerator', () => {
     expect(formatAccelerator('Alt+Command+Right')).toBe('⌥⌘→')
     expect(formatAccelerator('Alt+Command+Up')).toBe('⌥⌘↑')
     expect(formatAccelerator('Alt+Command+Down')).toBe('⌥⌘↓')
+  })
+
+  it('Enter 는 메뉴처럼 ↩ 로 적는다', () => {
+    expect(formatAccelerator('Control+Command+Enter')).toBe('⌃⌘↩')
   })
 })
 

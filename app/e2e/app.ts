@@ -187,6 +187,28 @@ export async function pressNew(app: ElectronApplication): Promise<void> {
   await clickMenu(app, 'new-workspace')
 }
 
+export async function newWorkspace({ app, page }: Launched, count: number): Promise<void> {
+  await pressNew(app)
+  await expect(workspaceItems(page)).toHaveCount(count)
+  await activeTerminal(page)
+}
+
+export async function split(
+  app: ElectronApplication,
+  page: Page,
+  id: 'split-right' | 'split-down',
+  count: number
+): Promise<void> {
+  await clickMenu(app, id)
+  await expect(panes(page)).toHaveCount(count)
+  await activeTerminal(page)
+}
+
+export async function openPalette({ app, page }: Launched): Promise<void> {
+  await clickMenu(app, 'command-palette')
+  await expect(page.locator('.palette .query')).toBeFocused()
+}
+
 export async function resizeBy(app: ElectronApplication, dw: number, dh: number): Promise<void> {
   await app.evaluate(
     ({ BrowserWindow }, [dw, dh]) => {

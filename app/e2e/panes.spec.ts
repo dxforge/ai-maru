@@ -1,8 +1,9 @@
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import {
   activeTerminal,
   clickMenu,
   expect,
+  openPalette,
   panes,
   pressNew,
   resizeBy,
@@ -10,21 +11,11 @@ import {
   shellSize,
   slowSessionBin,
   sockets,
+  split,
   test,
   workspaceItems,
   zshHome
 } from './app'
-
-async function split(
-  app: ElectronApplication,
-  page: Page,
-  id: 'split-right' | 'split-down',
-  count: number
-): Promise<void> {
-  await clickMenu(app, id)
-  await expect(panes(page)).toHaveCount(count)
-  await activeTerminal(page)
-}
 
 async function box(page: Page, i: number) {
   return (await panes(page).nth(i).boundingBox())!
@@ -323,8 +314,7 @@ test('팔레트가 열린 채 ⌘W 를 누르면 칸이 닫히고 키는 남은 
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await typesInto(page, 1, 'right')
-  await clickMenu(app, 'command-palette')
-  await expect(page.locator('.palette .query')).toBeFocused()
+  await openPalette({ app, page })
 
   await clickMenu(app, 'close-pane')
 
