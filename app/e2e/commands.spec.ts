@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { activeTerminal, clickMenu, expect, type Launched, run, test, workspaceItems } from './app'
+import { activeTerminal, clickMenu, expect, openPalette, run, test, workspaceItems } from './app'
 
 function palette(page: Page) {
   return page.locator('.palette')
@@ -7,11 +7,6 @@ function palette(page: Page) {
 
 function items(page: Page) {
   return palette(page).locator('.item')
-}
-
-async function openPalette(launched: Launched): Promise<void> {
-  await clickMenu(launched.app, 'command-palette')
-  await expect(palette(launched.page).locator('.query')).toBeFocused()
 }
 
 async function typesIntoTerminal(page: Page, marker: string): Promise<void> {
@@ -43,9 +38,10 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['split-down', 'Split Down', 'Shift+Command+D'],
     ['close-pane', 'Close Pane', 'Command+W']
   ])
-  expect(menus.view.slice(0, 7)).toEqual([
+  expect(menus.view.slice(0, 8)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
     ['toggle-canvas', 'Toggle Canvas', null],
+    ['toggle-view-mode', 'Toggle View Mode', 'Control+Command+Enter'],
     ['focus-pane-left', 'Focus Pane Left', 'Alt+Command+Left'],
     ['focus-pane-right', 'Focus Pane Right', 'Alt+Command+Right'],
     ['focus-pane-up', 'Focus Pane Up', 'Alt+Command+Up'],
@@ -67,6 +63,7 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
     'Split Down⇧⌘D',
     'Close Pane⌘W',
     'Toggle Canvas',
+    'Toggle View Mode⌃⌘↩',
     'Focus Pane Left⌥⌘←',
     'Focus Pane Right⌥⌘→',
     'Focus Pane Up⌥⌘↑',
@@ -111,8 +108,8 @@ test('↓·↑ 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 
   await expect(canvas).toBeHidden()
 
   await openPalette(launched)
-  await page.keyboard.type('le')
-  await expect(items(page)).toHaveText(['Toggle Canvas', 'Focus Pane Left⌥⌘←'])
+  await page.keyboard.type('toggle')
+  await expect(items(page)).toHaveText(['Toggle Canvas', 'Toggle View Mode⌃⌘↩'])
   await page.keyboard.press('ArrowDown')
   await expect(items(page).nth(1)).toHaveClass(/selected/)
   await page.keyboard.press('ArrowDown')
@@ -123,7 +120,7 @@ test('↓·↑ 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 
   await typesIntoTerminal(page, 'shown')
 
   await openPalette(launched)
-  await page.keyboard.type('le')
+  await page.keyboard.type('toggle')
   await page.keyboard.press('ArrowUp')
   await expect(items(page).nth(1)).toHaveClass(/selected/)
   await page.keyboard.press('ArrowUp')

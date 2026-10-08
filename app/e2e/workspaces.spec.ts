@@ -4,8 +4,8 @@ import type { ElectronApplication } from '@playwright/test'
 import {
   activeTerminal,
   expect,
-  type Launched,
   gridRows,
+  newWorkspace,
   pressNew,
   resizeBy,
   rows,
@@ -18,12 +18,6 @@ import {
   workspaceItems,
   zshHome
 } from './app'
-
-async function newWorkspace({ app, page }: Launched, count: number): Promise<void> {
-  await pressNew(app)
-  await expect(workspaceItems(page)).toHaveCount(count)
-  await activeTerminal(page)
-}
 
 function hostPid(app: ElectronApplication): Promise<number> {
   return app.evaluate(

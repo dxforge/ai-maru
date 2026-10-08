@@ -40,6 +40,13 @@ export function panes(layout: Layout): number[] {
   return 'pane' in layout ? [layout.pane] : [...panes(layout.first), ...panes(layout.second)]
 }
 
+/** 가로선 하나가 지나는 칸의 최대 개수. */
+export function columnCount(layout: Layout): number {
+  if ('pane' in layout) return 1
+  const [a, b] = [columnCount(layout.first), columnCount(layout.second)]
+  return layout.split === 'right' ? a + b : Math.max(a, b)
+}
+
 export function rects(layout: Layout, at: Rect = { x: 0, y: 0, w: 1, h: 1 }): Map<number, Rect> {
   if ('pane' in layout) return new Map([[layout.pane, at]])
   const [a, b]: Rect[] =
