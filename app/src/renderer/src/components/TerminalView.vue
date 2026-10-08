@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { FitAddon } from '@xterm/addon-fit'
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type IRenderDimensions } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { attach, type Attachment } from '../session/attach'
@@ -12,7 +12,12 @@ const {
   startDir = undefined,
   active
 } = defineProps<{ sessionId?: string; startDir?: string; active: boolean }>()
-const emit = defineEmits<{ exit: []; cwd: [cwd: string]; spawned: [id: string] }>()
+const emit = defineEmits<{
+  exit: []
+  cwd: [cwd: string]
+  spawned: [id: string]
+  cellWidth: [width: number]
+}>()
 
 const host = useTemplateRef<HTMLDivElement>('host')
 const term = new Terminal({ theme: { background: '#1e1e1e' } })
@@ -23,6 +28,9 @@ term.parser.registerOscHandler(7, (data) => {
   if (path) emit('cwd', path)
   return true
 })
+// css.cell.width 는 열 수마다 반올림이 달라, 열 수와 상관없는 device 값으로 셈한다.
+const cellWidth = (d: IRenderDimensions): number => d.device.cell.width / devicePixelRatio
+term.onDimensionsChange((d) => emit('cellWidth', cellWidth(d)))
 let session: Attachment | null = null
 const observer = new ResizeObserver(() => {
   if (session?.primary !== false) fit.fit()
@@ -40,6 +48,7 @@ watch(
 
 onMounted(async () => {
   term.open(host.value!)
+  if (term.dimensions) emit('cellWidth', cellWidth(term.dimensions))
   fit.fit()
   observer.observe(host.value!)
   if (active) term.focus()

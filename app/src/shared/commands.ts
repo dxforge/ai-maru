@@ -9,6 +9,7 @@ export type CommandId =
   | 'focus-pane-down'
   | 'command-palette'
   | 'toggle-canvas'
+  | 'toggle-view-mode'
 
 export type Command = {
   id: CommandId
@@ -31,6 +32,12 @@ export const commands: readonly Command[] = [
     palette: false
   },
   { id: 'toggle-canvas', title: 'Toggle Canvas', menu: 'view' },
+  {
+    id: 'toggle-view-mode',
+    title: 'Toggle View Mode',
+    menu: 'view',
+    accelerator: 'Control+Command+Enter'
+  },
   {
     id: 'focus-pane-left',
     title: 'Focus Pane Left',
@@ -61,7 +68,7 @@ const MODIFIERS: [string, string[]][] = [
   ['⌘', ['Command', 'Cmd', 'CommandOrControl', 'CmdOrCtrl']]
 ]
 
-const KEYS: Record<string, string> = { Left: '←', Right: '→', Up: '↑', Down: '↓' }
+const KEYS: Record<string, string> = { Left: '←', Right: '→', Up: '↑', Down: '↓', Enter: '↩' }
 
 export function formatAccelerator(accelerator: string): string {
   const parts = accelerator.split('+')

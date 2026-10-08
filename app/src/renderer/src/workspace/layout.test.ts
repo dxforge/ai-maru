@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { neighbor, panes, rects, removePane, splitPane, type Layout } from './layout'
+import { columnCount, neighbor, panes, rects, removePane, splitPane, type Layout } from './layout'
 
 function threePanes(): Layout {
   return splitPane(splitPane({ pane: 1 }, 1, 2, 'right'), 2, 3, 'down')
@@ -50,6 +50,20 @@ describe('rects', () => {
       ])
     )
     expect(panes(threePanes())).toEqual([1, 2, 3])
+  })
+})
+
+describe('columnCount', () => {
+  it('좌우로 나누면 양쪽을 더하고, 위아래로 나누면 큰 쪽을 쓴다', () => {
+    expect(columnCount({ pane: 1 })).toBe(1)
+    expect(columnCount(threePanes())).toBe(2)
+    expect(columnCount(splitPane(threePanes(), 3, 4, 'right'))).toBe(3)
+    expect(columnCount(splitPane({ pane: 1 }, 1, 2, 'down'))).toBe(1)
+  })
+
+  it('고르지 않게 나눠도 늘어선 칸 수다', () => {
+    const layout = splitPane(splitPane({ pane: 1 }, 1, 2, 'right'), 2, 3, 'right')
+    expect(columnCount(layout)).toBe(3)
   })
 })
 
