@@ -1,13 +1,14 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { createConnection, createServer } from 'node:net'
+import { createConnection, createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CLI_PROTOCOL_VERSION,
   InvalidParams,
   listenCli,
   type CliServer,
+  Subscription,
   type Handlers
 } from './cli-server'
 
@@ -35,8 +36,23 @@ const handlers: Handlers = {
   record: (params) => {
     recorded.push(params.value)
     return null
+  },
+  sub: () =>
+    new Subscription('test.event', (notify) => {
+      pushes.push(notify)
+      return () => unsubscribed++
+    }),
+  subRefuses: () => {
+    throw new InvalidParams('not yours')
+  },
+  subLater: async () => {
+    await new Promise<void>((r) => (release = r))
+    return handlers.sub({}, 's-test')
   }
 }
+
+let pushes: ((params: object) => boolean)[] = []
+let unsubscribed = 0
 
 let dir: string
 let server: CliServer | null = null
@@ -44,6 +60,8 @@ let server: CliServer | null = null
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'maru-cli-'))
   recorded = []
+  pushes = []
+  unsubscribed = 0
 })
 
 afterEach(async () => {
@@ -109,6 +127,19 @@ async function call(
   expect(out.endsWith('\n')).toBe(true)
   expect(out.trimEnd().includes('\n')).toBe(false)
   return JSON.parse(out)
+}
+
+function open(path: string, raw: string, got: string[]): Socket {
+  let buf = ''
+  const sock = createConnection(path, () => sock.write(raw))
+  sock.on('data', (c) => {
+    buf += c.toString()
+    const parts = buf.split('\n')
+    buf = parts.pop()!
+    got.push(...parts)
+  })
+  sock.on('error', () => {})
+  return sock
 }
 
 describe('listenCli', () => {
@@ -319,5 +350,97 @@ describe('listenCli', () => {
   it('열지 못하면 거절한다', async () => {
     writeFileSync(join(dir, 's'), '')
     await expect(start()).rejects.toThrow()
+  })
+})
+
+describe('구독', () => {
+  it('응답 뒤에 연결을 열어 두고 push 마다 monitor.event 를 보낸다', async () => {
+    const path = await start()
+    const got: string[] = []
+    const c = open(path, req('sub', common), got)
+    await vi.waitFor(() => expect(pushes.length > 0).toBe(true))
+    pushes[0]({ event: 'x', n: 1 })
+    pushes[0]({ event: 'x', n: 2 })
+    await vi.waitFor(() => expect(got.length >= 3).toBe(true))
+    expect(got.map((l) => JSON.parse(l))).toEqual([
+      { jsonrpc: '2.0', id: 1, result: null },
+      { jsonrpc: '2.0', method: 'test.event', params: { event: 'x', n: 1 } },
+      { jsonrpc: '2.0', method: 'test.event', params: { event: 'x', n: 2 } }
+    ])
+    c.destroy()
+  })
+
+  it('idle 시간이 지나도 끊지 않는다', async () => {
+    const path = await start({ idleMs: 50 })
+    const got: string[] = []
+    const c = open(path, req('sub', common), got)
+    await vi.waitFor(() => expect(pushes.length > 0).toBe(true))
+    await new Promise((r) => setTimeout(r, 150))
+    pushes[0]({ event: 'late' })
+    await vi.waitFor(() => expect(got.length >= 2).toBe(true))
+    expect(JSON.parse(got[1]).params).toEqual({ event: 'late' })
+    c.destroy()
+  })
+
+  it.each([
+    ['닫으면', (c: Socket) => c.destroy()],
+    ['쓰기를 닫아도', (c: Socket) => c.end()]
+  ])('클라이언트가 %s 구독을 푼다', async (_name, close) => {
+    const path = await start()
+    const c = open(path, req('sub', common), [])
+    await vi.waitFor(() => expect(pushes.length > 0).toBe(true))
+    close(c)
+    await vi.waitFor(() => expect(unsubscribed === 1).toBe(true))
+  })
+
+  it('handler 를 기다리는 사이 클라이언트가 쓰기를 닫으면 구독하지 않는다', async () => {
+    const path = await start()
+    const c = open(path, req('subLater', common), [])
+    await new Promise((r) => setTimeout(r, 30))
+    c.end()
+    await new Promise((r) => setTimeout(r, 30))
+    release()
+    await new Promise((r) => c.once('close', r))
+    expect(pushes).toEqual([])
+  })
+
+  it('닫힌 연결로는 보내지 못했다고 알린다', async () => {
+    const path = await start()
+    const c = open(path, req('sub', common), [])
+    await vi.waitFor(() => expect(pushes.length > 0).toBe(true))
+    expect(pushes[0]({ event: 'x' })).toBe(true)
+    c.destroy()
+    await vi.waitFor(() => expect(unsubscribed === 1).toBe(true))
+    expect(pushes[0]({ event: 'y' })).toBe(false)
+  })
+
+  it('구독 handler 가 던지면 오류로 답하고 닫는다', async () => {
+    const path = await start()
+    const res = await call(path, req('subRefuses', common))
+    expect(res.error.data.code).toBe('invalid_params')
+    expect(res.error.message).toBe('not yours')
+  })
+
+  it('id 없는 구독 요청은 invalid_request 로 거절하고 구독하지 않는다', async () => {
+    const path = await start()
+    const res = await call(path, req('sub', common, null))
+    expect(res.error.data.code).toBe('invalid_request')
+    expect(pushes).toEqual([])
+  })
+
+  it('구독도 버전을 먼저 본다', async () => {
+    const path = await start()
+    const res = await call(path, req('sub', { ...common, protocol_version: 999 }))
+    expect(res.error.data.code).toBe('protocol_mismatch')
+    expect(pushes).toEqual([])
+  })
+
+  it('서버를 닫으면 구독이 풀린다', async () => {
+    const path = await start()
+    open(path, req('sub', common), [])
+    await vi.waitFor(() => expect(pushes.length > 0).toBe(true))
+    await server!.close()
+    server = null
+    await vi.waitFor(() => expect(unsubscribed === 1).toBe(true))
   })
 })

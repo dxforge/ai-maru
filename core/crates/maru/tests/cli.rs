@@ -39,16 +39,20 @@ fn accept_within(listener: &UnixListener) -> UnixStream {
     }
 }
 
+fn accept_request(listener: &UnixListener) -> (UnixStream, Value) {
+    let stream = accept_within(listener);
+    let mut line = String::new();
+    BufReader::new(&stream).read_line(&mut line).unwrap();
+    (stream, serde_json::from_str(&line).unwrap())
+}
+
 fn serve_once(
     sock: &Path,
     reply: impl FnOnce(&Value) -> Option<String> + Send + 'static,
 ) -> JoinHandle<Value> {
     let listener = UnixListener::bind(sock).unwrap();
     std::thread::spawn(move || {
-        let stream = accept_within(&listener);
-        let mut line = String::new();
-        BufReader::new(&stream).read_line(&mut line).unwrap();
-        let req: Value = serde_json::from_str(&line).unwrap();
+        let (stream, req) = accept_request(&listener);
         match reply(&req) {
             Some(out) => writeln!(&stream, "{out}").unwrap(),
             // 답하지 않는 앱 — CLI 가 먼저 끊을 때까지 연결을 쥐고 있는다.
@@ -606,6 +610,42 @@ fn claude_hook_forwards_the_session_start_source() {
 }
 
 #[test]
+fn claude_hook_on_session_start_tells_claude_its_session_and_the_inbox() {
+    for source in ["startup", "resume", "clear", "compact"] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, |req| result(req, Value::Null));
+        let input = format!(
+            r#"{{"session_id":"c-1","hook_event_name":"SessionStart","source":"{source}"}}"#
+        );
+        let out = maru_claude(&sock, &["claude", "hook"], input.as_bytes(), &[]);
+        server.join().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(
+            stdout(&out),
+            format!(
+                "You are in AI Maru terminal session {SESSION}. Messages from other sessions arrive as\n\
+                 monitor notifications. Send: `maru inbox push <session> <message>`. Unread: `maru inbox read`.\n"
+            )
+        );
+    }
+}
+
+#[test]
+fn claude_hook_on_session_start_says_nothing_when_the_app_fails() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        error(req, -32603, "boom", json!({"code": "internal_error"}))
+    });
+    let input = br#"{"session_id":"c-1","hook_event_name":"SessionStart","source":"startup"}"#;
+    let out = maru_claude(&sock, &["claude", "hook"], input, &[]);
+    server.join().unwrap();
+    assert_fails_with(&out, "boom");
+    assert_eq!(stdout(&out), "");
+}
+
+#[test]
 fn claude_hook_follows_claude_config_dir() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
@@ -700,12 +740,17 @@ fn claude_commands_are_hidden_from_help() {
     assert!(!stdout(&out).contains("claude"), "{}", stdout(&out));
 }
 
-fn monitor(stdout: Stdio) -> Child {
-    maru_cmd(None, &["claude", "monitor"])
+fn monitor_at(sock: Option<&Path>, stdout: Stdio) -> Child {
+    maru_cmd(sock, &["claude", "monitor"])
         .stdin(Stdio::null())
         .stdout(stdout)
         .spawn()
         .unwrap()
+}
+
+/// 듣는 앱이 없는 소켓 경로로 띄운다 — 앱에 닿지 않아도 stdout 이 닫힐 때까지 기다린다.
+fn monitor(tmp: &tempfile::TempDir, stdout: Stdio) -> Child {
+    monitor_at(Some(&sock_in(tmp)), stdout)
 }
 
 fn assert_running(child: &mut Child) {
@@ -729,7 +774,8 @@ fn assert_ends_when_closed(mut child: Child, close: impl FnOnce(&mut Child)) {
 
 #[test]
 fn claude_monitor_writes_nothing_and_ends_on_sigterm() {
-    let mut child = monitor(Stdio::piped());
+    let tmp = tmpdir();
+    let mut child = monitor(&tmp, Stdio::piped());
     assert_running(&mut child);
     send(&child, Signal::SIGTERM);
     let out = wait_within(child);
@@ -739,19 +785,26 @@ fn claude_monitor_writes_nothing_and_ends_on_sigterm() {
 
 #[test]
 fn claude_monitor_ends_when_the_pipe_reader_closes() {
-    assert_ends_when_closed(monitor(Stdio::piped()), |child| drop(child.stdout.take()));
+    let tmp = tmpdir();
+    assert_ends_when_closed(monitor(&tmp, Stdio::piped()), |child| {
+        drop(child.stdout.take())
+    });
 }
 
 #[test]
 fn claude_monitor_ends_when_the_socket_peer_closes() {
     // Claude Code 는 monitor 의 stdout 에 socket 을 준다.
+    let tmp = tmpdir();
     let (ours, theirs) = UnixStream::pair().unwrap();
-    assert_ends_when_closed(monitor(Stdio::from(OwnedFd::from(theirs))), |_| drop(ours));
+    assert_ends_when_closed(monitor(&tmp, Stdio::from(OwnedFd::from(theirs))), |_| {
+        drop(ours)
+    });
 }
 
 #[test]
 fn claude_monitor_still_ends_after_a_stop_and_continue() {
-    assert_ends_when_closed(monitor(Stdio::piped()), |child| {
+    let tmp = tmpdir();
+    assert_ends_when_closed(monitor(&tmp, Stdio::piped()), |child| {
         send(child, Signal::SIGSTOP);
         send(child, Signal::SIGCONT);
         assert_running(child);
@@ -761,6 +814,309 @@ fn claude_monitor_still_ends_after_a_stop_and_continue() {
 
 #[test]
 fn claude_monitor_on_dev_null_fails() {
-    let out = wait_within(monitor(Stdio::null()));
+    let tmp = tmpdir();
+    let out = wait_within(monitor(&tmp, Stdio::null()));
     assert_fails_with(&out, "cannot watch stdout");
+}
+
+fn serve_subscription(
+    sock: &Path,
+    first: impl FnOnce(&Value) -> String + Send + 'static,
+    then: impl FnOnce(UnixStream) + Send + 'static,
+) -> std::sync::mpsc::Receiver<Value> {
+    let listener = UnixListener::bind(sock).unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (stream, req) = accept_request(&listener);
+        (&stream).write_all(first(&req).as_bytes()).unwrap();
+        let _ = tx.send(req);
+        then(stream);
+    });
+    rx
+}
+
+fn subscribed(req: &Value) -> String {
+    result(req, Value::Null).unwrap() + "\n"
+}
+
+fn event(params: &Value) -> String {
+    json!({"jsonrpc": "2.0", "method": "monitor.event", "params": params}).to_string() + "\n"
+}
+
+/// monitor 가 끝나 연결이 닫힐 때까지 쥐고 있는다.
+fn hold(stream: UnixStream) {
+    let _ = BufReader::new(&stream).read_line(&mut String::new());
+}
+
+fn read_lines(child: &mut Child, n: usize) -> Vec<Value> {
+    let out = child.stdout.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(out).lines() {
+            if tx.send(line.unwrap()).is_err() {
+                break;
+            }
+        }
+    });
+    (0..n)
+        .map(|_| {
+            let line = rx
+                .recv_timeout(Duration::from_secs(15))
+                .expect("monitor 가 줄을 쓰지 않았다");
+            serde_json::from_str(&line).unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn claude_monitor_outside_an_app_terminal_ends_silently() {
+    let out = wait_within(monitor_at(None, Stdio::piped()));
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(out.stdout.is_empty(), "{:?}", out.stdout);
+}
+
+#[test]
+fn claude_monitor_subscribes_with_its_ancestors() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let reqs = serve_subscription(&sock, subscribed, hold);
+    let child = monitor_at(Some(&sock), Stdio::piped());
+    let req = reqs.recv_timeout(Duration::from_secs(15)).unwrap();
+    assert_eq!(req["method"], "monitor.subscribe");
+    assert_eq!(req["params"]["protocol_version"], 1);
+    assert_eq!(req["params"]["session"], SESSION);
+    let ancestors = req["params"]["ancestors"].as_array().unwrap();
+    assert_eq!(ancestors[0], std::process::id());
+    assert!(ancestors.len() > 1, "{req}");
+    assert_ends_when_closed(child, |child| drop(child.stdout.take()));
+}
+
+#[test]
+fn claude_monitor_writes_each_event_as_one_line() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let a = json!({"event": "inbox", "from": "s-0000000a", "body": "줄\n둘"});
+    let b = json!({"event": "inbox", "from": "s-0000000a", "body": "x", "truncated": true});
+    let (first, later) = (event(&a), event(&b));
+    // 응답과 첫 알림을 한 번에 보내, 응답 뒤에 붙어 온 알림도 쓰는지 본다.
+    let _reqs = serve_subscription(
+        &sock,
+        move |req| subscribed(req) + &first,
+        move |stream| {
+            std::thread::sleep(Duration::from_millis(100));
+            // 다른 메서드·JSON 이 아닌 줄은 건너뛰고, 두 번에 나뉘어 온 줄은 이어 붙인다.
+            let other = r#"{"jsonrpc":"2.0","method":"other","params":{"event":"no"}}"#;
+            let (head, tail) = later.split_at(10);
+            (&stream)
+                .write_all(format!("{other}\nnot json\n{head}").as_bytes())
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(100));
+            (&stream).write_all(tail.as_bytes()).unwrap();
+            hold(stream)
+        },
+    );
+    let mut child = monitor_at(Some(&sock), Stdio::piped());
+    assert_eq!(read_lines(&mut child, 2), vec![a, b]);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn claude_monitor_ends_silently_when_the_app_refuses() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let _reqs = serve_subscription(
+        &sock,
+        |req| {
+            let reason = "not running under session s-test's shell";
+            error(req, -32602, reason, json!({"code": "invalid_params"})).unwrap() + "\n"
+        },
+        drop,
+    );
+    let out = wait_within(monitor_at(Some(&sock), Stdio::piped()));
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(out.stdout.is_empty(), "{:?}", out.stdout);
+}
+
+#[test]
+fn claude_monitor_keeps_waiting_after_the_app_closes_the_subscription() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let reqs = serve_subscription(&sock, subscribed, drop);
+    let child = monitor_at(Some(&sock), Stdio::piped());
+    reqs.recv_timeout(Duration::from_secs(15)).unwrap();
+    assert_ends_when_closed(child, |child| drop(child.stdout.take()));
+}
+
+#[test]
+fn claude_monitor_ends_when_its_socket_stdout_closes_while_subscribed() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let reqs = serve_subscription(&sock, subscribed, hold);
+    let (ours, theirs) = UnixStream::pair().unwrap();
+    let child = monitor_at(Some(&sock), Stdio::from(OwnedFd::from(theirs)));
+    reqs.recv_timeout(Duration::from_secs(15)).unwrap();
+    assert_ends_when_closed(child, |_| drop(ours));
+}
+
+#[test]
+fn inbox_push_sends_the_message_argument() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, Value::Null));
+    let out = maru(Some(&sock), &["inbox", "push", "s-0000000b", "hello there"]);
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert_eq!(req["method"], "inbox.push");
+    assert_eq!(req["params"]["protocol_version"], 1);
+    assert_eq!(req["params"]["session"], SESSION);
+    assert_eq!(req["params"]["to"], "s-0000000b");
+    assert_eq!(req["params"]["text"], "hello there");
+}
+
+#[test]
+fn inbox_push_sends_a_message_that_starts_with_a_hyphen() {
+    for text in ["- fixed the bug", "-x done", "--note done"] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, |req| result(req, Value::Null));
+        let out = maru(Some(&sock), &["inbox", "push", "s-0000000b", text]);
+        assert!(out.status.success(), "{text}: {}", stderr(&out));
+        assert_eq!(server.join().unwrap()["params"]["text"], text);
+    }
+}
+
+#[test]
+fn inbox_push_reads_stdin_without_a_message_or_with_a_dash() {
+    for args in [
+        &["inbox", "push", "s-0000000b"][..],
+        &["inbox", "push", "s-0000000b", "-"],
+    ] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, |req| result(req, Value::Null));
+        let out = maru_input(Some(&sock), args, "줄 하나\n줄 둘\n".as_bytes());
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(server.join().unwrap()["params"]["text"], "줄 하나\n줄 둘\n");
+    }
+}
+
+#[test]
+fn inbox_push_without_a_message_on_a_terminal_says_how() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let pty = nix::pty::openpty(None, None).unwrap();
+    let child = maru_with(
+        Some(&sock),
+        &["inbox", "push", "s-0000000b"],
+        Stdio::from(pty.slave),
+    );
+    let out = wait_within(child);
+    drop(pty.master);
+    assert_fails_with(&out, "pipe the message into stdin");
+}
+
+#[test]
+fn inbox_push_rejects_an_empty_message_without_reaching_the_app() {
+    let tmp = tmpdir();
+    // 소켓이 없어서, 연결을 시도했다면 "cannot reach the app" 이 나온다.
+    let sock = sock_in(&tmp);
+    for input in [&b""[..], b"  \n"] {
+        let out = maru_input(Some(&sock), &["inbox", "push", "s-0000000b"], input);
+        assert_fails_with(&out, "the message is empty");
+    }
+    let out = maru(Some(&sock), &["inbox", "push", "s-0000000b", ""]);
+    assert_fails_with(&out, "the message is empty");
+}
+
+#[test]
+fn inbox_push_rejects_stdin_that_is_not_utf8() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let out = maru_input(Some(&sock), &["inbox", "push", "s-0000000b"], &[0xff, 0xfe]);
+    assert_fails_with(&out, "stdin is not UTF-8");
+}
+
+#[test]
+fn inbox_push_shows_the_apps_reason() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        error(
+            req,
+            -32602,
+            "session s-0000000b has ended",
+            json!({"code": "invalid_params"}),
+        )
+    });
+    let out = maru(Some(&sock), &["inbox", "push", "s-0000000b", "hi"]);
+    server.join().unwrap();
+    assert_fails_with(&out, "session s-0000000b has ended");
+}
+
+#[test]
+fn inbox_commands_outside_an_app_terminal_say_so_before_reading_stdin() {
+    // stdin 을 열어 둔 채라, 읽으려 했다면 wait_within 이 시간 초과로 실패한다.
+    for args in [&["inbox", "push", "s-0000000b"][..], &["inbox", "read"]] {
+        let child = maru_with(None, args, Stdio::piped());
+        assert_fails_with(&wait_within(child), "not inside an AI Maru terminal");
+    }
+}
+
+#[test]
+fn inbox_read_prints_each_message_under_its_sender() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        result(
+            req,
+            json!({"messages": [
+                {"from": "s-0000000a", "text": "a\nb"},
+                {"from": "s-0000000c", "text": "c\n"}
+            ]}),
+        )
+    });
+    let out = maru(Some(&sock), &["inbox", "read"]);
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(req["method"], "inbox.read");
+    assert_eq!(req["params"]["session"], SESSION);
+    assert_eq!(
+        stdout(&out),
+        "--- from s-0000000a ---\na\nb\n--- from s-0000000c ---\nc\n"
+    );
+}
+
+#[test]
+fn inbox_read_with_nothing_unread_says_so_on_stderr() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({"messages": []})));
+    let out = maru(Some(&sock), &["inbox", "read"]);
+    server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert!(
+        stderr(&out).contains("no unread messages"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn inbox_read_prints_nothing_from_an_answer_it_cannot_print() {
+    let answers = [
+        json!({}),
+        json!({"messages": [{"from": "s-0000000a", "text": "ok"}, {"from": "s-0000000a"}]}),
+    ];
+    for answer in answers {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, move |req| result(req, answer));
+        let out = maru(Some(&sock), &["inbox", "read"]);
+        server.join().unwrap();
+        assert_fails_with(&out, "the app answered");
+        assert_eq!(stdout(&out), "");
+    }
 }
