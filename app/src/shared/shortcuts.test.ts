@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatKeys,
-  isCommandKey,
+  isAppKey,
   keyCode,
   matchesKeys,
   shortcuts,
+  terminalInput,
   toAccelerator,
   type KeyEventLike
 } from './shortcuts'
@@ -19,9 +20,8 @@ describe('shortcuts', () => {
     expect(new Set(combos).size).toBe(combos.length)
   })
 
-  it('명령의 키는 모두 자판 위치로 맞출 수 있다', () => {
-    for (const s of shortcuts.filter((s) => s.target === 'command'))
-      expect(keyCode(s.key), s.action).toBeDefined()
+  it('표의 키는 모두 자판 위치로 맞출 수 있다', () => {
+    for (const s of shortcuts) expect(keyCode(s.key), s.key).toBeDefined()
   })
 })
 
@@ -70,16 +70,36 @@ describe('matchesKeys', () => {
   })
 })
 
-describe('isCommandKey', () => {
-  it('명령에 걸린 키만 참이다', () => {
-    expect(isCommandKey(press('Enter', { ctrlKey: true, metaKey: true }))).toBe(true)
-    expect(isCommandKey(press('KeyD', { metaKey: true }))).toBe(true)
-    expect(isCommandKey(press('Enter'))).toBe(false)
-    expect(isCommandKey(press('Enter', { metaKey: true }))).toBe(false)
+describe('isAppKey', () => {
+  it('명령이나 메뉴에 걸린 키만 참이다', () => {
+    expect(isAppKey(press('Enter', { ctrlKey: true, metaKey: true }))).toBe(true)
+    expect(isAppKey(press('KeyD', { metaKey: true }))).toBe(true)
+    expect(isAppKey(press('KeyC', { metaKey: true }))).toBe(true)
+    expect(isAppKey(press('KeyA', { metaKey: true }))).toBe(true)
+    expect(isAppKey(press('Enter'))).toBe(false)
+    expect(isAppKey(press('Enter', { metaKey: true }))).toBe(false)
   })
 
-  it('메뉴 role 의 키는 터미널이 받는다', () => {
-    expect(isCommandKey(press('KeyA', { metaKey: true }))).toBe(false)
-    expect(isCommandKey(press('KeyC', { metaKey: true }))).toBe(false)
+  it('터미널이 바꿔 보내는 키는 앱의 키가 아니다', () => {
+    expect(isAppKey(press('Backspace', { metaKey: true }))).toBe(false)
+    expect(isAppKey(press('ArrowLeft', { metaKey: true }))).toBe(false)
+  })
+})
+
+describe('terminalInput', () => {
+  it('⌘← / ⌘→ 는 ⌃A / ⌃E 로 보낸다', () => {
+    expect(terminalInput(press('ArrowLeft', { metaKey: true }))).toBe('\x01')
+    expect(terminalInput(press('ArrowRight', { metaKey: true }))).toBe('\x05')
+    expect(terminalInput(press('ArrowLeft', { metaKey: true, altKey: true }))).toBeUndefined()
+  })
+
+  it('⌘⌫ 은 ⌃U 로 보낸다', () => {
+    expect(terminalInput(press('Backspace', { metaKey: true }))).toBe('\x15')
+    expect(terminalInput(press('Backspace'))).toBeUndefined()
+  })
+
+  it('표에 없는 키는 xterm 에 맡긴다', () => {
+    expect(terminalInput(press('Enter', { shiftKey: true }))).toBeUndefined()
+    expect(terminalInput(press('Backspace'))).toBeUndefined()
   })
 })

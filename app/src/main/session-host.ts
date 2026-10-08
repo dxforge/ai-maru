@@ -23,7 +23,7 @@ type HostRequest = OpenRequest | KillRequest
 const opened = new Map<string, Promise<string | null>>()
 
 async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
-  // 세션이 뜨는 동안 닫은 칸도 kill 이 기다렸다 끝낼 수 있게 await 전에 단다.
+  // 세션이 뜨는 동안 칸을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 opened 에 넣는다.
   const spawning = startDir(req.cwd).then(async (cwd) => ({
     id: await spawnSession(req.bin, req.dir, req.setup, cwd),
     cwd

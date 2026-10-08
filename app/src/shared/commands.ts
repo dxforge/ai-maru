@@ -8,6 +8,7 @@ export type CommandId =
   | 'focus-pane-up'
   | 'focus-pane-down'
   | 'command-palette'
+  | 'toggle-sidebar'
   | 'toggle-canvas'
   | 'toggle-view-mode'
 
@@ -24,6 +25,7 @@ export const commands: readonly Command[] = [
   { id: 'split-down', title: 'Split Down', menu: 'file' },
   { id: 'close-pane', title: 'Close Pane', menu: 'file' },
   { id: 'command-palette', title: 'Command Palette…', menu: 'view', palette: false },
+  { id: 'toggle-sidebar', title: 'Toggle Sidebar', menu: 'view' },
   { id: 'toggle-canvas', title: 'Toggle Canvas', menu: 'view' },
   { id: 'toggle-view-mode', title: 'Toggle View Mode', menu: 'view' },
   { id: 'focus-pane-left', title: 'Focus Pane Left', menu: 'view' },

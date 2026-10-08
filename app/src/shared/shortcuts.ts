@@ -1,10 +1,4 @@
-/**
- * 앱이 받는 키 조합은 모두 이 표에 한 번씩 적는다.
- *
- * renderer 가 먼저 키를 받고, preventDefault 한 키는 메뉴로 가지 않는다. 그래서 터미널은 명령의
- * 키를 셸로 보내지 않고 흘려보낸다(`isCommandKey`). 메뉴 role 의 키도 여기 적어 메뉴가 그대로 건다
- * — 명령과 겹치면 그 명령이 키로는 불리지 않아, 겹치지 않는지를 한 표에서 테스트한다.
- */
+/** 앱이 받는 키 조합은 명령·메뉴 role·터미널 입력 가운데 어디에 쓰든 이 표에 한 번씩 적는다 — 두 곳에 걸린 키는 한쪽에서만 불린다. */
 import type { CommandId } from './commands'
 
 export type MenuRole =
@@ -32,14 +26,17 @@ export type MenuRole =
   | 'zoom'
   | 'front'
 
-/** role 이 아닌 메뉴 항목. */
 export type MenuAction = MenuRole | 'toggle-full-screen'
 
 /** `key` 는 Electron accelerator 의 키 이름이다(`N`, `Enter`, `Left`, `Plus`). */
 export type Keys = { key: string; ctrl?: true; alt?: true; shift?: true; meta?: true }
 
 export type Shortcut = Keys &
-  ({ target: 'command'; action: CommandId } | { target: 'menu'; action: MenuAction })
+  (
+    | { target: 'command'; action: CommandId }
+    | { target: 'menu'; action: MenuAction }
+    | { target: 'terminal'; input: string }
+  )
 
 export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'new-workspace', key: 'N', meta: true },
@@ -47,6 +44,8 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'split-down', key: 'D', shift: true, meta: true },
   { target: 'command', action: 'close-pane', key: 'W', meta: true },
   { target: 'command', action: 'command-palette', key: 'P', shift: true, meta: true },
+  { target: 'command', action: 'toggle-sidebar', key: 'B', meta: true },
+  { target: 'command', action: 'toggle-canvas', key: 'B', alt: true, meta: true },
   { target: 'command', action: 'toggle-view-mode', key: 'Enter', ctrl: true, meta: true },
   { target: 'command', action: 'focus-pane-left', key: 'Left', alt: true, meta: true },
   { target: 'command', action: 'focus-pane-right', key: 'Right', alt: true, meta: true },
@@ -69,7 +68,13 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'menu', action: 'zoomIn', key: 'Plus', meta: true },
   { target: 'menu', action: 'zoomOut', key: '-', meta: true },
   { target: 'menu', action: 'toggle-full-screen', key: 'F', ctrl: true, meta: true },
-  { target: 'menu', action: 'minimize', key: 'M', meta: true }
+  { target: 'menu', action: 'minimize', key: 'M', meta: true },
+
+  // xterm 은 ⌘⌫ 의 ⌘ 을 무시해 한 글자만 지운다. iTerm2·Terminal.app 처럼 ⌃U 를 보낸다.
+  { target: 'terminal', input: '\x15', key: 'Backspace', meta: true },
+  // xterm 은 ⌘← / ⌘→ 에 아무것도 보내지 않는다. 줄 처음·끝으로 가는 ⌃A / ⌃E 를 보낸다.
+  { target: 'terminal', input: '\x01', key: 'Left', meta: true },
+  { target: 'terminal', input: '\x05', key: 'Right', meta: true }
 ]
 
 export function commandKeys(id: CommandId): Keys | undefined {
@@ -91,10 +96,10 @@ const LABELS: Record<string, string> = {
   Up: '↑',
   Down: '↓',
   Enter: '↩',
+  Backspace: '⌫',
   Plus: '+'
 }
 
-/** macOS 메뉴처럼 ⌃⌥⇧⌘ 순서로 적는다. */
 export function formatKeys(k: Keys): string {
   const mods = `${k.ctrl ? '⌃' : ''}${k.alt ? '⌥' : ''}${k.shift ? '⇧' : ''}${k.meta ? '⌘' : ''}`
   return mods + (LABELS[k.key] ?? k.key)
@@ -102,22 +107,23 @@ export function formatKeys(k: Keys): string {
 
 const CODES: Record<string, string> = {
   Enter: 'Enter',
+  Backspace: 'Backspace',
+  Plus: 'Equal',
+  '-': 'Minus',
   Left: 'ArrowLeft',
   Right: 'ArrowRight',
   Up: 'ArrowUp',
   Down: 'ArrowDown'
 }
 
-/**
- * KeyboardEvent.key 는 ⌥ 를 누르면 다른 글자가 되어(⌥⌘B 는 `∫`) 자판 위치인 code 로 맞춘다.
- */
+// ⌥ 를 누르면 KeyboardEvent.key 가 다른 글자로 바뀌므로(⌥⌘B 는 `∫`) 자판 위치인 code 로 맞춘다.
 export function keyCode(key: string): string | undefined {
   if (/^[A-Z]$/.test(key)) return `Key${key}`
   if (/^[0-9]$/.test(key)) return `Digit${key}`
   return CODES[key]
 }
 
-/** KeyboardEvent 의 이 필드들 — main 쪽 tsconfig 엔 DOM 타입이 없다. */
+/** KeyboardEvent 대신 쓴다 — shared 는 DOM 타입이 없는 main 쪽 tsconfig 로도 빌드된다. */
 export type KeyEventLike = {
   code: string
   ctrlKey: boolean
@@ -136,6 +142,11 @@ export function matchesKeys(e: KeyEventLike, k: Keys): boolean {
   )
 }
 
-export function isCommandKey(e: KeyEventLike): boolean {
-  return shortcuts.some((s) => s.target === 'command' && matchesKeys(e, s))
+export function isAppKey(e: KeyEventLike): boolean {
+  return shortcuts.some((s) => s.target !== 'terminal' && matchesKeys(e, s))
+}
+
+export function terminalInput(e: KeyEventLike): string | undefined {
+  for (const s of shortcuts) if (s.target === 'terminal' && matchesKeys(e, s)) return s.input
+  return undefined
 }

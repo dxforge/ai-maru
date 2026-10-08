@@ -91,7 +91,7 @@ function createWindow(): void {
     backgroundColor: '#1e1e1e',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      // DevTools 안에서도 창을 새로 고칠 수 있다. 새로 고치면 workspace 목록을 잃는다.
+      // DevTools 에서는 메뉴와 상관없이 창을 새로 고칠 수 있는데, 새로 고치면 workspace 목록을 잃는다.
       devTools: !app.isPackaged
     }
   })

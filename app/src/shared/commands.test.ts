@@ -10,6 +10,7 @@ describe('filterCommands', () => {
       'Split Right',
       'Split Down',
       'Close Pane',
+      'Toggle Sidebar',
       'Toggle Canvas',
       'Toggle View Mode',
       'Focus Pane Left',

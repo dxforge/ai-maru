@@ -9,7 +9,7 @@ function role(r: MenuRole): MenuItemConstructorOptions {
   return { role: r, accelerator: keys && toAccelerator(keys) }
 }
 
-// Electron 44 의 togglefullscreen role 은 macOS 메뉴에 같은 항목을 두 줄로 보인다(electron#49048).
+// Electron 44 의 togglefullscreen role 은 macOS 메뉴에 같은 항목을 두 번 보인다(electron#49048).
 const fullScreen: MenuItemConstructorOptions = {
   label: 'Toggle Full Screen',
   accelerator: toAccelerator(menuKeys('toggle-full-screen')!),

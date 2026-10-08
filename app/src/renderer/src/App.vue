@@ -71,6 +71,7 @@ function paneStyles(layout: Layout): Map<number, Record<string, string>> {
   return styles
 }
 
+const sidebarOpen = ref(true)
 const viewMode = ref<'single' | 'columns'>('single')
 // 모든 터미널이 같은 글꼴을 쓰므로 마지막으로 잰 값 하나로 셈한다.
 const cellWidth = ref(0)
@@ -124,6 +125,9 @@ const handlers: Record<CommandId, () => void> = {
     paletteOpen.value = true
     palette.value?.focus()
   },
+  'toggle-sidebar': () => {
+    sidebarOpen.value = !sidebarOpen.value
+  },
   'toggle-canvas': canvas.toggle,
   'toggle-view-mode': () => {
     viewMode.value = viewMode.value === 'single' ? 'columns' : 'single'
@@ -139,7 +143,7 @@ window.maru.onCommand(runCommand)
 
 <template>
   <div class="app">
-    <nav class="sidebar">
+    <nav v-show="sidebarOpen" class="sidebar">
       <button
         v-for="{ w, focused } in views"
         :key="w.key"
