@@ -19,6 +19,7 @@ type SessionRecord = {
   protocol_version: number
   id: string
   pid: number
+  shell_pid: number
   created_at_ms: number
 }
 
@@ -51,12 +52,24 @@ async function isLive(path: string): Promise<boolean> {
   }
 }
 
+export function sessionLive(dir: string, id: string): Promise<boolean> {
+  return isLive(socketPath(dir, id))
+}
+
 function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
   } catch (e) {
     return (e as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+export async function readRecord(dir: string, id: string): Promise<SessionRecord | null> {
+  try {
+    return JSON.parse(await readFile(join(dir, `${id}.json`), 'utf8')) as SessionRecord
+  } catch {
+    return null
   }
 }
 
@@ -68,13 +81,7 @@ async function readRecords(dir: string): Promise<SessionRecord[]> {
     return []
   }
   const parsed = await Promise.all(
-    names
-      .filter((name) => name.endsWith('.json'))
-      .map((name) =>
-        readFile(join(dir, name), 'utf8')
-          .then((body) => JSON.parse(body) as SessionRecord)
-          .catch(() => null)
-      )
+    names.filter((name) => name.endsWith('.json')).map((name) => readRecord(dir, name.slice(0, -5)))
   )
   return parsed.filter((r): r is SessionRecord => r !== null)
 }
@@ -179,6 +186,13 @@ export function utf8Locale(
   const region = rest.find((p) => /^[A-Z]{2}$/.test(p))
   const name = `${lang}_${region}.UTF-8`
   return region && exists(name) ? name : 'C.UTF-8'
+}
+
+const SESSION_ID = /^s-[0-9a-f]{8}$/
+
+/** `spawnSession` 이 만드는 세션 id 의 모양인지. 파일 경로를 만들기 전에 본다. */
+export function isSessionId(v: unknown): v is string {
+  return typeof v === 'string' && SESSION_ID.test(v)
 }
 
 export async function spawnSession(

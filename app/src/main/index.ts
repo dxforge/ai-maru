@@ -11,8 +11,17 @@ import {
 import { canvasPut } from './canvas'
 import { createClaudeStatus } from './claude-status'
 import { listenCli, type Handlers } from './cli-server'
+import { createInbox } from './inbox'
 import { installCommandMenu } from './menu'
-import { appSocketPath, killSessions, utf8Locale, type CliAccess } from './session'
+import { createMonitor } from './monitor'
+import {
+  appSocketPath,
+  killSessions,
+  readRecord,
+  sessionLive,
+  utf8Locale,
+  type CliAccess
+} from './session'
 import type { KillRequest, OpenRequest, RestoreRequest } from './session-host'
 
 function sessionDir(): string {
@@ -53,10 +62,18 @@ const claudeStatus = createClaudeStatus({
   }
 })
 
+const monitor = createMonitor({
+  shellPidOf: async (id) => (await readRecord(sessionDir(), id))?.shell_pid ?? null
+})
+
+const inbox = createInbox({ isLive: (id) => sessionLive(sessionDir(), id), emit: monitor.emit })
+
 const cliHandlers: Handlers = {
   ping: (_params, session) => ({ session }),
   'canvas.put': canvasPut(() => BrowserWindow.getAllWindows()[0]),
-  ...claudeStatus.handlers
+  ...claudeStatus.handlers,
+  ...monitor.handlers,
+  ...inbox
 }
 
 const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
