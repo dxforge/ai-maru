@@ -19,27 +19,12 @@ const workspaces = createWorkspaces()
 const claude = createClaudeStatuses()
 window.maru.onClaudeStatus(claude.set)
 void window.maru.claudeStatuses().then(claude.replace)
-// 되살리기 전에 띄운 세션은 되살릴 목록에도 들어가 workspace 가 둘 생길 수 있어, 그동안의 ⌘N 은
-// 되살린 뒤에 연다.
-let pendingNew: number | null = 0
 function newWorkspace(): void {
-  if (pendingNew === null) {
-    const w = workspaces.selected()
-    const p = w && focusedPane(w)
-    workspaces.open(undefined, p?.cwd ?? p?.startDir)
-  } else pendingNew++
+  const w = workspaces.selected()
+  const p = w && focusedPane(w)
+  workspaces.open(p?.cwd ?? p?.startDir)
 }
-// 거절은 session host 가 답하기 전에 죽었다는 뜻이다. 다시 청하면 새 host 가 답한다.
-void window.maru
-  .restoreSessions()
-  .catch(() => window.maru.restoreSessions())
-  .catch(() => [])
-  .then((ids) => {
-    if (ids.length === 0 && !pendingNew) workspaces.open()
-    for (const id of ids) workspaces.open(id)
-    for (; pendingNew; pendingNew--) workspaces.open()
-    pendingNew = null
-  })
+workspaces.open()
 
 type Terminal = InstanceType<typeof TerminalView>
 const terminals = new Map<number, Terminal>()
@@ -189,7 +174,6 @@ window.maru.onCommand(runCommand)
         >
           <TerminalView
             :ref="(t) => setTerminal(p.key, t)"
-            :session-id="p.sessionId"
             :start-dir="p.startDir"
             :active="w.key === workspaces.selectedKey.value && p.key === w.focused"
             @exit="workspaces.closePane(p.key)"

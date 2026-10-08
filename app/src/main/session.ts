@@ -86,13 +86,6 @@ async function readRecords(dir: string): Promise<SessionRecord[]> {
   return parsed.filter((r): r is SessionRecord => r !== null)
 }
 
-export async function liveSessions(dir: string): Promise<string[]> {
-  const records = await readRecords(dir)
-  records.sort((a, b) => a.created_at_ms - b.created_at_ms)
-  const live = await Promise.all(records.map((rec) => isLive(socketPath(dir, rec.id))))
-  return records.filter((_, i) => live[i]).map((rec) => rec.id)
-}
-
 /**
  * 셸을 정리하고 소켓·레코드를 지운 뒤에 연결을 닫으므로 닫힐 때까지 기다린다. 멈춘 프로세스도
  * 커널이 connect 를 받아 주므로, 답이 없으면 기다리기를 그만둔다.

@@ -3,7 +3,7 @@ import { createWorkspaces, focusedPane } from './store'
 
 function opened(n: number) {
   const ws = createWorkspaces()
-  for (let i = 0; i < n; i++) ws.open(`s-${i}`)
+  for (let i = 0; i < n; i++) ws.open(`/d-${i}`)
   return ws
 }
 
@@ -25,7 +25,7 @@ describe('workspaces', () => {
   it('연 workspace 는 칸 하나로 목록 끝에 붙고 선택된다', () => {
     const ws = opened(2)
     ws.open()
-    expect(firstPanes(ws).map((p) => p.sessionId)).toEqual(['s-0', 's-1', undefined])
+    expect(firstPanes(ws).map((p) => p.startDir)).toEqual(['/d-0', '/d-1', undefined])
     expect(ws.selectedKey.value).toBe(keys(ws)[2])
     expect(selected(ws).panes).toHaveLength(1)
     expect(selected(ws).focused).toBe(selected(ws).panes[0].key)
@@ -64,7 +64,7 @@ describe('workspaces', () => {
 
   it('open 에 준 시작 디렉토리는 cwd 가 아니고, cwd 는 setCwd 로 정한다', () => {
     const ws = createWorkspaces()
-    ws.open(undefined, '/a')
+    ws.open('/a')
     const [pane] = firstPanes(ws)
     expect(pane.startDir).toBe('/a')
     expect(pane.cwd).toBeUndefined()
@@ -94,7 +94,7 @@ describe('panes', () => {
 
   it('cwd 를 아직 모르는 칸을 나누면 그 칸의 시작 디렉토리에서 시작한다', () => {
     const ws = createWorkspaces()
-    ws.open(undefined, '/start')
+    ws.open('/start')
     ws.split('down')
     expect(selected(ws).panes[1].startDir).toBe('/start')
   })

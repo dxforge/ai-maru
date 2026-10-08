@@ -24,22 +24,22 @@ export type MenuRole =
   | 'selectAll'
   | 'startSpeaking'
   | 'stopSpeaking'
-  | 'reload'
-  | 'forceReload'
   | 'toggleDevTools'
   | 'resetZoom'
   | 'zoomIn'
   | 'zoomOut'
-  | 'togglefullscreen'
   | 'minimize'
   | 'zoom'
   | 'front'
+
+/** role 이 아닌 메뉴 항목. */
+export type MenuAction = MenuRole | 'toggle-full-screen'
 
 /** `key` 는 Electron accelerator 의 키 이름이다(`N`, `Enter`, `Left`, `Plus`). */
 export type Keys = { key: string; ctrl?: true; alt?: true; shift?: true; meta?: true }
 
 export type Shortcut = Keys &
-  ({ target: 'command'; action: CommandId } | { target: 'menu'; action: MenuRole })
+  ({ target: 'command'; action: CommandId } | { target: 'menu'; action: MenuAction })
 
 export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'new-workspace', key: 'N', meta: true },
@@ -64,13 +64,11 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'menu', action: 'paste', key: 'V', meta: true },
   { target: 'menu', action: 'pasteAndMatchStyle', key: 'V', alt: true, shift: true, meta: true },
   { target: 'menu', action: 'selectAll', key: 'A', meta: true },
-  { target: 'menu', action: 'reload', key: 'R', meta: true },
-  { target: 'menu', action: 'forceReload', key: 'R', shift: true, meta: true },
   { target: 'menu', action: 'toggleDevTools', key: 'I', alt: true, meta: true },
   { target: 'menu', action: 'resetZoom', key: '0', meta: true },
   { target: 'menu', action: 'zoomIn', key: 'Plus', meta: true },
   { target: 'menu', action: 'zoomOut', key: '-', meta: true },
-  { target: 'menu', action: 'togglefullscreen', key: 'F', ctrl: true, meta: true },
+  { target: 'menu', action: 'toggle-full-screen', key: 'F', ctrl: true, meta: true },
   { target: 'menu', action: 'minimize', key: 'M', meta: true }
 ]
 
@@ -78,8 +76,8 @@ export function commandKeys(id: CommandId): Keys | undefined {
   return shortcuts.find((s) => s.target === 'command' && s.action === id)
 }
 
-export function roleKeys(role: MenuRole): Keys | undefined {
-  return shortcuts.find((s) => s.target === 'menu' && s.action === role)
+export function menuKeys(action: MenuAction): Keys | undefined {
+  return shortcuts.find((s) => s.target === 'menu' && s.action === action)
 }
 
 export function toAccelerator(k: Keys): string {

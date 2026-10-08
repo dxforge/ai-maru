@@ -1,7 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import {
   activePane,
-  activeTerminal,
   clickMenu,
   expect,
   type Launched,
@@ -243,19 +242,4 @@ test('columns 에서 창 크기를 바꿔도 칸은 80열이다', async ({ launc
 
   await expect.poll(async () => (await shellSize(page)).rows).toBeLessThan(before.rows)
   expect((await shellSize(page)).cols).toBe(80)
-})
-
-test('columns 로 바꾼 뒤 새로 고치면 single 로 시작한다', async ({ launch }) => {
-  const launched = await launch()
-  const { page } = launched
-  await newWorkspace(launched, 2)
-  await toggle(launched, 'columns')
-
-  await page.reload()
-
-  await expect(workspaceItems(page)).toHaveCount(2)
-  await activeTerminal(page)
-  await expect(page.locator('.terminals')).toHaveClass(/single/)
-  await expect(workspaces(page).nth(0)).toBeHidden()
-  await expect(workspaces(page).nth(1)).toBeVisible()
 })

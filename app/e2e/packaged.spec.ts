@@ -74,3 +74,17 @@ test('설치본의 zsh 에서 workspace 이름이 cd 를 따른다', async ({ la
   await page.keyboard.type('cd proj\n')
   await expect(workspaceItems(page)).toHaveText(['proj'])
 })
+
+test('설치본에는 DevTools 메뉴가 없고, 열려고 해도 열리지 않는다', async ({ launch }) => {
+  const { app } = await launch({}, executable())
+  const devTools = await app.evaluate(async ({ BrowserWindow, Menu }) => {
+    const roles = Menu.getApplicationMenu()!.items.flatMap(
+      (top) => top.submenu?.items.map((i) => i.role?.toLowerCase()) ?? []
+    )
+    const contents = BrowserWindow.getAllWindows()[0].webContents
+    contents.openDevTools()
+    await new Promise((r) => setTimeout(r, 500))
+    return { inMenu: roles.includes('toggledevtools'), opened: contents.isDevToolsOpened() }
+  })
+  expect(devTools).toEqual({ inMenu: false, opened: false })
+})

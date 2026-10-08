@@ -13,7 +13,7 @@ async function typesIntoTerminal(page: Page, marker: string): Promise<void> {
   await run(page, `echo ${marker}-$((1+1))`, `${marker}-2`)
 }
 
-test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W 는 Close Window 가 아니다', async ({
+test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W 는 Close Window 가 아니며, 새로 고침은 메뉴에 없다', async ({
   launch
 }) => {
   const { app } = await launch()
@@ -27,7 +27,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
           i.accelerator ?? null
         ])
     const roles = Menu.getApplicationMenu()!.items.flatMap(
-      (top) => top.submenu?.items.map((i) => i.role ?? null) ?? []
+      (top) => top.submenu?.items.map((i) => i.role?.toLowerCase() ?? null) ?? []
     )
     const lastTypes = Menu.getApplicationMenu()!.items.map((top) => top.submenu?.items.at(-1)?.type)
     return { file: items('filemenu'), view: items('viewmenu'), roles, lastTypes }
@@ -50,7 +50,9 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
   ])
   expect(menus.lastTypes).not.toContain('separator')
   expect(menus.roles).not.toContain('close')
-  expect(menus.roles).toContain('reload')
+  expect(menus.roles).not.toContain('reload')
+  expect(menus.roles).not.toContain('forcereload')
+  expect(menus.roles).toContain('toggledevtools')
 })
 
 test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않고 메뉴로 흘려보낸다', async ({

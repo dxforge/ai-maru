@@ -32,12 +32,12 @@ export function createWorkspaces() {
     return list.value.find((w) => w.panes.some((p) => p.key === pane))
   }
 
-  function open(sessionId?: string, startDir?: string): void {
+  function open(startDir?: string): void {
     const pane = nextKey++
     const key = nextKey++
     list.value.push({
       key,
-      panes: [{ key: pane, sessionId, startDir }],
+      panes: [{ key: pane, startDir }],
       layout: { pane },
       focused: pane
     })

@@ -1,12 +1,21 @@
-import { Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
 import { commands, type CommandId } from '../shared/commands'
-import { commandKeys, roleKeys, toAccelerator, type MenuRole } from '../shared/shortcuts'
+import { commandKeys, menuKeys, toAccelerator, type MenuRole } from '../shared/shortcuts'
 
 const separator: MenuItemConstructorOptions = { type: 'separator' }
 
 function role(r: MenuRole): MenuItemConstructorOptions {
-  const keys = roleKeys(r)
+  const keys = menuKeys(r)
   return { role: r, accelerator: keys && toAccelerator(keys) }
+}
+
+// Electron 44 의 togglefullscreen role 은 macOS 메뉴에 같은 항목을 두 줄로 보인다(electron#49048).
+const fullScreen: MenuItemConstructorOptions = {
+  label: 'Toggle Full Screen',
+  accelerator: toAccelerator(menuKeys('toggle-full-screen')!),
+  click: (_item, win) => {
+    if (win instanceof BrowserWindow) win.setFullScreen(!win.isFullScreen())
+  }
 }
 
 export function installCommandMenu(run: (id: CommandId) => void): void {
@@ -60,15 +69,12 @@ export function installCommandMenu(run: (id: CommandId) => void): void {
         submenu: [
           ...commandItems('view'),
           separator,
-          role('reload'),
-          role('forceReload'),
-          role('toggleDevTools'),
-          separator,
+          ...(app.isPackaged ? [] : [role('toggleDevTools'), separator]),
           role('resetZoom'),
           role('zoomIn'),
           role('zoomOut'),
           separator,
-          role('togglefullscreen')
+          fullScreen
         ]
       },
       {

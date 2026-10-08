@@ -8,11 +8,7 @@ import { openSession, type SessionConnection } from '../session/connection'
 import { isCommandKey } from '../../../shared/shortcuts'
 import { osc7Path } from '../workspace/cwd'
 
-const {
-  sessionId = undefined,
-  startDir = undefined,
-  active
-} = defineProps<{ sessionId?: string; startDir?: string; active: boolean }>()
+const { startDir = undefined, active } = defineProps<{ startDir?: string; active: boolean }>()
 const emit = defineEmits<{
   exit: []
   cwd: [cwd: string]
@@ -55,7 +51,7 @@ onMounted(async () => {
   fit.fit()
   observer.observe(host.value!)
   if (active) term.focus()
-  opening = openSession(sessionId, startDir)
+  opening = openSession(startDir)
   session = attach(term, await opening, {
     onExit: () => emit('exit'),
     onSpawned: (id, dir) => {
