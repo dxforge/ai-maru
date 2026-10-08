@@ -13,6 +13,18 @@ export type CliServer = { close: () => Promise<void> }
 
 export class InvalidParams extends Error {}
 
+/**
+ * handler 가 돌려주면 응답 뒤에도 연결을 열어 두고, `start` 가 받은 `notify` 마다 `method` 로
+ * notification 한 줄을 보낸다. `notify` 는 연결이 닫혀 보내지 못하면 false 다. `start` 는 구독을
+ * 푸는 함수를 돌려준다.
+ */
+export class Subscription {
+  constructor(
+    readonly method: string,
+    readonly start: (notify: (params: object) => boolean) => () => void
+  ) {}
+}
+
 type Id = string | number | null
 type Reply = { id: Id; result?: unknown; error?: object }
 
@@ -73,7 +85,11 @@ async function reply(line: string, handlers: Handlers): Promise<Reply | null> {
   }
   const params = isObject(msg.params) ? msg.params : {}
   const body = await dispatch((msg.id as Id | undefined) ?? null, msg.method, params, handlers)
-  return 'id' in msg ? body : null
+  if ('id' in msg) return body
+  // 답하지 않는 요청으로 구독하면 열린 연결만 남는다.
+  return body.result instanceof Subscription
+    ? failure(null, -32600, 'invalid_request', `${msg.method} needs an id`)
+    : null
 }
 
 function encode(body: Reply): string {
@@ -93,8 +109,20 @@ function serve(sock: Socket, handlers: Handlers, maxLine: number, idleMs: number
   // 요청을 다 보내지 않고 멈춘 연결이 앱이 끝날 때까지 남지 않게.
   sock.setTimeout(idleMs, () => sock.destroy())
   const send = (body: Reply | null): void => {
-    if (body) sock.write(encode(body))
-    sock.end()
+    const sub = body?.result instanceof Subscription ? body.result : null
+    if (body) sock.write(encode(sub ? { id: body.id, result: null } : body))
+    if (!sub) return void sock.end()
+    // handler 를 기다리는 사이 상대가 쓰기를 닫았으면 구독할 곳이 없다.
+    if (sock.readableEnded) return void sock.destroy()
+    // 구독 연결은 알림을 기다리는 동안 오가는 것이 없다.
+    sock.setTimeout(0)
+    const stop = sub.start((params) => {
+      if (!sock.writable) return false
+      sock.write(JSON.stringify({ jsonrpc: '2.0', method: sub.method, params }) + '\n')
+      return true
+    })
+    sock.once('close', stop)
+    sock.once('end', () => sock.destroy())
   }
   const finish = (line: string): void => {
     done = true

@@ -1,10 +1,18 @@
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { PROTOCOL_VERSION } from '../shared/protocol'
-import { killSessions, sessionEnv, shellEnv, socketPath, startDir, utf8Locale } from './session'
+import {
+  killSessions,
+  readRecord,
+  sessionEnv,
+  shellEnv,
+  socketPath,
+  startDir,
+  utf8Locale
+} from './session'
 
 const hang = vi.hoisted(() => ({ path: undefined as string | undefined }))
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -161,6 +169,28 @@ describe('killSessions', () => {
       expect(Date.now() - started).toBeLessThan(2000)
     } finally {
       server.close()
+    }
+  })
+})
+
+describe('readRecord', () => {
+  it('세션 레코드를 읽고, 없거나 깨졌으면 null 이다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maru-rec-'))
+    const rec = {
+      protocol_version: 1,
+      id: 's-0000000a',
+      pid: 1,
+      shell_pid: 42,
+      created_at_ms: 0
+    }
+    writeFileSync(join(dir, 's-0000000a.json'), JSON.stringify(rec))
+    writeFileSync(join(dir, 's-0000000b.json'), '{')
+    try {
+      expect((await readRecord(dir, 's-0000000a'))?.shell_pid).toBe(42)
+      expect(await readRecord(dir, 's-0000000b')).toBeNull()
+      expect(await readRecord(dir, 's-0000000c')).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true })
     }
   })
 })
