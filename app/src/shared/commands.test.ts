@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commands, filterCommands, formatAccelerator } from './commands'
+import { commands, filterCommands } from './commands'
 
 const titles = (query: string): string[] => filterCommands(query).map((c) => c.title)
 
@@ -33,37 +33,9 @@ describe('filterCommands', () => {
   })
 })
 
-describe('formatAccelerator', () => {
-  it('modifier 를 ⌃⌥⇧⌘ 순서의 기호로 적는다', () => {
-    expect(formatAccelerator('Command+N')).toBe('⌘N')
-    expect(formatAccelerator('Shift+Command+P')).toBe('⇧⌘P')
-    expect(formatAccelerator('Command+Shift+Alt+Control+K')).toBe('⌃⌥⇧⌘K')
-  })
-
-  it('Electron 이 받는 다른 이름의 modifier 도 같은 기호로 적는다', () => {
-    expect(formatAccelerator('Cmd+K')).toBe('⌘K')
-    expect(formatAccelerator('CmdOrCtrl+K')).toBe('⌘K')
-    expect(formatAccelerator('CommandOrControl+K')).toBe('⌘K')
-    expect(formatAccelerator('Ctrl+Option+K')).toBe('⌃⌥K')
-  })
-
-  it('방향키는 화살표로 적는다', () => {
-    expect(formatAccelerator('Alt+Command+Left')).toBe('⌥⌘←')
-    expect(formatAccelerator('Alt+Command+Right')).toBe('⌥⌘→')
-    expect(formatAccelerator('Alt+Command+Up')).toBe('⌥⌘↑')
-    expect(formatAccelerator('Alt+Command+Down')).toBe('⌥⌘↓')
-  })
-
-  it('Enter 는 메뉴처럼 ↩ 로 적는다', () => {
-    expect(formatAccelerator('Control+Command+Enter')).toBe('⌃⌘↩')
-  })
-})
-
 describe('commands', () => {
-  it('id 와 단축키가 겹치지 않는다', () => {
+  it('id 가 겹치지 않는다', () => {
     const ids = commands.map((c) => c.id)
     expect(new Set(ids).size).toBe(ids.length)
-    const keys = commands.flatMap((c) => (c.accelerator ? [formatAccelerator(c.accelerator)] : []))
-    expect(new Set(keys).size).toBe(keys.length)
   })
 })

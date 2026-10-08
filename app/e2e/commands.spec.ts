@@ -53,6 +53,30 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
   expect(menus.roles).toContain('reload')
 })
 
+test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않고 메뉴로 흘려보낸다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await activeTerminal(page)
+  await page.evaluate(() => {
+    const seen: { code: string; prevented: boolean }[] = []
+    Object.assign(window, { seen })
+    document.addEventListener('keydown', (e) => {
+      if (e.metaKey && e.key !== 'Meta') seen.push({ code: e.code, prevented: e.defaultPrevented })
+    })
+  })
+  await page.keyboard.type('echo pass-$((1+1))')
+
+  await page.keyboard.press('Control+Meta+Enter')
+  await page.keyboard.press('Alt+Meta+ArrowLeft')
+
+  expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual([
+    { code: 'Enter', prevented: false },
+    { code: 'ArrowLeft', prevented: false }
+  ])
+  await run(page, '3', 'pass-23')
+})
+
 test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력한 단어로 거른다', async ({ launch }) => {
   const launched = await launch()
   const { page } = launched

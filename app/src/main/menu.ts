@@ -1,36 +1,80 @@
-import { Menu, MenuItem } from 'electron'
+import { Menu, type MenuItemConstructorOptions } from 'electron'
 import { commands, type CommandId } from '../shared/commands'
+import { commandKeys, roleKeys, toAccelerator, type MenuRole } from '../shared/shortcuts'
 
-/**
- * 기본 메뉴의 Close Window 는 Close Pane 과 같은 ⌘W 라 뺀다. 메뉴의 항목은 지울 수 없어 메뉴를
- * 새로 짓는다.
- */
+const separator: MenuItemConstructorOptions = { type: 'separator' }
+
+function role(r: MenuRole): MenuItemConstructorOptions {
+  const keys = roleKeys(r)
+  return { role: r, accelerator: keys && toAccelerator(keys) }
+}
+
 export function installCommandMenu(run: (id: CommandId) => void): void {
-  const menu = Menu.getApplicationMenu()
-  if (!menu) return
-  const rebuilt = new Menu()
-  for (const top of menu.items) {
-    const where = (['file', 'view'] as const).find((w) => top.role?.toLowerCase() === `${w}menu`)
-    const items = commands.filter((c) => c.menu === where)
-    if (!top.submenu || (!items.length && !top.submenu.items.some((i) => i.role === 'close'))) {
-      rebuilt.append(top)
-      continue
-    }
-    const submenu = new Menu()
-    for (const c of items) {
-      submenu.append(
-        new MenuItem({
+  const commandItems = (menu: 'file' | 'view'): MenuItemConstructorOptions[] =>
+    commands
+      .filter((c) => c.menu === menu)
+      .map((c) => {
+        const keys = commandKeys(c.id)
+        return {
           id: c.id,
           label: c.title,
-          accelerator: c.accelerator,
+          accelerator: keys && toAccelerator(keys),
           click: () => run(c.id)
-        })
-      )
-    }
-    const kept = top.submenu.items.filter((i) => i.role !== 'close')
-    if (items.length && kept.length) submenu.append(new MenuItem({ type: 'separator' }))
-    for (const item of kept) submenu.append(item)
-    rebuilt.append(new MenuItem({ role: top.role, label: top.label, submenu }))
-  }
-  Menu.setApplicationMenu(rebuilt)
+        }
+      })
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        role: 'appMenu',
+        submenu: [
+          role('about'),
+          separator,
+          role('services'),
+          separator,
+          role('hide'),
+          role('hideOthers'),
+          role('unhide'),
+          separator,
+          role('quit')
+        ]
+      },
+      { role: 'fileMenu', submenu: commandItems('file') },
+      {
+        role: 'editMenu',
+        submenu: [
+          role('undo'),
+          role('redo'),
+          separator,
+          role('cut'),
+          role('copy'),
+          role('paste'),
+          role('pasteAndMatchStyle'),
+          role('delete'),
+          role('selectAll'),
+          separator,
+          { label: 'Speech', submenu: [role('startSpeaking'), role('stopSpeaking')] }
+        ]
+      },
+      {
+        role: 'viewMenu',
+        submenu: [
+          ...commandItems('view'),
+          separator,
+          role('reload'),
+          role('forceReload'),
+          role('toggleDevTools'),
+          separator,
+          role('resetZoom'),
+          role('zoomIn'),
+          role('zoomOut'),
+          separator,
+          role('togglefullscreen')
+        ]
+      },
+      {
+        role: 'windowMenu',
+        submenu: [role('minimize'), role('zoom'), separator, role('front')]
+      }
+    ])
+  )
 }

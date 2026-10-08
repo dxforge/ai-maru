@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css'
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { attach, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
+import { isCommandKey } from '../../../shared/shortcuts'
 import { osc7Path } from '../workspace/cwd'
 
 const {
@@ -23,6 +24,8 @@ const host = useTemplateRef<HTMLDivElement>('host')
 const term = new Terminal({ theme: { background: '#1e1e1e' } })
 const fit = new FitAddon()
 term.loadAddon(fit)
+// xterm 은 ⌃⌘↩ 같은 키도 셸에 보내고 preventDefault 해 메뉴에 닿지 않는다.
+term.attachCustomKeyEventHandler((e) => !isCommandKey(e))
 term.parser.registerOscHandler(7, (data) => {
   const path = osc7Path(data)
   if (path) emit('cwd', path)

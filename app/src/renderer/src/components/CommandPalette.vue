@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
-import { filterCommands, formatAccelerator, type CommandId } from '../../../shared/commands'
+import { filterCommands, type CommandId } from '../../../shared/commands'
+import { commandKeys, formatKeys } from '../../../shared/shortcuts'
 
 const emit = defineEmits<{ run: [id: CommandId]; close: [] }>()
 
 const input = useTemplateRef<HTMLInputElement>('input')
 const query = ref('')
 const index = ref(0)
-const matches = computed(() => filterCommands(query.value))
+const matches = computed(() =>
+  filterCommands(query.value).map((c) => ({ ...c, keys: commandKeys(c.id) }))
+)
 watch(query, () => (index.value = 0))
 
 const focus = (): void => input.value?.focus()
@@ -59,7 +62,7 @@ function onKeydown(e: KeyboardEvent): void {
           @click="emit('run', c.id)"
         >
           <span>{{ c.title }}</span>
-          <kbd v-if="c.accelerator">{{ formatAccelerator(c.accelerator) }}</kbd>
+          <kbd v-if="c.keys">{{ formatKeys(c.keys) }}</kbd>
         </li>
         <li v-if="!matches.length" class="empty">No matching commands</li>
       </ul>

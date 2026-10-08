@@ -221,7 +221,7 @@ test('columns 에서 줌을 바꿔도 칸은 80열이다', async ({ launch }) =>
   await toggle(launched, 'columns')
   await expectCols(page, 80)
 
-  for (const level of [2, -2]) {
+  for (const level of [0.5, 1, 1.5, 2, 2.5, 3, -0.5, -1, -1.5, -2, -2.5, -3]) {
     const before = await page.evaluate(() => devicePixelRatio)
     await app.evaluate(
       ({ BrowserWindow }, level) =>
