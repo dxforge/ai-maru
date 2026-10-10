@@ -56,15 +56,6 @@ test('점은 그 터미널의 workspace 에만, 띠는 보이는 칸의 상태�
   await expect(activePane(page)).toHaveClass(/working/)
 })
 
-test('창을 새로 고쳐도 상태가 남는다', async ({ launch }) => {
-  const { page } = await launch()
-  await page.keyboard.type(hook('UserPromptSubmit'))
-  await expect(dot(page)).toHaveClass(/working/)
-  await page.reload()
-  await page.waitForSelector('.xterm-screen')
-  await expect(dot(page)).toHaveClass(/working/)
-})
-
 test('띠는 칸마다 그 칸의 상태를, 사이드바 점은 포커스가 있는 칸의 상태를 보인다', async ({
   launch
 }) => {

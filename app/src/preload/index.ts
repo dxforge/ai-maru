@@ -13,10 +13,7 @@ ipcRenderer.on('session:lost', () => {
 })
 
 const api = {
-  /** 살아 있는 세션의 id 를 띄운 순서로 준다. 이 창이 그 전에 연 연결은 모두 끊긴다. */
-  restoreSessions: (): Promise<string[]> => ipcRenderer.invoke('session:restore'),
-  openSession: (key: string, id?: string, cwd?: string): void =>
-    ipcRenderer.send('session:open', key, id, cwd),
+  openSession: (key: string, cwd?: string): void => ipcRenderer.send('session:open', key, cwd),
   killSession: (key: string): void => ipcRenderer.send('session:kill', key),
   onCommand: (cb: (id: CommandId) => void): void => {
     ipcRenderer.on('command:run', (_event, id: CommandId) => cb(id))

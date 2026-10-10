@@ -1,5 +1,7 @@
 export type CommandId =
   | 'new-workspace'
+  | 'next-workspace'
+  | 'previous-workspace'
   | 'split-right'
   | 'split-down'
   | 'close-pane'
@@ -8,6 +10,7 @@ export type CommandId =
   | 'focus-pane-up'
   | 'focus-pane-down'
   | 'command-palette'
+  | 'toggle-sidebar'
   | 'toggle-canvas'
   | 'toggle-view-mode'
 
@@ -15,43 +18,24 @@ export type Command = {
   id: CommandId
   title: string
   menu: 'file' | 'view'
-  accelerator?: string
   palette?: false
 }
 
 export const commands: readonly Command[] = [
-  { id: 'new-workspace', title: 'New Workspace', menu: 'file', accelerator: 'Command+N' },
-  { id: 'split-right', title: 'Split Right', menu: 'file', accelerator: 'Command+D' },
-  { id: 'split-down', title: 'Split Down', menu: 'file', accelerator: 'Shift+Command+D' },
-  { id: 'close-pane', title: 'Close Pane', menu: 'file', accelerator: 'Command+W' },
-  {
-    id: 'command-palette',
-    title: 'Command Palette…',
-    menu: 'view',
-    accelerator: 'Shift+Command+P',
-    palette: false
-  },
+  { id: 'new-workspace', title: 'New Workspace', menu: 'file' },
+  { id: 'split-right', title: 'Split Right', menu: 'file' },
+  { id: 'split-down', title: 'Split Down', menu: 'file' },
+  { id: 'close-pane', title: 'Close Pane', menu: 'file' },
+  { id: 'command-palette', title: 'Command Palette…', menu: 'view', palette: false },
+  { id: 'next-workspace', title: 'Next Workspace', menu: 'view' },
+  { id: 'previous-workspace', title: 'Previous Workspace', menu: 'view' },
+  { id: 'toggle-sidebar', title: 'Toggle Sidebar', menu: 'view' },
   { id: 'toggle-canvas', title: 'Toggle Canvas', menu: 'view' },
-  {
-    id: 'toggle-view-mode',
-    title: 'Toggle View Mode',
-    menu: 'view',
-    accelerator: 'Control+Command+Enter'
-  },
-  {
-    id: 'focus-pane-left',
-    title: 'Focus Pane Left',
-    menu: 'view',
-    accelerator: 'Alt+Command+Left'
-  },
-  {
-    id: 'focus-pane-right',
-    title: 'Focus Pane Right',
-    menu: 'view',
-    accelerator: 'Alt+Command+Right'
-  },
-  { id: 'focus-pane-up', title: 'Focus Pane Up', menu: 'view', accelerator: 'Alt+Command+Up' },
-  { id: 'focus-pane-down', title: 'Focus Pane Down', menu: 'view', accelerator: 'Alt+Command+Down' }
+  { id: 'toggle-view-mode', title: 'Toggle View Mode', menu: 'view' },
+  { id: 'focus-pane-left', title: 'Focus Pane Left', menu: 'view' },
+  { id: 'focus-pane-right', title: 'Focus Pane Right', menu: 'view' },
+  { id: 'focus-pane-up', title: 'Focus Pane Up', menu: 'view' },
+  { id: 'focus-pane-down', title: 'Focus Pane Down', menu: 'view' }
 ]
 
 export function filterCommands(query: string): Command[] {
@@ -59,20 +43,4 @@ export function filterCommands(query: string): Command[] {
   return commands.filter(
     (c) => c.palette !== false && words.every((w) => c.title.toLowerCase().includes(w))
   )
-}
-
-const MODIFIERS: [string, string[]][] = [
-  ['⌃', ['Control', 'Ctrl']],
-  ['⌥', ['Alt', 'Option']],
-  ['⇧', ['Shift']],
-  ['⌘', ['Command', 'Cmd', 'CommandOrControl', 'CmdOrCtrl']]
-]
-
-const KEYS: Record<string, string> = { Left: '←', Right: '→', Up: '↑', Down: '↓', Enter: '↩' }
-
-export function formatAccelerator(accelerator: string): string {
-  const parts = accelerator.split('+')
-  const key = parts.pop()!
-  const mods = MODIFIERS.filter(([, names]) => names.some((n) => parts.includes(n)))
-  return mods.map(([sign]) => sign).join('') + (KEYS[key] ?? key)
 }
