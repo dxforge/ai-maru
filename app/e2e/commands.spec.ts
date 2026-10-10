@@ -141,6 +141,44 @@ test('터미널에서 ⌘⌫ 은 커서 앞의 입력을 지운다', async ({ la
   await expect(rows(page)).not.toContainText('gone')
 })
 
+async function composeThenMetaKey(page: Page, code: string, keyCode: number): Promise<void> {
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.imeSetComposition', { text: '하', selectionStart: 1, selectionEnd: 1 })
+  const key = { modifiers: 4, windowsVirtualKeyCode: keyCode, code, key: code }
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...key })
+  await cdp.send('Input.insertText', { text: '하' })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key })
+  await cdp.detach()
+}
+
+test('터미널에서 한글을 조합하는 중에 ⌘⌫ 을 누르면 조합하던 글자까지 지운다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await activeTerminal(page)
+  await page.keyboard.insertText('안녕')
+
+  await composeThenMetaKey(page, 'Backspace', 8)
+  await page.keyboard.type('echo kept-$((1+1))\n')
+
+  await expect(rows(page)).toContainText('kept-2')
+})
+
+test('터미널에서 한글을 조합하는 중에 ⌘← 를 누르면 조합하던 글자를 넣은 뒤 줄 처음으로 간다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await activeTerminal(page)
+  await page.keyboard.insertText('안녕')
+
+  await composeThenMetaKey(page, 'ArrowLeft', 37)
+  await page.keyboard.type('echo ')
+  await page.keyboard.press('Meta+ArrowRight')
+  await page.keyboard.type('-$((1+1))\n')
+
+  await expect(rows(page)).toContainText('안녕하-2')
+})
+
 test('터미널에서 ⌥ 는 Meta 로 가서 ⌥P 는 ESC p 를 보낸다', async ({ launch }) => {
   const { page } = await launch()
   await activeTerminal(page)

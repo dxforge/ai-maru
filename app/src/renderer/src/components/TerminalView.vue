@@ -28,10 +28,32 @@ const term = new Terminal({
 const fit = new FitAddon()
 term.loadAddon(fit)
 const selectAllKeys = menuKeys('selectAll')!
+// xterm 은 조합한 글자를 compositionend 다음 setTimeout(0) 에 보내고, 아래 handler 가 false 를 내면
+// 조합을 먼저 끝내지도 않는다. 그 사이에 보낸 키는 조합한 글자보다 앞서 가므로, 조합한 글자가 간 뒤로 미룬다.
+let composing = false
+let afterComposition: string[] | undefined
+function flushAfterComposition(): void {
+  const queued = afterComposition ?? []
+  afterComposition = undefined
+  for (const input of queued) term.input(input)
+}
+function sendInput(input: string): void {
+  if (composing || afterComposition) (afterComposition ??= []).push(input)
+  else term.input(input)
+}
+function trackComposition(textarea: HTMLTextAreaElement): void {
+  textarea.addEventListener('compositionstart', () => (composing = true))
+  textarea.addEventListener('compositionend', () => {
+    composing = false
+    afterComposition ??= []
+    // 조합한 글자가 비어 xterm 이 아무것도 보내지 않을 때. xterm 의 listener 보다 뒤에 걸려 그 setTimeout 보다 뒤에 돈다.
+    setTimeout(flushAfterComposition)
+  })
+}
 term.attachCustomKeyEventHandler((e) => {
   const input = terminalInput(e)
   if (input !== undefined) {
-    if (e.type === 'keydown') term.input(input)
+    if (e.type === 'keydown') sendInput(input)
     e.preventDefault()
     return false
   }
@@ -67,6 +89,7 @@ watch(
 
 onMounted(async () => {
   term.open(host.value!)
+  trackComposition(term.textarea!)
   if (term.dimensions) emit('cellWidth', cellWidth(term.dimensions))
   fit.fit()
   observer.observe(host.value!)
@@ -78,6 +101,11 @@ onMounted(async () => {
       emit('spawned', id)
       emit('cwd', dir)
     }
+  })
+  // 조합한 글자는 다음 키가 오면 그 키보다 먼저 setTimeout 을 기다리지 않고 간다. 그 바로 뒤에 보낸다.
+  // 세션에 보내는 attach 의 listener 보다 뒤에 걸어야 미룬 키가 조합한 글자 뒤로 간다.
+  term.onData(() => {
+    if (!composing) flushAfterComposition()
   })
 })
 
