@@ -44,7 +44,6 @@ export function createWorkspaces() {
     selectedKey.value = key
   }
 
-  /** 끝에서 넘어가면 반대쪽 끝으로 돈다. */
   function step(by: 1 | -1): number | undefined {
     const n = list.value.length
     if (!n) return undefined

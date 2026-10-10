@@ -28,7 +28,6 @@ export type MenuRole =
 
 export type MenuAction = MenuRole | 'toggle-full-screen'
 
-/** `key` 는 Electron accelerator 의 키 이름이다(`N`, `Enter`, `Left`, `Plus`). */
 export type Keys = { key: string; ctrl?: true; alt?: true; shift?: true; meta?: true }
 
 export type Shortcut = Keys &
