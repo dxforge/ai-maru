@@ -192,4 +192,24 @@ describe('panes', () => {
     expect(ws.selectedKey.value).toBe(second)
     expect(ws.list.value.find((w) => w.key === first)!.focused).toBe(hidden)
   })
+
+  it('step 은 다음·이전 workspace 를 주고, 끝에서는 반대쪽 끝으로 돈다', () => {
+    const ws = opened(3)
+    const [a, b, c] = keys(ws)
+    ws.select(a)
+    expect(ws.step(1)).toBe(b)
+    expect(ws.step(-1)).toBe(c)
+    ws.select(c)
+    expect(ws.step(1)).toBe(a)
+  })
+
+  it('workspace 가 하나면 step 은 그것을 준다', () => {
+    const ws = opened(1)
+    expect(ws.step(1)).toBe(keys(ws)[0])
+    expect(ws.step(-1)).toBe(keys(ws)[0])
+  })
+
+  it('workspace 가 없으면 step 은 아무것도 주지 않는다', () => {
+    expect(createWorkspaces().step(1)).toBeUndefined()
+  })
 })

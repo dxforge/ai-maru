@@ -47,6 +47,11 @@ function selectWorkspace(key: number): void {
   void focusSelected().then(revealFocused)
 }
 
+function stepWorkspace(by: 1 | -1): void {
+  const key = workspaces.step(by)
+  if (key !== undefined) selectWorkspace(key)
+}
+
 function closePane(): void {
   const w = workspaces.selected()
   if (!w) return
@@ -117,6 +122,8 @@ const handlers: Record<CommandId, () => void> = {
   'split-right': () => workspaces.split('right'),
   'split-down': () => workspaces.split('down'),
   'close-pane': closePane,
+  'next-workspace': () => stepWorkspace(1),
+  'previous-workspace': () => stepWorkspace(-1),
   'focus-pane-left': () => workspaces.moveFocus('left'),
   'focus-pane-right': () => workspaces.moveFocus('right'),
   'focus-pane-up': () => workspaces.moveFocus('up'),

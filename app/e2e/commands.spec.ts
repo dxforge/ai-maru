@@ -48,8 +48,10 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['split-down', 'Split Down', 'Shift+Command+D'],
     ['close-pane', 'Close Pane', 'Command+W']
   ])
-  expect(menus.view.slice(0, 9)).toEqual([
+  expect(menus.view.slice(0, 11)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
+    ['next-workspace', 'Next Workspace', 'Shift+Command+]'],
+    ['previous-workspace', 'Previous Workspace', 'Shift+Command+['],
     ['toggle-sidebar', 'Toggle Sidebar', 'Command+B'],
     ['toggle-canvas', 'Toggle Canvas', 'Alt+Command+B'],
     ['toggle-view-mode', 'Toggle View Mode', 'Control+Command+Enter'],
@@ -84,12 +86,14 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
   await page.keyboard.press('Alt+Meta+ArrowLeft')
   await page.keyboard.press('Alt+Meta+KeyB')
   await page.keyboard.press('Meta+KeyB')
+  await page.keyboard.press('Shift+Meta+BracketRight')
 
   expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual([
     { code: 'Enter', prevented: false },
     { code: 'ArrowLeft', prevented: false },
     { code: 'KeyB', prevented: false },
-    { code: 'KeyB', prevented: false }
+    { code: 'KeyB', prevented: false },
+    { code: 'BracketRight', prevented: false }
   ])
   await run(page, '3', 'pass-23')
 })
@@ -191,6 +195,8 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
     'Split Right⌘D',
     'Split Down⇧⌘D',
     'Close Pane⌘W',
+    'Next Workspace⇧⌘]',
+    'Previous Workspace⇧⌘[',
     'Toggle Sidebar⌘B',
     'Toggle Canvas⌥⌘B',
     'Toggle View Mode⌃⌘↩',
@@ -291,6 +297,29 @@ test('View 메뉴의 Toggle Canvas 는 팔레트 없이 Canvas 를 열고 닫는
   await clickMenu(app, 'toggle-canvas')
   await expect(canvas).toBeHidden()
   await typesIntoTerminal(page, 'menu-toggle')
+})
+
+test('Next·Previous Workspace 는 사이드바의 다음·이전 workspace 를 선택하고 끝에서는 반대쪽 끝으로 돌며, 키는 그 터미널로 간다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await clickMenu(app, 'new-workspace')
+  await expect(workspaceItems(page)).toHaveCount(2)
+  await clickMenu(app, 'new-workspace')
+  await expect(workspaceItems(page)).toHaveCount(3)
+  await activeTerminal(page)
+
+  for (const [id, i] of [
+    ['next-workspace', 0],
+    ['next-workspace', 1],
+    ['previous-workspace', 0],
+    ['previous-workspace', 2]
+  ] as const) {
+    await clickMenu(app, id)
+    await expect(workspaceItems(page).nth(i)).toHaveClass(/selected/)
+    await typesIntoTerminal(page, `at-${i}-${id}`)
+  }
 })
 
 test('View 메뉴의 Toggle Sidebar 는 사이드바를 숨기고 다시 보이며, 터미널이 그 폭을 쓴다', async ({

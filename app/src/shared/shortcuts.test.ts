@@ -74,6 +74,7 @@ describe('isAppKey', () => {
   it('명령이나 메뉴에 걸린 키만 참이다', () => {
     expect(isAppKey(press('Enter', { ctrlKey: true, metaKey: true }))).toBe(true)
     expect(isAppKey(press('KeyD', { metaKey: true }))).toBe(true)
+    expect(isAppKey(press('BracketRight', { shiftKey: true, metaKey: true }))).toBe(true)
     expect(isAppKey(press('KeyC', { metaKey: true }))).toBe(true)
     expect(isAppKey(press('KeyA', { metaKey: true }))).toBe(true)
     expect(isAppKey(press('Enter'))).toBe(false)
