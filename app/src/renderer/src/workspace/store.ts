@@ -32,16 +32,23 @@ export function createWorkspaces() {
     return list.value.find((w) => w.panes.some((p) => p.key === pane))
   }
 
-  function open(sessionId?: string, startDir?: string): void {
+  function open(startDir?: string): void {
     const pane = nextKey++
     const key = nextKey++
     list.value.push({
       key,
-      panes: [{ key: pane, sessionId, startDir }],
+      panes: [{ key: pane, startDir }],
       layout: { pane },
       focused: pane
     })
     selectedKey.value = key
+  }
+
+  function step(by: 1 | -1): number | undefined {
+    const n = list.value.length
+    if (!n) return undefined
+    const i = list.value.findIndex((w) => w.key === selectedKey.value)
+    return list.value[(i + by + n) % n].key
   }
 
   function close(key: number): void {
@@ -110,6 +117,7 @@ export function createWorkspaces() {
     setSessionId,
     setCwd,
     selected,
+    step,
     select: (key: number): void => void (selectedKey.value = key)
   }
 }

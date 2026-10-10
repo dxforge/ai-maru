@@ -52,22 +52,15 @@ test('다른 클라이언트가 primary 를 가져가면 창은 그 크기를 �
   await expect(gridRows(page)).toHaveCount(12)
 })
 
-test('세션을 잇는 utilityProcess 가 죽으면 끊김을 보이고, 새로 고치면 다시 붙는다', async ({
-  launch
-}) => {
+test('세션을 잇는 utilityProcess 가 죽으면 끊김을 보인다', async ({ launch }) => {
   const { app, page } = await launch()
-  await page.keyboard.type('X=same-$((5+5)); echo set-$((1+1))\n')
+  await page.keyboard.type('echo set-$((1+1))\n')
   await expect(rows(page)).toContainText('set-2')
   const pid = await app.evaluate(
     ({ app }) => app.getAppMetrics().find((m) => m.name === 'maru-session-host')!.pid
   )
   process.kill(pid, 'SIGKILL')
   await expect(rows(page)).toContainText('disconnected from the session')
-
-  await page.reload()
-  await page.waitForSelector('.xterm-screen')
-  await page.keyboard.type('echo $X\n')
-  await expect(rows(page)).toContainText('same-10')
 })
 
 test('maru-session 이 준비 전에 끝나면 그 이유를 터미널에 보인다', async ({ launch, dataDir }) => {
@@ -149,35 +142,4 @@ test('남은 세션은 프로토콜 버전이 달라도 kill 로 끝낸다', asy
   expect(JSON.parse(Buffer.concat(received).subarray(5).toString())).toMatchObject({ type: 'kill' })
   expect(sockets(dataDir)).toHaveLength(1)
   expect(sockets(dataDir)).not.toContain(join(dir, 's-old.sock'))
-})
-
-for (const [label, region] of [
-  ['', ''],
-  [' 스크롤 리전이 걸려 있어도', '\\033[1;20r']
-] as const) {
-  test(`다시 붙을 때${label} 화면 아래의 빈 행까지 맞춰 이어 그린다`, async ({ launch }) => {
-    const { page } = await launch()
-    await page.keyboard.type(`seq 1 200; printf '\\033[H\\033[2J${region}'; echo top-$((1+1))\n`)
-    await expect(rows(page)).toContainText('top-2')
-    await page.reload()
-
-    await expect(rows(page)).toContainText('top-2')
-    await page.keyboard.type('echo next-$((2+2))\n')
-    await expect(rows(page)).toContainText('next-4')
-    const lines = await gridRows(page).allInnerTexts()
-    const top = lines.findIndex((l) => l.includes('top-2'))
-    const next = lines.findIndex((l) => l.includes('next-4') && !l.includes('echo'))
-    expect(top).toBeGreaterThanOrEqual(0)
-    expect(next - top).toBe(2)
-  })
-}
-
-test('세션이 뜨는 동안 다시 연결을 청해도 세션은 하나만 뜬다', async ({ launch, dataDir }) => {
-  const { page } = await launch()
-  await page.reload()
-  await page.reload()
-  await page.waitForSelector('.xterm-screen')
-  await page.keyboard.type('echo single-$((1+1))\n')
-  await expect(rows(page)).toContainText('single-2')
-  expect(sockets(dataDir)).toHaveLength(1)
 })

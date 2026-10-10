@@ -35,36 +35,6 @@ test('창을 닫으면 세션도 끝난다', async ({ launch, dataDir }) => {
   expect(sessionFiles(dataDir)).toEqual([])
 })
 
-test('대체 화면 위에서 새로 고쳐도, 그 프로그램이 끝나면 일반 화면이 돌아온다', async ({
-  launch
-}) => {
-  const { page } = await launch()
-  await page.keyboard.type(
-    "echo main-$((1+1)); printf '\\033[?1049h\\033[Halt-%s' $((2+2)); read; printf '\\033[?1049l'\n"
-  )
-  await expect(rows(page)).toContainText('alt-4')
-  await page.reload()
-
-  await expect(rows(page)).toContainText('alt-4')
-  await expect(gridRows(page).first()).toContainText('alt-4')
-  await page.keyboard.press('Enter')
-  await expect(rows(page)).toContainText('main-2')
-  await expect(rows(page)).not.toContainText('alt-4')
-})
-
-test('프로그램이 켠 커서 키 모드는 새로 고친 뒤에도 남는다', async ({ launch }) => {
-  const { page } = await launch()
-  await page.keyboard.type(
-    "printf '\\033[?1h'; echo armed-$((1+1)); IFS= read -rsn3 k; printf 'got=%q\\n' \"$k\"\n"
-  )
-  await expect(rows(page)).toContainText('armed-2')
-  await page.reload()
-
-  await expect(rows(page)).toContainText('armed-2')
-  await page.keyboard.press('ArrowUp')
-  await expect(rows(page)).toContainText("got=$'\\EOA'")
-})
-
 test('창 크기를 바꾸면 셸이 보는 크기도 바뀐다', async ({ launch }) => {
   const { app, page } = await launch()
   const before = await shellSize(page)

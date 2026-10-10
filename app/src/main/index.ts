@@ -22,7 +22,7 @@ import {
   utf8Locale,
   type CliAccess
 } from './session'
-import type { KillRequest, OpenRequest, RestoreRequest } from './session-host'
+import type { KillRequest, OpenRequest } from './session-host'
 
 function sessionDir(): string {
   return join(app.getPath('userData'), 's')
@@ -90,7 +90,9 @@ function createWindow(): void {
     focusable: !unobtrusive,
     backgroundColor: '#1e1e1e',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js')
+      preload: join(__dirname, '../preload/index.js'),
+      // DevTools 에서는 메뉴와 상관없이 창을 새로 고칠 수 있는데, 새로 고치면 workspace 목록을 잃는다.
+      devTools: !app.isPackaged
     }
   })
   win.webContents.on('will-navigate', (event, url) => {
@@ -172,29 +174,13 @@ function start(): void {
   })
   // 셸이 뜨자마자 `maru` 를 불러도 닿게.
   const ready = Promise.all([leftovers, cliServer])
-  ipcMain.handle('session:restore', async (event) => {
-    await ready
-    const { port1, port2 } = new MessageChannelMain()
-    const req: RestoreRequest = { type: 'restore', owner: event.sender.id, dir: sessionDir() }
-    sessionHost().postMessage(req, [port1])
-    return new Promise<string[]>((resolve, reject) => {
-      port2.once('message', ({ data }) => {
-        resolve(data)
-        port2.close()
-      })
-      port2.once('close', () => reject(new Error('session host exited')))
-      port2.start()
-    })
-  })
   ipcMain.handle('claude:statuses', () => claudeStatus.snapshot())
   const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
-  ipcMain.on('session:open', (event, key: string, id?: string, cwd?: string) => {
+  ipcMain.on('session:open', (event, key: string, cwd?: string) => {
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
-      owner: event.sender.id,
       key,
-      id,
       cwd,
       dir: sessionDir(),
       bin: sessionBin(),

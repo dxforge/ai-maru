@@ -195,45 +195,6 @@ test('zsh 에서 새 칸은 포커스가 있던 칸의 디렉토리에서 시작
   await run(page, '[ "$PWD" = "$HOME/other" ] && echo in-other-$((1+1))', 'in-other-2')
 })
 
-test('새로 고치면 칸 배치는 되살리지 않고 칸마다 workspace 하나로 되살린다', async ({
-  launch,
-  dataDir
-}) => {
-  const { app, page } = await launch()
-  await run(page, 'X=a-$((1+1)); echo set-a', 'set-a')
-  await split(app, page, 'split-right', 2)
-  await run(page, 'X=b-$((2+2)); echo set-b', 'set-b')
-
-  await page.reload()
-  await activeTerminal(page)
-
-  await expect(workspaceItems(page)).toHaveCount(2)
-  await expect(panes(page)).toHaveCount(1)
-  expect(sockets(dataDir)).toHaveLength(2)
-  await run(page, 'echo "x=$X"', 'x=b-4')
-  await workspaceItems(page).first().click()
-  await run(page, 'echo "x=$X"', 'x=a-2')
-})
-
-test('셸이 뜨는 중에 ⌘W 로 닫고 바로 새로 고쳐도 닫은 칸의 세션은 되살아나지 않는다', async ({
-  launch,
-  dataDir
-}) => {
-  const { app, page } = await launch({ MARU_SESSION_BIN: slowSessionBin(dataDir) })
-  await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
-  await clickMenu(app, 'split-right')
-  await expect(panes(page)).toHaveCount(2)
-  await clickMenu(app, 'close-pane')
-  await expect(panes(page)).toHaveCount(1)
-
-  await page.reload()
-  await activeTerminal(page)
-
-  await page.waitForTimeout(2500)
-  await expect(workspaceItems(page)).toHaveCount(1)
-  await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
-})
-
 test('포커스가 있는 칸의 셸이 끝나면 형제 칸이 포커스를 받는다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await page.keyboard.type('X=left-$((1+1))\n')
@@ -278,20 +239,6 @@ test('보이지 않는 workspace 에서 포커스가 있던 칸의 셸이 끝나
 
   await expect(panes(page)).toHaveCount(1)
   await typesInto(page, 0, 'left')
-})
-
-test('새로 고쳐 되살린 칸도 ⌘W 로 닫으면 세션이 끝난다', async ({ launch, dataDir }) => {
-  const { app, page } = await launch()
-  await split(app, page, 'split-right', 2)
-  await typesInto(page, 1, 'right')
-  await page.reload()
-  await activeTerminal(page)
-  await expect(workspaceItems(page)).toHaveCount(2)
-
-  await clickMenu(app, 'close-pane')
-
-  await expect(workspaceItems(page)).toHaveCount(1)
-  await expect.poll(() => sockets(dataDir)).toHaveLength(1)
 })
 
 test('나눈 칸들은 창 크기를 따라 셸이 보는 크기가 바뀐다', async ({ launch }) => {
