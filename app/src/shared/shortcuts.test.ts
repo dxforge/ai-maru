@@ -81,6 +81,11 @@ describe('isAppKey', () => {
     expect(isAppKey(press('Enter', { metaKey: true }))).toBe(false)
   })
 
+  it('⌘+ 는 ⇧ 를 누르든 안 누르든 앱의 키다', () => {
+    expect(isAppKey(press('Equal', { metaKey: true }))).toBe(true)
+    expect(isAppKey(press('Equal', { shiftKey: true, metaKey: true }))).toBe(true)
+  })
+
   it('터미널이 바꿔 보내는 키는 앱의 키가 아니다', () => {
     expect(isAppKey(press('Backspace', { metaKey: true }))).toBe(false)
     expect(isAppKey(press('ArrowLeft', { metaKey: true }))).toBe(false)

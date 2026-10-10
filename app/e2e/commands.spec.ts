@@ -202,14 +202,16 @@ test('kitty 키보드 모드인 프로그램이 떠 있어도 메뉴의 키는 �
     const seen: { code: string; prevented: boolean }[] = []
     Object.assign(window, { seen })
     document.addEventListener('keydown', (e) => {
-      if (e.metaKey && e.key !== 'Meta') seen.push({ code: e.code, prevented: e.defaultPrevented })
+      if (e.metaKey && !['Meta', 'Shift'].includes(e.key))
+        seen.push({ code: e.code, prevented: e.defaultPrevented })
     })
   })
 
-  for (const key of ['KeyC', 'KeyQ', 'KeyZ', 'Equal']) await page.keyboard.press(`Meta+${key}`)
+  for (const key of ['KeyC', 'KeyQ', 'KeyZ', 'Equal', 'Shift+Equal'])
+    await page.keyboard.press(`Meta+${key}`)
 
   expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual(
-    ['KeyC', 'KeyQ', 'KeyZ', 'Equal'].map((code) => ({ code, prevented: false }))
+    ['KeyC', 'KeyQ', 'KeyZ', 'Equal', 'Equal'].map((code) => ({ code, prevented: false }))
   )
   await expect(rows(page)).toContainText("got=''")
 })

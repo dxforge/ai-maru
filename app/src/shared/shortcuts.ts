@@ -141,7 +141,8 @@ export function matchesKeys(e: KeyEventLike, k: Keys): boolean {
     e.code === keyCode(k.key) &&
     e.ctrlKey === !!k.ctrl &&
     e.altKey === !!k.alt &&
-    e.shiftKey === !!k.shift &&
+    // `+` 는 `=` 자리에 ⇧ 를 눌러 친다. 메뉴의 Command+Plus 는 ⌘= 로 불리지만, ⇧⌘= 도 프로그램에 `=` 로 가지 않게 한다.
+    (k.key === 'Plus' || e.shiftKey === !!k.shift) &&
     e.metaKey === !!k.meta
   )
 }
