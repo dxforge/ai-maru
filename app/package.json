@@ -16,7 +16,8 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json && vue-tsc --noEmit -p tsconfig.e2e.json",
     "test": "vitest run",
     "test:e2e": "electron-vite build && playwright test",
-    "test:e2e:packaged": "app=\"$(../scripts/package-app.sh)\" && MARU_PACKAGED_APP=\"$app\" playwright test --project packaged"
+    "test:e2e:packaged": "app=\"$(../scripts/package-app.sh)\" && MARU_PACKAGED_APP=\"$app\" playwright test --project packaged",
+    "postinstall": "[ \"$CI\" = true ] || install-electron"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
