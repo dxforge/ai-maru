@@ -166,7 +166,6 @@ test('세션에 붙기 전에 ⌘W 로 닫아도 그 세션은 끝난다', async
   await clickMenu(app, 'close-pane')
 
   await expect(panes(page)).toHaveCount(1)
-  // 늦게 온 포트가 닫힌 칸에 닿은 뒤를 본다.
   await page.waitForTimeout(2500)
   await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
   await typesInto(page, 0, 'remaining')

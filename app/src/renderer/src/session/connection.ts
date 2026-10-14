@@ -31,6 +31,8 @@ export function openSession(cwd?: string): SessionConnection {
     if (e.source !== window || e.data?.type !== 'session:port' || e.data.key !== key) return
     window.removeEventListener('message', onPort)
     port = e.ports[0]
+    // 포트보다 먼저 온 session:lost 는 이 open 을 받기 전에 죽은 host 의 것이라 듣지 않는다.
+    // main 이 포트를 host 보다 먼저 renderer 에 보내는 순서에 기댄다(main/index.ts 의 session:open).
     window.addEventListener('message', onLost)
     port.onmessage = ({ data }) => (data === null ? close() : onMessage(data))
     for (const msg of pending.splice(0)) port.postMessage(msg)
