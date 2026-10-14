@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import {
   activeTerminal,
   clickMenu,
+  delaySessionPort,
   expect,
   openPalette,
   panes,
@@ -150,6 +151,21 @@ test('셸이 뜨기 전에 ⌘W 로 닫아도 그 세션은 뜬 뒤에 끝난다
 
   await expect(panes(page)).toHaveCount(1)
   // 띄우던 세션이 소켓을 연 뒤에 끝나야 하므로 그 시간이 지나도록 본다.
+  await page.waitForTimeout(2500)
+  await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
+  await typesInto(page, 0, 'remaining')
+})
+
+test('세션에 붙기 전에 ⌘W 로 닫아도 그 세션은 끝난다', async ({ launch, dataDir }) => {
+  const { app, page } = await launch()
+  await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
+  await delaySessionPort(app, 1500)
+  await clickMenu(app, 'split-right')
+  await expect(panes(page)).toHaveCount(2)
+
+  await clickMenu(app, 'close-pane')
+
+  await expect(panes(page)).toHaveCount(1)
   await page.waitForTimeout(2500)
   await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
   await typesInto(page, 0, 'remaining')

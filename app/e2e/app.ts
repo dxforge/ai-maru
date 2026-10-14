@@ -103,6 +103,25 @@ export function slowSessionBin(dataDir: string): string {
   return bin
 }
 
+export async function delaySessionPort(app: ElectronApplication, ms: number): Promise<void> {
+  await app.evaluate(({ ipcMain }, ms) => {
+    const [open] = ipcMain.listeners('session:open')
+    ipcMain.removeAllListeners('session:open')
+    ipcMain.on('session:open', (event, ...args) => {
+      const sender = event.sender
+      const late = Object.create(event, {
+        sender: {
+          value: {
+            postMessage: (...msg: Parameters<typeof sender.postMessage>) =>
+              setTimeout(() => sender.postMessage(...msg), ms)
+          }
+        }
+      })
+      open(late, ...args)
+    })
+  }, ms)
+}
+
 export function sessionDir(dataDir: string): string {
   return join(dataDir, 's')
 }

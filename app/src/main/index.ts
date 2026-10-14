@@ -187,6 +187,8 @@ function start(): void {
       setup
     }
     void ready.then(() => sessionHost().postMessage(req, [port1]))
+    // host 에 넘기는 것(위 ready.then)보다 먼저 renderer 에 가야 한다 — renderer 는 포트보다 먼저 온
+    // session:lost 를 이 open 이전 host 의 것으로 보고 버린다(renderer/src/session/connection.ts).
     event.sender.postMessage('session:port', key, [port2])
   })
 
