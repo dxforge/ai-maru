@@ -10,20 +10,10 @@ export interface SessionConnection {
 }
 
 /** 세션을 띄우는 데 실패하면 연결로 `{"type":"error"}` 가 오고 닫힌다. */
-export function openSession(cwd?: string): Promise<SessionConnection> {
+export function openSession(cwd?: string): SessionConnection {
   const key = crypto.randomUUID()
-  return new Promise((resolve) => {
-    const onPort = (e: MessageEvent): void => {
-      if (e.source !== window || e.data?.type !== 'session:port' || e.data.key !== key) return
-      window.removeEventListener('message', onPort)
-      resolve(portConnection(e.ports[0], key))
-    }
-    window.addEventListener('message', onPort)
-    window.maru.openSession(key, cwd)
-  })
-}
-
-function portConnection(port: MessagePort, key: string): SessionConnection {
+  let port: MessagePort | undefined
+  const pending: SessionMessage[] = []
   let onMessage: (msg: SessionMessage) => void = () => {}
   let onClose: () => void = () => {}
   let closed = false
@@ -31,16 +21,27 @@ function portConnection(port: MessagePort, key: string): SessionConnection {
     if (closed) return
     closed = true
     window.removeEventListener('message', onLost)
-    port.close()
+    port!.close()
     onClose()
   }
   const onLost = (e: MessageEvent): void => {
     if (e.source === window && e.data === 'session:lost') close()
   }
-  window.addEventListener('message', onLost)
-  port.onmessage = ({ data }) => (data === null ? close() : onMessage(data))
+  const onPort = (e: MessageEvent): void => {
+    if (e.source !== window || e.data?.type !== 'session:port' || e.data.key !== key) return
+    window.removeEventListener('message', onPort)
+    port = e.ports[0]
+    window.addEventListener('message', onLost)
+    port.onmessage = ({ data }) => (data === null ? close() : onMessage(data))
+    for (const msg of pending.splice(0)) port.postMessage(msg)
+  }
+  window.addEventListener('message', onPort)
+  window.maru.openSession(key, cwd)
   return {
-    send: (msg) => port.postMessage(msg),
+    send: (msg) => {
+      if (port) port.postMessage(msg)
+      else pending.push(msg)
+    },
     onMessage: (cb) => (onMessage = cb),
     onClose: (cb) => (onClose = cb),
     kill: () => window.maru.killSession(key)

@@ -1,6 +1,20 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, gridRows, resizeBy, rows, sessionFiles, shellSize, sockets, test } from './app'
+import {
+  delaySessionPort,
+  expect,
+  gridRows,
+  newWorkspace,
+  resizeBy,
+  rows,
+  run,
+  sessionFiles,
+  shellSize,
+  slowSessionBin,
+  sockets,
+  test,
+  zshHome
+} from './app'
 
 // 산술 확장을 쓰면 화면에 찍힌 입력과 셸의 출력이 구별된다.
 
@@ -33,6 +47,38 @@ test('창을 닫으면 세션도 끝난다', async ({ launch, dataDir }) => {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
   await closed
   expect(sessionFiles(dataDir)).toEqual([])
+})
+
+test('새 터미널이 세션에 붙기 전에 친 키도 셸에 간다', async ({ launch }) => {
+  const launched = await launch()
+  await delaySessionPort(launched.app, 1500)
+  await newWorkspace(launched, 2)
+  await launched.page.keyboard.type('echo ')
+  await launched.page.keyboard.insertText('한글')
+  await run(launched.page, '-$((1+1))', '한글-2')
+})
+
+test('새 터미널이 세션에 붙기 전에 창 크기가 바뀌어도 셸은 바뀐 크기를 본다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await delaySessionPort(app, 1500)
+  await newWorkspace(launched, 2)
+  const before = await gridRows(page).count()
+  await resizeBy(app, -200, -180)
+  await expect.poll(() => gridRows(page).count()).toBeLessThan(before)
+  expect((await shellSize(page)).rows).toBe(await gridRows(page).count())
+})
+
+test('zsh 가 뜨는 동안 친 키도 셸에 간다', async ({ launch, dataDir }) => {
+  test.skip(!existsSync('/bin/zsh'), 'zsh 가 없다')
+  const { page } = await launch({
+    SHELL: '/bin/zsh',
+    HOME: zshHome(dataDir),
+    MARU_SESSION_BIN: slowSessionBin(dataDir)
+  })
+  await run(page, 'echo "$MARK" typeahead-$((1+1))', 'rc-2 typeahead-2')
 })
 
 test('창 크기를 바꾸면 셸이 보는 크기도 바뀐다', async ({ launch }) => {

@@ -77,9 +77,9 @@ const observer = new ResizeObserver(() => {
   if (session?.primary !== false) fit.fit()
 })
 
-let opening: Promise<SessionConnection> | undefined
+let conn: SessionConnection | undefined
 
-defineExpose({ focus: () => term.focus(), kill: () => void opening?.then((c) => c.kill()) })
+defineExpose({ focus: () => term.focus(), kill: () => conn?.kill() })
 
 watch(
   () => active,
@@ -87,15 +87,15 @@ watch(
   { flush: 'post' }
 )
 
-onMounted(async () => {
+onMounted(() => {
   term.open(host.value!)
   trackComposition(term.textarea!)
   if (term.dimensions) emit('cellWidth', cellWidth(term.dimensions))
   fit.fit()
   observer.observe(host.value!)
   if (active) term.focus()
-  opening = openSession(startDir)
-  session = attach(term, await opening, {
+  conn = openSession(startDir)
+  session = attach(term, conn, {
     onExit: () => emit('exit'),
     onSpawned: (id, dir) => {
       emit('spawned', id)
