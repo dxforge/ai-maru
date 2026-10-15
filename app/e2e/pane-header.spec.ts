@@ -38,6 +38,22 @@ test('칸 머리는 OSC 0·2 로 받은 제목을, 받기 전에는 Shell 을 �
   await expect(activeHeader(page).locator('.title')).toHaveText('both-2')
 })
 
+test('앱이 뜰 때 그린 pane 헤더 아이콘도 함께 실은 Nerd Font 로 그린다', async ({ launch }) => {
+  const { page } = await launch()
+  await expect(activeHeader(page)).toBeVisible()
+
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('DOM.enable')
+  await cdp.send('CSS.enable')
+  const { root } = await cdp.send('DOM.getDocument')
+  const { nodeId } = await cdp.send('DOM.querySelector', {
+    nodeId: root.nodeId,
+    selector: '.pane-header .row-bar-icon'
+  })
+  const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId })
+  expect(fonts.map((f) => f.familyName)).toEqual(['Symbols Nerd Font Mono'])
+})
+
 test('칸 머리를 누르면 그 칸이 포커스를 받고 키가 그리로 간다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
@@ -192,15 +208,6 @@ test('터미널 왼쪽 여백도 터미널 배경으로 칠한다', async ({ lau
   )
   expect(viewport).toBe('rgba(0, 0, 0, 0)')
   expect(xterm).toBe(scrollable)
-})
-
-test('칸 머리의 아이콘 글꼴을 불러온다', async ({ launch }) => {
-  const { page } = await launch()
-  const status = await page.evaluate(async () => {
-    await document.fonts.ready
-    return [...document.fonts].find((f) => f.family.includes('Symbols Nerd Font Mono'))?.status
-  })
-  expect(status).toBe('loaded')
 })
 
 async function measure(page: Page) {
