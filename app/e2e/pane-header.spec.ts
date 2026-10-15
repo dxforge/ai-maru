@@ -340,13 +340,21 @@ test('포커스 없는 칸의 스크롤바도 흐리게 덮는다', async ({ lau
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await run(page, 'seq 1 300', '300')
-  const slider = await page.evaluate(() => {
-    const r = document
-      .querySelectorAll('.panes.selected .pane')[1]
-      .querySelector('.xterm-vertical > .xterm-slider')!
-      .getBoundingClientRect()
-    return { x: Math.floor(r.left + r.width / 2), y: Math.floor(r.top + r.height / 2) }
-  })
+  const sliderRect = () =>
+    page.evaluate(() => {
+      const track = document
+        .querySelectorAll('.panes.selected .pane')[1]
+        .querySelector('.xterm-vertical')!
+      const r = track.querySelector('.xterm-slider')!.getBoundingClientRect()
+      return {
+        x: Math.floor(r.left + r.width / 2),
+        y: Math.floor(r.top + r.height / 2),
+        shrunk: r.height < track.getBoundingClientRect().height
+      }
+    })
+  // 출력이 뜬 직후에는 스크롤바가 아직 갱신되지 않아 슬라이더가 트랙 전체를 차지한다.
+  await expect.poll(async () => (await sliderRect()).shrunk).toBe(true)
+  const slider = await sliderRect()
   const background = await pixel(page, slider.x - 40, slider.y)
   const hovered = async () => {
     await page.mouse.move(slider.x - 40, slider.y)
