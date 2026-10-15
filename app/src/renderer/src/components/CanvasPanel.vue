@@ -58,8 +58,8 @@ watch(
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border-left: 1px solid #3c3c3c;
-  color: #d4d4d4;
+  border-left: 1px solid var(--line);
+  color: var(--fg);
   font:
     14px/1.6 system-ui,
     sans-serif;
@@ -70,9 +70,9 @@ watch(
   align-items: center;
   justify-content: space-between;
   padding: 4px 8px 4px 12px;
-  border-bottom: 1px solid #3c3c3c;
+  border-bottom: 1px solid var(--line);
   font-size: 12px;
-  color: #9d9d9d;
+  color: var(--muted);
 }
 
 button {
@@ -94,7 +94,7 @@ button {
   margin: 0;
   padding: 4px 0;
   list-style: none;
-  border-bottom: 1px solid #3c3c3c;
+  border-bottom: 1px solid var(--line);
 }
 
 .list button {
@@ -109,12 +109,12 @@ button {
 }
 
 .list button:hover {
-  background: #2a2d2e;
+  background: var(--hover);
 }
 
 .list button.selected {
-  background: #37373d;
-  color: #fff;
+  background: var(--selected);
+  color: var(--fg);
 }
 
 .view {
@@ -131,19 +131,19 @@ button {
   flex: none;
   writing-mode: vertical-rl;
   padding: 12px 4px;
-  border-left: 1px solid #3c3c3c;
+  border-left: 1px solid var(--line);
   font-size: 12px;
-  color: #9d9d9d;
+  color: var(--muted);
 }
 
 .markdown :deep(a) {
-  color: #4daafc;
+  color: var(--accent);
 }
 
 .markdown :deep(code) {
   font-family: ui-monospace, monospace;
   font-size: 0.9em;
-  background: #2d2d2d;
+  background: var(--raised);
   padding: 0.1em 0.3em;
   border-radius: 3px;
 }
@@ -151,7 +151,7 @@ button {
 .markdown :deep(pre) {
   overflow-x: auto;
   padding: 8px 12px;
-  background: #2d2d2d;
+  background: var(--raised);
   border-radius: 4px;
 }
 
@@ -163,8 +163,8 @@ button {
 .markdown :deep(blockquote) {
   margin: 0;
   padding-left: 12px;
-  border-left: 3px solid #555;
-  color: #a0a0a0;
+  border-left: 3px solid var(--faint);
+  color: var(--muted);
 }
 
 .markdown :deep(table) {
@@ -174,11 +174,11 @@ button {
 .markdown :deep(th),
 .markdown :deep(td) {
   padding: 4px 8px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--line);
 }
 
 .markdown :deep(hr) {
   border: none;
-  border-top: 1px solid #3c3c3c;
+  border-top: 1px solid var(--line);
 }
 </style>

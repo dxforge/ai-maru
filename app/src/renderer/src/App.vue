@@ -12,7 +12,7 @@ import { ICONS } from './icons'
 import { columnsWidth, terminalPadding } from './workspace/columns'
 import { workspaceName } from './workspace/cwd'
 import { snapRects, type Box, type Size } from './workspace/grid'
-import { columnCount, rects, type Rect } from './workspace/layout'
+import { columnCount, EPSILON, rects, type Layout } from './workspace/layout'
 import { createWorkspaces, focusedPane } from './workspace/store'
 
 const canvas = createCanvas()
@@ -79,7 +79,7 @@ const gridVars = computed(() => ({
   '--font-family': FONT_FAMILY
 }))
 
-/** workspace 마다 칸이 놓이는 영역의 크기. CSS 가 정하는 머리·여백을 JS 에서 다시 셈하지 않게 잰다. */
+/** workspace 마다 칸이 놓이는 영역의 크기. CSS 가 정하는 머리·여백을 JS 에서 다시 계산하지 않게 잰다. */
 const gridSizes = reactive(new Map<number, Size>())
 const gridEls = new Map<number, Element>()
 const gridKeys = new WeakMap<Element, number>()
@@ -109,58 +109,64 @@ function setCell(c: Size): void {
   if (c.width !== cell.value.width || c.height !== cell.value.height) cell.value = c
 }
 
-function paneStyle(b: Box, size: Size) {
-  const bottom = b.top + b.height < size.height
+function placement(b: Box, unit: string, bodyHeight?: number) {
   return {
     style: {
-      left: `${b.left}px`,
-      top: `${b.top}px`,
-      width: `${b.width}px`,
-      height: `${b.height}px`
+      left: `${b.left}${unit}`,
+      top: `${b.top}${unit}`,
+      width: `${b.width}${unit}`,
+      height: `${b.height}${unit}`
     },
-    // FitAddon 은 높이를 정수로 잘라 읽고, 지금 행 수로 반올림한 셀 높이로 나눠 행의 배수인 높이에서
-    // 한 행을 잃곤 한다. 아래에 칸이 있는 칸은 터미널을 반 행 더 내리고 넘친 부분은 칸이 가린다.
-    body: bottom ? { height: `${b.height - row.value / 2}px` } : { bottom: '0' },
-    edges: { 'edge-left': b.left > 0, 'edge-top': b.top > 0 }
+    body: bodyHeight === undefined ? { bottom: '0' } : { height: `${bodyHeight}px` },
+    edge: b.left > 0
   }
 }
 
-/** 영역을 재기 전의 첫 렌더. 0×0 으로 그리면 터미널이 그 크기로 세션을 연다. */
-function unmeasuredStyle(r: Rect) {
-  return {
-    style: {
-      left: `${r.x * 100}%`,
-      top: `${r.y * 100}%`,
-      width: `${r.w * 100}%`,
-      height: `${r.h * 100}%`
-    },
-    body: { bottom: '0' },
-    edges: { 'edge-left': r.x > 0, 'edge-top': r.y > 0 }
-  }
+// FitAddon 은 칸 높이를 정수로 잘라 읽고 반올림한 셀 높이로 나눠 행 하나를 잃곤 하므로, 머리 아래에 들어갈
+// 행 수보다 반 행 큰 높이를 주고 넘친 부분은 칸이 가린다.
+function bodyHeight(b: Box): number {
+  const rows = Math.max(0, Math.floor(b.height / row.value - 1 + EPSILON))
+  return (rows + 0.5) * row.value
+}
+
+function placements(layout: Layout, size: Size | undefined) {
+  // 영역을 재기 전의 첫 렌더는 비율로 그린다. 0×0 으로 그리면 터미널이 그 크기로 세션을 연다.
+  if (!size)
+    return new Map(
+      [...rects(layout)].map(([pane, r]) => [
+        pane,
+        placement({ left: r.x * 100, top: r.y * 100, width: r.w * 100, height: r.h * 100 }, '%')
+      ])
+    )
+  return new Map(
+    [...snapRects(layout, size, cell.value)].map(([pane, b]) => [
+      pane,
+      placement(b, 'px', bodyHeight(b))
+    ])
+  )
 }
 
 const views = computed(() =>
   workspaces.list.value.map((w) => {
     const selected = w.key === workspaces.selectedKey.value
     const measured = gridSizes.get(w.key)
-    const size =
+    const width =
       viewMode.value === 'columns'
-        ? {
-            width: columnsWidth(columnCount(w.layout), cell.value.width),
-            height: measured?.height ?? 0
-          }
-        : (measured ?? { width: 0, height: 0 })
-    const boxes = snapRects(w.layout, size, cell.value)
-    const fractions = rects(w.layout)
+        ? columnsWidth(columnCount(w.layout), cell.value.width)
+        : undefined
+    const places = placements(
+      w.layout,
+      measured && (width === undefined ? measured : { width, height: measured.height })
+    )
     return {
       w,
       selected,
       focused: focusedPane(w),
-      width: viewMode.value === 'columns' ? `${size.width}px` : undefined,
+      width: width === undefined ? undefined : `${width}px`,
       panes: w.panes.map((p) => ({
         p,
         active: selected && p.key === w.focused,
-        ...(measured ? paneStyle(boxes.get(p.key)!, size) : unmeasuredStyle(fractions.get(p.key)!))
+        ...places.get(p.key)!
       }))
     }
   })
@@ -263,26 +269,25 @@ window.maru.onCommand(runCommand)
       >
         <div
           v-if="viewMode === 'columns'"
-          class="bar workspace-header"
+          class="row-bar workspace-header"
           :class="[urgent.get(w.key), { focused: selected }]"
           @mousedown.prevent="selectWorkspace(w.key)"
         >
-          <span class="bar-icon">{{ urgent.has(w.key) ? ICONS[urgent.get(w.key)!] : '' }}</span>
-          <span class="name">{{ workspaceName(focused.cwd) }}</span>
+          <span class="row-bar-icon">{{ urgent.has(w.key) ? ICONS[urgent.get(w.key)!] : '' }}</span>
+          <span class="row-bar-text name">{{ workspaceName(focused.cwd) }}</span>
         </div>
         <div :ref="(el) => observeGrid(w.key, el)" class="grid">
           <div
-            v-for="{ p, active, style, body, edges } in panes"
+            v-for="{ p, active, style, body, edge } in panes"
             :key="p.key"
             class="pane"
-            :class="[edges, { focused: active }]"
+            :class="{ 'edge-left': edge, focused: active }"
             :style="style"
             @focusin="focusPane(w.key, p.key)"
           >
             <PaneHeader
               :state="claude.state(p.sessionId)"
-              :title="p.title"
-              :cwd="p.cwd"
+              :pane="p"
               :focused="active"
               @mousedown.prevent="terminals.get(p.key)?.focus()"
             />
@@ -383,9 +388,9 @@ window.maru.onCommand(runCommand)
   min-height: 0;
 }
 
-/* workspace 사이는 행 격자를 이어 쓸 필요가 없어, 틈을 두고 카드로 나눈다. */
 .columns {
   display: flex;
+  /* workspace 사이는 행을 이어 쓸 필요가 없어 틈을 두고 카드로 나눈다. */
   gap: 8px;
   padding: 8px 8px 0;
   background: var(--side);
@@ -406,13 +411,11 @@ window.maru.onCommand(runCommand)
 }
 
 .workspace-header {
-  flex: none;
+  box-shadow: inset 0 -1px 0 var(--line);
 }
 
 .workspace-header .name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 600;
+  font-weight: bold;
 }
 
 .pane {
@@ -423,27 +426,16 @@ window.maru.onCommand(runCommand)
   background: var(--ground);
 }
 
-/* 경계선은 자리를 차지하지 않게 칸 위에 겹친다 — 세로선은 터미널 왼쪽 여백에, 가로선은 칸 머리 맨 위에. */
-.edge-left::before,
-.edge-top::after {
+/* 좌우 칸의 경계선. 자리를 차지하지 않게 겹친다 — docs/architecture.md 의 "칸 경계와 셀 격자". */
+.edge-left::before {
   content: '';
   position: absolute;
-  z-index: 2;
-  background: var(--line);
-}
-
-.edge-left::before {
   top: 0;
   bottom: 0;
   left: 0;
+  z-index: 2;
   width: 1px;
-}
-
-.edge-top::after {
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
+  background: var(--line);
 }
 
 .body {

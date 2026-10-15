@@ -2,43 +2,33 @@
 import type { ClaudeState } from '../../../shared/claude'
 import { ICONS } from '../icons'
 import { workspaceName } from '../workspace/cwd'
+import type { Pane } from '../workspace/store'
 
+// 제목은 여기서 읽어, 제목이 바뀌면 이 머리만 다시 그린다.
 const {
   state = undefined,
-  title = undefined,
-  cwd = undefined,
+  pane,
   focused
-} = defineProps<{ state?: ClaudeState; title?: string; cwd?: string; focused: boolean }>()
+} = defineProps<{ state?: ClaudeState; pane: Pick<Pane, 'title' | 'cwd'>; focused: boolean }>()
 </script>
 
 <template>
-  <div class="bar pane-header" :class="[state, { focused }]">
-    <span class="bar-icon" :title="state && `Claude: ${state}`">{{
+  <div class="row-bar pane-header" :class="[state, { focused }]">
+    <span class="row-bar-icon" :title="state && `Claude: ${state}`">{{
       state ? ICONS[state] : ICONS.terminal
     }}</span>
-    <span class="title">{{ title || 'Shell' }}</span>
-    <span v-if="state" class="app">{{ ICONS.claude }}</span>
-    <span v-if="cwd" class="cwd">{{ workspaceName(cwd) }}</span>
+    <span class="row-bar-text title">{{ pane.title || 'Shell' }}</span>
+    <span v-if="state" class="claude-icon">{{ ICONS.claude }}</span>
+    <span v-if="pane.cwd" class="cwd">{{ workspaceName(pane.cwd) }}</span>
   </div>
 </template>
 
 <style scoped>
-.idle .bar-icon {
-  font-size: 9px;
-}
-
 .title {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.app {
-  color: var(--faint);
-  font-family: 'Symbols Nerd Font Mono';
-}
-
+.claude-icon,
 .cwd {
   color: var(--faint);
 }

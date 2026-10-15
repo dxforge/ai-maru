@@ -6,6 +6,7 @@ import {
   claudeHook as hook,
   clickMenu,
   expect,
+  paneHeader,
   panes,
   pressNew,
   test,
@@ -23,7 +24,7 @@ test('hook 이 오면 사이드바 점과 칸 머리의 상태가 바뀌고, cla
   await expect(dot(page)).toHaveClass(/working/)
   await expect(dot(page)).toHaveAttribute('title', 'Claude: working')
   await expect(activeHeader(page)).toHaveClass(/working/)
-  await expect(activeHeader(page).locator('.app')).toHaveCount(1)
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
   await page.keyboard.type(hook('PermissionRequest'))
   await expect(dot(page)).toHaveClass(/waiting/)
   await expect(activeHeader(page)).toHaveClass(/waiting/)
@@ -33,7 +34,7 @@ test('hook 이 오면 사이드바 점과 칸 머리의 상태가 바뀌고, cla
   await page.keyboard.type('"$MARU_CLI" claude exit\n')
   await expect(dot(page)).toHaveCount(0)
   await expect(activeHeader(page)).not.toHaveClass(/idle/)
-  await expect(activeHeader(page).locator('.app')).toHaveCount(0)
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
 })
 
 test('hook 없이 claude 의 상태 파일이 idle 이 되면 쉬는 중으로 돌아온다', async ({
@@ -74,7 +75,7 @@ test('칸 머리는 칸마다 그 칸의 상태를, 사이드바 점은 포커�
   await clickMenu(app, 'split-right')
   await expect(panes(page)).toHaveCount(2)
   await page.waitForSelector('.terminal-view.active .xterm-screen')
-  const [left, right] = [0, 1].map((i) => panes(page).nth(i).locator('.pane-header'))
+  const [left, right] = [0, 1].map((i) => paneHeader(page, i))
   await page.keyboard.type(hook('UserPromptSubmit'))
   await expect(right).toHaveClass(/working/)
   await expect(left).not.toHaveClass(/working/)

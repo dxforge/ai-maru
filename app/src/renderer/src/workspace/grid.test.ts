@@ -36,6 +36,17 @@ describe('snapRects', () => {
     expect(boxes.get(1)!.height).toBe(17 * 17.5)
   })
 
+  it('칸이 반 셀보다 작아져도 상자는 음수가 되지 않고 빈틈 없이 workspace 를 채운다', () => {
+    const chain = (i: number): Layout =>
+      i === 8 ? { pane: i } : { split: 'down', first: { pane: i }, second: chain(i + 1) }
+    const boxes = [...snapRects(chain(0), { width: 800, height: 300 }, cell).values()].sort(
+      (a, b) => a.top - b.top
+    )
+    expect(boxes.every((b) => b.height >= 0)).toBe(true)
+    boxes.slice(1).forEach((b, i) => expect(b.top).toBe(boxes[i].top + boxes[i].height))
+    expect(boxes.at(-1)!.top + boxes.at(-1)!.height).toBe(300)
+  })
+
   it('셀 크기를 모르면 px 로만 반올림한다', () => {
     const boxes = snapRects(
       { split: 'right', first: { pane: 1 }, second: { pane: 2 } },

@@ -1,6 +1,5 @@
 import type { ITheme } from '@xterm/xterm'
 
-/** 터미널 테마. `ansi` 는 black, red, green, yellow, blue, magenta, cyan, white 와 그 bright 순서의 16색이다. */
 export type TerminalTheme = { background: string; foreground: string; ansi: readonly string[] }
 
 /** Ghostty 의 기본값 — 배경·글자는 `src/config/Config.zig`, 팔레트(Tomorrow Night)는 `src/terminal/color.zig`. */
@@ -56,62 +55,65 @@ export function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
+const THUMB_ALPHA = '33'
+
 /** 아이콘처럼 글자가 아닌 그래픽이 배경과 구분되는 대비(WCAG 1.4.11). */
 const MIN_CONTRAST = 3
 
-export type UiColors = {
-  ground: string
-  fg: string
-  side: string
-  hover: string
-  selected: string
-  line: string
-  muted: string
-  faint: string
-  dim: string
-  thumb: string
-  working: string
-  waiting: string
-  done: string
-  error: string
-}
-
-export function uiColors({ background: bg, foreground: fg, ansi }: TerminalTheme): UiColors {
+export function uiColors({ background: bg, foreground: fg, ansi }: TerminalTheme) {
   const light = luminance(bg) > 0.5
   const side = light ? mix(bg, fg, 0.035) : mix(bg, '#000000', 0.22)
+  const raised = mix(bg, fg, 0.05)
+  const hdrFocus = mix(bg, fg, 0.1)
   const status = (i: number): string =>
-    [side, bg].every((s) => contrast(ansi[i], s) >= MIN_CONTRAST) ? ansi[i] : ansi[i + 8]
+    [side, bg, raised, hdrFocus].every((s) => contrast(ansi[i], s) >= MIN_CONTRAST)
+      ? ansi[i]
+      : ansi[i + 8]
   return {
     ground: bg,
     fg,
     side,
-    hover: mix(side, fg, 0.06),
-    selected: mix(side, fg, 0.12),
+    raised,
+    hdrFocus,
+    // 어느 면 위에서나 쓰도록 글자색을 반투명하게 겹친다.
+    hover: fg + '0f',
+    selected: fg + '1f',
     line: mix(bg, fg, 0.13),
     muted: mix(fg, bg, 0.35),
     faint: mix(fg, bg, 0.55),
     dim: bg + '73',
-    thumb: fg + '33',
+    thumb: fg + THUMB_ALPHA,
     working: status(4),
     waiting: status(3),
-    done: status(2),
-    error: status(1)
+    accent: ansi[4]
   }
 }
 
 export function xtermTheme({ background, foreground, ansi }: TerminalTheme): ITheme {
-  const names = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
-  const palette = Object.fromEntries(
-    ansi.map((c, i) => [
-      i < 8 ? names[i] : 'bright' + names[i - 8][0].toUpperCase() + names[i - 8].slice(1),
-      c
-    ])
-  )
+  const names = [
+    'black',
+    'red',
+    'green',
+    'yellow',
+    'blue',
+    'magenta',
+    'cyan',
+    'white',
+    'brightBlack',
+    'brightRed',
+    'brightGreen',
+    'brightYellow',
+    'brightBlue',
+    'brightMagenta',
+    'brightCyan',
+    'brightWhite'
+  ]
+  const palette = Object.fromEntries(ansi.map((c, i) => [names[i], c]))
   return {
     background,
     foreground,
     cursor: foreground,
-    scrollbarSliderBackground: foreground + '33',
+    scrollbarSliderBackground: foreground + THUMB_ALPHA,
     scrollbarSliderHoverBackground: foreground + '66',
     scrollbarSliderActiveBackground: foreground + '80',
     ...palette
