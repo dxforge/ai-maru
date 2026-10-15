@@ -62,7 +62,7 @@ export function rects(layout: Layout, at: Rect = { x: 0, y: 0, w: 1, h: 1 }): Ma
   return new Map([...rects(layout.first, a), ...rects(layout.second, b)])
 }
 
-const EPSILON = 1e-9
+export const EPSILON = 1e-9
 
 export function neighbor(layout: Layout, from: number, dir: FocusDirection): number | undefined {
   const all = rects(layout)

@@ -8,8 +8,14 @@ import {
   type SplitDirection
 } from './layout'
 
-/** `startDir` 는 셸을 띄울 때 청한 디렉토리, `cwd` 는 세션이 알려 온 디렉토리다. */
-export type Pane = { key: number; sessionId?: string; startDir?: string; cwd?: string }
+/** `startDir` 는 셸을 띄울 때 청한 디렉토리, `cwd` 는 세션이 알려 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목이다. */
+export type Pane = {
+  key: number
+  sessionId?: string
+  startDir?: string
+  cwd?: string
+  title?: string
+}
 
 /** `panes` 는 연 순서다. 배치 순서로 그리면 나눌 때마다 터미널의 DOM 이 옮겨진다. */
 export type Workspace = { key: number; panes: Pane[]; layout: Layout; focused: number }
@@ -106,6 +112,11 @@ export function createWorkspaces() {
     if (p) p.cwd = cwd
   }
 
+  function setTitle(key: number, title: string): void {
+    const p = pane(key)
+    if (p) p.title = title
+  }
+
   return {
     list: readonly(list),
     selectedKey: readonly(selectedKey),
@@ -116,6 +127,7 @@ export function createWorkspaces() {
     moveFocus,
     setSessionId,
     setCwd,
+    setTitle,
     selected,
     step,
     select: (key: number): void => void (selectedKey.value = key)

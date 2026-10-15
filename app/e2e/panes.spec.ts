@@ -14,17 +14,13 @@ import {
   sockets,
   split,
   test,
+  typesInto,
   workspaceItems,
   zshHome
 } from './app'
 
 async function box(page: Page, i: number) {
   return (await panes(page).nth(i).boundingBox())!
-}
-
-async function typesInto(page: Page, i: number, marker: string): Promise<void> {
-  await expect(panes(page).nth(i).locator('.terminal-view')).toHaveClass(/active/)
-  await run(page, `echo ${marker}-$((1+1))`, `${marker}-2`)
 }
 
 test('⌘D 는 포커스가 있는 칸을 오른쪽으로 나눠 새 셸을 띄우고, 새 칸이 키를 받는다', async ({

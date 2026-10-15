@@ -1,8 +1,67 @@
+@font-face {
+  font-family: 'Symbols Nerd Font Mono';
+  src: url('./assets/SymbolsNerdFontMono-Regular.ttf') format('truetype');
+  font-display: block;
+}
+
+/* ::-webkit-scrollbar 를 쓰면 macOS 의 overlay 스크롤바가 고전 모드로 바뀌어, 표준 속성으로 색만 정한다. */
+* {
+  scrollbar-color: var(--thumb) transparent;
+}
+
 html,
 body,
 #app {
   height: 100%;
   margin: 0;
-  background: #1e1e1e;
+  background: var(--ground);
   overflow: hidden;
+}
+
+.working {
+  --claude: var(--working);
+}
+
+.waiting {
+  --claude: var(--waiting);
+}
+
+.idle {
+  --claude: var(--faint);
+}
+
+.row-bar {
+  height: var(--row);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--pad);
+  overflow: hidden;
+  background: var(--raised);
+  color: var(--muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  white-space: nowrap;
+}
+
+.row-bar.focused {
+  background: var(--hdr-focus);
+  color: var(--fg);
+}
+
+/* 아이콘을 두 셀로 잡아 뒤 글자가 터미널의 세 번째 열에서 시작한다. */
+.row-bar-icon {
+  flex: none;
+  width: calc(var(--cell) * 2);
+  margin-right: -8px;
+  color: var(--claude, var(--faint));
+}
+
+.idle .row-bar-icon {
+  font-size: 9px;
+}
+
+.row-bar-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

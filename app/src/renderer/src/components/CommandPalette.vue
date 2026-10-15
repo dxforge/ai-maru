@@ -80,11 +80,11 @@ function onKeydown(e: KeyboardEvent): void {
 .palette {
   width: min(500px, calc(100% - 32px));
   margin: 8px auto 0;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #252526;
+  background: var(--raised);
   box-shadow: 0 4px 16px rgb(0 0 0 / 50%);
-  color: #d4d4d4;
+  color: var(--fg);
   font:
     13px system-ui,
     sans-serif;
@@ -95,16 +95,16 @@ function onKeydown(e: KeyboardEvent): void {
   width: calc(100% - 12px);
   margin: 6px;
   padding: 4px 6px;
-  border: 1px solid #3c3c3c;
+  border: 1px solid var(--line);
   border-radius: 4px;
   outline: none;
-  background: #1e1e1e;
+  background: var(--ground);
   color: inherit;
   font: inherit;
 }
 
 .query:focus {
-  border-color: #0078d4;
+  border-color: var(--accent);
 }
 
 .list {
@@ -125,15 +125,15 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 .item.selected {
-  background: #37373d;
+  background: var(--selected);
 }
 
 kbd {
   font: inherit;
-  color: #9d9d9d;
+  color: var(--muted);
 }
 
 .empty {
-  color: #9d9d9d;
+  color: var(--muted);
 }
 </style>

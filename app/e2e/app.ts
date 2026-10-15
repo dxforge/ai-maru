@@ -162,7 +162,31 @@ export function panes(page: Page) {
 }
 
 export function activePane(page: Page) {
-  return page.locator('.pane:has(> .terminal-view.active)')
+  return page.locator('.pane:has(.terminal-view.active)')
+}
+
+export function claudeHook(event: string, session = 'c-1'): string {
+  return `printf '%s' '{"hook_event_name":"${event}","session_id":"${session}"}' | "$MARU_CLI" claude hook\n`
+}
+
+export function activeHeader(page: Page) {
+  return activePane(page).locator('.pane-header')
+}
+
+export async function toggleView(
+  { app, page }: Launched,
+  mode: 'single' | 'columns'
+): Promise<void> {
+  await clickMenu(app, 'toggle-view-mode')
+  await expect(page.locator('.terminals')).toHaveClass(new RegExp(mode))
+}
+
+export function workspaceViews(page: Page) {
+  return page.locator('.panes')
+}
+
+export function paneHeader(page: Page, i: number) {
+  return panes(page).nth(i).locator('.pane-header')
 }
 
 export function rows(page: Page) {
@@ -187,6 +211,18 @@ export async function activeTerminal(page: Page): Promise<void> {
 export async function run(page: Page, command: string, expected: string): Promise<void> {
   await page.keyboard.type(`${command}\n`)
   await expect(rows(page)).toContainText(expected)
+}
+
+export async function typesInto(page: Page, i: number, marker: string): Promise<void> {
+  await expect(panes(page).nth(i).locator('.terminal-view')).toHaveClass(/active/)
+  await run(page, `echo ${marker}-$((1+1))`, `${marker}-2`)
+}
+
+export async function setZoom(app: ElectronApplication, level: number): Promise<void> {
+  await app.evaluate(
+    ({ BrowserWindow }, level) => BrowserWindow.getAllWindows()[0].webContents.setZoomLevel(level),
+    level
+  )
 }
 
 export function gridRows(page: Page) {

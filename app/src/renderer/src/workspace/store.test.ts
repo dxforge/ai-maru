@@ -71,6 +71,13 @@ describe('workspaces', () => {
     ws.setCwd(pane.key, '/b')
     expect(firstPanes(ws)[0].cwd).toBe('/b')
   })
+
+  it('setTitle 은 그 칸의 제목만 바꾼다', () => {
+    const ws = opened(1)
+    ws.split('right')
+    ws.setTitle(selected(ws).panes[1].key, 'task')
+    expect(selected(ws).panes.map((p) => p.title)).toEqual([undefined, 'task'])
+  })
 })
 
 describe('panes', () => {
@@ -145,6 +152,7 @@ describe('panes', () => {
     const before = JSON.stringify(ws.list.value)
     ws.closePane(999)
     ws.setCwd(999, '/x')
+    ws.setTitle(999, 'x')
     ws.setSessionId(999, 's-x')
     ws.focusPane(999)
     expect(JSON.stringify(ws.list.value)).toBe(before)
