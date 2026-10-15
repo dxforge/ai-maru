@@ -9,10 +9,7 @@ import {
   type SplitDirection
 } from './layout'
 
-/**
- * `startDir` 는 셸을 띄울 때 청한 디렉토리, `cwd` 는 세션이 알려 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목,
- * `git` 은 `cwd` 의 저장소다.
- */
+/** `startDir` 는 셸을 띄울 때 청한 디렉토리, `cwd` 는 세션이 알려 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목이다. */
 export type Pane = {
   key: number
   sessionId?: string

@@ -1,10 +1,12 @@
 import type { Locator, Page } from '@playwright/test'
 import {
   activePane,
+  claudeHook,
   clickMenu,
   expect,
   newWorkspace,
   openPalette,
+  paneRows,
   panes,
   resizeBy,
   run,
@@ -15,7 +17,8 @@ import {
   toggleView,
   workspaceGroups,
   workspaceItems,
-  workspaceViews
+  workspaceViews,
+  zshHome
 } from './app'
 
 /** 폭이 바뀐 직후의 크기는 셸이 SIGWINCH 를 받기 전일 수 있어 기대한 열 수가 될 때까지 다시 잰다. */
@@ -171,6 +174,62 @@ test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 칸�
   await expect.poll(() => inView(page, activePane(page))).toBe(false)
   await workspaceItems(page).first().click()
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
+})
+
+test('columns 에서 포커스가 같은 칸으로 돌아와도 스크롤한 자리는 그대로고, 사이드바의 칸 줄을 누르면 그 칸을 보인다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await page.keyboard.type(claudeHook('UserPromptSubmit'))
+  await expect(paneRows(page)).toHaveClass(/working/)
+  await newWorkspace(launched, 2)
+  await newWorkspace(launched, 3)
+  await toggleView(launched, 'columns')
+  await workspaceItems(page).first().click()
+  await expect.poll(() => inView(page, activePane(page))).toBe(true)
+
+  const area = page.locator('.terminals')
+  const scrolled = await area.evaluate((el) => {
+    el.scrollLeft = el.scrollWidth
+    return el.scrollLeft
+  })
+  await expect.poll(() => inView(page, activePane(page))).toBe(false)
+  // 브라우저가 focus() 로 스스로 스크롤하지 않게 해서 앱이 하는 스크롤만 잰다.
+  await activePane(page)
+    .locator('textarea')
+    .evaluate(async (el) => {
+      el.blur()
+      el.focus({ preventScroll: true })
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    })
+  expect(await area.evaluate((el) => el.scrollLeft)).toBe(scrolled)
+
+  await paneRows(page).click()
+  await expect.poll(() => inView(page, activePane(page))).toBe(true)
+})
+
+test('columns 에서 칸의 디렉토리가 바뀌어도 스크롤한 자리는 그대로다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: zshHome(dataDir, 'notes') })
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await newWorkspace(launched, 3)
+  await toggleView(launched, 'columns')
+  const names = page.locator('.workspace-header .name')
+  await expect(names).toHaveText(['home', 'home', 'home'])
+  await page.keyboard.type('sleep 2; cd notes\n')
+
+  const area = page.locator('.terminals')
+  await area.evaluate((el) => (el.scrollLeft = 0))
+  await expect.poll(() => inView(page, activePane(page))).toBe(false)
+  await expect(names).toHaveText(['home', 'home', 'notes'])
+  await page.evaluate(
+    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  )
+  expect(await area.evaluate((el) => el.scrollLeft)).toBe(0)
 })
 
 test('columns 에서 앞의 workspace 가 닫혀도 포커스된 칸이 화면에 남고 키를 받는다', async ({

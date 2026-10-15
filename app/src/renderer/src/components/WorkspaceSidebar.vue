@@ -79,7 +79,6 @@ const groups = computed(() =>
 </template>
 
 <style scoped>
-/* 사이드바는 터미널 영역이 아니라 셀 격자에 맞추지 않는다. 줄 높이만 터미널 한 행을 따른다. */
 .sidebar {
   flex: 0 0 280px;
   display: flex;

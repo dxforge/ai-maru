@@ -177,7 +177,6 @@ const views = computed(() =>
     return {
       w,
       selected,
-      label: workspaceLabel(focusedPane(w)),
       width: width === undefined ? undefined : `${width}px`,
       panes: w.panes.map((p) => ({
         p,
@@ -186,6 +185,11 @@ const views = computed(() =>
       }))
     }
   })
+)
+
+// 스크롤 watch 가 views 를 지켜보므로, 칸의 cwd·branch 가 바뀔 때마다 스크롤이 돌지 않게 views 밖에 둔다.
+const labels = computed(
+  () => new Map(workspaces.list.value.map((w) => [w.key, workspaceLabel(focusedPane(w))]))
 )
 
 const URGENCY = ['waiting', 'working', 'idle'] as const
@@ -201,9 +205,14 @@ const urgent = computed(() => {
   return map
 })
 
-// columns 에서는 다른 workspace 의 칸도 보여 눌러 포커스를 줄 수 있고, 사이드바에서는 칸 줄을 눌러 고를 수
-// 있으므로, 그 workspace 를 선택한다.
+// columns 에서는 다른 workspace 의 칸도 보여 눌러 포커스를 줄 수 있으므로, 그 workspace 를 선택한다.
+// 포커스가 같은 칸으로 돌아올 때도 불려, 여기서 칸을 다시 보이면 스크롤해 둔 자리를 잃는다.
 function focusPane(workspace: number, pane: number): void {
+  workspaces.focusPane(pane)
+  workspaces.select(workspace)
+}
+
+function selectPane(workspace: number, pane: number): void {
   workspaces.focusPane(pane)
   selectWorkspace(workspace)
 }
@@ -274,11 +283,11 @@ window.maru.onCommand(runCommand)
       :state="claude.state"
       :home="home"
       @select="selectWorkspace"
-      @focus="focusPane"
+      @focus="selectPane"
     />
     <div class="terminals" :class="viewMode">
       <div
-        v-for="{ w, selected, label, width, panes } in views"
+        v-for="{ w, selected, width, panes } in views"
         :key="w.key"
         class="panes"
         :class="{ selected }"
@@ -293,8 +302,10 @@ window.maru.onCommand(runCommand)
           <span class="row-bar-icon status-icon">{{
             urgent.has(w.key) ? ICONS[urgent.get(w.key)!] : ''
           }}</span>
-          <span class="row-bar-text name">{{ label.name }}</span>
-          <span v-if="label.branch" class="row-bar-text branch">{{ label.branch }}</span>
+          <span class="row-bar-text name">{{ labels.get(w.key)!.name }}</span>
+          <span v-if="labels.get(w.key)!.branch" class="row-bar-text branch">{{
+            labels.get(w.key)!.branch
+          }}</span>
         </div>
         <div :ref="(el) => observeGrid(w.key, el)" class="grid">
           <div
