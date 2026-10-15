@@ -100,7 +100,9 @@ function createWindow(): void {
   })
   win.webContents.on('will-navigate', (event, url) => {
     event.preventDefault()
-    openExternal(url)
+    // dev 에서 Vite 가 페이지를 새로 고치려 할 때도 여기로 온다.
+    if (!process.env.ELECTRON_RENDERER_URL || !url.startsWith(process.env.ELECTRON_RENDERER_URL))
+      openExternal(url)
   })
   win.webContents.setWindowOpenHandler(({ url }) => {
     openExternal(url)
