@@ -57,7 +57,7 @@ body,
   color: var(--claude, var(--faint));
 }
 
-.idle .row-bar-icon {
+.idle .status-icon {
   font-size: 9px;
 }
 

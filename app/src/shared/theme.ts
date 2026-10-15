@@ -60,8 +60,13 @@ const THUMB_ALPHA = '33'
 /** 아이콘처럼 글자가 아닌 그래픽이 배경과 구분되는 대비(WCAG 1.4.11). */
 const MIN_CONTRAST = 3
 
-export function uiColors({ background: bg, foreground: fg, ansi }: TerminalTheme) {
-  const light = luminance(bg) > 0.5
+export function isLight({ background }: TerminalTheme): boolean {
+  return luminance(background) > 0.5
+}
+
+export function uiColors(theme: TerminalTheme) {
+  const { background: bg, foreground: fg, ansi } = theme
+  const light = isLight(theme)
   const side = light ? mix(bg, fg, 0.035) : mix(bg, '#000000', 0.22)
   const raised = mix(bg, fg, 0.05)
   const hdrFocus = mix(bg, fg, 0.1)

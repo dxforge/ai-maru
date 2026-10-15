@@ -4,6 +4,7 @@ import {
   BrowserWindow,
   ipcMain,
   MessageChannelMain,
+  nativeTheme,
   shell,
   utilityProcess,
   type UtilityProcess
@@ -11,6 +12,7 @@ import {
 import { canvasPut } from './canvas'
 import { createClaudeStatus } from './claude-status'
 import { listenCli, type Handlers } from './cli-server'
+import { gitHead } from './git'
 import { createInbox } from './inbox'
 import { installCommandMenu } from './menu'
 import { createMonitor } from './monitor'
@@ -23,7 +25,7 @@ import {
   type CliAccess
 } from './session'
 import type { KillRequest, OpenRequest } from './session-host'
-import { GHOSTTY } from '../shared/theme'
+import { GHOSTTY, isLight } from '../shared/theme'
 
 function sessionDir(): string {
   return join(app.getPath('userData'), 's')
@@ -165,6 +167,8 @@ if (!app.requestSingleInstanceLock()) {
 
 function start(): void {
   if (unobtrusive) app.dock?.hide()
+  // 창 틀이 시스템 설정 대신 터미널 배경을 따라야, 어두운 터미널 위에 밝은 타이틀바가 뜨지 않는다.
+  nativeTheme.themeSource = isLight(GHOSTTY) ? 'light' : 'dark'
   // 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.
   const leftovers = killSessions(sessionDir())
   const cli = cliAccess()
@@ -176,6 +180,13 @@ function start(): void {
   // 셸이 뜨자마자 `maru` 를 불러도 닿게.
   const ready = Promise.all([leftovers, cliServer])
   ipcMain.handle('claude:statuses', () => claudeStatus.snapshot())
+  ipcMain.handle('git:head', (_event, cwd: unknown) =>
+    typeof cwd === 'string' ? gitHead(cwd) : null
+  )
+  ipcMain.on('window:path', (event, path: unknown) => {
+    if (process.platform === 'darwin' && typeof path === 'string')
+      BrowserWindow.fromWebContents(event.sender)?.setRepresentedFilename(path)
+  })
   const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
   ipcMain.on('session:open', (event, key: string, cwd?: string) => {
     const { port1, port2 } = new MessageChannelMain()

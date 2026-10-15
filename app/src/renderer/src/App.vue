@@ -1,16 +1,26 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, reactive, ref, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  reactive,
+  ref,
+  useTemplateRef,
+  watch,
+  watchEffect
+} from 'vue'
 import type { CommandId } from '../../shared/commands'
 import { createCanvas } from './canvas/store'
 import { createClaudeStatuses } from './claude/status'
 import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PaneHeader from './components/PaneHeader.vue'
+import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import TerminalView from './components/TerminalView.vue'
 import { FONT_FAMILY, FONT_SIZE } from './font'
 import { ICONS } from './icons'
 import { columnsWidth, terminalPadding } from './workspace/columns'
-import { workspaceName } from './workspace/cwd'
+import { windowTitle, workspaceLabel } from './workspace/cwd'
 import { snapRects, type Box, type Size } from './workspace/grid'
 import { columnCount, EPSILON, rects, type Layout } from './workspace/layout'
 import { createWorkspaces, focusedPane } from './workspace/store'
@@ -18,11 +28,17 @@ import { createWorkspaces, focusedPane } from './workspace/store'
 const canvas = createCanvas()
 window.maru.onCanvasPut(canvas.put)
 
-const workspaces = createWorkspaces()
+const workspaces = createWorkspaces(window.maru.gitHead)
 
 const claude = createClaudeStatuses()
-window.maru.onClaudeStatus(claude.set)
+// zsh 는 프롬프트마다 cwd 를 알려 와 그때 branch 를 다시 읽지만, Claude 를 띄운 칸에는 프롬프트가 뜨지 않아
+// 상태가 바뀔 때 읽는다. 그래서 Claude 가 한 상태에 머문 채 branch 를 바꾸면 다음 상태로 넘어갈 때 반영된다.
+window.maru.onClaudeStatus((session, state) => {
+  claude.set(session, state)
+  workspaces.refreshSession(session)
+})
 void window.maru.claudeStatuses().then(claude.replace)
+const home = window.maru.home
 function newWorkspace(): void {
   const w = workspaces.selected()
   const p = w && focusedPane(w)
@@ -161,7 +177,6 @@ const views = computed(() =>
     return {
       w,
       selected,
-      focused: focusedPane(w),
       width: width === undefined ? undefined : `${width}px`,
       panes: w.panes.map((p) => ({
         p,
@@ -170,6 +185,11 @@ const views = computed(() =>
       }))
     }
   })
+)
+
+// 스크롤 watch 가 views 를 지켜보므로, 칸의 cwd·branch 가 바뀔 때마다 스크롤이 돌지 않게 views 밖에 둔다.
+const labels = computed(
+  () => new Map(workspaces.list.value.map((w) => [w.key, workspaceLabel(focusedPane(w))]))
 )
 
 const URGENCY = ['waiting', 'working', 'idle'] as const
@@ -186,10 +206,24 @@ const urgent = computed(() => {
 })
 
 // columns 에서는 다른 workspace 의 칸도 보여 눌러 포커스를 줄 수 있으므로, 그 workspace 를 선택한다.
+// 포커스가 같은 칸으로 돌아올 때도 불려, 여기서 칸을 다시 보이면 스크롤해 둔 자리를 잃는다.
 function focusPane(workspace: number, pane: number): void {
   workspaces.focusPane(pane)
   workspaces.select(workspace)
 }
+
+function selectPane(workspace: number, pane: number): void {
+  workspaces.focusPane(pane)
+  selectWorkspace(workspace)
+}
+
+const appTitle = document.title
+watchEffect(() => {
+  const w = workspaces.selected()
+  const p = w && focusedPane(w)
+  document.title = p ? windowTitle(workspaceLabel(p)) : appTitle
+  window.maru.setWindowPath(p?.cwd ?? '')
+})
 
 // workspace 가 화면보다 넓을 수 있어, workspace 가 아니라 포커스된 칸이 보이게 한다.
 function revealFocused(): void {
@@ -242,26 +276,18 @@ window.maru.onCommand(runCommand)
 
 <template>
   <div class="app" :style="gridVars">
-    <nav v-show="sidebarOpen" class="sidebar">
-      <button
-        v-for="{ w, selected, focused } in views"
-        :key="w.key"
-        class="workspace"
-        :class="{ selected }"
-        @mousedown.prevent
-        @click="selectWorkspace(w.key)"
-      >
-        <span
-          v-if="claude.state(focused.sessionId)"
-          class="claude-dot"
-          :class="claude.state(focused.sessionId)"
-          :title="`Claude: ${claude.state(focused.sessionId)}`"
-        />{{ workspaceName(focused.cwd) }}
-      </button>
-    </nav>
+    <WorkspaceSidebar
+      v-show="sidebarOpen"
+      :workspaces="workspaces.list.value"
+      :selected-key="workspaces.selectedKey.value"
+      :state="claude.state"
+      :home="home"
+      @select="selectWorkspace"
+      @focus="selectPane"
+    />
     <div class="terminals" :class="viewMode">
       <div
-        v-for="{ w, selected, focused, width, panes } in views"
+        v-for="{ w, selected, width, panes } in views"
         :key="w.key"
         class="panes"
         :class="{ selected }"
@@ -273,8 +299,13 @@ window.maru.onCommand(runCommand)
           :class="[urgent.get(w.key), { focused: selected }]"
           @mousedown.prevent="selectWorkspace(w.key)"
         >
-          <span class="row-bar-icon">{{ urgent.has(w.key) ? ICONS[urgent.get(w.key)!] : '' }}</span>
-          <span class="row-bar-text name">{{ workspaceName(focused.cwd) }}</span>
+          <span class="row-bar-icon status-icon">{{
+            urgent.has(w.key) ? ICONS[urgent.get(w.key)!] : ''
+          }}</span>
+          <span class="row-bar-text name">{{ labels.get(w.key)!.name }}</span>
+          <span v-if="labels.get(w.key)!.branch" class="row-bar-text branch">{{
+            labels.get(w.key)!.branch
+          }}</span>
         </div>
         <div :ref="(el) => observeGrid(w.key, el)" class="grid">
           <div
@@ -316,51 +347,6 @@ window.maru.onCommand(runCommand)
 .app {
   display: flex;
   height: 100%;
-}
-
-.sidebar {
-  flex: 0 0 140px;
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-  border-right: 1px solid var(--line);
-  background: var(--side);
-  overflow-y: auto;
-}
-
-.workspace {
-  padding: 4px 8px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: var(--muted);
-  font:
-    13px system-ui,
-    sans-serif;
-  text-align: left;
-  cursor: pointer;
-}
-
-.workspace:hover {
-  background: var(--hover);
-}
-
-.workspace.selected {
-  background: var(--selected);
-  color: var(--fg);
-}
-
-.claude-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: var(--claude);
-  vertical-align: middle;
 }
 
 .terminals {
@@ -416,6 +402,10 @@ window.maru.onCommand(runCommand)
 
 .workspace-header .name {
   font-weight: bold;
+}
+
+.workspace-header .branch {
+  color: var(--faint);
 }
 
 .pane {

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { CanvasItem } from '../shared/canvas'
 import type { ClaudeState } from '../shared/claude'
 import type { CommandId } from '../shared/commands'
+import type { GitHead } from '../shared/git'
 
 // MessagePort 는 contextBridge 를 건너지 못해서 window.postMessage 로 넘긴다.
 ipcRenderer.on('session:port', (event, key: string) => {
@@ -27,7 +28,10 @@ const api = {
     ipcRenderer.on('claude:status', (_event, session: string, state: ClaudeState | null) =>
       cb(session, state)
     )
-  }
+  },
+  gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),
+  setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),
+  home: process.env.HOME
 }
 
 export type MaruApi = typeof api

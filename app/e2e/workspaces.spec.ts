@@ -15,6 +15,7 @@ import {
   shellSize,
   sockets,
   test,
+  workspaceGroups,
   workspaceItems,
   zshHome
 } from './app'
@@ -30,7 +31,7 @@ const homeName = basename(process.env.HOME!)
 test('앱을 켜면 홈 디렉토리에서 workspace 하나를 연다', async ({ launch, dataDir }) => {
   const { page } = await launch()
   await expect(workspaceItems(page)).toHaveText([homeName])
-  await expect(workspaceItems(page).first()).toHaveClass(/selected/)
+  await expect(workspaceGroups(page).first()).toHaveClass(/selected/)
   await run(page, '[ "$PWD" = "$HOME" ] && echo home-$((1+1))', 'home-2')
   expect(sockets(dataDir)).toHaveLength(1)
 })
@@ -47,7 +48,7 @@ test('bash 에서 ⌘N 은 cd 와 상관없이 홈 디렉토리에서 새 세션
   await newWorkspace(launched, 2)
   await expect(workspaceItems(page)).toHaveText([homeName, homeName])
 
-  await expect(workspaceItems(page).nth(1)).toHaveClass(/selected/)
+  await expect(workspaceGroups(page).nth(1)).toHaveClass(/selected/)
   await run(page, 'echo "x=$X pwd=$PWD" new-$((2+2))', `x= pwd=${process.env.HOME} new-4`)
   expect(sockets(dataDir)).toHaveLength(2)
 })
@@ -65,7 +66,7 @@ test('사이드바에서 누른 workspace 로 전환하고, 보이지 않던 동
 
   await workspaceItems(page).first().click()
 
-  await expect(workspaceItems(page).first()).toHaveClass(/selected/)
+  await expect(workspaceGroups(page).first()).toHaveClass(/selected/)
   await expect(rows(page)).toContainText('late-6')
   await run(page, 'echo "x=$X"', 'x=a-2')
   await workspaceItems(page).nth(1).click()
@@ -84,7 +85,7 @@ test('셸이 끝나면 그 workspace 를 닫고, 바로 위 workspace 를 선택
   await page.keyboard.type('exit\n')
 
   await expect(workspaceItems(page)).toHaveCount(1)
-  await expect(workspaceItems(page).first()).toHaveClass(/selected/)
+  await expect(workspaceGroups(page).first()).toHaveClass(/selected/)
   await expect.poll(() => sockets(dataDir)).toHaveLength(1)
   await run(page, 'echo "x=$X"', 'x=kept-2')
 })
@@ -162,7 +163,7 @@ test('보이지 않는 workspace 의 셸이 끝나면 그것만 닫고, 선택�
   await page.keyboard.type('X=stay-$((1+1))\n')
 
   await expect(workspaceItems(page)).toHaveCount(1)
-  await expect(workspaceItems(page).first()).toHaveClass(/selected/)
+  await expect(workspaceGroups(page).first()).toHaveClass(/selected/)
   await expect.poll(() => sockets(dataDir)).toHaveLength(1)
   await run(page, 'echo "x=$X"', 'x=stay-2')
 })

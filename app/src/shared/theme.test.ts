@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { contrast, GHOSTTY, mix, uiColors, xtermTheme } from './theme'
+import { contrast, GHOSTTY, isLight, mix, uiColors, xtermTheme } from './theme'
+
+describe('isLight', () => {
+  it('배경의 밝기로 가른다', () => {
+    expect(isLight(GHOSTTY)).toBe(false)
+    expect(isLight({ ...GHOSTTY, background: '#ffffff', foreground: '#1f2328' })).toBe(true)
+  })
+})
 
 describe('mix', () => {
   it('두 색 사이를 비율만큼 옮긴다', () => {
