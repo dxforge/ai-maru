@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { GitHead } from '../../../shared/git'
 import { createWorkspaces, focusedPane } from './store'
 
 function opened(n: number) {
@@ -80,6 +81,100 @@ describe('workspaces', () => {
   })
 })
 
+describe('git', () => {
+  function reader() {
+    const pending: { cwd: string; resolve: (g: GitHead | null) => void }[] = []
+    const read = (cwd: string) =>
+      new Promise<GitHead | null>((resolve) => pending.push({ cwd, resolve }))
+    const answer = async (cwd: string, git: GitHead | null) => {
+      for (const p of pending.filter((p) => p.cwd === cwd)) p.resolve(git)
+      await Promise.resolve()
+    }
+    return { read, pending, answer }
+  }
+
+  it('cwd 를 받으면 그 디렉토리의 저장소를 읽고, 늦게 온 이전 디렉토리의 답은 버린다', async () => {
+    const r = reader()
+    const ws = createWorkspaces(r.read)
+    ws.open()
+    const key = selected(ws).panes[0].key
+    ws.setCwd(key, '/a')
+    ws.setCwd(key, '/b')
+    await r.answer('/b', { repo: 'b', branch: 'main' })
+    await r.answer('/a', { repo: 'a', branch: 'old' })
+    expect(selected(ws).panes[0].git).toEqual({ repo: 'b', branch: 'main' })
+    ws.setCwd(key, '/c')
+    await r.answer('/c', null)
+    expect(selected(ws).panes[0].git).toBeUndefined()
+  })
+
+  it('같은 디렉토리를 두 번 읽어 답이 거꾸로 와도 나중에 청한 답이 남는다', async () => {
+    const r = reader()
+    const ws = createWorkspaces(r.read)
+    ws.open()
+    const key = selected(ws).panes[0].key
+    ws.setCwd(key, '/a')
+    ws.setCwd(key, '/a')
+    const [older, newer] = r.pending
+    newer.resolve({ repo: 'a', branch: 'feat' })
+    await Promise.resolve()
+    older.resolve({ repo: 'a', branch: 'main' })
+    await Promise.resolve()
+    expect(selected(ws).panes[0].git).toEqual({ repo: 'a', branch: 'feat' })
+  })
+
+  it('저장소와 branch 가 그대로면 값을 바꾸지 않는다', async () => {
+    const r = reader()
+    const ws = createWorkspaces(r.read)
+    ws.open()
+    const key = selected(ws).panes[0].key
+    ws.setCwd(key, '/a')
+    await r.answer('/a', { repo: 'a', branch: 'main' })
+    const before = selected(ws).panes[0].git
+    ws.setCwd(key, '/a')
+    await r.answer('/a', { repo: 'a', branch: 'main' })
+    expect(selected(ws).panes[0].git).toBe(before)
+  })
+
+  it('다른 디렉토리로 옮긴 뒤 읽지 못하면 이전 저장소를 남기지 않고, 읽는 사이 닫힌 칸의 답은 버린다', async () => {
+    const r = reader()
+    let fail = false
+    const ws = createWorkspaces((cwd) => (fail ? Promise.reject(new Error('x')) : r.read(cwd)))
+    ws.open()
+    const key = selected(ws).panes[0].key
+    ws.setCwd(key, '/a')
+    await r.answer('/a', { repo: 'a', branch: 'main' })
+    fail = true
+    ws.setCwd(key, '/tmp')
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(selected(ws).panes[0].git).toBeUndefined()
+
+    fail = false
+    ws.split('right')
+    const other = selected(ws).panes[1].key
+    ws.setCwd(other, '/b')
+    ws.closePane(other)
+    await r.answer('/b', { repo: 'b', branch: 'main' })
+    expect(selected(ws).panes.map((p) => p.key)).toEqual([key])
+  })
+
+  it('refreshSession 은 그 세션의 칸만 다시 읽는다', () => {
+    const r = reader()
+    const ws = createWorkspaces(r.read)
+    ws.open()
+    const first = selected(ws).panes[0].key
+    ws.split('right')
+    const second = selected(ws).panes[1].key
+    ws.setSessionId(first, 's-1')
+    ws.setSessionId(second, 's-2')
+    ws.setCwd(first, '/a')
+    ws.setCwd(second, '/b')
+    r.pending.length = 0
+    ws.refreshSession('s-2')
+    expect(r.pending.map((p) => p.cwd)).toEqual(['/b'])
+  })
+})
+
 describe('panes', () => {
   it('나누면 새 칸이 포커스가 있던 칸의 cwd 에서 시작하고 포커스를 받는다', () => {
     const ws = opened(1)
@@ -153,6 +248,7 @@ describe('panes', () => {
     ws.closePane(999)
     ws.setCwd(999, '/x')
     ws.setTitle(999, 'x')
+    ws.refreshSession('s-x')
     ws.setSessionId(999, 's-x')
     ws.focusPane(999)
     expect(JSON.stringify(ws.list.value)).toBe(before)

@@ -8,6 +8,7 @@ import {
   run,
   shellSize,
   test,
+  workspaceGroups,
   workspaceItems
 } from './app'
 
@@ -270,7 +271,7 @@ test('팔레트에서 Enter 로 New Workspace 를 실행하면 팔레트가 닫�
   await page.keyboard.press('Enter')
   await expect(palette(page)).toHaveCount(0)
   await expect(workspaceItems(page)).toHaveCount(2)
-  await expect(workspaceItems(page).nth(1)).toHaveClass(/selected/)
+  await expect(workspaceGroups(page).nth(1)).toHaveClass(/selected/)
   await activeTerminal(page)
   await typesIntoTerminal(page, 'new')
 })
@@ -357,7 +358,7 @@ test('Next·Previous Workspace 는 사이드바의 다음·이전 workspace 를 
     ['previous-workspace', 2]
   ] as const) {
     await clickMenu(app, id)
-    await expect(workspaceItems(page).nth(i)).toHaveClass(/selected/)
+    await expect(workspaceGroups(page).nth(i)).toHaveClass(/selected/)
     await typesIntoTerminal(page, `at-${i}-${id}`)
   }
 })

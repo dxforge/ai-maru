@@ -14,6 +14,7 @@ import {
   test,
   toggleView,
   typesInto,
+  workspaceGroups,
   workspaceItems,
   workspaceViews
 } from './app'
@@ -58,7 +59,7 @@ test('columns 에서 고르지 않은 workspace 의 칸 머리를 누르면 그 
 
   await workspaceViews(page).nth(0).locator('.pane-header').click()
 
-  await expect(workspaceItems(page).nth(0)).toHaveClass(/selected/)
+  await expect(workspaceGroups(page).nth(0)).toHaveClass(/selected/)
   await typesInto(page, 0, 'other')
 })
 
@@ -106,7 +107,7 @@ test('columns 의 workspace 머리는 칸 상태 가운데 waiting, working 순�
 
   await headers.nth(0).click()
 
-  await expect(workspaceItems(page).nth(0)).toHaveClass(/selected/)
+  await expect(workspaceGroups(page).nth(0)).toHaveClass(/selected/)
   await run(page, 'echo first-$((1+1))', 'first-2')
 })
 

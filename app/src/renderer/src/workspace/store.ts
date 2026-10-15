@@ -1,4 +1,5 @@
 import { readonly, ref } from 'vue'
+import type { GitHead } from '../../../shared/git'
 import {
   neighbor,
   removePane,
@@ -8,13 +9,17 @@ import {
   type SplitDirection
 } from './layout'
 
-/** `startDir` 는 셸을 띄울 때 청한 디렉토리, `cwd` 는 세션이 알려 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목이다. */
+/**
+ * `startDir` 는 셸을 띄울 때 청한 디렉토리, `cwd` 는 세션이 알려 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목,
+ * `git` 은 `cwd` 의 저장소다.
+ */
 export type Pane = {
   key: number
   sessionId?: string
   startDir?: string
   cwd?: string
   title?: string
+  git?: GitHead
 }
 
 /** `panes` 는 연 순서다. 배치 순서로 그리면 나눌 때마다 터미널의 DOM 이 옮겨진다. */
@@ -27,10 +32,14 @@ export function focusedPane(w: {
   return w.panes.find((p) => p.key === w.focused)!
 }
 
-export function createWorkspaces() {
+export function createWorkspaces(
+  readGit: (cwd: string) => Promise<GitHead | null> = async () => null
+) {
   const list = ref<Workspace[]>([])
   const selectedKey = ref<number | null>(null)
   let nextKey = 0
+  let reads = 0
+  const lastRead = new Map<number, number>()
 
   const selected = (): Workspace | undefined => list.value.find((w) => w.key === selectedKey.value)
 
@@ -77,6 +86,7 @@ export function createWorkspaces() {
   }
 
   function closePane(pane: number): void {
+    lastRead.delete(pane)
     const w = owner(pane)
     if (!w) return
     if (w.panes.length === 1) return close(w.key)
@@ -109,7 +119,30 @@ export function createWorkspaces() {
 
   function setCwd(key: number, cwd: string): void {
     const p = pane(key)
-    if (p) p.cwd = cwd
+    if (!p) return
+    p.cwd = cwd
+    readGitFor(key, cwd)
+  }
+
+  // 칸마다 마지막으로 청한 답만 쓴다. 답은 청한 순서대로 오지 않아, 늦게 온 답이 새 답을 덮을 수 있다.
+  // 읽지 못하면 저장소 밖으로 본다. 이전 디렉토리의 저장소가 새 디렉토리에 남지 않게.
+  function readGitFor(key: number, cwd: string): void {
+    const read = ++reads
+    lastRead.set(key, read)
+    void readGit(cwd)
+      .catch(() => null)
+      .then((git) => setGit(key, read, git ?? undefined))
+  }
+
+  function setGit(key: number, read: number, git: GitHead | undefined): void {
+    const p = pane(key)
+    if (!p || lastRead.get(key) !== read) return
+    if (p.git?.repo !== git?.repo || p.git?.branch !== git?.branch) p.git = git
+  }
+
+  function refreshSession(sessionId: string): void {
+    for (const w of list.value)
+      for (const p of w.panes) if (p.sessionId === sessionId && p.cwd) readGitFor(p.key, p.cwd)
   }
 
   function setTitle(key: number, title: string): void {
@@ -128,6 +161,7 @@ export function createWorkspaces() {
     setSessionId,
     setCwd,
     setTitle,
+    refreshSession,
     selected,
     step,
     select: (key: number): void => void (selectedKey.value = key)

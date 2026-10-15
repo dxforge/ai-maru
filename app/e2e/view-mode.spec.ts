@@ -13,6 +13,7 @@ import {
   split,
   test,
   toggleView,
+  workspaceGroups,
   workspaceItems,
   workspaceViews
 } from './app'
@@ -113,8 +114,8 @@ test('columns 에서 다른 workspace 의 칸을 누르면 그 workspace 를 선
 
   await workspaceViews(page).nth(0).locator('.pane').click()
 
-  await expect(workspaceItems(page).first()).toHaveClass(/selected/)
-  await expect(workspaceItems(page).nth(1)).not.toHaveClass(/selected/)
+  await expect(workspaceGroups(page).first()).toHaveClass(/selected/)
+  await expect(workspaceGroups(page).nth(1)).not.toHaveClass(/selected/)
   await run(page, 'echo "x=$X"', 'x=a-2')
   await split(launched.app, page, 'split-right', 2)
   await expect(workspaceViews(page).nth(1).locator('.pane')).toHaveCount(1)
@@ -188,7 +189,7 @@ test('columns 에서 앞의 workspace 가 닫혀도 포커스된 칸이 화면�
   await expect(workspaceItems(page)).toHaveCount(2)
 
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
-  await expect(workspaceItems(page).first()).toHaveClass(/selected/)
+  await expect(workspaceGroups(page).first()).toHaveClass(/selected/)
   await run(page, 'echo typed-$((1+1))', 'typed-2')
 })
 

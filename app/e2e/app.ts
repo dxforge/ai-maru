@@ -230,7 +230,15 @@ export function gridRows(page: Page) {
 }
 
 export function workspaceItems(page: Page) {
-  return page.locator('.sidebar .workspace')
+  return page.locator('.sidebar .workspace .name')
+}
+
+export function workspaceGroups(page: Page) {
+  return page.locator('.sidebar .group')
+}
+
+export function paneRows(page: Page) {
+  return page.locator('.sidebar .pane-row')
 }
 
 // Playwright 의 키 입력은 macOS 메뉴를 거치지 않아 메뉴 항목을 직접 누른다.
