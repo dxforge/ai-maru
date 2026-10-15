@@ -7,18 +7,24 @@ import { attach, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
 import { isAppKey, matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
 import { osc7Path } from '../workspace/cwd'
+import type { Size } from '../workspace/grid'
+import { GHOSTTY, xtermTheme } from '../../../shared/theme'
 
 const { startDir = undefined, active } = defineProps<{ startDir?: string; active: boolean }>()
 const emit = defineEmits<{
   exit: []
   cwd: [cwd: string]
   spawned: [id: string]
-  cellWidth: [width: number]
+  title: [title: string]
+  cell: [cell: Size]
 }>()
 
 const host = useTemplateRef<HTMLDivElement>('host')
 const term = new Terminal({
-  theme: { background: '#1e1e1e' },
+  theme: xtermTheme(GHOSTTY),
+  fontFamily: "'SF Mono', Menlo, monospace",
+  fontSize: 13,
+  lineHeight: 1.2,
   // Claude Code 의 ⌥P(모델 전환)·⌥B/⌥F(단어 이동) 같은 키는 ⌥ 가 Meta 로 가야 동작한다.
   // 대신 ⌥ 로 치는 글자(™, 유럽 자판의 `@`·`{` 등)는 터미널에 칠 수 없다.
   macOptionIsMeta: true,
@@ -69,9 +75,13 @@ term.parser.registerOscHandler(7, (data) => {
   if (path) emit('cwd', path)
   return true
 })
-// css.cell.width 는 열 수마다 반올림이 달라, 열 수와 상관없는 device 값으로 셈한다.
-const cellWidth = (d: IRenderDimensions): number => d.device.cell.width / devicePixelRatio
-term.onDimensionsChange((d) => emit('cellWidth', cellWidth(d)))
+term.onTitleChange((title) => emit('title', title))
+// css.cell 은 열·행 수마다 반올림이 달라, 그와 상관없는 device 값으로 셈한다.
+const cell = (d: IRenderDimensions): Size => ({
+  width: d.device.cell.width / devicePixelRatio,
+  height: d.device.cell.height / devicePixelRatio
+})
+term.onDimensionsChange((d) => emit('cell', cell(d)))
 let session: Attachment | null = null
 const observer = new ResizeObserver(() => {
   if (session?.primary !== false) fit.fit()
@@ -90,7 +100,7 @@ watch(
 onMounted(() => {
   term.open(host.value!)
   trackComposition(term.textarea!)
-  if (term.dimensions) emit('cellWidth', cellWidth(term.dimensions))
+  if (term.dimensions) emit('cell', cell(term.dimensions))
   fit.fit()
   observer.observe(host.value!)
   if (active) term.focus()
@@ -123,5 +133,9 @@ onBeforeUnmount(() => {
 .terminal-view {
   position: absolute;
   inset: 0;
+}
+
+.terminal-view :deep(.xterm) {
+  padding-left: var(--pad);
 }
 </style>

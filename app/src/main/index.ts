@@ -23,6 +23,7 @@ import {
   type CliAccess
 } from './session'
 import type { KillRequest, OpenRequest } from './session-host'
+import { GHOSTTY } from '../shared/theme'
 
 function sessionDir(): string {
   return join(app.getPath('userData'), 's')
@@ -88,7 +89,7 @@ function createWindow(): void {
     height: 700,
     show: !unobtrusive,
     focusable: !unobtrusive,
-    backgroundColor: '#1e1e1e',
+    backgroundColor: GHOSTTY.background,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       // DevTools 에서는 메뉴와 상관없이 창을 새로 고칠 수 있는데, 새로 고치면 workspace 목록을 잃는다.

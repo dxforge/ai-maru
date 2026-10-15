@@ -162,7 +162,15 @@ export function panes(page: Page) {
 }
 
 export function activePane(page: Page) {
-  return page.locator('.pane:has(> .terminal-view.active)')
+  return page.locator('.pane:has(.terminal-view.active)')
+}
+
+export function claudeHook(event: string, session = 'c-1'): string {
+  return `printf '%s' '{"hook_event_name":"${event}","session_id":"${session}"}' | "$MARU_CLI" claude hook\n`
+}
+
+export function activeHeader(page: Page) {
+  return activePane(page).locator('.pane-header')
 }
 
 export function rows(page: Page) {

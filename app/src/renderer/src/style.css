@@ -1,8 +1,57 @@
+@font-face {
+  font-family: 'Maru Symbols';
+  src: url('./assets/symbols.woff2') format('woff2');
+  font-display: block;
+}
+
 html,
 body,
 #app {
   height: 100%;
   margin: 0;
-  background: #1e1e1e;
+  background: var(--ground);
   overflow: hidden;
+}
+
+.working {
+  --claude: var(--working);
+}
+
+.waiting {
+  --claude: var(--waiting);
+}
+
+.idle {
+  --claude: var(--faint);
+}
+
+/* 칸 머리와 columns 의 workspace 머리. 터미널 한 행 높이에, 아이콘을 두 셀로 잡아 뒤 글자가 터미널의
+   세 번째 열에서 시작한다. */
+.bar {
+  height: var(--row);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--pad);
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--hdr);
+  color: var(--muted);
+  font:
+    12px system-ui,
+    sans-serif;
+  white-space: nowrap;
+}
+
+.bar.focused {
+  background: var(--hdr-focus);
+  color: var(--fg);
+}
+
+.bar-icon {
+  flex: none;
+  width: calc(var(--cell) * 2);
+  margin-right: -8px;
+  color: var(--claude, var(--faint));
+  font-family: 'Maru Symbols';
 }
