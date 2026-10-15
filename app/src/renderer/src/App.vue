@@ -15,6 +15,7 @@ import { createClaudeStatuses } from './claude/status'
 import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PaneHeader from './components/PaneHeader.vue'
+import WorkspaceRail from './components/WorkspaceRail.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import TerminalView from './components/TerminalView.vue'
 import { FONT_FAMILY, FONT_SIZE } from './font'
@@ -82,6 +83,35 @@ function closePane(): void {
 }
 
 const sidebarOpen = ref(true)
+const folded = reactive(new Set<number>())
+function toggleFold(key: number): void {
+  if (!folded.delete(key)) folded.add(key)
+}
+// 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 칸마다 열 수가 갈린다(#58).
+const sidebarWidth = ref(282)
+const sidebarCss = computed(() => `min(${sidebarWidth.value}px, 50vw)`)
+// 신호등 버튼 양옆에 12px 씩.
+const RAIL_WIDTH = 85
+const resizing = ref(false)
+
+// 끄는 도중 사이드바를 닫으면 손잡이가 DOM 에서 빠져 손잡이로는 끝을 받지 못한다.
+function resizeSidebar(e: PointerEvent): void {
+  resizing.value = true
+  const from = sidebarWidth.value - e.clientX
+  const move = (m: PointerEvent): void => {
+    sidebarWidth.value = Math.min(480, Math.max(200, from + m.clientX))
+  }
+  const end = (): void => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', end)
+    window.removeEventListener('pointercancel', end)
+    resizing.value = false
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', end)
+  window.addEventListener('pointercancel', end)
+}
+
 const viewMode = ref<'single' | 'columns'>('single')
 // 모든 터미널이 같은 글꼴을 쓰므로 마지막으로 잰 값 하나로 셈한다.
 const cell = ref<Size>({ width: 0, height: 0 })
@@ -196,13 +226,17 @@ const URGENCY = ['waiting', 'working', 'idle'] as const
 
 const urgent = computed(() => {
   const map = new Map<number, (typeof URGENCY)[number]>()
-  if (viewMode.value !== 'columns') return map
   for (const w of workspaces.list.value) {
     const states = new Set(w.panes.map((p) => claude.state(p.sessionId)))
     const state = URGENCY.find((s) => states.has(s))
     if (state) map.set(w.key, state)
   }
   return map
+})
+
+// Claude 가 다 끝난 workspace 는 접기 화살표가 없어지므로, 다시 띄웠을 때 접힌 채로 나오지 않게.
+watch(urgent, (map) => {
+  for (const key of folded) if (!map.has(key)) folded.delete(key)
 })
 
 // columns 에서는 다른 workspace 의 칸도 보여 눌러 포커스를 줄 수 있으므로, 그 workspace 를 선택한다.
@@ -276,15 +310,37 @@ window.maru.onCommand(runCommand)
 
 <template>
   <div class="app" :style="gridVars">
-    <WorkspaceSidebar
-      v-show="sidebarOpen"
-      :workspaces="workspaces.list.value"
-      :selected-key="workspaces.selectedKey.value"
-      :state="claude.state"
-      :home="home"
-      @select="selectWorkspace"
-      @focus="selectPane"
-    />
+    <div
+      class="side"
+      :class="{ resizing }"
+      :style="{ width: sidebarOpen ? sidebarCss : `${RAIL_WIDTH}px` }"
+    >
+      <WorkspaceSidebar
+        v-if="sidebarOpen"
+        :style="{ width: sidebarCss }"
+        :workspaces="workspaces.list.value"
+        :selected-key="workspaces.selectedKey.value"
+        :state="claude.state"
+        :urgent="urgent"
+        :folded="folded"
+        :home="home"
+        @select="selectWorkspace"
+        @focus="selectPane"
+        @fold="toggleFold"
+      />
+      <WorkspaceRail
+        v-else
+        :style="{ width: `${RAIL_WIDTH}px` }"
+        :workspaces="workspaces.list.value"
+        :selected-key="workspaces.selectedKey.value"
+        :state="claude.state"
+        :urgent="urgent"
+        :folded="folded"
+        @select="selectWorkspace"
+        @focus="selectPane"
+      />
+    </div>
+    <div v-if="sidebarOpen" class="resizer" @pointerdown="resizeSidebar" />
     <div class="terminals" :class="viewMode">
       <div
         v-for="{ w, selected, width, panes } in views"
@@ -347,6 +403,27 @@ window.maru.onCommand(runCommand)
 .app {
   display: flex;
   height: 100%;
+}
+
+.side {
+  flex: none;
+  display: flex;
+  overflow: hidden;
+  background: var(--side);
+  transition: width 150ms ease;
+}
+
+.side.resizing {
+  transition: none;
+}
+
+.resizer {
+  -webkit-app-region: no-drag;
+  flex: none;
+  z-index: 1;
+  width: 6px;
+  margin: 0 -3px;
+  cursor: col-resize;
 }
 
 .terminals {

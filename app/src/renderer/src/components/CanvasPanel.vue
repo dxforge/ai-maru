@@ -73,6 +73,11 @@ watch(
   border-bottom: 1px solid var(--line);
   font-size: 12px;
   color: var(--muted);
+  -webkit-app-region: drag;
+}
+
+.bar button {
+  -webkit-app-region: no-drag;
 }
 
 button {

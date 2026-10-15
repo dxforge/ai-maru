@@ -5,10 +5,15 @@ export const ICONS = {
   claude: '\uEC82',
   terminal: '\uEA85',
   branch: '\uEA68',
+  expanded: '\uEAB4',
+  collapsed: '\uEAB6',
   idle: '\uEA71',
   working: '\uEB19',
   waiting: '\uEAA2'
-} as const satisfies Record<'claude' | 'terminal' | 'branch' | ClaudeState, string>
+} as const satisfies Record<
+  'claude' | 'terminal' | 'branch' | 'expanded' | 'collapsed' | ClaudeState,
+  string
+>
 
 /** 상태 아이콘의 툴팁·aria-label. 화면에는 글자를 쓰지 않는다. */
 export const STATE_LABELS: Record<ClaudeState, string> = {

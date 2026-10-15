@@ -92,6 +92,7 @@ function createWindow(): void {
     show: !unobtrusive,
     focusable: !unobtrusive,
     backgroundColor: GHOSTTY.background,
+    titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       // DevTools 에서는 메뉴와 상관없이 창을 새로 고칠 수 있는데, 새로 고치면 workspace 목록을 잃는다.
