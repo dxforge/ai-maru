@@ -44,19 +44,6 @@ test('칸 머리를 누르면 그 칸이 포커스를 받고 키가 그리로 �
   await run(page, 'echo again-$((1+1))', 'again-2')
 })
 
-test('waiting 인 칸 머리는 포커스가 있을 때와 없을 때 배경이 다르다', async ({ launch }) => {
-  const { app, page } = await launch()
-  await page.keyboard.type(claudeHook('PermissionRequest'))
-  const header = panes(page).nth(0).locator('.pane-header')
-  await expect(header).toHaveClass(/waiting/)
-  const focused = await header.evaluate((el) => getComputedStyle(el).backgroundColor)
-
-  await split(app, page, 'split-right', 2)
-
-  await expect(header).not.toHaveClass(/focused/)
-  expect(await header.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(focused)
-})
-
 test('columns 의 workspace 머리는 칸 상태 가운데 waiting, working 순으로 하나를 보이고, 없으면 비우며, 누르면 그 workspace 를 고른다', async ({
   launch
 }) => {
@@ -83,11 +70,22 @@ test('columns 의 workspace 머리는 칸 상태 가운데 waiting, working 순�
   await run(page, 'echo first-$((1+1))', 'first-2')
 })
 
+test('터미널 왼쪽 여백도 터미널 배경으로 칠한다', async ({ launch }) => {
+  const { page } = await launch()
+  const [viewport, xterm, scrollable] = await page.evaluate(() =>
+    ['.xterm-viewport', '.xterm', '.xterm-scrollable-element'].map(
+      (s) => getComputedStyle(document.querySelector(s)!).backgroundColor
+    )
+  )
+  expect(viewport).toBe('rgba(0, 0, 0, 0)')
+  expect(xterm).toBe(scrollable)
+})
+
 test('칸 머리의 아이콘 글꼴을 불러온다', async ({ launch }) => {
   const { page } = await launch()
   const status = await page.evaluate(async () => {
     await document.fonts.ready
-    return [...document.fonts].find((f) => f.family.includes('Maru Symbols'))?.status
+    return [...document.fonts].find((f) => f.family.includes('Symbols Nerd Font Mono'))?.status
   })
   expect(status).toBe('loaded')
 })
@@ -185,4 +183,22 @@ test('창 크기를 바꿔도 칸 경계는 행·열 격자에 놓인다', async
   await expect.poll(async () => (await measure(page))[0].gridWidth).not.toBe(before[0].gridWidth)
   expectOnGrid(await measure(page))
   await expect(panes(page)).toHaveCount(3)
+})
+
+test('columns 에서 위아래로 나눈 위 칸에 포커스가 가도 칸 머리는 칸 맨 위에 있다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await clickMenu(app, 'toggle-view-mode')
+  await split(app, page, 'split-down', 2)
+  await clickMenu(app, 'focus-pane-up')
+  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
+
+  const offsets = await page.evaluate(() =>
+    [...document.querySelectorAll('.panes.selected .pane')].map(
+      (p) =>
+        p.querySelector('.pane-header')!.getBoundingClientRect().top - p.getBoundingClientRect().top
+    )
+  )
+  expect(offsets).toEqual([0, 0])
 })

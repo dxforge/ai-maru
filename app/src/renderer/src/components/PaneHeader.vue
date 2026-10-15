@@ -23,14 +23,6 @@ const {
 </template>
 
 <style scoped>
-.pane-header.waiting {
-  background: var(--hdr-waiting);
-}
-
-.pane-header.waiting.focused {
-  background: var(--hdr-waiting-focus);
-}
-
 .idle .bar-icon {
   font-size: 9px;
 }
@@ -44,7 +36,7 @@ const {
 
 .app {
   color: var(--faint);
-  font-family: 'Maru Symbols';
+  font-family: 'Symbols Nerd Font Mono';
 }
 
 .cwd {

@@ -7,6 +7,7 @@ import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PaneHeader from './components/PaneHeader.vue'
 import TerminalView from './components/TerminalView.vue'
+import { FONT_FAMILY, FONT_SIZE } from './font'
 import { ICONS } from './icons'
 import { columnsWidth, terminalPadding } from './workspace/columns'
 import { workspaceName } from './workspace/cwd'
@@ -73,7 +74,9 @@ const row = computed(() => cell.value.height || FALLBACK_ROW)
 const gridVars = computed(() => ({
   '--row': `${row.value}px`,
   '--cell': `${cell.value.width}px`,
-  '--pad': `${terminalPadding(cell.value.width)}px`
+  '--pad': `${terminalPadding(cell.value.width)}px`,
+  '--font-size': `${FONT_SIZE}px`,
+  '--font-family': FONT_FAMILY
 }))
 
 /** workspace 마다 칸이 놓이는 영역의 크기. CSS 가 정하는 머리·여백을 JS 에서 다시 셈하지 않게 잰다. */
@@ -394,7 +397,7 @@ window.maru.onCommand(runCommand)
   position: relative;
   flex: none;
   border-radius: 6px 6px 0 0;
-  overflow: hidden;
+  overflow: clip;
   visibility: visible;
 }
 
@@ -414,8 +417,9 @@ window.maru.onCommand(runCommand)
 
 .pane {
   position: absolute;
-  /* 다른 클라이언트가 primary 면 fit 하지 않아, 터미널이 칸보다 넓으면 옆 칸과 패널을 덮는다. */
-  overflow: hidden;
+  /* 다른 클라이언트가 primary 면 fit 하지 않아, 터미널이 칸보다 넓으면 옆 칸과 패널을 덮는다.
+     hidden 이면 칸이 스크롤 영역이 되어, 칸보다 큰 터미널을 scrollIntoView 할 때 머리가 밀려 올라간다. */
+  overflow: clip;
   background: var(--ground);
 }
 

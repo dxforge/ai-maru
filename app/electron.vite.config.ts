@@ -15,8 +15,6 @@ export default defineConfig({
   },
   preload: {},
   renderer: {
-    plugins: [vue()],
-    // 작은 글꼴을 data: URL 로 넣으면 CSP 의 default-src 'self' 가 막는다.
-    build: { assetsInlineLimit: (file) => (file.endsWith('.woff2') ? false : undefined) }
+    plugins: [vue()]
   }
 })

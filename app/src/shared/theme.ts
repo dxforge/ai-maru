@@ -63,47 +63,37 @@ export type UiColors = {
   ground: string
   fg: string
   side: string
-  hdr: string
-  hdrFocus: string
-  hdrWaiting: string
-  hdrWaitingFocus: string
   hover: string
   selected: string
   line: string
   muted: string
   faint: string
   dim: string
+  thumb: string
   working: string
   waiting: string
   done: string
   error: string
 }
 
-/** 터미널 테마에서 화면 나머지의 색을 얻는다. */
 export function uiColors({ background: bg, foreground: fg, ansi }: TerminalTheme): UiColors {
   const light = luminance(bg) > 0.5
-  const hdr = mix(bg, fg, 0.035)
-  const hdrFocus = mix(bg, fg, 0.09)
   const side = light ? mix(bg, fg, 0.035) : mix(bg, '#000000', 0.22)
   const status = (i: number): string =>
-    [side, hdr, hdrFocus].every((s) => contrast(ansi[i], s) >= MIN_CONTRAST) ? ansi[i] : ansi[i + 8]
-  const waiting = status(3)
+    [side, bg].every((s) => contrast(ansi[i], s) >= MIN_CONTRAST) ? ansi[i] : ansi[i + 8]
   return {
     ground: bg,
     fg,
     side,
-    hdr,
-    hdrFocus,
-    hdrWaiting: mix(hdr, waiting, 0.14),
-    hdrWaitingFocus: mix(hdrFocus, waiting, 0.14),
     hover: mix(side, fg, 0.06),
     selected: mix(side, fg, 0.12),
     line: mix(bg, fg, 0.13),
     muted: mix(fg, bg, 0.35),
     faint: mix(fg, bg, 0.55),
     dim: bg + '73',
+    thumb: fg + '33',
     working: status(4),
-    waiting,
+    waiting: status(3),
     done: status(2),
     error: status(1)
   }
@@ -117,5 +107,13 @@ export function xtermTheme({ background, foreground, ansi }: TerminalTheme): ITh
       c
     ])
   )
-  return { background, foreground, cursor: foreground, ...palette }
+  return {
+    background,
+    foreground,
+    cursor: foreground,
+    scrollbarSliderBackground: foreground + '33',
+    scrollbarSliderHoverBackground: foreground + '66',
+    scrollbarSliderActiveBackground: foreground + '80',
+    ...palette
+  }
 }

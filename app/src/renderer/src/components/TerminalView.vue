@@ -6,6 +6,7 @@ import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { attach, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
 import { isAppKey, matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
+import { FONT_FAMILY, FONT_SIZE } from '../font'
 import { osc7Path } from '../workspace/cwd'
 import type { Size } from '../workspace/grid'
 import { GHOSTTY, xtermTheme } from '../../../shared/theme'
@@ -22,8 +23,8 @@ const emit = defineEmits<{
 const host = useTemplateRef<HTMLDivElement>('host')
 const term = new Terminal({
   theme: xtermTheme(GHOSTTY),
-  fontFamily: "'SF Mono', Menlo, monospace",
-  fontSize: 13,
+  fontFamily: FONT_FAMILY,
+  fontSize: FONT_SIZE,
   lineHeight: 1.2,
   // Claude Code 의 ⌥P(모델 전환)·⌥B/⌥F(단어 이동) 같은 키는 ⌥ 가 Meta 로 가야 동작한다.
   // 대신 ⌥ 로 치는 글자(™, 유럽 자판의 `@`·`{` 등)는 터미널에 칠 수 없다.
@@ -137,5 +138,11 @@ onBeforeUnmount(() => {
 
 .terminal-view :deep(.xterm) {
   padding-left: var(--pad);
+}
+
+/* xterm.css 가 viewport 를 검게 칠하는데, viewport 는 여백까지 덮고 테마 배경은 그 안쪽에만 칠해진다.
+   투명하게 두어 여백에도 .xterm 의 테마 배경이 보이게 한다. */
+.terminal-view :deep(.xterm .xterm-viewport) {
+  background-color: transparent;
 }
 </style>

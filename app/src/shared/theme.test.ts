@@ -10,13 +10,19 @@ describe('mix', () => {
 })
 
 describe('uiColors', () => {
-  it('Ghostty 의 red 는 포커스된 칸 머리 위에서 3:1 이 안 되어 bright red 를 쓰고, 나머지는 그대로 쓴다', () => {
+  it('상태 색은 사이드바와 칸 배경 위에서 3:1 이 넘으면 ANSI 색을 그대로 쓴다', () => {
     const ui = uiColors(GHOSTTY)
-    expect(contrast(GHOSTTY.ansi[1], ui.hdrFocus)).toBeLessThan(3)
-    expect(ui.error).toBe(GHOSTTY.ansi[9])
-    expect(ui.waiting).toBe(GHOSTTY.ansi[3])
-    expect(ui.working).toBe(GHOSTTY.ansi[4])
-    expect(ui.done).toBe(GHOSTTY.ansi[2])
+    expect([ui.error, ui.done, ui.waiting, ui.working]).toEqual(
+      [1, 2, 3, 4].map((i) => GHOSTTY.ansi[i])
+    )
+  })
+
+  it('3:1 이 안 되는 상태 색은 bright 색을 쓴다', () => {
+    const ansi = [...GHOSTTY.ansi]
+    ansi[1] = '#5a2020'
+    const ui = uiColors({ ...GHOSTTY, ansi })
+    expect(contrast(ansi[1], GHOSTTY.background)).toBeLessThan(3)
+    expect(ui.error).toBe(ansi[9])
   })
 
   it('어두운 테마의 사이드바는 배경보다 어둡고, 밝은 테마의 사이드바는 배경보다 글자색 쪽이다', () => {
@@ -24,11 +30,6 @@ describe('uiColors', () => {
     expect(contrast(dark.side, '#000000')).toBeLessThan(contrast(dark.ground, '#000000'))
     const light = uiColors({ background: '#ffffff', foreground: '#1f2328', ansi: GHOSTTY.ansi })
     expect(light.side).toBe(mix('#ffffff', '#1f2328', 0.035))
-  })
-
-  it('포커스된 칸 머리는 다른 칸 머리보다 글자색에 가깝다', () => {
-    const ui = uiColors(GHOSTTY)
-    expect(contrast(ui.hdrFocus, ui.fg)).toBeLessThan(contrast(ui.hdr, ui.fg))
   })
 })
 
