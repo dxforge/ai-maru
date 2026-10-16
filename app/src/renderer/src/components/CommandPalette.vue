@@ -71,7 +71,10 @@ function onKeydown(e: KeyboardEvent): void {
 </template>
 
 <style scoped>
+/* 사이드바와 Canvas 헤더의 drag 영역은 그 위에 덮인 요소와 상관없이 클릭을 창 끌기로 가져가므로,
+   팔레트를 no-drag 로 둔다. */
 .backdrop {
+  -webkit-app-region: no-drag;
   position: fixed;
   inset: 0;
   z-index: 10;

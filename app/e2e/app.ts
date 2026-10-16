@@ -313,3 +313,22 @@ export async function serveRenderer(defer: (fn: () => void) => void): Promise<st
   defer(() => server.close())
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
 }
+
+/**
+ * Playwright 의 입력은 OS 의 창 끌기를 거치지 않는다. 그래서 테스트는 main 이 hit test 에 쓰는 drag
+ * 영역을 Electron 의 디버그 로그에서 읽는다. 이 env 로 띄운 앱에 `dragRegion` 을 쓴다.
+ */
+export const DRAG_LOG_ENV = {
+  ELECTRON_ENABLE_LOGGING: '1',
+  ELECTRON_DEBUG_DRAGGABLE_REGIONS: '1'
+}
+
+/** 이 함수를 부른 뒤로 main 이 받은 마지막 drag 영역의 경계 상자(`x,y wxh`, 비었으면 `0,0 0x0`)를 준다. */
+export function dragRegion(app: ElectronApplication): () => string | undefined {
+  let last: string | undefined
+  app.process().stderr!.on('data', (chunk: Buffer) => {
+    for (const m of chunk.toString().matchAll(/\[draggable-regions\].*update #.*bounds (\S+ \S+)/g))
+      last = m[1]
+  })
+  return () => last
+}
