@@ -143,9 +143,10 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* 스크롤바 폭을 정하면 xterm 이 decoration 을 그리는 canvas 를 붙인다. decoration 을 쓰지 않아 숨긴다. */
+/* 스크롤바 폭을 정하면 xterm 이 decoration 을 그리는 canvas 를 붙인다. decoration 을 쓰지 않아 숨긴다.
+   xterm 은 buffer 가 바뀔 때마다 이 canvas 의 inline display 를 다시 쓴다. alt screen 에서 나오면 block 이 된다. */
 .terminal-view :deep(.xterm-decoration-overview-ruler) {
-  display: none;
+  display: none !important;
 }
 
 .terminal-view :deep(.xterm) {
