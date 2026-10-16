@@ -101,7 +101,7 @@ function createWindow(): void {
     }
   })
   win.webContents.on('will-navigate', (event, url) => {
-    if (isDevReload(url, process.env.ELECTRON_RENDERER_URL)) return
+    if (isDevReload(url, win.webContents.getURL(), process.env.ELECTRON_RENDERER_URL)) return
     event.preventDefault()
     openExternal(url)
   })

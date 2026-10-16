@@ -1,15 +1,18 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync
 } from 'node:fs'
-import { createConnection, type Socket } from 'node:net'
+import { createServer } from 'node:http'
+import { createConnection, type AddressInfo, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { extname, join, normalize } from 'node:path'
 import {
   test as base,
   expect,
@@ -286,4 +289,27 @@ export async function resizeBy(app: ElectronApplication, dw: number, dh: number)
     },
     [dw, dh]
   )
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.ttf': 'font/ttf',
+  '.woff2': 'font/woff2'
+}
+
+/** 이 주소를 `ELECTRON_RENDERER_URL` 로 주면 앱이 dev 서버에서 뜬 것처럼 동작한다. */
+export async function serveRenderer(defer: (fn: () => void) => void): Promise<string> {
+  const root = join(__dirname, '../out/renderer')
+  const server = createServer((req, res) => {
+    const path = normalize(new URL(req.url!, 'http://x').pathname)
+    const file = join(root, path === '/' ? 'index.html' : path)
+    if (!file.startsWith(root) || !existsSync(file)) return void res.writeHead(404).end()
+    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' })
+    res.end(readFileSync(file))
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  defer(() => server.close())
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
 }
