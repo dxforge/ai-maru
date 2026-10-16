@@ -7,6 +7,7 @@ import {
   gridRows,
   newWorkspace,
   pressNew,
+  putCanvas,
   resizeBy,
   rows,
   run,
@@ -172,13 +173,7 @@ test('다른 곳을 눌러 터미널의 포커스가 빠진 뒤 선택된 worksp
   launch
 }) => {
   const { app, page } = await launch()
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].webContents.send('canvas:put', {
-      id: 'a',
-      kind: 'markdown',
-      text: '# 문서\n\n본문\n'
-    })
-  )
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: '# 문서\n\n본문\n' })
   const sidebar = page.locator('.sidebar')
   const blurs = [
     () => page.locator('.canvas .markdown p').click(),
