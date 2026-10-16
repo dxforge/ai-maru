@@ -1,24 +1,14 @@
-import type { ElectronApplication, Page } from '@playwright/test'
-import type { CanvasMarkdown } from '../src/shared/canvas'
-import { attachFromOutside, expect, rows, serveRenderer, shellSize, sockets, test } from './app'
-
-type Item = CanvasMarkdown | { id: string; kind: 'image'; name: string; mime: string; svg: string }
-
-async function put(app: ElectronApplication, item: Item): Promise<void> {
-  await app.evaluate(({ BrowserWindow }, item) => {
-    const msg =
-      item.kind === 'image'
-        ? {
-            id: item.id,
-            kind: item.kind,
-            name: item.name,
-            mime: item.mime,
-            bytes: Buffer.from(item.svg)
-          }
-        : item
-    BrowserWindow.getAllWindows()[0].webContents.send('canvas:put', msg)
-  }, item)
-}
+import type { Page } from '@playwright/test'
+import {
+  attachFromOutside,
+  expect,
+  putCanvas,
+  rows,
+  serveRenderer,
+  shellSize,
+  sockets,
+  test
+} from './app'
 
 const svg = (width: number) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="20"><rect width="100%" height="100%" fill="red"/></svg>`
@@ -40,7 +30,7 @@ test('마크다운을 넣으면 패널이 열려 GFM 으로 렌더되고, 셸이
   const { app, page } = await launch()
   const before = await shellSize(page)
 
-  await put(app, {
+  await putCanvas(app, {
     id: 'a',
     kind: 'markdown',
     text: '# 설계 초안\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n~~old~~\n\n- [x] done\n'
@@ -59,11 +49,11 @@ test('같은 id 로 다시 넣으면 목록 자리를 지킨 채 내용이 바�
   launch
 }) => {
   const { app, page } = await launch()
-  await put(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
-  await put(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
   await expect(markdown(page)).toHaveText('second')
 
-  await put(app, { id: 'a', kind: 'markdown', text: 'first again', title: 'A2' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first again', title: 'A2' })
 
   await expect(titles(page)).toHaveText(['B', 'A2'])
   await expect(titles(page).nth(1)).toHaveClass(/selected/)
@@ -72,8 +62,8 @@ test('같은 id 로 다시 넣으면 목록 자리를 지킨 채 내용이 바�
 
 test('목록에서 고르면 그 문서를 보인다', async ({ launch }) => {
   const { app, page } = await launch()
-  await put(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
-  await put(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
 
   await titles(page).filter({ hasText: 'A' }).click()
 
@@ -86,11 +76,23 @@ test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 새 그�
   const image = page.locator('.canvas .image')
   const naturalWidth = () => image.evaluate((img: HTMLImageElement) => img.naturalWidth)
 
-  await put(app, { id: 'i', kind: 'image', name: 'shot.svg', mime: 'image/svg+xml', svg: svg(40) })
+  await putCanvas(app, {
+    id: 'i',
+    kind: 'image',
+    name: 'shot.svg',
+    mime: 'image/svg+xml',
+    svg: svg(40)
+  })
   await expect(titles(page)).toHaveText(['shot.svg'])
   await expect.poll(naturalWidth).toBe(40)
 
-  await put(app, { id: 'i', kind: 'image', name: 'shot.svg', mime: 'image/svg+xml', svg: svg(60) })
+  await putCanvas(app, {
+    id: 'i',
+    kind: 'image',
+    name: 'shot.svg',
+    mime: 'image/svg+xml',
+    svg: svg(60)
+  })
   await expect.poll(naturalWidth).toBe(60)
   await expect(titles(page)).toHaveCount(1)
 })
@@ -100,7 +102,7 @@ test('닫으면 띠만 남아 셸이 보는 폭이 넓어지고, 띠를 누르�
 }) => {
   const { app, page } = await launch()
   const before = await shellSize(page)
-  await put(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
   await expect.poll(async () => (await shellSize(page)).cols).toBeLessThan(before.cols)
   const opened = await shellSize(page)
 
@@ -112,7 +114,7 @@ test('닫으면 띠만 남아 셸이 보는 폭이 넓어지고, 띠를 누르�
   await expect(reopen(page)).toHaveCount(0)
 
   await page.locator('.canvas .close').click()
-  await put(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
   await expect(panel(page)).toBeVisible()
   await expect(markdown(page)).toHaveText('second')
 })
@@ -125,7 +127,7 @@ test('문서 안의 링크를 누르면 창은 그대로이고 그 주소를 바
     shell.openExternal = async (url: string) => void opened.push(url)
   })
   const url = page.url()
-  await put(app, { id: 'a', kind: 'markdown', text: '[site](https://example.com/x)' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: '[site](https://example.com/x)' })
   await expect(markdown(page).locator('a')).toHaveCount(1)
 
   // 막힌 이동 뒤에는 playwright 의 locator 가 멈춰서, 누르는 것부터는 페이지 안에서 한다.
@@ -155,7 +157,7 @@ test('dev 서버에서 뜬 창에서도 상대 링크는 창을 옮기지 않고
     shell.openExternal = async (url: string) => void opened.push(url)
   })
   await page.evaluate(() => ((window as { marker?: number }).marker = 1))
-  await put(app, { id: 'a', kind: 'markdown', text: '[notes](notes.md)' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: '[notes](notes.md)' })
   await expect(markdown(page).locator('a')).toHaveCount(1)
 
   await page.evaluate(() => document.querySelector<HTMLAnchorElement>('.markdown a')!.click())
@@ -178,7 +180,7 @@ test('dev 서버에서 뜬 창에서도 상대 링크는 창을 옮기지 않고
 
 test('문서 안의 스크립트는 돌지 않고, 이미지는 대체 텍스트만 남는다', async ({ launch }) => {
   const { app, page } = await launch()
-  await put(app, {
+  await putCanvas(app, {
     id: 'a',
     kind: 'markdown',
     text: [
@@ -198,7 +200,7 @@ test('문서 안의 스크립트는 돌지 않고, 이미지는 대체 텍스트
 
 test('문서의 스타일은 패널 밖을 바꾸지 못한다', async ({ launch }) => {
   const { app, page } = await launch()
-  await put(app, {
+  await putCanvas(app, {
     id: 'a',
     kind: 'markdown',
     text: [
@@ -216,7 +218,7 @@ test('문서의 스타일은 패널 밖을 바꾸지 못한다', async ({ launch
 
 test('문서의 dialog·popover 는 패널 밖으로 떠오르지 않는다', async ({ launch }) => {
   const { app, page } = await launch()
-  await put(app, {
+  await putCanvas(app, {
     id: 'a',
     kind: 'markdown',
     text: [
@@ -235,7 +237,7 @@ test('문서의 dialog·popover 는 패널 밖으로 떠오르지 않는다', as
 
 test('목록의 제목은 본문 heading 과 같은 글자로 보인다', async ({ launch }) => {
   const { app, page } = await launch()
-  await put(app, {
+  await putCanvas(app, {
     id: 'a',
     kind: 'markdown',
     text: '# Tom &amp; *J &lt;3&gt;* [&copy;](https://x) &#38; `&amp;` \\&amp;'
@@ -245,7 +247,7 @@ test('목록의 제목은 본문 heading 과 같은 글자로 보인다', async 
   expect(body).toBe('Tom & J <3> © & &amp; &amp;')
   await expect(titles(page)).toHaveText(body!)
 
-  await put(app, { id: 'a', kind: 'markdown', text: '# &copy 2024 a &lt b &copyx; &notit;' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: '# &copy 2024 a &lt b &copyx; &notit;' })
   await expect(markdown(page).locator('h1')).toHaveText('&copy 2024 a &lt b ©x; ¬it;')
   await expect(titles(page)).toHaveText('&copy 2024 a &lt b ©x; ¬it;')
 })
@@ -258,8 +260,8 @@ test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터�
     await page.keyboard.type(`echo typed-$((${n}+1000))\n`)
     await expect(rows(page)).toContainText(`typed-${n + 1000}`)
   }
-  await put(app, { id: 'a', kind: 'markdown', text: 'doc', title: 'A' })
-  await put(app, { id: 'b', kind: 'markdown', text: 'doc', title: 'B' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'doc', title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'doc', title: 'B' })
   await expect(panel(page)).toBeVisible()
   await typesIntoTerminal()
 
@@ -283,8 +285,8 @@ test('다른 클라이언트가 터미널을 넓게 잡고 있어도 패널을 �
   defer(() => other.destroy())
   await expect(rows(page)).toContainText('took over input and size')
 
-  await put(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
-  await put(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
   await titles(page).filter({ hasText: 'A' }).click()
   await expect(markdown(page)).toHaveText('first')
   await page.locator('.canvas .close').click()
@@ -300,12 +302,12 @@ test('보던 문서가 바뀌면 스크롤 자리를 지키고, 다른 문서를
   const view = page.locator('.canvas .view')
   const scrollTop = () => view.evaluate((el) => el.scrollTop)
 
-  await put(app, { id: 'b', kind: 'markdown', text: long('b'), title: 'B' })
-  await put(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: long('b'), title: 'B' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
   await view.evaluate((el) => el.scrollTo(0, 1000))
   await expect.poll(scrollTop).toBe(1000)
 
-  await put(app, { id: 'a', kind: 'markdown', text: long('a2'), title: 'A' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a2'), title: 'A' })
   await expect(markdown(page)).toContainText('a2 line 0')
   expect(await scrollTop()).toBe(1000)
 

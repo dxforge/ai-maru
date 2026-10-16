@@ -7,6 +7,7 @@ import {
   newWorkspace,
   paneHeader,
   panes,
+  putCanvas,
   resizeBy,
   run,
   setZoom,
@@ -142,6 +143,50 @@ test('columns 의 workspace 머리는 idle 만 있으면 칸 머리와 같은 id
   expect(await workspaceIcon.evaluate((e) => getComputedStyle(e).fontSize)).toBe(
     await paneIcon.evaluate((e) => getComputedStyle(e).fontSize)
   )
+})
+
+test('칸 머리와 columns 의 workspace 머리는 글자 위에서도 기본 커서를 보이고, Canvas 글자에서 머리로 끌어도 머리 글자는 선택되지 않는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await toggleView({ app, page }, 'columns')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: '# canvas-heading\n' })
+  const heading = page.locator('.canvas .markdown h1')
+  await expect(heading).toBeVisible()
+  for (const s of ['.pane-header .title', '.pane-header .cwd', '.workspace-header .name']) {
+    const text = page.locator(s)
+    expect(await text.evaluate((e) => getComputedStyle(e).cursor)).toBe('default')
+
+    // columns 뷰의 pane 은 보이는 폭보다 넓을 수 있으므로, 끝점을 화면 안에 두고 그 점의 요소가 헤더 안에 있는지 확인한다.
+    await text.evaluate((e) => e.scrollIntoView({ inline: 'nearest' }))
+    const box = (await text.boundingBox())!
+    const end = { x: box.x + 8, y: box.y + box.height / 2 }
+    expect(
+      await page.evaluate(
+        ({ s, end }) =>
+          document.querySelector(s)!.contains(document.elementFromPoint(end.x, end.y)),
+        { s, end }
+      )
+    ).toBe(true)
+    const from = (await heading.boundingBox())!
+    await page.mouse.move(from.x + from.width - 1, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 10 })
+    await page.mouse.up()
+
+    // 사이드바도 같은 이름을 보여 주므로 선택된 글자만으로는 구별할 수 없다.
+    // 그래서 선택의 anchor·focus 가 헤더 안에 있지 않은지 확인한다.
+    const selection = await page.evaluate((s) => {
+      const header = document.querySelector(s)!
+      const sel = getSelection()!
+      return {
+        text: sel.toString(),
+        inHeader: header.contains(sel.anchorNode) || header.contains(sel.focusNode)
+      }
+    }, s)
+    expect(selection.text).toContain('canvas-heading')
+    expect(selection.inHeader).toBe(false)
+  }
 })
 
 test('Canvas 패널 머리에는 칸 머리의 모양이 걸리지 않는다', async ({ launch }) => {

@@ -22,11 +22,31 @@ import {
 } from '@playwright/test'
 import { encodeFrame, TAG_TEXT } from '../src/main/frame'
 import { appSocketPath, killSessions } from '../src/main/session'
+import type { CanvasMarkdown } from '../src/shared/canvas'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 
 export { expect }
 
 export type Launched = { app: ElectronApplication; page: Page }
+
+export type CanvasItem =
+  CanvasMarkdown | { id: string; kind: 'image'; name: string; mime: string; svg: string }
+
+export async function putCanvas(app: ElectronApplication, item: CanvasItem): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, item) => {
+    const msg =
+      item.kind === 'image'
+        ? {
+            id: item.id,
+            kind: item.kind,
+            name: item.name,
+            mime: item.mime,
+            bytes: Buffer.from(item.svg)
+          }
+        : item
+    BrowserWindow.getAllWindows()[0].webContents.send('canvas:put', msg)
+  }, item)
+}
 
 type Fixtures = {
   dataDir: string

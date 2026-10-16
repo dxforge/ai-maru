@@ -42,6 +42,8 @@ body,
   font-family: var(--font-family);
   font-size: var(--font-size);
   white-space: nowrap;
+  cursor: default;
+  user-select: none;
 }
 
 .row-bar.focused {
