@@ -88,16 +88,16 @@ function toggleFold(key: number): void {
 }
 // 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 칸마다 열 수가 갈린다(#58).
 const sidebarWidth = ref(282)
-// 신호등 버튼 양옆에 12px 씩.
+// 신호등 버튼 묶음 폭에 양옆 12px 씩을 더한 폭이다.
 const RAIL_WIDTH = 85
 const resizing = ref(false)
 const side = useTemplateRef<HTMLElement>('side')
 
-// 끄는 도중 사이드바를 닫으면 손잡이가 DOM 에서 빠져 손잡이로는 끝을 받지 못한다.
+// 드래그하는 도중 사이드바를 닫으면 `.resizer` 가 DOM 에서 빠져 `pointerup` 을 받지 못하므로, window 에서 받는다.
 function resizeSidebar(e: PointerEvent): void {
   if (e.button !== 0) return
   resizing.value = true
-  // 창 폭의 반에 걸려 있거나 펴지는 중이면 정한 폭과 보이는 폭이 달라, 보이는 폭에서 시작한다.
+  // `max-width: 50vw` 로 줄어 있거나 펴지는 중이면 정한 폭(`sidebarWidth`)과 보이는 폭이 달라, 보이는 폭에서 시작한다.
   const from = side.value!.getBoundingClientRect().width - e.clientX
   const move = (m: PointerEvent): void => {
     sidebarWidth.value = Math.min(480, Math.max(200, from + m.clientX))
@@ -162,7 +162,7 @@ onBeforeUnmount(() => gridObserver.disconnect())
 
 function sideTransition(e: TransitionEvent): void {
   if (e.propertyName !== 'width') return
-  // 움직이는 도중에 다시 토글하면 cancel 이 오지만, 그때는 이미 반대로 가는 transition 이 돌고 있다.
+  // 움직이는 도중에 다시 토글하면 `transitioncancel` 이 오지만, 그때는 이미 반대로 가는 transition 이 돌고 있다.
   sideMoving = side.value!.getAnimations().some((a) => a.playState === 'running')
   if (sideMoving) return
   // 다시 observe 하면 지금 크기로 콜백이 한 번 온다.

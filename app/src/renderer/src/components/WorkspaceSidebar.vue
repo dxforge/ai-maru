@@ -29,7 +29,6 @@ const emit = defineEmits<{
   fold: [workspace: number]
 }>()
 
-/** `pane` 이 없는 줄은 접은 workspace 의 칸 줄을 모은 요약이고, 누르면 편다. */
 type Row = {
   key: number | 'summary'
   pane?: number
@@ -164,7 +163,6 @@ function press(workspace: number, row: Row): void {
     sans-serif;
 }
 
-/* 신호등 버튼 자리. */
 .titlebar {
   flex: none;
   height: 36px;

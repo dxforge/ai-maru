@@ -240,7 +240,6 @@ export function workspaceGroups(page: Page) {
   return page.locator('.sidebar .group')
 }
 
-/** 사이드바에서 Claude 가 도는 칸의 줄. 셸 칸의 줄은 `shellRows` 다. */
 export function paneRows(page: Page) {
   return page.locator('.sidebar .pane-row:not(.shell)')
 }

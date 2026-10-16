@@ -339,7 +339,7 @@ test('접히는 도중에 다시 펴도 터미널을 중간 폭으로 맞추지 
   const widths = await watchTerminalWidths(page)
 
   await clickMenu(app, 'toggle-sidebar')
-  // transition(180ms) 도중에 되돌린다.
+  // `.side` 의 width transition(180ms, `App.vue`)이 도는 도중에 되돌린다.
   await page.waitForTimeout(60)
   await clickMenu(app, 'toggle-sidebar')
 
