@@ -473,7 +473,10 @@ window.maru.onCommand(runCommand)
   display: flex;
   /* workspace 사이는 행을 이어 쓸 필요가 없어 틈을 두고 카드로 나눈다. */
   gap: 8px;
-  padding: 8px 8px 0;
+  /* 카드 테두리는 바깥 1px 의 box-shadow 라, 여백이 없으면 스크롤 영역이 그 1px 을 자른다. */
+  padding: 8px;
+  /* 포커스를 따라 scrollIntoView 할 때도 카드를 영역 끝에 붙이지 않고 같은 여백을 남긴다. */
+  scroll-padding: 8px;
   background: var(--side);
   /* 스크롤바가 자리를 차지하는 설정에서, 넘치기 시작하거나 그칠 때마다 터미널의 줄 수가 바뀌지 않게. */
   overflow-x: scroll;
@@ -482,7 +485,7 @@ window.maru.onCommand(runCommand)
 .columns .panes {
   position: relative;
   flex: none;
-  border-radius: 6px 6px 0 0;
+  border-radius: 6px;
   overflow: clip;
   visibility: visible;
 }

@@ -32,6 +32,14 @@ async function inView(page: Page, el: Locator): Promise<boolean> {
   return box.x >= area.x - 1 && box.x + box.width <= area.x + area.width + 1
 }
 
+async function scrollArea(page: Page): Promise<{ left: number; right: number; bottom: number }> {
+  return page.locator('.terminals').evaluate((el) => {
+    const { top, left } = el.getBoundingClientRect()
+    const x = left + el.clientLeft
+    return { left: x, right: x + el.clientWidth, bottom: top + el.clientTop + el.clientHeight }
+  })
+}
+
 test('View 메뉴의 Toggle View Mode 는 workspace 를 가로로 늘어놓아 80열로 보이고, 다시 누르면 선택한 것만 보인다', async ({
   launch
 }) => {
@@ -265,6 +273,44 @@ test('columns 에서 workspace 가 넘치기 시작해도 터미널의 줄 수�
   await workspaceItems(page).first().click()
 
   expect((await shellSize(page)).rows).toBe(before.rows)
+})
+
+test('columns 에서 선택한 workspace 의 테두리는 아래 변도 스크롤 영역 안에 그려진다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await toggleView(launched, 'columns')
+
+  // 테두리는 카드 바깥 1px 의 box-shadow 라, 스크롤 영역이 자르지 않으려면 그 1px 이 영역 안에 있어야 한다.
+  const area = await scrollArea(page)
+  const card = (await workspaceViews(page).first().boundingBox())!
+  expect(card.y + card.height + 1).toBeLessThanOrEqual(area.bottom)
+  expect(card.x - 1).toBeGreaterThanOrEqual(area.left)
+})
+
+test('columns 에서 포커스를 따라 스크롤해도 선택한 workspace 의 옆 테두리는 스크롤 영역 안에 그려진다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await newWorkspace(launched, 3)
+  await toggleView(launched, 'columns')
+  await workspaceItems(page).first().click()
+  await expect.poll(() => inView(page, workspaceViews(page).nth(0))).toBe(true)
+
+  const area = await scrollArea(page)
+  const right = async (): Promise<number> => {
+    const card = (await workspaceViews(page).nth(2).boundingBox())!
+    return card.x + card.width + 1
+  }
+  await workspaceItems(page).nth(2).click()
+  await expect.poll(right).toBeLessThanOrEqual(area.right)
+
+  const left = async (): Promise<number> => (await workspaceViews(page).nth(0).boundingBox())!.x - 1
+  await workspaceItems(page).first().click()
+  await expect.poll(left).toBeGreaterThanOrEqual(area.left)
 })
 
 test('columns 에서 줌을 바꿔도 칸은 80열이다', async ({ launch }) => {
