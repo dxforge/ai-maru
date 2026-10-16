@@ -121,6 +121,9 @@ export function xtermTheme({ background, foreground, ansi }: TerminalTheme): ITh
     scrollbarSliderBackground: foreground + THUMB_ALPHA,
     scrollbarSliderHoverBackground: foreground + '66',
     scrollbarSliderActiveBackground: foreground + '80',
+    // 스크롤바 폭을 정하면 xterm 이 overview ruler canvas 를 붙인다. 이 canvas 는 왼쪽 끝에 이 색(기본 흰색)으로
+    // 선을 긋는다. decoration 을 쓰지 않으므로 선을 투명하게 한다.
+    overviewRulerBorder: 'transparent',
     ...palette
   }
 }

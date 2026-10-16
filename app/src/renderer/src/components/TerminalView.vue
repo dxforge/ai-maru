@@ -143,11 +143,6 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* 스크롤바 폭을 정하면 xterm 이 decoration 을 그리는 canvas 를 붙인다. decoration 을 쓰지 않아 숨긴다. */
-.terminal-view :deep(.xterm-decoration-overview-ruler) {
-  display: none;
-}
-
 .terminal-view :deep(.xterm) {
   padding-left: var(--pad);
 }
