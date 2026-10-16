@@ -191,7 +191,31 @@ function start(): void {
       BrowserWindow.fromWebContents(event.sender)?.setRepresentedFilename(path)
   })
   const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
+  // open 과 같은 `ready.then` 으로 보내야 host 가 그 open 을 먼저 받는다.
+  const sendKill = (key: string): void => {
+    const req: KillRequest = { type: 'kill', key, dir: sessionDir() }
+    void ready.then(() => sessionHost().postMessage(req))
+  }
+  // docs/architecture.md 의 "문서가 바뀌면 이전 문서의 세션을 끈다".
+  const opened = new Map<number, Set<string>>()
+  app.on('web-contents-created', (_event, contents) => {
+    let leaving = new Set<string>()
+    // 이동이 시작된 뒤 새 문서가 연 세션을 끄지 않게, 시작할 때 있던 세션만 끈다.
+    contents.on('did-start-navigation', ({ isMainFrame, isSameDocument }) => {
+      if (isMainFrame && !isSameDocument) leaving = new Set(opened.get(contents.id))
+    })
+    contents.on('did-navigate', () => {
+      for (const key of leaving) {
+        opened.get(contents.id)?.delete(key)
+        sendKill(key)
+      }
+      leaving = new Set()
+    })
+    contents.once('destroyed', () => opened.delete(contents.id))
+  })
   ipcMain.on('session:open', (event, key: string, cwd?: string) => {
+    const keys = opened.get(event.sender.id) ?? new Set<string>()
+    opened.set(event.sender.id, keys.add(key))
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
@@ -207,10 +231,9 @@ function start(): void {
     event.sender.postMessage('session:port', key, [port2])
   })
 
-  // open 과 같은 `ready.then` 으로 보내야 host 가 그 open 을 먼저 받는다.
-  ipcMain.on('session:kill', (_event, key: string) => {
-    const req: KillRequest = { type: 'kill', key, dir: sessionDir() }
-    void ready.then(() => sessionHost().postMessage(req))
+  ipcMain.on('session:kill', (event, key: string) => {
+    opened.get(event.sender.id)?.delete(key)
+    sendKill(key)
   })
 
   app.on('window-all-closed', () => app.quit())

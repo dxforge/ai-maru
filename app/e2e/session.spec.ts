@@ -49,6 +49,22 @@ test('창을 닫으면 세션도 끝난다', async ({ launch, dataDir }) => {
   expect(sessionFiles(dataDir)).toEqual([])
 })
 
+test('창이 새로 고쳐지면 이전 화면이 연 세션은 끝나고, 새 화면의 셸만 남는다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await expect.poll(() => sockets(dataDir).length).toBe(2)
+  const before = sockets(dataDir)
+
+  await page.reload()
+  await run(page, 'echo fresh-$((1+1))', 'fresh-2')
+  await expect.poll(() => sockets(dataDir).length).toBe(1)
+  expect(before).not.toContain(sockets(dataDir)[0])
+})
+
 test('새 터미널이 세션에 붙기 전에 친 키도 셸에 간다', async ({ launch }) => {
   const launched = await launch()
   await delaySessionPort(launched.app, 1500)

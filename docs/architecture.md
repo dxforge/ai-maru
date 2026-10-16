@@ -6,6 +6,12 @@
 
 renderer 는 이 순서에 기댄다. host 가 죽으면 main 이 모든 창에 `session:lost` 를 보내는데, 포트보다 먼저 온 `session:lost` 는 이 open 을 받기 전에 죽은 host 의 것이고 이 open 은 새로 띄운 host 가 받는다. 그래서 연결은 포트를 받은 뒤에만 `session:lost` 를 듣는다(`app/src/renderer/src/session/connection.ts`). main 이 포트를 host 에 넘긴 뒤에 renderer 에 보내도록 바뀌면 이 판단이 틀어진다.
 
+## 문서가 바뀌면 이전 문서의 세션을 끈다
+
+창이 새로 고쳐지면(dev 의 Vite 새로 고침 등) 새 문서는 세션을 새로 연다. 새 문서는 이전 문서가 연 세션을 모르므로 거기에 다시 붙지 않는다. 그래서 main 이 이전 문서의 세션을 끈다(`app/src/main/index.ts`).
+
+이전 문서가 떠나 포트가 닫히면 `bridge` 가 세션 소켓을 닫지만 세션 프로세스는 살아 있다. session host 는 이때 key 를 지우지 않고 남겨, 뒤에 오는 kill 이 세션 id 를 찾게 한다(`app/src/main/session-host.ts`). host 가 소켓이 닫힐 때 key 를 지우도록 바뀌면 이전 세션이 남는다.
+
 ## 칸 경계와 셀 격자
 
 나란히 놓인 칸끼리 터미널 행이, 위아래로 놓인 칸끼리 열이 이어지도록 칸 경계를 터미널 셀 크기의 배수에 둔다. 모든 터미널이 같은 글꼴을 쓰므로 `App.vue` 는 마지막으로 잰 값 하나를 `--row`·`--cell`·`--pad` 로 화면 전체에 둔다.
