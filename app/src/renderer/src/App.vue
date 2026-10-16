@@ -15,7 +15,6 @@ import { createClaudeStatuses } from './claude/status'
 import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PaneHeader from './components/PaneHeader.vue'
-import WorkspaceRail from './components/WorkspaceRail.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import TerminalView from './components/TerminalView.vue'
 import { FONT_FAMILY, FONT_SIZE } from './font'
@@ -89,15 +88,17 @@ function toggleFold(key: number): void {
 }
 // 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 칸마다 열 수가 갈린다(#58).
 const sidebarWidth = ref(282)
-const sidebarCss = computed(() => `min(${sidebarWidth.value}px, 50vw)`)
 // 신호등 버튼 양옆에 12px 씩.
 const RAIL_WIDTH = 85
 const resizing = ref(false)
+const side = useTemplateRef<HTMLElement>('side')
 
 // 끄는 도중 사이드바를 닫으면 손잡이가 DOM 에서 빠져 손잡이로는 끝을 받지 못한다.
 function resizeSidebar(e: PointerEvent): void {
+  if (e.button !== 0) return
   resizing.value = true
-  const from = sidebarWidth.value - e.clientX
+  // 창 폭의 반에 걸려 있거나 펴지는 중이면 정한 폭과 보이는 폭이 달라, 보이는 폭에서 시작한다.
+  const from = side.value!.getBoundingClientRect().width - e.clientX
   const move = (m: PointerEvent): void => {
     sidebarWidth.value = Math.min(480, Math.max(200, from + m.clientX))
   }
@@ -129,11 +130,19 @@ const gridVars = computed(() => ({
 const gridSizes = reactive(new Map<number, Size>())
 const gridEls = new Map<number, Element>()
 const gridKeys = new WeakMap<Element, number>()
+// 사이드바 폭이 transition 으로 바뀌는 동안 칸 크기를 다시 재면 터미널이 프레임마다 맞춰져 PTY 크기가
+// 여러 번 바뀐다. 그동안은 재지 않고, 끝난 뒤 다시 잰다.
+let sideMoving = false
 const gridObserver = new ResizeObserver((entries) => {
-  for (const { target, contentRect } of entries) {
+  if (sideMoving) return
+  for (const {
+    target,
+    contentRect: { width, height }
+  } of entries) {
     const key = gridKeys.get(target)
-    if (key !== undefined)
-      gridSizes.set(key, { width: contentRect.width, height: contentRect.height })
+    if (key === undefined) continue
+    const old = gridSizes.get(key)
+    if (old?.width !== width || old.height !== height) gridSizes.set(key, { width, height })
   }
 })
 function observeGrid(key: number, el: unknown): void {
@@ -150,6 +159,18 @@ function observeGrid(key: number, el: unknown): void {
   }
 }
 onBeforeUnmount(() => gridObserver.disconnect())
+
+function sideTransition(e: TransitionEvent): void {
+  if (e.propertyName !== 'width') return
+  // 움직이는 도중에 다시 토글하면 cancel 이 오지만, 그때는 이미 반대로 가는 transition 이 돌고 있다.
+  sideMoving = side.value!.getAnimations().some((a) => a.playState === 'running')
+  if (sideMoving) return
+  // 다시 observe 하면 지금 크기로 콜백이 한 번 온다.
+  for (const el of gridEls.values()) {
+    gridObserver.unobserve(el)
+    gridObserver.observe(el)
+  }
+}
 
 function setCell(c: Size): void {
   if (c.width !== cell.value.width || c.height !== cell.value.height) cell.value = c
@@ -234,11 +255,6 @@ const urgent = computed(() => {
   return map
 })
 
-// Claude 가 다 끝난 workspace 는 접기 화살표가 없어지므로, 다시 띄웠을 때 접힌 채로 나오지 않게.
-watch(urgent, (map) => {
-  for (const key of folded) if (!map.has(key)) folded.delete(key)
-})
-
 // columns 에서는 다른 workspace 의 칸도 보여 눌러 포커스를 줄 수 있으므로, 그 workspace 를 선택한다.
 // 포커스가 같은 칸으로 돌아올 때도 불려, 여기서 칸을 다시 보이면 스크롤해 둔 자리를 잃는다.
 function focusPane(workspace: number, pane: number): void {
@@ -311,13 +327,19 @@ window.maru.onCommand(runCommand)
 <template>
   <div class="app" :style="gridVars">
     <div
+      ref="side"
       class="side"
       :class="{ resizing }"
-      :style="{ width: sidebarOpen ? sidebarCss : `${RAIL_WIDTH}px` }"
+      :style="{
+        width: `${sidebarOpen ? sidebarWidth : RAIL_WIDTH}px`,
+        '--rail': `${RAIL_WIDTH}px`
+      }"
+      @transitionrun.self="sideTransition"
+      @transitionend.self="sideTransition"
+      @transitioncancel.self="sideTransition"
     >
       <WorkspaceSidebar
-        v-if="sidebarOpen"
-        :style="{ width: sidebarCss }"
+        :collapsed="!sidebarOpen"
         :workspaces="workspaces.list.value"
         :selected-key="workspaces.selectedKey.value"
         :state="claude.state"
@@ -328,19 +350,8 @@ window.maru.onCommand(runCommand)
         @focus="selectPane"
         @fold="toggleFold"
       />
-      <WorkspaceRail
-        v-else
-        :style="{ width: `${RAIL_WIDTH}px` }"
-        :workspaces="workspaces.list.value"
-        :selected-key="workspaces.selectedKey.value"
-        :state="claude.state"
-        :urgent="urgent"
-        :folded="folded"
-        @select="selectWorkspace"
-        @focus="selectPane"
-      />
     </div>
-    <div v-if="sidebarOpen" class="resizer" @pointerdown="resizeSidebar" />
+    <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />
     <div class="terminals" :class="viewMode">
       <div
         v-for="{ w, selected, width, panes } in views"
@@ -405,12 +416,14 @@ window.maru.onCommand(runCommand)
   height: 100%;
 }
 
+/* 창 폭의 반이라는 상한은 width 와 따로 두어, 창 크기를 바꿀 때는 transition 없이 바로 따라간다. */
 .side {
   flex: none;
   display: flex;
+  max-width: 50vw;
   overflow: hidden;
   background: var(--side);
-  transition: width 150ms ease;
+  transition: width 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .side.resizing {
@@ -430,6 +443,11 @@ window.maru.onCommand(runCommand)
   position: relative;
   flex: 1;
   min-width: 0;
+}
+
+/* 사이드바가 펴지는 동안 칸은 이전 폭으로 남아, 자르지 않으면 Canvas 를 덮는다. */
+.single {
+  overflow: clip;
 }
 
 /* 보이지 않는 터미널도 자리를 차지해야 창 크기를 따라가고, 보일 때 다시 맞추지 않아도 된다. */

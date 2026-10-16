@@ -237,8 +237,13 @@ export function workspaceGroups(page: Page) {
   return page.locator('.sidebar .group')
 }
 
+/** 사이드바에서 Claude 가 도는 칸의 줄. 셸 칸의 줄은 `shellRows` 다. */
 export function paneRows(page: Page) {
-  return page.locator('.sidebar .pane-row')
+  return page.locator('.sidebar .pane-row:not(.shell)')
+}
+
+export function shellRows(page: Page) {
+  return page.locator('.sidebar .pane-row.shell')
 }
 
 // Playwright 의 키 입력은 macOS 메뉴를 거치지 않아 메뉴 항목을 직접 누른다.

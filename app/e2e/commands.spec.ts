@@ -363,7 +363,7 @@ test('Next·Previous Workspace 는 사이드바의 다음·이전 workspace 를 
   }
 })
 
-test('View 메뉴의 Toggle Sidebar 는 사이드바를 숨기고 다시 보이며, 터미널이 그 폭을 쓴다', async ({
+test('View 메뉴의 Toggle Sidebar 는 사이드바를 접고 다시 펴며, 터미널이 그 폭을 쓴다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -372,13 +372,13 @@ test('View 메뉴의 Toggle Sidebar 는 사이드바를 숨기고 다시 보이�
 
   await clickMenu(app, 'toggle-sidebar')
 
-  await expect(sidebar).toBeHidden()
+  await expect(sidebar).toHaveClass(/collapsed/)
   await expect.poll(async () => (await shellSize(page)).cols).toBeGreaterThan(before.cols)
   await typesIntoTerminal(page, 'hidden')
 
   await clickMenu(app, 'toggle-sidebar')
 
-  await expect(sidebar).toBeVisible()
+  await expect(sidebar).not.toHaveClass(/collapsed/)
   await expect.poll(async () => (await shellSize(page)).cols).toBe(before.cols)
   await typesIntoTerminal(page, 'shown')
 })

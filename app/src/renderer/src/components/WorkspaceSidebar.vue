@@ -2,7 +2,7 @@
 import { computed, type DeepReadonly } from 'vue'
 import type { ClaudeState } from '../../../shared/claude'
 import { ICONS, STATE_LABELS } from '../icons'
-import { tildePath, workspaceLabel } from '../workspace/cwd'
+import { tildePath, windowTitle, workspaceLabel } from '../workspace/cwd'
 import { focusedPane, type Pane, type Workspace } from '../workspace/store'
 
 const {
@@ -11,6 +11,7 @@ const {
   state,
   urgent,
   folded,
+  collapsed,
   home = undefined
 } = defineProps<{
   workspaces: readonly DeepReadonly<Workspace>[]
@@ -18,6 +19,7 @@ const {
   state: (session?: string) => ClaudeState | undefined
   urgent: ReadonlyMap<number, ClaudeState>
   folded: ReadonlySet<number>
+  collapsed: boolean
   home?: string
 }>()
 
@@ -27,77 +29,119 @@ const emit = defineEmits<{
   fold: [workspace: number]
 }>()
 
+/** `pane` 이 없는 줄은 접은 workspace 의 칸 줄을 모은 요약이고, 누르면 편다. */
+type Row = {
+  key: number | 'summary'
+  pane?: number
+  state?: ClaudeState
+  focused: boolean
+  text: string
+  aria: string
+}
+
+function paneRow(p: DeepReadonly<Pane>, s: ClaudeState | undefined, focused: boolean): Row {
+  const text = p.title || (s ? 'Claude' : 'Shell')
+  return {
+    key: p.key,
+    pane: p.key,
+    state: s,
+    focused,
+    text,
+    aria: s ? `${STATE_LABELS[s]}: ${text}` : text
+  }
+}
+
+function summaryRow(w: DeepReadonly<Workspace>): Row {
+  const claude = w.panes.filter((p) => state(p.sessionId)).length
+  const counts: [number, string][] = [
+    [claude, 'Claude'],
+    [w.panes.length - claude, 'Shell']
+  ]
+  const text = counts
+    .filter(([n]) => n)
+    .map(([n, what]) => `${what} ${n}`)
+    .join(' · ')
+  return { key: 'summary', state: urgent.get(w.key), focused: false, text, aria: `Expand: ${text}` }
+}
+
 const groups = computed(() =>
   workspaces.map((w) => {
     const selected = w.key === selectedKey
     const current = focusedPane(w)
-    const claude: { p: DeepReadonly<Pane>; state: ClaudeState; focused: boolean }[] = []
-    for (const p of w.panes) {
-      const s = state(p.sessionId)
-      if (s) claude.push({ p, state: s, focused: selected && p === current })
-    }
+    const label = workspaceLabel(current)
+    const title = windowTitle(label)
+    const f = folded.has(w.key)
     return {
       w,
       selected,
-      label: workspaceLabel(current),
-      path: selected && current.cwd ? tildePath(current.cwd, home) : undefined,
-      shells: w.panes.length - claude.length,
-      folded: folded.has(w.key),
-      summary: folded.has(w.key) ? urgent.get(w.key) : undefined,
-      claude
+      label,
+      tip: current.cwd ? `${title}\n${tildePath(current.cwd, home)}` : title,
+      folded: f,
+      rows: f
+        ? [summaryRow(w)]
+        : w.panes.map((p) => paneRow(p, state(p.sessionId), selected && p === current))
     }
   })
 )
+
+function press(workspace: number, row: Row): void {
+  if (row.pane === undefined) emit('fold', workspace)
+  else emit('focus', workspace, row.pane)
+}
 </script>
 
 <template>
-  <nav class="sidebar">
+  <nav class="sidebar" :class="{ collapsed }">
     <div class="titlebar" />
     <div class="list">
       <div
-        v-for="{ w, selected, label, path, shells, folded: f, summary, claude } in groups"
+        v-for="{ w, selected, label, tip, folded: f, rows } in groups"
         :key="w.key"
         class="group"
         :class="{ selected }"
       >
-        <button
-          v-if="claude.length"
-          class="fold"
-          :aria-label="f ? 'Expand' : 'Collapse'"
-          :aria-expanded="!f"
-          @mousedown.prevent
-          @click="emit('fold', w.key)"
-        >
-          {{ f ? ICONS.collapsed : ICONS.expanded }}
-        </button>
-        <button class="workspace" @mousedown.prevent @click="emit('select', w.key)">
-          <span class="line">
+        <div class="head">
+          <button
+            class="workspace"
+            :title="tip"
+            :aria-label="tip"
+            @mousedown.prevent
+            @click="emit('select', w.key)"
+          >
             <span class="name">{{ label.name }}</span>
             <span v-if="label.branch" class="branch"
               >{{ ICONS.branch }}<span class="branch-name">{{ label.branch }}</span></span
             >
-            <span v-if="summary" class="summary status-icon" :class="summary">{{
-              ICONS[summary]
-            }}</span>
-            <span v-if="shells" class="shells" :title="`${shells} shell${shells > 1 ? 's' : ''}`"
-              ><span>{{ ICONS.terminal }}</span
-              >{{ shells }}</span
-            >
-          </span>
-          <span v-if="path" class="path">{{ path }}</span>
-        </button>
+          </button>
+          <button
+            class="fold"
+            :aria-label="f ? 'Expand' : 'Collapse'"
+            :aria-expanded="!f"
+            @mousedown.prevent
+            @click="emit('fold', w.key)"
+          >
+            {{ f ? ICONS.collapsed : ICONS.expanded }}
+          </button>
+        </div>
         <button
-          v-for="{ p, state: s, focused } in f ? [] : claude"
-          :key="p.key"
-          class="pane-row"
-          :class="[s, { focused }]"
-          :aria-label="`${STATE_LABELS[s]}: ${p.title || 'Claude'}`"
+          v-for="r in rows"
+          :key="r.key"
+          class="row"
+          :class="[
+            r.pane === undefined ? 'summary' : 'pane-row',
+            r.state ?? 'shell',
+            { focused: r.focused }
+          ]"
+          :title="r.aria"
+          :aria-label="r.aria"
           @mousedown.prevent
-          @click="emit('focus', w.key, p.key)"
+          @click="press(w.key, r)"
         >
-          <span class="state status-icon" :title="STATE_LABELS[s]">{{ ICONS[s] }}</span>
-          <span class="title">{{ p.title || 'Claude' }}</span>
-          <span class="app">{{ ICONS.claude }}</span>
+          <span class="state status-icon" :title="r.state && STATE_LABELS[r.state]">{{
+            r.state ? ICONS[r.state] : ICONS.terminal
+          }}</span>
+          <span class="title fade">{{ r.text }}</span>
+          <span v-if="r.state && r.pane !== undefined" class="app fade">{{ ICONS.claude }}</span>
         </button>
       </div>
     </div>
@@ -107,7 +151,8 @@ const groups = computed(() =>
 <style scoped>
 .sidebar {
   -webkit-app-region: drag;
-  flex: none;
+  flex: 1;
+  min-width: 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -129,32 +174,25 @@ const groups = computed(() =>
 .list {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px 8px 8px;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
 .group {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  padding: 3px 0;
-  border-radius: 8px;
+  padding: 4px 0;
 }
 
-.group.selected {
-  background: var(--raised);
+.group + .group {
+  border-top: 1px solid var(--line);
 }
 
 button {
   -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
-  height: var(--row);
+  height: 26px;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
   background: none;
   color: var(--muted);
   font: inherit;
@@ -163,81 +201,40 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+.head:hover,
+.row:hover {
   background: var(--hover);
 }
 
-.fold {
-  position: absolute;
-  top: 3px;
-  left: 6px;
-  z-index: 1;
-  justify-content: center;
-  width: 20px;
-  padding: 0;
-  color: var(--faint);
-  font-size: 11px;
+.head {
+  display: flex;
 }
 
 .workspace {
-  flex-direction: column;
-  align-items: stretch;
-  height: auto;
-  padding: 0 10px 0 28px;
-}
-
-.line {
-  display: flex;
-  align-items: center;
+  flex: 1;
+  min-width: 0;
   gap: 6px;
-  height: var(--row);
+  padding: 0 4px 0 12px;
 }
 
 .name {
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 600;
+  color: var(--faint);
 }
 
 .selected .name {
   color: var(--fg);
 }
 
-.branch,
-.shells,
-.path {
-  font-size: 11px;
-  color: var(--faint);
-}
-
-.branch,
-.shells {
+.branch {
   display: flex;
   align-items: center;
   gap: 3px;
-}
-
-.branch {
   min-width: 0;
-}
-
-.shells {
-  flex: none;
-  gap: 4px;
-}
-
-.summary,
-.shells {
-  margin-left: auto;
-}
-
-.summary + .shells {
-  margin-left: 0;
-}
-
-.summary {
-  flex: none;
-  color: var(--claude);
+  font-size: 11px;
+  color: var(--faint);
 }
 
 .branch-name {
@@ -245,42 +242,39 @@ button:hover {
   text-overflow: ellipsis;
 }
 
-.path {
-  height: var(--row);
-  line-height: var(--row);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.pane-row {
-  gap: 8px;
-  padding: 0 10px 0 26px;
-  font-size: 12px;
-}
-
-.pane-row.waiting {
-  background: color-mix(in srgb, var(--waiting) 16%, transparent);
-}
-
-.pane-row.idle {
+.fold {
+  flex: none;
+  justify-content: center;
+  width: 24px;
   color: var(--faint);
+  font-size: 11px;
+  opacity: 0;
 }
 
-.pane-row.focused {
-  background: var(--selected);
-  color: var(--fg);
+.head:hover .fold,
+.fold:focus-visible {
+  opacity: 1;
+}
+
+/* 상태 아이콘(14px)의 가운데를 접은 사이드바(--rail)의 가운데에 맞춰, 접고 펴도 아이콘이 제자리에 남는다. */
+.row {
+  width: 100%;
+  gap: 8px;
+  padding: 0 10px 0 calc(var(--rail) / 2 - 7px);
+  box-sizing: border-box;
+  font-size: 12px;
 }
 
 .state {
   flex: none;
   width: 14px;
   text-align: center;
-  color: var(--claude);
+  color: var(--claude, var(--faint));
 }
 
 .title {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -288,5 +282,49 @@ button:hover {
 .app {
   flex: none;
   color: var(--faint);
+}
+
+.pane-row.idle .title,
+.summary .title {
+  color: var(--faint);
+}
+
+.row.waiting {
+  background: color-mix(in srgb, var(--waiting) 14%, transparent);
+}
+
+.pane-row.waiting .title {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.pane-row.focused {
+  background: var(--selected);
+}
+
+.pane-row.focused .title {
+  color: var(--fg);
+}
+
+.fade {
+  transition: opacity 100ms linear;
+}
+
+.collapsed .fade {
+  opacity: 0;
+}
+
+.collapsed .workspace {
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.collapsed .name {
+  font-size: 10.5px;
+}
+
+.collapsed .branch,
+.collapsed .fold {
+  display: none;
 }
 </style>
