@@ -16,6 +16,7 @@ import { gitHead } from './git'
 import { createInbox } from './inbox'
 import { installCommandMenu } from './menu'
 import { createMonitor } from './monitor'
+import { isDevReload } from './navigation'
 import {
   appSocketPath,
   killSessions,
@@ -100,10 +101,9 @@ function createWindow(): void {
     }
   })
   win.webContents.on('will-navigate', (event, url) => {
+    if (isDevReload(url, process.env.ELECTRON_RENDERER_URL)) return
     event.preventDefault()
-    // dev 에서 Vite 가 페이지를 새로 고치려 할 때도 여기로 온다.
-    if (!process.env.ELECTRON_RENDERER_URL || !url.startsWith(process.env.ELECTRON_RENDERER_URL))
-      openExternal(url)
+    openExternal(url)
   })
   win.webContents.setWindowOpenHandler(({ url }) => {
     openExternal(url)
