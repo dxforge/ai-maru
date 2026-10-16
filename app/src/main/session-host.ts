@@ -38,7 +38,11 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
   try {
     const { id, cwd } = await spawning
     const sock = await connect(socketPath(req.dir, id))
-    sock.on('close', () => opened.delete(req.key))
+    // renderer 가 떠나 포트가 닫히면 `bridge` 가 소켓을 닫지만 세션은 살아 있으므로, main 이 끌 수 있게
+    // key 를 남긴다(docs/architecture.md 의 "문서가 바뀌면 이전 문서의 세션을 끈다").
+    let detached = false
+    port.on('close', () => (detached = true))
+    sock.on('close', () => detached || opened.delete(req.key))
     port.postMessage(JSON.stringify({ type: 'spawned', id, cwd }))
     bridge(sock, port)
   } catch (err) {
@@ -56,7 +60,9 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
 }
 
 function kill(req: KillRequest): void {
-  void opened.get(req.key)?.then((id) => (id === null ? undefined : killSession(req.dir, id)))
+  const id = opened.get(req.key)
+  opened.delete(req.key)
+  void id?.then((id) => (id === null ? undefined : killSession(req.dir, id)))
 }
 
 process.parentPort.on('message', (e) => {

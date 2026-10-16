@@ -1,15 +1,18 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync
 } from 'node:fs'
-import { createConnection, type Socket } from 'node:net'
+import { createServer } from 'node:http'
+import { createConnection, type AddressInfo, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { extname, join, normalize } from 'node:path'
 import {
   test as base,
   expect,
@@ -238,7 +241,11 @@ export function workspaceGroups(page: Page) {
 }
 
 export function paneRows(page: Page) {
-  return page.locator('.sidebar .pane-row')
+  return page.locator('.sidebar .pane-row:not(.shell)')
+}
+
+export function shellRows(page: Page) {
+  return page.locator('.sidebar .pane-row.shell')
 }
 
 // Playwright 의 키 입력은 macOS 메뉴를 거치지 않아 메뉴 항목을 직접 누른다.
@@ -281,4 +288,46 @@ export async function resizeBy(app: ElectronApplication, dw: number, dh: number)
     },
     [dw, dh]
   )
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.ttf': 'font/ttf',
+  '.woff2': 'font/woff2'
+}
+
+/** 이 주소를 `ELECTRON_RENDERER_URL` 로 주면 앱이 dev 서버에서 뜬 것처럼 동작한다. */
+export async function serveRenderer(defer: (fn: () => void) => void): Promise<string> {
+  const root = join(__dirname, '../out/renderer')
+  const server = createServer((req, res) => {
+    const path = normalize(new URL(req.url!, 'http://x').pathname)
+    const file = join(root, path === '/' ? 'index.html' : path)
+    if (!file.startsWith(root) || !existsSync(file)) return void res.writeHead(404).end()
+    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' })
+    res.end(readFileSync(file))
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  defer(() => server.close())
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
+}
+
+/**
+ * Playwright 의 입력은 OS 의 창 끌기를 거치지 않는다. 그래서 테스트는 main 이 hit test 에 쓰는 drag
+ * 영역을 Electron 의 디버그 로그에서 읽는다. 이 env 로 띄운 앱에 `dragRegion` 을 쓴다.
+ */
+export const DRAG_LOG_ENV = {
+  ELECTRON_ENABLE_LOGGING: '1',
+  ELECTRON_DEBUG_DRAGGABLE_REGIONS: '1'
+}
+
+/** 이 함수를 부른 뒤로 main 이 받은 마지막 drag 영역의 경계 상자(`x,y wxh`, 비었으면 `0,0 0x0`)를 준다. */
+export function dragRegion(app: ElectronApplication): () => string | undefined {
+  let last: string | undefined
+  app.process().stderr!.on('data', (chunk: Buffer) => {
+    for (const m of chunk.toString().matchAll(/\[draggable-regions\].*update #.*bounds (\S+ \S+)/g))
+      last = m[1]
+  })
+  return () => last
 }

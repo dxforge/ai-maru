@@ -9,6 +9,7 @@ import {
   paneHeader,
   paneRows,
   pressNew,
+  shellRows,
   split,
   test,
   typesInto,
@@ -69,7 +70,7 @@ test('칸 줄은 그 터미널의 workspace 아래에만, 칸 머리는 보이�
   await page.waitForSelector('.terminal-view.active .xterm-screen')
   await page.keyboard.type(hook('UserPromptSubmit'))
   await expect(groups(page).nth(1).locator('.pane-row')).toHaveClass(/working/)
-  await expect(groups(page).nth(0).locator('.pane-row')).toHaveCount(0)
+  await expect(groups(page).nth(0).locator('.pane-row')).toHaveClass(/shell/)
   await expect(activeHeader(page)).toHaveClass(/working/)
   await workspaceItems(page).nth(0).click()
   await expect(activeHeader(page)).not.toHaveClass(/working/)
@@ -77,26 +78,37 @@ test('칸 줄은 그 터미널의 workspace 아래에만, 칸 머리는 보이�
   await expect(activeHeader(page)).toHaveClass(/working/)
 })
 
-test('칸 줄은 포커스와 상관없이 칸마다 남고, 포커스된 칸의 줄만 밝다. 셸 칸은 수로 센다', async ({
-  launch
-}) => {
+test('셸 칸과 Claude 칸 모두 칸마다 줄이 있고, 포커스된 칸의 줄만 밝다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   const [left, right] = [0, 1].map((i) => paneHeader(page, i))
-  const shells = page.locator('.sidebar .shells')
-  await expect(shells).toHaveAttribute('title', '2 shells')
+  await expect(shellRows(page)).toHaveCount(2)
+  await expect(shellRows(page)).toHaveClass([/^(?!.*focused)/, /focused/])
+  await expect(shellRows(page).first()).toHaveAttribute('aria-label', 'Shell')
   await page.keyboard.type(hook('UserPromptSubmit'))
   await expect(right).toHaveClass(/working/)
   await expect(left).not.toHaveClass(/working/)
   await expect(paneRows(page)).toHaveClass(/working/)
   await expect(paneRows(page)).toHaveClass(/focused/)
-  await expect(shells).toHaveAttribute('title', '1 shell')
+  await expect(shellRows(page)).toHaveCount(1)
 
   await clickMenu(app, 'focus-pane-left')
   await expect(paneRows(page)).toHaveClass(/working/)
   await expect(paneRows(page)).not.toHaveClass(/focused/)
+  await expect(shellRows(page)).toHaveClass(/focused/)
   await clickMenu(app, 'focus-pane-right')
   await expect(paneRows(page)).toHaveClass(/focused/)
+  await expect(shellRows(page)).not.toHaveClass(/focused/)
+})
+
+test('셸 칸의 줄을 눌러도 그 칸에 키 입력이 간다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+
+  await shellRows(page).nth(0).click()
+
+  await expect(shellRows(page).nth(0)).toHaveClass(/focused/)
+  await typesInto(page, 0, 'shell-row')
 })
 
 test('칸 줄을 누르면 그 workspace 를 고르고 그 칸에 키 입력이 간다', async ({ launch }) => {

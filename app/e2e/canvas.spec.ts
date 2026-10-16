@@ -1,6 +1,6 @@
 import type { ElectronApplication, Page } from '@playwright/test'
 import type { CanvasMarkdown } from '../src/shared/canvas'
-import { attachFromOutside, expect, rows, shellSize, sockets, test } from './app'
+import { attachFromOutside, expect, rows, serveRenderer, shellSize, sockets, test } from './app'
 
 type Item = CanvasMarkdown | { id: string; kind: 'image'; name: string; mime: string; svg: string }
 
@@ -141,6 +141,39 @@ test('문서 안의 링크를 누르면 창은 그대로이고 그 주소를 바
   expect(
     await page.evaluate(() => [location.href, document.querySelectorAll('.xterm-screen').length])
   ).toEqual([url, 1])
+})
+
+test('dev 서버에서 뜬 창에서도 상대 링크는 창을 옮기지 않고 바깥에서 열고, 새로 고침만 창 안에서 한다', async ({
+  launch,
+  defer
+}) => {
+  const dev = await serveRenderer(defer)
+  const { app, page } = await launch({ ELECTRON_RENDERER_URL: dev })
+  await app.evaluate(({ shell }) => {
+    const opened: string[] = []
+    ;(globalThis as { opened?: string[] }).opened = opened
+    shell.openExternal = async (url: string) => void opened.push(url)
+  })
+  await page.evaluate(() => ((window as { marker?: number }).marker = 1))
+  await put(app, { id: 'a', kind: 'markdown', text: '[notes](notes.md)' })
+  await expect(markdown(page).locator('a')).toHaveCount(1)
+
+  await page.evaluate(() => document.querySelector<HTMLAnchorElement>('.markdown a')!.click())
+  await expect
+    .poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened))
+    .toEqual([`${dev}notes.md`])
+  expect(
+    await page.evaluate(() => [location.href, (window as { marker?: number }).marker])
+  ).toEqual([dev, 1])
+
+  // Vite 는 location.reload() 로 새로 고친다.
+  const reloaded = page.waitForEvent('load')
+  await page.evaluate(() => setTimeout(() => location.reload()))
+  await reloaded
+  await page.waitForSelector('.xterm-screen')
+  expect(
+    await page.evaluate(() => [location.href, (window as { marker?: number }).marker ?? null])
+  ).toEqual([dev, null])
 })
 
 test('문서 안의 스크립트는 돌지 않고, 이미지는 대체 텍스트만 남는다', async ({ launch }) => {

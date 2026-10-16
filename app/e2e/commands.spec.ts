@@ -2,6 +2,8 @@ import type { Page } from '@playwright/test'
 import {
   activeTerminal,
   clickMenu,
+  DRAG_LOG_ENV,
+  dragRegion,
   expect,
   openPalette,
   rows,
@@ -363,7 +365,7 @@ test('Next·Previous Workspace 는 사이드바의 다음·이전 workspace 를 
   }
 })
 
-test('View 메뉴의 Toggle Sidebar 는 사이드바를 숨기고 다시 보이며, 터미널이 그 폭을 쓴다', async ({
+test('View 메뉴의 Toggle Sidebar 는 사이드바를 접고 다시 펴며, 터미널이 그 폭을 쓴다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -372,13 +374,13 @@ test('View 메뉴의 Toggle Sidebar 는 사이드바를 숨기고 다시 보이�
 
   await clickMenu(app, 'toggle-sidebar')
 
-  await expect(sidebar).toBeHidden()
+  await expect(sidebar).toHaveClass(/collapsed/)
   await expect.poll(async () => (await shellSize(page)).cols).toBeGreaterThan(before.cols)
   await typesIntoTerminal(page, 'hidden')
 
   await clickMenu(app, 'toggle-sidebar')
 
-  await expect(sidebar).toBeVisible()
+  await expect(sidebar).not.toHaveClass(/collapsed/)
   await expect.poll(async () => (await shellSize(page)).cols).toBe(before.cols)
   await typesIntoTerminal(page, 'shown')
 })
@@ -486,6 +488,21 @@ test('Esc 나 바깥을 누르면 실행하지 않고 닫히며 키는 터미널
   await expect(palette(page)).toHaveCount(0)
   await expect(workspaceItems(page)).toHaveCount(1)
   await typesIntoTerminal(page, 'outside')
+})
+
+test('팔레트가 열린 동안에는 사이드바·Canvas 헤더 위를 눌러도 창을 끌지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch(DRAG_LOG_ENV)
+  const { app, page } = launched
+  const region = dragRegion(app)
+  await clickMenu(app, 'toggle-canvas')
+  await expect.poll(region).toBe('0,0 1000x700')
+
+  await openPalette(launched)
+  await expect.poll(region).toBe('0,0 0x0')
+  await page.keyboard.press('Escape')
+  await expect.poll(region).toBe('0,0 1000x700')
 })
 
 test('팔레트가 열린 채 메뉴로 명령을 부르면 팔레트가 닫히고, 팔레트를 다시 부르면 입력이 그대로다', async ({
