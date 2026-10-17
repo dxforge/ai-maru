@@ -38,6 +38,22 @@ describe('workspaces', () => {
     expect(a).not.toBe(b)
   })
 
+  it('workspace 를 열 때마다 id 를 새로 정하고, 나눈 칸은 workspace 의 id 를 바꾸지 않는다', () => {
+    let n = 0
+    const ws = createWorkspaces(undefined, undefined, () => `w-${++n}`)
+    ws.open()
+    ws.split('right')
+    ws.open()
+    expect(ws.list.value.map((w) => w.id)).toEqual(['w-1', 'w-2'])
+  })
+
+  it('기본 workspace id 는 w- 뒤에 16진 8자리이고 workspace 마다 다르다', () => {
+    const [a, b] = opened(2).list.value.map((w) => w.id)
+    expect(a).toMatch(/^w-[0-9a-f]{8}$/)
+    expect(b).toMatch(/^w-[0-9a-f]{8}$/)
+    expect(a).not.toBe(b)
+  })
+
   it('연 workspace 는 칸 하나로 목록 끝에 붙고 선택된다', () => {
     const ws = opened(2)
     ws.open()

@@ -1,3 +1,5 @@
+import type { SessionOpen } from '../../../shared/session'
+
 /** 문자열은 JSON 메시지, 바이트는 셸 입출력이다. */
 export type SessionMessage = string | Uint8Array
 
@@ -10,7 +12,7 @@ export interface SessionConnection {
 }
 
 /** 세션을 띄우는 데 실패하면 연결로 `{"type":"error"}` 가 오고 닫힌다. */
-export function openSession(id: string, cwd?: string, command?: string[]): SessionConnection {
+export function openSession(open: SessionOpen): SessionConnection {
   const key = crypto.randomUUID()
   let port: MessagePort | undefined
   const pending: SessionMessage[] = []
@@ -38,7 +40,7 @@ export function openSession(id: string, cwd?: string, command?: string[]): Sessi
     for (const msg of pending.splice(0)) port.postMessage(msg)
   }
   window.addEventListener('message', onPort)
-  window.maru.openSession(key, id, cwd, command)
+  window.maru.openSession(key, open)
   return {
     send: (msg) => {
       if (port) port.postMessage(msg)

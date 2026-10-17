@@ -24,6 +24,7 @@ import { encodeFrame, TAG_TEXT } from '../src/main/frame'
 import { appSocketPath, killSessions } from '../src/main/session'
 import type { CanvasMarkdown } from '../src/shared/canvas'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
+import type { SessionOpen } from '../src/shared/session'
 
 export { expect }
 
@@ -147,6 +148,23 @@ export async function delaySessionPort(app: ElectronApplication, ms: number): Pr
       open(late, ...args)
     })
   }, ms)
+}
+
+export type SessionEvents = { opens: (SessionOpen & { key: string })[]; kills: string[] }
+
+export async function recordSessions(
+  app: ElectronApplication
+): Promise<() => Promise<SessionEvents>> {
+  await app.evaluate(({ ipcMain }) => {
+    const events: SessionEvents = { opens: [], kills: [] }
+    Object.assign(globalThis, { sessionEvents: events })
+    ipcMain.prependListener('session:open', (_event, key, open) =>
+      events.opens.push({ key, ...open })
+    )
+    ipcMain.prependListener('session:kill', (_event, key) => events.kills.push(key))
+  })
+  return () =>
+    app.evaluate(() => (globalThis as unknown as { sessionEvents: SessionEvents }).sessionEvents)
 }
 
 export function sessionDir(dataDir: string): string {

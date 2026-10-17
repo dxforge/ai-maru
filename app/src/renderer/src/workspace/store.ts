@@ -1,6 +1,6 @@
 import { readonly, ref } from 'vue'
 import type { GitHead } from '../../../shared/git'
-import { newSessionId } from '../../../shared/session'
+import { newSessionId, randomId } from '../../../shared/session'
 import {
   neighbor,
   removePane,
@@ -25,7 +25,7 @@ export type Pane = {
 }
 
 /** `panes` 는 연 순서다. 배치 순서로 그리면 나눌 때마다 터미널의 DOM 이 옮겨진다. */
-export type Workspace = { key: number; panes: Pane[]; layout: Layout; focused: number }
+export type Workspace = { key: number; id: string; panes: Pane[]; layout: Layout; focused: number }
 
 export function focusedPane(w: {
   readonly panes: readonly Pane[]
@@ -36,7 +36,8 @@ export function focusedPane(w: {
 
 export function createWorkspaces(
   readGit: (cwd: string) => Promise<GitHead | null> = async () => null,
-  sessionId: () => string = newSessionId
+  sessionId: () => string = newSessionId,
+  workspaceId: () => string = () => randomId('w')
 ) {
   const list = ref<Workspace[]>([])
   const selectedKey = ref<number | null>(null)
@@ -55,6 +56,7 @@ export function createWorkspaces(
     const key = nextKey++
     list.value.push({
       key,
+      id: workspaceId(),
       panes: [{ key: pane, sessionId: sessionId(), startDir }],
       layout: { pane },
       focused: pane

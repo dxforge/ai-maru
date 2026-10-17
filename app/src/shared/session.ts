@@ -1,3 +1,5 @@
+export type SessionOpen = { id: string; workspace: string; cwd?: string; command?: string[] }
+
 const SESSION_ID = /^s-[0-9a-f]{8}$/
 
 /** 파일 경로를 만들기 전에 본다. */
@@ -10,6 +12,10 @@ export function isSessionId(v: unknown): v is string {
  * 뒤에 renderer 가 id 를 받으면 그 사이에 온 요청이 pane 을 찾지 못하기 때문이다.
  */
 export function newSessionId(): string {
+  return randomId('s')
+}
+
+export function randomId(prefix: string): string {
   const bytes = crypto.getRandomValues(new Uint8Array(4))
-  return `s-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`
+  return `${prefix}-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`
 }

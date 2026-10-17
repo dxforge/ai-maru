@@ -4,6 +4,7 @@ import type { ClaudeState } from '../shared/claude'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
 import type { PaneNewRequest, PaneReply } from '../shared/pane'
+import type { SessionOpen } from '../shared/session'
 
 // MessagePort 는 contextBridge 를 건너지 못해서 window.postMessage 로 넘긴다.
 ipcRenderer.on('session:port', (event, key: string) => {
@@ -15,8 +16,8 @@ ipcRenderer.on('session:lost', () => {
 })
 
 const api = {
-  openSession: (key: string, id: string, cwd?: string, command?: string[]): void =>
-    ipcRenderer.send('session:open', key, id, cwd, command),
+  openSession: (key: string, open: SessionOpen): void =>
+    ipcRenderer.send('session:open', key, open),
   killSession: (key: string): void => ipcRenderer.send('session:kill', key),
   onCommand: (cb: (id: CommandId) => void): void => {
     ipcRenderer.on('command:run', (_event, id: CommandId) => cb(id))
