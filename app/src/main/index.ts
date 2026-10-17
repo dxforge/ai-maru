@@ -27,7 +27,9 @@ import {
   type CliAccess
 } from './session'
 import type { KillRequest, OpenRequest } from './session-host'
+import { createSessionWorkspaces } from './session-workspaces'
 import type { PaneReply } from '../shared/pane'
+import type { SessionOpen } from '../shared/session'
 import { GHOSTTY, isLight } from '../shared/theme'
 
 function sessionDir(): string {
@@ -78,6 +80,8 @@ const inbox = createInbox({ isLive: (id) => sessionLive(sessionDir(), id), emit:
 function mainWindow(): BrowserWindow | undefined {
   return BrowserWindow.getAllWindows()[0]
 }
+
+const sessionWorkspaces = createSessionWorkspaces()
 
 const panes = createPanes((channel, id, arg) => {
   const win = mainWindow()
@@ -209,6 +213,7 @@ function start(): void {
   const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
   // open 과 같은 `ready.then` 으로 보내야 host 가 그 open 을 먼저 받는다.
   const sendKill = (key: string): void => {
+    sessionWorkspaces.close(key)
     const req: KillRequest = { type: 'kill', key, dir: sessionDir() }
     void ready.then(() => sessionHost().postMessage(req))
   }
@@ -229,9 +234,10 @@ function start(): void {
     })
     contents.once('destroyed', () => opened.delete(contents.id))
   })
-  ipcMain.on('session:open', (event, key: string, id: string, cwd?: string, command?: string[]) => {
+  ipcMain.on('session:open', (event, key: string, { id, workspace, cwd, command }: SessionOpen) => {
     const keys = opened.get(event.sender.id) ?? new Set<string>()
     opened.set(event.sender.id, keys.add(key))
+    sessionWorkspaces.open(key, id, workspace)
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',

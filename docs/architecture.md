@@ -12,6 +12,10 @@ renderer 는 이 순서에 기댄다. host 가 죽으면 main 이 모든 창에 
 
 이전 문서가 떠나 포트가 닫히면 `bridge` 가 세션 소켓을 닫지만 세션 프로세스는 살아 있다. session host 는 이때 key 를 지우지 않고 남겨, 뒤에 오는 kill 이 세션 id 를 찾게 한다(`app/src/main/session-host.ts`). host 가 소켓이 닫힐 때 key 를 지우도록 바뀌면 이전 세션이 남는다.
 
+## main 이 아는 세션의 workspace
+
+workspace 목록은 renderer 만 가진다. renderer 는 세션을 열 때 `session:open` 에 그 pane 의 workspace id 를 싣는다. main 은 그 key 의 kill 이 올 때까지 세션의 workspace 를 기억한다(`app/src/main/session-workspaces.ts`). 그래서 renderer 는 pane 을 지울 때마다, 세션이 스스로 끝났어도 kill 을 보낸다(`App.vue` 의 `removePane`). kill 을 보내지 않고 pane 을 지우는 경로가 생기면 main 은 끝난 세션의 workspace 를 계속 기억한다.
+
 ## 칸 경계와 셀 격자
 
 나란히 놓인 칸끼리 터미널 행이, 위아래로 놓인 칸끼리 열이 이어지도록 칸 경계를 터미널 셀 크기의 배수에 둔다. 모든 터미널이 같은 글꼴을 쓰므로 `App.vue` 는 마지막으로 잰 값 하나를 `--row`·`--cell`·`--pad` 로 화면 전체에 둔다.

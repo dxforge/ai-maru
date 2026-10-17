@@ -76,13 +76,8 @@ function stepWorkspace(by: 1 | -1): void {
 function closePane(): void {
   const w = workspaces.selected()
   if (!w) return
-  killPane(w.focused)
+  removePane(w.focused)
   void focusSelected()
-}
-
-function killPane(pane: number): void {
-  terminals.get(pane)?.kill()
-  removePane(pane)
 }
 
 // `maru pane new` 로 나눠 세션이 뜨기를 기다리는 pane → 답할 요청 id.
@@ -99,6 +94,9 @@ function removePane(
   pane: number,
   message = 'the pane was closed before its session started'
 ): void {
+  // 세션이 스스로 끝나 닫는 pane 도 kill 을 보낸다 — docs/architecture.md 의
+  // "main 이 아는 세션의 workspace". 이미 끝난 세션의 kill 은 host 가 무시한다(`kill`, `main/session-host.ts`).
+  terminals.get(pane)?.kill()
   answerPaneRequest(pane, { error: 'open_failed', message })
   workspaces.closePane(pane)
 }
@@ -124,7 +122,7 @@ window.maru.onPaneClose((id, session) => {
   if (!pane) return window.maru.paneReply(id, noPane(session))
   // 자기 pane 을 닫는 CLI 는 세션과 함께 끝나므로 끄기 전에 답한다.
   window.maru.paneReply(id, null)
-  killPane(pane.key)
+  removePane(pane.key)
 })
 
 const sidebarOpen = ref(true)
@@ -439,6 +437,7 @@ window.maru.onCommand(runCommand)
               <TerminalView
                 :ref="(t) => setTerminal(p.key, t)"
                 :session-id="p.sessionId"
+                :workspace-id="w.id"
                 :start-dir="p.startDir"
                 :command="p.command"
                 :active="active"

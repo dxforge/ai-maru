@@ -14,11 +14,13 @@ import { GHOSTTY, xtermTheme } from '../../../shared/theme'
 
 const {
   sessionId,
+  workspaceId,
   startDir = undefined,
   command = undefined,
   active
 } = defineProps<{
   sessionId: string
+  workspaceId: string
   startDir?: string
   command?: readonly string[]
   active: boolean
@@ -119,7 +121,12 @@ onMounted(() => {
   observer.observe(host.value!)
   if (active) term.focus()
   // reactive 배열의 proxy 는 IPC 로 보낼 수 없다.
-  conn = openSession(sessionId, startDir, command && [...command])
+  conn = openSession({
+    id: sessionId,
+    workspace: workspaceId,
+    cwd: startDir,
+    command: command && [...command]
+  })
   session = attach(term, conn, {
     onExit: () => emit('exit'),
     onOpenFailed: (message) => emit('failed', message),
