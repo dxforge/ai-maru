@@ -85,7 +85,7 @@ function killPane(pane: number): void {
   removePane(pane)
 }
 
-// `maru pane new` 로 나눠 세션이 뜨기를 기다리는 칸 → 답할 요청 id.
+// `maru pane new` 로 나눠 세션이 뜨기를 기다리는 pane → 답할 요청 id.
 const paneRequests = new Map<number, number>()
 
 function answerPaneRequest(pane: number, reply: PaneReply): void {
@@ -103,7 +103,7 @@ function removePane(
   workspaces.closePane(pane)
 }
 
-// ⌘D 로 나눈 칸은 오류를 보인 채 남지만, `maru pane new` 의 칸은 띄운 쪽이 이유를 받으므로 닫는다.
+// ⌘D 로 나눈 pane 은 오류를 보인 채 남지만, `maru pane new` 의 pane 은 띄운 쪽이 이유를 받으므로 닫는다.
 function paneFailed(pane: number, message: string): void {
   if (paneRequests.has(pane)) removePane(pane, message)
 }

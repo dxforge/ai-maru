@@ -11,7 +11,7 @@ import {
 } from './layout'
 
 /**
- * `startDir` 는 셸을 띄울 때 청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령, `cwd` 는 세션이 알려
+ * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령, `cwd` 는 세션이 알려
  * 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목이다.
  */
 export type Pane = {
@@ -85,7 +85,6 @@ export function createWorkspaces(
     w.focused = splitFrom(from.key, direction, { startDir: from.cwd ?? from.startDir })
   }
 
-  /** 포커스와 선택은 그대로 둔다. */
   function splitFrom(
     from: number,
     direction: SplitDirection,

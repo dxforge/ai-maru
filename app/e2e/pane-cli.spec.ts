@@ -118,7 +118,7 @@ test('세션을 띄우지 못하면 나눈 칸을 닫고 maru pane new 가 이�
   launch,
   dataDir
 }) => {
-  // 명령을 받은 세션만 실패해, 처음 칸의 셸은 뜬다.
+  // 명령을 받은 세션만 실패하므로 처음 pane 의 셸은 뜬다.
   const bin = wrapSessionBin(
     dataDir,
     'failing-session',

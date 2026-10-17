@@ -209,7 +209,7 @@ export async function spawnSession(
     failure = e
   }
   // maru-session 은 소켓을 연 뒤에 셸이 끝나야 0 으로 끝난다. 바로 끝나는 명령은 앱이 소켓을 확인하기 전에
-  // 끝난다.
+  // 끝날 수 있다.
   const onExit = (code: number | null, signal: string | null): void => {
     if (code === 0) ended = true
     else

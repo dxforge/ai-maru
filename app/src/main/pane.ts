@@ -3,16 +3,13 @@ import type { PaneNewRequest, PaneReply } from '../shared/pane'
 import { isSessionId } from '../shared/session'
 import { InvalidParams, type Handlers } from './cli-server'
 
-// CLI 는 10초 기다리므로 이 오류가 그 안에 닿게 한다. 세션 띄우기는 5초(`SPAWN_TIMEOUT_MS`) 안에 끝나거나
-// 실패하므로 그보다는 길다.
+// `maru` 의 `TIMEOUT`(main.rs)이 10초이므로 이 오류가 그 안에 닿게 한다. 세션 띄우기는 5초(`SPAWN_TIMEOUT_MS`)
+// 안에 끝나거나 실패하므로 그보다는 길다.
 const REPLY_MS = 8_000
 
 export type PaneChannel = 'pane:new' | 'pane:close'
 
-/**
- * pane 은 renderer 가 들고 있어, 요청을 창에 넘기고 `reply` 로 받은 답을 돌려준다. `send` 는 보낼 창이
- * 없으면 false 다. 창이 새로 고쳐지는 등으로 답이 오지 않으면 `replyMs` 뒤에 기다리기를 그만둔다.
- */
+/** pane 은 renderer 가 들고 있다. `createPanes` 는 요청을 창에 넘기고 `reply` 로 받은 답을 돌려준다. */
 export function createPanes(
   send: (channel: PaneChannel, id: number, arg: unknown) => boolean,
   replyMs = REPLY_MS

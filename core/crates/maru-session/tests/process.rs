@@ -446,6 +446,17 @@ fn the_process_ends_when_the_shell_exits() {
 }
 
 #[test]
+fn a_command_that_fails_at_once_still_ends_the_process_with_zero() {
+    let tmp = tmpdir();
+    let dir = tmp.path().join("s");
+    let args = ["--", "/bin/sh", "-c", "exit 5"];
+    let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
+    let mut child = spawn_with(&dir, "sess-test", &args);
+    let status = child.wait().unwrap();
+    assert!(status.success(), "{status:?}: {}", stderr(&mut child));
+}
+
+#[test]
 fn the_process_ends_even_if_a_background_job_keeps_the_tty_open() {
     let mut p = start();
     let (mut c, _, _) = p.attach("primary", 80, 24);
@@ -551,7 +562,7 @@ fn a_command_finds_what_the_interactive_rc_defines() {
 #[test]
 fn a_command_runs_under_sh_when_the_shell_is_not_posix() {
     let tmp = tmpdir();
-    // `"$@"` 를 모르는 셸 대신 늘 실패하는 셸을 둔다.
+    // `"$@"` 를 모르는 진짜 fish 대신, 실행되면 늘 실패하는 가짜 `fish` 를 둔다.
     let fish = tmp.path().join("fish");
     std::fs::write(&fish, "#!/bin/sh\necho wrong-shell\nexit 1\n").unwrap();
     std::fs::set_permissions(&fish, std::fs::Permissions::from_mode(0o755)).unwrap();

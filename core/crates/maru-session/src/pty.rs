@@ -55,7 +55,7 @@ pub fn spawn(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "sh".into());
-    // 명령을 `"$@"` 로 넘기면 따옴표를 다시 escape 하지 않아도 되고, 셸 함수도 불린다.
+    // 명령을 `"$@"` 로 넘기면 따옴표를 다시 escape 하지 않아도 된다. 셸 함수도 불린다.
     let run = ["-c", "\"$@\""];
     let mut cmd = if command.is_empty() {
         let mut cmd = Command::new(shell);
@@ -68,7 +68,7 @@ pub fn spawn(
         cmd.arg0(format!("-{name}")).arg("-i").args(run).arg(&name);
         cmd
     } else {
-        // tcsh·fish 등은 `"$@"` 를 모른다. rc 는 못 읽어도 명령은 돌게 한다.
+        // tcsh·fish 등은 `"$@"` 를 모른다. rc 는 못 읽어도 명령은 실행한다.
         let mut cmd = Command::new("/bin/sh");
         cmd.args(run).arg("sh");
         cmd
