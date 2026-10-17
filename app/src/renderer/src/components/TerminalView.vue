@@ -12,11 +12,22 @@ import { osc7Path } from '../workspace/cwd'
 import type { Size } from '../workspace/grid'
 import { GHOSTTY, xtermTheme } from '../../../shared/theme'
 
-const { startDir = undefined, active } = defineProps<{ startDir?: string; active: boolean }>()
+const {
+  sessionId,
+  startDir = undefined,
+  command = undefined,
+  active
+} = defineProps<{
+  sessionId: string
+  startDir?: string
+  command?: readonly string[]
+  active: boolean
+}>()
 const emit = defineEmits<{
   exit: []
+  failed: [message: string]
   cwd: [cwd: string]
-  spawned: [id: string]
+  spawned: []
   title: [title: string]
   cell: [cell: Size]
 }>()
@@ -107,11 +118,13 @@ onMounted(() => {
   fit.fit()
   observer.observe(host.value!)
   if (active) term.focus()
-  conn = openSession(startDir)
+  // reactive 배열의 proxy 는 IPC 로 보낼 수 없다.
+  conn = openSession(sessionId, startDir, command && [...command])
   session = attach(term, conn, {
     onExit: () => emit('exit'),
-    onSpawned: (id, dir) => {
-      emit('spawned', id)
+    onOpenFailed: (message) => emit('failed', message),
+    onSpawned: (_id, dir) => {
+      emit('spawned')
       emit('cwd', dir)
     }
   })

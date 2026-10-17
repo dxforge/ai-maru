@@ -17,6 +17,7 @@ import { createInbox } from './inbox'
 import { installCommandMenu } from './menu'
 import { createMonitor } from './monitor'
 import { isDevReload } from './navigation'
+import { createPanes } from './pane'
 import {
   appSocketPath,
   killSessions,
@@ -26,6 +27,7 @@ import {
   type CliAccess
 } from './session'
 import type { KillRequest, OpenRequest } from './session-host'
+import type { PaneReply } from '../shared/pane'
 import { GHOSTTY, isLight } from '../shared/theme'
 
 function sessionDir(): string {
@@ -72,12 +74,25 @@ const monitor = createMonitor({
 
 const inbox = createInbox({ isLive: (id) => sessionLive(sessionDir(), id), emit: monitor.emit })
 
+// 창은 하나다.
+function mainWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getAllWindows()[0]
+}
+
+const panes = createPanes((channel, id, arg) => {
+  const win = mainWindow()
+  if (!win || win.isDestroyed()) return false
+  win.webContents.send(channel, id, arg)
+  return true
+})
+
 const cliHandlers: Handlers = {
   ping: (_params, session) => ({ session }),
-  'canvas.put': canvasPut(() => BrowserWindow.getAllWindows()[0]),
+  'canvas.put': canvasPut(mainWindow),
   ...claudeStatus.handlers,
   ...monitor.handlers,
-  ...inbox
+  ...inbox,
+  ...panes.handlers
 }
 
 const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
@@ -161,7 +176,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', () => {
     if (unobtrusive) return
-    const win = BrowserWindow.getAllWindows()[0]
+    const win = mainWindow()
     if (win?.isMinimized()) win.restore()
     win?.focus()
   })
@@ -182,6 +197,7 @@ function start(): void {
   })
   // 셸이 뜨자마자 `maru` 를 불러도 닿게.
   const ready = Promise.all([leftovers, cliServer])
+  ipcMain.on('pane:reply', (_event, id: number, reply: PaneReply) => panes.reply(id, reply))
   ipcMain.handle('claude:statuses', () => claudeStatus.snapshot())
   ipcMain.handle('git:head', (_event, cwd: unknown) =>
     typeof cwd === 'string' ? gitHead(cwd) : null
@@ -213,14 +229,16 @@ function start(): void {
     })
     contents.once('destroyed', () => opened.delete(contents.id))
   })
-  ipcMain.on('session:open', (event, key: string, cwd?: string) => {
+  ipcMain.on('session:open', (event, key: string, id: string, cwd?: string, command?: string[]) => {
     const keys = opened.get(event.sender.id) ?? new Set<string>()
     opened.set(event.sender.id, keys.add(key))
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
       key,
+      id,
       cwd,
+      command,
       dir: sessionDir(),
       bin: sessionBin(),
       setup
@@ -252,6 +270,6 @@ function start(): void {
     })
   })
 
-  installCommandMenu((id) => BrowserWindow.getAllWindows()[0]?.webContents.send('command:run', id))
+  installCommandMenu((id) => mainWindow()?.webContents.send('command:run', id))
   createWindow()
 }

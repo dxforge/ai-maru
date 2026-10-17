@@ -1,5 +1,5 @@
 import { InvalidParams, Subscription, type Handlers } from './cli-server'
-import { isSessionId } from './session'
+import { isSessionId } from '../shared/session'
 
 type Notify = (event: object) => boolean
 

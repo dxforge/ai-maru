@@ -117,13 +117,17 @@ export function zshHome(dataDir: string, ...dirs: string[]): string {
   return realpathSync(home)
 }
 
-export function slowSessionBin(dataDir: string): string {
+export function wrapSessionBin(dataDir: string, name: string, prelude: string): string {
   const real =
     process.env.MARU_SESSION_BIN ?? join(__dirname, '../../core/target/debug/maru-session')
-  const bin = join(dataDir, 'slow-session')
-  writeFileSync(bin, `#!/bin/sh\nsleep 1.5\nexec '${real}' "$@"\n`)
+  const bin = join(dataDir, name)
+  writeFileSync(bin, `#!/bin/sh\n${prelude}\nexec '${real}' "$@"\n`)
   chmodSync(bin, 0o755)
   return bin
+}
+
+export function slowSessionBin(dataDir: string): string {
+  return wrapSessionBin(dataDir, 'slow-session', 'sleep 1.5')
 }
 
 export async function delaySessionPort(app: ElectronApplication, ms: number): Promise<void> {
@@ -182,6 +186,14 @@ export function attachFromOutside(sockPath: string, cols: number, rows: number):
 
 export function panes(page: Page) {
   return page.locator('.panes.selected .pane')
+}
+
+export async function paneBox(page: Page, i: number) {
+  return (await panes(page).nth(i).boundingBox())!
+}
+
+export function paneTerminalRows(page: Page, i: number) {
+  return panes(page).nth(i).locator('.xterm-rows')
 }
 
 export function activePane(page: Page) {

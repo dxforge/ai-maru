@@ -137,7 +137,13 @@ struct Screen {
 }
 
 impl Session {
-    pub fn spawn(shell: &Path, cwd: Option<&Path>, cols: u16, rows: u16) -> Result<Arc<Self>> {
+    pub fn spawn(
+        shell: &Path,
+        cwd: Option<&Path>,
+        command: &[String],
+        cols: u16,
+        rows: u16,
+    ) -> Result<Arc<Self>> {
         // 셸이 뜬 뒤 크기 검사에 걸리면 그 셸을 쥘 핸들이 없다.
         let screen = Arc::new(Mutex::new(Screen {
             vt: VtTerminal::new(cols, rows)?,
@@ -145,7 +151,7 @@ impl Session {
             rows,
             outputs: Vec::new(),
         }));
-        let spawned = pty::spawn(shell, cwd, cols, rows)?;
+        let spawned = pty::spawn(shell, cwd, command, cols, rows)?;
         let shell_pid = spawned.child.id();
         let (exit_tx, exit_rx) = watch::channel(None);
         let (drained_tx, drained_rx) = std::sync::mpsc::channel::<()>();
@@ -352,7 +358,7 @@ mod tests {
     }
 
     fn with_session(f: impl FnOnce(&Arc<Session>)) {
-        let s = Session::spawn(Path::new("/bin/sh"), None, 80, 24).unwrap();
+        let s = Session::spawn(Path::new("/bin/sh"), None, &[], 80, 24).unwrap();
         f(&s);
         tokio::runtime::Runtime::new()
             .unwrap()

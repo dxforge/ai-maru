@@ -6,6 +6,8 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
+const POSIX_SHELLS: [&str; 5] = ["sh", "bash", "zsh", "ksh", "dash"];
+
 pub struct Pty {
     master: OwnedFd,
 }
@@ -27,7 +29,13 @@ fn winsize(cols: u16, rows: u16) -> nix::pty::Winsize {
     }
 }
 
-pub fn spawn(shell: &Path, cwd: Option<&Path>, cols: u16, rows: u16) -> Result<Spawned> {
+pub fn spawn(
+    shell: &Path,
+    cwd: Option<&Path>,
+    command: &[String],
+    cols: u16,
+    rows: u16,
+) -> Result<Spawned> {
     let ws = winsize(cols, rows);
     let pair = nix::pty::openpty(Some(&ws), None).context("openpty failed")?;
     // openpty 는 CLOEXEC 를 안 건다. 안 걸면 셸과 그 자식들이 master 를 물려받는다.
@@ -47,8 +55,25 @@ pub fn spawn(shell: &Path, cwd: Option<&Path>, cols: u16, rows: u16) -> Result<S
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "sh".into());
-    let mut cmd = Command::new(shell);
-    cmd.arg0(format!("-{name}"))
+    // 명령을 `"$@"` 로 넘기면 따옴표를 다시 escape 하지 않아도 되고, 셸 함수도 불린다.
+    let run = ["-c", "\"$@\""];
+    let mut cmd = if command.is_empty() {
+        let mut cmd = Command::new(shell);
+        cmd.arg0(format!("-{name}"));
+        cmd
+    } else if POSIX_SHELLS.contains(&name.as_str()) {
+        // `-i` 가 있어야 사용자가 터미널에 칠 때처럼 rc(zsh 의 ~/.zshrc 등)를 읽어, rc 가 PATH 에 넣은 명령을
+        // 찾는다.
+        let mut cmd = Command::new(shell);
+        cmd.arg0(format!("-{name}")).arg("-i").args(run).arg(&name);
+        cmd
+    } else {
+        // tcsh·fish 등은 `"$@"` 를 모른다. rc 는 못 읽어도 명령은 돌게 한다.
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(run).arg("sh");
+        cmd
+    };
+    cmd.args(command)
         .env("TERM", "xterm-256color")
         .stdin(Stdio::from(pair.slave.try_clone()?))
         .stdout(Stdio::from(pair.slave.try_clone()?))

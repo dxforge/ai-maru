@@ -1,5 +1,5 @@
 import { InvalidParams, type Handlers } from './cli-server'
-import { isSessionId } from './session'
+import { isSessionId } from '../shared/session'
 
 /** 알림 한 줄에 싣는 본문의 길이(코드 포인트). 넘는 본문은 `maru inbox read` 로 읽는다. */
 export const PREVIEW_CHARS = 240

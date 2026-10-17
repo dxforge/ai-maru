@@ -10,7 +10,7 @@ export interface SessionConnection {
 }
 
 /** 세션을 띄우는 데 실패하면 연결로 `{"type":"error"}` 가 오고 닫힌다. */
-export function openSession(cwd?: string): SessionConnection {
+export function openSession(id: string, cwd?: string, command?: string[]): SessionConnection {
   const key = crypto.randomUUID()
   let port: MessagePort | undefined
   const pending: SessionMessage[] = []
@@ -38,7 +38,7 @@ export function openSession(cwd?: string): SessionConnection {
     for (const msg of pending.splice(0)) port.postMessage(msg)
   }
   window.addEventListener('message', onPort)
-  window.maru.openSession(key, cwd)
+  window.maru.openSession(key, id, cwd, command)
   return {
     send: (msg) => {
       if (port) port.postMessage(msg)

@@ -1120,3 +1120,113 @@ fn inbox_read_prints_nothing_from_an_answer_it_cannot_print() {
         assert_eq!(stdout(&out), "");
     }
 }
+
+fn maru_in(dir: &Path, sock: &Path, args: &[&str]) -> Output {
+    let child = maru_cmd(Some(sock), args)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_within(child)
+}
+
+#[test]
+fn pane_new_sends_where_it_was_called_and_the_command_then_prints_the_session() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let out = maru_in(
+        tmp.path(),
+        &sock,
+        &["pane", "new", "claude", "--down", "--model", "x", "a b"],
+    );
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "s-0000000c\n");
+    assert_eq!(req["method"], "pane.new");
+    assert_eq!(req["params"]["session"], SESSION);
+    let cwd = std::fs::canonicalize(tmp.path()).unwrap();
+    assert_eq!(req["params"]["cwd"], cwd.to_str().unwrap());
+    assert_eq!(req["params"]["direction"], "right");
+    assert_eq!(
+        req["params"]["command"],
+        json!(["claude", "--down", "--model", "x", "a b"])
+    );
+}
+
+#[test]
+fn pane_new_resolves_a_relative_cwd_and_splits_down() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    std::fs::create_dir(tmp.path().join("sub")).unwrap();
+    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let out = maru_in(
+        tmp.path(),
+        &sock,
+        &["pane", "new", "--cwd", "sub", "--down", "--", "-x"],
+    );
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    let sub = std::fs::canonicalize(tmp.path()).unwrap().join("sub");
+    assert_eq!(req["params"]["cwd"], sub.to_str().unwrap());
+    assert_eq!(req["params"]["direction"], "down");
+    assert_eq!(req["params"]["command"], json!(["-x"]));
+}
+
+#[test]
+fn pane_new_rejects_an_unknown_option_before_the_command() {
+    let out = maru(None, &["pane", "new", "--dwon", "claude"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains("--dwon"), "{}", stderr(&out));
+}
+
+#[test]
+fn pane_new_without_a_command_sends_none() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let out = maru_in(tmp.path(), &sock, &["pane", "new"]);
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(req["params"].get("command").is_none(), "{req}");
+}
+
+#[test]
+fn pane_new_refuses_a_cwd_that_is_not_a_directory_before_asking_the_app() {
+    let tmp = tmpdir();
+    let file = tmp.path().join("file");
+    std::fs::write(&file, "").unwrap();
+    // 아무도 듣지 않는 소켓이라, 앱에 닿으려 했다면 다른 오류가 난다.
+    let sock = sock_in(&tmp);
+    for cwd in [file, tmp.path().join("missing")] {
+        let out = maru_in(
+            tmp.path(),
+            &sock,
+            &["pane", "new", "--cwd", cwd.to_str().unwrap()],
+        );
+        assert_fails_with(&out, "is not a directory");
+    }
+}
+
+#[test]
+fn pane_new_fails_on_an_answer_without_a_session() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, Value::Null));
+    let out = maru_in(tmp.path(), &sock, &["pane", "new"]);
+    server.join().unwrap();
+    assert_fails_with(&out, "without a session");
+}
+
+#[test]
+fn pane_close_sends_the_target_and_prints_nothing() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, Value::Null));
+    let out = maru(Some(&sock), &["pane", "close", "s-0000000c"]);
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert_eq!(req["method"], "pane.close");
+    assert_eq!(req["params"]["target"], "s-0000000c");
+}

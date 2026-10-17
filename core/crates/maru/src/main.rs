@@ -49,6 +49,8 @@
 //! | `inbox.push` | `to`(세션 id), `text`(빈 문자열이 아닌 문자열) | `null` |
 //! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 세션 id>,"text":<본문>}…]}` |
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
+//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택) | `{"session":<새 세션 id>}` |
+//! | `pane.close` | `target`(세션 id) | `null` |
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
 //! `id` 가 없으면 앱이 새 id 를 만든다. id 는 형식 없는 문자열이다.
@@ -63,6 +65,16 @@
 //! `invalid_params` 다. `to` 를 구독하는 연결이 있으면 알림을 보내고, 본문이 알림에 다 실렸으면 읽은
 //! 것으로 쳐서 보관하지 않는다. 그 밖의 메시지는 보관하고 `inbox.read` 가 오래된 것부터 돌려준 뒤
 //! 지운다. 보관은 앱 메모리에만 한다.
+//!
+//! `pane.new` 는 `session` 의 pane 을 `direction` 쪽으로 나누고, 새 pane 에서 `cwd` 를 시작 디렉토리로
+//! 세션을 띄운다. 포커스와 선택한 workspace 는 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
+//! 그 명령을 실행하고(셸이 sh·bash·zsh·ksh·dash 가 아니면 `/bin/sh` 가 실행한다), 명령이 끝나면 셸과 함께
+//! pane 이 닫힌다. 새 세션이 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. `session` 의 pane 이 창에
+//! 없으면 `invalid_params`, 세션을 띄우지 못하면 나눈 pane 을 닫고 `internal_error` 다.
+//!
+//! `pane.close` 는 `target` 세션의 pane 을 닫고 그 세션을 끈다. `target` 의 pane 이 창에 없으면
+//! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 세션을 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
+//! 전에 끝날 수 있다.
 //!
 //! `monitor.subscribe` 는 `result` 를 보낸 뒤 연결을 닫지 않고, 알림이 생길 때마다
 //! `{"jsonrpc":"2.0","method":"monitor.event","params":<알림>}` 한 줄을 보낸다. 이 연결은 10초 끊기가
@@ -124,6 +136,11 @@ enum Command {
         #[command(subcommand)]
         command: InboxCommand,
     },
+    /// Open and close panes next to this terminal.
+    Pane {
+        #[command(subcommand)]
+        command: PaneCommand,
+    },
     /// Report a claude running in this terminal. The app's zsh function and claude plugin
     /// call these.
     #[command(hide = true)]
@@ -160,6 +177,32 @@ enum InboxCommand {
     },
     /// Print the unread messages sent to this terminal and mark them read.
     Read,
+}
+
+#[derive(Subcommand)]
+enum PaneCommand {
+    /// Split this terminal's pane and run COMMAND in the new pane, or a shell when COMMAND
+    /// is omitted. The pane closes when COMMAND exits. Focus stays where it is.
+    ///
+    /// Prints the new pane's session id; `maru inbox push` sends messages to it and
+    /// `maru pane close` closes it. Options go before COMMAND; everything from COMMAND on is
+    /// passed to COMMAND. Use `sh -c '...'` for a pipeline.
+    New {
+        /// Directory to start in. Defaults to the current directory.
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Split below instead of to the right.
+        #[arg(long)]
+        down: bool,
+        /// Command and its arguments.
+        #[arg(trailing_var_arg = true)]
+        command: Vec<String>,
+    },
+    /// Close the pane of a terminal session, any pane in this window.
+    Close {
+        /// Session id of the pane to close, e.g. s-1a2b3c4d.
+        session: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -221,6 +264,17 @@ fn run(command: Command) -> Result<()> {
         Command::Inbox { command } => match command {
             InboxCommand::Push { session, message } => inbox_push(session, message)?,
             InboxCommand::Read => inbox_read()?,
+        },
+        Command::Pane { command } => match command {
+            PaneCommand::New { cwd, down, command } => {
+                let session = pane_new(cwd, down, command)?;
+                writeln!(std::io::stdout(), "{session}")?;
+            }
+            PaneCommand::Close { session } => {
+                let mut params = Map::new();
+                params.insert("target".into(), session.into());
+                call(&target()?, "pane.close", params)?;
+            }
         },
         Command::Claude { command } => match command {
             ClaudeCommand::Hook => claude_hook()?,
@@ -519,6 +573,37 @@ fn inbox_push(to: String, message: Option<String>) -> Result<()> {
     params.insert("text".into(), text.into());
     call(&target, "inbox.push", params)?;
     Ok(())
+}
+
+fn pane_new(cwd: Option<PathBuf>, down: bool, command: Vec<String>) -> Result<String> {
+    let target = target()?;
+    let cwd = match cwd {
+        Some(dir) => std::path::absolute(&dir)
+            .with_context(|| format!("cannot resolve {}", dir.display()))?,
+        None => std::env::current_dir().context("cannot read the current directory")?,
+    };
+    // 앱은 열 수 없는 디렉토리를 홈으로 바꿔 띄우므로, 잘못 준 경로는 여기서 알린다.
+    if !cwd.is_dir() {
+        bail!("{} is not a directory", cwd.display());
+    }
+    let cwd = cwd
+        .into_os_string()
+        .into_string()
+        .map_err(|_| anyhow!("the directory is not UTF-8"))?;
+    let mut params = Map::new();
+    params.insert("cwd".into(), cwd.into());
+    params.insert(
+        "direction".into(),
+        if down { "down" } else { "right" }.into(),
+    );
+    if !command.is_empty() {
+        params.insert("command".into(), command.into());
+    }
+    let result = call(&target, "pane.new", params)?;
+    match result["session"].as_str() {
+        Some(session) => Ok(session.to_owned()),
+        None => bail!("the app answered without a session: {result}"),
+    }
 }
 
 fn inbox_read() -> Result<()> {

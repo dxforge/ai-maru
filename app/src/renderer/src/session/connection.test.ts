@@ -44,7 +44,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('openSession', () => {
   it('포트가 오기 전에 보낸 메시지를 포트가 온 뒤 보낸 순서대로 보낸다', async () => {
     const win = fakeWindow()
-    const conn = openSession()
+    const conn = openSession('s-00000001')
     const key = new Uint8Array([107])
     conn.send('{"type":"attach"}')
     conn.send(key)
@@ -56,7 +56,7 @@ describe('openSession', () => {
 
   it('다른 세션의 포트는 받지 않는다', async () => {
     const win = fakeWindow()
-    const conn = openSession()
+    const conn = openSession('s-00000001')
     conn.send('mine')
     const other = win.givePort('other')
     const port = win.givePort()
@@ -70,7 +70,7 @@ describe('openSession', () => {
 
   it('포트가 오기 전의 session:lost 로는 닫히지 않고, 온 뒤의 것으로 닫힌다', () => {
     const win = fakeWindow()
-    const conn = openSession()
+    const conn = openSession('s-00000001')
     let closes = 0
     conn.onClose(() => closes++)
     win.lose()
@@ -82,7 +82,7 @@ describe('openSession', () => {
 
   it('포트가 오기 전에도 그 세션을 끝낼 수 있다', () => {
     const win = fakeWindow()
-    openSession().kill()
+    openSession('s-00000001').kill()
     expect(win.killed).toEqual(win.opened)
     expect(win.killed).toHaveLength(1)
   })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GitHead } from '../../../shared/git'
+import { isSessionId } from '../../../shared/session'
 import { createWorkspaces, focusedPane } from './store'
 
 function opened(n: number) {
@@ -15,12 +16,26 @@ const firstPanes = (ws: Workspaces) => ws.list.value.map((w) => w.panes[0])
 const selected = (ws: Workspaces) => ws.selected()!
 
 describe('workspaces', () => {
-  it('새로 띄운 세션의 id 를 그 칸에 단다', () => {
-    const ws = createWorkspaces()
+  it('칸을 만들 때마다 그 세션의 id 를 새로 정한다', () => {
+    let n = 0
+    const ws = createWorkspaces(undefined, () => `s-${++n}`)
     ws.open()
+    ws.split('right')
+    ws.splitFrom(selected(ws).panes[0].key, 'down', {})
     ws.open()
-    ws.setSessionId(firstPanes(ws)[0].key, 's-9')
-    expect(firstPanes(ws).map((p) => p.sessionId)).toEqual(['s-9', undefined])
+    expect(ws.list.value.flatMap((w) => w.panes.map((p) => p.sessionId))).toEqual([
+      's-1',
+      's-2',
+      's-3',
+      's-4'
+    ])
+  })
+
+  it('기본 세션 id 는 세션 id 모양이고 칸마다 다르다', () => {
+    const ws = opened(2)
+    const [a, b] = firstPanes(ws).map((p) => p.sessionId)
+    expect(isSessionId(a) && isSessionId(b)).toBe(true)
+    expect(a).not.toBe(b)
   })
 
   it('연 workspace 는 칸 하나로 목록 끝에 붙고 선택된다', () => {
@@ -165,12 +180,10 @@ describe('git', () => {
     const first = selected(ws).panes[0].key
     ws.split('right')
     const second = selected(ws).panes[1].key
-    ws.setSessionId(first, 's-1')
-    ws.setSessionId(second, 's-2')
     ws.setCwd(first, '/a')
     ws.setCwd(second, '/b')
     r.pending.length = 0
-    ws.refreshSession('s-2')
+    ws.refreshSession(selected(ws).panes[1].sessionId)
     expect(r.pending.map((p) => p.cwd)).toEqual(['/b'])
   })
 })
@@ -185,7 +198,7 @@ describe('panes', () => {
     expect(w.panes).toHaveLength(2)
     const added = w.panes[1]
     expect(added.startDir).toBe('/work')
-    expect(added.sessionId).toBeUndefined()
+    expect(added.sessionId).not.toBe(w.panes[0].sessionId)
     expect(w.focused).toBe(added.key)
     expect(w.layout).toEqual({
       split: 'right',
@@ -249,7 +262,6 @@ describe('panes', () => {
     ws.setCwd(999, '/x')
     ws.setTitle(999, 'x')
     ws.refreshSession('s-x')
-    ws.setSessionId(999, 's-x')
     ws.focusPane(999)
     expect(JSON.stringify(ws.list.value)).toBe(before)
   })
@@ -279,6 +291,44 @@ describe('panes', () => {
     const ws = opened(1)
     ws.split('down')
     expect(focusedPane(selected(ws)).key).toBe(selected(ws).focused)
+  })
+
+  it('splitFrom 은 선택되지 않은 workspace 의 칸도 나누고, 포커스와 선택은 그대로 둔다', () => {
+    const ws = opened(2)
+    const [first, second] = keys(ws)
+    const from = ws.list.value[0].panes[0].key
+    const pane = ws.splitFrom(from, 'down', { startDir: '/x', command: ['ls', '-l'] })
+    const w = ws.list.value.find((w) => w.key === first)!
+    expect(w.layout).toEqual({ split: 'down', first: { pane: from }, second: { pane } })
+    expect(w.panes.at(-1)).toEqual({
+      key: pane,
+      sessionId: expect.any(String),
+      startDir: '/x',
+      command: ['ls', '-l']
+    })
+    expect(w.focused).toBe(from)
+    expect(ws.selectedKey.value).toBe(second)
+  })
+
+  it('splitFrom 은 포커스가 없는 칸을 나눈다', () => {
+    const ws = opened(1)
+    const a = selected(ws).focused
+    ws.split('right')
+    const b = selected(ws).focused
+    ws.splitFrom(a, 'down', {})
+    expect(selected(ws).layout).toEqual({
+      split: 'right',
+      first: { split: 'down', first: { pane: a }, second: { pane: expect.any(Number) } },
+      second: { pane: b }
+    })
+    expect(selected(ws).focused).toBe(b)
+  })
+
+  it('세션 id 로 어느 workspace 의 칸이든 찾는다', () => {
+    const ws = opened(2)
+    const hidden = ws.list.value[0].panes[0]
+    expect(ws.paneBySession(hidden.sessionId)?.key).toBe(hidden.key)
+    expect(ws.paneBySession('s-00000000')).toBeUndefined()
   })
 
   it('선택된 workspace 가 없으면 split·moveFocus 는 아무것도 바꾸지 않는다', () => {
