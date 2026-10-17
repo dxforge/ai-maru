@@ -10,6 +10,7 @@ import {
   watchEffect
 } from 'vue'
 import type { CommandId } from '../../shared/commands'
+import type { PaneReply } from '../../shared/pane'
 import { createCanvas } from './canvas/store'
 import { createClaudeStatuses } from './claude/status'
 import CanvasPanel from './components/CanvasPanel.vue'
@@ -75,11 +76,56 @@ function stepWorkspace(by: 1 | -1): void {
 function closePane(): void {
   const w = workspaces.selected()
   if (!w) return
-  const pane = w.focused
-  terminals.get(pane)?.kill()
-  workspaces.closePane(pane)
+  killPane(w.focused)
   void focusSelected()
 }
+
+function killPane(pane: number): void {
+  terminals.get(pane)?.kill()
+  removePane(pane)
+}
+
+// `maru pane new` 로 나눠 세션이 뜨기를 기다리는 pane → 답할 요청 id.
+const paneRequests = new Map<number, number>()
+
+function answerPaneRequest(pane: number, reply: PaneReply): void {
+  const id = paneRequests.get(pane)
+  if (id === undefined) return
+  paneRequests.delete(pane)
+  window.maru.paneReply(id, reply)
+}
+
+function removePane(
+  pane: number,
+  message = 'the pane was closed before its session started'
+): void {
+  answerPaneRequest(pane, { error: 'open_failed', message })
+  workspaces.closePane(pane)
+}
+
+// ⌘D 로 나눈 pane 은 오류를 보인 채 남지만, `maru pane new` 의 pane 은 띄운 쪽이 이유를 받으므로 닫는다.
+function paneFailed(pane: number, message: string): void {
+  if (paneRequests.has(pane)) removePane(pane, message)
+}
+
+const noPane = (session: string): PaneReply => ({
+  error: 'no_pane',
+  message: `no pane for session ${session}`
+})
+
+window.maru.onPaneNew((id, { session, cwd, direction, command }) => {
+  const from = workspaces.paneBySession(session)
+  if (!from) return window.maru.paneReply(id, noPane(session))
+  paneRequests.set(workspaces.splitFrom(from.key, direction, { startDir: cwd, command }), id)
+})
+
+window.maru.onPaneClose((id, session) => {
+  const pane = workspaces.paneBySession(session)
+  if (!pane) return window.maru.paneReply(id, noPane(session))
+  // 자기 pane 을 닫는 CLI 는 세션과 함께 끝나므로 끄기 전에 답한다.
+  window.maru.paneReply(id, null)
+  killPane(pane.key)
+})
 
 const sidebarOpen = ref(true)
 const folded = reactive(new Set<number>())
@@ -392,10 +438,13 @@ window.maru.onCommand(runCommand)
             <div class="body" :style="body">
               <TerminalView
                 :ref="(t) => setTerminal(p.key, t)"
+                :session-id="p.sessionId"
                 :start-dir="p.startDir"
+                :command="p.command"
                 :active="active"
-                @exit="workspaces.closePane(p.key)"
-                @spawned="(id) => workspaces.setSessionId(p.key, id)"
+                @exit="removePane(p.key)"
+                @failed="(message) => paneFailed(p.key, message)"
+                @spawned="answerPaneRequest(p.key, { session: p.sessionId })"
                 @cwd="(dir) => workspaces.setCwd(p.key, dir)"
                 @title="(title) => workspaces.setTitle(p.key, title)"
                 @cell="setCell"

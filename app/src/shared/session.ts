@@ -1,0 +1,15 @@
+const SESSION_ID = /^s-[0-9a-f]{8}$/
+
+/** 파일 경로를 만들기 전에 본다. */
+export function isSessionId(v: unknown): v is string {
+  return typeof v === 'string' && SESSION_ID.test(v)
+}
+
+/**
+ * pane 을 만들 때 그 세션의 id 를 정한다. 셸은 뜨자마자 `maru` 로 자기 pane 을 가리킬 수 있다. 세션이 뜬
+ * 뒤에 renderer 가 id 를 받으면 그 사이에 온 요청이 pane 을 찾지 못하기 때문이다.
+ */
+export function newSessionId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(4))
+  return `s-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`
+}

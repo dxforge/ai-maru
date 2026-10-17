@@ -1,5 +1,6 @@
 import { readonly, ref } from 'vue'
 import type { GitHead } from '../../../shared/git'
+import { newSessionId } from '../../../shared/session'
 import {
   neighbor,
   removePane,
@@ -9,11 +10,15 @@ import {
   type SplitDirection
 } from './layout'
 
-/** `startDir` 는 셸을 띄울 때 청한 디렉토리, `cwd` 는 세션이 알려 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목이다. */
+/**
+ * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령, `cwd` 는 세션이 알려
+ * 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목이다.
+ */
 export type Pane = {
   key: number
-  sessionId?: string
+  sessionId: string
   startDir?: string
+  command?: readonly string[]
   cwd?: string
   title?: string
   git?: GitHead
@@ -30,7 +35,8 @@ export function focusedPane(w: {
 }
 
 export function createWorkspaces(
-  readGit: (cwd: string) => Promise<GitHead | null> = async () => null
+  readGit: (cwd: string) => Promise<GitHead | null> = async () => null,
+  sessionId: () => string = newSessionId
 ) {
   const list = ref<Workspace[]>([])
   const selectedKey = ref<number | null>(null)
@@ -49,7 +55,7 @@ export function createWorkspaces(
     const key = nextKey++
     list.value.push({
       key,
-      panes: [{ key: pane, startDir }],
+      panes: [{ key: pane, sessionId: sessionId(), startDir }],
       layout: { pane },
       focused: pane
     })
@@ -76,10 +82,24 @@ export function createWorkspaces(
     const w = selected()
     if (!w) return
     const from = focusedPane(w)
+    w.focused = splitFrom(from.key, direction, { startDir: from.cwd ?? from.startDir })
+  }
+
+  function splitFrom(
+    from: number,
+    direction: SplitDirection,
+    init: Pick<Pane, 'startDir' | 'command'>
+  ): number {
+    const w = owner(from)!
     const pane = nextKey++
-    w.panes.push({ key: pane, startDir: from.cwd ?? from.startDir })
-    w.layout = splitPane(w.layout, from.key, pane, direction)
-    w.focused = pane
+    w.panes.push({ key: pane, sessionId: sessionId(), ...init })
+    w.layout = splitPane(w.layout, from, pane, direction)
+    return pane
+  }
+
+  function paneBySession(id: string): Pane | undefined {
+    for (const w of list.value) for (const p of w.panes) if (p.sessionId === id) return p
+    return undefined
   }
 
   function closePane(pane: number): void {
@@ -107,11 +127,6 @@ export function createWorkspaces(
 
   function pane(key: number): Pane | undefined {
     return owner(key)?.panes.find((p) => p.key === key)
-  }
-
-  function setSessionId(key: number, id: string): void {
-    const p = pane(key)
-    if (p) p.sessionId = id
   }
 
   function setCwd(key: number, cwd: string): void {
@@ -152,10 +167,11 @@ export function createWorkspaces(
     selectedKey: readonly(selectedKey),
     open,
     split,
+    splitFrom,
+    paneBySession,
     closePane,
     focusPane,
     moveFocus,
-    setSessionId,
     setCwd,
     setTitle,
     refreshSession,

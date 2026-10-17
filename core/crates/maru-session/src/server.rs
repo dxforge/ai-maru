@@ -35,6 +35,10 @@ pub struct Options {
     pub cols: u16,
     #[arg(long, default_value_t = 24)]
     pub rows: u16,
+    /// `--` 뒤에 주면 대화형 로그인 셸이 이 명령을 실행하고 끝난다. 셸이 sh·bash·zsh·ksh·dash 가
+    /// 아니면 `/bin/sh` 가 실행한다.
+    #[arg(last = true)]
+    pub command: Vec<String>,
 }
 
 type KillAck = oneshot::Sender<()>;
@@ -61,7 +65,13 @@ pub async fn run(opts: Options) -> Result<()> {
         .shell
         .or_else(|| std::env::var_os("SHELL").map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("/bin/sh"));
-    let session = Session::spawn(&shell, opts.cwd.as_deref(), opts.cols, opts.rows)?;
+    let session = Session::spawn(
+        &shell,
+        opts.cwd.as_deref(),
+        &opts.command,
+        opts.cols,
+        opts.rows,
+    )?;
     let listener = match publish(&opts.id, &paths, &session) {
         Ok(l) => l,
         Err(e) => {

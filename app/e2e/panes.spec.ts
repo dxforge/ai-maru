@@ -1,10 +1,10 @@
-import type { Page } from '@playwright/test'
 import {
   activeTerminal,
   clickMenu,
   delaySessionPort,
   expect,
   openPalette,
+  paneBox,
   panes,
   pressNew,
   resizeBy,
@@ -19,10 +19,6 @@ import {
   zshHome
 } from './app'
 
-async function box(page: Page, i: number) {
-  return (await panes(page).nth(i).boundingBox())!
-}
-
 test('⌘D 는 포커스가 있는 칸을 오른쪽으로 나눠 새 셸을 띄우고, 새 칸이 키를 받는다', async ({
   launch,
   dataDir
@@ -33,7 +29,7 @@ test('⌘D 는 포커스가 있는 칸을 오른쪽으로 나눠 새 셸을 띄�
 
   await split(app, page, 'split-right', 2)
 
-  const [left, right] = [await box(page, 0), await box(page, 1)]
+  const [left, right] = [await paneBox(page, 0), await paneBox(page, 1)]
   expect(right.x).toBeGreaterThan(left.x + left.width - 1)
   expect(right.y).toBe(left.y)
   expect(right.height).toBe(left.height)
@@ -53,7 +49,7 @@ test('⇧⌘D 는 아래로 나눈다', async ({ launch }) => {
 
   await split(app, page, 'split-down', 2)
 
-  const [top, bottom] = [await box(page, 0), await box(page, 1)]
+  const [top, bottom] = [await paneBox(page, 0), await paneBox(page, 1)]
   expect(bottom.y).toBeGreaterThan(top.y + top.height - 1)
   expect(bottom.x).toBe(top.x)
   expect(bottom.width).toBe(top.width)

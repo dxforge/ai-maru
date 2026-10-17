@@ -3,6 +3,7 @@ import type { CanvasItem } from '../shared/canvas'
 import type { ClaudeState } from '../shared/claude'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
+import type { PaneNewRequest, PaneReply } from '../shared/pane'
 
 // MessagePort 는 contextBridge 를 건너지 못해서 window.postMessage 로 넘긴다.
 ipcRenderer.on('session:port', (event, key: string) => {
@@ -14,7 +15,8 @@ ipcRenderer.on('session:lost', () => {
 })
 
 const api = {
-  openSession: (key: string, cwd?: string): void => ipcRenderer.send('session:open', key, cwd),
+  openSession: (key: string, id: string, cwd?: string, command?: string[]): void =>
+    ipcRenderer.send('session:open', key, id, cwd, command),
   killSession: (key: string): void => ipcRenderer.send('session:kill', key),
   onCommand: (cb: (id: CommandId) => void): void => {
     ipcRenderer.on('command:run', (_event, id: CommandId) => cb(id))
@@ -29,6 +31,13 @@ const api = {
       cb(session, state)
     )
   },
+  onPaneNew: (cb: (id: number, req: PaneNewRequest) => void): void => {
+    ipcRenderer.on('pane:new', (_event, id: number, req: PaneNewRequest) => cb(id, req))
+  },
+  onPaneClose: (cb: (id: number, session: string) => void): void => {
+    ipcRenderer.on('pane:close', (_event, id: number, session: string) => cb(id, session))
+  },
+  paneReply: (id: number, reply: PaneReply): void => ipcRenderer.send('pane:reply', id, reply),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),
   setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),
   home: process.env.HOME

@@ -5,6 +5,7 @@ import type { SessionConnection } from './connection'
 export type AttachHandlers = {
   onExit(): void
   onSpawned(id: string, cwd: string): void
+  onOpenFailed(message: string): void
 }
 
 export type Attachment = {
@@ -19,6 +20,13 @@ export function attach(
   const encoder = new TextEncoder()
   let primary = true
   let exited = false
+  let spawned = false
+  let failed = false
+  const openFailed = (message: string): void => {
+    if (failed) return
+    failed = true
+    handlers.onOpenFailed(message)
+  }
 
   conn.onMessage((msg) => {
     if (typeof msg !== 'string') {
@@ -41,6 +49,7 @@ export function attach(
         }
         break
       case 'spawned':
+        spawned = true
         handlers.onSpawned(m.id, m.cwd)
         break
       case 'exit':
@@ -49,12 +58,16 @@ export function attach(
         break
       case 'error':
         term.write(`\r\n[maru-session: ${m.code}] ${m.message ?? ''}\r\n`)
+        if (m.code === 'open_failed') openFailed(m.message ?? '')
         break
     }
   })
   // 셸이 끝나면 세션이 연결을 닫는다 — 그건 끊김이 아니다.
   conn.onClose(() => {
-    if (!exited) term.write('\r\n[disconnected from the session]\r\n')
+    if (exited) return
+    term.write('\r\n[disconnected from the session]\r\n')
+    // session host 가 죽으면 open_failed 없이 닫힌다.
+    if (!spawned) openFailed('disconnected before the session started')
   })
 
   term.onData((data) => {

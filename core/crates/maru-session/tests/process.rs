@@ -27,6 +27,10 @@ fn spawn(dir: &Path, id: &str) -> Child {
 }
 
 fn spawn_with(dir: &Path, id: &str, extra: &[&std::ffi::OsStr]) -> Child {
+    spawn_env(dir, id, extra, &[])
+}
+
+fn spawn_env(dir: &Path, id: &str, extra: &[&std::ffi::OsStr], env: &[(&str, &Path)]) -> Child {
     Command::new(env!("CARGO_BIN_EXE_maru-session"))
         .args([
             "--id", id, "--shell", "/bin/sh", "--cols", "80", "--rows", "24",
@@ -34,6 +38,7 @@ fn spawn_with(dir: &Path, id: &str, extra: &[&std::ffi::OsStr]) -> Child {
         .arg("--dir")
         .arg(dir)
         .args(extra)
+        .envs(env.iter().copied())
         // 셸의 TERM 이 상속값이 아니라 세션 프로세스가 정한 값인지 보려고 일부러 다르게 둔다.
         .env("TERM", "dumb")
         .stdin(Stdio::null())
@@ -56,10 +61,14 @@ fn start() -> Proc {
 }
 
 fn start_in(tmp: tempfile::TempDir, extra: &[&std::ffi::OsStr]) -> Proc {
+    start_env(tmp, extra, &[])
+}
+
+fn start_env(tmp: tempfile::TempDir, extra: &[&std::ffi::OsStr], env: &[(&str, &Path)]) -> Proc {
     let dir = tmp.path().join("s");
     let id = "sess-test".to_string();
     let mut p = Proc {
-        child: spawn_with(&dir, &id, extra),
+        child: spawn_env(&dir, &id, extra, env),
         paths: Paths::new(&dir, &id).unwrap(),
         _tmp: tmp,
         dir,
@@ -437,6 +446,17 @@ fn the_process_ends_when_the_shell_exits() {
 }
 
 #[test]
+fn a_command_that_fails_at_once_still_ends_the_process_with_zero() {
+    let tmp = tmpdir();
+    let dir = tmp.path().join("s");
+    let args = ["--", "/bin/sh", "-c", "exit 5"];
+    let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
+    let mut child = spawn_with(&dir, "sess-test", &args);
+    let status = child.wait().unwrap();
+    assert!(status.success(), "{status:?}: {}", stderr(&mut child));
+}
+
+#[test]
 fn the_process_ends_even_if_a_background_job_keeps_the_tty_open() {
     let mut p = start();
     let (mut c, _, _) = p.attach("primary", 80, 24);
@@ -509,6 +529,71 @@ fn the_shell_is_a_login_shell_with_term_and_cwd_set() {
     assert!(text.contains("a0=[-sh]"), "{text}");
     assert!(text.contains("T=[xterm-256color]"), "{text}");
     assert!(text.contains(&format!("D=[{}]", cwd.display())), "{text}");
+}
+
+#[test]
+fn a_command_after_the_options_runs_in_the_shell_with_its_arguments_intact() {
+    let script = r#"read line; printf '[%s]' "$@"; echo; exit 4"#;
+    let args = ["--", "/bin/sh", "-c", script, "sh", "a b", "c'd", "-x", ""];
+    let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
+    let mut p = start_in(tmpdir(), &args);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("\n");
+    c.output_until("[a b][c'd][-x][]");
+    let exit = c.next_text();
+    assert_eq!(exit, json!({ "type": "exit", "code": 4, "signal": null }));
+    assert!(p.wait().success());
+}
+
+#[test]
+fn a_command_finds_what_the_interactive_rc_defines() {
+    let tmp = tmpdir();
+    let rc = tmp.path().join("rc");
+    std::fs::write(&rc, "from_rc() { read line; echo \"rc-$((2+3))\"; }\n").unwrap();
+    // 대화형 sh 는 $ENV 의 파일을 읽는다.
+    let mut p = start_env(tmp, &["--".as_ref(), "from_rc".as_ref()], &[("ENV", &rc)]);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("\n");
+    c.output_until("rc-5");
+    assert_eq!(c.next_text()["type"], "exit");
+    assert!(p.wait().success());
+}
+
+#[test]
+fn a_command_runs_under_sh_when_the_shell_is_not_posix() {
+    let tmp = tmpdir();
+    // `"$@"` 를 모르는 진짜 fish 대신, 실행되면 늘 실패하는 가짜 `fish` 를 둔다.
+    let fish = tmp.path().join("fish");
+    std::fs::write(&fish, "#!/bin/sh\necho wrong-shell\nexit 1\n").unwrap();
+    std::fs::set_permissions(&fish, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let dir = tmp.path().join("s");
+    let id = "sess-test".to_string();
+    let script = r#"read line; printf '[%s]' "$@"; echo; exit 4"#;
+    let child = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+        .args(["--id", &id])
+        .arg("--dir")
+        .arg(&dir)
+        .arg("--shell")
+        .arg(&fish)
+        .args(["--", "/bin/sh", "-c", script, "sh", "a b", "-x"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut p = Proc {
+        child,
+        paths: Paths::new(&dir, &id).unwrap(),
+        _tmp: tmp,
+        dir,
+        id,
+    };
+    p.wait_ready();
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("\n");
+    c.output_until("[a b][-x]");
+    assert_eq!(c.next_text()["code"], 4);
+    assert!(p.wait().success());
 }
 
 #[test]

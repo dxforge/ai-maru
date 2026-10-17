@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
 import { closeSync, constants, existsSync, mkdirSync, openSync } from 'node:fs'
 import { access, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
@@ -8,6 +7,7 @@ import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
+import { isSessionId } from '../shared/session'
 import { encodeFrame } from './frame'
 
 const SPAWN_TIMEOUT_MS = 5000
@@ -181,25 +181,22 @@ export function utf8Locale(
   return region && exists(name) ? name : 'C.UTF-8'
 }
 
-const SESSION_ID = /^s-[0-9a-f]{8}$/
-
-/** `spawnSession` 이 만드는 세션 id 의 모양인지. 파일 경로를 만들기 전에 본다. */
-export function isSessionId(v: unknown): v is string {
-  return typeof v === 'string' && SESSION_ID.test(v)
-}
-
 export async function spawnSession(
   bin: string,
   dir: string,
   setup: ShellSetup,
-  cwd: string
-): Promise<string> {
-  const id = `s-${randomBytes(4).toString('hex')}`
+  id: string,
+  cwd: string,
+  command: string[] = []
+): Promise<'live' | 'ended'> {
+  if (!isSessionId(id)) throw new Error(`not a session id: ${id}`)
   // 준비 전에 끝나면 이유가 stderr 에만 있다. 파이프로 받으면 앱이 끝난 뒤 세션의 쓰기가 실패한다.
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const logPath = join(dir, `${id}.log`)
   const log = openSync(logPath, 'w', 0o600)
-  const child = spawn(bin, ['--dir', dir, '--id', id, '--cwd', cwd], {
+  const args = ['--dir', dir, '--id', id, '--cwd', cwd]
+  if (command.length) args.push('--', ...command)
+  const child = spawn(bin, args, {
     detached: true,
     env: shellEnv(process.env, id, setup),
     stdio: ['ignore', 'ignore', log]
@@ -207,11 +204,18 @@ export async function spawnSession(
   closeSync(log)
   child.unref()
   let failure: Error | null = null
+  let ended = false
   const onError = (e: Error): void => {
     failure = e
   }
+  // maru-session 은 소켓을 연 뒤에 셸이 끝나야 0 으로 끝난다. 바로 끝나는 명령은 앱이 소켓을 확인하기 전에
+  // 끝날 수 있다.
   const onExit = (code: number | null, signal: string | null): void => {
-    failure = new Error(`maru-session exited before it was ready (code=${code}, signal=${signal})`)
+    if (code === 0) ended = true
+    else
+      failure = new Error(
+        `maru-session exited before it was ready (code=${code}, signal=${signal})`
+      )
   }
   child.once('error', onError)
   child.once('exit', onExit)
@@ -219,7 +223,8 @@ export async function spawnSession(
     const deadline = Date.now() + SPAWN_TIMEOUT_MS
     while (Date.now() < deadline) {
       if (failure) throw failure
-      if (await isLive(socketPath(dir, id))) return id
+      if (ended) return 'ended'
+      if (await isLive(socketPath(dir, id))) return 'live'
       await sleep(SPAWN_POLL_MS)
     }
     child.kill('SIGTERM')
