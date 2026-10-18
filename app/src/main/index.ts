@@ -5,6 +5,7 @@ import {
   ipcMain,
   MessageChannelMain,
   nativeTheme,
+  screen,
   shell,
   utilityProcess,
   type UtilityProcess
@@ -28,6 +29,12 @@ import {
 } from './session'
 import type { KillRequest, OpenRequest } from './session-host'
 import { createSessionWorkspaces } from './session-workspaces'
+import {
+  readWindowState,
+  restoreWindowState,
+  saveWindowStateOnClose,
+  windowBounds
+} from './window-state'
 import type { PaneReply } from '../shared/pane'
 import type { SessionOpen } from '../shared/session'
 import { GHOSTTY, isLight } from '../shared/theme'
@@ -106,9 +113,13 @@ function openExternal(url: string): void {
 }
 
 function createWindow(): void {
+  const stateFile = join(app.getPath('userData'), 'window-state.json')
+  const state = readWindowState(stateFile)
+  const displays = screen.getAllDisplays().map((d) => d.bounds)
   const win = new BrowserWindow({
     width: 1000,
     height: 700,
+    ...windowBounds(state, displays),
     show: !unobtrusive,
     focusable: !unobtrusive,
     backgroundColor: GHOSTTY.background,
@@ -133,6 +144,8 @@ function createWindow(): void {
     win.setIgnoreMouseEvents(true)
     win.showInactive()
   }
+  restoreWindowState(win, state)
+  saveWindowStateOnClose(win, stateFile)
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
