@@ -927,3 +927,42 @@ fn attaching_on_the_alternate_screen_replays_the_primary_screen_first() {
     let alt = replay.rfind("alt-4").expect("대체 화면이 없다");
     assert!(main < enter && enter < alt, "{replay:?}");
 }
+
+#[test]
+fn protocol_version_prints_the_version_without_dir_or_id() {
+    let out = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+        .arg("--protocol-version")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        format!("{PROTOCOL_VERSION}\n")
+    );
+}
+
+#[test]
+fn without_arguments_it_fails_without_printing() {
+    let out = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn the_protocol_version_flag_does_not_combine() {
+    let tmp = tmpdir();
+    let out = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+        .arg("--protocol-version")
+        .args(["--id", "sess-test", "--dir"])
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+}

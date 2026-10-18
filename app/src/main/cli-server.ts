@@ -1,6 +1,6 @@
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, rename, rm } from 'node:fs/promises'
 import { createServer, type Socket } from 'node:net'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 
 // 계약은 core/crates/maru 의 모듈 doc 에 있다.
 export const CLI_PROTOCOL_VERSION = 1
@@ -12,6 +12,26 @@ export type Handlers = Record<string, (params: Record<string, unknown>, session:
 export type CliServer = { close: () => Promise<void> }
 
 export class InvalidParams extends Error {}
+
+/** handler 가 앱이 정한 이유로 거절할 때 던진다. `data` 의 필드는 `error.data` 에 `code` 와 함께 들어간다. */
+export class CliError extends Error {
+  constructor(
+    readonly code: number,
+    readonly reason: string,
+    message: string,
+    readonly data?: object
+  ) {
+    super(message)
+  }
+}
+
+/** handler 가 돌려주면 `result` 로 답을 쓴 뒤에 `run` 을 부른다 — 답하기 전에 앱을 내리면 CLI 가 답을 못 받는다. */
+export class AfterReply {
+  constructor(
+    readonly result: unknown,
+    readonly run: () => void
+  ) {}
+}
 
 /**
  * handler 가 돌려주면 응답 뒤에도 연결을 열어 두고, `start` 가 받은 `notify` 마다 `method` 로
@@ -62,6 +82,7 @@ async function dispatch(
     return { id, result: (await handler(params, params.session)) ?? null }
   } catch (err) {
     if (err instanceof InvalidParams) return failure(id, -32602, 'invalid_params', err.message)
+    if (err instanceof CliError) return failure(id, err.code, err.reason, err.message, err.data)
     const message = err instanceof Error ? err.message : String(err)
     return failure(id, -32603, 'internal_error', message)
   }
@@ -86,6 +107,7 @@ async function reply(line: string, handlers: Handlers): Promise<Reply | null> {
   const params = isObject(msg.params) ? msg.params : {}
   const body = await dispatch((msg.id as Id | undefined) ?? null, msg.method, params, handlers)
   if ('id' in msg) return body
+  if (body.result instanceof AfterReply) body.result.run()
   // 답하지 않는 요청으로 구독하면 열린 연결만 남는다.
   return body.result instanceof Subscription
     ? failure(null, -32600, 'invalid_request', `${msg.method} needs an id`)
@@ -109,6 +131,10 @@ function serve(sock: Socket, handlers: Handlers, maxLine: number, idleMs: number
   // 요청을 다 보내지 않고 멈춘 연결이 앱이 끝날 때까지 남지 않게.
   sock.setTimeout(idleMs, () => sock.destroy())
   const send = (body: Reply | null): void => {
+    if (body?.result instanceof AfterReply) {
+      const after = body.result
+      return void sock.end(encode({ id: body.id, result: after.result }), () => after.run())
+    }
     const sub = body?.result instanceof Subscription ? body.result : null
     if (body) sock.write(encode(sub ? { id: body.id, result: null } : body))
     if (!sub) return void sock.end()
@@ -158,7 +184,10 @@ export async function listenCli(
   { maxLine = MAX_LINE, idleMs = IDLE_MS }: { maxLine?: number; idleMs?: number } = {}
 ): Promise<CliServer> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-  await rm(path, { force: true })
+  // 다른 이름으로 듣기 시작한 뒤 옮긴다 — `maru claude monitor` 는 경로가 보이면 바로 붙어 본다(계약은
+  // core/crates/maru 의 모듈 doc). 같은 디렉토리의 짧은 이름이라 소켓 경로 한도를 넘지 않는다.
+  const listening = join(dirname(path), '.sock')
+  await rm(listening, { force: true })
   const open = new Set<Socket>()
   // 줄바꿈 없이 쓰기를 닫은 요청에도 답해야 한다.
   const server = createServer({ allowHalfOpen: true }, (sock) => {
@@ -168,11 +197,12 @@ export async function listenCli(
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(path, () => {
+    server.listen(listening, () => {
       server.off('error', reject)
       resolve()
     })
   })
+  await rename(listening, path)
   return {
     close: async () => {
       for (const sock of open) sock.destroy()

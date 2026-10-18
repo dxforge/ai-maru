@@ -13,11 +13,12 @@ export type CommandId =
   | 'toggle-sidebar'
   | 'toggle-canvas'
   | 'toggle-view-mode'
+  | 'restart'
 
 export type Command = {
   id: CommandId
   title: string
-  menu: 'file' | 'view'
+  menu: 'app' | 'file' | 'view'
   palette?: false
 }
 
@@ -35,8 +36,13 @@ export const commands: readonly Command[] = [
   { id: 'focus-pane-left', title: 'Focus Pane Left', menu: 'view' },
   { id: 'focus-pane-right', title: 'Focus Pane Right', menu: 'view' },
   { id: 'focus-pane-up', title: 'Focus Pane Up', menu: 'view' },
-  { id: 'focus-pane-down', title: 'Focus Pane Down', menu: 'view' }
+  { id: 'focus-pane-down', title: 'Focus Pane Down', menu: 'view' },
+  { id: 'restart', title: 'Restart', menu: 'app' }
 ]
+
+export function available(c: Command, { canRestart }: { canRestart: boolean }): boolean {
+  return c.id !== 'restart' || canRestart
+}
 
 export function filterCommands(query: string): Command[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)

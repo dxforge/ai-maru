@@ -1,7 +1,7 @@
-export type SplitDirection = 'right' | 'down'
-export type FocusDirection = 'left' | 'right' | 'up' | 'down'
+import type { Layout, SplitDirection } from '../../../shared/layout'
 
-export type Layout = { pane: number } | { split: SplitDirection; first: Layout; second: Layout }
+export type { Layout, SplitDirection }
+export type FocusDirection = 'left' | 'right' | 'up' | 'down'
 
 export type Rect = { x: number; y: number; w: number; h: number }
 

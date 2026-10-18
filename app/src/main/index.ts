@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   MessageChannelMain,
   nativeTheme,
@@ -12,13 +13,21 @@ import {
 } from 'electron'
 import { canvasPut } from './canvas'
 import { createClaudeStatus } from './claude-status'
-import { listenCli, type Handlers } from './cli-server'
+import { AfterReply, CliError, InvalidParams, listenCli, type Handlers } from './cli-server'
 import { gitHead } from './git'
 import { createInbox } from './inbox'
 import { installCommandMenu } from './menu'
 import { createMonitor } from './monitor'
 import { isDevReload } from './navigation'
 import { createPanes } from './pane'
+import {
+  checkRestart,
+  restartFile,
+  screenSessions,
+  takeScreen,
+  writeScreen,
+  type RestartCheck
+} from './restart'
 import {
   appSocketPath,
   killSessions,
@@ -36,6 +45,8 @@ import {
   windowBounds
 } from './window-state'
 import type { PaneReply } from '../shared/pane'
+import { PROTOCOL_VERSION } from '../shared/protocol'
+import { parseScreen, type ScreenState } from '../shared/screen'
 import type { SessionOpen } from '../shared/session'
 import { GHOSTTY, isLight } from '../shared/theme'
 
@@ -97,13 +108,99 @@ const panes = createPanes((channel, id, arg) => {
   return true
 })
 
+const devServer = Boolean(process.env.ELECTRON_RENDERER_URL)
+// `screen:state` 는 자주 오고 재시작 때만 읽으므로, `parseScreen` 은 읽을 때 부른다.
+let lastScreen: unknown = null
+let keepSessions = false
+let restarting = false
+
+function restartCheck(): Promise<RestartCheck> {
+  const screen = parseScreen(lastScreen)
+  return checkRestart({ devServer, screen, bin: sessionBin(), dir: sessionDir() })
+}
+
+/** 저장하지 못하면 던진다 — 다시 뜬 앱은 화면 없이 세션을 모두 끄기 때문이다. */
+async function saveScreen(): Promise<void> {
+  const screen = parseScreen(lastScreen)
+  if (!screen) throw new Error('the window has not reported its layout yet')
+  await writeScreen(restartFile(app.getPath('userData')), screen)
+}
+
+function relaunch(): void {
+  if (restarting) return
+  restarting = true
+  keepSessions = true
+  app.relaunch()
+  app.quit()
+}
+
+async function restartFromMenu(): Promise<void> {
+  const check = await restartCheck()
+  if (!check.ok && check.reason !== 'incompatible') return
+  if (!check.ok) {
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      message: 'Restart and end all terminals?',
+      detail: incompatibleDetail(check),
+      buttons: ['Restart', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1
+    })
+    if (response !== 0) return
+  }
+  try {
+    await saveScreen()
+  } catch (err) {
+    dialog.showErrorBox('Cannot restart', err instanceof Error ? err.message : String(err))
+    return
+  }
+  relaunch()
+}
+
+function incompatibleDetail(check: { sessions: number; protocol: number | null }): string {
+  const installed =
+    check.protocol === null
+      ? 'cannot tell its session protocol'
+      : `uses session protocol ${check.protocol}`
+  return `${check.sessions} terminal(s) will end: the installed app ${installed} and this app uses ${PROTOCOL_VERSION}.`
+}
+
+const restartHandlers: Handlers = {
+  'app.restart': async ({ kill_sessions: kill }) => {
+    if (kill !== undefined && typeof kill !== 'boolean') {
+      throw new InvalidParams('params.kill_sessions must be a boolean')
+    }
+    const check = await restartCheck()
+    if (!check.ok && check.reason !== 'incompatible') {
+      throw new CliError(
+        -32001,
+        'restart_unavailable',
+        check.reason === 'dev_server'
+          ? 'an app started by the dev server cannot restart itself'
+          : 'the window has not reported its layout yet'
+      )
+    }
+    if (!check.ok && !kill) {
+      throw new CliError(
+        -32001,
+        'sessions_would_end',
+        `${incompatibleDetail(check)} Pass --kill-sessions to restart anyway.`,
+        { sessions: check.sessions }
+      )
+    }
+    await saveScreen()
+    return new AfterReply(null, relaunch)
+  }
+}
+
 const cliHandlers: Handlers = {
   ping: (_params, session) => ({ session }),
   'canvas.put': canvasPut(mainWindow),
   ...claudeStatus.handlers,
   ...monitor.handlers,
   ...inbox,
-  ...panes.handlers
+  ...panes.handlers,
+  ...restartHandlers
 }
 
 const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
@@ -204,8 +301,19 @@ function start(): void {
   if (unobtrusive) app.dock?.hide()
   // 창 틀이 시스템 설정 대신 터미널 배경을 따라야, 어두운 터미널 위에 밝은 타이틀바가 뜨지 않는다.
   nativeTheme.themeSource = isLight(GHOSTTY) ? 'light' : 'dark'
-  // 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.
-  const leftovers = killSessions(sessionDir())
+  const restored = takeScreen(restartFile(app.getPath('userData')))
+  // 재시작으로 뜨지 않았으면 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.
+  const leftovers = restored.then((screen) =>
+    killSessions(sessionDir(), undefined, screenSessions(screen))
+  )
+  let toRestore: Promise<ScreenState | null> | null = restored
+  ipcMain.handle('screen:restore', () => {
+    const screen = toRestore
+    toRestore = null
+    return screen
+  })
+  ipcMain.on('screen:state', (_event, screen: unknown) => (lastScreen = screen))
+  ipcMain.on('app:restart', () => void restartFromMenu())
   const cli = cliAccess()
   // 터미널은 CLI 없이도 쓸 수 있어야 한다. env 는 그대로 넣어 CLI 가 앱에 닿지 않는다고 말하게 한다.
   const cliServer = listenCli(cli.socket, cliHandlers).catch((err) => {
@@ -247,7 +355,8 @@ function start(): void {
     })
     contents.once('destroyed', () => opened.delete(contents.id))
   })
-  ipcMain.on('session:open', (event, key: string, { id, workspace, cwd, command }: SessionOpen) => {
+  ipcMain.on('session:open', (event, key: string, open: SessionOpen) => {
+    const { id, workspace, cwd, command, attach } = open
     const keys = opened.get(event.sender.id) ?? new Set<string>()
     opened.set(event.sender.id, keys.add(key))
     sessionWorkspaces.open(key, id, workspace)
@@ -258,6 +367,7 @@ function start(): void {
       id,
       cwd,
       command,
+      attach,
       dir: sessionDir(),
       bin: sessionBin(),
       setup
@@ -281,7 +391,7 @@ function start(): void {
     event.preventDefault()
     claudeStatus.close()
     void Promise.all([
-      killSessions(sessionDir()),
+      keepSessions || killSessions(sessionDir()),
       cliServer.then((server) => server?.close())
     ]).finally(() => {
       sessionsKilled = true
@@ -289,6 +399,11 @@ function start(): void {
     })
   })
 
-  installCommandMenu((id) => mainWindow()?.webContents.send('command:run', id))
+  // 재시작은 renderer 를 거치지 않는다. renderer 가 멈췄을 때도 메뉴로 재시작할 수 있어야 하기 때문이다.
+  installCommandMenu(
+    (id) =>
+      id === 'restart' ? void restartFromMenu() : mainWindow()?.webContents.send('command:run', id),
+    { canRestart: !devServer }
+  )
   createWindow()
 }

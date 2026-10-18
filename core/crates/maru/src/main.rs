@@ -51,6 +51,7 @@
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
 //! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택) | `{"session":<새 세션 id>}` |
 //! | `pane.close` | `target`(세션 id) | `null` |
+//! | `app.restart` | `kill_sessions`(bool, 선택) | `null` |
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
 //! `id` 가 없으면 앱이 새 id 를 만든다. id 는 형식 없는 문자열이다.
@@ -76,6 +77,14 @@
 //! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 세션을 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
 //! 전에 끝날 수 있다.
 //!
+//! `app.restart` 는 터미널 세션을 끄지 않고 앱을 다시 띄운다. 다시 뜬 앱은 workspace 와 pane 을
+//! 되살리고 같은 세션에 다시 붙는다. 앱은 답을 보낸 뒤에 끝난다. 설치된 앱이 떠 있는 세션과 세션
+//! 프로토콜 버전이 다르면 다시 뜬 앱은 그 세션에 붙지 못한다. 이때 `kill_sessions` 가 true 가 아니면
+//! 재시작하지 않고 -32001 `sessions_would_end` 로 답한다(`data.sessions` 는 꺼질 세션 수). `kill_sessions`
+//! 가 true 면 재시작하고 다시 뜬 앱이 그 세션을 끈다. 재시작할 수 없으면(dev 서버로 띄웠거나 창이 아직
+//! 배치를 알리지 않았으면) -32001 `restart_unavailable` 로 답한다. 되살릴 화면을 저장하지 못하면 재시작하지
+//! 않고 `internal_error` 로 답한다.
+//!
 //! `monitor.subscribe` 는 `result` 를 보낸 뒤 연결을 닫지 않고, 알림이 생길 때마다
 //! `{"jsonrpc":"2.0","method":"monitor.event","params":<알림>}` 한 줄을 보낸다. 이 연결은 10초 끊기가
 //! 없고, 어느 쪽이든 닫으면 구독이 풀린다. `ancestors` 는 구독하는 프로세스의 부모부터 위로 올라간 pid
@@ -89,7 +98,10 @@
 //! Claude Code 는 이 프로세스의 stdout 한 줄마다 claude 에 알리고, 쉬는 claude 도 그 줄을 받아 새
 //! 응답을 시작한다. 그래서 알릴 것이 없으면 시작할 때도 stdout 에 아무것도 쓰지 않는다.
 //!
-//! monitor 는 `monitor.subscribe` 로 앱에 붙어, 받은 알림 객체를 한 줄씩 stdout 에 쓴다.
+//! monitor 는 `monitor.subscribe` 로 앱에 붙어, 받은 알림 객체를 한 줄씩 stdout 에 쓴다. 앱이 끝나거나
+//! 처음부터 없으면, `MARU_SOCKET` 이 있는 디렉토리가 바뀔 때마다 다시 구독해 본다 — 재시작한 앱에도
+//! 다시 붙는다. 그래서 앱은 그 경로에 소켓을 둘 때 이미 connect 를 받고 있어야 한다. 소켓이 보인 뒤에
+//! listen 을 시작하면, 그 사이에 붙어 본 monitor 는 다음 변화가 올 때까지 붙지 못한다.
 //!
 //! 종료 신호를 받거나 stdout 의 상대가 닫히면 끝난다. claude 는 정상으로 끝날 때 SIGTERM 을 보내지만,
 //! 신호 없이 죽으면(SIGKILL 등) monitor 에 남는 흔적은 stdout 이 닫히는 것뿐이다.
@@ -140,6 +152,11 @@ enum Command {
     Pane {
         #[command(subcommand)]
         command: PaneCommand,
+    },
+    /// Control the app.
+    App {
+        #[command(subcommand)]
+        command: AppCommand,
     },
     /// Report a claude running in this terminal. The app's zsh function and claude plugin
     /// call these.
@@ -202,6 +219,20 @@ enum PaneCommand {
     Close {
         /// Session id of the pane to close, e.g. s-1a2b3c4d.
         session: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum AppCommand {
+    /// Restart the app and keep its terminals running. The restarted app restores the
+    /// workspaces and panes and reattaches them to their terminals.
+    ///
+    /// Refuses when the installed app cannot reattach to the running terminals; pass
+    /// --kill-sessions to restart anyway and end them.
+    Restart {
+        /// Restart even if the terminals would end.
+        #[arg(long)]
+        kill_sessions: bool,
     },
 }
 
@@ -276,6 +307,13 @@ fn run(command: Command) -> Result<()> {
                 call(&target()?, "pane.close", params)?;
             }
         },
+        Command::App {
+            command: AppCommand::Restart { kill_sessions },
+        } => {
+            let mut params = Map::new();
+            params.insert("kill_sessions".into(), kill_sessions.into());
+            call(&target()?, "app.restart", params)?;
+        }
         Command::Claude { command } => match command {
             ClaudeCommand::Hook => claude_hook()?,
             ClaudeCommand::Exit => {
@@ -324,18 +362,19 @@ fn claude_monitor() -> Result<()> {
     };
     // macOS 의 poll 은 쓰기를 기다리지 않으면 pipe·socket 의 상대가 닫힌 것을 알리지 않는다.
     let kq = Kqueue::new().context("cannot create a kqueue")?;
-    watch(&kq, 1, EventFilter::EVFILT_WRITE).context("cannot watch stdout")?;
-    let mut app = match subscribe(&target) {
-        Ok(Some(app)) => Some(app),
-        Ok(None) => return Ok(()),
-        Err(_) => None,
-    };
-    if let Some(a) = &mut app {
-        watch(&kq, a.stream.as_raw_fd() as usize, EventFilter::EVFILT_READ)
-            .context("cannot watch the app")?;
-        if a.write_events() == Flow::StdoutClosed {
-            return Ok(());
-        }
+    watch(&kq, 1, EventFilter::EVFILT_WRITE, FilterFlag::empty()).context("cannot watch stdout")?;
+    // 다시 뜬 앱이 소켓을 같은 경로로 옮기므로(모듈 doc 「claude monitor」) 디렉토리를 감시한다.
+    let dir = std::path::Path::new(&target.socket)
+        .parent()
+        .and_then(|d| File::open(d).ok());
+    if let Some(d) = &dir {
+        let fd = d.as_raw_fd() as usize;
+        watch(&kq, fd, EventFilter::EVFILT_VNODE, FilterFlag::NOTE_WRITE)
+            .context("cannot watch the app's socket directory")?;
+    }
+    let mut app = None;
+    if !resubscribe(&kq, &target, &mut app)? {
+        return Ok(());
     }
     let idle = KEvent::new(
         0,
@@ -345,7 +384,7 @@ fn claude_monitor() -> Result<()> {
         0,
         0,
     );
-    let mut events = [idle; 2];
+    let mut events = [idle; 3];
     loop {
         let n = match kq.kevent(&[], &mut events, None) {
             Ok(n) => n,
@@ -357,11 +396,24 @@ fn claude_monitor() -> Result<()> {
                 if ev.flags().contains(EventFlag::EV_EOF) {
                     return Ok(());
                 }
+            } else if dir
+                .as_ref()
+                .is_some_and(|d| ev.ident() == d.as_raw_fd() as usize)
+            {
+                if app.is_none() && !resubscribe(&kq, &target, &mut app)? {
+                    return Ok(());
+                }
             } else if let Some(a) = &mut app {
                 match a.read() {
                     Flow::Open => {}
-                    // 닫은 fd 는 kqueue 에서도 빠진다.
-                    Flow::AppClosed => app = None,
+                    // 닫은 fd 는 kqueue 에서도 빠진다. 앱이 이미 다시 떠 있으면 디렉토리가 더 바뀌지 않으므로
+                    // 곧바로 한 번 붙어 본다.
+                    Flow::AppClosed => {
+                        app = None;
+                        if !resubscribe(&kq, &target, &mut app)? {
+                            return Ok(());
+                        }
+                    }
                     Flow::StdoutClosed => return Ok(()),
                 }
             }
@@ -369,12 +421,28 @@ fn claude_monitor() -> Result<()> {
     }
 }
 
-fn watch(kq: &Kqueue, fd: usize, filter: EventFilter) -> nix::Result<()> {
+/// 앱에 붙으면 `app` 에 넣는다. 앱이 구독을 거절했거나 stdout 이 닫혀 끝내야 하면 false 다.
+fn resubscribe(kq: &Kqueue, target: &Target, app: &mut Option<App>) -> Result<bool> {
+    let mut a = match subscribe(target) {
+        Ok(Some(a)) => a,
+        Ok(None) => return Ok(false),
+        Err(_) => return Ok(true),
+    };
+    let fd = a.stream.as_raw_fd() as usize;
+    watch(kq, fd, EventFilter::EVFILT_READ, FilterFlag::empty()).context("cannot watch the app")?;
+    if a.write_events() == Flow::StdoutClosed {
+        return Ok(false);
+    }
+    *app = Some(a);
+    Ok(true)
+}
+
+fn watch(kq: &Kqueue, fd: usize, filter: EventFilter, fflags: FilterFlag) -> nix::Result<()> {
     let ev = KEvent::new(
         fd,
         filter,
         EventFlag::EV_ADD | EventFlag::EV_CLEAR,
-        FilterFlag::empty(),
+        fflags,
         0,
         0,
     );

@@ -15,6 +15,46 @@ const keys = (ws: Workspaces) => ws.list.value.map((w) => w.key)
 const firstPanes = (ws: Workspaces) => ws.list.value.map((w) => w.panes[0])
 const selected = (ws: Workspaces) => ws.selected()!
 
+describe('snapshot·restore', () => {
+  function arranged(): Workspaces {
+    const ws = opened(2)
+    ws.split('down')
+    const p = selected(ws).panes[1]
+    ws.setCwd(p.key, '/moved')
+    ws.setTitle(p.key, 'vim')
+    ws.select(ws.list.value[0].key)
+    return ws
+  }
+
+  it('되살린 store 는 workspace·pane·배치·포커스·선택이 같다', () => {
+    const from = arranged()
+    const to = createWorkspaces()
+    to.restore(from.snapshot())
+    expect(to.snapshot()).toEqual(from.snapshot())
+    expect(to.selected()!.key).toBe(from.selected()!.key)
+    const pane = to.list.value[1].panes[1]
+    expect([pane.cwd, pane.title]).toEqual(['/moved', 'vim'])
+  })
+
+  it('되살린 pane 은 세션에 붙고, 스냅샷에는 붙기·git 을 싣지 않는다', () => {
+    const to = createWorkspaces()
+    to.restore(arranged().snapshot())
+    expect(to.list.value.flatMap((w) => w.panes.map((p) => p.attach))).toEqual([true, true, true])
+    for (const w of to.snapshot().workspaces)
+      for (const p of w.panes) expect(Object.keys(p)).not.toContain('attach')
+  })
+
+  it('되살린 뒤 새로 연 workspace·pane 의 key 가 겹치지 않고 새 pane 은 세션을 띄운다', () => {
+    const to = createWorkspaces()
+    to.restore(arranged().snapshot())
+    to.open()
+    to.split('right')
+    const all = to.list.value.flatMap((w) => [w.key, ...w.panes.map((p) => p.key)])
+    expect(new Set(all).size).toBe(all.length)
+    expect(selected(to).panes.map((p) => p.attach)).toEqual([undefined, undefined])
+  })
+})
+
 describe('workspaces', () => {
   it('칸을 만들 때마다 그 세션의 id 를 새로 정한다', () => {
     let n = 0

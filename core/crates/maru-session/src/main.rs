@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use maru_session::server::{self, Options};
 use std::io::Write;
 use std::process::ExitCode;
@@ -7,12 +7,27 @@ use std::process::ExitCode;
 #[derive(Parser)]
 #[command(version)]
 struct Args {
+    /// Print the session protocol version and exit.
+    #[arg(long, exclusive = true)]
+    protocol_version: bool,
     #[command(flatten)]
-    opts: Options,
+    opts: Option<Options>,
 }
 
 fn main() -> ExitCode {
-    let Args { opts } = Args::parse();
+    let args = Args::parse();
+    if args.protocol_version {
+        let _ = writeln!(std::io::stdout(), "{}", maru_session::PROTOCOL_VERSION);
+        return ExitCode::SUCCESS;
+    }
+    let Some(opts) = args.opts else {
+        Args::command()
+            .error(
+                clap::error::ErrorKind::MissingRequiredArgument,
+                "--dir and --id are required",
+            )
+            .exit()
+    };
 
     let _ = nix::unistd::setsid();
 
