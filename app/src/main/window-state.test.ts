@@ -201,6 +201,40 @@ describe('saveWindowStateOnClose', () => {
     expect(readWindowState(file)).toEqual({ ...NORMAL, ...placed })
   })
 
+  it('최대화한 뒤 전체 화면인 채 닫으면 전체 화면에 들어가기 전의 보통 크기와 최대화를 쓴다', () => {
+    const file = join(dir, 'w.json')
+    const win = tracked(file, { bounds: placed })
+    win.s.maximized = true
+    win.emit('maximize')
+    Object.assign(win.s, {
+      fullScreen: true,
+      maximized: false,
+      bounds: { x: 0, y: 0, width: 1440, height: 900 }
+    })
+    win.emit('resize')
+    win.emit('enter-full-screen')
+    win.emit('move')
+    win.emit('close')
+    expect(readWindowState(file)).toEqual({
+      ...placed,
+      isMaximized: true,
+      isFullScreen: true
+    })
+  })
+
+  it('최대화한 창이 전체 화면에서 나온 뒤 닫으면 최대화만 쓴다', () => {
+    const file = join(dir, 'w.json')
+    const win = tracked(file, { bounds: placed })
+    win.s.maximized = true
+    win.emit('maximize')
+    Object.assign(win.s, { fullScreen: true, maximized: false })
+    win.emit('enter-full-screen')
+    Object.assign(win.s, { fullScreen: false, maximized: true })
+    win.emit('leave-full-screen')
+    win.emit('close')
+    expect(readWindowState(file)).toEqual({ ...NORMAL, ...placed, isMaximized: true })
+  })
+
   it('쓸 수 없는 경로여도 throw 하지 않는다', () => {
     const win = tracked(join(dir, 'missing', 'w.json'))
     expect(() => win.emit('close')).not.toThrow()

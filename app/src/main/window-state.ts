@@ -63,7 +63,6 @@ export function restoreWindowState(win: StatefulWindow, state: WindowState | nul
 }
 
 function currentState(win: StatefulWindow): WindowState {
-  // 최대화·전체 화면 중에도 그 전의 보통 크기를 저장해야 풀었을 때 그 크기로 돌아간다.
   return {
     ...win.getNormalBounds(),
     isMaximized: win.isMaximized(),
@@ -72,18 +71,23 @@ function currentState(win: StatefulWindow): WindowState {
 }
 
 /**
- * 최소화 중에는 `isMaximized()` 가 false 이고 `getNormalBounds()` 가 최대화된 크기를 주므로,
- * 최소화한 채 닫으면 최소화하기 전에 마지막으로 기록한 상태를 저장한다.
+ * 최소화·전체 화면 중에는 `isMaximized()` 가 false 이므로, 그 상태로 닫으면 들어가기 전에
+ * 마지막으로 기록한 상태를 저장한다. 최소화 중에는 `getNormalBounds()` 도 최대화된 크기를 준다.
  */
 export function saveWindowStateOnClose(win: TrackedWindow, file: string): void {
   let last = currentState(win)
   const update = (): void => {
-    if (!win.isMinimized()) last = currentState(win)
+    if (!win.isMinimized() && !win.isFullScreen()) last = currentState(win)
   }
   for (const event of CHANGES) win.on(event as 'resize', update)
+  const closing = (): WindowState => {
+    if (win.isMinimized()) return last
+    if (win.isFullScreen()) return { ...last, isFullScreen: true }
+    return currentState(win)
+  }
   win.on('close', () => {
     try {
-      writeFileSync(file, JSON.stringify(win.isMinimized() ? last : currentState(win)))
+      writeFileSync(file, JSON.stringify(closing()))
     } catch (err) {
       console.error(`maru: cannot save the window state to ${file}:`, err)
     }
