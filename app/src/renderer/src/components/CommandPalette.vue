@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
-import { filterCommands, type CommandId } from '../../../shared/commands'
+import { available, filterCommands, type CommandId } from '../../../shared/commands'
 import { commandKeys, formatKeys } from '../../../shared/shortcuts'
 
 const emit = defineEmits<{ run: [id: CommandId]; close: [] }>()
@@ -9,7 +9,9 @@ const input = useTemplateRef<HTMLInputElement>('input')
 const query = ref('')
 const index = ref(0)
 const matches = computed(() =>
-  filterCommands(query.value).map((c) => ({ ...c, keys: commandKeys(c.id) }))
+  filterCommands(query.value)
+    .filter((c) => available(c, window.maru))
+    .map((c) => ({ ...c, keys: commandKeys(c.id) }))
 )
 watch(query, () => (index.value = 0))
 

@@ -86,6 +86,12 @@ async function readRecords(dir: string): Promise<SessionRecord[]> {
   return parsed.filter((r): r is SessionRecord => r !== null)
 }
 
+export async function liveSessions(dir: string): Promise<string[]> {
+  const records = await readRecords(dir)
+  const live = await Promise.all(records.map((rec) => sessionLive(dir, rec.id)))
+  return records.filter((_, i) => live[i]).map((rec) => rec.id)
+}
+
 /**
  * 셸을 정리하고 소켓·레코드를 지운 뒤에 연결을 닫으므로 닫힐 때까지 기다린다. 멈춘 프로세스도
  * 커널이 connect 를 받아 주므로, 답이 없으면 기다리기를 그만둔다.
@@ -114,11 +120,16 @@ export function killSession(dir: string, id: string, timeoutMs = KILL_TIMEOUT_MS
  * 프로세스까지 없는 레코드는 지운다 — 띄우는 중인 세션은 소켓이 아직 안 열렸어도 프로세스는
  * 있다.
  */
-export async function killSessions(dir: string, timeoutMs = KILL_TIMEOUT_MS): Promise<void> {
+export async function killSessions(
+  dir: string,
+  timeoutMs = KILL_TIMEOUT_MS,
+  keep: ReadonlySet<string> = new Set()
+): Promise<void> {
   await Promise.all(
     (await readRecords(dir)).map(async (rec) => {
       const sock = socketPath(dir, rec.id)
       if (await isLive(sock)) {
+        if (keep.has(rec.id) && rec.protocol_version === PROTOCOL_VERSION) return
         await requestKill(sock, timeoutMs)
       } else if (!processExists(rec.pid)) {
         await rm(join(dir, `${rec.id}.json`), { force: true })

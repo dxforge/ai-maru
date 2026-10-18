@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  AfterReply,
   CLI_PROTOCOL_VERSION,
+  CliError,
   InvalidParams,
   listenCli,
   type CliServer,
@@ -42,6 +44,14 @@ const handlers: Handlers = {
       pushes.push(notify)
       return () => unsubscribed++
     }),
+  refuses: () => {
+    throw new CliError(-32001, 'not_now', 'try later', { left: 2 })
+  },
+  thenRun: (params) =>
+    new AfterReply({ ok: true }, () => {
+      recorded.push(params.value)
+    }),
+  thenClose: () => new AfterReply({ ok: true }, () => void server?.close()),
   subRefuses: () => {
     throw new InvalidParams('not yours')
   },
@@ -150,6 +160,36 @@ describe('listenCli', () => {
       id: 7,
       result: { session: 's-test' }
     })
+  })
+
+  it('CliError 는 그 code·이유·data 로 답한다', async () => {
+    const path = await start()
+    const res = await call(path, req('refuses', common))
+    expect(res.error).toEqual({
+      code: -32001,
+      message: 'try later',
+      data: { code: 'not_now', left: 2 }
+    })
+  })
+
+  it('AfterReply 의 run 이 연결을 모두 끊어도 답은 닿는다', async () => {
+    const path = await start()
+    const res = await call(path, req('thenClose', common))
+    expect(res.result).toEqual({ ok: true })
+  })
+
+  it('AfterReply 는 run 을 한 번 부른다', async () => {
+    const path = await start()
+    expect((await call(path, req('thenRun', { ...common, value: 3 }))).result).toEqual({
+      ok: true
+    })
+    await vi.waitFor(() => expect(recorded).toEqual([3]))
+  })
+
+  it('id 없는 요청의 AfterReply 도 run 을 부른다', async () => {
+    const path = await start()
+    expect(await exchange(path, req('thenRun', { ...common, value: 4 }, null))).toBe('')
+    await vi.waitFor(() => expect(recorded).toEqual([4]))
   })
 
   it('줄바꿈 없이 끝난 요청도 받는다', async () => {
@@ -328,6 +368,14 @@ describe('listenCli', () => {
     } finally {
       leftover.close()
     }
+  })
+
+  it('듣기 시작한 소켓을 제 경로로 옮기고 임시 이름을 남기지 않는다', async () => {
+    mkdirSync(join(dir, 's'))
+    writeFileSync(join(dir, 's', '.sock'), '')
+    const path = await start()
+    expect(existsSync(join(dir, 's', '.sock'))).toBe(false)
+    expect((await call(path, req('ping', common))).result).toEqual({ session: 's-test' })
   })
 
   it('닫으면 소켓 파일을 지운다', async () => {

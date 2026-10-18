@@ -819,12 +819,20 @@ fn claude_monitor_on_dev_null_fails() {
     assert_fails_with(&out, "cannot watch stdout");
 }
 
+/// 앱처럼 다른 이름으로 듣기 시작한 뒤 소켓을 옮긴다 — 경로가 보이면 이미 connect 를 받는다.
+fn listen_like_the_app(sock: &Path) -> UnixListener {
+    let tmp = sock.with_file_name(".sock");
+    let listener = UnixListener::bind(&tmp).unwrap();
+    std::fs::rename(&tmp, sock).unwrap();
+    listener
+}
+
 fn serve_subscription(
     sock: &Path,
     first: impl FnOnce(&Value) -> String + Send + 'static,
     then: impl FnOnce(UnixStream) + Send + 'static,
 ) -> std::sync::mpsc::Receiver<Value> {
-    let listener = UnixListener::bind(sock).unwrap();
+    let listener = listen_like_the_app(sock);
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let (stream, req) = accept_request(&listener);
@@ -946,6 +954,40 @@ fn claude_monitor_keeps_waiting_after_the_app_closes_the_subscription() {
     let child = monitor_at(Some(&sock), Stdio::piped());
     reqs.recv_timeout(Duration::from_secs(15)).unwrap();
     assert_ends_when_closed(child, |child| drop(child.stdout.take()));
+}
+
+#[test]
+fn claude_monitor_subscribes_again_when_the_app_comes_back() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let first = serve_subscription(&sock, subscribed, drop);
+    let mut child = monitor_at(Some(&sock), Stdio::piped());
+    first.recv_timeout(Duration::from_secs(15)).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    std::fs::remove_file(&sock).unwrap();
+    let a = json!({"event": "inbox", "from": "s-0000000a", "body": "back"});
+    let line = event(&a);
+    let again = serve_subscription(&sock, move |req| subscribed(req) + &line, hold);
+    let req = again.recv_timeout(Duration::from_secs(15)).unwrap();
+    assert_eq!(req["method"], "monitor.subscribe");
+    assert_eq!(read_lines(&mut child, 1), vec![a]);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn claude_monitor_subscribes_when_the_app_starts_after_it() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let mut child = monitor_at(Some(&sock), Stdio::piped());
+    assert_running(&mut child);
+    let a = json!({"event": "inbox", "from": "s-0000000a", "body": "late"});
+    let line = event(&a);
+    let reqs = serve_subscription(&sock, move |req| subscribed(req) + &line, hold);
+    reqs.recv_timeout(Duration::from_secs(15)).unwrap();
+    assert_eq!(read_lines(&mut child, 1), vec![a]);
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 #[test]
@@ -1216,6 +1258,41 @@ fn pane_new_fails_on_an_answer_without_a_session() {
     let out = maru_in(tmp.path(), &sock, &["pane", "new"]);
     server.join().unwrap();
     assert_fails_with(&out, "without a session");
+}
+
+#[test]
+fn app_restart_sends_kill_sessions_only_when_asked() {
+    for (args, kill) in [
+        (&["app", "restart"][..], false),
+        (&["app", "restart", "--kill-sessions"][..], true),
+    ] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, |req| result(req, Value::Null));
+        let out = maru(Some(&sock), args);
+        let req = server.join().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(stdout(&out), "");
+        assert_eq!(req["method"], "app.restart");
+        assert_eq!(req["params"]["kill_sessions"], kill);
+    }
+}
+
+#[test]
+fn app_restart_shows_the_apps_reason() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        error(
+            req,
+            -32001,
+            "1 terminal(s) will end. Pass --kill-sessions to restart anyway.",
+            json!({ "code": "sessions_would_end", "sessions": 1 }),
+        )
+    });
+    let out = maru(Some(&sock), &["app", "restart"]);
+    server.join().unwrap();
+    assert_fails_with(&out, "Pass --kill-sessions to restart anyway.");
 }
 
 #[test]

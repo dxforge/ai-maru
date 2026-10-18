@@ -1,4 +1,5 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -169,6 +170,58 @@ describe('killSessions', () => {
       expect(Date.now() - started).toBeLessThan(2000)
     } finally {
       server.close()
+    }
+  })
+
+  async function fakeSession(dir: string, id: string, protocol = PROTOCOL_VERSION) {
+    const killed = { value: false }
+    const server = createServer((sock) =>
+      sock.on('data', () => {
+        killed.value = true
+        sock.end()
+      })
+    )
+    await new Promise<void>((r) => server.listen(socketPath(dir, id), r))
+    writeFileSync(
+      join(dir, `${id}.json`),
+      JSON.stringify({ protocol_version: protocol, id, pid: process.pid, created_at_ms: 0 })
+    )
+    return { killed, close: () => server.close() }
+  }
+
+  it('남길 세션은 끄지 않고 나머지는 끈다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maru-keep-'))
+    const kept = await fakeSession(dir, 's-0000000a')
+    const other = await fakeSession(dir, 's-0000000b')
+    try {
+      await killSessions(dir, 200, new Set(['s-0000000a']))
+      expect(kept.killed.value).toBe(false)
+      expect(other.killed.value).toBe(true)
+    } finally {
+      kept.close()
+      other.close()
+    }
+  })
+
+  it('남길 세션이어도 프로세스까지 없는 레코드는 지운다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maru-keep-'))
+    const dead = spawnSync('true').pid!
+    writeFileSync(
+      join(dir, 's-0000000a.json'),
+      JSON.stringify({ protocol_version: PROTOCOL_VERSION, id: 's-0000000a', pid: dead })
+    )
+    await killSessions(dir, 200, new Set(['s-0000000a']))
+    expect(existsSync(join(dir, 's-0000000a.json'))).toBe(false)
+  })
+
+  it('프로토콜 버전이 다른 세션은 남길 세션이어도 끈다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maru-keep-'))
+    const old = await fakeSession(dir, 's-0000000a', PROTOCOL_VERSION + 1)
+    try {
+      await killSessions(dir, 200, new Set(['s-0000000a']))
+      expect(old.killed.value).toBe(true)
+    } finally {
+      old.close()
     }
   })
 })

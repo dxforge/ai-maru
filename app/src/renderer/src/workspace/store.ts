@@ -1,5 +1,6 @@
 import { readonly, ref } from 'vue'
 import type { GitHead } from '../../../shared/git'
+import type { ScreenState } from '../../../shared/screen'
 import { newSessionId, randomId } from '../../../shared/session'
 import {
   neighbor,
@@ -12,7 +13,8 @@ import {
 
 /**
  * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령, `cwd` 는 세션이 알려
- * 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목이다.
+ * 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목이다. `attach` 는 재시작으로 되살린 pane 이 떠 있는
+ * 세션에 붙어야 할 때 true 다.
  */
 export type Pane = {
   key: number
@@ -22,7 +24,10 @@ export type Pane = {
   cwd?: string
   title?: string
   git?: GitHead
+  attach?: boolean
 }
+
+export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
 
 /** `panes` 는 연 순서다. 배치 순서로 그리면 나눌 때마다 터미널의 DOM 이 옮겨진다. */
 export type Workspace = { key: number; id: string; panes: Pane[]; layout: Layout; focused: number }
@@ -164,6 +169,26 @@ export function createWorkspaces(
     if (p) p.title = title
   }
 
+  // IPC 로 보내므로 JSON 으로 reactive proxy 를 벗긴다. `git` 은 `restore` 가 cwd 로 다시 읽고, `attach` 는
+  // `restore` 가 정한다.
+  function snapshot(): WorkspacesScreen {
+    const screen = { workspaces: list.value, selected: selectedKey.value }
+    return JSON.parse(
+      JSON.stringify(screen, (k, v) => (k === 'git' || k === 'attach' ? undefined : v))
+    )
+  }
+
+  function restore(screen: WorkspacesScreen): void {
+    list.value = screen.workspaces.map((w) => ({
+      ...w,
+      panes: w.panes.map((p) => ({ ...p, attach: true }))
+    }))
+    selectedKey.value = screen.selected
+    const keys = screen.workspaces.flatMap((w) => [w.key, ...w.panes.map((p) => p.key)])
+    nextKey = Math.max(nextKey, ...keys.map((k) => k + 1))
+    for (const w of list.value) for (const p of w.panes) if (p.cwd) readGitFor(p.key, p.cwd)
+  }
+
   return {
     list: readonly(list),
     selectedKey: readonly(selectedKey),
@@ -176,6 +201,8 @@ export function createWorkspaces(
     moveFocus,
     setCwd,
     setTitle,
+    snapshot,
+    restore,
     refreshSession,
     selected,
     step,

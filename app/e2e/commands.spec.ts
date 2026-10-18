@@ -246,7 +246,8 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
     'Focus Pane Left⌥⌘←',
     'Focus Pane Right⌥⌘→',
     'Focus Pane Up⌥⌘↑',
-    'Focus Pane Down⌥⌘↓'
+    'Focus Pane Down⌥⌘↓',
+    'Restart'
   ])
   await expect(items(page).first()).toHaveClass(/selected/)
 

@@ -73,6 +73,21 @@ describe('attach', () => {
     expect(term.written).toEqual([replayAndOutput])
   })
 
+  it('되살린 세션이 없으면 이유만 보이고 pane 을 닫거나 실패로 알리지 않는다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, deliver, close } = fakeConnection()
+    const calls: string[] = []
+    attach(term as unknown as Terminal, conn, {
+      onExit: () => calls.push('exit'),
+      onSpawned: () => calls.push('spawned'),
+      onOpenFailed: () => calls.push('failed')
+    })
+    deliver(JSON.stringify({ type: 'gone' }))
+    close()
+    expect(calls).toEqual([])
+    expect(term.written).toEqual(['\r\n[the session ended while the app was restarting]\r\n'])
+  })
+
   it('셸이 끝난 뒤 연결이 닫히면 끊김을 보이지 않는다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver, close } = fakeConnection()

@@ -11,6 +11,7 @@ import {
 } from 'vue'
 import type { CommandId } from '../../shared/commands'
 import type { PaneReply } from '../../shared/pane'
+import { SCREEN_VERSION, type ScreenState } from '../../shared/screen'
 import { createCanvas } from './canvas/store'
 import { createClaudeStatuses } from './claude/status'
 import CanvasPanel from './components/CanvasPanel.vue'
@@ -45,7 +46,6 @@ function newWorkspace(): void {
   const p = w && focusedPane(w)
   workspaces.open(p?.cwd ?? p?.startDir)
 }
-workspaces.open()
 
 type Terminal = InstanceType<typeof TerminalView>
 const terminals = new Map<number, Terminal>()
@@ -358,7 +358,8 @@ const handlers: Record<CommandId, () => void> = {
   'toggle-canvas': canvas.toggle,
   'toggle-view-mode': () => {
     viewMode.value = viewMode.value === 'single' ? 'columns' : 'single'
-  }
+  },
+  restart: window.maru.restart
 }
 
 function runCommand(id: CommandId): void {
@@ -366,6 +367,28 @@ function runCommand(id: CommandId): void {
   handlers[id]()
 }
 window.maru.onCommand(runCommand)
+
+function screen(): ScreenState {
+  return {
+    version: SCREEN_VERSION,
+    ...workspaces.snapshot(),
+    sidebar: { open: sidebarOpen.value, width: sidebarWidth.value, folded: [...folded] },
+    viewMode: viewMode.value
+  }
+}
+
+void window.maru.restoreScreen().then((s) => {
+  if (s?.workspaces.length) {
+    workspaces.restore(s)
+    sidebarOpen.value = s.sidebar.open
+    sidebarWidth.value = s.sidebar.width
+    for (const key of s.sidebar.folded) folded.add(key)
+    viewMode.value = s.viewMode
+  } else {
+    workspaces.open()
+  }
+  watch(screen, window.maru.saveScreen, { immediate: true })
+})
 </script>
 
 <template>
@@ -440,6 +463,7 @@ window.maru.onCommand(runCommand)
                 :workspace-id="w.id"
                 :start-dir="p.startDir"
                 :command="p.command"
+                :attach="p.attach"
                 :active="active"
                 @exit="removePane(p.key)"
                 @failed="(message) => paneFailed(p.key, message)"

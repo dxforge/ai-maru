@@ -4,7 +4,8 @@ import type { SessionConnection } from './connection'
 
 export type AttachHandlers = {
   onExit(): void
-  onSpawned(id: string, cwd: string): void
+  /** 되살린 pane 이 붙으면 `cwd` 가 없다. */
+  onSpawned(id: string, cwd: string | undefined): void
   onOpenFailed(message: string): void
 }
 
@@ -19,7 +20,8 @@ export function attach(
 ): Attachment {
   const encoder = new TextEncoder()
   let primary = true
-  let exited = false
+  // 셸이 끝났거나 되살린 세션이 없다 — 그 뒤 연결이 닫히는 것은 끊김이 아니다.
+  let ended = false
   let spawned = false
   let failed = false
   const openFailed = (message: string): void => {
@@ -53,8 +55,13 @@ export function attach(
         handlers.onSpawned(m.id, m.cwd)
         break
       case 'exit':
-        exited = true
+        ended = true
         handlers.onExit()
+        break
+      // 되살린 pane 은 지우지 않고 이유를 보인다 — 말없이 사라지면 재시작 전 배치와 달라 헷갈린다.
+      case 'gone':
+        ended = true
+        term.write('\r\n[the session ended while the app was restarting]\r\n')
         break
       case 'error':
         term.write(`\r\n[maru-session: ${m.code}] ${m.message ?? ''}\r\n`)
@@ -62,9 +69,8 @@ export function attach(
         break
     }
   })
-  // 셸이 끝나면 세션이 연결을 닫는다 — 그건 끊김이 아니다.
   conn.onClose(() => {
-    if (exited) return
+    if (ended) return
     term.write('\r\n[disconnected from the session]\r\n')
     // session host 가 죽으면 open_failed 없이 닫힌다.
     if (!spawned) openFailed('disconnected before the session started')

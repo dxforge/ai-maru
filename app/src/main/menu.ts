@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
-import { commands, type CommandId } from '../shared/commands'
+import { available, commands, type CommandId } from '../shared/commands'
 import { commandKeys, menuKeys, toAccelerator, type MenuRole } from '../shared/shortcuts'
 
 const separator: MenuItemConstructorOptions = { type: 'separator' }
@@ -18,10 +18,13 @@ const fullScreen: MenuItemConstructorOptions = {
   }
 }
 
-export function installCommandMenu(run: (id: CommandId) => void): void {
-  const commandItems = (menu: 'file' | 'view'): MenuItemConstructorOptions[] =>
+export function installCommandMenu(
+  run: (id: CommandId) => void,
+  can: Parameters<typeof available>[1]
+): void {
+  const commandItems = (menu: 'app' | 'file' | 'view'): MenuItemConstructorOptions[] =>
     commands
-      .filter((c) => c.menu === menu)
+      .filter((c) => c.menu === menu && available(c, can))
       .map((c) => {
         const keys = commandKeys(c.id)
         return {
@@ -44,6 +47,7 @@ export function installCommandMenu(run: (id: CommandId) => void): void {
           role('hideOthers'),
           role('unhide'),
           separator,
+          ...commandItems('app'),
           role('quit')
         ]
       },

@@ -3,7 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal, type IRenderDimensions } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
-import { attach, type Attachment } from '../session/attach'
+import { attach as attachTerminal, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
 import { isAppKey, matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
 import { FONT_FAMILY, FONT_SIZE } from '../font'
@@ -17,12 +17,14 @@ const {
   workspaceId,
   startDir = undefined,
   command = undefined,
+  attach = undefined,
   active
 } = defineProps<{
   sessionId: string
   workspaceId: string
   startDir?: string
   command?: readonly string[]
+  attach?: boolean
   active: boolean
 }>()
 const emit = defineEmits<{
@@ -125,14 +127,15 @@ onMounted(() => {
     id: sessionId,
     workspace: workspaceId,
     cwd: startDir,
-    command: command && [...command]
+    command: command && [...command],
+    attach
   })
-  session = attach(term, conn, {
+  session = attachTerminal(term, conn, {
     onExit: () => emit('exit'),
     onOpenFailed: (message) => emit('failed', message),
     onSpawned: (_id, dir) => {
       emit('spawned')
-      emit('cwd', dir)
+      if (dir !== undefined) emit('cwd', dir)
     }
   })
   // 조합한 글자는 다음 키가 오면 그 키보다 먼저 setTimeout 을 기다리지 않고 간다. 그 바로 뒤에 보낸다.

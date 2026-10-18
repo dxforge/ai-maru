@@ -1,0 +1,134 @@
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { PROTOCOL_VERSION } from '../shared/protocol'
+import { SCREEN_VERSION, type ScreenState } from '../shared/screen'
+import {
+  checkRestart,
+  restartFile,
+  screenSessions,
+  sessionProtocol,
+  takeScreen,
+  writeScreen
+} from './restart'
+import { socketPath } from './session'
+
+const screen: ScreenState = {
+  version: SCREEN_VERSION,
+  workspaces: [
+    {
+      key: 1,
+      id: 'w-00000001',
+      panes: [
+        { key: 0, sessionId: 's-0000000a', cwd: '/tmp' },
+        { key: 2, sessionId: 's-0000000b', command: ['sh', '-c', 'true'], title: 't' }
+      ],
+      layout: { split: 'right', first: { pane: 0 }, second: { pane: 2 } },
+      focused: 2
+    }
+  ],
+  selected: 1,
+  sidebar: { open: false, width: 300, folded: [1] },
+  viewMode: 'columns'
+}
+
+let dir: string
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'maru-restart-'))
+})
+afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+function fakeBin(output: string): string {
+  const bin = join(dir, 'maru-session')
+  writeFileSync(bin, `#!/bin/sh\necho ${output}\n`)
+  chmodSync(bin, 0o755)
+  return bin
+}
+
+describe('restart 파일', () => {
+  it('쓴 화면을 한 번만 읽고 지운다', async () => {
+    const path = restartFile(dir)
+    await writeScreen(path, screen)
+    expect(await takeScreen(path)).toEqual(screen)
+    expect(existsSync(path)).toBe(false)
+    expect(await takeScreen(path)).toBeNull()
+  })
+
+  it('모르는 버전이나 깨진 파일은 되살리지 않고 지운다', async () => {
+    const path = restartFile(dir)
+    writeFileSync(path, JSON.stringify({ ...screen, version: SCREEN_VERSION + 1 }))
+    expect(await takeScreen(path)).toBeNull()
+    expect(existsSync(path)).toBe(false)
+    writeFileSync(path, '{')
+    expect(await takeScreen(path)).toBeNull()
+    expect(existsSync(path)).toBe(false)
+  })
+
+  it('화면의 세션 id 를 모은다', () => {
+    expect(screenSessions(screen)).toEqual(new Set(['s-0000000a', 's-0000000b']))
+    expect(screenSessions(null)).toEqual(new Set())
+  })
+})
+
+describe('sessionProtocol', () => {
+  it('바이너리가 알려 준 버전을 읽고, 못 읽으면 null 이다', async () => {
+    expect(await sessionProtocol(fakeBin('7'))).toBe(7)
+    expect(await sessionProtocol(fakeBin('nope'))).toBeNull()
+    expect(await sessionProtocol(fakeBin(''))).toBeNull()
+    expect(await sessionProtocol(join(dir, 'missing'))).toBeNull()
+  })
+})
+
+describe('checkRestart', () => {
+  const sessions = (): string => join(dir, 's')
+
+  it('dev 서버로 띄웠거나 받은 화면이 없으면 재시작하지 않는다', async () => {
+    const bin = fakeBin(String(PROTOCOL_VERSION))
+    expect(await checkRestart({ devServer: true, screen, bin, dir: sessions() })).toEqual({
+      ok: false,
+      reason: 'dev_server'
+    })
+    expect(await checkRestart({ devServer: false, screen: null, bin, dir: sessions() })).toEqual({
+      ok: false,
+      reason: 'no_screen'
+    })
+  })
+
+  it('버전이 같으면 재시작한다', async () => {
+    const bin = fakeBin(String(PROTOCOL_VERSION))
+    expect(await checkRestart({ devServer: false, screen, bin, dir: sessions() })).toEqual({
+      ok: true
+    })
+  })
+
+  it('버전이 달라도 산 세션이 없으면 재시작한다', async () => {
+    const bin = fakeBin(String(PROTOCOL_VERSION + 1))
+    expect(await checkRestart({ devServer: false, screen, bin, dir: sessions() })).toEqual({
+      ok: true
+    })
+  })
+
+  it('버전이 다르고 산 세션이 있으면 꺼질 세션 수를 알린다', async () => {
+    const bin = fakeBin(String(PROTOCOL_VERSION + 1))
+    const d = mkdtempSync(join(tmpdir(), 'maru-live-'))
+    const server = createServer((s) => s.destroy())
+    await new Promise<void>((r) => server.listen(socketPath(d, 's-0000000a'), r))
+    writeFileSync(
+      join(d, 's-0000000a.json'),
+      JSON.stringify({ protocol_version: PROTOCOL_VERSION, id: 's-0000000a', pid: process.pid })
+    )
+    try {
+      expect(await checkRestart({ devServer: false, screen, bin, dir: d })).toEqual({
+        ok: false,
+        reason: 'incompatible',
+        sessions: 1,
+        protocol: PROTOCOL_VERSION + 1
+      })
+    } finally {
+      server.close()
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+})

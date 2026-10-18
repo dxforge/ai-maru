@@ -16,6 +16,12 @@ renderer 는 이 순서에 기댄다. host 가 죽으면 main 이 모든 창에 
 
 workspace 목록은 renderer 만 가진다. renderer 는 세션을 열 때 `session:open` 에 그 pane 의 workspace id 를 싣는다. main 은 그 key 의 kill 이 올 때까지 세션의 workspace 를 기억한다(`app/src/main/session-workspaces.ts`). 그래서 renderer 는 pane 을 지울 때마다, 세션이 스스로 끝났어도 kill 을 보낸다(`App.vue` 의 `removePane`). kill 을 보내지 않고 pane 을 지우는 경로가 생기면 main 은 끝난 세션의 workspace 를 계속 기억한다.
 
+## 재시작은 세션을 남긴다
+
+종료는 세션을 모두 끄고, 재시작은 끄지 않는다. renderer 는 화면(workspace·pane 배치와 사이드바·보기 모드, `app/src/shared/screen.ts`)이 바뀔 때마다 main 에 보낸다. 재시작하면 main 이 마지막으로 받은 화면을 userData 의 `restart.json` 에 쓴 뒤 다시 뜬다(`app/src/main/restart.ts`). renderer 에게 그때 묻지 않으므로 renderer 가 멈춰 있어도 재시작한다.
+
+다시 뜬 앱의 남은 세션 정리는 이 파일에 있는 세션만 남기고, 그 가운데 프로토콜 버전이 다른 세션은 끈다. 되살린 pane 은 `session:open` 의 `attach` 로 세션을 띄우지 않고 붙는다.
+
 ## 칸 경계와 셀 격자
 
 나란히 놓인 칸끼리 터미널 행이, 위아래로 놓인 칸끼리 열이 이어지도록 칸 경계를 터미널 셀 크기의 배수에 둔다. 모든 터미널이 같은 글꼴을 쓰므로 `App.vue` 는 마지막으로 잰 값 하나를 `--row`·`--cell`·`--pad` 로 화면 전체에 둔다.
