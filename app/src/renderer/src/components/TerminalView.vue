@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal, type IRenderDimensions } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
@@ -18,7 +19,8 @@ const {
   startDir = undefined,
   command = undefined,
   attach = undefined,
-  active
+  active,
+  shown
 } = defineProps<{
   sessionId: string
   workspaceId: string
@@ -26,6 +28,8 @@ const {
   command?: readonly string[]
   attach?: boolean
   active: boolean
+  /** 터미널이 속한 workspace 가 화면에 나와 있다. 겹쳐 숨은 workspace 도 화면 안에 있어 IntersectionObserver 로는 가려낼 수 없다. */
+  shown: boolean
 }>()
 const emit = defineEmits<{
   exit: []
@@ -95,11 +99,35 @@ term.parser.registerOscHandler(7, (data) => {
 })
 term.onTitleChange((title) => emit('title', title))
 // css.cell 은 열·행 수마다 반올림이 달라, 그와 상관없는 device 값으로 계산한다.
+// WebGL renderer 는 셀 폭을 device px 로 내림한다. DOM 으로 그리는 동안에도 그 폭을 써서, renderer 가
+// 바뀔 때 열 수가 바뀌어 프로그램에 resize 가 가지 않게 한다. 대신 DOM 으로 그리면 pane 보다 넓어져 오른쪽
+// 몇 열이 잘린다.
 const cell = (d: IRenderDimensions): Size => ({
-  width: d.device.cell.width / devicePixelRatio,
+  width:
+    (window.maru.webgl ? Math.floor(d.device.cell.width) : d.device.cell.width) / devicePixelRatio,
   height: d.device.cell.height / devicePixelRatio
 })
-term.onDimensionsChange((d) => emit('cell', cell(d)))
+let dpr = devicePixelRatio
+term.onDimensionsChange((d) => {
+  emit('cell', cell(d))
+  // 창을 DPR 이 다른 화면으로 옮기면 pane 크기는 그대로라 ResizeObserver 가 돌지 않지만, 내림한 셀 폭은 바뀐다.
+  if (devicePixelRatio === dpr) return
+  dpr = devicePixelRatio
+  if (started && session!.primary) fitTerminal()
+})
+function fitTerminal(): void {
+  if (!window.maru.webgl) return fit.fit()
+  const size = fit.proposeDimensions()
+  if (!size || !term.dimensions) return
+  // FitAddon 이 나누는 폭을 같은 방법으로 구해 `cell()` 의 셀 폭으로 나눈다.
+  const padding = getComputedStyle(term.element!)
+  const width =
+    (parseInt(getComputedStyle(host.value!).width) || 0) -
+    (parseInt(padding.paddingLeft) || 0) -
+    (parseInt(padding.paddingRight) || 0) -
+    SCROLLBAR_WIDTH
+  term.resize(Math.max(2, Math.floor(width / cell(term.dimensions).width)), size.rows)
+}
 let session: Attachment | null = null
 let started = false
 const observer = new ResizeObserver(() => {
@@ -108,12 +136,53 @@ const observer = new ResizeObserver(() => {
     // 세션은 그 폭으로 행마다 개행을 넣어 재생하므로 뒤에 넓혀도 펼쳐지지 않는다.
     if (host.value!.clientWidth === 0) return
     started = true
-    fit.fit()
+    fitTerminal()
     session!.start()
     return
   }
-  if (session!.primary) fit.fit()
+  if (session!.primary) fitTerminal()
 })
+
+// Chromium 이 동시에 유지하는 WebGL context 는 16개뿐이라, 보이는 터미널만 WebGL 로 그리고 나머지는 DOM 으로 둔다.
+let webgl: WebglAddon | undefined
+let inView = false
+// context 를 잃은 원인(한도 초과·GPU 리셋)이 남아 있으면 다시 적용해도 또 잃으므로, 한 번 숨었다 보일 때까지 기다린다.
+let lost = false
+// addon 은 dispose 해도 context 를 GC 될 때까지 쥐고 있다. 그렇게 남은 context 가 한도를 채우면 Chromium 이
+// 보이는 터미널의 context 를 버린다.
+function disposeWebgl(): void {
+  const canvas = term.element!.querySelector<HTMLCanvasElement>(
+    '.xterm-screen > canvas:not([class*="-layer"])'
+  )
+  webgl!.dispose()
+  webgl = undefined
+  canvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext()
+}
+function updateRenderer(): void {
+  if (!(shown && inView)) lost = false
+  const want = shown && inView && !lost
+  if (want === (webgl !== undefined)) return
+  if (!want) return disposeWebgl()
+  const addon = new WebglAddon()
+  addon.onContextLoss(() => {
+    lost = true
+    updateRenderer()
+  })
+  try {
+    term.loadAddon(addon)
+    webgl = addon
+  } catch {
+    addon.dispose()
+    lost = true
+  }
+}
+const intersection = window.maru.webgl
+  ? new IntersectionObserver((entries) => {
+      inView = entries[entries.length - 1].isIntersecting
+      updateRenderer()
+    })
+  : undefined
+watch(() => shown, updateRenderer)
 
 let conn: SessionConnection | undefined
 
@@ -129,6 +198,7 @@ onMounted(() => {
   term.open(host.value!)
   trackComposition(term.textarea!)
   if (term.dimensions) emit('cell', cell(term.dimensions))
+  intersection?.observe(host.value!)
   if (active) term.focus()
   // reactive 배열의 proxy 는 IPC 로 보낼 수 없다.
   conn = openSession({
@@ -156,6 +226,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   observer.disconnect()
+  intersection?.disconnect()
+  if (webgl) disposeWebgl()
   term.dispose()
 })
 </script>
