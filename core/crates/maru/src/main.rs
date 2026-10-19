@@ -51,6 +51,11 @@
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
 //! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택) | `{"session":<새 세션 id>}` |
 //! | `pane.close` | `target`(세션 id) | `null` |
+//! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"session":<job 의 세션 id>}` |
+//! | `job.list` | 없음 | `{"jobs":[{"session","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
+//! | `job.read` | `target`(job 이름이나 세션 id) | `{"text":<글자>}` |
+//! | `job.send` | `target`, `text`(문자열) | `null` |
+//! | `job.kill` | `target` | `null` |
 //! | `app.restart` | `kill_sessions`(bool, 선택) | `null` |
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
@@ -77,6 +82,26 @@
 //! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 세션을 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
 //! 전에 끝날 수 있다.
 //!
+//! `job.*` 는 화면에 없는 세션(job)을 다룬다. job 은 부른 세션의 workspace 가 갖는다 — 부른 세션이
+//! job 이면 그 job 의 workspace 다. 다른 workspace 의 job 은 목록에 없고 `target` 으로 가리켜도 없는
+//! job 이다. workspace 의 마지막 pane 이 닫히면 그 workspace 의 job 을 끈다. 앱을 끝내면 job 도 끝나고,
+//! `app.restart` 는 pane 처럼 job 을 남긴다.
+//!
+//! - `job.new` 는 `pane.new` 처럼 대화형 로그인 셸이 `command` 를 실행하는 세션을 80×24 로 띄운다. 답의
+//!   `session` 은 그 세션의 id 다. `name` 은 1~64자의 영숫자·`.`·`_`·`-` 이고 영숫자로
+//!   시작하며 세션 id 모양이 아니어야 한다(`target` 이 둘 다 받으므로). 같은 workspace 에서 그 이름의
+//!   job 이 돌고 있으면 -32001 `job_name_taken`, 끝났으면 그 job 을 지우고 띄운다.
+//! - 셸이 끝나도 job 은 목록에 남고 `job.read` 로 출력을 읽을 수 있다. `job.kill` 하거나, 같은 이름으로
+//!   `job.new` 하거나, workspace 가 닫히면 빠진다. `code`·`signal` 은 끝난 job 의 종료 상태이고 돌고
+//!   있으면 null 이다.
+//! - `target` 이 `s-` 와 hex 8자리면 세션 id 로, 아니면 이름으로 찾는다. 없으면 `invalid_params` 다.
+//! - `job.read` 는 스크롤백과 화면을 스타일 없는 글자로 돌려준다. 화면 폭에서 접힌 줄은 잇는다.
+//! - `job.send` 는 `text` 를 그대로 입력한다(Enter 는 CLI 가 붙인다). 끝난 job 이면 -32001
+//!   `job_exited` 다. 프로그램이 입력을 읽지 않아 8초 안에 다 쓰지 못하면 `internal_error` 로 답하지만,
+//!   입력은 세션에 남아 프로그램이 읽을 때 들어간다. 줄 단위로 읽는 프로그램에는 PTY 의 줄 버퍼
+//!   (`MAX_CANON`, macOS 에서 1024바이트)를 넘는 한 줄이 닿지 않는다.
+//! - `job.kill` 은 돌고 있으면 끝내고, 끝난 뒤 목록에서 지우고 답한다.
+//!
 //! `app.restart` 는 터미널 세션을 끄지 않고 앱을 다시 띄운다. 다시 뜬 앱은 workspace 와 pane 을
 //! 되살리고 같은 세션에 다시 붙는다. 앱은 답을 보낸 뒤에 끝난다. 설치된 앱이 떠 있는 세션과 세션
 //! 프로토콜 버전이 다르면 다시 뜬 앱은 그 세션에 붙지 못한다. 이때 `kill_sessions` 가 true 가 아니면
@@ -89,8 +114,14 @@
 //! `{"jsonrpc":"2.0","method":"monitor.event","params":<알림>}` 한 줄을 보낸다. 이 연결은 10초 끊기가
 //! 없고, 어느 쪽이든 닫으면 구독이 풀린다. `ancestors` 는 구독하는 프로세스의 부모부터 위로 올라간 pid
 //! 들이고, 그 세션의 셸 pid 가 없으면 `invalid_params` 로 거절한다. 알림은 `event` 로 종류를 가리는
-//! 객체다. inbox 의 알림은 `{"event":"inbox","from":<보낸 세션 id>,"body":<본문>}` 이고, 본문이 240 코드
-//! 포인트를 넘으면 앞 240 만 싣고 `"truncated":true` 와 `"note"`(`maru inbox read` 안내)를 붙인다.
+//! 객체다. 알림의 종류는 `method` 가 아니라 `event` 로 더한다 — 재시작 뒤에도 도는 이전
+//! `maru claude monitor` 는 모르는 `method` 를 버린다.
+//!
+//! - inbox 의 알림은 `{"event":"inbox","from":<보낸 세션 id>,"body":<본문>}` 이고, 본문이 240 코드
+//!   포인트를 넘으면 앞 240 만 싣고 `"truncated":true` 와 `"note"`(`maru inbox read` 안내)를 붙인다.
+//! - job 의 셸이 스스로 끝나면 그 job 을 띄운 세션에 `{"event":"job","session":<job 의 세션 id>,
+//!   "name":<이름, 없으면 뺀다>,"code","signal"}` 을 보낸다. 그 세션에 구독이 없으면 보류했다가
+//!   구독이 생길 때 보낸다. `job.kill` 이나 workspace 닫기로 끝난 job 은 알리지 않는다.
 //!
 //! # claude monitor
 //!
@@ -152,6 +183,11 @@ enum Command {
     Pane {
         #[command(subcommand)]
         command: PaneCommand,
+    },
+    /// Run commands in terminals that are not shown, and read their output.
+    Job {
+        #[command(subcommand)]
+        command: JobCommand,
     },
     /// Control the app.
     App {
@@ -219,6 +255,54 @@ enum PaneCommand {
     Close {
         /// Session id of the pane to close, e.g. s-1a2b3c4d.
         session: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum JobCommand {
+    /// Run COMMAND in a terminal that is not shown. The job belongs to this terminal's
+    /// workspace and ends when the workspace closes.
+    ///
+    /// Prints the job's session id. Options go before COMMAND; everything from COMMAND on is
+    /// passed to COMMAND. A job that exits on its own stays listed with its output, and this
+    /// terminal gets a `job` notification. A name that a running job holds is refused; a
+    /// job that has exited gives its name to the new one.
+    New {
+        /// Name to refer to the job by, unique in this workspace.
+        #[arg(long)]
+        name: Option<String>,
+        /// Directory to start in. Defaults to the current directory.
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Command and its arguments.
+        #[arg(trailing_var_arg = true, required = true)]
+        command: Vec<String>,
+    },
+    /// List this workspace's jobs in the order they started.
+    List,
+    /// Print a job's scrollback and screen as text.
+    Read {
+        /// Job name or session id.
+        job: String,
+    },
+    /// Type TEXT into a job and press Enter.
+    ///
+    /// Reads TEXT, or stdin when TEXT is omitted or `-`. A program that reads line by line
+    /// does not get a line longer than the terminal's line buffer (1024 bytes on macOS).
+    Send {
+        /// Do not press Enter after TEXT.
+        #[arg(long)]
+        no_enter: bool,
+        /// Job name or session id.
+        job: String,
+        /// Text to type. It may start with `-`.
+        #[arg(allow_hyphen_values = true)]
+        text: Option<String>,
+    },
+    /// End a job if it is running and remove it from the list.
+    Kill {
+        /// Job name or session id.
+        job: String,
     },
 }
 
@@ -302,9 +386,33 @@ fn run(command: Command) -> Result<()> {
                 writeln!(std::io::stdout(), "{session}")?;
             }
             PaneCommand::Close { session } => {
-                let mut params = Map::new();
-                params.insert("target".into(), session.into());
-                call(&target()?, "pane.close", params)?;
+                call(&target()?, "pane.close", target_params(session))?;
+            }
+        },
+        Command::Job { command } => match command {
+            JobCommand::New { name, cwd, command } => {
+                let session = job_new(name, cwd, command)?;
+                writeln!(std::io::stdout(), "{session}")?;
+            }
+            JobCommand::List => job_list()?,
+            JobCommand::Read { job } => {
+                let result = call(&target()?, "job.read", target_params(job))?;
+                let text = result["text"]
+                    .as_str()
+                    .ok_or_else(|| anyhow!("the app answered without text: {result}"))?;
+                let mut out = std::io::stdout().lock();
+                out.write_all(text.as_bytes())?;
+                if !text.is_empty() && !text.ends_with('\n') {
+                    writeln!(out)?;
+                }
+            }
+            JobCommand::Send {
+                no_enter,
+                job,
+                text,
+            } => job_send(job, text, !no_enter)?,
+            JobCommand::Kill { job } => {
+                call(&target()?, "job.kill", target_params(job))?;
             }
         },
         Command::App {
@@ -348,7 +456,9 @@ fn claude_hook() -> Result<()> {
         write!(
             std::io::stdout(),
             "You are in AI Maru terminal session {}. Messages from other sessions arrive as\n\
-             monitor notifications. Send: `maru inbox push <session> <message>`. Unread: `maru inbox read`.\n",
+             monitor notifications. Send: `maru inbox push <session> <message>`. Unread: `maru inbox read`.\n\
+             Background processes (dev servers, builds, watchers): `maru job new --name <name> <command>`.\n\
+             When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n",
             target.session
         )?;
     }
@@ -643,8 +753,7 @@ fn inbox_push(to: String, message: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn pane_new(cwd: Option<PathBuf>, down: bool, command: Vec<String>) -> Result<String> {
-    let target = target()?;
+fn start_dir(cwd: Option<PathBuf>) -> Result<String> {
     let cwd = match cwd {
         Some(dir) => std::path::absolute(&dir)
             .with_context(|| format!("cannot resolve {}", dir.display()))?,
@@ -654,12 +763,15 @@ fn pane_new(cwd: Option<PathBuf>, down: bool, command: Vec<String>) -> Result<St
     if !cwd.is_dir() {
         bail!("{} is not a directory", cwd.display());
     }
-    let cwd = cwd
-        .into_os_string()
+    cwd.into_os_string()
         .into_string()
-        .map_err(|_| anyhow!("the directory is not UTF-8"))?;
+        .map_err(|_| anyhow!("the directory is not UTF-8"))
+}
+
+fn pane_new(cwd: Option<PathBuf>, down: bool, command: Vec<String>) -> Result<String> {
+    let target = target()?;
     let mut params = Map::new();
-    params.insert("cwd".into(), cwd.into());
+    params.insert("cwd".into(), start_dir(cwd)?.into());
     params.insert(
         "direction".into(),
         if down { "down" } else { "right" }.into(),
@@ -671,6 +783,122 @@ fn pane_new(cwd: Option<PathBuf>, down: bool, command: Vec<String>) -> Result<St
     match result["session"].as_str() {
         Some(session) => Ok(session.to_owned()),
         None => bail!("the app answered without a session: {result}"),
+    }
+}
+
+fn job_new(name: Option<String>, cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
+    let target = target()?;
+    let mut params = Map::new();
+    params.insert("cwd".into(), start_dir(cwd)?.into());
+    params.insert("command".into(), command.into());
+    if let Some(name) = name {
+        params.insert("name".into(), name.into());
+    }
+    let result = call(&target, "job.new", params)?;
+    match result["session"].as_str() {
+        Some(session) => Ok(session.to_owned()),
+        None => bail!("the app answered without a session: {result}"),
+    }
+}
+
+fn target_params(target: String) -> Map<String, Value> {
+    let mut params = Map::new();
+    params.insert("target".into(), target.into());
+    params
+}
+
+fn job_send(job: String, text: Option<String>, enter: bool) -> Result<()> {
+    // 앱 터미널 밖이면 끝나지 않는 입력을 읽기 전에 실패해야 한다.
+    let target = target()?;
+    let mut text = match text.filter(|t| t != "-") {
+        Some(text) => text,
+        None => {
+            let mut text =
+                read_stdin("give TEXT or pipe the input into stdin, e.g. `maru job send dev r`")?;
+            // `echo r | maru job send dev` 가 Enter 를 두 번 누르지 않게.
+            if enter && text.ends_with('\n') {
+                text.pop();
+            }
+            text
+        }
+    };
+    if enter {
+        text.push('\r');
+    } else if text.is_empty() {
+        bail!("nothing to send");
+    }
+    let mut params = target_params(job);
+    params.insert("text".into(), text.into());
+    call(&target, "job.send", params)?;
+    Ok(())
+}
+
+fn job_list() -> Result<()> {
+    let result = call(&target()?, "job.list", Map::new())?;
+    let rows = result["jobs"]
+        .as_array()
+        .ok_or_else(|| anyhow!("the app answered without jobs: {result}"))?
+        .iter()
+        .map(job_row)
+        .collect::<Result<Vec<_>>>()?;
+    if rows.is_empty() {
+        writeln!(std::io::stderr(), "no jobs")?;
+        return Ok(());
+    }
+    let header = ["SESSION", "NAME", "STATE", "COMMAND"].map(String::from);
+    let mut widths = [0; 3];
+    for row in std::iter::once(&header).chain(&rows) {
+        for (w, cell) in widths.iter_mut().zip(row) {
+            *w = (*w).max(cell.chars().count());
+        }
+    }
+    let mut out = std::io::stdout().lock();
+    for row in std::iter::once(&header).chain(&rows) {
+        for (w, cell) in widths.iter().zip(row) {
+            write!(out, "{cell:<0$}  ", w)?;
+        }
+        writeln!(out, "{}", row[3])?;
+    }
+    Ok(())
+}
+
+fn job_row(job: &Value) -> Result<[String; 4]> {
+    let fail = || anyhow!("the app answered with a job it cannot print: {job}");
+    let session = job["session"].as_str().ok_or_else(fail)?;
+    let name = match &job["name"] {
+        Value::Null => "-",
+        Value::String(name) => name,
+        _ => return Err(fail()),
+    };
+    let command = job["command"]
+        .as_array()
+        .and_then(|args| {
+            args.iter()
+                .map(|a| a.as_str().map(shell_word))
+                .collect::<Option<Vec<_>>>()
+        })
+        .ok_or_else(fail)?
+        .join(" ");
+    let state = match (
+        job["state"].as_str(),
+        job["code"].as_i64(),
+        job["signal"].as_i64(),
+    ) {
+        (Some("running"), _, _) => "running".to_owned(),
+        (Some("exited"), Some(code), _) => format!("exited {code}"),
+        (Some("exited"), None, Some(signal)) => format!("signal {signal}"),
+        _ => return Err(fail()),
+    };
+    Ok([session.to_owned(), name.to_owned(), state, command])
+}
+
+/// 셸에 다시 넣으면 같은 인자가 되게 쓴다.
+fn shell_word(arg: &str) -> String {
+    let plain = |b: u8| b.is_ascii_alphanumeric() || b"_@%+=:,./-".contains(&b);
+    if !arg.is_empty() && arg.bytes().all(plain) {
+        arg.to_owned()
+    } else {
+        format!("'{}'", arg.replace('\'', r"'\''"))
     }
 }
 

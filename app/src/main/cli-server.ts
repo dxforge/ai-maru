@@ -1,6 +1,6 @@
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { createServer, type Socket } from 'node:net'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 
 // 계약은 core/crates/maru 의 모듈 doc 에 있다.
 export const CLI_PROTOCOL_VERSION = 1
@@ -12,6 +12,22 @@ export type Handlers = Record<string, (params: Record<string, unknown>, session:
 export type CliServer = { close: () => Promise<void> }
 
 export class InvalidParams extends Error {}
+
+export function isCommand(v: unknown): v is string[] {
+  return Array.isArray(v) && v.length > 0 && v.every((a) => typeof a === 'string')
+}
+
+export function requireCommand(v: unknown): string[] {
+  if (!isCommand(v)) throw new InvalidParams('params.command must be a non-empty array of strings')
+  return v
+}
+
+export function requireCwd(v: unknown): string {
+  if (typeof v !== 'string' || !isAbsolute(v)) {
+    throw new InvalidParams('params.cwd must be an absolute path')
+  }
+  return v
+}
 
 /** handler 가 앱이 정한 이유로 거절할 때 던진다. `data` 의 필드는 `error.data` 에 `code` 와 함께 들어간다. */
 export class CliError extends Error {

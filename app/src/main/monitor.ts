@@ -9,10 +9,16 @@ export type Monitor = {
   emit(session: string, event: object): boolean
 }
 
+/**
+ * `monitor.subscribe` 는 구독을 넣은 뒤에 `onSubscribe` 를 부른다. 그래서 그 안에서 `emit` 한 알림이 새
+ * 구독에 닿는다.
+ */
 export function createMonitor({
-  shellPidOf
+  shellPidOf,
+  onSubscribe = () => {}
 }: {
   shellPidOf: (session: string) => Promise<number | null>
+  onSubscribe?: (session: string) => void
 }): Monitor {
   const listeners = new Map<string, Set<Notify>>()
 
@@ -31,6 +37,7 @@ export function createMonitor({
         const subs = listeners.get(session) ?? new Set<Notify>()
         subs.add(notify)
         listeners.set(session, subs)
+        onSubscribe(session)
         return () => {
           subs.delete(notify)
           // 두 번 불려도 그 사이 새로 만든 집합을 지우지 않게.

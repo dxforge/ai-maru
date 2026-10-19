@@ -1,16 +1,21 @@
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { SCREEN_VERSION, type ScreenState } from '../shared/screen'
+import type { JobsFile } from './job'
 import {
   checkRestart,
+  jobsFile,
   restartFile,
   screenSessions,
   sessionProtocol,
+  takeJobs,
   takeScreen,
+  writeJobs,
+  writeRestart,
   writeScreen
 } from './restart'
 import { socketPath } from './session'
@@ -64,6 +69,42 @@ describe('restart 파일', () => {
     writeFileSync(path, '{')
     expect(await takeScreen(path)).toBeNull()
     expect(existsSync(path)).toBe(false)
+  })
+
+  it('쓴 job 표를 한 번만 읽고 지우며, 모르는 버전이나 깨진 파일은 버린다', async () => {
+    const path = jobsFile(dir)
+    const file: JobsFile = {
+      version: 1,
+      jobs: [
+        {
+          session: 's-0000000a',
+          workspace: 'w-1',
+          owner: 's-0000000b',
+          command: ['x'],
+          pending: false
+        }
+      ]
+    }
+    await writeJobs(path, file)
+    expect(await takeJobs(path)).toEqual(file)
+    expect(existsSync(path)).toBe(false)
+    expect(await takeJobs(path)).toBeNull()
+    writeFileSync(path, JSON.stringify({ ...file, version: 2 }))
+    expect(await takeJobs(path)).toBeNull()
+    expect(existsSync(path)).toBe(false)
+    writeFileSync(path, '{')
+    expect(await takeJobs(path)).toBeNull()
+  })
+
+  it('화면과 job 표 가운데 하나라도 못 쓰면 둘 다 남기지 않는다', async () => {
+    const jobs: JobsFile = { version: 1, jobs: [] }
+    await writeRestart(dir, screen, jobs)
+    expect(await takeScreen(restartFile(dir))).toEqual(screen)
+    expect(await takeJobs(jobsFile(dir))).toEqual(jobs)
+    // 디렉토리가 그 자리에 있으면 tmp 를 옮겨 놓지 못한다.
+    mkdirSync(jobsFile(dir))
+    await expect(writeRestart(dir, screen, jobs)).rejects.toThrow()
+    expect(existsSync(restartFile(dir))).toBe(false)
   })
 
   it('화면의 세션 id 를 모은다', () => {

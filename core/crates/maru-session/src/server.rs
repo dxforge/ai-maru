@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{mpsc, oneshot};
@@ -35,6 +36,9 @@ pub struct Options {
     pub cols: u16,
     #[arg(long, default_value_t = 24)]
     pub rows: u16,
+    /// 셸이 끝나도 이 프로세스는 끝나지 않고 화면·종료 상태를 유지한다. `kill` 이나 종료 시그널로 끝난다.
+    #[arg(long)]
+    pub keep: bool,
     /// `--` 뒤에 주면 대화형 로그인 셸이 이 명령을 실행하고 끝난다. 셸이 sh·bash·zsh·ksh·dash 가
     /// 아니면 `/bin/sh` 가 실행한다.
     #[arg(last = true)]
@@ -86,6 +90,7 @@ pub async fn run(opts: Options) -> Result<()> {
         paths.socket.display()
     );
 
+    let keep = opts.keep;
     let (kill_tx, mut kill_rx) = mpsc::channel::<KillAck>(1);
     let mut exit_rx = session.exit_rx();
     let mut conns = JoinSet::new();
@@ -103,7 +108,7 @@ pub async fn run(opts: Options) -> Result<()> {
                 }
             },
             Some(_) = conns.join_next(), if !conns.is_empty() => {}
-            _ = wait_exit(&mut exit_rx) => break,
+            _ = wait_exit(&mut exit_rx), if !keep => break,
             Some(a) = kill_rx.recv() => {
                 ack = Some(a);
                 break;
@@ -193,7 +198,44 @@ async fn handle(mut stream: UnixStream, session: Arc<Session>, kill_tx: mpsc::Se
             .await
         }
         Some("attach") => crate::attach::run(stream, session, &req).await,
-        Some("capture") => match session.capture() {
+        Some("status") => {
+            let wait = req["wait"] == true;
+            let exit = if wait {
+                let mut rx = session.exit_rx();
+                let mut probe = [0u8; 1];
+                tokio::select! {
+                    // 끝낸 것이 이 프로세스면 셸이 스스로 끝난 것이 아니므로 답하지 않는다.
+                    exit = wait_exit(&mut rx) => match exit {
+                        Some(exit) if !session.terminating() => Some(exit),
+                        _ => return,
+                    },
+                    // 기다리던 쪽이 끊었으면 셸이 끝날 때까지 연결을 열어 두지 않는다.
+                    _ = stream.read(&mut probe) => return,
+                }
+            } else {
+                session.exited()
+            };
+            reply(&mut stream, json!({ "type": "status", "exit": exit })).await
+        }
+        Some("input") => {
+            let Some(text) = req["text"].as_str() else {
+                return error(&mut stream, "bad_request", "text must be a string").await;
+            };
+            if session.exited().is_some() {
+                return error(&mut stream, "exited", "the shell has exited").await;
+            }
+            let bytes = text.as_bytes().to_vec();
+            let s = session.clone();
+            let written = tokio::task::spawn_blocking(move || s.write(&bytes))
+                .await
+                .map_err(std::io::Error::other)
+                .and_then(|r| r);
+            match written {
+                Ok(()) => reply(&mut stream, json!({ "type": "input" })).await,
+                Err(e) => error(&mut stream, "input_failed", &e.to_string()).await,
+            }
+        }
+        Some("capture") => match session.capture(req["unwrap"] == true) {
             Ok(text) => {
                 reply(
                     &mut stream,

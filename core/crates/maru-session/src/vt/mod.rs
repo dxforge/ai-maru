@@ -19,6 +19,7 @@ fn check_size(cols: u16, rows: u16) -> Result<()> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VtFormat {
     Plain,
+    PlainUnwrapped,
     Vt,
 }
 
@@ -243,7 +244,7 @@ impl VtTerminal {
             } else {
                 ffi::GHOSTTY_FORMATTER_FORMAT_PLAIN
             },
-            unwrap: false,
+            unwrap: fmt == VtFormat::PlainUnwrapped,
             trim: true,
             extra: ffi::GhosttyFormatterTerminalExtra {
                 size: size_of::<ffi::GhosttyFormatterTerminalExtra>(),

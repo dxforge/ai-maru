@@ -625,7 +625,9 @@ fn claude_hook_on_session_start_tells_claude_its_session_and_the_inbox() {
             stdout(&out),
             format!(
                 "You are in AI Maru terminal session {SESSION}. Messages from other sessions arrive as\n\
-                 monitor notifications. Send: `maru inbox push <session> <message>`. Unread: `maru inbox read`.\n"
+                 monitor notifications. Send: `maru inbox push <session> <message>`. Unread: `maru inbox read`.\n\
+                 Background processes (dev servers, builds, watchers): `maru job new --name <name> <command>`.\n\
+                 When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n"
             )
         );
     }
@@ -1306,4 +1308,200 @@ fn pane_close_sends_the_target_and_prints_nothing() {
     assert_eq!(stdout(&out), "");
     assert_eq!(req["method"], "pane.close");
     assert_eq!(req["params"]["target"], "s-0000000c");
+}
+
+#[test]
+fn job_new_sends_the_command_and_cwd_and_prints_the_session() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    std::fs::create_dir(tmp.path().join("sub")).unwrap();
+    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-9f8e7d6c" })));
+    let out = maru_in(
+        tmp.path(),
+        &sock,
+        &[
+            "job", "new", "--name", "dev", "--cwd", "sub", "sh", "-c", "x y", "--name",
+        ],
+    );
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "s-9f8e7d6c\n");
+    assert_eq!(req["method"], "job.new");
+    assert_eq!(req["params"]["name"], "dev");
+    let sub = std::fs::canonicalize(tmp.path()).unwrap().join("sub");
+    assert_eq!(req["params"]["cwd"], sub.to_str().unwrap());
+    assert_eq!(
+        req["params"]["command"],
+        json!(["sh", "-c", "x y", "--name"])
+    );
+}
+
+#[test]
+fn job_new_without_a_name_sends_none_and_defaults_to_the_current_directory() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-9f8e7d6c" })));
+    let out = maru_in(tmp.path(), &sock, &["job", "new", "pnpm", "build"]);
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(req["params"].get("name").is_none(), "{req}");
+    let cwd = std::fs::canonicalize(tmp.path()).unwrap();
+    assert_eq!(req["params"]["cwd"], cwd.to_str().unwrap());
+}
+
+#[test]
+fn job_new_needs_a_command_and_a_directory() {
+    let out = maru(None, &["job", "new", "--name", "dev"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    let tmp = tmpdir();
+    let file = tmp.path().join("file");
+    std::fs::write(&file, "").unwrap();
+    // 아무도 듣지 않는 소켓이라, 앱에 닿으려 했다면 다른 오류가 난다.
+    let sock = sock_in(&tmp);
+    let out = maru_in(
+        tmp.path(),
+        &sock,
+        &["job", "new", "--cwd", file.to_str().unwrap(), "true"],
+    );
+    assert_fails_with(&out, "is not a directory");
+}
+
+#[test]
+fn job_list_prints_aligned_columns_with_a_header() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        result(
+            req,
+            json!({ "jobs": [
+                { "session": "s-9f8e7d6c", "name": "dev", "command": ["pnpm", "dev"],
+                  "state": "running", "code": null, "signal": null },
+                { "session": "s-1a2b3c4d", "command": ["sh", "-c", "exit 1"],
+                  "state": "exited", "code": 1, "signal": null },
+                { "session": "s-77aa0011", "name": "w", "command": ["node", "w.js", "it's", ""],
+                  "state": "exited", "code": null, "signal": 9 },
+            ]}),
+        )
+    });
+    let out = maru(Some(&sock), &["job", "list"]);
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(req["method"], "job.list");
+    assert_eq!(
+        stdout(&out),
+        "SESSION     NAME  STATE     COMMAND\n\
+         s-9f8e7d6c  dev   running   pnpm dev\n\
+         s-1a2b3c4d  -     exited 1  sh -c 'exit 1'\n\
+         s-77aa0011  w     signal 9  node w.js 'it'\\''s' ''\n"
+    );
+}
+
+#[test]
+fn job_list_without_jobs_writes_nothing_to_stdout() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "jobs": [] })));
+    let out = maru(Some(&sock), &["job", "list"]);
+    server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert_eq!(stderr(&out), "no jobs\n");
+}
+
+#[test]
+fn job_list_fails_on_a_job_it_cannot_print() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        result(req, json!({ "jobs": [{ "session": 1 }] }))
+    });
+    let out = maru(Some(&sock), &["job", "list"]);
+    server.join().unwrap();
+    assert_fails_with(&out, "cannot print");
+    assert_eq!(stdout(&out), "");
+}
+
+fn sent_text(args: &[&str], input: &[u8]) -> Value {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, Value::Null));
+    let out = maru_input(Some(&sock), args, input);
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert_eq!(req["method"], "job.send");
+    assert_eq!(req["params"]["target"], "dev");
+    req["params"]["text"].clone()
+}
+
+#[test]
+fn job_send_appends_enter_unless_told_not_to() {
+    assert_eq!(sent_text(&["job", "send", "dev", "r"], b""), "r\r");
+    assert_eq!(
+        sent_text(&["job", "send", "--no-enter", "dev", "r"], b""),
+        "r"
+    );
+    assert_eq!(sent_text(&["job", "send", "dev", "-x"], b""), "-x\r");
+    assert_eq!(sent_text(&["job", "send", "dev"], b"hello"), "hello\r");
+    assert_eq!(sent_text(&["job", "send", "dev", "-"], b"hello"), "hello\r");
+    assert_eq!(sent_text(&["job", "send", "dev"], b"hi\n"), "hi\r");
+    assert_eq!(
+        sent_text(&["job", "send", "--no-enter", "dev"], b"hi\n"),
+        "hi\n"
+    );
+    assert_eq!(sent_text(&["job", "send", "dev", ""], b""), "\r");
+}
+
+#[test]
+fn job_send_with_nothing_to_send_fails_before_asking_the_app() {
+    let tmp = tmpdir();
+    // 아무도 듣지 않는 소켓이라, 앱에 닿으려 했다면 다른 오류가 난다.
+    let sock = sock_in(&tmp);
+    let out = maru(Some(&sock), &["job", "send", "--no-enter", "dev", ""]);
+    assert_fails_with(&out, "nothing to send");
+}
+
+#[test]
+fn job_read_prints_the_text_with_one_trailing_newline() {
+    for (text, want) in [("a\nb", "a\nb\n"), ("a\n", "a\n"), ("", "")] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, move |req| result(req, json!({ "text": text })));
+        let out = maru(Some(&sock), &["job", "read", "dev"]);
+        let req = server.join().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(req["method"], "job.read");
+        assert_eq!(req["params"]["target"], "dev");
+        assert_eq!(stdout(&out), want, "{text:?}");
+    }
+}
+
+#[test]
+fn job_kill_sends_the_target_and_prints_nothing() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, Value::Null));
+    let out = maru(Some(&sock), &["job", "kill", "s-9f8e7d6c"]);
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert_eq!(req["method"], "job.kill");
+    assert_eq!(req["params"]["target"], "s-9f8e7d6c");
+}
+
+#[test]
+fn job_errors_pass_the_message_through() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        error(
+            req,
+            -32001,
+            "job dev is running in this workspace",
+            json!({ "code": "job_name_taken" }),
+        )
+    });
+    let out = maru_in(tmp.path(), &sock, &["job", "new", "--name", "dev", "true"]);
+    server.join().unwrap();
+    assert_fails_with(&out, "maru: job dev is running in this workspace");
 }

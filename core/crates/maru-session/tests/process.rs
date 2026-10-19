@@ -445,6 +445,154 @@ fn the_process_ends_when_the_shell_exits() {
     assert!(!p.socket().exists() && !p.record_path().exists());
 }
 
+fn start_keep(command: &str) -> Proc {
+    let args = ["--keep", "--", "/bin/sh", "-c", command];
+    let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
+    start_in(tmpdir(), &args)
+}
+
+fn status(wait: bool) -> Value {
+    json!({ "type": "status", "protocol_version": PROTOCOL_VERSION, "wait": wait })
+}
+
+#[test]
+fn keep_leaves_the_files_and_answers_after_the_shell_exits() {
+    let mut p = start_keep("echo done-$((1+1)); exit 3");
+    let exit = p.request(status(true));
+    assert_eq!(
+        exit,
+        json!({ "type": "status", "exit": { "code": 3, "signal": null } })
+    );
+    assert!(p.socket().exists() && p.record_path().exists());
+    assert!(p.child.try_wait().unwrap().is_none(), "프로세스가 끝났다");
+    let cap = p.request(json!({ "type": "capture", "protocol_version": PROTOCOL_VERSION }));
+    assert!(cap["text"].as_str().unwrap().contains("done-2"), "{cap}");
+    assert_eq!(p.request(status(false)), exit);
+
+    assert_eq!(p.request(json!({ "type": "kill" }))["type"], "killed");
+    assert!(p.wait().success());
+    assert!(!p.socket().exists() && !p.record_path().exists());
+}
+
+#[test]
+fn status_wait_answers_when_the_shell_exits() {
+    let p = start_keep("read x; exit 5");
+    assert_eq!(
+        p.request(status(false)),
+        json!({ "type": "status", "exit": null })
+    );
+    let mut waiting = p.connect();
+    waiting.send_text(status(true));
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("go\n");
+    let want = json!({ "type": "status", "exit": { "code": 5, "signal": null } });
+    assert_eq!(waiting.text(), want);
+    assert_eq!(p.request(status(true)), want);
+}
+
+#[test]
+fn status_wait_closes_without_an_answer_when_the_session_ends_the_shell() {
+    for how in ["kill", "SIGTERM"] {
+        let mut p = start_keep("sleep 30");
+        let mut waiting = p.connect();
+        waiting.send_text(status(true));
+        // wait 가 기다리기 시작한 뒤에 끝내야 이 경로를 시험한다.
+        std::thread::sleep(Duration::from_millis(100));
+        if how == "kill" {
+            assert_eq!(p.request(json!({ "type": "kill" }))["type"], "killed");
+        } else {
+            kill(pid(p.child.id()), Signal::SIGTERM).unwrap();
+        }
+        assert_eq!(waiting.frame(), None, "{how}");
+        assert!(p.wait().success(), "{how}");
+    }
+}
+
+fn open_fds(pid: u32) -> usize {
+    let out = Command::new("lsof")
+        .args(["-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).lines().count()
+}
+
+#[test]
+fn status_wait_lets_go_of_a_client_that_hung_up() {
+    let p = start_keep("sleep 30");
+    let pid = p.child.id();
+    let before = open_fds(pid);
+    let waits: Vec<Conn> = (0..30)
+        .map(|_| {
+            let mut c = p.connect();
+            c.send_text(status(true));
+            c
+        })
+        .collect();
+    let deadline = Instant::now() + WAIT;
+    while open_fds(pid) < before + 30 {
+        assert!(Instant::now() < deadline, "wait 연결이 다 열리지 않았다");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    drop(waits);
+    while open_fds(pid) > before + 2 {
+        assert!(Instant::now() < deadline, "끊은 wait 의 연결이 남았다");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn status_wait_without_keep_answers_then_the_process_ends() {
+    let mut p = start();
+    let mut waiting = p.connect();
+    waiting.send_text(status(true));
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("exit 4\n");
+    assert_eq!(
+        waiting.text(),
+        json!({ "type": "status", "exit": { "code": 4, "signal": null } })
+    );
+    assert!(p.wait().success());
+}
+
+#[test]
+fn input_reaches_the_shell_and_is_refused_after_exit() {
+    let p = start_keep("read a; echo \"in-$a\"; read b; exit 0");
+    let (mut c, _, _) = p.attach("observer", 80, 24);
+    let input = |text: &str| {
+        p.request(json!({ "type": "input", "protocol_version": PROTOCOL_VERSION, "text": text }))
+    };
+    assert_eq!(input("x5\r"), json!({ "type": "input" }));
+    c.output_until("in-x5");
+    input("\r");
+    p.request(status(true));
+    let refused = input("late\r");
+    assert_eq!(
+        (&refused["type"], &refused["code"]),
+        (&json!("error"), &json!("exited")),
+        "{refused}"
+    );
+}
+
+#[test]
+fn capture_unwrap_joins_a_wrapped_line() {
+    let p = start_keep("printf '%0100d\\n' 0");
+    p.request(status(true));
+    let line = "0".repeat(100);
+    let joined = p.request(json!({
+        "type": "capture", "protocol_version": PROTOCOL_VERSION, "unwrap": true,
+    }));
+    assert!(
+        joined["text"].as_str().unwrap().lines().any(|l| l == line),
+        "{joined}"
+    );
+    let cut = p.request(json!({ "type": "capture", "protocol_version": PROTOCOL_VERSION }));
+    let cut = cut["text"].as_str().unwrap();
+    assert!(
+        !cut.contains(&line) && cut.lines().any(|l| l == "0".repeat(80)),
+        "{cut:?}"
+    );
+}
+
 #[test]
 fn a_command_that_fails_at_once_still_ends_the_process_with_zero() {
     let tmp = tmpdir();

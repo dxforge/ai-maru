@@ -51,6 +51,37 @@ describe('monitor.subscribe', () => {
   })
 })
 
+describe('onSubscribe', () => {
+  it('구독을 넣은 뒤에 불려, 그 안의 emit 이 새 구독에 닿는다', async () => {
+    const seen: string[] = []
+    const monitor = createMonitor({
+      shellPidOf: async () => 42,
+      onSubscribe: (session) => {
+        seen.push(session)
+        expect(monitor.emit(session, { event: 'job' })).toBe(true)
+      }
+    })
+    const sub = (await monitor.handlers['monitor.subscribe'](
+      { ancestors: [42] },
+      B
+    )) as Subscription
+    const got: object[] = []
+    sub.start((e) => got.push(e) > 0)
+    expect(seen).toEqual([B])
+    expect(got).toEqual([{ event: 'job' }])
+  })
+
+  it('구독이 거절되면 부르지 않는다', async () => {
+    const seen: string[] = []
+    const monitor = createMonitor({
+      shellPidOf: async () => null,
+      onSubscribe: (s) => seen.push(s)
+    })
+    await expect(monitor.handlers['monitor.subscribe']({ ancestors: [42] }, B)).rejects.toThrow()
+    expect(seen).toEqual([])
+  })
+})
+
 describe('emit', () => {
   it('구독자가 없으면 false', () => {
     const { monitor } = setup()
