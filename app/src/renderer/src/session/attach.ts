@@ -11,6 +11,8 @@ export type AttachHandlers = {
 
 export type Attachment = {
   readonly primary: boolean
+  /** 터미널의 지금 크기로 세션에 붙는다. 그 전의 입력은 모아 두었다가 붙은 뒤에 보낸다. */
+  start(): void
 }
 
 export function attach(
@@ -20,6 +22,12 @@ export function attach(
 ): Attachment {
   const encoder = new TextEncoder()
   let primary = true
+  // maru-session 은 첫 프레임이 JSON 요청이 아니면 bad_request 로 연결을 끊는다.
+  let queued: Uint8Array[] | undefined = []
+  const input = (bytes: Uint8Array): void => {
+    if (queued) queued.push(bytes)
+    else if (primary) conn.send(bytes)
+  }
   // 셸이 끝났거나 되살린 세션이 없다 — 그 뒤 연결이 닫히는 것은 끊김이 아니다.
   let ended = false
   let spawned = false
@@ -76,29 +84,30 @@ export function attach(
     if (!spawned) openFailed('disconnected before the session started')
   })
 
-  term.onData((data) => {
-    if (primary) conn.send(encoder.encode(data))
-  })
+  term.onData((data) => input(encoder.encode(data)))
   // 일부 마우스 보고는 UTF-8 이 아닌 바이트 문자열로 나온다.
-  term.onBinary((data) => {
-    if (primary) conn.send(Uint8Array.from(data, (c) => c.charCodeAt(0)))
-  })
+  term.onBinary((data) => input(Uint8Array.from(data, (c) => c.charCodeAt(0))))
   term.onResize(({ cols, rows }) => {
-    if (primary) conn.send(JSON.stringify({ type: 'resize', cols, rows }))
+    if (!queued && primary) conn.send(JSON.stringify({ type: 'resize', cols, rows }))
   })
 
-  conn.send(
-    JSON.stringify({
-      type: 'attach',
-      protocol_version: PROTOCOL_VERSION,
-      role: 'primary',
-      cols: term.cols,
-      rows: term.rows
-    })
-  )
   return {
     get primary() {
       return primary
+    },
+    start() {
+      if (!queued) return
+      conn.send(
+        JSON.stringify({
+          type: 'attach',
+          protocol_version: PROTOCOL_VERSION,
+          role: 'primary',
+          cols: term.cols,
+          rows: term.rows
+        })
+      )
+      for (const bytes of queued) conn.send(bytes)
+      queued = undefined
     }
   }
 }

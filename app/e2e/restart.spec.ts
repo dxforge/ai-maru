@@ -4,14 +4,17 @@ import type { ElectronApplication } from '@playwright/test'
 import { killSession } from '../src/main/session'
 import {
   activeHeader,
+  activeTerminal,
   claudeHook,
   clickMenu,
   expect,
   newWorkspace,
   openPalette,
   paneRows,
+  paneTerminalRows,
   panes,
   restartWith,
+  rows,
   run,
   serveRenderer,
   sessionDir,
@@ -237,4 +240,41 @@ test('팔레트에서 Restart 를 고르면 재시작한다', async ({ launch })
     await launched.page.keyboard.type('restart')
     await launched.page.keyboard.press('Enter')
   })
+})
+
+test('columns 보기로 재시작해도 재시작 전 출력이 좁은 폭으로 접히지 않는다', async ({ launch }) => {
+  const first = await launch()
+  const { app, page } = first
+  await split(app, page, 'split-right', 2)
+  await toggleView(first, 'columns')
+  for (const i of [0, 1]) {
+    await panes(page).nth(i).locator('.xterm-screen').click()
+    await typesInto(page, i, `wide${i}-abcdefghijklmnopqrstuvwxyz`)
+  }
+
+  await restartWith(app)
+  const { page: again } = await launch()
+  // 행 div 를 이어 붙이는 textContent 로는 접힌 줄도 한 줄로 이어져 통과하므로 innerText 의 줄로 본다.
+  for (const i of [0, 1])
+    await expect
+      .poll(async () => (await paneTerminalRows(again, i).innerText()).split('\n'))
+      .toContain(`wide${i}-abcdefghijklmnopqrstuvwxyz-2`)
+})
+
+test('columns 보기로 재시작한 뒤 대체 화면을 나가도 그 아래 출력이 접히지 않는다', async ({
+  launch
+}) => {
+  const first = await launch()
+  const { app, page } = first
+  await toggleView(first, 'columns')
+  await typesInto(page, 0, 'under-abcdefghijklmnopqrstuvwxyz')
+  await run(page, "printf '\\033[?1049h'; echo alt-$((1+1))", 'alt-2')
+
+  await restartWith(app)
+  const { page: again } = await launch()
+  await activeTerminal(again)
+  await run(again, "printf '\\033[?1049l'; echo back-$((1+1))", 'back-2')
+  expect((await rows(again).innerText()).split('\n')).toContain(
+    'under-abcdefghijklmnopqrstuvwxyz-2'
+  )
 })
