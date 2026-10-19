@@ -27,7 +27,7 @@ describe('pane.new', () => {
       {
         channel: 'pane:new',
         id: 0,
-        arg: { session: A, cwd: '/a b', direction: 'down', command: ['x', ''] }
+        arg: { session: A, cwd: '/a b', direction: 'down', full: false, command: ['x', ''] }
       }
     ])
     answer({ session: B })
@@ -37,13 +37,28 @@ describe('pane.new', () => {
   it('명령이 없으면 창에도 넘기지 않는다', async () => {
     const { handlers, sent, answer } = setup()
     const done = handlers['pane.new']({ cwd: '/', direction: 'right' }, A) as Promise<unknown>
-    expect(sent[0].arg).toEqual({ session: A, cwd: '/', direction: 'right' })
+    expect(sent[0].arg).toEqual({ session: A, cwd: '/', direction: 'right', full: false })
     answer({ session: B })
     await done
   })
 
+  it('full 을 창에 넘기고, 없으면 false 로 넘긴다', async () => {
+    const { handlers, sent, answer } = setup()
+    for (const params of [{ full: true }, {}]) {
+      const done = handlers['pane.new'](
+        { cwd: '/', direction: 'down', ...params },
+        A
+      ) as Promise<unknown>
+      answer({ session: B })
+      await done
+    }
+    expect(sent.map((s) => (s.arg as { full: boolean }).full)).toEqual([true, false])
+  })
+
   it.each([
     [{ cwd: 'rel', direction: 'right' }],
+    [{ cwd: '/', direction: 'right', full: 'yes' }],
+    [{ cwd: '/', direction: 'right', full: 1 }],
     [{ direction: 'right' }],
     [{ cwd: '/', direction: 'left' }],
     [{ cwd: '/', direction: 'right', command: [] }],

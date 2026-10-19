@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   activePane,
+  clickMenu,
   expect,
   newWorkspace,
   paneBox as box,
@@ -157,6 +158,70 @@ test('columns 에서 maru pane new 로 오른쪽에 나누면 workspace 가 넓�
   await expect
     .poll(async () => (await workspaceViews(page).first().boundingBox())!.width)
     .toBeGreaterThan(one * 1.9)
+})
+
+test('columns 에서 maru pane new --full 은 아래로 나눈 칸에서 불러도 workspace 오른쪽 끝에 높이 전체로 붙는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  await clickMenu(app, 'split-down')
+  await expect(panes(page)).toHaveCount(2)
+  await page.keyboard.type(`maru pane new --full bash -c 'read x'\n`)
+  await expect(panes(page)).toHaveCount(3)
+
+  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
+  await expect
+    .poll(async () => {
+      const added = await box(page, 2)
+      return [added.x + added.width, added.y, added.height]
+    })
+    .toEqual([grid.x + grid.width, grid.y, grid.height])
+  const [top, added] = [await box(page, 0), await box(page, 2)]
+  expect(added.width).toBeCloseTo(top.width, 0)
+  await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
+})
+
+test('columns 에서 maru pane new --full --down 은 workspace 폭을 그대로 두고 아래쪽 끝에 폭 전체로 붙는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  await clickMenu(app, 'split-right')
+  await expect(panes(page)).toHaveCount(2)
+  const width = (await workspaceViews(page).first().boundingBox())!.width
+  await page.keyboard.type(`maru pane new --full --down bash -c 'read x'\n`)
+  await expect(panes(page)).toHaveCount(3)
+
+  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
+  await expect
+    .poll(async () => {
+      const added = await box(page, 2)
+      return [added.x, added.width, added.y + added.height]
+    })
+    .toEqual([grid.x, grid.width, grid.y + grid.height])
+  expect((await workspaceViews(page).first().boundingBox())!.width).toBe(width)
+})
+
+test('single 에서 maru pane new --full --down 은 workspace 아래쪽 끝에 폭 전체로 붙는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await clickMenu(app, 'split-right')
+  await expect(panes(page)).toHaveCount(2)
+  await page.keyboard.type(`maru pane new --full --down bash -c 'read x'\n`)
+  await expect(panes(page)).toHaveCount(3)
+
+  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
+  await expect
+    .poll(async () => {
+      const added = await box(page, 2)
+      return [added.x, added.width, added.y + added.height]
+    })
+    .toEqual([grid.x, grid.width, grid.y + grid.height])
 })
 
 test('maru pane new 이 찍은 id 로 그 칸에 inbox 메시지를 보낸다', async ({ launch }) => {

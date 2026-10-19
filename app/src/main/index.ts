@@ -13,7 +13,7 @@ import {
 } from 'electron'
 import { canvasPut } from './canvas'
 import { createClaudeStatus } from './claude-status'
-import { AfterReply, CliError, InvalidParams, listenCli, type Handlers } from './cli-server'
+import { AfterReply, CliError, listenCli, optionalBoolean, type Handlers } from './cli-server'
 import { gitHead } from './git'
 import { createInbox } from './inbox'
 import { installCommandMenu } from './menu'
@@ -186,10 +186,8 @@ function incompatibleDetail(check: { sessions: number; protocol: number | null }
 }
 
 const restartHandlers: Handlers = {
-  'app.restart': async ({ kill_sessions: kill }) => {
-    if (kill !== undefined && typeof kill !== 'boolean') {
-      throw new InvalidParams('params.kill_sessions must be a boolean')
-    }
+  'app.restart': async (params) => {
+    const kill = optionalBoolean(params.kill_sessions, 'kill_sessions')
     const check = await restartCheck()
     if (!check.ok && check.reason !== 'incompatible') {
       throw new CliError(

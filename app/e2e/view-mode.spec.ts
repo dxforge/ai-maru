@@ -85,7 +85,23 @@ test('팔레트의 Toggle View Mode 도 view mode 를 바꾸고, 키는 터미�
   await expectCols(page, 80)
 })
 
-test('columns 에서 좌우로 고르게 나누면 칸마다 80열이고, 고르지 않게 나누면 늘어선 칸 수만큼 넓어진다', async ({
+test('columns 에서 좌우로 나누면 고르지 않게 나눠도 칸마다 80열이다', async ({ launch }) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+
+  await split(app, page, 'split-right', 2)
+  await expectCols(page, 80)
+  await split(app, page, 'split-right', 3)
+  await expectCols(page, 80)
+  for (const i of [1, 0]) {
+    await clickMenu(app, 'focus-pane-left')
+    await expect(panes(page).nth(i).locator('.terminal-view')).toHaveClass(/active/)
+    await expectCols(page, 80)
+  }
+})
+
+test('columns 에서 위아래 두 쪽의 늘어선 칸 수가 다르면 적은 쪽 칸이 넓어진다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -93,24 +109,15 @@ test('columns 에서 좌우로 고르게 나누면 칸마다 80열이고, 고르
   await toggleView(launched, 'columns')
 
   await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-down', 3)
+  await split(app, page, 'split-right', 4)
   await expectCols(page, 80)
-  await clickMenu(app, 'focus-pane-left')
-  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
-  await expectCols(page, 80)
-
-  await clickMenu(app, 'focus-pane-right')
-  await split(app, page, 'split-right', 3)
-
-  // 늘어선 칸이 셋이라 240열 폭을 1/2·1/4·1/4 로 나눈다 — 좁은 칸은 80열보다 좁다.
-  const narrow = (await shellSize(page)).cols
-  expect(narrow).toBeLessThan(80)
-  expect(narrow).toBeGreaterThan(55)
-  await clickMenu(app, 'focus-pane-left')
-  await clickMenu(app, 'focus-pane-left')
-  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
+  await clickMenu(app, 'focus-pane-up')
+  await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
+  // 오른쪽 아래에 pane 이 둘 늘어서 있어 위쪽 pane 은 pane 두 개 폭이다.
   const wide = (await shellSize(page)).cols
-  expect(wide).toBeGreaterThan(110)
-  expect(wide).toBeLessThan(130)
+  expect(wide).toBeGreaterThan(155)
+  expect(wide).toBeLessThan(170)
 })
 
 test('columns 에서 다른 workspace 의 칸을 누르면 그 workspace 를 선택하고 키가 그리로 간다', async ({

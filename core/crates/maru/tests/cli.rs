@@ -1233,6 +1233,24 @@ fn pane_new_without_a_command_sends_none() {
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(req["params"].get("command").is_none(), "{req}");
+    assert!(req["params"].get("full").is_none(), "{req}");
+}
+
+#[test]
+fn pane_new_full_asks_to_split_the_workspace_and_leaves_a_later_full_to_the_command() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let out = maru_in(
+        tmp.path(),
+        &sock,
+        &["pane", "new", "--full", "--down", "x", "--full"],
+    );
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(req["params"]["full"], true);
+    assert_eq!(req["params"]["direction"], "down");
+    assert_eq!(req["params"]["command"], json!(["x", "--full"]));
 }
 
 #[test]

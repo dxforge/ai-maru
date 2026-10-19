@@ -29,6 +29,13 @@ export function requireCwd(v: unknown): string {
   return v
 }
 
+export function optionalBoolean(v: unknown, name: string): boolean {
+  if (v !== undefined && typeof v !== 'boolean') {
+    throw new InvalidParams(`params.${name} must be a boolean`)
+  }
+  return v ?? false
+}
+
 /** handler 가 앱이 정한 이유로 거절할 때 던진다. `data` 의 필드는 `error.data` 에 `code` 와 함께 들어간다. */
 export class CliError extends Error {
   constructor(

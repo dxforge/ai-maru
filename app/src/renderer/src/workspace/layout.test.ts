@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { columnCount, neighbor, panes, rects, removePane, splitPane, type Layout } from './layout'
+import {
+  columnCount,
+  neighbor,
+  panes,
+  rects,
+  removePane,
+  splitPane,
+  splitRoot,
+  type Layout
+} from './layout'
 
 function threePanes(): Layout {
   return splitPane(splitPane({ pane: 1 }, 1, 2, 'right'), 2, 3, 'down')
@@ -16,6 +25,17 @@ describe('splitPane', () => {
 
   it('없는 칸을 나누면 그대로다', () => {
     expect(splitPane({ pane: 1 }, 9, 2, 'right')).toEqual({ pane: 1 })
+  })
+})
+
+describe('splitRoot', () => {
+  it('workspace 전체를 나눠 새 칸을 오른쪽·아래 끝에 둔다', () => {
+    expect(splitRoot({ pane: 1 }, 2, 'right')).toEqual(splitPane({ pane: 1 }, 1, 2, 'right'))
+    expect(splitRoot(threePanes(), 4, 'down')).toEqual({
+      split: 'down',
+      first: threePanes(),
+      second: { pane: 4 }
+    })
   })
 })
 
@@ -50,6 +70,38 @@ describe('rects', () => {
       ])
     )
     expect(panes(threePanes())).toEqual([1, 2, 3])
+  })
+
+  it('columns 는 좌우로 나눈 폭을 양쪽의 늘어선 칸 수 비율로 나눈다', () => {
+    const widths = (layout: Layout) =>
+      [...rects(layout, 'columns')].map(([pane, r]) => [
+        pane,
+        Math.round(r.x * 3),
+        Math.round(r.w * 3)
+      ])
+    const right = splitPane(splitPane({ pane: 1 }, 1, 2, 'right'), 2, 3, 'right')
+    expect(widths(right)).toEqual([
+      [1, 0, 1],
+      [2, 1, 1],
+      [3, 2, 1]
+    ])
+    expect(widths(splitRoot(splitPane({ pane: 1 }, 1, 2, 'right'), 3, 'right'))).toEqual([
+      [1, 0, 1],
+      [2, 1, 1],
+      [3, 2, 1]
+    ])
+  })
+
+  it('columns 에서 위아래 두 쪽의 늘어선 칸 수가 다르면 적은 쪽 칸이 넓어진다', () => {
+    const layout = splitPane(threePanes(), 3, 4, 'right')
+    const all = rects(layout, 'columns')
+    expect(all.get(1)!.w * 3).toBeCloseTo(1)
+    expect(all.get(2)).toMatchObject({ y: 0, h: 0.5 })
+    expect(all.get(2)!.x * 3).toBeCloseTo(1)
+    expect(all.get(2)!.w * 3).toBeCloseTo(2)
+    expect(all.get(3)!.w * 3).toBeCloseTo(1)
+    expect(all.get(4)!.x * 3).toBeCloseTo(2)
+    expect(all.get(4)!.w * 3).toBeCloseTo(1)
   })
 })
 
@@ -87,6 +139,21 @@ describe('neighbor', () => {
     expect(neighbor(layout, 2, 'left')).toBe(1)
     expect(neighbor(layout, 1, 'down')).toBe(3)
     expect(neighbor(layout, 4, 'up')).toBe(1)
+  })
+
+  it('columns 에서는 늘어선 칸 수 비율로 그린 자리에서 이웃을 찾는다', () => {
+    // 위 1 | 2, 아래 3 | 4 | 5 — columns 에서 2 는 아래 4·5 위에 걸치고, 5 와 더 길게 맞닿는다.
+    const layout: Layout = {
+      split: 'down',
+      first: { split: 'right', first: { pane: 1 }, second: { pane: 2 } },
+      second: {
+        split: 'right',
+        first: { pane: 3 },
+        second: { split: 'right', first: { pane: 4 }, second: { pane: 5 } }
+      }
+    }
+    expect(neighbor(layout, 2, 'down')).toBe(4)
+    expect(neighbor(layout, 2, 'down', 'columns')).toBe(5)
   })
 
   it('그 방향에 칸이 없거나 모서리만 닿으면 undefined 다', () => {

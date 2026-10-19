@@ -270,6 +270,21 @@ describe('panes', () => {
     expect(selected(ws).panes[1].startDir).toBe('/start')
   })
 
+  it('full 로 나누면 부른 칸의 workspace 전체를 나누고, 포커스와 선택은 그대로다', () => {
+    const ws = opened(2)
+    ws.select(keys(ws)[0])
+    ws.split('down')
+    const [first, second] = ws.list.value
+    ws.select(second.key)
+    const before = first.layout
+    const focused = first.focused
+    const pane = ws.splitFrom(first.panes[1].key, 'right', {}, true)
+    expect(first.layout).toEqual({ split: 'right', first: before, second: { pane } })
+    expect(first.focused).toBe(focused)
+    expect(second.panes).toHaveLength(1)
+    expect(ws.selectedKey.value).toBe(second.key)
+  })
+
   it('선택된 workspace 만 나눈다', () => {
     const ws = opened(2)
     ws.select(keys(ws)[0])
