@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 use tokio::sync::{Notify, watch};
@@ -126,6 +126,7 @@ pub struct Session {
     exit_rx: watch::Receiver<Option<Exit>>,
     primary: watch::Sender<Option<u64>>,
     next_conn: AtomicU64,
+    terminating: AtomicBool,
 }
 
 /// 크기를 VT 와 같은 락 아래 두어 재생 스냅샷과 어긋나지 않게 한다.
@@ -204,6 +205,7 @@ impl Session {
             exit_rx,
             primary: watch::channel(None).0,
             next_conn: AtomicU64::new(1),
+            terminating: AtomicBool::new(false),
         }))
     }
 
@@ -255,8 +257,13 @@ impl Session {
         Ok(())
     }
 
-    pub fn capture(&self) -> Result<Vec<u8>> {
-        self.screen.lock().unwrap().vt.format(VtFormat::Plain)
+    pub fn capture(&self, unwrap: bool) -> Result<Vec<u8>> {
+        let fmt = if unwrap {
+            VtFormat::PlainUnwrapped
+        } else {
+            VtFormat::Plain
+        };
+        self.screen.lock().unwrap().vt.format(fmt)
     }
 
     pub fn subscribe_with_replay(&self, conn: u64) -> Result<(Vec<u8>, ReplayState, Arc<Output>)> {
@@ -280,6 +287,14 @@ impl Session {
 
     pub fn exit_rx(&self) -> watch::Receiver<Option<Exit>> {
         self.exit_rx.clone()
+    }
+
+    pub fn exited(&self) -> Option<Exit> {
+        *self.exit_rx.borrow()
+    }
+
+    pub fn terminating(&self) -> bool {
+        self.terminating.load(Ordering::SeqCst)
     }
 
     pub fn next_conn_id(&self) -> u64 {
@@ -309,6 +324,7 @@ impl Session {
         if exit_rx.borrow().is_some() {
             return;
         }
+        self.terminating.store(true, Ordering::SeqCst);
         let shell = self.shell_pid as i32;
         let fg = self.pty.foreground_pgid().filter(|&g| g != shell);
         let groups: Vec<Pid> = [Some(shell), fg]

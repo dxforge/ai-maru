@@ -1,7 +1,6 @@
-import { isAbsolute } from 'node:path'
 import type { PaneNewRequest, PaneReply } from '../shared/pane'
 import { isSessionId } from '../shared/session'
-import { InvalidParams, type Handlers } from './cli-server'
+import { InvalidParams, requireCommand, requireCwd, type Handlers } from './cli-server'
 
 // `maru` 의 `TIMEOUT`(main.rs)이 10초이므로 이 오류가 그 안에 닿게 한다. 세션 띄우기는 5초(`SPAWN_TIMEOUT_MS`)
 // 안에 끝나거나 실패하므로 그보다는 길다.
@@ -45,19 +44,13 @@ export function createPanes(
   }
 
   const handlers: Handlers = {
-    'pane.new': async ({ cwd, direction, command }, session) => {
-      if (typeof cwd !== 'string' || !isAbsolute(cwd)) {
-        throw new InvalidParams('params.cwd must be an absolute path')
-      }
+    'pane.new': async (params, session) => {
+      const cwd = requireCwd(params.cwd)
+      const { direction } = params
       if (direction !== 'right' && direction !== 'down') {
         throw new InvalidParams('params.direction must be "right" or "down"')
       }
-      if (
-        command !== undefined &&
-        (!Array.isArray(command) || !command.length || !command.every((a) => typeof a === 'string'))
-      ) {
-        throw new InvalidParams('params.command must be a non-empty array of strings')
-      }
+      const command = params.command === undefined ? undefined : requireCommand(params.command)
       const req: PaneNewRequest = { session, cwd, direction, ...(command && { command }) }
       const reply = await ask('pane:new', req)
       if (!reply || !('session' in reply)) throw new Error('the window answered without a session')

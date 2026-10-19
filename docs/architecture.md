@@ -16,6 +16,12 @@ renderer 는 이 순서에 기댄다. host 가 죽으면 main 이 모든 창에 
 
 workspace 목록은 renderer 만 가진다. renderer 는 세션을 열 때 `session:open` 에 그 pane 의 workspace id 를 싣는다. main 은 그 key 의 kill 이 올 때까지 세션의 workspace 를 기억한다(`app/src/main/session-workspaces.ts`). 그래서 renderer 는 pane 을 지울 때마다, 세션이 스스로 끝났어도 kill 을 보낸다(`App.vue` 의 `removePane`). kill 을 보내지 않고 pane 을 지우는 경로가 생기면 main 은 끝난 세션의 workspace 를 계속 기억한다.
 
+## job 은 main 이 가진다
+
+`maru job` 의 job 은 pane 과 같은 세션 디렉토리에 `maru-session --keep` 으로 뜨는 세션이다. renderer 와 session host 는 job 을 모르고, main 의 jobs 표(`app/src/main/job.ts`)가 이름·workspace·`job.new` 를 부른 세션을 가진다. job 의 출력 바이트는 main 을 지나지 않는다. main 은 돌고 있는 job 마다 셸이 끝나기를 기다리는 `status` 연결 하나를 두고, 출력은 `job.read` 를 받을 때 `capture` 로 한 번 받는다.
+
+workspace 가 닫힌 것은 kill 로 안다. renderer 는 workspace 의 마지막 pane 을 지울 때 workspace 도 지우므로, kill 로 그 workspace 의 마지막 세션이 빠지면 main 은 workspace 가 닫힌 것으로 보고 그 workspace 의 job 을 끈다(`sendKill`, `app/src/main/index.ts`). 문서가 바뀔 때 이전 문서의 세션을 끄는 경로도 같은 `sendKill` 을 부른다. 그래서 창을 새로 고치면 그 창 workspace 의 job 도 꺼진다. pane 이 없는 workspace 를 남기는 경로가 생기면 이 판단이 틀어진다.
+
 ## 재시작은 세션을 남긴다
 
 종료는 세션을 모두 끄고, 재시작은 끄지 않는다. renderer 는 화면(workspace·pane 배치와 사이드바·보기 모드, `app/src/shared/screen.ts`)이 바뀔 때마다 main 에 보낸다. 재시작하면 main 이 마지막으로 받은 화면을 userData 의 `restart.json` 에 쓴 뒤 다시 뜬다(`app/src/main/restart.ts`). renderer 에게 그때 묻지 않으므로 renderer 가 멈춰 있어도 재시작한다.

@@ -1,18 +1,31 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
+import { createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { PROTOCOL_VERSION } from '../shared/protocol'
+import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
+import { encodeFrame, FrameDecoder } from './frame'
 import {
+  captureSession,
   killSessions,
   readRecord,
   sessionEnv,
   shellEnv,
   socketPath,
+  spawnSession,
   startDir,
-  utf8Locale
+  utf8Locale,
+  waitSessionExit,
+  writeSessionInput
 } from './session'
 
 const hang = vi.hoisted(() => ({ path: undefined as string | undefined }))
@@ -223,6 +236,156 @@ describe('killSessions', () => {
     } finally {
       old.close()
     }
+  })
+})
+
+async function frameSession(answer: (req: Record<string, unknown>, sock: Socket) => void): Promise<{
+  dir: string
+  id: string
+  requests: Record<string, unknown>[]
+  closed: Promise<void>
+  close: () => void
+}> {
+  const dir = mkdtempSync(join(tmpdir(), 'maru-ask-'))
+  const id = 's-0000000a'
+  const requests: Record<string, unknown>[] = []
+  let markClosed = (): void => {}
+  const closed = new Promise<void>((r) => (markClosed = r))
+  const server = createServer((sock) => {
+    const decoder = new FrameDecoder()
+    sock.on('data', (chunk) => {
+      for (const f of decoder.push(chunk)) {
+        if (f.tag !== TAG_TEXT) continue
+        const req = JSON.parse(f.payload.toString())
+        requests.push(req)
+        answer(req, sock)
+      }
+    })
+    sock.on('close', markClosed)
+    sock.on('error', () => {})
+  })
+  await new Promise<void>((r) => server.listen(socketPath(dir, id), r))
+  return { dir, id, requests, closed, close: () => server.close() }
+}
+
+const send = (sock: Socket, v: object): void =>
+  void sock.write(encodeFrame(TAG_TEXT, Buffer.from(JSON.stringify(v))))
+
+describe('waitSessionExit', () => {
+  it('답의 종료 상태로 끝나고, 기다리는 status 를 보낸다', async () => {
+    const s = await frameSession((_req, sock) =>
+      send(sock, { type: 'status', exit: { code: 1, signal: null } })
+    )
+    try {
+      expect(await waitSessionExit(s.dir, s.id).exit).toEqual({ code: 1, signal: null })
+      expect(s.requests).toEqual([
+        { type: 'status', wait: true, protocol_version: PROTOCOL_VERSION }
+      ])
+    } finally {
+      s.close()
+    }
+  })
+
+  it('답 없이 닫히면 null 이다', async () => {
+    const s = await frameSession((_req, sock) => sock.end())
+    try {
+      expect(await waitSessionExit(s.dir, s.id).exit).toBeNull()
+    } finally {
+      s.close()
+    }
+  })
+
+  it('cancel 하면 null 로 끝나고 연결을 닫는다', async () => {
+    const s = await frameSession(() => {})
+    try {
+      const wait = waitSessionExit(s.dir, s.id)
+      await vi.waitFor(() => expect(s.requests).toHaveLength(1))
+      wait.cancel()
+      expect(await wait.exit).toBeNull()
+      await s.closed
+    } finally {
+      s.close()
+    }
+  })
+
+  it('세션이 없으면 null 이다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maru-ask-'))
+    expect(await waitSessionExit(dir, 's-0000000a').exit).toBeNull()
+  })
+})
+
+describe('captureSession', () => {
+  it('접힌 줄을 이어 붙인 글자를 청해 돌려준다', async () => {
+    const s = await frameSession((_req, sock) => send(sock, { type: 'capture', text: 'out' }))
+    try {
+      expect(await captureSession(s.dir, s.id, 1000)).toBe('out')
+      expect(s.requests[0]).toMatchObject({ type: 'capture', unwrap: true })
+    } finally {
+      s.close()
+    }
+  })
+
+  it('오류 답이나 시간 초과는 실패다', async () => {
+    const failing = await frameSession((_req, sock) =>
+      send(sock, { type: 'error', code: 'capture_failed', message: 'boom' })
+    )
+    const mute = await frameSession(() => {})
+    try {
+      await expect(captureSession(failing.dir, failing.id, 1000)).rejects.toThrow('boom')
+      await expect(captureSession(mute.dir, mute.id, 50)).rejects.toThrow('did not answer')
+    } finally {
+      failing.close()
+      mute.close()
+    }
+  })
+
+  it('세션이 없으면 시간을 기다리지 않고 없다고 실패한다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maru-ask-'))
+    const started = Date.now()
+    await expect(captureSession(dir, 's-0000000a', 5000)).rejects.toThrow(
+      'session s-0000000a is not running'
+    )
+    expect(Date.now() - started).toBeLessThan(1000)
+  })
+})
+
+describe('writeSessionInput', () => {
+  it('받은 글자를 그대로 보내고, 쓴 답과 끝난 답을 가린다', async () => {
+    let exited = false
+    const s = await frameSession((_req, sock) =>
+      send(sock, exited ? { type: 'error', code: 'exited' } : { type: 'input' })
+    )
+    try {
+      expect(await writeSessionInput(s.dir, s.id, 'r\r', 1000)).toBe('written')
+      expect(s.requests[0]).toMatchObject({ type: 'input', text: 'r\r' })
+      exited = true
+      expect(await writeSessionInput(s.dir, s.id, 'x', 1000)).toBe('exited')
+    } finally {
+      s.close()
+    }
+  })
+
+  it('답하지 않으면 시간 안에, 다시 보내지 말라는 말과 함께 실패한다', async () => {
+    const s = await frameSession(() => {})
+    try {
+      await expect(writeSessionInput(s.dir, s.id, 'x', 50)).rejects.toThrow('do not send it again')
+    } finally {
+      s.close()
+    }
+  })
+})
+
+describe('spawnSession', () => {
+  it('keep 이면 명령 앞에 --keep 을 넘긴다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maru-spawn-'))
+    const bin = join(dir, 'fake-session')
+    writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(dir, 'args')}"\n`)
+    chmodSync(bin, 0o755)
+    const setup = { cli: { socket: '/s', bin: '/b/maru' }, zdotdir: '/z', claudePlugin: '/p' }
+    const id = 's-0000000a'
+    expect(await spawnSession(bin, dir, setup, id, '/', ['sh'], { keep: true })).toBe('ended')
+    const args = readFileSync(join(dir, 'args'), 'utf8').trim().split('\n')
+    expect(args.slice(-3)).toEqual(['--keep', '--', 'sh'])
   })
 })
 

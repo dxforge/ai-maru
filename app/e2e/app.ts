@@ -261,7 +261,7 @@ export async function activeTerminal(page: Page): Promise<void> {
   await page.waitForSelector('.terminal-view.active .xterm-screen')
 }
 
-export async function run(page: Page, command: string, expected: string): Promise<void> {
+export async function run(page: Page, command: string, expected: string | RegExp): Promise<void> {
   await page.keyboard.type(`${command}\n`)
   await expect(rows(page)).toContainText(expected)
 }
@@ -301,6 +301,20 @@ export function shellRows(page: Page) {
 // Playwright 의 키 입력은 macOS 메뉴를 거치지 않아 메뉴 항목을 직접 누른다.
 export async function clickMenu(app: ElectronApplication, id: string): Promise<void> {
   await app.evaluate(({ Menu }, id) => Menu.getApplicationMenu()!.getMenuItemById(id)!.click(), id)
+}
+
+// 세션이 다 뜨기 전에 재시작하면 다시 뜬 앱이 그 세션에 붙을지가 시점에 달리므로, 부르는 쪽이 셸이 답한
+// 것을 본 뒤에 부른다.
+export async function restartWith(
+  app: ElectronApplication,
+  trigger: () => Promise<void> = () => clickMenu(app, 'restart')
+): Promise<void> {
+  await app.evaluate(({ app }) => {
+    app.relaunch = () => {}
+  })
+  const closed = app.waitForEvent('close')
+  await trigger()
+  await closed
 }
 
 export async function pressNew(app: ElectronApplication): Promise<void> {

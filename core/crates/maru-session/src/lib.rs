@@ -11,6 +11,8 @@
 //!   SIGTERM·SIGINT·SIGHUP 을 받으면 셸을 정리하고 소켓·레코드를 지운 뒤 끝난다.
 //! - 준비되기 전에 실패하면 0 이 아닌 코드로 끝나고, 준비된 뒤에는 셸의 종료 코드와 상관없이 0 으로
 //!   끝난다. 띄우는 쪽이 소켓을 확인하기 전에 셸이 끝났어도 마찬가지다.
+//! - `--keep` 으로 띄우면 셸이 끝나도 이 프로세스는 끝나지 않고, 소켓·레코드와 화면·스크롤백·종료 상태를 유지한 채
+//!   연결을 계속 받는다. `kill` 요청이나 종료 시그널을 받으면 위와 같이 정리하고 끝난다.
 //! - 같은 id 를 동시에 띄우면 막지 못한다. 띄우는 쪽은 매번 새 id 를 쓴다.
 //! - 이 프로세스는 시작할 때 `setsid` 로 띄운 쪽의 세션에서 떨어진다. 프로세스 그룹 리더로 띄우면
 //!   이게 실패해 띄운 쪽이 끝날 때 같이 시그널을 받을 수 있다.
@@ -39,8 +41,20 @@
 //! |---|---|
 //! | `version` | `{"type":"version","protocol_version":…}` |
 //! | `kill` | 셸을 끝내고 소켓·레코드를 지운 뒤 `{"type":"killed"}` |
-//! | `capture` | `{"type":"capture","text":…}` |
+//! | `capture` (`unwrap`: bool, 선택) | `{"type":"capture","text":…}` |
+//! | `status` (`wait`: bool, 선택) | `{"type":"status","exit":null}` 또는 `{"type":"status","exit":{"code","signal"}}` |
+//! | `input` (`text`: 문자열) | 셸 입력으로 다 쓴 뒤 `{"type":"input"}` |
 //! | `attach` (`role`: `primary`·`observer`, primary 면 `cols`·`rows`) | 아래 |
+//!
+//! `capture` 는 화면과 스크롤백을 스타일 없는 글자로 돌려준다. 행마다 줄을 끊고, `unwrap` 이 true 면
+//! 화면 폭에서 접힌 행을 한 줄로 잇는다.
+//!
+//! `status` 의 `exit` 는 셸이 끝났으면 `exit` 메시지와 같은 `code`·`signal` 이다. `wait` 가 true 면
+//! 셸이 스스로 끝날 때까지 기다렸다 답하고, 이미 끝났으면 곧바로 답한다. `kill` 요청이나 종료
+//! 시그널로 이 프로세스가 셸을 끝낼 때는 답하지 않고 연결을 닫는다.
+//!
+//! `input` 은 attach 의 primary 자리와 상관없이 쓴다. 셸이 끝났으면 쓰지 않고 `exited` 로 거절한다.
+//! 요청한 쪽이 답을 기다리지 않고 연결을 끊어도 받은 입력은 끝까지 쓴다.
 //!
 //! `attach` 의 응답은 헤더 `{"type":"attached","protocol_version","tty","role","cols","rows",
 //! "cursor_x","cursor_y"}` 와 재생(Binary, 비어 있어도 보낸다)이고, 그 뒤로

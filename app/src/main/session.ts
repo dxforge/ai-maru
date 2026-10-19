@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
 import { isSessionId } from '../shared/session'
-import { encodeFrame } from './frame'
+import { encodeFrame, FrameDecoder } from './frame'
 
 const SPAWN_TIMEOUT_MS = 5000
 const SPAWN_POLL_MS = 50
@@ -116,6 +116,106 @@ export function killSession(dir: string, id: string, timeoutMs = KILL_TIMEOUT_MS
   return requestKill(socketPath(dir, id), timeoutMs)
 }
 
+type Reply = Record<string, unknown>
+
+function ask(
+  dir: string,
+  id: string,
+  body: object
+): { reply: Promise<Reply | null>; cancel: () => void; reached: () => boolean } {
+  let sock: Socket | null = null
+  let connected = false
+  let settle: (r: Reply | null) => void = () => {}
+  const reply = new Promise<Reply | null>((resolve) => {
+    let done = false
+    settle = (r) => {
+      if (done) return
+      done = true
+      sock?.destroy()
+      resolve(r)
+    }
+    const decoder = new FrameDecoder()
+    sock = createConnection(socketPath(dir, id), () => {
+      connected = true
+      const req = JSON.stringify({ ...body, protocol_version: PROTOCOL_VERSION })
+      sock!.write(encodeFrame(TAG_TEXT, Buffer.from(req)))
+    })
+    sock.on('data', (chunk) => {
+      let frames
+      try {
+        frames = decoder.push(chunk)
+      } catch {
+        return settle(null)
+      }
+      const text = frames.find((f) => f.tag === TAG_TEXT)
+      if (!text) return
+      try {
+        settle(JSON.parse(text.payload.toString()) as Reply)
+      } catch {
+        settle(null)
+      }
+    })
+    sock.on('close', () => settle(null))
+    sock.on('error', () => {})
+  })
+  return { reply, cancel: () => settle(null), reached: () => connected }
+}
+
+async function askWithin(
+  dir: string,
+  id: string,
+  body: object,
+  timeoutMs: number,
+  late = `session ${id} did not answer within ${timeoutMs / 1000}s`
+): Promise<Reply> {
+  const { reply, cancel, reached } = ask(dir, id, body)
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    cancel()
+  }, timeoutMs)
+  const r = await reply.finally(() => clearTimeout(timer))
+  if (r) return r
+  if (!reached()) throw new Error(`session ${id} is not running`)
+  throw new Error(timedOut ? late : `session ${id} closed the connection without answering`)
+}
+
+export type SessionExit = { code: number | null; signal: number | null }
+
+/** 셸이 스스로 끝나면 그 종료 상태로 끝난다. 세션이 셸을 끝냈거나 닿지 못하면 null 이다. */
+export function waitSessionExit(
+  dir: string,
+  id: string
+): { exit: Promise<SessionExit | null>; cancel: () => void } {
+  const { reply, cancel } = ask(dir, id, { type: 'status', wait: true })
+  const exit = reply.then((r) => (r?.type === 'status' && r.exit ? (r.exit as SessionExit) : null))
+  return { exit, cancel }
+}
+
+export async function captureSession(dir: string, id: string, timeoutMs: number): Promise<string> {
+  const r = await askWithin(dir, id, { type: 'capture', unwrap: true }, timeoutMs)
+  if (r.type !== 'capture' || typeof r.text !== 'string') {
+    throw new Error(`cannot read session ${id}: ${String(r.message ?? r.code)}`)
+  }
+  return r.text
+}
+
+export async function writeSessionInput(
+  dir: string,
+  id: string,
+  text: string,
+  timeoutMs: number
+): Promise<'written' | 'exited'> {
+  // 시간이 지나도 입력은 들어가므로 다시 보내지 말라고 알린다(maru-session 의 `lib.rs`).
+  const late =
+    `session ${id} has not taken the input within ${timeoutMs / 1000}s. ` +
+    'It gets the input once the program reads it, so do not send it again.'
+  const r = await askWithin(dir, id, { type: 'input', text }, timeoutMs, late)
+  if (r.type === 'input') return 'written'
+  if (r.code === 'exited') return 'exited'
+  throw new Error(`cannot write to session ${id}: ${String(r.message ?? r.code)}`)
+}
+
 /**
  * 프로세스까지 없는 레코드는 지운다 — 띄우는 중인 세션은 소켓이 아직 안 열렸어도 프로세스는
  * 있다.
@@ -198,7 +298,8 @@ export async function spawnSession(
   setup: ShellSetup,
   id: string,
   cwd: string,
-  command: string[] = []
+  command: string[] = [],
+  { keep = false, env = process.env }: { keep?: boolean; env?: NodeJS.ProcessEnv } = {}
 ): Promise<'live' | 'ended'> {
   if (!isSessionId(id)) throw new Error(`not a session id: ${id}`)
   // 준비 전에 끝나면 이유가 stderr 에만 있다. 파이프로 받으면 앱이 끝난 뒤 세션의 쓰기가 실패한다.
@@ -206,10 +307,11 @@ export async function spawnSession(
   const logPath = join(dir, `${id}.log`)
   const log = openSync(logPath, 'w', 0o600)
   const args = ['--dir', dir, '--id', id, '--cwd', cwd]
+  if (keep) args.push('--keep')
   if (command.length) args.push('--', ...command)
   const child = spawn(bin, args, {
     detached: true,
-    env: shellEnv(process.env, id, setup),
+    env: shellEnv(env, id, setup),
     stdio: ['ignore', 'ignore', log]
   })
   closeSync(log)

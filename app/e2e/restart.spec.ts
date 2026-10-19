@@ -11,6 +11,7 @@ import {
   openPalette,
   paneRows,
   panes,
+  restartWith,
   run,
   serveRenderer,
   sessionDir,
@@ -24,20 +25,6 @@ import {
   wrapSessionBin,
   type Launched
 } from './app'
-
-// 세션이 다 뜨기 전에 재시작하면 다시 뜬 앱이 그 세션에 붙을지가 시점에 달리므로, 부르는 쪽이 셸이 답한
-// 것을 본 뒤에 부른다.
-async function restartWith(
-  app: ElectronApplication,
-  trigger: () => Promise<void> = () => clickMenu(app, 'restart')
-): Promise<void> {
-  await app.evaluate(({ app }) => {
-    app.relaunch = () => {}
-  })
-  const closed = app.waitForEvent('close')
-  await trigger()
-  await closed
-}
 
 async function shellUp(page: Launched['page'], i: number): Promise<void> {
   await panes(page).nth(i).locator('.xterm-screen').click()

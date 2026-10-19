@@ -20,20 +20,29 @@ import { installCommandMenu } from './menu'
 import { createMonitor } from './monitor'
 import { isDevReload } from './navigation'
 import { createPanes } from './pane'
+import { createJobs, JOB_REPLY_MS } from './job'
 import {
   checkRestart,
+  jobsFile,
   restartFile,
   screenSessions,
+  takeJobs,
   takeScreen,
-  writeScreen,
+  writeRestart,
   type RestartCheck
 } from './restart'
 import {
   appSocketPath,
+  captureSession,
+  killSession,
   killSessions,
   readRecord,
   sessionLive,
+  spawnSession,
+  startDir,
   utf8Locale,
+  waitSessionExit,
+  writeSessionInput,
   type CliAccess
 } from './session'
 import type { KillRequest, OpenRequest } from './session-host'
@@ -47,7 +56,7 @@ import {
 import type { PaneReply } from '../shared/pane'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { parseScreen, type ScreenState } from '../shared/screen'
-import type { SessionOpen } from '../shared/session'
+import { newSessionId, type SessionOpen } from '../shared/session'
 import { GHOSTTY, isLight } from '../shared/theme'
 
 function sessionDir(): string {
@@ -88,8 +97,13 @@ const claudeStatus = createClaudeStatus({
   }
 })
 
+// 재시작한 앱의 monitor 는 표를 되살리기 전에도 붙으므로, 보류한 알림은 되살린 뒤에 보낸다.
+let jobs: ReturnType<typeof createJobs> | null = null
+let jobsRestored: Promise<void> = Promise.resolve()
+
 const monitor = createMonitor({
-  shellPidOf: async (id) => (await readRecord(sessionDir(), id))?.shell_pid ?? null
+  shellPidOf: async (id) => (await readRecord(sessionDir(), id))?.shell_pid ?? null,
+  onSubscribe: (session) => void jobsRestored.then(() => jobs?.subscribed(session))
 })
 
 const inbox = createInbox({ isLive: (id) => sessionLive(sessionDir(), id), emit: monitor.emit })
@@ -123,7 +137,13 @@ function restartCheck(): Promise<RestartCheck> {
 async function saveScreen(): Promise<void> {
   const screen = parseScreen(lastScreen)
   if (!screen) throw new Error('the window has not reported its layout yet')
-  await writeScreen(restartFile(app.getPath('userData')), screen)
+  const file = jobs?.save()
+  try {
+    await writeRestart(app.getPath('userData'), screen, file)
+  } catch (err) {
+    jobs?.resume()
+    throw err
+  }
 }
 
 function relaunch(): void {
@@ -301,12 +321,19 @@ function start(): void {
   if (unobtrusive) app.dock?.hide()
   // 창 틀이 시스템 설정 대신 터미널 배경을 따라야, 어두운 터미널 위에 밝은 타이틀바가 뜨지 않는다.
   nativeTheme.themeSource = isLight(GHOSTTY) ? 'light' : 'dark'
-  const restored = takeScreen(restartFile(app.getPath('userData')))
+  const userData = app.getPath('userData')
+  // 화면 없이 남은 job 표는 재시작이 쓴 것이 아니므로 버린다.
+  const restored = Promise.all([
+    takeScreen(restartFile(userData)),
+    takeJobs(jobsFile(userData))
+  ]).then(([screen, jobs]) => ({ screen, jobs: screen ? jobs : null }))
   // 재시작으로 뜨지 않았으면 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.
-  const leftovers = restored.then((screen) =>
-    killSessions(sessionDir(), undefined, screenSessions(screen))
-  )
-  let toRestore: Promise<ScreenState | null> | null = restored
+  const leftovers = restored.then(({ screen, jobs }) => {
+    const keep = screenSessions(screen)
+    for (const j of jobs?.jobs ?? []) keep.add(j.session)
+    return killSessions(sessionDir(), undefined, keep)
+  })
+  let toRestore: Promise<ScreenState | null> | null = restored.then((r) => r.screen)
   ipcMain.handle('screen:restore', () => {
     const screen = toRestore
     toRestore = null
@@ -315,8 +342,31 @@ function start(): void {
   ipcMain.on('screen:state', (_event, screen: unknown) => (lastScreen = screen))
   ipcMain.on('app:restart', () => void restartFromMenu())
   const cli = cliAccess()
+  const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
+  // pane 의 셸과 같은 환경(LANG 보정 포함)으로 job 을 띄운다.
+  const jobEnv = hostEnv()
+  const jobTable = createJobs({
+    newId: newSessionId,
+    workspaceOf: sessionWorkspaces.workspaceOf,
+    spawn: async (id, cwd, command) => {
+      await ready
+      const dir = await startDir(cwd)
+      await spawnSession(sessionBin(), sessionDir(), setup, id, dir, command, {
+        keep: true,
+        env: jobEnv
+      })
+    },
+    waitExit: (id) => waitSessionExit(sessionDir(), id),
+    capture: (id) => captureSession(sessionDir(), id, JOB_REPLY_MS),
+    input: (id, text) => writeSessionInput(sessionDir(), id, text, JOB_REPLY_MS),
+    kill: (id) => killSession(sessionDir(), id),
+    emit: monitor.emit
+  })
+  jobs = jobTable
+  // `leftovers` 의 `killSessions` 는 job 세션을 끄지 않으므로 그것을 기다리지 않고 되살린다.
+  jobsRestored = restored.then(({ jobs }) => void (jobs && jobTable.restore(jobs)))
   // 터미널은 CLI 없이도 쓸 수 있어야 한다. env 는 그대로 넣어 CLI 가 앱에 닿지 않는다고 말하게 한다.
-  const cliServer = listenCli(cli.socket, cliHandlers).catch((err) => {
+  const cliServer = listenCli(cli.socket, { ...cliHandlers, ...jobTable.handlers }).catch((err) => {
     console.error(`maru: cannot listen on ${cli.socket}:`, err)
     return null
   })
@@ -331,10 +381,11 @@ function start(): void {
     if (process.platform === 'darwin' && typeof path === 'string')
       BrowserWindow.fromWebContents(event.sender)?.setRepresentedFilename(path)
   })
-  const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
   // open 과 같은 `ready.then` 으로 보내야 host 가 그 open 을 먼저 받는다.
   const sendKill = (key: string): void => {
-    sessionWorkspaces.close(key)
+    // workspace 의 마지막 pane 을 지우면 renderer 가 workspace 도 지운다(docs/architecture.md).
+    const closed = sessionWorkspaces.close(key)
+    if (closed) void jobTable.closeWorkspace(closed)
     const req: KillRequest = { type: 'kill', key, dir: sessionDir() }
     void ready.then(() => sessionHost().postMessage(req))
   }
