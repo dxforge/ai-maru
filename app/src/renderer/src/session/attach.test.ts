@@ -15,9 +15,18 @@ function fakeTerminal(cols: number, rows: number) {
       term.cols = c
       term.rows = r
     },
-    onData: () => {},
-    onBinary: () => {},
-    onResize: () => {}
+    type: (() => {}) as (data: string) => void,
+    onData(cb: (data: string) => void) {
+      term.type = cb
+    },
+    binary: (() => {}) as (data: string) => void,
+    onBinary(cb: (data: string) => void) {
+      term.binary = cb
+    },
+    resized: (() => {}) as (size: { cols: number; rows: number }) => void,
+    onResize(cb: (size: { cols: number; rows: number }) => void) {
+      term.resized = cb
+    }
   }
   return term
 }
@@ -37,6 +46,24 @@ function fakeConnection() {
 const handlers = { onExit: () => {}, onSpawned: () => {}, onOpenFailed: () => {} }
 
 describe('attach', () => {
+  it('붙기 전의 입력은 attach 요청 뒤에 보내고, 붙기 전의 resize 는 보내지 않는다', () => {
+    const term = fakeTerminal(80, 24)
+    const sent: SessionMessage[] = []
+    const conn: SessionConnection = { ...fakeConnection().conn, send: (msg) => sent.push(msg) }
+    const session = attach(term as unknown as Terminal, conn, handlers)
+    term.type('a')
+    term.binary('m')
+    term.resize(100, 24)
+    term.resized({ cols: 100, rows: 24 })
+    expect(sent).toEqual([])
+    session.start()
+    session.start()
+    term.type('b')
+    expect(
+      sent.map((m) => (typeof m === 'string' ? JSON.parse(m) : new TextDecoder().decode(m)))
+    ).toEqual([expect.objectContaining({ type: 'attach', cols: 100, rows: 24 }), 'a', 'm', 'b'])
+  })
+
   it('자리를 내준 뒤 밀려 resync 를 받으면 그 크기를 따른다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver } = fakeConnection()

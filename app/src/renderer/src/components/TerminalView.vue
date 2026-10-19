@@ -101,8 +101,18 @@ const cell = (d: IRenderDimensions): Size => ({
 })
 term.onDimensionsChange((d) => emit('cell', cell(d)))
 let session: Attachment | null = null
+let started = false
 const observer = new ResizeObserver(() => {
-  if (session?.primary !== false) fit.fit()
+  if (!started) {
+    // columns 보기는 글자 폭을 재기 전 pane 폭이 0 이다. 그때 붙으면 FitAddon 의 최소인 2열로 붙는다.
+    // 세션은 그 폭으로 행마다 개행을 넣어 재생하므로 뒤에 넓혀도 펼쳐지지 않는다.
+    if (host.value!.clientWidth === 0) return
+    started = true
+    fit.fit()
+    session!.start()
+    return
+  }
+  if (session!.primary) fit.fit()
 })
 
 let conn: SessionConnection | undefined
@@ -119,8 +129,6 @@ onMounted(() => {
   term.open(host.value!)
   trackComposition(term.textarea!)
   if (term.dimensions) emit('cell', cell(term.dimensions))
-  fit.fit()
-  observer.observe(host.value!)
   if (active) term.focus()
   // reactive 배열의 proxy 는 IPC 로 보낼 수 없다.
   conn = openSession({
@@ -143,6 +151,7 @@ onMounted(() => {
   term.onData(() => {
     if (!composing) flushAfterComposition()
   })
+  observer.observe(host.value!)
 })
 
 onBeforeUnmount(() => {
