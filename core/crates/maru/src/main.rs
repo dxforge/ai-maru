@@ -49,7 +49,7 @@
 //! | `inbox.push` | `to`(세션 id), `text`(빈 문자열이 아닌 문자열) | `null` |
 //! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 세션 id>,"text":<본문>}…]}` |
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
-//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택) | `{"session":<새 세션 id>}` |
+//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `full`(bool, 선택) | `{"session":<새 세션 id>}` |
 //! | `pane.close` | `target`(세션 id) | `null` |
 //! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"session":<job 의 세션 id>}` |
 //! | `job.list` | 없음 | `{"jobs":[{"session","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
@@ -73,7 +73,8 @@
 //! 지운다. 보관은 앱 메모리에만 한다.
 //!
 //! `pane.new` 는 `session` 의 pane 을 `direction` 쪽으로 나누고, 새 pane 에서 `cwd` 를 시작 디렉토리로
-//! 세션을 띄운다. 포커스와 선택한 workspace 는 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
+//! 세션을 띄운다. `full` 이 true 면 그 pane 이 든 workspace 전체를 나눠 새 pane 을 `direction` 쪽 끝에
+//! 붙인다. 포커스와 선택한 workspace 는 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
 //! 그 명령을 실행한다(셸이 sh·bash·zsh·ksh·dash 가 아니면 `/bin/sh` 가 실행한다). 명령이 끝나면 셸과
 //! 함께 pane 이 닫힌다. 새 세션이 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. `session` 의 pane 이 창에
 //! 없으면 `invalid_params` 로 답한다. 세션을 띄우지 못하면 나눈 pane 을 닫고 `internal_error` 로 답한다.
@@ -247,6 +248,10 @@ enum PaneCommand {
         /// Split below instead of to the right.
         #[arg(long)]
         down: bool,
+        /// Split the whole workspace instead of this pane, adding the new pane at its right
+        /// end (bottom end with --down).
+        #[arg(long)]
+        full: bool,
         /// Command and its arguments.
         #[arg(trailing_var_arg = true)]
         command: Vec<String>,
@@ -381,8 +386,13 @@ fn run(command: Command) -> Result<()> {
             InboxCommand::Read => inbox_read()?,
         },
         Command::Pane { command } => match command {
-            PaneCommand::New { cwd, down, command } => {
-                let session = pane_new(cwd, down, command)?;
+            PaneCommand::New {
+                cwd,
+                down,
+                full,
+                command,
+            } => {
+                let session = pane_new(cwd, down, full, command)?;
                 writeln!(std::io::stdout(), "{session}")?;
             }
             PaneCommand::Close { session } => {
@@ -768,7 +778,7 @@ fn start_dir(cwd: Option<PathBuf>) -> Result<String> {
         .map_err(|_| anyhow!("the directory is not UTF-8"))
 }
 
-fn pane_new(cwd: Option<PathBuf>, down: bool, command: Vec<String>) -> Result<String> {
+fn pane_new(cwd: Option<PathBuf>, down: bool, full: bool, command: Vec<String>) -> Result<String> {
     let target = target()?;
     let mut params = Map::new();
     params.insert("cwd".into(), start_dir(cwd)?.into());
@@ -776,6 +786,9 @@ fn pane_new(cwd: Option<PathBuf>, down: bool, command: Vec<String>) -> Result<St
         "direction".into(),
         if down { "down" } else { "right" }.into(),
     );
+    if full {
+        params.insert("full".into(), true.into());
+    }
     if !command.is_empty() {
         params.insert("command".into(), command.into());
     }

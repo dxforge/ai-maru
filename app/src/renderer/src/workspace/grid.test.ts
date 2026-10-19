@@ -55,4 +55,23 @@ describe('snapRects', () => {
     )
     expect(boxes.get(2)).toEqual({ left: 401, top: 0, width: 400, height: 600 })
   })
+
+  it('columns 는 늘어선 칸마다 같은 셀 수를 준다', () => {
+    const layout: Layout = {
+      split: 'right',
+      first: { pane: 1 },
+      second: { split: 'right', first: { pane: 2 }, second: { pane: 3 } }
+    }
+    const boxes = snapRects(
+      layout,
+      { width: 3 * 82 * 9, height: 700 },
+      { width: 9, height: 18 },
+      'columns'
+    )
+    expect([...boxes.values()].map((b) => [b.left, b.width])).toEqual([
+      [0, 82 * 9],
+      [82 * 9, 82 * 9],
+      [2 * 82 * 9, 82 * 9]
+    ])
+  })
 })

@@ -5,6 +5,9 @@ export type FocusDirection = 'left' | 'right' | 'up' | 'down'
 
 export type Rect = { x: number; y: number; w: number; h: number }
 
+/** 좌우로 나눈 폭을 반씩(`half`) 또는 양쪽의 `columnCount` 비율로(`columns`) 나눈다. */
+export type Widths = 'half' | 'columns'
+
 export function splitPane(
   layout: Layout,
   target: number,
@@ -19,6 +22,10 @@ export function splitPane(
     first: splitPane(layout.first, target, pane, split),
     second: splitPane(layout.second, target, pane, split)
   }
+}
+
+export function splitRoot(layout: Layout, pane: number, split: SplitDirection): Layout {
+  return { split, first: layout, second: { pane } }
 }
 
 export function removePane(
@@ -47,25 +54,37 @@ export function columnCount(layout: Layout): number {
   return layout.split === 'right' ? a + b : Math.max(a, b)
 }
 
-export function rects(layout: Layout, at: Rect = { x: 0, y: 0, w: 1, h: 1 }): Map<number, Rect> {
+export function rects(
+  layout: Layout,
+  widths: Widths = 'half',
+  at: Rect = { x: 0, y: 0, w: 1, h: 1 }
+): Map<number, Rect> {
   if ('pane' in layout) return new Map([[layout.pane, at]])
-  const [a, b]: Rect[] =
-    layout.split === 'right'
-      ? [
-          { ...at, w: at.w / 2 },
-          { ...at, x: at.x + at.w / 2, w: at.w / 2 }
-        ]
-      : [
-          { ...at, h: at.h / 2 },
-          { ...at, y: at.y + at.h / 2, h: at.h / 2 }
-        ]
-  return new Map([...rects(layout.first, a), ...rects(layout.second, b)])
+  let a: Rect, b: Rect
+  if (layout.split === 'right') {
+    let w = at.w / 2
+    if (widths === 'columns') {
+      const first = columnCount(layout.first)
+      w = (at.w * first) / (first + columnCount(layout.second))
+    }
+    a = { ...at, w }
+    b = { ...at, x: at.x + w, w: at.w - w }
+  } else {
+    a = { ...at, h: at.h / 2 }
+    b = { ...at, y: at.y + at.h / 2, h: at.h / 2 }
+  }
+  return new Map([...rects(layout.first, widths, a), ...rects(layout.second, widths, b)])
 }
 
 export const EPSILON = 1e-9
 
-export function neighbor(layout: Layout, from: number, dir: FocusDirection): number | undefined {
-  const all = rects(layout)
+export function neighbor(
+  layout: Layout,
+  from: number,
+  dir: FocusDirection,
+  widths: Widths = 'half'
+): number | undefined {
+  const all = rects(layout, widths)
   const cur = all.get(from)
   if (!cur) return undefined
   const [along, length, across, width] =

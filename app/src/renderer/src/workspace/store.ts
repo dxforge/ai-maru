@@ -6,9 +6,11 @@ import {
   neighbor,
   removePane,
   splitPane,
+  splitRoot,
   type FocusDirection,
   type Layout,
-  type SplitDirection
+  type SplitDirection,
+  type Widths
 } from './layout'
 
 /**
@@ -95,12 +97,15 @@ export function createWorkspaces(
   function splitFrom(
     from: number,
     direction: SplitDirection,
-    init: Pick<Pane, 'startDir' | 'command'>
+    init: Pick<Pane, 'startDir' | 'command'>,
+    full = false
   ): number {
     const w = owner(from)!
     const pane = nextKey++
     w.panes.push({ key: pane, sessionId: sessionId(), ...init })
-    w.layout = splitPane(w.layout, from, pane, direction)
+    w.layout = full
+      ? splitRoot(w.layout, pane, direction)
+      : splitPane(w.layout, from, pane, direction)
     return pane
   }
 
@@ -126,9 +131,9 @@ export function createWorkspaces(
     if (w) w.focused = pane
   }
 
-  function moveFocus(direction: FocusDirection): void {
+  function moveFocus(direction: FocusDirection, widths: Widths = 'half'): void {
     const w = selected()
-    const to = w && neighbor(w.layout, w.focused, direction)
+    const to = w && neighbor(w.layout, w.focused, direction, widths)
     if (to !== undefined) w!.focused = to
   }
 

@@ -24,7 +24,7 @@ import { ICONS } from './icons'
 import { columnsWidth, terminalPadding } from './workspace/columns'
 import { windowTitle, workspaceLabel } from './workspace/cwd'
 import { snapRects, type Box, type Size } from './workspace/grid'
-import { columnCount, EPSILON, rects, type Layout } from './workspace/layout'
+import { columnCount, EPSILON, rects, type Layout, type Widths } from './workspace/layout'
 import { createWorkspaces, focusedPane } from './workspace/store'
 
 const canvas = createCanvas()
@@ -111,10 +111,10 @@ const noPane = (session: string): PaneReply => ({
   message: `no pane for session ${session}`
 })
 
-window.maru.onPaneNew((id, { session, cwd, direction, command }) => {
+window.maru.onPaneNew((id, { session, cwd, direction, command, full }) => {
   const from = workspaces.paneBySession(session)
   if (!from) return window.maru.paneReply(id, noPane(session))
-  paneRequests.set(workspaces.splitFrom(from.key, direction, { startDir: cwd, command }), id)
+  paneRequests.set(workspaces.splitFrom(from.key, direction, { startDir: cwd, command }, full), id)
 })
 
 window.maru.onPaneClose((id, session) => {
@@ -158,6 +158,7 @@ function resizeSidebar(e: PointerEvent): void {
 }
 
 const viewMode = ref<'single' | 'columns'>('single')
+const widths = computed<Widths>(() => (viewMode.value === 'columns' ? 'columns' : 'half'))
 // 모든 터미널이 같은 글꼴을 쓰므로 마지막으로 잰 값 하나로 셈한다.
 const cell = ref<Size>({ width: 0, height: 0 })
 const FALLBACK_ROW = 18
@@ -240,17 +241,17 @@ function bodyHeight(b: Box): number {
   return (rows + 0.5) * row.value
 }
 
-function placements(layout: Layout, size: Size | undefined) {
+function placements(layout: Layout, size: Size | undefined, widths: Widths) {
   // 영역을 재기 전의 첫 렌더는 비율로 그린다. 0×0 으로 그리면 터미널이 그 크기로 세션을 연다.
   if (!size)
     return new Map(
-      [...rects(layout)].map(([pane, r]) => [
+      [...rects(layout, widths)].map(([pane, r]) => [
         pane,
         placement({ left: r.x * 100, top: r.y * 100, width: r.w * 100, height: r.h * 100 }, '%')
       ])
     )
   return new Map(
-    [...snapRects(layout, size, cell.value)].map(([pane, b]) => [
+    [...snapRects(layout, size, cell.value, widths)].map(([pane, b]) => [
       pane,
       placement(b, 'px', bodyHeight(b))
     ])
@@ -261,13 +262,12 @@ const views = computed(() =>
   workspaces.list.value.map((w) => {
     const selected = w.key === workspaces.selectedKey.value
     const measured = gridSizes.get(w.key)
-    const width =
-      viewMode.value === 'columns'
-        ? columnsWidth(columnCount(w.layout), cell.value.width)
-        : undefined
+    const columns = viewMode.value === 'columns'
+    const width = columns ? columnsWidth(columnCount(w.layout), cell.value.width) : undefined
     const places = placements(
       w.layout,
-      measured && (width === undefined ? measured : { width, height: measured.height })
+      measured && (width === undefined ? measured : { width, height: measured.height }),
+      widths.value
     )
     return {
       w,
@@ -344,10 +344,10 @@ const handlers: Record<CommandId, () => void> = {
   'close-pane': closePane,
   'next-workspace': () => stepWorkspace(1),
   'previous-workspace': () => stepWorkspace(-1),
-  'focus-pane-left': () => workspaces.moveFocus('left'),
-  'focus-pane-right': () => workspaces.moveFocus('right'),
-  'focus-pane-up': () => workspaces.moveFocus('up'),
-  'focus-pane-down': () => workspaces.moveFocus('down'),
+  'focus-pane-left': () => workspaces.moveFocus('left', widths.value),
+  'focus-pane-right': () => workspaces.moveFocus('right', widths.value),
+  'focus-pane-up': () => workspaces.moveFocus('up', widths.value),
+  'focus-pane-down': () => workspaces.moveFocus('down', widths.value),
   'command-palette': () => {
     paletteOpen.value = true
     palette.value?.focus()
