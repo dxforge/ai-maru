@@ -148,6 +148,41 @@ test('WebGL 터미널은 칸 폭을 셀 단위로 채우고, renderer 가 바뀌
   expect(await sttySize(page, dataDir)).toEqual(before)
 })
 
+test('WebGL2 를 쓸 수 없으면 DOM 으로 그리고, 칸 폭을 DOM 의 셀 단위로 채우며 columns 의 칸은 80열이다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch({ MARU_DOM_RENDERER: '' })
+  const { page } = launched
+  // 첫 터미널이 열리기 전에 막아야 하므로, init script 를 걸고 페이지를 다시 불러온다.
+  await page.addInitScript(() => {
+    const getContext = HTMLCanvasElement.prototype.getContext
+    HTMLCanvasElement.prototype.getContext = function (
+      this: HTMLCanvasElement,
+      id: string,
+      ...rest
+    ) {
+      return id === 'webgl2' ? null : getContext.call(this, id, ...rest)
+    } as typeof getContext
+  })
+  await page.reload()
+  await activeTerminal(page)
+  const first = terminals(page)
+  await page.waitForTimeout(500)
+  expect(await renderer(first)).toBe('dom')
+  await expect
+    .poll(async () => {
+      const w = await screenWidth(first)
+      const spare = w.room - SCROLLBAR_WIDTH - w.screen
+      return spare >= 0 && spare < w.cell
+    })
+    .toBe(true)
+
+  await newWorkspace(launched, 2)
+  await toggleView(launched, 'columns')
+  await expect.poll(async () => (await sttySize(page, dataDir)).cols).toBe(80)
+})
+
 test('WebGL 로 그려도 columns 의 칸은 80열이다', async ({ launch, dataDir }) => {
   const launched = await launchWebgl(launch)
   await toggleView(launched, 'columns')
@@ -174,7 +209,6 @@ test('pane 이 많은 workspace 사이를 한도보다 많이 오가도 WebGL co
   await expect
     .poll(() => renderers(workspaceViews(page).nth(3)))
     .toEqual(['webgl', 'webgl', 'webgl', 'webgl'])
-  // 한도를 넘기면 Chromium 이 가장 오래된 context 를 버리고, 그것이 보이는 터미널의 것일 수 있다.
   expect(warnings).toEqual([])
 })
 

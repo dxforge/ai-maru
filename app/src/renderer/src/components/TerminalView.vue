@@ -1,3 +1,12 @@
+<script lang="ts">
+import { shallowRef } from 'vue'
+
+// 창 안의 어느 터미널도 WebGL addon 을 적용한 적이 없을 때 적용에 실패하면 켠다. 그동안은 renderer 가
+// 바뀔 일이 없으므로 모든 터미널이 DOM 의 셀 폭으로 열 수를 센다.
+const webglUnavailable = shallowRef(false)
+let webglLoaded = false
+</script>
+
 <script setup lang="ts">
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -102,9 +111,9 @@ term.onTitleChange((title) => emit('title', title))
 // WebGL renderer 는 셀 폭을 device px 로 내림한다. DOM 으로 그리는 동안에도 그 폭을 써서, renderer 가
 // 바뀔 때 열 수가 바뀌어 프로그램에 resize 가 가지 않게 한다. 대신 DOM 으로 그리면 pane 보다 넓어져 오른쪽
 // 몇 열이 잘린다.
+const floorCell = (): boolean => window.maru.webgl && !webglUnavailable.value
 const cell = (d: IRenderDimensions): Size => ({
-  width:
-    (window.maru.webgl ? Math.floor(d.device.cell.width) : d.device.cell.width) / devicePixelRatio,
+  width: (floorCell() ? Math.floor(d.device.cell.width) : d.device.cell.width) / devicePixelRatio,
   height: d.device.cell.height / devicePixelRatio
 })
 let dpr = devicePixelRatio
@@ -116,10 +125,9 @@ term.onDimensionsChange((d) => {
   if (started && session!.primary) fitTerminal()
 })
 function fitTerminal(): void {
-  if (!window.maru.webgl) return fit.fit()
+  if (!floorCell()) return fit.fit()
   const size = fit.proposeDimensions()
   if (!size || !term.dimensions) return
-  // FitAddon 이 나누는 폭을 같은 방법으로 구해 `cell()` 의 셀 폭으로 나눈다.
   const padding = getComputedStyle(term.element!)
   const width =
     (parseInt(getComputedStyle(host.value!).width) || 0) -
@@ -148,8 +156,8 @@ let webgl: WebglAddon | undefined
 let inView = false
 // context 를 잃은 원인(한도 초과·GPU 리셋)이 남아 있으면 다시 적용해도 또 잃으므로, 한 번 숨었다 보일 때까지 기다린다.
 let lost = false
-// addon 은 dispose 해도 context 를 GC 될 때까지 쥐고 있다. 그렇게 남은 context 가 한도를 채우면 Chromium 이
-// 보이는 터미널의 context 를 버린다.
+// addon 은 dispose 해도 GC 될 때까지 context 를 해제하지 않는다. 그렇게 남은 context 가 한도를 채우면 Chromium 이
+// 가장 오래된 context 를 버리고, 그것이 보이는 터미널의 것일 수 있다.
 function disposeWebgl(): void {
   const canvas = term.element!.querySelector<HTMLCanvasElement>(
     '.xterm-screen > canvas:not([class*="-layer"])'
@@ -171,11 +179,19 @@ function updateRenderer(): void {
   try {
     term.loadAddon(addon)
     webgl = addon
+    webglLoaded = true
+    webglUnavailable.value = false
   } catch {
     addon.dispose()
     lost = true
+    if (!webglLoaded) webglUnavailable.value = true
   }
 }
+watch(webglUnavailable, () => {
+  if (!term.dimensions) return
+  emit('cell', cell(term.dimensions))
+  if (started && session!.primary) fitTerminal()
+})
 const intersection = window.maru.webgl
   ? new IntersectionObserver((entries) => {
       inView = entries[entries.length - 1].isIntersecting
