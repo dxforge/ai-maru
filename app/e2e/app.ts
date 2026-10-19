@@ -99,6 +99,7 @@ async function launchApp(
     env: {
       ...inherited,
       MARU_UNOBTRUSIVE: '1',
+      MARU_DOM_RENDERER: '1',
       SHELL: '/bin/bash',
       BASH_SILENCE_DEPRECATION_WARNING: '1',
       ...env
@@ -255,6 +256,21 @@ export async function shellSize(page: Page): Promise<{ rows: number; cols: numbe
   let m: RegExpMatchArray | null = null
   await expect.poll(async () => (m = (await rows(page).innerText()).match(re))).not.toBeNull()
   return { rows: Number(m![1]), cols: Number(m![2]) }
+}
+
+/** WebGL 로 그리면 `.xterm-rows` 가 없어 셸이 본 크기를 파일로 받는다. */
+export async function sttySize(
+  page: Page,
+  dataDir: string
+): Promise<{ rows: number; cols: number }> {
+  const out = join(dataDir, `size${++sizeMarker}`)
+  await page.keyboard.type(`stty size > ${out}\n`)
+  let size: string | undefined
+  await expect
+    .poll(() => (size = existsSync(out) ? readFileSync(out, 'utf8').trim() : undefined))
+    .toMatch(/^\d+ \d+$/)
+  const [rows, cols] = size!.split(' ').map(Number)
+  return { rows, cols }
 }
 
 export async function activeTerminal(page: Page): Promise<void> {

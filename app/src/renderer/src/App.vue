@@ -465,6 +465,7 @@ void window.maru.restoreScreen().then((s) => {
                 :command="p.command"
                 :attach="p.attach"
                 :active="active"
+                :shown="selected || viewMode === 'columns'"
                 @exit="removePane(p.key)"
                 @failed="(message) => paneFailed(p.key, message)"
                 @spawned="answerPaneRequest(p.key, { session: p.sessionId })"

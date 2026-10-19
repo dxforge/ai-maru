@@ -48,6 +48,8 @@ const api = {
   restart: (): void => ipcRenderer.send('app:restart'),
   // dev 서버로 띄우면 Electron 이 끝날 때 dev 서버도 끝나, 다시 뜬 앱이 renderer 를 불러올 곳이 없다.
   canRestart: !process.env.ELECTRON_RENDERER_URL,
+  // e2e 는 터미널 글자를 DOM renderer 가 그린 `.xterm-rows` 에서 읽는다.
+  webgl: !process.env.MARU_DOM_RENDERER,
   home: process.env.HOME
 }
 
