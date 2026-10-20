@@ -52,6 +52,12 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'focus-pane-right', key: 'Right', alt: true, meta: true },
   { target: 'command', action: 'focus-pane-up', key: 'Up', alt: true, meta: true },
   { target: 'command', action: 'focus-pane-down', key: 'Down', alt: true, meta: true },
+  // workspace 이동(⇧⌘[ / ⇧⌘])과 modifier 를 맞춰 ⇧⌘방향키로도 받는다.
+  // ⌥⌘ 줄 뒤에 두어 메뉴와 명령 팔레트에는 ⌥⌘방향키가 보이게 한다.
+  { target: 'command', action: 'focus-pane-left', key: 'Left', shift: true, meta: true },
+  { target: 'command', action: 'focus-pane-right', key: 'Right', shift: true, meta: true },
+  { target: 'command', action: 'focus-pane-up', key: 'Up', shift: true, meta: true },
+  { target: 'command', action: 'focus-pane-down', key: 'Down', shift: true, meta: true },
 
   // Electron 이 role 에 거는 기본 키와 같다.
   { target: 'menu', action: 'hide', key: 'H', meta: true },
@@ -148,6 +154,13 @@ export function matchesKeys(e: KeyEventLike, k: Keys): boolean {
 
 export function isAppKey(e: KeyEventLike): boolean {
   return shortcuts.some((s) => s.target !== 'terminal' && matchesKeys(e, s))
+}
+
+// 메뉴 항목 하나에는 accelerator 를 하나만 걸 수 있으므로, 메뉴에 걸지 못한 키는 창이 keydown 으로 받는다.
+export function secondaryCommand(e: KeyEventLike): CommandId | undefined {
+  for (const s of shortcuts)
+    if (s.target === 'command' && s !== commandKeys(s.action) && matchesKeys(e, s)) return s.action
+  return undefined
 }
 
 export function terminalInput(e: KeyEventLike): string | undefined {

@@ -9,9 +9,10 @@ import {
   watch,
   watchEffect
 } from 'vue'
-import type { CommandId } from '../../shared/commands'
+import { available, commands, type CommandId } from '../../shared/commands'
 import type { PaneReply } from '../../shared/pane'
 import { SCREEN_VERSION, type ScreenState } from '../../shared/screen'
+import { secondaryCommand } from '../../shared/shortcuts'
 import { createCanvas } from './canvas/store'
 import { createClaudeStatuses } from './claude/status'
 import CanvasPanel from './components/CanvasPanel.vue'
@@ -379,6 +380,19 @@ function runCommand(id: CommandId): void {
   handlers[id]()
 }
 window.maru.onCommand(runCommand)
+
+function isTextInput(t: EventTarget | null): boolean {
+  if (t instanceof HTMLTextAreaElement) return !t.classList.contains('xterm-helper-textarea')
+  return t instanceof HTMLInputElement || (t instanceof HTMLElement && t.isContentEditable)
+}
+// 입력창에서는 ⇧⌘방향키를 입력창에 맡겨 macOS 의 텍스트 선택 키로 쓰게 한다.
+window.addEventListener('keydown', (e) => {
+  const id = secondaryCommand(e)
+  if (id === undefined || isTextInput(e.target)) return
+  e.preventDefault()
+  const command = commands.find((c) => c.id === id)!
+  if (available(command, window.maru)) runCommand(id)
+})
 
 function screen(): ScreenState {
   return {

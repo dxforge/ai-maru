@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  commandKeys,
   formatKeys,
   isAppKey,
   keyCode,
   matchesKeys,
   shortcuts,
+  secondaryCommand,
   terminalInput,
   toAccelerator,
   type KeyEventLike
@@ -22,6 +24,15 @@ describe('shortcuts', () => {
 
   it('표의 키는 모두 자판 위치로 맞출 수 있다', () => {
     for (const s of shortcuts) expect(keyCode(s.key), s.key).toBeDefined()
+  })
+})
+
+describe('commandKeys', () => {
+  it('pane 이동은 메뉴·팔레트에 ⌥⌘방향키를 보인다', () => {
+    expect(formatKeys(commandKeys('focus-pane-left')!)).toBe('⌥⌘←')
+    expect(formatKeys(commandKeys('focus-pane-right')!)).toBe('⌥⌘→')
+    expect(formatKeys(commandKeys('focus-pane-up')!)).toBe('⌥⌘↑')
+    expect(formatKeys(commandKeys('focus-pane-down')!)).toBe('⌥⌘↓')
   })
 })
 
@@ -86,9 +97,41 @@ describe('isAppKey', () => {
     expect(isAppKey(press('Equal', { shiftKey: true, metaKey: true }))).toBe(true)
   })
 
+  it('⌥⌘방향키와 ⇧⌘방향키는 앱의 키다', () => {
+    for (const code of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) {
+      expect(isAppKey(press(code, { altKey: true, metaKey: true })), code).toBe(true)
+      expect(isAppKey(press(code, { shiftKey: true, metaKey: true })), code).toBe(true)
+    }
+  })
+
   it('터미널이 바꿔 보내는 키는 앱의 키가 아니다', () => {
     expect(isAppKey(press('Backspace', { metaKey: true }))).toBe(false)
     expect(isAppKey(press('ArrowLeft', { metaKey: true }))).toBe(false)
+  })
+})
+
+describe('secondaryCommand', () => {
+  it('⇧⌘방향키는 pane 이동이다', () => {
+    expect(secondaryCommand(press('ArrowLeft', { shiftKey: true, metaKey: true }))).toBe(
+      'focus-pane-left'
+    )
+    expect(secondaryCommand(press('ArrowRight', { shiftKey: true, metaKey: true }))).toBe(
+      'focus-pane-right'
+    )
+    expect(secondaryCommand(press('ArrowUp', { shiftKey: true, metaKey: true }))).toBe(
+      'focus-pane-up'
+    )
+    expect(secondaryCommand(press('ArrowDown', { shiftKey: true, metaKey: true }))).toBe(
+      'focus-pane-down'
+    )
+  })
+
+  it('메뉴에 건 키는 돌려주지 않는다', () => {
+    expect(secondaryCommand(press('ArrowLeft', { altKey: true, metaKey: true }))).toBeUndefined()
+    expect(
+      secondaryCommand(press('BracketRight', { shiftKey: true, metaKey: true }))
+    ).toBeUndefined()
+    expect(secondaryCommand(press('ArrowLeft', { metaKey: true }))).toBeUndefined()
   })
 })
 
@@ -97,6 +140,7 @@ describe('terminalInput', () => {
     expect(terminalInput(press('ArrowLeft', { metaKey: true }))).toBe('\x01')
     expect(terminalInput(press('ArrowRight', { metaKey: true }))).toBe('\x05')
     expect(terminalInput(press('ArrowLeft', { metaKey: true, altKey: true }))).toBeUndefined()
+    expect(terminalInput(press('ArrowLeft', { metaKey: true, shiftKey: true }))).toBeUndefined()
   })
 
   it('⌘⌫ 은 ⌃U 로 보낸다', () => {

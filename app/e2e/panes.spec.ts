@@ -7,6 +7,7 @@ import {
   paneBox,
   panes,
   pressNew,
+  putCanvas,
   resizeBy,
   run,
   shellSize,
@@ -80,6 +81,42 @@ test('⌘⌥방향키는 그 방향의 칸으로 포커스를 옮기고, 그 방
   await typesInto(page, 1, 'right')
   await clickMenu(app, 'focus-pane-down')
   await typesInto(page, 2, 'down')
+})
+
+test('터미널에서 ⇧⌘방향키도 그 방향의 칸으로 포커스를 옮긴다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-down', 3)
+  await typesInto(page, 2, 'start')
+
+  await page.keyboard.press('Shift+Meta+ArrowUp')
+  await typesInto(page, 1, 'up')
+  await page.keyboard.press('Shift+Meta+ArrowLeft')
+  await typesInto(page, 0, 'left')
+  await page.keyboard.press('Shift+Meta+ArrowRight')
+  await typesInto(page, 1, 'right')
+  await page.keyboard.press('Shift+Meta+ArrowDown')
+  await typesInto(page, 2, 'down')
+})
+
+test('칸이 하나면 ⇧⌘방향키는 포커스를 그대로 두고 셸에 아무것도 보내지 않는다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await activeTerminal(page)
+  await page.keyboard.type('echo edge-$((1+')
+  for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'])
+    await page.keyboard.press(`Shift+Meta+${key}`)
+  await run(page, '1))', 'edge-2')
+})
+
+test('포커스가 터미널 밖에 있어도 ⇧⌘방향키는 칸을 옮긴다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'x', title: 'A' })
+  await page.locator('.canvas .list button').first().focus()
+  await page.keyboard.press('Shift+Meta+ArrowLeft')
+  await typesInto(page, 0, 'left')
 })
 
 test('칸을 누르면 그 칸이 포커스를 받는다', async ({ launch }) => {
