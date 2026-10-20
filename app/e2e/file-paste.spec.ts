@@ -43,10 +43,7 @@ async function dropFiles(page: Page, i: number, files: string[]): Promise<void> 
   await cdp.detach()
 }
 
-/**
- * Finder 의 ⌘C 처럼 파일마다 file URL 항목을 클립보드에 둔다. 클립보드에 쓴 프로세스가 끝나면 첫 항목만 남는다. 그래서
- * 테스트가 끝날 때까지 프로세스를 종료하지 않는다.
- */
+/** 클립보드에 쓴 프로세스가 끝나면 첫 항목만 남는다. 그래서 테스트가 끝날 때까지 프로세스를 종료하지 않는다. */
 async function copyFiles(files: string[], defer: (fn: () => void) => void): Promise<void> {
   const writer = spawn('osascript', [
     '-l',
