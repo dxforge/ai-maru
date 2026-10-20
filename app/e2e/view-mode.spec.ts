@@ -9,6 +9,7 @@ import {
   paneRows,
   panes,
   resizeBy,
+  rows,
   run,
   shellSize,
   setZoom,
@@ -344,4 +345,53 @@ test('columns 에서 창 크기를 바꿔도 칸은 80열이다', async ({ launc
 
   await expect.poll(async () => (await shellSize(page)).rows).toBeLessThan(before.rows)
   expect((await shellSize(page)).cols).toBe(80)
+})
+
+test('columns 에서 마우스 트래킹을 켠 터미널 위에서도 가로 스와이프로 스크롤하고, 세로 wheel 은 프로그램에 간다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await newWorkspace(launched, 3)
+  await toggleView(launched, 'columns')
+  await workspaceItems(page).first().click()
+  const area = page.locator('.terminals')
+  await expect.poll(() => area.evaluate((el) => el.scrollLeft)).toBe(0)
+  await run(page, "printf '\\033[?1000h'; echo on-$((1+1))", 'on-2')
+  await expect(activePane(page).locator('.xterm')).toHaveClass(/enable-mouse-events/)
+  const box = (await activePane(page).locator('.xterm-screen').boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+
+  await page.mouse.wheel(300, 0)
+  await expect.poll(() => area.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
+
+  await area.evaluate((el) => (el.scrollLeft = 0))
+  await page.keyboard.type('cat -v\n')
+  await page.mouse.wheel(0, 100)
+  await expect(rows(page)).toContainText('^[[M')
+  expect(await area.evaluate((el) => el.scrollLeft)).toBe(0)
+})
+
+test('columns 에서 마우스 트래킹 없는 alt buffer 위의 가로 스와이프는 화살표 키가 되지 않고 스크롤한다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await newWorkspace(launched, 3)
+  await toggleView(launched, 'columns')
+  await workspaceItems(page).first().click()
+  const area = page.locator('.terminals')
+  await expect.poll(() => area.evaluate((el) => el.scrollLeft)).toBe(0)
+  await run(page, "printf '\\033[?1049h'; echo alt-$((1+1)); cat -v", 'alt-2')
+  const box = (await activePane(page).locator('.xterm-screen').boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+
+  await page.mouse.wheel(300, 60)
+  await expect.poll(() => area.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
+
+  await area.evaluate((el) => (el.scrollLeft = 0))
+  await page.mouse.wheel(0, 100)
+  await expect(rows(page)).toContainText('^[[B')
 })
