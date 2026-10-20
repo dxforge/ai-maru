@@ -255,10 +255,13 @@ test('columns 보기로 재시작해도 재시작 전 출력이 좁은 폭으로
   await restartWith(app)
   const { page: again } = await launch()
   // 행 div 를 이어 붙이는 textContent 로는 접힌 줄도 한 줄로 이어져 통과하므로 innerText 의 줄로 본다.
-  for (const i of [0, 1])
+  for (const i of [0, 1]) {
+    // 창보다 넓은 columns 보기에서 화면 밖 pane 은 xterm 이 렌더링을 멈추므로, 받은 출력이 DOM 에 그려지지 않는다.
+    await panes(again).nth(i).scrollIntoViewIfNeeded()
     await expect
       .poll(async () => (await paneTerminalRows(again, i).innerText()).split('\n'))
       .toContain(`wide${i}-abcdefghijklmnopqrstuvwxyz-2`)
+  }
 })
 
 test('columns 보기로 재시작한 뒤 대체 화면을 나가도 그 아래 출력이 접히지 않는다', async ({

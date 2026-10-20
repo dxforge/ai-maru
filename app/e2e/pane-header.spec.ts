@@ -363,7 +363,7 @@ test('칸을 닫으면 남은 칸이 다시 행·열 격자에 놓이고 행을 
   expectOnGrid(await measure(page))
 })
 
-for (const level of [1, 0.5, -0.5]) {
+for (const level of [1.5, 0.5, -0.5]) {
   test(`줌 ${level} 에서 행 높이가 소수이고 영역 높이가 행의 배수 근처여도, 모든 칸이 격자에 놓이고 머리를 뺀 높이를 행으로 채운다`, async ({
     launch
   }) => {

@@ -47,7 +47,8 @@ const emit = defineEmits<{
   cwd: [cwd: string]
   spawned: []
   title: [title: string]
-  cell: [cell: Size]
+  /** `floored` 는 터미널이 이 셀 폭으로 열 수를 직접 나누는지(WebGL 의 내림한 셀 폭)다. */
+  cell: [cell: Size, floored: boolean]
 }>()
 
 const host = useTemplateRef<HTMLDivElement>('host')
@@ -119,7 +120,7 @@ const cell = (d: IRenderDimensions): Size => ({
 })
 let dpr = devicePixelRatio
 term.onDimensionsChange((d) => {
-  emit('cell', cell(d))
+  emit('cell', cell(d), floorCell())
   // 창을 DPR 이 다른 화면으로 옮기면 pane 크기는 그대로라 ResizeObserver 가 돌지 않지만, 내림한 셀 폭은 바뀐다.
   if (devicePixelRatio === dpr) return
   dpr = devicePixelRatio
@@ -195,7 +196,7 @@ function updateRenderer(): void {
 }
 watch(webglUnavailable, () => {
   if (!term.dimensions) return
-  emit('cell', cell(term.dimensions))
+  emit('cell', cell(term.dimensions), floorCell())
   if (started && session!.primary) fitTerminal()
 })
 const intersection = window.maru.webgl
@@ -220,7 +221,7 @@ onMounted(() => {
   term.open(host.value!)
   trackComposition(term.textarea!)
   alignComposition(term, webglCanvas)
-  if (term.dimensions) emit('cell', cell(term.dimensions))
+  if (term.dimensions) emit('cell', cell(term.dimensions), floorCell())
   intersection?.observe(host.value!)
   if (active) term.focus()
   // reactive 배열의 proxy 는 IPC 로 보낼 수 없다.
