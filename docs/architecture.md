@@ -40,4 +40,7 @@ workspace 가 닫힌 것은 kill 로 안다. renderer 는 workspace 의 마지�
 
 renderer 의 xterm 과 `maru-session` 의 VT 는 글자마다 차지하는 칸 수를 같은 규칙으로 센다. 둘이 다르게 세면 재생한 화면에서 그 글자 뒤의 글자가 밀린다. 둘 다 grapheme cluster 를 한 글자로 센다. 피부색 수식자나 ZWJ 로 이은 emoji, VS16 이 붙은 글자는 2칸이다. xterm 은 `@xterm/addon-unicode-graphemes`(`TerminalView.vue`)로, `maru-session` 은 VT 를 만들 때 mode 2027 을 기본값으로 켜서 센다(`core/crates/maru-session/src/vt/mod.rs`).
 
-이 addon 의 emoji 폭 표에는 Unicode 14 이후에 추가된 emoji(🫠 등)가 없어 1칸으로 센다. `maru-session` 이 이 글자들을 몇 칸으로 세는지는 확인하지 않았다.
+두 쪽이 다르게 세는 경우가 둘 남아 있다.
+
+- 이 addon 의 emoji 폭 표에는 Unicode 14 이후에 추가된 emoji(🫠 등)가 없어 1칸으로 센다. `maru-session` 은 2칸으로 센다.
+- 프로그램이 `CSI ? 2027 l` 로 mode 2027 을 끄면 `maru-session` 만 꺼진다. xterm 은 이 mode 를 처리하지 않는다.

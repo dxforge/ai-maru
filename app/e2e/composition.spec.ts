@@ -1,14 +1,13 @@
 import type { CDPSession, Page } from '@playwright/test'
 import { activeTerminal, expect, test, type Launched } from './app'
 
-// 앱의 테마 배경(GHOSTTY). 이 색과 다른 픽셀을 글자의 잉크로 본다.
+// 앱의 테마 배경(GHOSTTY). 이 색과 다른 픽셀을 글자가 그려진 픽셀로 본다.
 const GROUND = [0x28, 0x2c, 0x34]
 // 한 = U+D55C. 셸의 locale 과 상관없이 같은 바이트를 내도록 printf 의 8진 escape 로 쓴다.
 const PRINT_HAN = "printf '\\355\\225\\234\\n'"
 
 type Box = { x: number; y: number; width: number; height: number }
 
-/** 셀 크기(CSS px). CSS 변수 `--cell`·`--row`(`App.vue`)가 터미널이 마지막으로 잰 셀이다. */
 async function cellSize(page: Page): Promise<{ width: number; height: number }> {
   return page.locator('.app').evaluate((el) => {
     const s = getComputedStyle(el)
@@ -19,7 +18,10 @@ async function cellSize(page: Page): Promise<{ width: number; height: number }> 
   })
 }
 
-/** 커서 셀의 왼쪽 위와 `.xterm-screen` 의 왼쪽 끝. xterm 은 textarea 를 커서 셀에 두고, `alignComposition` 은 조합창만 옮기고 textarea 는 옮기지 않는다. */
+/**
+ * 커서 셀의 왼쪽 위와 `.xterm-screen` 의 왼쪽 끝. xterm 은 textarea 를 커서 셀에 둔다. `alignComposition` 은
+ * 조합창만 옮기고 textarea 는 옮기지 않는다.
+ */
 async function cursor(page: Page): Promise<{ x: number; y: number; left: number }> {
   return page.locator('.terminal-view.active').evaluate((el) => {
     const r = el.querySelector('textarea')!.getBoundingClientRect()
@@ -31,7 +33,6 @@ async function cursor(page: Page): Promise<{ x: number; y: number; left: number 
   })
 }
 
-/** clip 안에서 배경과 다른 첫 픽셀 줄(device px). 글자의 위 끝이다. */
 async function inkTop(page: Page, clip: Box): Promise<number> {
   const png = (await page.screenshot({ clip })).toString('base64')
   return page.evaluate(
@@ -157,17 +158,37 @@ test('조합창은 터미널 배경에 밑줄로 두 칸을 덮어 그 아래의
   expect(style.bottom).toBeGreaterThanOrEqual(at.y + cell.height - 0.01)
 })
 
-test('한글은 설치된 D2Coding 으로, 영문은 Menlo 로 그린다', async ({ launch }) => {
+test('마지막 열에서 조합해도 조합창이 터미널 밖으로 넘치지 않는다', async ({ launch }) => {
+  const { page } = await launch({ MARU_DOM_RENDERER: '' })
+  await activeTerminal(page)
+  const cell = await cellSize(page)
+  // CUF 999 는 커서를 마지막 열에 둔다.
+  await page.keyboard.type(`clear; printf '\\033[999C'; read -rs\n`)
+  const right = await page
+    .locator('.terminal-view.active .xterm-screen')
+    .evaluate((el) => el.getBoundingClientRect().right)
+  await expect.poll(async () => (await cursor(page)).x).toBeGreaterThan(right - 2 * cell.width)
+  const cdp = await page.context().newCDPSession(page)
+  await compose(cdp, '한')
+  const view = page.locator('.terminal-view.active .composition-view')
+  await expect(view).toBeVisible()
+  expect(await view.evaluate((el) => el.getBoundingClientRect().right)).toBeLessThanOrEqual(
+    right + 0.5
+  )
+})
+
+test('한글과 영문을 설치된 D2Coding 으로 그린다', async ({ launch }) => {
   const launched = await launch({ MARU_DOM_RENDERER: '' })
   const { page } = launched
   await activeTerminal(page)
+  // 설치되지 않은 글꼴을 앞에 두면 뒤의 글꼴로 그려 폭이 같다.
   const installed = await page.evaluate(() => {
-    let loaded = false
-    // Chromium 은 공백이 든 family 를 따옴표로 감싸 돌려준다.
-    document.fonts.forEach((f) => {
-      if (f.family.replace(/"/g, '') === 'Maru Hangul' && f.status === 'loaded') loaded = true
-    })
-    return loaded
+    const ctx = document.createElement('canvas').getContext('2d')!
+    const width = (font: string): number => {
+      ctx.font = font
+      return ctx.measureText('abc 한').width
+    }
+    return width('14px D2Coding, serif') !== width('14px serif')
   })
   test.skip(!installed, 'D2Coding 이 설치돼 있지 않다')
 
@@ -182,6 +203,6 @@ test('한글은 설치된 D2Coding 으로, 영문은 Menlo 로 그린다', async
   }
   await compose(cdp, '한')
   await expect(page.locator('.terminal-view.active .composition-view')).toBeVisible()
-  expect(await fonts('.terminal-view.active .composition-view')).toContain('D2Coding')
-  expect(await fonts('.row-bar-text')).toEqual(['Menlo'])
+  expect(await fonts('.terminal-view.active .composition-view')).toEqual(['D2Coding'])
+  expect(await fonts('.row-bar-text')).toEqual(['D2Coding'])
 })

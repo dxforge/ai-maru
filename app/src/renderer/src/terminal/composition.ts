@@ -53,7 +53,10 @@ function domBaseline(view: HTMLElement): number {
   return baseline
 }
 
-/** 확정되면 차지할 칸 수. xterm 이 공개하지 않는 폭 계산이라, xterm 이 이 내부 API 를 없애면 `undefined` 를 돌려주고, 호출하는 쪽은 조합창 폭을 정하지 않는다. */
+/**
+ * 확정되면 차지할 칸 수. xterm 이 공개하지 않는 `_core.unicodeService` 를 쓴다. 이 API 가 없어지면 `undefined` 를
+ * 돌려주고, 호출하는 쪽은 조합창 폭을 정하지 않는다.
+ */
 function cellCount(term: Terminal, text: string): number | undefined {
   const unicode = (
     term as unknown as {
@@ -64,15 +67,15 @@ function cellCount(term: Terminal, text: string): number | undefined {
 }
 
 function shift(view: HTMLElement, offset: number): void {
-  // 조합창을 통째로 옮기면 비켜난 만큼 그 아래의 커서가 드러난다. 배경은 셀을 덮은 채 글자만 옮기도록
-  // 내릴 때는 위 여백을 넣고, 올릴 때는 상자를 올리고 아래 여백으로 셀 아래 끝까지 덮는다.
+  // 조합창을 통째로 옮기면 비켜난 만큼 그 아래의 커서가 드러난다. 그래서 배경은 셀을 덮은 채 여백으로 글자만 옮긴다.
   view.style.paddingTop = offset > 0 ? `${offset}px` : ''
   view.style.marginTop = offset < 0 ? `${offset}px` : ''
   view.style.paddingBottom = offset < 0 ? `${-offset}px` : ''
 }
 
 /**
- * `term.open()` 뒤에 부른다. xterm 이 open 에서 거는 조합 listener 보다 뒤에 돌아야 한다.
+ * `term.open()` 뒤에 부른다. xterm 이 open 에서 거는 조합 listener 보다 뒤에 돌아야 한다. xterm 의 listener 가
+ * 조합창의 글꼴·줄 높이·`maxWidth` 를 정한 뒤에 재야 하기 때문이다.
  * `webglCanvas` 는 WebGL 로 그리는 동안 그 캔버스를 돌려준다. DOM renderer 는 조합창과 같은 CSS 로 줄을
  * 그려 기준선이 이미 같다.
  */
@@ -115,6 +118,10 @@ export function alignComposition(
     // xterm 은 조합창 글자 양쪽에 U+200E 를 붙이고, `UnicodeGraphemesAddon` 은 이 글자를 1칸으로 센다. 그래서
     // `textContent` 가 아니라 `e.data` 를 센다.
     const cells = cellCount(term, e.data)
-    view.style.minWidth = cells ? `${cells * dims.css.cell.width}px` : ''
+    // xterm 은 조합창이 터미널 밖으로 넘치지 않게 `maxWidth` 를 커서 뒤 남은 폭으로 둔다. CSS 에서는 `min-width` 가
+    // `max-width` 보다 크면 `min-width` 를 따르므로, 남은 폭보다 넓게 두지 않는다.
+    const max = parseFloat(view.style.maxWidth)
+    const width = cells ? cells * dims.css.cell.width : 0
+    view.style.minWidth = width ? `${Number.isFinite(max) ? Math.min(width, max) : width}px` : ''
   })
 }

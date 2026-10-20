@@ -48,7 +48,7 @@ const emit = defineEmits<{
   cwd: [cwd: string]
   spawned: []
   title: [title: string]
-  /** `floored` 는 터미널이 이 셀 폭으로 열 수를 직접 나누는지(WebGL 의 내림한 셀 폭)다. */
+  /** `floored` 면 셀 폭이 WebGL 이 내림한 값이고, `fitTerminal` 이 열 수를 이 폭으로 직접 나눈다. */
   cell: [cell: Size, floored: boolean]
 }>()
 
@@ -163,7 +163,7 @@ let webgl: WebglAddon | undefined
 let inView = false
 // context 를 잃은 원인(한도 초과·GPU 리셋)이 남아 있으면 다시 적용해도 또 잃으므로, 한 번 숨었다 보일 때까지 기다린다.
 let lost = false
-// 링크 레이어 캔버스에는 xterm 이 `xterm-<id>-layer` class 를 붙인다. 그 class 가 없는 캔버스가 WebGL renderer 의 것이다.
+// `@xterm/addon-webgl` 은 링크 레이어 캔버스에 `xterm-<id>-layer` class 를 붙인다. 그 class 가 없는 캔버스가 WebGL renderer 의 것이다.
 const webglCanvas = (): HTMLCanvasElement | undefined =>
   (webgl &&
     term.element!.querySelector<HTMLCanvasElement>(
@@ -287,8 +287,8 @@ onBeforeUnmount(() => {
 }
 
 /* xterm.css 는 조합창을 검은 바탕에 흰 글자로 칠한다. 바탕은 테마 색으로 바꾸되 불투명하게 두어, 조합하는
-   동안 그 아래의 커서를 가린다. 조합창은 긴 조합의 끝을 보이려고 direction: rtl 이라, 조합창 폭(`minWidth`)보다 좁은 한글이
-   오른쪽에 붙지 않게 왼쪽에 맞춘다. */
+   동안 그 아래의 커서를 가린다. 조합창은 긴 조합의 끝을 보이려고 `direction: rtl` 이다. 그래서 조합창
+   폭(`minWidth`)보다 좁은 한글이 오른쪽에 붙지 않게 왼쪽에 맞춘다. */
 .terminal-view :deep(.xterm .composition-view) {
   background: var(--ground);
   color: var(--fg);
