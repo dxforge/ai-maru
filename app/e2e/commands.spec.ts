@@ -264,6 +264,20 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
   await expect(palette(page)).toBeVisible()
 })
 
+test('팔레트 입력창에서 ⇧⌘← 는 pane 을 옮기지 않고 입력한 글자를 고른다', async ({ launch }) => {
+  const launched = await launch()
+  const { page } = launched
+  await openPalette(launched)
+  await page.keyboard.type('canv')
+  await page.keyboard.press('Shift+Meta+ArrowLeft')
+  await expect(palette(page)).toBeVisible()
+  const query = palette(page).locator('.query')
+  await expect(query).toBeFocused()
+  expect(
+    await query.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])
+  ).toEqual([0, 4])
+})
+
 test('팔레트에서 Enter 로 New Workspace 를 실행하면 팔레트가 닫히고 새 터미널이 키를 받는다', async ({
   launch
 }) => {
