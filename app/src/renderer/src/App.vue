@@ -332,6 +332,14 @@ function revealFocused(): void {
 // 포커스가 그대로여도 앞의 workspace 가 닫히거나 폭이 바뀌면 칸이 밀려나 views 도 지켜본다.
 watch([viewMode, () => workspaces.selected()?.focused, views], revealFocused, { flush: 'post' })
 
+// 마우스 트래킹이 켜진 터미널에서 xterm 은 모든 wheel 을 preventDefault 한다. 프로그램에는 deltaY 만
+// 보내므로 가로 스와이프는 프로그램에도 스크롤에도 가지 않는다. 스크롤백이 없는 alt buffer 에서도 xterm 은
+// wheel 을 화살표 키로 바꾸고 preventDefault 한다. xterm 의 리스너보다 먼저 전파를 끊어 기본 스크롤이
+// 일어나게 한다. attachCustomWheelEventHandler 에서 false 를 돌려줘도 그 리스너는 preventDefault 를 부른다.
+function keepHorizontalScroll(e: WheelEvent): void {
+  if (viewMode.value === 'columns' && Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.stopPropagation()
+}
+
 const paletteOpen = ref(false)
 const palette = useTemplateRef<InstanceType<typeof CommandPalette>>('palette')
 
@@ -423,7 +431,7 @@ void window.maru.restoreScreen().then((s) => {
       />
     </div>
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />
-    <div class="terminals" :class="viewMode">
+    <div class="terminals" :class="viewMode" @wheel.capture="keepHorizontalScroll">
       <div
         v-for="{ w, selected, width, panes } in views"
         :key="w.key"
