@@ -19,6 +19,7 @@ import { openSession, type SessionConnection } from '../session/connection'
 import { isAppKey, matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
 import { FONT_FAMILY, FONT_SIZE, LINE_HEIGHT } from '../font'
 import { alignComposition } from '../terminal/composition'
+import { pastePaths } from '../terminal/paths'
 import { SCROLLBAR_WIDTH } from '../workspace/columns'
 import { osc7Path } from '../workspace/cwd'
 import type { Size } from '../workspace/grid'
@@ -212,6 +213,31 @@ const intersection = window.maru.webgl
   : undefined
 watch(() => shown, updateRenderer)
 
+function pasteFiles(files: FileList | undefined): boolean {
+  const text = pastePaths(Array.from(files ?? [], window.maru.pathForFile))
+  if (!text) return false
+  term.paste(text)
+  return true
+}
+function onDragOver(e: DragEvent): void {
+  if (!e.dataTransfer?.types.includes('Files')) return
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'copy'
+}
+function onDrop(e: DragEvent): void {
+  if (!e.dataTransfer?.types.includes('Files')) return
+  e.preventDefault()
+  if (pasteFiles(e.dataTransfer.files)) term.focus()
+}
+// xterm 은 클립보드의 text/plain 만 붙이므로 `onPaste` 가 xterm 의 listener 보다 먼저 Finder 에서 복사한 파일을 받아 경로로 붙인다.
+// 경로가 없으면 막지 않는다. 이미지만 든 클립보드에서 xterm 이 보내는 빈 bracketed paste 를 받아야 Claude Code 가
+// 클립보드의 이미지를 읽기 때문이다.
+function onPaste(e: ClipboardEvent): void {
+  if (!pasteFiles(e.clipboardData?.files)) return
+  e.preventDefault()
+  e.stopPropagation()
+}
+
 let conn: SessionConnection | undefined
 
 defineExpose({ focus: () => term.focus(), kill: () => conn?.kill() })
@@ -262,7 +288,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="host" class="terminal-view" :class="{ active }" />
+  <div
+    ref="host"
+    class="terminal-view"
+    :class="{ active }"
+    @dragover="onDragOver"
+    @drop="onDrop"
+    @paste.capture="onPaste"
+  />
 </template>
 
 <style scoped>

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { CanvasItem } from '../shared/canvas'
 import type { ClaudeState } from '../shared/claude'
 import type { CommandId } from '../shared/commands'
@@ -46,6 +46,7 @@ const api = {
   /** 재시작으로 뜬 첫 문서만 화면을 받는다. */
   restoreScreen: (): Promise<ScreenState | null> => ipcRenderer.invoke('screen:restore'),
   restart: (): void => ipcRenderer.send('app:restart'),
+  pathForFile: (file: File): string => webUtils.getPathForFile(file),
   // dev 서버로 띄우면 Electron 이 끝날 때 dev 서버도 끝나, 다시 뜬 앱이 renderer 를 불러올 곳이 없다.
   canRestart: !process.env.ELECTRON_RENDERER_URL,
   // e2e 는 터미널 글자를 DOM renderer 가 그린 `.xterm-rows` 에서 읽는다.
