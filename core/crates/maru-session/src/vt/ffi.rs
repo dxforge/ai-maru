@@ -143,6 +143,15 @@ pub struct GhosttyTerminalScrollbar {
     pub len: u64,
 }
 
+/// `ghostty_mode_new(2027, false)`. DEC private mode 는 ANSI 비트(최상위)가 0 이라 번호 그대로다.
+pub const GHOSTTY_MODE_GRAPHEME_CLUSTER: u16 = 2027;
+
+#[repr(C)]
+pub struct GhosttyTerminalModeConfig {
+    pub mode: u16,
+    pub value: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,6 +188,7 @@ mod tests {
             rectangle
         });
         check!(GhosttyTerminalScrollbar { total, offset, len });
+        check!(GhosttyTerminalModeConfig { mode, value });
         check!(GhosttyFormatterScreenExtra {
             size,
             cursor,

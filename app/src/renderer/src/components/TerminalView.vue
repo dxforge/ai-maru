@@ -9,6 +9,7 @@ let webglLoaded = false
 
 <script setup lang="ts">
 import { FitAddon } from '@xterm/addon-fit'
+import { UnicodeGraphemesAddon } from '@xterm/addon-unicode-graphemes'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal, type IRenderDimensions } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
@@ -62,8 +63,12 @@ const term = new Terminal({
   // 대신 ⌥ 로 치는 글자(™, 유럽 자판의 `@`·`{` 등)는 터미널에 칠 수 없다.
   macOptionIsMeta: true,
   // 켜지 않으면 ⇧↩ 이 ↩ 과 같은 CR 로 가서, Claude Code 가 줄을 바꾸는 대신 입력을 제출해 버린다.
-  vtExtensions: { kittyKeyboard: true }
+  vtExtensions: { kittyKeyboard: true },
+  // `UnicodeGraphemesAddon` 이 쓰는 `term.unicode` 가 proposed API 라서, 끄면 `loadAddon` 이 예외를 던진다.
+  allowProposedApi: true
 })
+// 이 addon 을 빼거나 바꾸면 `maru-session` 과 글자 폭이 달라진다(`docs/architecture.md` 의 "글자 폭").
+term.loadAddon(new UnicodeGraphemesAddon())
 const fit = new FitAddon()
 term.loadAddon(fit)
 const selectAllKeys = menuKeys('selectAll')!

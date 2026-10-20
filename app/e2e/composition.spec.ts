@@ -56,6 +56,21 @@ async function inkTop(page: Page, clip: Box): Promise<number> {
   )
 }
 
+/**
+ * 세 번 연달아 같게 잰 `inkTop`. WebGL renderer 는 커서(textarea)가 옮겨 간 다음 프레임에 캔버스를 그린다.
+ * 그 사이에 찍으면 지우기 전의 글자나 빈 화면이 잡힌다.
+ */
+async function settledInkTop(page: Page, clip: Box): Promise<number> {
+  const seen: number[] = []
+  await expect
+    .poll(async () => {
+      seen.push(await inkTop(page, clip))
+      return seen.length >= 3 && seen.slice(-3).every((y) => y === seen.at(-1))
+    })
+    .toBe(true)
+  return seen.at(-1)!
+}
+
 async function compose(cdp: CDPSession, text: string): Promise<void> {
   await cdp.send('Input.imeSetComposition', {
     text,
@@ -70,7 +85,16 @@ async function printHan({ page }: Launched): Promise<void> {
     .locator('.terminal-view.active .xterm-screen')
     .evaluate((el) => el.getBoundingClientRect().top)
   await page.keyboard.type(`clear; ${PRINT_HAN}\n`)
-  await expect.poll(async () => (await cursor(page)).y).toBeCloseTo(top + height, 1)
+  let last = ''
+  await expect
+    .poll(async () => {
+      const at = await cursor(page)
+      const now = `${at.x},${at.y}`
+      const settled = now === last && Math.abs(at.y - (top + height)) < 0.1 && at.x > at.left
+      last = now
+      return settled
+    })
+    .toBe(true)
 }
 
 for (const renderer of ['webgl', 'dom'] as const)
@@ -89,20 +113,20 @@ for (const renderer of ['webgl', 'dom'] as const)
       await printHan(launched)
       const cell = await cellSize(page)
       const at = await cursor(page)
-      const committed = await inkTop(page, {
+      const committedClip = {
         x: at.left,
         y: at.y - cell.height,
         width: 2 * cell.width,
         height: cell.height
-      })
+      }
+      const committed = await settledInkTop(page, committedClip)
       expect(committed).toBeGreaterThan(0)
 
       const cdp = await page.context().newCDPSession(page)
       await compose(cdp, '한')
       await expect(page.locator('.terminal-view.active .composition-view')).toBeVisible()
       const clip = { x: at.x, y: at.y, width: 2 * cell.width, height: cell.height }
-      // 조합창이 보인 뒤 글자가 그려지기 전에 찍히면 잉크가 없다.
-      await expect.poll(() => inkTop(page, clip)).toBe(committed)
+      expect(await settledInkTop(page, clip)).toBe(committed)
     })
 
 test('조합창은 터미널 배경에 밑줄로 두 칸을 덮어 그 아래의 커서를 가린다', async ({ launch }) => {

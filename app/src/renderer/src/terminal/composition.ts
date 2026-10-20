@@ -83,7 +83,7 @@ export function alignComposition(
   let key = ''
   let offset = 0
   // xterm 은 compositionupdate 에서야 조합창의 글꼴·줄 높이를 정하므로 compositionstart 에서 재면 틀린다.
-  term.textarea!.addEventListener('compositionupdate', () => {
+  term.textarea!.addEventListener('compositionupdate', (e) => {
     const view = term.element!.querySelector<HTMLElement>('.composition-view')
     const dims = term.dimensions
     if (!view || !dims) return
@@ -112,7 +112,9 @@ export function alignComposition(
     }
     shift(view, offset)
     // 조합창은 글자 폭만큼만 넓다. 한글이 두 칸보다 좁으면 두 번째 칸이 비어 반쪽 상자처럼 보인다.
-    const cells = cellCount(term, view.textContent ?? '')
+    // xterm 은 조합창 글자 양쪽에 U+200E 를 붙이고, `UnicodeGraphemesAddon` 은 이 글자를 1칸으로 센다. 그래서
+    // `textContent` 가 아니라 `e.data` 를 센다.
+    const cells = cellCount(term, e.data)
     view.style.minWidth = cells ? `${cells * dims.css.cell.width}px` : ''
   })
 }
