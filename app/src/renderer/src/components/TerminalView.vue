@@ -229,7 +229,7 @@ function onDrop(e: DragEvent): void {
   e.preventDefault()
   if (pasteFiles(e.dataTransfer.files)) term.focus()
 }
-// xterm 은 클립보드의 text/plain 만 붙이므로 Finder 에서 복사한 파일은 xterm 의 listener 보다 먼저 받아 경로로 붙인다.
+// xterm 은 클립보드의 text/plain 만 붙이므로 `onPaste` 가 xterm 의 listener 보다 먼저 Finder 에서 복사한 파일을 받아 경로로 붙인다.
 // 경로가 없으면 막지 않는다. 이미지만 든 클립보드에서 xterm 이 보내는 빈 bracketed paste 를 받아야 Claude Code 가
 // 클립보드의 이미지를 읽기 때문이다.
 function onPaste(e: ClipboardEvent): void {

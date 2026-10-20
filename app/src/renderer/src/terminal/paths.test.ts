@@ -13,7 +13,7 @@ const NAMES = [
 ]
 
 describe('pastePaths', () => {
-  // macOS 의 셸에서만 돌린다. Linux 의 `/bin/sh`(dash)는 `$'…'` 를 모르고, CI 의 Linux 에는 zsh 가 없다.
+  // Linux 의 `/bin/sh`(dash)는 `$'…'` 를 모른다. CI 의 Linux 에는 `/bin/zsh` 가 없다.
   for (const shell of ['/bin/sh', '/bin/bash', '/bin/zsh']) {
     it.skipIf(process.platform !== 'darwin')(`${shell} 에서 경로마다 한 인자로 읽힌다`, () => {
       const out = execFileSync(shell, ['-c', `printf '%s\\0' ${pastePaths(NAMES)}`], {

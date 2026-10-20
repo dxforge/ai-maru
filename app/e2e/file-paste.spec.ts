@@ -24,7 +24,7 @@ async function armPrintf(page: Page): Promise<void> {
 }
 
 /**
- * 붙인 글자가 공백으로 끝나지 않으면 마지막 인자에 `END` 가 붙으므로 끝 공백이 빠진 것을 잡는다.
+ * 끝 공백이 빠지면 `END` 가 마지막 경로에 붙으므로, 기대값의 `END` 가 끝 공백을 확인한다.
  */
 async function readArgs(page: Page, out: string): Promise<string[]> {
   await page.keyboard.type(`END > '${out}'\n`)
@@ -43,7 +43,7 @@ async function dropFiles(page: Page, i: number, files: string[]): Promise<void> 
   await cdp.detach()
 }
 
-/** 클립보드에 쓴 프로세스가 끝나면 첫 항목만 남는다. 그래서 테스트가 끝날 때까지 프로세스를 종료하지 않는다. */
+/** `osascript` 를 테스트가 끝날 때까지 종료하지 않는다. 클립보드에 쓴 프로세스가 끝나면 첫 항목만 남기 때문이다. */
 async function copyFiles(files: string[], defer: (fn: () => void) => void): Promise<void> {
   const writer = spawn('osascript', [
     '-l',
