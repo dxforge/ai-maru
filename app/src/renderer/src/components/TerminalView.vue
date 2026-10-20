@@ -16,7 +16,8 @@ import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
 import { isAppKey, matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
-import { FONT_FAMILY, FONT_SIZE } from '../font'
+import { FONT_FAMILY, FONT_SIZE, LINE_HEIGHT } from '../font'
+import { alignComposition } from '../terminal/composition'
 import { SCROLLBAR_WIDTH } from '../workspace/columns'
 import { osc7Path } from '../workspace/cwd'
 import type { Size } from '../workspace/grid'
@@ -54,7 +55,7 @@ const term = new Terminal({
   theme: xtermTheme(GHOSTTY),
   fontFamily: FONT_FAMILY,
   fontSize: FONT_SIZE,
-  lineHeight: 1.2,
+  lineHeight: LINE_HEIGHT,
   scrollbar: { width: SCROLLBAR_WIDTH },
   // Claude Code 의 ⌥P(모델 전환)·⌥B/⌥F(단어 이동) 같은 키는 ⌥ 가 Meta 로 가야 동작한다.
   // 대신 ⌥ 로 치는 글자(™, 유럽 자판의 `@`·`{` 등)는 터미널에 칠 수 없다.
@@ -156,12 +157,17 @@ let webgl: WebglAddon | undefined
 let inView = false
 // context 를 잃은 원인(한도 초과·GPU 리셋)이 남아 있으면 다시 적용해도 또 잃으므로, 한 번 숨었다 보일 때까지 기다린다.
 let lost = false
+// 링크 레이어 캔버스에는 xterm 이 `xterm-<id>-layer` class 를 붙인다. 그 class 가 없는 캔버스가 WebGL renderer 의 것이다.
+const webglCanvas = (): HTMLCanvasElement | undefined =>
+  (webgl &&
+    term.element!.querySelector<HTMLCanvasElement>(
+      '.xterm-screen > canvas:not([class*="-layer"])'
+    )) ||
+  undefined
 // addon 은 dispose 해도 GC 될 때까지 context 를 해제하지 않는다. 그렇게 남은 context 가 한도를 채우면 Chromium 이
 // 가장 오래된 context 를 버리고, 그것이 보이는 터미널의 것일 수 있다.
 function disposeWebgl(): void {
-  const canvas = term.element!.querySelector<HTMLCanvasElement>(
-    '.xterm-screen > canvas:not([class*="-layer"])'
-  )
+  const canvas = webglCanvas()
   webgl!.dispose()
   webgl = undefined
   canvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext()
@@ -213,6 +219,7 @@ watch(
 onMounted(() => {
   term.open(host.value!)
   trackComposition(term.textarea!)
+  alignComposition(term, webglCanvas)
   if (term.dimensions) emit('cell', cell(term.dimensions))
   intersection?.observe(host.value!)
   if (active) term.focus()
@@ -271,6 +278,16 @@ onBeforeUnmount(() => {
    투명하게 두어 여백에도 .xterm 의 테마 배경이 보이게 한다. */
 .terminal-view :deep(.xterm .xterm-viewport) {
   background-color: transparent;
+}
+
+/* xterm.css 는 조합창을 검은 바탕에 흰 글자로 칠한다. 바탕은 테마 색으로 바꾸되 불투명하게 두어, 조합하는
+   동안 그 아래의 커서를 가린다. 조합창은 긴 조합의 끝을 보이려고 direction: rtl 이라, 조합창 폭(`minWidth`)보다 좁은 한글이
+   오른쪽에 붙지 않게 왼쪽에 맞춘다. */
+.terminal-view :deep(.xterm .composition-view) {
+  background: var(--ground);
+  color: var(--fg);
+  text-decoration: underline;
+  text-align: left;
 }
 
 /* 막대를 둥글게 스크롤바 안쪽 1px 에 그린다. 폭은 xterm 이 inline 으로 정해 투명 테두리로 줄이고, xterm 이
