@@ -59,6 +59,23 @@ impl VtTerminal {
                 bail!("ghostty_terminal_set(opt={opt}) rc={rc}");
             }
         }
+        // 앱의 xterm 과 같은 규칙으로 글자 폭을 센다(`docs/architecture.md` 의 "글자 폭"). 기본값으로 두어야
+        // 셸의 `reset`(RIS) 뒤에도 켜져 있다.
+        let mode = ffi::GhosttyTerminalModeConfig {
+            mode: ffi::GHOSTTY_MODE_GRAPHEME_CLUSTER,
+            value: true,
+        };
+        // SAFETY: 이 옵션의 입력 타입은 `GhosttyTerminalModeConfig*` 다. 포인터는 호출 동안만 읽힌다.
+        let rc = unsafe {
+            ffi::ghostty_terminal_set(
+                t.raw,
+                ffi::GHOSTTY_TERMINAL_OPT_MODE_DEFAULT,
+                &mode as *const ffi::GhosttyTerminalModeConfig as *const c_void,
+            )
+        };
+        if rc != ffi::GHOSTTY_SUCCESS {
+            bail!("ghostty_terminal_set(mode 2027) rc={rc}");
+        }
         Ok(t)
     }
 
@@ -417,6 +434,30 @@ mod tests {
         t.write(&s[..4]);
         t.write(&s[4..]);
         assert!(plain(&t).contains("한글 테스트"));
+    }
+
+    #[test]
+    fn emoji_sequences_take_the_cells_the_app_counts() {
+        for (text, cells) in [
+            ("✅", 2),
+            ("👍🏽", 2),
+            ("👨\u{200d}👩\u{200d}👧", 2),
+            ("❤\u{fe0f}", 2),
+            ("한", 2),
+            ("⏺", 1),
+            ("①", 1),
+        ] {
+            let mut t = term();
+            t.write(text.as_bytes());
+            assert_eq!(t.cursor().unwrap().0, cells, "{text}");
+        }
+    }
+
+    #[test]
+    fn emoji_sequences_keep_their_cells_after_a_full_reset() {
+        let mut t = term();
+        t.write("\x1bc👍🏽".as_bytes());
+        assert_eq!(t.cursor().unwrap().0, 2);
     }
 
     #[test]

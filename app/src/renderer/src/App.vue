@@ -161,6 +161,7 @@ const viewMode = ref<'single' | 'columns'>('single')
 const widths = computed<Widths>(() => (viewMode.value === 'columns' ? 'columns' : 'half'))
 // 모든 터미널이 같은 글꼴을 쓰므로 마지막으로 잰 값 하나로 셈한다.
 const cell = ref<Size>({ width: 0, height: 0 })
+const cellFloored = ref(false)
 const FALLBACK_ROW = 18
 const row = computed(() => cell.value.height || FALLBACK_ROW)
 const gridVars = computed(() => ({
@@ -217,8 +218,9 @@ function sideTransition(e: TransitionEvent): void {
   }
 }
 
-function setCell(c: Size): void {
+function setCell(c: Size, floored: boolean): void {
   if (c.width !== cell.value.width || c.height !== cell.value.height) cell.value = c
+  cellFloored.value = floored
 }
 
 function placement(b: Box, unit: string, bodyHeight?: number) {
@@ -263,7 +265,9 @@ const views = computed(() =>
     const selected = w.key === workspaces.selectedKey.value
     const measured = gridSizes.get(w.key)
     const columns = viewMode.value === 'columns'
-    const width = columns ? columnsWidth(columnCount(w.layout), cell.value.width) : undefined
+    const width = columns
+      ? columnsWidth(columnCount(w.layout), cell.value.width, cellFloored.value)
+      : undefined
     const places = placements(
       w.layout,
       measured && (width === undefined ? measured : { width, height: measured.height }),

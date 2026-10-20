@@ -51,10 +51,12 @@ body,
   color: var(--fg);
 }
 
-/* 아이콘을 두 셀로 잡아 뒤 글자가 터미널의 세 번째 열에서 시작한다. */
+/* 아이콘을 두 셀로 잡아 뒤 글자가 터미널의 세 번째 열에서 시작한다. Nerd Font 아이콘은 1em 폭이라, 두 셀보다
+   작게 그려 뒤 글자와 틈을 둔다. */
 .row-bar-icon {
   flex: none;
   width: calc(var(--cell) * 2);
+  font-size: calc(var(--cell) * 2 - 3px);
   margin-right: -8px;
   color: var(--claude, var(--faint));
 }

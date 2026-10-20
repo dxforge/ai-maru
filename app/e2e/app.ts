@@ -51,7 +51,11 @@ export async function putCanvas(app: ElectronApplication, item: CanvasItem): Pro
 
 type Fixtures = {
   dataDir: string
-  launch: (env?: Record<string, string>, executablePath?: string) => Promise<Launched>
+  launch: (
+    env?: Record<string, string>,
+    executablePath?: string,
+    args?: string[]
+  ) => Promise<Launched>
   defer: (fn: () => void) => void
 }
 
@@ -67,8 +71,8 @@ export const test = base.extend<Fixtures>({
   },
   launch: async ({ dataDir }, use) => {
     const apps: ElectronApplication[] = []
-    await use(async (env = {}, executablePath) => {
-      const launched = await launchApp(dataDir, env, executablePath)
+    await use(async (env = {}, executablePath, args = []) => {
+      const launched = await launchApp(dataDir, env, executablePath, args)
       apps.push(launched.app)
       return launched
     })
@@ -85,7 +89,8 @@ export const test = base.extend<Fixtures>({
 async function launchApp(
   dataDir: string,
   env: Record<string, string>,
-  executablePath?: string
+  executablePath: string | undefined,
+  args: string[]
 ): Promise<Launched> {
   const inherited = { ...process.env }
   // 패키징한 앱이 번들 안의 바이너리를 쓰는지 봐야 하므로 바깥의 덮어쓰기를 물려주지 않는다.
@@ -95,7 +100,7 @@ async function launchApp(
   }
   const app = await electron.launch({
     executablePath,
-    args: executablePath ? [`--user-data-dir=${dataDir}`] : ['.', `--user-data-dir=${dataDir}`],
+    args: [...(executablePath ? [] : ['.']), `--user-data-dir=${dataDir}`, ...args],
     env: {
       ...inherited,
       MARU_UNOBTRUSIVE: '1',
