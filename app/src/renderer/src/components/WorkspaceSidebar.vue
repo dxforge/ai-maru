@@ -109,7 +109,7 @@ function press(workspace: number, row: Row): void {
           >
             <span class="name">{{ label.name }}</span>
             <span v-if="label.branch" class="branch"
-              ><span class="icon">{{ ICONS.branch }}</span
+              ><span class="nerd-icon">{{ ICONS.branch }}</span
               ><span class="branch-name">{{ label.branch }}</span></span
             >
           </button>
@@ -120,7 +120,7 @@ function press(workspace: number, row: Row): void {
             @mousedown.prevent
             @click="emit('fold', w.key)"
           >
-            <span class="icon">{{ f ? ICONS.collapsed : ICONS.expanded }}</span>
+            <span class="nerd-icon">{{ f ? ICONS.collapsed : ICONS.expanded }}</span>
           </button>
         </div>
         <button
@@ -137,11 +137,11 @@ function press(workspace: number, row: Row): void {
           @mousedown.prevent
           @click="press(w.key, r)"
         >
-          <span class="state status-icon icon" :title="r.state && STATE_LABELS[r.state]">{{
+          <span class="state status-icon nerd-icon" :title="r.state && STATE_LABELS[r.state]">{{
             r.state ? ICONS[r.state] : ICONS.terminal
           }}</span>
           <span class="title fade">{{ r.text }}</span>
-          <span v-if="r.state && r.pane !== undefined" class="app fade icon">{{
+          <span v-if="r.state && r.pane !== undefined" class="app fade nerd-icon">{{
             ICONS.claude
           }}</span>
         </button>
