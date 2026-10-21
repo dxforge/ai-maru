@@ -11,7 +11,12 @@ import {
 } from 'vue'
 import { available, commands, type CommandId } from '../../shared/commands'
 import type { PaneReply } from '../../shared/pane'
-import { clampSidebarWidth, SCREEN_VERSION, type ScreenState } from '../../shared/screen'
+import {
+  clampCanvasWidth,
+  clampSidebarWidth,
+  SCREEN_VERSION,
+  type ScreenState
+} from '../../shared/screen'
 import { secondaryCommand } from '../../shared/shortcuts'
 import { createCanvas } from './canvas/store'
 import { createClaudeStatuses } from './claude/status'
@@ -150,27 +155,41 @@ function toggleFold(key: number): void {
 const sidebarWidth = ref(prefs.sidebar?.width ?? 282)
 // 신호등 버튼 묶음 폭에 양옆 12px 씩을 더한 폭이다.
 const RAIL_WIDTH = 85
-const resizing = ref(false)
+const resizing = ref<'side' | 'canvas' | null>(null)
 const side = useTemplateRef<HTMLElement>('side')
 
-// 드래그하는 도중 사이드바를 닫으면 `.resizer` 가 DOM 에서 빠져 `pointerup` 을 받지 못하므로, window 에서 받는다.
-function resizeSidebar(e: PointerEvent): void {
+// 드래그하는 도중 패널을 닫으면 `.resizer` 가 DOM 에서 빠져 `pointerup` 을 받지 못하므로, window 에서 받는다.
+function drag(e: PointerEvent, panel: 'side' | 'canvas', move: (m: PointerEvent) => void): void {
   if (e.button !== 0) return
-  resizing.value = true
-  // `max-width: 50vw` 로 줄어 있거나 펴지는 중이면 정한 폭(`sidebarWidth`)과 보이는 폭이 달라, 보이는 폭에서 시작한다.
-  const from = side.value!.getBoundingClientRect().width - e.clientX
-  const move = (m: PointerEvent): void => {
-    sidebarWidth.value = clampSidebarWidth(from + m.clientX)
-  }
+  resizing.value = panel
+  // 패널이 닫힌 뒤에도 포인터를 따라 폭을 바꾸면, 보이지 않는 폭이 바뀌어 저장된다.
+  const open = (): boolean => (panel === 'side' ? sidebarOpen.value : canvas.open.value)
+  const step = (m: PointerEvent): void => (open() ? move(m) : end())
   const end = (): void => {
-    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointermove', step)
     window.removeEventListener('pointerup', end)
     window.removeEventListener('pointercancel', end)
-    resizing.value = false
+    resizing.value = null
   }
-  window.addEventListener('pointermove', move)
+  window.addEventListener('pointermove', step)
   window.addEventListener('pointerup', end)
   window.addEventListener('pointercancel', end)
+}
+
+function resizeSidebar(e: PointerEvent): void {
+  // `max-width: 50vw` 로 줄어 있거나 펴지는 중이면 정한 폭(`sidebarWidth`)과 보이는 폭이 달라, 보이는 폭에서 시작한다.
+  const from = side.value!.getBoundingClientRect().width - e.clientX
+  drag(e, 'side', (m) => (sidebarWidth.value = clampSidebarWidth(from + m.clientX)))
+}
+
+const canvasWidth = ref(prefs.canvas?.width)
+const canvasPanel = useTemplateRef<InstanceType<typeof CanvasPanel>>('canvasPanel')
+
+function resizeCanvas(e: PointerEvent): void {
+  const from = canvasPanel.value!.panel!.getBoundingClientRect().width + e.clientX
+  // 정한 폭(`canvasWidth`)이 보이는 폭보다 커지지 않게, 터미널 영역의 폭이 0 이 되는 데서 멈춘다.
+  const max = window.innerWidth - side.value!.getBoundingClientRect().width
+  drag(e, 'canvas', (m) => (canvasWidth.value = Math.min(max, clampCanvasWidth(from - m.clientX))))
 }
 
 const viewMode = ref<'single' | 'columns'>(prefs.viewMode ?? 'columns')
@@ -192,11 +211,28 @@ const gridVars = computed(() => ({
 const gridSizes = reactive(new Map<number, Size>())
 const gridEls = new Map<number, Element>()
 const gridKeys = new WeakMap<Element, number>()
-// 사이드바 폭이 transition 으로 바뀌는 동안 칸 크기를 다시 재면 터미널이 프레임마다 맞춰져 PTY 크기가
+// 사이드바·Canvas 폭이 transition 으로 바뀌는 동안 칸 크기를 다시 재면 터미널이 프레임마다 맞춰져 PTY 크기가
 // 여러 번 바뀐다. 그동안은 재지 않고, 끝난 뒤 다시 잰다.
-let sideMoving = false
+const panels = (): Element[] => [side.value, canvasPanel.value?.panel].filter((el) => !!el)
+// `transitionrun` 은 transition 이 생긴 다음 프레임에 온다. 그래서 그것으로 움직임을 알면, 그 전 프레임의 크기로 터미널을
+// 한 번 더 맞춘다. Canvas 를 닫을 때 다시 여는 띠가 바로 자리를 잡는 프레임이 그렇다. transition 은 스타일을 계산할 때
+// 생기므로, `gridObserver` 콜백이 돌 때는 `getAnimations()` 에 이미 있다.
+// 폭이 아닌 transition 은 보지 않는다. Canvas 가 닫힐 때의 visibility 는 늘 180ms 를 다 채워, 되돌아가느라 일찍 끝난
+// 폭의 `transitionend` 를 놓치게 한다.
+const PANEL_SIZES = ['width', 'flex-basis']
+const panelsMoving = (): boolean =>
+  panels().some((el) =>
+    el
+      .getAnimations()
+      .some(
+        (a) =>
+          a.playState === 'running' &&
+          a instanceof CSSTransition &&
+          PANEL_SIZES.includes(a.transitionProperty)
+      )
+  )
 const gridObserver = new ResizeObserver((entries) => {
-  if (sideMoving) return
+  if (panelsMoving()) return
   for (const {
     target,
     contentRect: { width, height }
@@ -222,11 +258,11 @@ function observeGrid(key: number, el: unknown): void {
 }
 onBeforeUnmount(() => gridObserver.disconnect())
 
-function sideTransition(e: TransitionEvent): void {
-  if (e.propertyName !== 'width') return
+function panelTransition(e: TransitionEvent): void {
+  if (!PANEL_SIZES.includes(e.propertyName)) return
+  if (!panels().includes(e.target as Element)) return
   // 움직이는 도중에 다시 토글하면 `transitioncancel` 이 오지만, 그때는 이미 반대로 가는 transition 이 돌고 있다.
-  sideMoving = side.value!.getAnimations().some((a) => a.playState === 'running')
-  if (sideMoving) return
+  if (panelsMoving()) return
   // 다시 observe 하면 지금 크기로 콜백이 한 번 온다.
   for (const el of gridEls.values()) {
     gridObserver.unobserve(el)
@@ -414,7 +450,8 @@ function screen(): ScreenState {
     version: SCREEN_VERSION,
     ...workspaces.snapshot(),
     sidebar: { open: sidebarOpen.value, width: sidebarWidth.value, folded: [...folded] },
-    viewMode: viewMode.value
+    viewMode: viewMode.value,
+    ...(canvasWidth.value === undefined ? {} : { canvas: { width: canvasWidth.value } })
   }
 }
 
@@ -425,6 +462,7 @@ void window.maru.restoreScreen().then((s) => {
     sidebarWidth.value = s.sidebar.width
     for (const key of s.sidebar.folded) folded.add(key)
     viewMode.value = s.viewMode
+    if (s.canvas) canvasWidth.value = s.canvas.width
   } else {
     workspaces.open()
   }
@@ -435,18 +473,20 @@ void window.maru.restoreScreen().then((s) => {
 </script>
 
 <template>
-  <div class="app" :style="gridVars">
+  <div
+    class="app"
+    :style="gridVars"
+    @transitionend="panelTransition"
+    @transitioncancel="panelTransition"
+  >
     <div
       ref="side"
       class="side"
-      :class="{ resizing }"
+      :class="{ resizing: resizing === 'side' }"
       :style="{
         width: `${sidebarOpen ? sidebarWidth : RAIL_WIDTH}px`,
         '--rail': `${RAIL_WIDTH}px`
       }"
-      @transitionrun.self="sideTransition"
-      @transitionend.self="sideTransition"
-      @transitioncancel.self="sideTransition"
     >
       <WorkspaceSidebar
         :collapsed="!sidebarOpen"
@@ -521,15 +561,29 @@ void window.maru.restoreScreen().then((s) => {
         </div>
       </div>
     </div>
-    <CanvasPanel :canvas="canvas" />
+    <div
+      v-if="canvas.open.value"
+      class="resizer canvas-edge"
+      @mousedown.prevent
+      @pointerdown="resizeCanvas"
+    />
+    <CanvasPanel
+      ref="canvasPanel"
+      :canvas="canvas"
+      :width="canvasWidth"
+      :resizing="resizing === 'canvas'"
+    />
     <CommandPalette v-if="paletteOpen" ref="palette" @run="runCommand" @close="closePalette" />
   </div>
 </template>
 
 <style scoped>
 .app {
+  --panel-duration: 180ms;
+  --panel-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
   display: flex;
   height: 100%;
+  background: var(--side);
 }
 
 /* 창 폭의 반이라는 상한은 width 와 따로 두어, 창 크기를 바꿀 때는 transition 없이 바로 따라간다. */
@@ -539,26 +593,37 @@ void window.maru.restoreScreen().then((s) => {
   max-width: 50vw;
   overflow: hidden;
   background: var(--side);
-  transition: width 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: width var(--panel-duration) var(--panel-easing);
 }
 
 .side.resizing {
   transition: none;
 }
 
+/* `.resizer` 는 패널 쪽에만 겹친다. 카드에 걸치면 맨 끝 터미널의 스크롤바를 가린다. */
 .resizer {
   -webkit-app-region: no-drag;
   flex: none;
-  z-index: 1;
+  /* Canvas 쪽 경계는 DOM 에서 뒤에 오는 Canvas 보다 위에 그려야 포인터 이벤트를 받는다. */
+  z-index: 2;
   width: 6px;
-  margin: 0 -3px;
+  margin-left: -6px;
   cursor: col-resize;
+}
+
+.resizer.canvas-edge {
+  margin: 0 -6px 0 0;
 }
 
 .terminals {
   position: relative;
   flex: 1;
   min-width: 0;
+  z-index: 1;
+  border-radius: 8px;
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 4px 24px rgb(0 0 0 / 0.65);
 }
 
 /* 사이드바가 펴지는 동안 칸은 이전 폭으로 남아, 자르지 않으면 Canvas 를 덮는다. */
@@ -593,7 +658,7 @@ void window.maru.restoreScreen().then((s) => {
   padding: 8px;
   /* 포커스를 따라 scrollIntoView 할 때도 카드를 영역 끝에 붙이지 않고 같은 여백을 남긴다. */
   scroll-padding: 8px;
-  background: var(--side);
+  background: color-mix(in srgb, var(--side), var(--ground));
   /* 스크롤바가 자리를 차지하는 설정에서, 넘치기 시작하거나 그칠 때마다 터미널의 줄 수가 바뀌지 않게. */
   overflow-x: scroll;
 }

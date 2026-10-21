@@ -5,12 +5,15 @@ import { killSession } from '../src/main/session'
 import {
   activeHeader,
   activeTerminal,
+  canvasWidth,
   claudeConfig,
   claudeFile,
   claudeHook,
   clickMenu,
   expect,
   newWorkspace,
+  dragCanvas,
+  openCanvas,
   openPalette,
   paneHeader,
   paneRows,
@@ -67,6 +70,17 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 �
   await expect(panes(again)).toHaveCount(2)
   await expect(panes(again).nth(1).locator('.terminal-view')).toHaveClass(/active/)
   await run(again, 'echo $MARK', 'kept-2')
+})
+
+test('재시작 뒤 Canvas 는 재시작 전에 끌어 정한 폭으로 열린다', async ({ launch }) => {
+  const first = await launch()
+  await openCanvas(first)
+  const width = await dragCanvas(first.page, -70)
+
+  await restartWith(first.app)
+  const again = await launch()
+  await openCanvas(again)
+  await expect.poll(() => canvasWidth(again.page)).toBe(width)
 })
 
 test('재시작하면 window-state.json 의 보기 설정보다 재시작 전 화면을 따른다', async ({

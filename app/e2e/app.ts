@@ -18,6 +18,7 @@ import {
   expect,
   _electron as electron,
   type ElectronApplication,
+  type Locator,
   type Page
 } from '@playwright/test'
 import { encodeFrame, TAG_TEXT } from '../src/main/frame'
@@ -409,17 +410,72 @@ export async function sidebarWidth(page: Page): Promise<number> {
   return (await page.locator('.side').boundingBox())!.width
 }
 
-export async function dragResizer(
+export function sidebarResizer(page: Page): Locator {
+  return page.locator('.side + .resizer')
+}
+
+export function canvasPanel(page: Page): Locator {
+  return page.locator('.canvas')
+}
+
+export function canvasResizer(page: Page): Locator {
+  return page.locator('.resizer:has(+ .canvas)')
+}
+
+export async function openCanvas({ app, page }: Launched): Promise<void> {
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first' })
+  await expect(canvasPanel(page)).toBeVisible()
+  await expect.poll(() => canvasPanel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
+}
+
+export async function canvasWidth(page: Page): Promise<number> {
+  return (await canvasPanel(page).boundingBox())!.width
+}
+
+type Grab = { button?: 'left' | 'right' }
+
+export async function grabHandle(
   page: Page,
+  handle: Locator,
   dx: number,
-  button: 'left' | 'right' = 'left'
+  { button = 'left' }: Grab = {}
 ): Promise<void> {
-  const handle = (await page.locator('.resizer').boundingBox())!
-  const [x, y] = [handle.x + handle.width / 2, handle.y + handle.height / 2]
+  const box = (await handle.boundingBox())!
+  const [x, y] = [box.x + box.width / 2, box.y + box.height / 2]
   await page.mouse.move(x, y)
   await page.mouse.down({ button })
   await page.mouse.move(x + dx, y, { steps: 4 })
-  await page.mouse.up({ button })
+}
+
+export async function dragHandle(
+  page: Page,
+  handle: Locator,
+  dx: number,
+  grab: Grab = {}
+): Promise<void> {
+  await grabHandle(page, handle, dx, grab)
+  await page.mouse.up({ button: grab.button ?? 'left' })
+}
+
+export async function dragCanvas(page: Page, dx: number): Promise<number> {
+  const width = (await canvasWidth(page)) - dx
+  await dragHandle(page, canvasResizer(page), dx)
+  await expect.poll(() => canvasWidth(page)).toBe(width)
+  return width
+}
+
+export async function watchTerminalWidths(page: Page): Promise<() => Promise<number[]>> {
+  await page.evaluate(() => {
+    const widths: number[] = []
+    Object.assign(window, { widths })
+    new ResizeObserver(([e]) => widths.push(e.contentRect.width)).observe(
+      document.querySelector('.terminal-view.active .xterm-screen')!
+    )
+  })
+  const widths = (): Promise<number[]> =>
+    page.evaluate(() => (window as unknown as { widths: number[] }).widths)
+  await expect.poll(widths).toHaveLength(1)
+  return widths
 }
 
 const MIME: Record<string, string> = {

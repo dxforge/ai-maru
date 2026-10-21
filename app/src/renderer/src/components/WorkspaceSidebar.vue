@@ -158,7 +158,6 @@ function press(workspace: number, row: Row): void {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--line);
   background: var(--side);
   font:
     13px system-ui,

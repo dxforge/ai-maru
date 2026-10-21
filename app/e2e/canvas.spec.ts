@@ -1,19 +1,28 @@
 import type { Page } from '@playwright/test'
 import {
   attachFromOutside,
+  canvasPanel,
+  canvasResizer,
+  canvasWidth,
+  clickMenu,
+  dragCanvas,
+  dragHandle,
+  grabHandle,
   expect,
+  openCanvas,
   putCanvas,
   rows,
   serveRenderer,
   shellSize,
   sockets,
-  test
+  test,
+  watchTerminalWidths
 } from './app'
 
 const svg = (width: number) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="20"><rect width="100%" height="100%" fill="red"/></svg>`
 
-const panel = (page: Page) => page.locator('.canvas')
+const panel = canvasPanel
 const titles = (page: Page) => page.locator('.canvas .list button')
 const markdown = (page: Page) => page.locator('.canvas .markdown')
 const reopen = (page: Page) => page.locator('.reopen')
@@ -376,4 +385,120 @@ test('FILE 없이 stdin 이 터미널이면 기다리지 않고 실패한다', a
   await page.keyboard.type('maru canvas put; echo code-$?\n')
   await expect(rows(page)).toContainText('pipe markdown into stdin')
   await expect(rows(page)).toContainText('code-1')
+})
+
+test('왼쪽 경계를 끌어 Canvas 폭을 바꾸고, 240 아래로는 줄지 않으며, 터미널 영역이 0 이 되는 데서 멈춘다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await openCanvas(launched)
+  const beforeCols = (await shellSize(page)).cols
+
+  await dragCanvas(page, -100)
+  await expect.poll(async () => (await shellSize(page)).cols).toBeLessThan(beforeCols)
+  await dragHandle(page, canvasResizer(page), 2000)
+  await expect.poll(() => canvasWidth(page)).toBe(240)
+  await dragHandle(page, canvasResizer(page), -3000)
+
+  await expect.poll(async () => (await page.locator('.terminals').boundingBox())!.width).toBe(0)
+  const innerWidth = await page.evaluate(() => window.innerWidth)
+  const box = (await panel(page).boundingBox())!
+  expect(box.x + box.width).toBe(innerWidth)
+})
+
+test('Canvas 경계를 끄는 동안에는 폭이 transition 없이 바로 따라가고, 왼쪽 버튼으로만 끌린다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await openCanvas(launched)
+  const before = await canvasWidth(page)
+
+  await dragHandle(page, canvasResizer(page), -80, { button: 'right' })
+  expect(await canvasWidth(page)).toBe(before)
+
+  await grabHandle(page, canvasResizer(page), -60)
+  await expect(panel(page)).toHaveClass(/resizing/)
+  expect(await panel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
+  expect(await canvasWidth(page)).toBe(before + 60)
+  await page.mouse.up()
+  await expect(panel(page)).not.toHaveClass(/resizing/)
+})
+
+test('Canvas 를 열고 닫는 동안에는 터미널 크기를 맞추지 않고, 폭이 다 바뀐 뒤 한 번 맞춘다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const widths = await watchTerminalWidths(page)
+
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first' })
+  await expect(panel(page)).toBeVisible()
+  await expect.poll(widths).toHaveLength(2)
+  await page.waitForTimeout(300)
+  expect(await widths()).toHaveLength(2)
+
+  await clickMenu(app, 'toggle-canvas')
+  await expect(panel(page)).toBeHidden()
+  await expect.poll(widths).toHaveLength(3)
+  await page.waitForTimeout(300)
+  expect(await widths()).toHaveLength(3)
+})
+
+test('Canvas 를 닫다가 열고 다시 닫아도, 끝난 뒤 터미널은 닫힌 폭에 맞는다', async ({ launch }) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await openCanvas(launched)
+  await clickMenu(app, 'toggle-canvas')
+  await expect(panel(page)).toBeHidden()
+  const closed = await shellSize(page)
+  await clickMenu(app, 'toggle-canvas')
+  await expect.poll(() => panel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
+
+  await clickMenu(app, 'toggle-canvas')
+  // 폭의 transition(180ms, `App.vue` 의 `--panel-duration`)이 도는 도중에 되돌린다.
+  await page.waitForTimeout(60)
+  await clickMenu(app, 'toggle-canvas')
+  await page.waitForTimeout(60)
+  await clickMenu(app, 'toggle-canvas')
+
+  await expect(panel(page)).toBeHidden()
+  await expect.poll(async () => (await shellSize(page)).cols).toBe(closed.cols)
+})
+
+test('사이드바·Canvas 경계는 터미널 카드에 걸치지 않아, 카드의 양 끝은 터미널이 받는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await openCanvas(launched)
+
+  const hits = await page.evaluate(() => {
+    const card = document.querySelector('.terminals')!.getBoundingClientRect()
+    const y = card.top + card.height / 2
+    return [card.left + 1, card.right - 1].map(
+      (x) => !!document.elementFromPoint(x, y)?.closest('.terminals')
+    )
+  })
+  expect(hits).toEqual([true, true])
+})
+
+test('끄는 도중 Canvas 를 닫으면 끌기가 끝나, 닫힌 뒤의 움직임은 폭을 바꾸지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await openCanvas(launched)
+  const before = await canvasWidth(page)
+  await grabHandle(page, canvasResizer(page), -50)
+
+  await clickMenu(app, 'toggle-canvas')
+  await expect(panel(page)).toBeHidden()
+  await page.mouse.move(100, 300, { steps: 4 })
+  await page.mouse.up()
+
+  await expect(panel(page)).not.toHaveClass(/resizing/)
+  await clickMenu(app, 'toggle-canvas')
+  await expect.poll(() => panel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
+  expect(await canvasWidth(page)).toBe(before + 50)
 })

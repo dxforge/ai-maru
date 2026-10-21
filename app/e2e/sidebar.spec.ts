@@ -5,7 +5,8 @@ import { ICONS } from '../src/renderer/src/icons'
 import {
   claudeHook,
   clickMenu,
-  dragResizer,
+  dragHandle,
+  grabHandle,
   expect,
   newWorkspace,
   paneRows,
@@ -14,10 +15,12 @@ import {
   run,
   shellRows,
   shellSize,
+  sidebarResizer,
   sidebarWidth,
   split,
   test,
   toggleView,
+  watchTerminalWidths,
   workspaceGroups,
   workspaceItems,
   zshHome
@@ -223,21 +226,6 @@ async function collapse(app: ElectronApplication, page: Page): Promise<void> {
   await expect.poll(() => sidebarWidth(page)).toBe(85)
 }
 
-/** 지금부터 터미널 화면 폭이 바뀔 때마다 적는다. 처음 한 번은 지금 폭이다. */
-async function watchTerminalWidths(page: Page): Promise<() => Promise<number[]>> {
-  await page.evaluate(() => {
-    const widths: number[] = []
-    Object.assign(window, { widths })
-    new ResizeObserver(([e]) => widths.push(e.contentRect.width)).observe(
-      document.querySelector('.terminal-view.active .xterm-screen')!
-    )
-  })
-  const widths = (): Promise<number[]> =>
-    page.evaluate(() => (window as unknown as { widths: number[] }).widths)
-  await expect.poll(widths).toHaveLength(1)
-  return widths
-}
-
 async function twoClaudes(app: ElectronApplication, page: Page): Promise<void> {
   await page.keyboard.type(`${claudeHook('UserPromptSubmit', 'c-1').trimEnd()} && sleep 600\n`)
   await split(app, page, 'split-right', 2)
@@ -384,12 +372,12 @@ test('창이 좁아 사이드바가 창 폭의 반에 걸려 있어도, 경계�
   launch
 }) => {
   const { app, page } = await launch()
-  await dragResizer(page, 600)
+  await dragHandle(page, sidebarResizer(page), 600)
   await expect.poll(() => sidebarWidth(page)).toBe(480)
   await resizeBy(app, -400, 0)
   await expect.poll(() => sidebarWidth(page)).toBe(300)
 
-  await dragResizer(page, -50)
+  await dragHandle(page, sidebarResizer(page), -50)
 
   await expect.poll(() => sidebarWidth(page)).toBe(250)
 })
@@ -397,7 +385,7 @@ test('창이 좁아 사이드바가 창 폭의 반에 걸려 있어도, 경계�
 test('경계는 왼쪽 버튼으로 끌 때만 폭이 바뀐다', async ({ launch }) => {
   const { page } = await launch()
 
-  await dragResizer(page, 80, 'right')
+  await dragHandle(page, sidebarResizer(page), 80, { button: 'right' })
 
   expect(await sidebarWidth(page)).toBe(282)
   await expect(page.locator('.side')).not.toHaveClass(/resizing/)
@@ -437,11 +425,11 @@ test('사이드바 오른쪽 경계를 끌어 폭을 200~480 사이로 바꾸고
   const { app, page } = await launch()
   const before = await sidebarWidth(page)
 
-  await dragResizer(page, 60)
+  await dragHandle(page, sidebarResizer(page), 60)
   await expect.poll(() => sidebarWidth(page)).toBe(before + 60)
-  await dragResizer(page, -600)
+  await dragHandle(page, sidebarResizer(page), -600)
   await expect.poll(() => sidebarWidth(page)).toBe(200)
-  await dragResizer(page, 600)
+  await dragHandle(page, sidebarResizer(page), 600)
   await expect.poll(() => sidebarWidth(page)).toBe(480)
 
   await collapse(app, page)
@@ -453,11 +441,7 @@ test('끄는 도중 사이드바를 닫아도 끌기가 끝나고, 그 뒤에도
   launch
 }) => {
   const { app, page } = await launch()
-  const handle = (await page.locator('.resizer').boundingBox())!
-  const [x, y] = [handle.x + handle.width / 2, handle.y + handle.height / 2]
-  await page.mouse.move(x, y)
-  await page.mouse.down()
-  await page.mouse.move(x + 30, y, { steps: 3 })
+  await grabHandle(page, sidebarResizer(page), 30)
 
   await clickMenu(app, 'toggle-sidebar')
   await page.mouse.up()
@@ -472,7 +456,7 @@ test('끄는 도중 사이드바를 닫아도 끌기가 끝나고, 그 뒤에도
 
 test('창이 좁아지면 사이드바는 창 폭의 반까지만 차지한다', async ({ launch }) => {
   const { app, page } = await launch()
-  await dragResizer(page, 600)
+  await dragHandle(page, sidebarResizer(page), 600)
   await expect.poll(() => sidebarWidth(page)).toBe(480)
 
   await resizeBy(app, -400, 0)
