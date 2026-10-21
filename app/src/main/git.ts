@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import type { GitHead } from '../shared/git'
 
 async function read(path: string): Promise<string | undefined> {
@@ -39,9 +41,39 @@ function commonName(commonDir: string): string {
   return name.startsWith('.') ? basename(dirname(commonDir)) : name.replace(/\.git$/, '')
 }
 
+/** reftable 저장소의 HEAD 파일은 이 placeholder 만 담는다. 실제 HEAD 는 reftable 에 있다. */
+const REFTABLE_HEAD = 'ref: refs/heads/.invalid'
+
+const run = promisify(execFile)
+
+/**
+ * lock 을 잡지 않는 `symbolic-ref`·`rev-parse` 로 읽는다. 앱이 lock 을 잡으면 그동안 사용자의 git 이
+ * ref 를 쓰지 못하기 때문이다. git 이 나중에 optional lock 을 더해도 잡지 않도록 `--no-optional-locks` 를
+ * 넘긴다. 앱 env 의 `GIT_COMMON_DIR` 같은 변수가 읽을 저장소를 바꾸지 않도록 `GIT_*` 는 넘기지 않는다.
+ */
+async function readReftableHead(gitDir: string): Promise<string | undefined> {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')))
+  const git = async (...args: string[]): Promise<string> => {
+    const { stdout } = await run('git', ['--no-optional-locks', `--git-dir=${gitDir}`, ...args], {
+      env,
+      timeout: 2000
+    })
+    return stdout.trim()
+  }
+  try {
+    const ref = await git('symbolic-ref', '-q', 'HEAD')
+    return ref ? `ref: ${ref}` : undefined
+  } catch (err) {
+    // exit 1 은 HEAD 가 branch 를 가리키지 않는다는 뜻이다. git 이 없거나 실패한 것과 구별한다.
+    if ((err as { code?: unknown }).code !== 1) return undefined
+  }
+  return git('rev-parse', '-q', '--verify', 'HEAD').catch(() => undefined)
+}
+
 /**
  * `git` 을 실행하지 않고 `.git` 을 읽는다 — Command Line Tools 가 없는 Mac 에서는 `git` 을 부르면
- * 설치 창이 뜬다.
+ * 설치 창이 뜬다. reftable 저장소의 HEAD 만은 `.git` 으로 읽을 수 없어 `git` 을 실행한다. reftable 저장소는
+ * git 이 만드므로 git 이 설치되어 있다고 본다.
  */
 export async function gitHead(cwd: string): Promise<GitHead | null> {
   if (!isAbsolute(cwd)) return null
@@ -49,8 +81,8 @@ export async function gitHead(cwd: string): Promise<GitHead | null> {
   if (!found) return null
   const common = await read(join(found.gitDir, 'commondir'))
   const repo = common ? commonName(resolve(found.gitDir, common)) : basename(found.top)
-  const ref = /^ref: (.+)$/.exec(found.head)?.[1]
-  // reftable 저장소의 HEAD 는 이 자리표시만 담고, 진짜 branch 는 reftable 에 있다.
-  if (ref === 'refs/heads/.invalid') return { repo }
-  return { repo, branch: ref ? ref.replace(/^refs\/heads\//, '') : found.head.slice(0, 7) }
+  const head = found.head === REFTABLE_HEAD ? await readReftableHead(found.gitDir) : found.head
+  if (!head) return { repo }
+  const ref = /^ref: (.+)$/.exec(head)?.[1]
+  return { repo, branch: ref ? ref.replace(/^refs\/heads\//, '') : head.slice(0, 7) }
 }

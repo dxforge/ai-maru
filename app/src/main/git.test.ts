@@ -1,12 +1,23 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { gitHead } from './git'
 
 const dirs: string[] = []
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 
@@ -16,9 +27,8 @@ function tempDir(): string {
   return d
 }
 
-// 테스트가 만드는 저장소의 ref 형식을 `files` 로 고정한다. 전역 `init.defaultRefFormat` 이
-// reftable 이면 `gitHead`(`git.ts`)가 branch 를 돌려주지 않기 때문이다. 그때 HEAD 파일은
-// `refs/heads/.invalid` 만 가리킨다.
+// `git` 은 `--ref-format` 을 넘기지 않고 만드는 저장소의 ref 형식을 `files` 로 고정한다. 전역
+// `init.defaultRefFormat` 이 reftable 이면 `.git` 을 직접 읽는 files 경로를 시험하지 못하기 때문이다.
 function git(cwd: string, ...args: string[]): string {
   return execFileSync(
     'git',
@@ -27,45 +37,69 @@ function git(cwd: string, ...args: string[]): string {
   ).trim()
 }
 
-function repo(name = 'proj'): string {
+type RefFormat = 'files' | 'reftable'
+
+function repo(name = 'proj', format: RefFormat = 'files', commit = true): string {
   const dir = join(tempDir(), name)
   mkdirSync(dir)
-  git(dir, 'init', '-q', '-b', 'main')
-  git(dir, 'commit', '-q', '--allow-empty', '-m', 'init')
+  git(dir, 'init', '-q', '-b', 'main', `--ref-format=${format}`)
+  if (commit) git(dir, 'commit', '-q', '--allow-empty', '-m', 'init')
   return dir
 }
 
-describe('gitHead', () => {
+/** lock 파일은 만들었다 지워도 디렉토리 mtime 을 바꾸므로 `.git` 자신과 그 아래 디렉토리의 mtime 까지 비교한다. */
+function snapshot(dir: string): string[] {
+  return readdirSync(dir, { recursive: true, encoding: 'utf8' })
+    .map((p) => `${p} ${statSync(join(dir, p)).mtimeMs}`)
+    .concat(`. ${statSync(dir).mtimeMs}`)
+    .sort()
+}
+
+function fakeGit(script: string): { bin: string; calls: () => string[] } {
+  const bin = tempDir()
+  const log = join(bin, 'calls')
+  writeFileSync(log, '')
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\necho "$*" >> '${log}'\n${script}\n`, { mode: 0o755 })
+  return { bin, calls: () => readFileSync(log, 'utf8').split('\n').filter(Boolean) }
+}
+
+describe.each<RefFormat>(['files', 'reftable'])('%s 저장소의 gitHead', (format) => {
   it('저장소 맨 위와 그 아래 디렉토리에서 저장소 이름과 branch 를 읽는다', async () => {
-    const dir = repo()
+    const dir = repo('proj', format)
     mkdirSync(join(dir, 'a', 'b'), { recursive: true })
     expect(await gitHead(dir)).toEqual({ repo: 'proj', branch: 'main' })
     expect(await gitHead(join(dir, 'a', 'b'))).toEqual({ repo: 'proj', branch: 'main' })
   })
 
   it('/ 가 든 branch 이름을 그대로 읽고, 바꾸면 다시 읽을 때 따라간다', async () => {
-    const dir = repo()
+    const dir = repo('proj', format)
     git(dir, 'switch', '-q', '-c', 'feat/32-x')
     expect(await gitHead(dir)).toEqual({ repo: 'proj', branch: 'feat/32-x' })
     git(dir, 'switch', '-q', 'main')
     expect(await gitHead(dir)).toEqual({ repo: 'proj', branch: 'main' })
   })
 
+  it('커밋이 없어도 HEAD 가 가리키는 branch 를 쓴다', async () => {
+    expect(await gitHead(repo('proj', format, false))).toEqual({ repo: 'proj', branch: 'main' })
+  })
+
   it('HEAD 가 branch 를 가리키지 않으면 커밋 해시 앞 7자리를 쓴다', async () => {
-    const dir = repo()
+    const dir = repo('proj', format)
     git(dir, 'switch', '-q', '--detach')
     const sha = git(dir, 'rev-parse', 'HEAD')
     expect(await gitHead(dir)).toEqual({ repo: 'proj', branch: sha.slice(0, 7) })
   })
 
   it('linked worktree 는 원래 저장소 이름과 그 worktree 의 branch 를 쓴다', async () => {
-    const dir = repo('ai-maru')
+    const dir = repo('ai-maru', format)
     const wt = join(dir, '.claude', 'worktrees', 'feat-1-x')
     git(dir, 'worktree', 'add', '-q', '-b', 'feat/1-x', wt)
     expect(await gitHead(wt)).toEqual({ repo: 'ai-maru', branch: 'feat/1-x' })
     expect(await gitHead(dir)).toEqual({ repo: 'ai-maru', branch: 'main' })
   })
+})
 
+describe('gitHead', () => {
   it('submodule 은 그 디렉토리 이름을 쓴다', async () => {
     const top = repo('top')
     const modules = join(top, '.git', 'modules', 'lib')
@@ -112,13 +146,6 @@ describe('gitHead', () => {
     expect(await gitHead(join(base, 'myproj'))).toEqual({ repo: 'myproj', branch: 'main' })
   })
 
-  it('reftable 저장소는 HEAD 의 자리표시를 branch 로 쓰지 않는다', async () => {
-    const dir = join(tempDir(), 'rt')
-    mkdirSync(join(dir, '.git'), { recursive: true })
-    writeFileSync(join(dir, '.git', 'HEAD'), 'ref: refs/heads/.invalid\n')
-    expect(await gitHead(dir)).toEqual({ repo: 'rt' })
-  })
-
   it('심링크는 풀어서, 저장소 안을 가리키면 그 저장소로 본다', async () => {
     const dir = repo()
     mkdirSync(join(dir, 'sub'))
@@ -149,4 +176,81 @@ describe('gitHead', () => {
     expect(await gitHead(join(dir, 'broken'))).toBeNull()
     expect(await gitHead(join(dir, 'moved'))).toBeNull()
   })
+})
+
+describe('reftable 저장소의 gitHead', () => {
+  it('앱의 env 에 있는 GIT_* 는 git 에 넘기지 않는다', async () => {
+    const dir = repo('rt', 'reftable')
+    vi.stubEnv('GIT_DIR', '/elsewhere/.git')
+    vi.stubEnv('GIT_COMMON_DIR', '/elsewhere/.git')
+    vi.stubEnv(
+      'PATH',
+      fakeGit(`/usr/bin/env | /usr/bin/grep -q '^GIT_' && exit 3; echo refs/heads/clean`).bin
+    )
+    expect(await gitHead(dir)).toEqual({ repo: 'rt', branch: 'clean' })
+  })
+
+  it('사용자의 git 이 ref 를 쓰는 중(tables.list.lock)에도 읽는다', async () => {
+    const dir = repo('rt', 'reftable')
+    writeFileSync(join(dir, '.git', 'reftable', 'tables.list.lock'), '')
+    expect(await gitHead(dir)).toEqual({ repo: 'rt', branch: 'main' })
+  })
+
+  it('읽어도 .git 아래에 아무것도 만들거나 바꾸지 않는다', async () => {
+    const dir = repo('rt', 'reftable')
+    const wt = join(dirname(dir), 'rt-wt')
+    git(dir, 'worktree', 'add', '-q', '-b', 'wt', wt)
+    git(dir, 'switch', '-q', '--detach')
+    const before = snapshot(join(dir, '.git'))
+    expect(await gitHead(dir)).toMatchObject({ repo: 'rt' })
+    expect(await gitHead(wt)).toEqual({ repo: 'rt', branch: 'wt' })
+    expect(snapshot(join(dir, '.git'))).toEqual(before)
+  })
+
+  it('git 이 없으면 branch 없이 저장소 이름만 쓴다', async () => {
+    const dir = repo('rt', 'reftable')
+    vi.stubEnv('PATH', tempDir())
+    expect(await gitHead(dir)).toEqual({ repo: 'rt' })
+  })
+
+  it('git 이 reftable 을 읽지 못하면 다시 실행하지 않고 branch 없이 저장소 이름만 쓴다', async () => {
+    const dir = repo('rt', 'reftable')
+    const fake = fakeGit('echo "fatal: unknown repository extension" >&2; exit 128')
+    vi.stubEnv('PATH', fake.bin)
+    expect(await gitHead(dir)).toEqual({ repo: 'rt' })
+    expect(fake.calls()).toHaveLength(1)
+  })
+
+  it('linked worktree 의 HEAD 가 branch 를 가리키지 않으면 그 worktree 의 커밋 해시 앞 7자리를 쓴다', async () => {
+    const dir = repo('rt', 'reftable')
+    const wt = join(dirname(dir), 'rt-wt')
+    git(dir, 'worktree', 'add', '-q', '--detach', wt)
+    const sha = git(wt, 'rev-parse', 'HEAD')
+    expect(await gitHead(wt)).toEqual({ repo: 'rt', branch: sha.slice(0, 7) })
+    expect(await gitHead(dir)).toEqual({ repo: 'rt', branch: 'main' })
+  })
+
+  it('HEAD 가 branch 를 가리키지 않는데 커밋 해시를 읽지 못하면 branch 없이 저장소 이름만 쓴다', async () => {
+    const dir = repo('rt', 'reftable')
+    const fake = fakeGit(`case "$*" in *symbolic-ref*) exit 1 ;; *) exit 128 ;; esac`)
+    vi.stubEnv('PATH', fake.bin)
+    expect(await gitHead(dir)).toEqual({ repo: 'rt' })
+    expect(fake.calls()).toHaveLength(2)
+  })
+
+  it('git 이 아무것도 출력하지 않으면 branch 없이 저장소 이름만 쓴다', async () => {
+    const dir = repo('rt', 'reftable')
+    vi.stubEnv('PATH', fakeGit('exit 0').bin)
+    expect(await gitHead(dir)).toEqual({ repo: 'rt' })
+  })
+
+  it('git 이 2초 안에 끝나지 않으면 다시 실행하지 않고 branch 없이 저장소 이름만 쓴다', async () => {
+    const dir = repo('rt', 'reftable')
+    const fake = fakeGit('/bin/sleep 10')
+    vi.stubEnv('PATH', fake.bin)
+    const start = Date.now()
+    expect(await gitHead(dir)).toEqual({ repo: 'rt' })
+    expect(Date.now() - start).toBeLessThan(4000)
+    expect(fake.calls()).toHaveLength(1)
+  }, 15_000)
 })
