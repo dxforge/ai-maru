@@ -17,7 +17,7 @@ import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
 import { isAppKey, matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
-import { FONT_FAMILY, FONT_SIZE, LINE_HEIGHT } from '../font'
+import type { TerminalFont } from '../config/terminal'
 import { alignComposition } from '../terminal/composition'
 import { pastePaths } from '../terminal/paths'
 import { SCROLLBAR_WIDTH } from '../workspace/columns'
@@ -32,7 +32,8 @@ const {
   command = undefined,
   attach = undefined,
   active,
-  shown
+  shown,
+  font
 } = defineProps<{
   sessionId: string
   workspaceId: string
@@ -42,6 +43,7 @@ const {
   active: boolean
   /** 터미널이 속한 workspace 가 화면에 나와 있다. 겹쳐 숨은 workspace 도 화면 안에 있어 IntersectionObserver 로는 가려낼 수 없다. */
   shown: boolean
+  font: TerminalFont
 }>()
 const emit = defineEmits<{
   exit: []
@@ -56,9 +58,7 @@ const emit = defineEmits<{
 const host = useTemplateRef<HTMLDivElement>('host')
 const term = new Terminal({
   theme: xtermTheme(GHOSTTY),
-  fontFamily: FONT_FAMILY,
-  fontSize: FONT_SIZE,
-  lineHeight: LINE_HEIGHT,
+  ...font,
   scrollbar: { width: SCROLLBAR_WIDTH },
   // Claude Code 의 ⌥P(모델 전환)·⌥B/⌥F(단어 이동) 같은 키는 ⌥ 가 Meta 로 가야 동작한다.
   // 대신 ⌥ 로 치는 글자(™, 유럽 자판의 `@`·`{` 등)는 터미널에 칠 수 없다.
@@ -124,14 +124,22 @@ const cell = (d: IRenderDimensions): Size => ({
   width: (floorCell() ? Math.floor(d.device.cell.width) : d.device.cell.width) / devicePixelRatio,
   height: d.device.cell.height / devicePixelRatio
 })
-let dpr = devicePixelRatio
-term.onDimensionsChange((d) => {
-  emit('cell', cell(d), floorCell())
-  // 창을 DPR 이 다른 화면으로 옮기면 pane 크기는 그대로라 ResizeObserver 가 돌지 않지만, 내림한 셀 폭은 바뀐다.
-  if (devicePixelRatio === dpr) return
-  dpr = devicePixelRatio
-  if (started && session!.primary) fitTerminal()
-})
+let lastCell: Size | undefined
+/**
+ * 창을 DPR 이 다른 화면으로 옮기거나 글꼴 설정이 바뀌면 셀 크기가 바뀐다. 이때 pane 크기는 그대로라
+ * `ResizeObserver` 가 돌지 않으므로, 이 함수가 열·행 수를 다시 맞춘다. xterm 은 줄 높이만 바뀔 때
+ * `onDimensionsChange` 를 내지 않으므로, 글꼴 설정을 바꾸는 쪽도 이 함수를 부른다.
+ */
+function checkCell(force = false): void {
+  if (!term.dimensions) return
+  const c = cell(term.dimensions)
+  const changed = lastCell && (c.width !== lastCell.width || c.height !== lastCell.height)
+  if (lastCell && !changed && !force) return
+  lastCell = c
+  emit('cell', c, floorCell())
+  if ((changed || force) && started && session!.primary) fitTerminal()
+}
+term.onDimensionsChange(() => checkCell())
 function fitTerminal(): void {
   if (!floorCell()) return fit.fit()
   const size = fit.proposeDimensions()
@@ -200,11 +208,8 @@ function updateRenderer(): void {
     if (!webglLoaded) webglUnavailable.value = true
   }
 }
-watch(webglUnavailable, () => {
-  if (!term.dimensions) return
-  emit('cell', cell(term.dimensions), floorCell())
-  if (started && session!.primary) fitTerminal()
-})
+// 셀 폭을 내림하는지가 바뀌므로, 폭이 같아도 `cell` 을 다시 알린다.
+watch(webglUnavailable, () => checkCell(true))
 const intersection = window.maru.webgl
   ? new IntersectionObserver((entries) => {
       inView = entries[entries.length - 1].isIntersecting
@@ -212,6 +217,13 @@ const intersection = window.maru.webgl
     })
   : undefined
 watch(() => shown, updateRenderer)
+watch(
+  () => font,
+  (f) => {
+    Object.assign(term.options, f)
+    checkCell()
+  }
+)
 
 function pasteFiles(files: FileList | undefined): boolean {
   const text = pastePaths(Array.from(files ?? [], window.maru.pathForFile))
@@ -252,7 +264,7 @@ onMounted(() => {
   term.open(host.value!)
   trackComposition(term.textarea!)
   alignComposition(term, webglCanvas)
-  if (term.dimensions) emit('cell', cell(term.dimensions), floorCell())
+  checkCell()
   intersection?.observe(host.value!)
   if (active) term.focus()
   // reactive 배열의 proxy 는 IPC 로 보낼 수 없다.

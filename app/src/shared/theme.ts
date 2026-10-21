@@ -90,6 +90,7 @@ export function uiColors(theme: TerminalTheme) {
     thumb: fg + THUMB_ALPHA,
     working: status(4),
     waiting: status(3),
+    error: status(1),
     accent: ansi[4]
   }
 }

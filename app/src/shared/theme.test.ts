@@ -22,6 +22,12 @@ describe('uiColors', () => {
     expect([ui.waiting, ui.working]).toEqual([GHOSTTY.ansi[3], GHOSTTY.ansi[4]])
   })
 
+  it('오류 색도 상태 색과 같은 대비 기준으로 고른다', () => {
+    const ui = uiColors(GHOSTTY)
+    expect(contrast(GHOSTTY.ansi[1], ui.hdrFocus)).toBeLessThan(3)
+    expect(ui.error).toBe(GHOSTTY.ansi[9])
+  })
+
   it('포커스된 칸 머리 위에서만 3:1 이 안 되어도 bright 색을 쓴다', () => {
     const ui = uiColors(GHOSTTY)
     const ansi = [...GHOSTTY.ansi]

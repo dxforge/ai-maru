@@ -25,10 +25,13 @@ import CommandPalette from './components/CommandPalette.vue'
 import PaneHeader from './components/PaneHeader.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import TerminalView from './components/TerminalView.vue'
-import { FONT_FAMILY, FONT_SIZE } from './font'
+import ToastStack from './components/ToastStack.vue'
+import { missingFonts } from './config/fonts'
+import { configToast, createConfig } from './config/store'
 import { ICONS } from './icons'
+import { createToasts } from './toast/store'
 import { columnsWidth, terminalPadding } from './workspace/columns'
-import { windowTitle, workspaceLabel } from './workspace/cwd'
+import { tildePath, windowTitle, workspaceLabel } from './workspace/cwd'
 import { snapRects, type Box, type Size } from './workspace/grid'
 import { columnCount, EPSILON, rects, type Layout, type Widths } from './workspace/layout'
 import { createWorkspaces, focusedPane } from './workspace/store'
@@ -47,6 +50,15 @@ window.maru.onClaudeStatus((session, state) => {
 })
 void window.maru.claudeStatuses().then(claude.replace)
 const home = window.maru.home
+
+const toasts = createToasts()
+const config = createConfig(window.maru.config, (r) => {
+  const toast = configToast(r, missingFonts(r.names), tildePath(r.path, home))
+  if (toast) toasts.put('config', toast)
+  else toasts.close('config')
+})
+window.maru.onConfig(config.apply)
+
 function newWorkspace(): void {
   const w = workspaces.selected()
   const p = w && focusedPane(w)
@@ -152,7 +164,12 @@ function toggleFold(key: number): void {
   if (!folded.delete(key)) folded.add(key)
 }
 // 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 칸마다 열 수가 갈린다(#58).
-const sidebarWidth = ref(prefs.sidebar?.width ?? 282)
+const SIDEBAR_WIDTH = 282
+const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
+// 토스트는 사이드바 안쪽 양옆 12px 을 비운다. 사이드바를 접거나 좁혀도 기본 폭일 때보다 좁히지 않는다.
+const toastWidth = computed(
+  () => Math.max(sidebarOpen.value ? sidebarWidth.value : 0, SIDEBAR_WIDTH) - 24
+)
 // 신호등 버튼 묶음 폭에 양옆 12px 씩을 더한 폭이다.
 const RAIL_WIDTH = 85
 const resizing = ref<'side' | 'canvas' | null>(null)
@@ -203,8 +220,8 @@ const gridVars = computed(() => ({
   '--row': `${row.value}px`,
   '--cell': `${cell.value.width}px`,
   '--pad': `${terminalPadding(cell.value.width)}px`,
-  '--font-size': `${FONT_SIZE}px`,
-  '--font-family': FONT_FAMILY
+  '--font-size': `${config.font.value.fontSize}px`,
+  '--font-family': config.font.value.fontFamily
 }))
 
 /** workspace 마다 칸이 놓이는 영역의 크기. CSS 가 정하는 머리·여백을 JS 에서 다시 계산하지 않게 잰다. */
@@ -549,6 +566,7 @@ void window.maru.restoreScreen().then((s) => {
                 :attach="p.attach"
                 :active="active"
                 :shown="selected || viewMode === 'columns'"
+                :font="config.font.value"
                 @exit="removePane(p.key)"
                 @failed="(message) => paneFailed(p.key, message)"
                 @spawned="answerPaneRequest(p.key, { session: p.sessionId })"
@@ -573,6 +591,7 @@ void window.maru.restoreScreen().then((s) => {
       :width="canvasWidth"
       :resizing="resizing === 'canvas'"
     />
+    <ToastStack :toasts="toasts.list.value" :width="toastWidth" @close="toasts.close" />
     <CommandPalette v-if="paletteOpen" ref="palette" @run="runCommand" @close="closePalette" />
   </div>
 </template>
@@ -581,6 +600,7 @@ void window.maru.restoreScreen().then((s) => {
 .app {
   --panel-duration: 180ms;
   --panel-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+  position: relative;
   display: flex;
   height: 100%;
   background: var(--side);

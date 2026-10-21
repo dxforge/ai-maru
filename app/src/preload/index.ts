@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { CanvasItem } from '../shared/canvas'
 import type { ClaudeState } from '../shared/claude'
+import type { ConfigRead } from '../shared/config'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
 import type { PaneNewRequest, PaneReply, WorkspaceNewRequest } from '../shared/pane'
@@ -14,6 +15,14 @@ ipcRenderer.on('session:port', (event, key: string) => {
 
 ipcRenderer.on('session:lost', () => {
   window.postMessage('session:lost', '*')
+})
+
+const firstConfig = ipcRenderer.sendSync('config:read') as ConfigRead
+let lastConfig: ConfigRead | undefined
+let onConfig: ((read: ConfigRead) => void) | undefined
+ipcRenderer.on('config:changed', (_event, read: ConfigRead) => {
+  lastConfig = read
+  onConfig?.(read)
 })
 
 const api = {
@@ -61,6 +70,13 @@ const api = {
   restoreScreen: (): Promise<ScreenState | null> => ipcRenderer.invoke('screen:restore'),
   /** 첫 화면을 그리기 전에 읽도록 동기로 받는다. */
   viewPrefs: ipcRenderer.sendSync('screen:prefs') as ViewPrefs,
+  /** 첫 화면을 기본 글꼴로 그렸다가 다시 맞추지 않게 동기로 받는다. */
+  config: firstConfig,
+  /** `config` 다음에 main 이 읽은 값마다 `cb` 를 부른다. 등록하기 전에 온 값이 있으면 그 가운데 마지막 값으로 바로 부른다. */
+  onConfig: (cb: (read: ConfigRead) => void): void => {
+    onConfig = cb
+    if (lastConfig) cb(lastConfig)
+  },
   restart: (): void => ipcRenderer.send('app:restart'),
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   // dev 서버로 띄우면 Electron 이 끝날 때 dev 서버도 끝나, 다시 뜬 앱이 renderer 를 불러올 곳이 없다.
