@@ -34,7 +34,10 @@ export type ScreenState = {
 
 const SIDEBAR_WIDTH = { min: 200, max: 480 }
 
-/** 재시작이 아닌 실행에서도 되살리는 화면 설정이다. */
+/**
+ * 재시작이 아닌 실행에서도 되살리는 화면 설정이다. 사이드바의 접힌 workspace 목록(`folded`)은 넣지 않는다.
+ * 일반 실행은 workspace 를 되살리지 않아 `folded` 의 key 가 가리킬 workspace 가 없기 때문이다.
+ */
 export type ViewPrefs = {
   viewMode?: ScreenState['viewMode']
   sidebar?: { open: boolean; width: number }
@@ -94,8 +97,9 @@ export function clampSidebarWidth(width: number): number {
 }
 
 /**
- * `ScreenState` 를 넘기면 `viewMode` 와 `sidebar` 의 열림·폭만 골라 돌려준다. 두 타입이 이 필드 이름을
- * 같이 쓰기 때문이다.
+ * `parseScreen` 과 `viewPrefs()`(`main/index.ts`)가 `ScreenState` 도 넘기므로, 이 함수는 그 안에서
+ * `viewMode` 와 `sidebar` 의 열림·폭만 골라 돌려준다. `ViewPrefs` 의 필드 이름을 바꾸면 `ScreenState` 의
+ * 것도 같이 바꿔야 한다.
  */
 export function parseViewPrefs(v: unknown): ViewPrefs {
   if (!isObj(v)) return {}

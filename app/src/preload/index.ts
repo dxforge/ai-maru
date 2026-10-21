@@ -55,8 +55,8 @@ const api = {
   setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),
   saveScreen: (screen: ScreenState): void => ipcRenderer.send('screen:state', screen),
   /**
-   * 재시작으로 뜬 첫 문서만 화면을 받는다. 받은 화면이 있으면 `viewPrefs` 대신 그 화면의 보기 모드와
-   * 사이드바 상태를 쓴다.
+   * 재시작으로 뜬 첫 문서만 화면을 받는다. 받은 화면에 workspace 가 있으면 renderer 는 `viewPrefs` 대신
+   * 그 화면의 보기 모드와 사이드바 상태를 쓴다.
    */
   restoreScreen: (): Promise<ScreenState | null> => ipcRenderer.invoke('screen:restore'),
   /** 첫 화면을 그리기 전에 읽도록 동기로 받는다. */
