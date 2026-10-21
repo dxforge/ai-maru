@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  activeTerminal,
   delaySessionPort,
   expect,
   gridRows,
@@ -60,6 +61,7 @@ test('창이 새로 고쳐지면 이전 화면이 연 세션은 끝나고, 새 �
   const before = sockets(dataDir)
 
   await page.reload()
+  await activeTerminal(page)
   await run(page, 'echo fresh-$((1+1))', 'fresh-2')
   await expect.poll(() => sockets(dataDir).length).toBe(1)
   expect(before).not.toContain(sockets(dataDir)[0])
