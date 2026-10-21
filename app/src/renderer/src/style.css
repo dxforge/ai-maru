@@ -61,6 +61,12 @@ body,
   color: var(--claude, var(--faint));
 }
 
+/* 아이콘을 `font-family` 의 첫 글꼴이 아닌 fallback 글꼴로 그리면 줄 상자의 높이와 기준선은 첫 글꼴이 정한다.
+   그래서 아이콘이 상자 가운데보다 1px 안팎 아래에 놓인다. */
+.nerd-icon {
+  font-family: 'Symbols Nerd Font Mono';
+}
+
 .idle .status-icon {
   font-size: 9px;
 }

@@ -474,7 +474,7 @@ void window.maru.restoreScreen().then((s) => {
           :class="[urgent.get(w.key), { focused: selected }]"
           @mousedown.prevent="selectWorkspace(w.key)"
         >
-          <span class="row-bar-icon status-icon">{{
+          <span class="row-bar-icon status-icon nerd-icon">{{
             urgent.has(w.key) ? ICONS[urgent.get(w.key)!] : ''
           }}</span>
           <span class="row-bar-text name">{{ labels.get(w.key)!.name }}</span>

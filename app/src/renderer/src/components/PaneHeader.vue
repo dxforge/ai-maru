@@ -14,11 +14,11 @@ const {
 
 <template>
   <div class="row-bar pane-header" :class="[state, { focused }]">
-    <span class="row-bar-icon status-icon" :title="state && STATE_LABELS[state]">{{
+    <span class="row-bar-icon status-icon nerd-icon" :title="state && STATE_LABELS[state]">{{
       state ? ICONS[state] : ICONS.terminal
     }}</span>
     <span class="row-bar-text title">{{ pane.title || 'Shell' }}</span>
-    <span v-if="state" class="claude-icon">{{ ICONS.claude }}</span>
+    <span v-if="state" class="claude-icon nerd-icon">{{ ICONS.claude }}</span>
     <span v-if="pane.cwd" class="cwd">{{ workspaceName(pane.cwd) }}</span>
   </div>
 </template>
