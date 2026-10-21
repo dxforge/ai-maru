@@ -4,6 +4,7 @@ import {
   activePane,
   clickMenu,
   expect,
+  failingCommandSessionBin,
   newWorkspace,
   paneBox as box,
   panes,
@@ -13,7 +14,6 @@ import {
   test,
   toggleView,
   workspaceViews,
-  wrapSessionBin,
   zshHome
 } from './app'
 
@@ -119,13 +119,7 @@ test('세션을 띄우지 못하면 나눈 칸을 닫고 maru pane new 가 이�
   launch,
   dataDir
 }) => {
-  // 명령을 받은 세션만 실패하므로 처음 pane 의 셸은 뜬다.
-  const bin = wrapSessionBin(
-    dataDir,
-    'failing-session',
-    `case " $* " in *" -- "*) echo "boom-$((1+1))" >&2; exit 1;; esac`
-  )
-  const { page } = await launch({ MARU_SESSION_BIN: bin })
+  const { page } = await launch({ MARU_SESSION_BIN: failingCommandSessionBin(dataDir) })
   await page.keyboard.type('maru pane new true; echo code-$?\n')
   await expect(rows(page)).toContainText('boom-2')
   await expect(rows(page)).toContainText('code-1')

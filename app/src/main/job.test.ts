@@ -200,6 +200,16 @@ describe('job.list', () => {
   })
 })
 
+describe('workspaceOf', () => {
+  it('pane 세션은 그 pane 의, job 세션은 그 job 의 workspace 이고, 모르는 세션은 없다', async () => {
+    const { jobs, start } = setup()
+    const job = await start({}, C)
+    expect(jobs.workspaceOf(A)).toBe('w-1')
+    expect(jobs.workspaceOf(job)).toBe('w-2')
+    expect(jobs.workspaceOf('s-000000ff')).toBeUndefined()
+  })
+})
+
 describe('job.read·send·kill', () => {
   it('이름과 session id 로 찾고, 다른 workspace 의 job 은 없는 job 이다', async () => {
     const t = setup()

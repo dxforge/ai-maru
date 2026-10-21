@@ -3,7 +3,7 @@ import type { CanvasItem } from '../shared/canvas'
 import type { ClaudeState } from '../shared/claude'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
-import type { PaneNewRequest, PaneReply } from '../shared/pane'
+import type { PaneNewRequest, PaneReply, WorkspaceNewRequest } from '../shared/pane'
 import type { ScreenState } from '../shared/screen'
 import type { SessionOpen } from '../shared/session'
 
@@ -38,6 +38,9 @@ const api = {
   },
   onPaneClose: (cb: (id: number, session: string) => void): void => {
     ipcRenderer.on('pane:close', (_event, id: number, session: string) => cb(id, session))
+  },
+  onWorkspaceNew: (cb: (id: number, req: WorkspaceNewRequest) => void): void => {
+    ipcRenderer.on('workspace:new', (_event, id: number, req: WorkspaceNewRequest) => cb(id, req))
   },
   paneReply: (id: number, reply: PaneReply): void => ipcRenderer.send('pane:reply', id, reply),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),

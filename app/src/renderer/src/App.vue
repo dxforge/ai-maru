@@ -81,7 +81,7 @@ function closePane(): void {
   void focusSelected()
 }
 
-// `maru pane new` 로 나눠 세션이 뜨기를 기다리는 pane → 답할 요청 id.
+// `maru pane new`·`maru workspace new` 로 열어 세션이 뜨기를 기다리는 pane → 답할 요청 id.
 const paneRequests = new Map<number, number>()
 
 function answerPaneRequest(pane: number, reply: PaneReply): void {
@@ -102,7 +102,8 @@ function removePane(
   workspaces.closePane(pane)
 }
 
-// ⌘D 로 나눈 pane 은 오류를 보인 채 남지만, `maru pane new` 의 pane 은 띄운 쪽이 이유를 받으므로 닫는다.
+// ⌘D 로 나눈 pane 은 오류를 보인 채 남지만, `maru pane new`·`maru workspace new` 의 pane 은 띄운 쪽이 이유를
+// 받으므로 닫는다.
 function paneFailed(pane: number, message: string): void {
   if (paneRequests.has(pane)) removePane(pane, message)
 }
@@ -116,6 +117,14 @@ window.maru.onPaneNew((id, { session, cwd, direction, command, full }) => {
   const from = workspaces.paneBySession(session)
   if (!from) return window.maru.paneReply(id, noPane(session))
   paneRequests.set(workspaces.splitFrom(from.key, direction, { startDir: cwd, command }, full), id)
+})
+
+// 재시작 직후에는 남은 세션이 보낸 `workspace:new` 가 화면을 되살리기 전에 올 수 있다. `workspaces.restore`
+// 가 목록을 통째로 바꾸므로 되살린 뒤에 연다.
+window.maru.onWorkspaceNew((id, { workspace, cwd, command }) => {
+  void restored.then(() =>
+    paneRequests.set(workspaces.openFrom(workspace, { startDir: cwd, command }), id)
+  )
 })
 
 window.maru.onPaneClose((id, session) => {
@@ -403,7 +412,7 @@ function screen(): ScreenState {
   }
 }
 
-void window.maru.restoreScreen().then((s) => {
+const restored = window.maru.restoreScreen().then((s) => {
   if (s?.workspaces.length) {
     workspaces.restore(s)
     sidebarOpen.value = s.sidebar.open

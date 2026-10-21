@@ -8,11 +8,15 @@ const B = 's-0000000b'
 
 function setup({ window = true } = {}) {
   const sent: { channel: PaneChannel; id: number; arg: unknown }[] = []
-  const panes = createPanes((channel, id, arg) => {
-    if (!window) return false
-    sent.push({ channel, id, arg })
-    return true
-  }, 1000)
+  const panes = createPanes(
+    (channel, id, arg) => {
+      if (!window) return false
+      sent.push({ channel, id, arg })
+      return true
+    },
+    (session) => (session === A ? 'w-0000000a' : undefined),
+    1000
+  )
   const answer = (reply: PaneReply) => panes.reply(sent.at(-1)!.id, reply)
   return { ...panes, sent, answer }
 }
@@ -97,6 +101,49 @@ describe('pane.new', () => {
     vi.advanceTimersByTime(1000)
     expect(await caught).toMatch('did not answer')
     expect(() => answer({ session: B })).not.toThrow()
+  })
+})
+
+describe('workspace.new', () => {
+  it('부른 세션의 workspace 와 함께 창에 넘기고, 창이 알려 준 새 세션을 돌려준다', async () => {
+    const { handlers, sent, answer } = setup()
+    const done = handlers['workspace.new']({ cwd: '/a b', command: ['x', ''] }, A)
+    expect(sent).toEqual([
+      {
+        channel: 'workspace:new',
+        id: 0,
+        arg: { workspace: 'w-0000000a', cwd: '/a b', command: ['x', ''] }
+      }
+    ])
+    answer({ session: B })
+    await expect(done).resolves.toEqual({ session: B })
+  })
+
+  it('명령이 없거나 부른 세션의 workspace 를 모르면 창에도 넘기지 않는다', async () => {
+    const { handlers, sent, answer } = setup()
+    const done = handlers['workspace.new']({ cwd: '/' }, B) as Promise<unknown>
+    expect(sent[0].arg).toEqual({ cwd: '/' })
+    answer({ session: A })
+    await done
+  })
+
+  it.each([
+    [{ cwd: 'rel' }],
+    [{}],
+    [{ cwd: '/', command: [] }],
+    [{ cwd: '/', command: 'ls' }],
+    [{ cwd: '/', command: ['ls', 1] }]
+  ])('맞지 않는 params %j 는 창에 넘기지 않고 거절한다', async (params) => {
+    const { handlers, sent } = setup()
+    await expect(handlers['workspace.new'](params, A)).rejects.toBeInstanceOf(InvalidParams)
+    expect(sent).toEqual([])
+  })
+
+  it('창이 세션 없이 답하면 실패한다', async () => {
+    const { handlers, answer } = setup()
+    const empty = handlers['workspace.new']({ cwd: '/' }, A)
+    answer(null)
+    await expect(empty).rejects.toThrow('without a session')
   })
 })
 

@@ -1,4 +1,4 @@
-import type { PaneNewRequest, PaneReply } from '../shared/pane'
+import type { PaneNewRequest, PaneReply, WorkspaceNewRequest } from '../shared/pane'
 import { isSessionId } from '../shared/session'
 import {
   InvalidParams,
@@ -12,11 +12,18 @@ import {
 // 안에 끝나거나 실패하므로 그보다는 길다.
 const REPLY_MS = 8_000
 
-export type PaneChannel = 'pane:new' | 'pane:close'
+export type PaneChannel = 'pane:new' | 'pane:close' | 'workspace:new'
 
-/** pane 은 renderer 가 들고 있다. `createPanes` 는 요청을 창에 넘기고 `reply` 로 받은 답을 돌려준다. */
+const optionalCommand = (v: unknown): string[] | undefined =>
+  v === undefined ? undefined : requireCommand(v)
+
+/**
+ * pane 은 renderer 가 들고 있다. `createPanes` 는 요청을 창에 넘기고 `reply` 로 받은 답을 돌려준다.
+ * `workspaceOf` 는 세션(pane 이나 job)의 workspace id 를 돌려준다.
+ */
 export function createPanes(
   send: (channel: PaneChannel, id: number, arg: unknown) => boolean,
+  workspaceOf: (session: string) => string | undefined,
   replyMs = REPLY_MS
 ): { handlers: Handlers; reply: (id: number, reply: PaneReply) => void } {
   let nextId = 0
@@ -49,6 +56,12 @@ export function createPanes(
     return reply
   }
 
+  async function askSession(channel: PaneChannel, arg: unknown): Promise<{ session: string }> {
+    const reply = await ask(channel, arg)
+    if (!reply || !('session' in reply)) throw new Error('the window answered without a session')
+    return { session: reply.session }
+  }
+
   const handlers: Handlers = {
     'pane.new': async (params, session) => {
       const cwd = requireCwd(params.cwd)
@@ -56,17 +69,26 @@ export function createPanes(
       if (direction !== 'right' && direction !== 'down') {
         throw new InvalidParams('params.direction must be "right" or "down"')
       }
-      const command = params.command === undefined ? undefined : requireCommand(params.command)
+      const command = optionalCommand(params.command)
       const full = optionalBoolean(params.full, 'full')
       const req: PaneNewRequest = { session, cwd, direction, full, ...(command && { command }) }
-      const reply = await ask('pane:new', req)
-      if (!reply || !('session' in reply)) throw new Error('the window answered without a session')
-      return { session: reply.session }
+      return askSession('pane:new', req)
     },
     'pane.close': async ({ target }) => {
       if (!isSessionId(target)) throw new InvalidParams('params.target must be a session id')
       await ask('pane:close', target)
       return null
+    },
+    'workspace.new': async (params, session) => {
+      const cwd = requireCwd(params.cwd)
+      const command = optionalCommand(params.command)
+      const workspace = workspaceOf(session)
+      const req: WorkspaceNewRequest = {
+        cwd,
+        ...(workspace && { workspace }),
+        ...(command && { command })
+      }
+      return askSession('workspace:new', req)
     }
   }
 
