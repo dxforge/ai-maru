@@ -169,12 +169,18 @@ test('문법 오류는 줄을 알리고 앞의 값을 두며, 고치면 토스�
   expect(await fontSize(page)).toBe('16px')
 })
 
-test('띄울 때 문법 오류면 기본값으로 그리고 알린다', async ({ launch, dataDir }) => {
+test('띄울 때 문법 오류면 기본값으로 그리고 알리며, 고치면 적용한다', async ({
+  launch,
+  dataDir
+}) => {
   writeConfig(dataDir, '[terminal\n')
   const { page } = await launch()
   await expect(toast(page)).toHaveClass(/error/)
   await expect(toast(page)).toContainText('Using the default settings.')
   expect(await fontSize(page)).toBe('14px')
+  writeConfig(dataDir, '[terminal]\nfont-size = 18\n')
+  await expect(toast(page)).toHaveCount(0)
+  expect(await fontSize(page)).toBe('18px')
 })
 
 test('범위를 벗어난 값은 맞춰 적용하고 알린다', async ({ launch, dataDir }) => {

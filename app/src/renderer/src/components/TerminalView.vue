@@ -13,7 +13,7 @@ import { UnicodeGraphemesAddon } from '@xterm/addon-unicode-graphemes'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal, type IRenderDimensions } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
 import { isAppKey, matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
@@ -137,7 +137,10 @@ function checkCell(force = false): void {
   if (lastCell && !changed && !force) return
   lastCell = c
   emit('cell', c, floorCell())
-  if ((changed || force) && started && session!.primary) fitTerminal()
+  if (!(changed || force) || !started) return
+  // App 이 새 셀 크기로 칸 배치를 고친 뒤에 맞춘다. 먼저 맞추면 옛 칸 높이로 한 번, 새 칸 높이로 또 한 번
+  // 프로그램에 resize 가 간다.
+  void nextTick(() => host.value && session!.primary && fitTerminal())
 }
 term.onDimensionsChange(() => checkCell())
 function fitTerminal(): void {
