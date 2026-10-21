@@ -102,8 +102,8 @@ term.attachCustomKeyEventHandler((e) => {
     e.preventDefault()
     return false
   }
-  // xterm 은 ⌘ 와 같이 누른 ↩ 도, kitty 키보드 모드에서는 ⌘C 같은 키도 프로그램에 보내며
-  // preventDefault 하므로, 그대로 두면 메뉴에 닿지 않는다.
+  // kitty 키보드 모드에서 xterm 은 ⌘C 같은 키도 프로그램에 보내며 preventDefault 하므로,
+  // 그대로 두면 메뉴에 닿지 않는다.
   if (!isAppKey(e)) return true
   // 메뉴의 Select All 은 포커스된 입력창(xterm 의 숨은 textarea)의 글자만 골라 터미널 내용은 고르지 않는다.
   if (e.type === 'keydown' && matchesKeys(e, selectAllKeys)) term.selectAll()

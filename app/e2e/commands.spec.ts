@@ -98,7 +98,8 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
     { code: 'KeyB', prevented: false },
     { code: 'BracketRight', prevented: false }
   ])
-  await run(page, '3', 'pass-23')
+  // 키가 글자로 새면 줄 끝에 붙는다. 새어 나온 \ 는 뒤의 $ 를 이스케이프하므로 pass-24 가 찍히지 않는다.
+  await run(page, '$((2+2))', 'pass-24')
 })
 
 test('터미널에서 ⇧↩ 은 kitty 키보드 프로토콜을 켠 프로그램에만 CSI u 로 가고, 셸에는 ↩ 으로 간다', async ({
