@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { BrowserWindow, Rectangle } from 'electron'
+import { parseViewPrefs, type ViewPrefs } from '../shared/screen'
 
 export type WindowState = Rectangle & { isMaximized: boolean; isFullScreen: boolean }
 
@@ -19,13 +20,16 @@ const CHANGES = [
   'leave-full-screen'
 ] as const
 
-export function readWindowState(file: string): WindowState | null {
-  let s: Partial<WindowState>
+function readJson(file: string): unknown {
   try {
-    s = JSON.parse(readFileSync(file, 'utf8'))
+    return JSON.parse(readFileSync(file, 'utf8'))
   } catch {
     return null
   }
+}
+
+export function readWindowState(file: string): WindowState | null {
+  const s = readJson(file) as Partial<WindowState> | null
   const valid =
     typeof s === 'object' &&
     s !== null &&
@@ -38,6 +42,10 @@ export function readWindowState(file: string): WindowState | null {
     typeof s.isMaximized === 'boolean' &&
     typeof s.isFullScreen === 'boolean'
   return valid ? (s as WindowState) : null
+}
+
+export function readViewPrefs(file: string): ViewPrefs {
+  return parseViewPrefs(readJson(file))
 }
 
 function contains(outer: Rectangle, inner: Rectangle): boolean {
@@ -74,7 +82,11 @@ function currentState(win: StatefulWindow): WindowState {
  * 최소화·전체 화면 중에는 `isMaximized()` 가 false 이므로, 그 상태로 닫으면 들어가기 전에
  * 마지막으로 기록한 상태를 저장한다. 최소화 중에는 `getNormalBounds()` 도 최대화된 크기를 준다.
  */
-export function saveWindowStateOnClose(win: TrackedWindow, file: string): void {
+export function saveWindowStateOnClose(
+  win: TrackedWindow,
+  file: string,
+  prefs: () => ViewPrefs
+): void {
   let last = currentState(win)
   const update = (): void => {
     if (!win.isMinimized() && !win.isFullScreen()) last = currentState(win)
@@ -87,7 +99,7 @@ export function saveWindowStateOnClose(win: TrackedWindow, file: string): void {
   }
   win.on('close', () => {
     try {
-      writeFileSync(file, JSON.stringify(closing()))
+      writeFileSync(file, JSON.stringify({ ...closing(), ...prefs() }))
     } catch (err) {
       console.error(`maru: cannot save the window state to ${file}:`, err)
     }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { ElectronApplication } from '@playwright/test'
 import { killSession } from '../src/main/session'
@@ -64,6 +64,25 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 �
   await expect(panes(again)).toHaveCount(2)
   await expect(panes(again).nth(1).locator('.terminal-view')).toHaveClass(/active/)
   await run(again, 'echo $MARK', 'kept-2')
+})
+
+test('재시작하면 window-state.json 의 보기 설정보다 재시작 전 화면을 따른다', async ({
+  launch,
+  dataDir
+}) => {
+  const first = await launch()
+  await toggleView(first, 'columns')
+  await clickMenu(first.app, 'toggle-sidebar')
+  await expect(first.page.locator('.sidebar')).toHaveClass(/collapsed/)
+  await restartWith(first.app)
+  writeFileSync(
+    join(dataDir, 'window-state.json'),
+    JSON.stringify({ viewMode: 'single', sidebar: { open: true, width: 300 } })
+  )
+
+  const { page } = await launch()
+  await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
+  await expect(page.locator('.terminals')).toHaveClass(/columns/)
 })
 
 test('재시작 뒤 claude 상태는 비어 있다가 되살린 셸의 hook 으로 다시 보인다', async ({

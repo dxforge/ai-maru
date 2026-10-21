@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import {
   claudeHook,
   clickMenu,
+  dragResizer,
   expect,
   newWorkspace,
   paneRows,
@@ -12,6 +13,7 @@ import {
   run,
   shellRows,
   shellSize,
+  sidebarWidth,
   split,
   test,
   toggleView,
@@ -187,27 +189,10 @@ test('마지막 workspace 를 닫으면 창 제목과 폴더 아이콘이 앱의
 
 const collapsedGroups = (page: Page) => page.locator('.sidebar.collapsed .group')
 
-async function sidebarWidth(page: Page): Promise<number> {
-  return (await page.locator('.side').boundingBox())!.width
-}
-
 async function collapse(app: ElectronApplication, page: Page): Promise<void> {
   await clickMenu(app, 'toggle-sidebar')
   await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
   await expect.poll(() => sidebarWidth(page)).toBe(85)
-}
-
-async function dragResizer(
-  page: Page,
-  dx: number,
-  button: 'left' | 'right' = 'left'
-): Promise<void> {
-  const handle = (await page.locator('.resizer').boundingBox())!
-  const [x, y] = [handle.x + handle.width / 2, handle.y + handle.height / 2]
-  await page.mouse.move(x, y)
-  await page.mouse.down({ button })
-  await page.mouse.move(x + dx, y, { steps: 4 })
-  await page.mouse.up({ button })
 }
 
 /** 지금부터 터미널 화면 폭이 바뀔 때마다 적는다. 처음 한 번은 지금 폭이다. */

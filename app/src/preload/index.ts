@@ -4,7 +4,7 @@ import type { ClaudeState } from '../shared/claude'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
 import type { PaneNewRequest, PaneReply, WorkspaceNewRequest } from '../shared/pane'
-import type { ScreenState } from '../shared/screen'
+import type { ScreenState, ViewPrefs } from '../shared/screen'
 import type { SessionOpen } from '../shared/session'
 
 // MessagePort 는 contextBridge 를 건너지 못해서 window.postMessage 로 넘긴다.
@@ -54,8 +54,13 @@ const api = {
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),
   setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),
   saveScreen: (screen: ScreenState): void => ipcRenderer.send('screen:state', screen),
-  /** 재시작으로 뜬 첫 문서만 화면을 받는다. */
+  /**
+   * 재시작으로 뜬 첫 문서만 화면을 받는다. 받은 화면이 있으면 `viewPrefs` 대신 그 화면의 보기 모드와
+   * 사이드바 상태를 쓴다.
+   */
   restoreScreen: (): Promise<ScreenState | null> => ipcRenderer.invoke('screen:restore'),
+  /** 첫 화면을 그리기 전에 읽도록 동기로 받는다. */
+  viewPrefs: ipcRenderer.sendSync('screen:prefs') as ViewPrefs,
   restart: (): void => ipcRenderer.send('app:restart'),
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   // dev 서버로 띄우면 Electron 이 끝날 때 dev 서버도 끝나, 다시 뜬 앱이 renderer 를 불러올 곳이 없다.

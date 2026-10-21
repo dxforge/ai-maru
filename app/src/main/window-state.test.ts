@@ -3,7 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { ViewPrefs } from '../shared/screen'
 import {
+  readViewPrefs,
   readWindowState,
   restoreWindowState,
   saveWindowStateOnClose,
@@ -43,9 +45,17 @@ function fakeWindow(
   return win
 }
 
-function tracked(file: string, init?: Parameters<typeof fakeWindow>[0]) {
+function tracked(
+  file: string,
+  init?: Parameters<typeof fakeWindow>[0],
+  prefs: () => ViewPrefs = () => ({})
+) {
   const win = fakeWindow(init)
-  saveWindowStateOnClose(win as unknown as Parameters<typeof saveWindowStateOnClose>[0], file)
+  saveWindowStateOnClose(
+    win as unknown as Parameters<typeof saveWindowStateOnClose>[0],
+    file,
+    prefs
+  )
   return win
 }
 
@@ -83,6 +93,22 @@ describe('readWindowState', () => {
       writeFileSync(file, JSON.stringify(bad))
       expect(readWindowState(file), JSON.stringify(bad)).toBeNull()
     }
+  })
+})
+
+describe('readViewPrefs', () => {
+  it('창 위치·크기가 없거나 틀려도 보기 설정은 읽는다', () => {
+    const file = join(dir, 'w.json')
+    writeFileSync(file, JSON.stringify({ viewMode: 'single' }))
+    expect(readViewPrefs(file)).toEqual({ viewMode: 'single' })
+    expect(readWindowState(file)).toBeNull()
+  })
+
+  it('파일이 없거나 JSON 이 아니면 빈 설정', () => {
+    expect(readViewPrefs(join(dir, 'none.json'))).toEqual({})
+    const file = join(dir, 'w.json')
+    writeFileSync(file, '{not json')
+    expect(readViewPrefs(file)).toEqual({})
   })
 })
 
@@ -233,6 +259,16 @@ describe('saveWindowStateOnClose', () => {
     win.emit('leave-full-screen')
     win.emit('close')
     expect(readWindowState(file)).toEqual({ ...NORMAL, ...placed, isMaximized: true })
+  })
+
+  it('닫을 때의 보기 설정을 함께 쓰고, readWindowState 도 그 파일을 읽는다', () => {
+    const file = join(dir, 'w.json')
+    let prefs: ViewPrefs = { viewMode: 'single' }
+    const win = tracked(file, { bounds: placed }, () => prefs)
+    prefs = { viewMode: 'columns', sidebar: { open: false, width: 300 } }
+    win.emit('close')
+    expect(readViewPrefs(file)).toEqual(prefs)
+    expect(readWindowState(file)).toMatchObject({ ...NORMAL, ...placed })
   })
 
   it('쓸 수 없는 경로여도 throw 하지 않는다', () => {
