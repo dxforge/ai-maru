@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ClaudeState } from '../shared/claude'
-import { createClaudeStatus, HOOK_STATES } from './claude-status'
+import { createClaudeStatus, HOOK_STATES, parseClaudeFile, type ClaudeFile } from './claude-status'
 import { InvalidParams } from './cli-server'
 
 const dirs: string[] = []
@@ -330,6 +330,189 @@ describe('claude-status 의 상태 파일 폴링', () => {
     expect(s.snapshot()).toEqual({})
     expect(sent.at(-1)).toEqual(['s-1', null])
     s.close()
+  })
+})
+
+describe('claude-status 의 재시작', () => {
+  function saved(dir: string, state: ClaudeState, since = 1000): ClaudeFile {
+    return {
+      version: 1,
+      sessions: { 's-00000001': { state, claudeSession: 'c-1', configDir: dir, since } }
+    }
+  }
+
+  it('저장한 항목을 다시 뜬 쪽이 알리지 않고 되살린다', async () => {
+    const before = setup()
+    const dir = configDir()
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: 0 })
+    await before.s.handlers['claude.hook'](
+      { event: 'UserPromptSubmit', claude_session: 'c-1', config_dir: dir },
+      's-00000001'
+    )
+    await before.s.poll()
+    const file = before.s.save()
+    expect(file).toEqual({
+      version: 1,
+      sessions: {
+        's-00000001': {
+          state: 'working',
+          claudeSession: 'c-1',
+          configDir: dir,
+          since: 1000,
+          file: '10.json'
+        }
+      }
+    })
+    before.s.close()
+    const after = setup()
+    await after.s.restore(JSON.parse(JSON.stringify(file)))
+    expect(after.s.snapshot()).toEqual({ 's-00000001': 'working' })
+    expect(after.sent).toEqual([])
+    after.s.close()
+  })
+
+  it('되살리기 전에 hook 이 만든 항목은 덮지 않는다', async () => {
+    const { s, hook } = setup()
+    const dir = configDir()
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'idle', statusUpdatedAt: 0 })
+    await hook('Stop', 'c-1', dir)
+    await s.restore({
+      version: 1,
+      sessions: { 's-1': { state: 'working', claudeSession: 'c-1', configDir: dir, since: 0 } }
+    })
+    expect(s.snapshot()).toEqual({ 's-1': 'idle' })
+    s.close()
+  })
+
+  it.each([
+    ['idle', 'busy', 'working'],
+    ['working', 'idle', 'idle'],
+    ['waiting', 'busy', 'working']
+  ] as const)(
+    '%s 로 저장한 뒤 파일이 %s 가 되었으면 %s 로 맞추고 알린다',
+    async (state, status, want) => {
+      const { s, sent } = setup()
+      const dir = configDir()
+      statusFile(dir, 10, { sessionId: 'c-1', status, statusUpdatedAt: 1001 })
+      await s.restore(saved(dir, state))
+      expect(s.snapshot()).toEqual({ 's-00000001': want })
+      expect(sent).toEqual([['s-00000001', want]])
+      s.close()
+    }
+  )
+
+  it('저장한 hook 시각보다 오래된 파일 상태는 무시한다', async () => {
+    const { s, sent } = setup()
+    const dir = configDir()
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'idle', statusUpdatedAt: 999 })
+    await s.restore(saved(dir, 'working'))
+    expect(s.snapshot()).toEqual({ 's-00000001': 'working' })
+    expect(sent).toEqual([])
+    s.close()
+  })
+
+  it.each(['idle', 'working'] as const)(
+    '%s 로 저장한 claude 의 파일이 없으면 항목을 지우고 null 을 알린다',
+    async (state) => {
+      const { s, sent } = setup()
+      await s.restore(saved(configDir(), state))
+      expect(s.snapshot()).toEqual({})
+      expect(sent).toEqual([['s-00000001', null]])
+      s.close()
+    }
+  )
+
+  it('되살리는 동안 hook 이 오면 파일이 없어도 지우지 않는다', async () => {
+    const { s, tick } = setup()
+    const dir = configDir()
+    const restored = s.restore(saved(dir, 'working'))
+    tick(1)
+    await s.handlers['claude.hook'](
+      { event: 'Stop', claude_session: 'c-1', config_dir: dir },
+      's-00000001'
+    )
+    await restored
+    expect(s.snapshot()).toEqual({ 's-00000001': 'idle' })
+    s.close()
+  })
+
+  it('되살리는 동안 claude.exit 가 오면 한 번만 알리고 다시 만들지 않는다', async () => {
+    const { s, sent } = setup()
+    const restored = s.restore(saved(configDir(), 'working'))
+    await s.handlers['claude.exit']({}, 's-00000001')
+    await restored
+    expect(s.snapshot()).toEqual({})
+    expect(sent).toEqual([['s-00000001', null]])
+    s.close()
+  })
+
+  it('찾아 둔 파일이나 디렉토리의 파일이 깨져 못 읽으면 지우지 않고 저장한 상태를 둔다', async () => {
+    const { s, sent } = setup()
+    const known = configDir()
+    const scanned = configDir()
+    statusFile(known, 10, '{"sessionId":"c-1","sta')
+    statusFile(scanned, 11, '{"sessionId":"c-2","sta')
+    await s.restore({
+      version: 1,
+      sessions: {
+        's-00000001': {
+          state: 'working',
+          claudeSession: 'c-1',
+          configDir: known,
+          since: 1000,
+          file: '10.json'
+        },
+        's-00000002': { state: 'idle', claudeSession: 'c-2', configDir: scanned, since: 1000 }
+      }
+    })
+    expect(s.snapshot()).toEqual({ 's-00000001': 'working', 's-00000002': 'idle' })
+    expect(sent).toEqual([])
+    s.close()
+  })
+
+  it('되살린 working 항목은 계속 폴링하고, idle 항목은 첫 폴링 뒤 읽지 않는다', async () => {
+    const { s } = setup()
+    const working = configDir()
+    const idle = configDir()
+    statusFile(working, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: 999 })
+    statusFile(idle, 10, { sessionId: 'c-2', status: 'idle', statusUpdatedAt: 999 })
+    await s.restore({
+      version: 1,
+      sessions: {
+        's-00000001': { state: 'working', claudeSession: 'c-1', configDir: working, since: 1000 },
+        's-00000002': { state: 'idle', claudeSession: 'c-2', configDir: idle, since: 1000 }
+      }
+    })
+    statusFile(working, 10, { sessionId: 'c-1', status: 'idle', statusUpdatedAt: 1001 })
+    statusFile(idle, 10, { sessionId: 'c-2', status: 'busy', statusUpdatedAt: 1001 })
+    await s.poll()
+    expect(s.snapshot()).toEqual({ 's-00000001': 'idle', 's-00000002': 'idle' })
+    s.close()
+  })
+})
+
+describe('parseClaudeFile', () => {
+  const entry = { state: 'idle', claudeSession: 'c-1', configDir: '/cfg', since: 1 }
+
+  it('맞는 모양만 받는다', () => {
+    const ok = { version: 1, sessions: { 's-00000001': { ...entry, file: '1.json' } } }
+    expect(parseClaudeFile(ok)).toEqual(ok)
+    expect(parseClaudeFile({ version: 1, sessions: {} })).toEqual({ version: 1, sessions: {} })
+  })
+
+  it.each([
+    [undefined],
+    [null],
+    [{ version: 2, sessions: {} }],
+    [{ version: 1, sessions: [] }],
+    [{ version: 1, sessions: { 'not-a-session': entry } }],
+    [{ version: 1, sessions: { 's-00000001': { ...entry, state: 'busy' } } }],
+    [{ version: 1, sessions: { 's-00000001': { ...entry, claudeSession: '' } } }],
+    [{ version: 1, sessions: { 's-00000001': { ...entry, configDir: 'rel' } } }],
+    [{ version: 1, sessions: { 's-00000001': { ...entry, since: '1' } } }],
+    [{ version: 1, sessions: { 's-00000001': { ...entry, file: 1 } } }]
+  ])('맞지 않으면 null: %j', (v) => {
+    expect(parseClaudeFile(v)).toBeNull()
   })
 })
 

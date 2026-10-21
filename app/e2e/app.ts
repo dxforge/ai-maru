@@ -239,6 +239,25 @@ export function claudeHook(event: string, session = 'c-1'): string {
   return `printf '%s' '{"hook_event_name":"${event}","session_id":"${session}"}' | "$MARU_CLI" claude hook\n`
 }
 
+export function claudeConfig(dataDir: string): string {
+  const config = join(dataDir, 'claude')
+  mkdirSync(join(config, 'sessions'), { recursive: true })
+  return config
+}
+
+export function claudeFile(
+  config: string,
+  pid: number,
+  sessionId: string,
+  status: string,
+  at: number
+): void {
+  writeFileSync(
+    join(config, 'sessions', `${pid}.json`),
+    JSON.stringify({ sessionId, status, statusUpdatedAt: at })
+  )
+}
+
 export function activeHeader(page: Page) {
   return activePane(page).locator('.pane-header')
 }
