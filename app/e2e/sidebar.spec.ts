@@ -20,20 +20,13 @@ import {
   zshHome
 } from './app'
 
-// 테스트가 만드는 저장소의 ref 형식을 `files` 로 고정한다. 전역 `init.defaultRefFormat` 이
-// reftable 이면 `gitHead`(`git.ts`)가 branch 를 돌려주지 않기 때문이다. 그때 HEAD 파일은
-// `refs/heads/.invalid` 만 가리킨다.
 function git(cwd: string, ...args: string[]): void {
-  execFileSync(
-    'git',
-    ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'init.defaultRefFormat=files', ...args],
-    { cwd }
-  )
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd })
 }
 
-function repoHome(dataDir: string): string {
+function repoHome(dataDir: string, format: 'files' | 'reftable' = 'files'): string {
   const home = zshHome(dataDir, 'proj', 'notes')
-  git(join(home, 'proj'), 'init', '-q', '-b', 'main')
+  git(join(home, 'proj'), 'init', '-q', '-b', 'main', `--ref-format=${format}`)
   git(join(home, 'proj'), 'commit', '-q', '--allow-empty', '-m', 'init')
   return home
 }
@@ -74,26 +67,28 @@ test('저장소 안에서는 저장소 이름과 branch 를, 밖에서는 디렉
   await expect.poll(() => win(app)).toEqual({ title: 'notes', path: join(home, 'notes') })
 })
 
-test('셸에서 branch 를 바꾸면 다음 프롬프트에 따라가고, worktree 는 원래 저장소 이름을 쓴다', async ({
-  launch,
-  dataDir
-}) => {
-  const home = repoHome(dataDir)
-  const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
-  await page.keyboard.type('cd proj\n')
-  await expect(branch(page)).toHaveText(/main$/)
+for (const format of ['files', 'reftable'] as const) {
+  test(`${format} 저장소에서 셸로 branch 를 바꾸면 다음 프롬프트에 따라가고, worktree 는 원래 저장소 이름을 쓴다`, async ({
+    launch,
+    dataDir
+  }) => {
+    const home = repoHome(dataDir, format)
+    const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+    await page.keyboard.type('cd proj\n')
+    await expect(branch(page)).toHaveText(/main$/)
 
-  await page.keyboard.type('git switch -q -c feat/1-x\n')
-  await expect(branch(page)).toHaveText(/feat\/1-x$/)
-  await expect.poll(async () => (await win(app)).title).toBe('proj — feat/1-x')
+    await page.keyboard.type('git switch -q -c feat/1-x\n')
+    await expect(branch(page)).toHaveText(/feat\/1-x$/)
+    await expect.poll(async () => (await win(app)).title).toBe('proj — feat/1-x')
 
-  await page.keyboard.type('git switch -q --detach\n')
-  await expect(branch(page)).toHaveText(/[0-9a-f]{7}$/)
+    await page.keyboard.type('git switch -q --detach\n')
+    await expect(branch(page)).toHaveText(/[0-9a-f]{7}$/)
 
-  await page.keyboard.type('git worktree add -q -b wt ../proj-wt && cd ../proj-wt\n')
-  await expect(workspaceItems(page)).toHaveText(['proj'])
-  await expect(branch(page)).toHaveText(/wt$/)
-})
+    await page.keyboard.type('git worktree add -q -b wt ../proj-wt && cd ../proj-wt\n')
+    await expect(workspaceItems(page)).toHaveText(['proj'])
+    await expect(branch(page)).toHaveText(/wt$/)
+  })
+}
 
 test('프롬프트가 뜨지 않아도 Claude 의 상태가 바뀌면 branch 를 다시 읽는다', async ({
   launch,
