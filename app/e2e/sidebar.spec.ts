@@ -20,8 +20,15 @@ import {
   zshHome
 } from './app'
 
+// 테스트가 만드는 저장소의 ref 형식을 `files` 로 고정한다. 전역 `init.defaultRefFormat` 이
+// reftable 이면 `gitHead`(`git.ts`)가 branch 를 돌려주지 않기 때문이다. 그때 HEAD 파일은
+// `refs/heads/.invalid` 만 가리킨다.
 function git(cwd: string, ...args: string[]): void {
-  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd })
+  execFileSync(
+    'git',
+    ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'init.defaultRefFormat=files', ...args],
+    { cwd }
+  )
 }
 
 function repoHome(dataDir: string): string {

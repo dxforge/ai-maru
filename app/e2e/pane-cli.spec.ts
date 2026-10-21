@@ -74,6 +74,9 @@ test('한 칸에서 동시에 부른 maru pane new 는 저마다 자기 칸의 �
   await expect(rows(page)).toContainText(/got=\[s-[0-9a-f]{8}\]\[s-[0-9a-f]{8}\]/)
   const [, a, b] = (await rows(page).textContent())!.match(/got=\[(s-\w+)\]\[(s-\w+)\]/)!
   expect(a).not.toBe(b)
+  const me = new RegExp(`me=\\[(${a}|${b})\\]`)
+  await expect(paneRows(page, 1)).toContainText(me)
+  await expect(paneRows(page, 2)).toContainText(me)
   const shown = [
     await paneRows(page, 1).textContent(),
     await paneRows(page, 2).textContent()
