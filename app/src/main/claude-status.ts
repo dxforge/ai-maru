@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import type { ClaudeState } from '../shared/claude'
+import { isSessionId } from '../shared/session'
 import { InvalidParams, type Handlers } from './cli-server'
 
 export const HOOK_STATES = new Map<string, ClaudeState>([
@@ -23,21 +24,28 @@ const FILE_STATES = new Map<unknown, ClaudeState>([
   ['waiting', 'waiting']
 ])
 
-type Entry = {
+type Saved = {
   state: ClaudeState
   claudeSession: string
   configDir: string
   /** 마지막 hook 을 받은 시각. 이보다 앞서 쓴 파일 상태는 그 hook 이 이미 지난 것이다. */
   since: number
   file?: string
-  polling: boolean
 }
+
+type Entry = Saved & { polling: boolean }
+
+/** 재시작 전 앱이 쓰고 다시 뜬 앱이 읽는다. 모양을 바꾸면 버전을 올린다. */
+export type ClaudeFile = { version: 1; sessions: Record<string, Saved> }
 
 type FileStatus = { sessionId?: unknown; status?: unknown; statusUpdatedAt?: unknown }
 
 export type ClaudeStatus = {
   handlers: Handlers
   snapshot(): Record<string, ClaudeState>
+  save(): ClaudeFile
+  /** 되살린 항목마다 상태 파일을 한 번 읽어, 재시작 사이에 바뀐 상태를 따른 뒤에 끝난다. */
+  restore(file: ClaudeFile): Promise<void>
   poll(): Promise<void>
   close(): void
 }
@@ -71,7 +79,8 @@ async function find(e: Entry): Promise<FileStatus | 'gone' | null> {
   }
   const read = await Promise.all(names.map((n) => readStatus(join(dir, n))))
   const i = read.findIndex((s) => s !== null && s !== 'missing' && s.sessionId === e.claudeSession)
-  if (i === -1) return 'gone'
+  // 쓰는 도중이라 못 읽은 파일이 그 claude 의 것일 수 있다.
+  if (i === -1) return read.includes(null) ? null : 'gone'
   e.file = names[i]
   return read[i] as FileStatus
 }
@@ -109,16 +118,34 @@ export function createClaudeStatus({
     schedule()
   }
 
-  async function pollOne(session: string, e: Entry): Promise<void> {
-    const s = await find(e)
-    if (entries.get(session) !== e || !e.polling || s === null) return
-    if (s === 'gone') {
-      e.polling = false
-      return
-    }
+  function follow(session: string, e: Entry, s: FileStatus): void {
     const state = FILE_STATES.get(s.status)
     if (state && typeof s.statusUpdatedAt === 'number' && s.statusUpdatedAt > e.since) {
       set(session, e, state)
+    }
+  }
+
+  async function pollOne(session: string, e: Entry): Promise<void> {
+    const s = await find(e)
+    if (entries.get(session) !== e || !e.polling || s === null) return
+    if (s === 'gone') e.polling = false
+    else follow(session, e, s)
+  }
+
+  /**
+   * 되살린 항목은 idle 이어도 한 번 읽는다. 앱이 떠 있는 동안 끝난 claude 는 zsh 의 `claude` 함수가
+   * `claude.exit` 로 알리므로, 파일이 없어 항목을 지우는 것은 재시작 사이에 끝난 claude 뿐이다.
+   */
+  async function checkRestored(session: string, e: Entry): Promise<void> {
+    const since = e.since
+    const s = await find(e)
+    if (entries.get(session) !== e || s === null) return
+    if (s !== 'gone') follow(session, e, s)
+    // 그 사이 hook 이 왔으면 claude 가 살아 있다.
+    else if (e.since === since) {
+      entries.delete(session)
+      notify(session, null)
+      schedule()
     }
   }
 
@@ -172,7 +199,51 @@ export function createClaudeStatus({
   return {
     handlers,
     snapshot: () => Object.fromEntries([...entries].map(([id, e]) => [id, e.state])),
+    save: () => ({
+      version: 1,
+      sessions: Object.fromEntries(
+        [...entries].map(([id, { state, claudeSession, configDir, since, file }]) => [
+          id,
+          { state, claudeSession, configDir, since, file }
+        ])
+      )
+    }),
+    restore: async (file) => {
+      // CLI 소켓은 되살리기 전에 열리므로, 그 사이 hook 이 만든 항목이 더 새롭다.
+      const restored = Object.entries(file.sessions)
+        .filter(([session]) => !entries.has(session))
+        .map(([session, saved]): [string, Entry] => [
+          session,
+          { ...saved, polling: saved.state !== 'idle' }
+        ])
+      for (const [session, e] of restored) entries.set(session, e)
+      schedule()
+      await Promise.all(restored.map(([session, e]) => checkRestored(session, e)))
+    },
     poll,
     close: stop
   }
+}
+
+const STATES = new Set<unknown>(HOOK_STATES.values())
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
+function isSaved(v: unknown): v is Saved {
+  return (
+    isObj(v) &&
+    STATES.has(v.state) &&
+    typeof v.claudeSession === 'string' &&
+    v.claudeSession !== '' &&
+    typeof v.configDir === 'string' &&
+    isAbsolute(v.configDir) &&
+    typeof v.since === 'number' &&
+    (v.file === undefined || typeof v.file === 'string')
+  )
+}
+
+export function parseClaudeFile(v: unknown): ClaudeFile | null {
+  if (!isObj(v) || v.version !== 1 || !isObj(v.sessions)) return null
+  if (!Object.entries(v.sessions).every(([id, s]) => isSessionId(id) && isSaved(s))) return null
+  return v as ClaudeFile
 }

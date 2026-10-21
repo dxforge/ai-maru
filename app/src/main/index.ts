@@ -23,11 +23,9 @@ import { createPanes } from './pane'
 import { createJobs, JOB_REPLY_MS } from './job'
 import {
   checkRestart,
-  jobsFile,
   restartFile,
   screenSessions,
-  takeJobs,
-  takeScreen,
+  takeRestart,
   writeRestart,
   type RestartCheck
 } from './restart'
@@ -101,6 +99,7 @@ const claudeStatus = createClaudeStatus({
 // 재시작한 앱의 monitor 는 표를 되살리기 전에도 붙으므로, 보류한 알림은 되살린 뒤에 보낸다.
 let jobs: ReturnType<typeof createJobs> | null = null
 let jobsRestored: Promise<void> = Promise.resolve()
+let claudeRestored: Promise<void> = Promise.resolve()
 
 const monitor = createMonitor({
   shellPidOf: async (id) => (await readRecord(sessionDir(), id))?.shell_pid ?? null,
@@ -149,9 +148,12 @@ function restartCheck(): Promise<RestartCheck> {
 async function saveScreen(): Promise<void> {
   const screen = parseScreen(lastScreen)
   if (!screen) throw new Error('the window has not reported its layout yet')
-  const file = jobs?.save()
   try {
-    await writeRestart(app.getPath('userData'), screen, file)
+    await writeRestart(restartFile(app.getPath('userData')), {
+      screen,
+      jobs: jobs?.save() ?? null,
+      claude: claudeStatus.save()
+    })
   } catch (err) {
     jobs?.resume()
     throw err
@@ -334,18 +336,22 @@ function start(): void {
   // 창 틀이 시스템 설정 대신 터미널 배경을 따라야, 어두운 터미널 위에 밝은 타이틀바가 뜨지 않는다.
   nativeTheme.themeSource = isLight(GHOSTTY) ? 'light' : 'dark'
   const userData = app.getPath('userData')
-  // 화면 없이 남은 job 표는 재시작이 쓴 것이 아니므로 버린다.
-  const restored = Promise.all([
-    takeScreen(restartFile(userData)),
-    takeJobs(jobsFile(userData))
-  ]).then(([screen, jobs]) => ({ screen, jobs: screen ? jobs : null }))
+  const restored = takeRestart(restartFile(userData))
   // 재시작으로 뜨지 않았으면 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.
-  const leftovers = restored.then(({ screen, jobs }) => {
-    const keep = screenSessions(screen)
-    for (const j of jobs?.jobs ?? []) keep.add(j.session)
+  const leftovers = restored.then((r) => {
+    const keep = screenSessions(r?.screen ?? null)
+    for (const j of r?.jobs?.jobs ?? []) keep.add(j.session)
     return killSessions(sessionDir(), undefined, keep)
   })
-  let toRestore: Promise<ScreenState | null> | null = restored.then((r) => r.screen)
+  // `leftovers` 가 끈 세션의 Claude 상태는 되살리지 않는다. 프로토콜이 달라 꺼진 세션의 claude 는 아직 상태 파일을 지우지 않았을 수 있어, 되살린 뒤 첫 폴링으로는 끝난 것을 알지 못하기 때문이다.
+  claudeRestored = Promise.all([restored, leftovers]).then(async ([r]) => {
+    if (!r?.claude) return
+    const saved = Object.entries(r.claude.sessions)
+    const live = await Promise.all(saved.map(([id]) => sessionLive(sessionDir(), id)))
+    const sessions = Object.fromEntries(saved.filter((_, i) => live[i]))
+    await claudeStatus.restore({ ...r.claude, sessions })
+  })
+  let toRestore: Promise<ScreenState | null> | null = restored.then((r) => r?.screen ?? null)
   ipcMain.handle('screen:restore', () => {
     const screen = toRestore
     toRestore = null
@@ -377,7 +383,7 @@ function start(): void {
   })
   jobs = jobTable
   // `leftovers` 의 `killSessions` 는 job 세션을 끄지 않으므로 그것을 기다리지 않고 되살린다.
-  jobsRestored = restored.then(({ jobs }) => void (jobs && jobTable.restore(jobs)))
+  jobsRestored = restored.then((r) => void (r?.jobs && jobTable.restore(r.jobs)))
   // 터미널은 CLI 없이도 쓸 수 있어야 한다. env 는 그대로 넣어 CLI 가 앱에 닿지 않는다고 말하게 한다.
   const cliServer = listenCli(cli.socket, { ...cliHandlers, ...jobTable.handlers }).catch((err) => {
     console.error(`maru: cannot listen on ${cli.socket}:`, err)
@@ -387,7 +393,7 @@ function start(): void {
   const ready = Promise.all([leftovers, cliServer])
   ipcMain.on('pane:reply', (_event, id: number, reply: PaneReply) => panes.reply(id, reply))
   ipcMain.on('pane:ready', () => panes.ready())
-  ipcMain.handle('claude:statuses', () => claudeStatus.snapshot())
+  ipcMain.handle('claude:statuses', () => claudeRestored.then(claudeStatus.snapshot))
   ipcMain.handle('git:head', (_event, cwd: unknown) =>
     typeof cwd === 'string' ? gitHead(cwd) : null
   )

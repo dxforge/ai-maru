@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { parseScreen, type ScreenState } from '../shared/screen'
+import { parseClaudeFile, type ClaudeFile } from './claude-status'
 import { parseJobsFile, type JobsFile } from './job'
 import { liveSessions } from './session'
 
@@ -11,19 +12,33 @@ export function restartFile(userData: string): string {
   return join(userData, 'restart.json')
 }
 
-export function jobsFile(userData: string): string {
-  return join(userData, 'restart-jobs.json')
+/**
+ * 재시작 전 앱이 쓰고 다시 뜬 앱이 읽는다. 두 앱의 빌드가 다를 수 있어 부분마다 따로 버전을 두고,
+ * 읽을 때 맞지 않는 부분만 버린다. 화면을 못 읽으면 전부 버린다.
+ */
+export type RestartState = {
+  screen: ScreenState
+  jobs: JobsFile | null
+  claude: ClaudeFile | null
 }
 
 /** 제자리 truncate 로 쓰면 그 사이 앱이 죽을 때 깨진 파일이 남는다. */
-async function writeJson(path: string, value: unknown): Promise<void> {
+export async function writeRestart(path: string, state: RestartState): Promise<void> {
   const tmp = `${path}.tmp`
-  await writeFile(tmp, JSON.stringify(value), { mode: 0o600 })
+  await writeFile(tmp, JSON.stringify(state), { mode: 0o600 })
   await rename(tmp, path)
 }
 
+function parseRestart(v: unknown): RestartState | null {
+  if (typeof v !== 'object' || v === null) return null
+  const { screen, jobs, claude } = v as Record<string, unknown>
+  const parsed = parseScreen(screen)
+  if (!parsed) return null
+  return { screen: parsed, jobs: parseJobsFile(jobs), claude: parseClaudeFile(claude) }
+}
+
 /** 읽자마자 지운다 — 남으면 다음 시작이 재시작이 아닌데도 그 세션을 남긴다. */
-async function takeJson<T>(path: string, parse: (v: unknown) => T | null): Promise<T | null> {
+export async function takeRestart(path: string): Promise<RestartState | null> {
   let text: string
   try {
     text = await readFile(path, 'utf8')
@@ -32,44 +47,10 @@ async function takeJson<T>(path: string, parse: (v: unknown) => T | null): Promi
   }
   try {
     await rm(path, { force: true })
-    return parse(JSON.parse(text))
+    return parseRestart(JSON.parse(text))
   } catch {
     return null
   }
-}
-
-export function writeScreen(path: string, screen: ScreenState): Promise<void> {
-  return writeJson(path, screen)
-}
-
-export function takeScreen(path: string): Promise<ScreenState | null> {
-  return takeJson(path, parseScreen)
-}
-
-export function writeJobs(path: string, file: JobsFile): Promise<void> {
-  return writeJson(path, file)
-}
-
-/** 하나라도 못 쓰면 둘 다 지우고 던진다. 화면만 남으면 다음 시작이 그것을 재시작으로 읽기 때문이다. */
-export async function writeRestart(
-  userData: string,
-  screen: ScreenState,
-  jobs: JobsFile | undefined
-): Promise<void> {
-  const paths = [restartFile(userData), jobsFile(userData)]
-  // 둘 다 끝난 뒤에 지워야, 늦게 끝난 쪽이 지운 뒤에 파일을 남기지 않는다.
-  const written = await Promise.allSettled([
-    writeScreen(paths[0], screen),
-    jobs && writeJobs(paths[1], jobs)
-  ])
-  const failed = written.find((r): r is PromiseRejectedResult => r.status === 'rejected')
-  if (!failed) return
-  await Promise.all(paths.map((p) => rm(p, { force: true }).catch(() => {})))
-  throw failed.reason
-}
-
-export function takeJobs(path: string): Promise<JobsFile | null> {
-  return takeJson(path, parseJobsFile)
 }
 
 export function screenSessions(screen: ScreenState | null): Set<string> {

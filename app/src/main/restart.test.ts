@@ -5,18 +5,16 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { SCREEN_VERSION, type ScreenState } from '../shared/screen'
+import type { ClaudeFile } from './claude-status'
 import type { JobsFile } from './job'
 import {
   checkRestart,
-  jobsFile,
   restartFile,
   screenSessions,
   sessionProtocol,
-  takeJobs,
-  takeScreen,
-  writeJobs,
+  takeRestart,
   writeRestart,
-  writeScreen
+  type RestartState
 } from './restart'
 import { socketPath } from './session'
 
@@ -53,58 +51,72 @@ function fakeBin(output: string): string {
 }
 
 describe('restart 파일', () => {
-  it('쓴 화면을 한 번만 읽고 지운다', async () => {
-    const path = restartFile(dir)
-    await writeScreen(path, screen)
-    expect(await takeScreen(path)).toEqual(screen)
-    expect(existsSync(path)).toBe(false)
-    expect(await takeScreen(path)).toBeNull()
-  })
-
-  it('모르는 버전이나 깨진 파일은 되살리지 않고 지운다', async () => {
-    const path = restartFile(dir)
-    writeFileSync(path, JSON.stringify({ ...screen, version: SCREEN_VERSION + 1 }))
-    expect(await takeScreen(path)).toBeNull()
-    expect(existsSync(path)).toBe(false)
-    writeFileSync(path, '{')
-    expect(await takeScreen(path)).toBeNull()
-    expect(existsSync(path)).toBe(false)
-  })
-
-  it('쓴 job 표를 한 번만 읽고 지우며, 모르는 버전이나 깨진 파일은 버린다', async () => {
-    const path = jobsFile(dir)
-    const file: JobsFile = {
-      version: 1,
-      jobs: [
-        {
-          session: 's-0000000a',
-          workspace: 'w-1',
-          owner: 's-0000000b',
-          command: ['x'],
-          pending: false
-        }
-      ]
+  const jobs: JobsFile = {
+    version: 1,
+    jobs: [
+      {
+        session: 's-0000000a',
+        workspace: 'w-1',
+        owner: 's-0000000b',
+        command: ['x'],
+        pending: false
+      }
+    ]
+  }
+  const claude: ClaudeFile = {
+    version: 1,
+    sessions: {
+      's-0000000a': {
+        state: 'working',
+        claudeSession: 'c-1',
+        configDir: '/cfg',
+        since: 5,
+        file: '1.json'
+      }
     }
-    await writeJobs(path, file)
-    expect(await takeJobs(path)).toEqual(file)
+  }
+  const state: RestartState = { screen, jobs, claude }
+
+  it('쓴 화면·job 표·claude 상태를 한 번만 읽고 지운다', async () => {
+    const path = restartFile(dir)
+    await writeRestart(path, state)
+    expect(await takeRestart(path)).toEqual(state)
     expect(existsSync(path)).toBe(false)
-    expect(await takeJobs(path)).toBeNull()
-    writeFileSync(path, JSON.stringify({ ...file, version: 2 }))
-    expect(await takeJobs(path)).toBeNull()
-    expect(existsSync(path)).toBe(false)
-    writeFileSync(path, '{')
-    expect(await takeJobs(path)).toBeNull()
+    expect(await takeRestart(path)).toBeNull()
   })
 
-  it('화면과 job 표 가운데 하나라도 못 쓰면 둘 다 남기지 않는다', async () => {
-    const jobs: JobsFile = { version: 1, jobs: [] }
-    await writeRestart(dir, screen, jobs)
-    expect(await takeScreen(restartFile(dir))).toEqual(screen)
-    expect(await takeJobs(jobsFile(dir))).toEqual(jobs)
+  it('job 표나 claude 상태가 없거나 맞지 않으면 그 부분만 버린다', async () => {
+    const path = restartFile(dir)
+    await writeRestart(path, { screen, jobs: null, claude: null })
+    expect(await takeRestart(path)).toEqual({ screen, jobs: null, claude: null })
+    writeFileSync(
+      path,
+      JSON.stringify({ screen, jobs: { ...jobs, version: 2 }, claude: { ...claude, version: 2 } })
+    )
+    expect(await takeRestart(path)).toEqual({ screen, jobs: null, claude: null })
+  })
+
+  it('화면이 맞지 않거나 깨진 파일은 되살리지 않고 지운다', async () => {
+    const path = restartFile(dir)
+    const cases = [
+      JSON.stringify({ screen: { ...screen, version: SCREEN_VERSION + 1 }, jobs, claude }),
+      // 화면만 담던 옛 모양이다.
+      JSON.stringify(screen),
+      'null',
+      '{'
+    ]
+    for (const text of cases) {
+      writeFileSync(path, text)
+      expect(await takeRestart(path)).toBeNull()
+      expect(existsSync(path)).toBe(false)
+    }
+  })
+
+  it('쓰지 못하면 던진다', async () => {
+    const path = restartFile(dir)
     // 디렉토리가 그 자리에 있으면 tmp 를 옮겨 놓지 못한다.
-    mkdirSync(jobsFile(dir))
-    await expect(writeRestart(dir, screen, jobs)).rejects.toThrow()
-    expect(existsSync(restartFile(dir))).toBe(false)
+    mkdirSync(path)
+    await expect(writeRestart(path, state)).rejects.toThrow()
   })
 
   it('화면의 세션 id 를 모은다', () => {

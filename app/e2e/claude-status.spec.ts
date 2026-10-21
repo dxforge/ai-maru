@@ -1,8 +1,8 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Locator, Page } from '@playwright/test'
 import {
   activeHeader,
+  claudeConfig,
+  claudeFile,
   claudeHook as hook,
   clickMenu,
   expect,
@@ -50,15 +50,11 @@ test('hook 없이 claude 의 상태 파일이 idle 이 되면 쉬는 중으로 �
   launch,
   dataDir
 }) => {
-  const config = join(dataDir, 'claude')
-  mkdirSync(join(config, 'sessions'), { recursive: true })
+  const config = claudeConfig(dataDir)
   const { page } = await launch({ CLAUDE_CONFIG_DIR: config })
   await page.keyboard.type(hook('UserPromptSubmit'))
   await expect(paneRows(page)).toHaveClass(/working/)
-  writeFileSync(
-    join(config, 'sessions', '1.json'),
-    JSON.stringify({ sessionId: 'c-1', status: 'idle', statusUpdatedAt: Date.now() + 60_000 })
-  )
+  claudeFile(config, 1, 'c-1', 'idle', Date.now() + 60_000)
   await expect(paneRows(page)).toHaveClass(/idle/)
 })
 

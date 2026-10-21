@@ -5,11 +5,14 @@ import { killSession } from '../src/main/session'
 import {
   activeHeader,
   activeTerminal,
+  claudeConfig,
+  claudeFile,
   claudeHook,
   clickMenu,
   expect,
   newWorkspace,
   openPalette,
+  paneHeader,
   paneRows,
   paneTerminalRows,
   panes,
@@ -85,22 +88,75 @@ test('재시작하면 window-state.json 의 보기 설정보다 재시작 전 �
   await expect(page.locator('.terminals')).toHaveClass(/columns/)
 })
 
-test('재시작 뒤 claude 상태는 비어 있다가 되살린 셸의 hook 으로 다시 보인다', async ({
-  launch
+test('재시작 뒤에도 claude 상태가 보이고, 되살린 셸의 hook 을 따른다', async ({
+  launch,
+  dataDir
 }) => {
-  const { app, page } = await launch()
+  const config = claudeConfig(dataDir)
+  claudeFile(config, 1, 'c-1', 'busy', 0)
+  const { app, page } = await launch({ CLAUDE_CONFIG_DIR: config })
   await shellUp(page, 0)
   await page.keyboard.type(claudeHook('UserPromptSubmit'))
   await expect(paneRows(page)).toHaveClass(/working/)
   await restartWith(app)
   const { page: again } = await launch()
-  await expect(paneRows(again)).toHaveCount(0)
-  await again.locator('.xterm-screen').click()
-  await again.keyboard.type(claudeHook('UserPromptSubmit'))
   await expect(paneRows(again)).toHaveClass(/working/)
   await expect(activeHeader(again)).toHaveClass(/working/)
+  await again.locator('.xterm-screen').click()
   await again.keyboard.type(claudeHook('Stop'))
   await expect(activeHeader(again)).toHaveClass(/idle/)
+})
+
+test('재시작 사이 claude 의 상태 파일이 바뀌었으면 따르고, 파일이 없어졌으면 상태를 지운다', async ({
+  launch,
+  dataDir
+}) => {
+  const config = claudeConfig(dataDir)
+  claudeFile(config, 1, 'c-1', 'idle', 0)
+  const { app, page } = await launch({ CLAUDE_CONFIG_DIR: config })
+  await split(app, page, 'split-right', 2)
+  await shellUp(page, 1)
+  await page.keyboard.type(claudeHook('Stop', 'c-2'))
+  await shellUp(page, 0)
+  await page.keyboard.type(claudeHook('Stop', 'c-1'))
+  await expect(paneRows(page)).toHaveCount(2)
+  await restartWith(app)
+  claudeFile(config, 1, 'c-1', 'busy', Date.now())
+
+  const { page: again } = await launch()
+  await expect(paneRows(again)).toHaveCount(1)
+  await expect(paneRows(again)).toHaveClass(/working/)
+  await expect(paneHeader(again, 0)).toHaveClass(/working/)
+})
+
+test('다시 뜬 앱이 프로토콜이 달라 끈 세션의 claude 상태는 되살리지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const config = claudeConfig(dataDir)
+  claudeFile(config, 1, 'c-1', 'busy', 0)
+  const { app, page } = await launch({ CLAUDE_CONFIG_DIR: config })
+  await shellUp(page, 0)
+  await page.keyboard.type(claudeHook('UserPromptSubmit'))
+  await expect(paneRows(page)).toHaveClass(/working/)
+  await restartWith(app)
+  const [sock] = sockets(dataDir)
+  const record = join(sessionDir(dataDir), `${basename(sock, '.sock')}.json`)
+  writeFileSync(
+    record,
+    JSON.stringify({ ...JSON.parse(readFileSync(record, 'utf8')), protocol_version: 999 })
+  )
+
+  const { page: again } = await launch()
+  await expect(panes(again).filter({ hasText: 'ended while the app was restarting' })).toHaveCount(
+    1
+  )
+  // `paneRows` 가 없는 것만으로는 아직 되살리기 전인지 알 수 없어, 되살린 뒤에 답하는 `claudeStatuses` 를 부른다.
+  const statuses = await again.evaluate(() =>
+    (window as unknown as { maru: { claudeStatuses(): Promise<object> } }).maru.claudeStatuses()
+  )
+  expect(statuses).toEqual({})
+  await expect(paneRows(again)).toHaveCount(0)
 })
 
 test('재시작 동안 끝난 세션의 pane 은 이유를 보이고 남는다', async ({ launch, dataDir }) => {
