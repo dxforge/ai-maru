@@ -11,7 +11,7 @@ import {
 } from 'vue'
 import { available, commands, type CommandId } from '../../shared/commands'
 import type { PaneReply } from '../../shared/pane'
-import { SCREEN_VERSION, type ScreenState } from '../../shared/screen'
+import { clampSidebarWidth, SCREEN_VERSION, type ScreenState } from '../../shared/screen'
 import { secondaryCommand } from '../../shared/shortcuts'
 import { createCanvas } from './canvas/store'
 import { createClaudeStatuses } from './claude/status'
@@ -139,13 +139,15 @@ window.maru.onPaneClose((id, session) => {
   removePane(pane.key)
 })
 
-const sidebarOpen = ref(true)
+// 기억한 값을 처음 값으로 쓴다. 나중에 적용하면 사이드바를 기본값(열림·282px)으로 그린 뒤 기억한 값으로 transition 이 돈다.
+const prefs = window.maru.viewPrefs
+const sidebarOpen = ref(prefs.sidebar?.open ?? true)
 const folded = reactive(new Set<number>())
 function toggleFold(key: number): void {
   if (!folded.delete(key)) folded.add(key)
 }
 // 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 칸마다 열 수가 갈린다(#58).
-const sidebarWidth = ref(282)
+const sidebarWidth = ref(prefs.sidebar?.width ?? 282)
 // 신호등 버튼 묶음 폭에 양옆 12px 씩을 더한 폭이다.
 const RAIL_WIDTH = 85
 const resizing = ref(false)
@@ -158,7 +160,7 @@ function resizeSidebar(e: PointerEvent): void {
   // `max-width: 50vw` 로 줄어 있거나 펴지는 중이면 정한 폭(`sidebarWidth`)과 보이는 폭이 달라, 보이는 폭에서 시작한다.
   const from = side.value!.getBoundingClientRect().width - e.clientX
   const move = (m: PointerEvent): void => {
-    sidebarWidth.value = Math.min(480, Math.max(200, from + m.clientX))
+    sidebarWidth.value = clampSidebarWidth(from + m.clientX)
   }
   const end = (): void => {
     window.removeEventListener('pointermove', move)
@@ -171,7 +173,7 @@ function resizeSidebar(e: PointerEvent): void {
   window.addEventListener('pointercancel', end)
 }
 
-const viewMode = ref<'single' | 'columns'>('single')
+const viewMode = ref<'single' | 'columns'>(prefs.viewMode ?? 'columns')
 const widths = computed<Widths>(() => (viewMode.value === 'columns' ? 'columns' : 'half'))
 // 모든 터미널이 같은 글꼴을 쓰므로 마지막으로 잰 값 하나로 셈한다.
 const cell = ref<Size>({ width: 0, height: 0 })

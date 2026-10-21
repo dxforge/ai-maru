@@ -32,6 +32,17 @@ export type ScreenState = {
   viewMode: 'single' | 'columns'
 }
 
+const SIDEBAR_WIDTH = { min: 200, max: 480 }
+
+/**
+ * 재시작이 아닌 실행에서도 되살리는 화면 설정이다. 사이드바의 접힌 workspace 목록(`folded`)은 넣지 않는다.
+ * 일반 실행은 workspace 를 되살리지 않아 `folded` 의 key 가 가리킬 workspace 가 없기 때문이다.
+ */
+export type ViewPrefs = {
+  viewMode?: ScreenState['viewMode']
+  sidebar?: { open: boolean; width: number }
+}
+
 type Obj = Record<string, unknown>
 
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -72,17 +83,30 @@ function isWorkspace(v: unknown): v is ScreenWorkspace {
 
 export function parseScreen(v: unknown): ScreenState | null {
   if (!isObj(v) || v.version !== SCREEN_VERSION) return null
-  const { workspaces, selected, sidebar, viewMode } = v
+  const { workspaces, selected, sidebar } = v
   if (!Array.isArray(workspaces) || !workspaces.every(isWorkspace)) return null
   if (selected !== null && !isKey(selected)) return null
-  if (
-    !isObj(sidebar) ||
-    typeof sidebar.open !== 'boolean' ||
-    typeof sidebar.width !== 'number' ||
-    !Array.isArray(sidebar.folded) ||
-    !sidebar.folded.every(isKey)
-  )
-    return null
-  if (viewMode !== 'single' && viewMode !== 'columns') return null
+  const prefs = parseViewPrefs(v)
+  if (!prefs.viewMode || !prefs.sidebar) return null
+  if (!isObj(sidebar) || !Array.isArray(sidebar.folded) || !sidebar.folded.every(isKey)) return null
   return v as ScreenState
+}
+
+export function clampSidebarWidth(width: number): number {
+  return Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, width))
+}
+
+/**
+ * `parseScreen` 과 `viewPrefs()`(`main/index.ts`)가 `ScreenState` 도 넘기므로, 이 함수는 그 안에서
+ * `viewMode` 와 `sidebar` 의 열림·폭만 골라 돌려준다. `ViewPrefs` 의 필드 이름을 바꾸면 `ScreenState` 의
+ * 것도 같이 바꿔야 한다.
+ */
+export function parseViewPrefs(v: unknown): ViewPrefs {
+  if (!isObj(v)) return {}
+  const { viewMode, sidebar } = v
+  const prefs: ViewPrefs = {}
+  if (viewMode === 'single' || viewMode === 'columns') prefs.viewMode = viewMode
+  if (isObj(sidebar) && typeof sidebar.open === 'boolean' && typeof sidebar.width === 'number')
+    prefs.sidebar = { open: sidebar.open, width: clampSidebarWidth(sidebar.width) }
+  return prefs
 }

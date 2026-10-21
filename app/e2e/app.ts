@@ -64,6 +64,8 @@ export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern
   dataDir: async ({}, use) => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-e2e-'))
+    // 대부분의 테스트가 single 에서 시작한다고 가정하므로, 새 dataDir 에 보기 모드를 single 로 써 둔다. 기본값(columns)을 재는 테스트는 이 파일을 지운다.
+    writeFileSync(join(dir, 'window-state.json'), JSON.stringify({ viewMode: 'single' }))
     await use(dir)
     // 앱을 강제로 끝낸 테스트는 세션을 남긴다.
     await killSessions(sessionDir(dir))
@@ -382,6 +384,23 @@ export async function resizeBy(app: ElectronApplication, dw: number, dh: number)
     },
     [dw, dh]
   )
+}
+
+export async function sidebarWidth(page: Page): Promise<number> {
+  return (await page.locator('.side').boundingBox())!.width
+}
+
+export async function dragResizer(
+  page: Page,
+  dx: number,
+  button: 'left' | 'right' = 'left'
+): Promise<void> {
+  const handle = (await page.locator('.resizer').boundingBox())!
+  const [x, y] = [handle.x + handle.width / 2, handle.y + handle.height / 2]
+  await page.mouse.move(x, y)
+  await page.mouse.down({ button })
+  await page.mouse.move(x + dx, y, { steps: 4 })
+  await page.mouse.up({ button })
 }
 
 const MIME: Record<string, string> = {

@@ -48,6 +48,7 @@ import {
 import type { KillRequest, OpenRequest } from './session-host'
 import { createSessionWorkspaces } from './session-workspaces'
 import {
+  readViewPrefs,
   readWindowState,
   restoreWindowState,
   saveWindowStateOnClose,
@@ -55,7 +56,7 @@ import {
 } from './window-state'
 import type { PaneReply } from '../shared/pane'
 import { PROTOCOL_VERSION } from '../shared/protocol'
-import { parseScreen, type ScreenState } from '../shared/screen'
+import { parseScreen, parseViewPrefs, type ScreenState, type ViewPrefs } from '../shared/screen'
 import { newSessionId, type SessionOpen } from '../shared/session'
 import { GHOSTTY, isLight } from '../shared/theme'
 
@@ -126,10 +127,18 @@ const panes = createPanes(
 )
 
 const devServer = Boolean(process.env.ELECTRON_RENDERER_URL)
-// `screen:state` 는 자주 오고 재시작 때만 읽으므로, `parseScreen` 은 읽을 때 부른다.
+// `screen:state` 는 자주 오고 재시작·창 닫기·문서 로드 때만 읽으므로, 받은 값을 그대로 두었다가 읽을 때 `parseScreen`·`parseViewPrefs` 로 검사한다.
 let lastScreen: unknown = null
 let keepSessions = false
 let restarting = false
+
+function windowStateFile(): string {
+  return join(app.getPath('userData'), 'window-state.json')
+}
+
+function viewPrefs(): ViewPrefs {
+  return { ...readViewPrefs(windowStateFile()), ...parseViewPrefs(lastScreen) }
+}
 
 function restartCheck(): Promise<RestartCheck> {
   const screen = parseScreen(lastScreen)
@@ -231,7 +240,7 @@ function openExternal(url: string): void {
 }
 
 function createWindow(): void {
-  const stateFile = join(app.getPath('userData'), 'window-state.json')
+  const stateFile = windowStateFile()
   const state = readWindowState(stateFile)
   const displays = screen.getAllDisplays().map((d) => d.bounds)
   const win = new BrowserWindow({
@@ -265,7 +274,7 @@ function createWindow(): void {
     win.showInactive()
   }
   restoreWindowState(win, state)
-  saveWindowStateOnClose(win, stateFile)
+  saveWindowStateOnClose(win, stateFile, viewPrefs)
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -342,6 +351,7 @@ function start(): void {
     toRestore = null
     return screen
   })
+  ipcMain.on('screen:prefs', (event) => (event.returnValue = viewPrefs()))
   ipcMain.on('screen:state', (_event, screen: unknown) => (lastScreen = screen))
   ipcMain.on('app:restart', () => void restartFromMenu())
   const cli = cliAccess()
