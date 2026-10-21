@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
+import { ICONS } from '../src/renderer/src/icons'
 import {
   claudeHook,
   clickMenu,
@@ -126,6 +127,33 @@ test('경로는 workspace 마다 헤더 툴팁에 있고, 헤더를 눌러도 �
 
   await toggleView(launched, 'columns')
   await expect(page.locator('.workspace-header .branch')).toHaveText(['main'])
+})
+
+test('아이콘은 모두 앞 글꼴의 fallback 이 아니라 함께 실은 Nerd Font 를 글꼴로 정해 그린다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = repoHome(dataDir)
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await page.keyboard.type('cd proj\n')
+  await expect(branch(page)).toHaveText(/main$/)
+  await toggleView(launched, 'columns')
+  await page.keyboard.type(claudeHook('UserPromptSubmit'))
+  await expect(page.locator('.workspace-header')).toHaveClass(/working/)
+
+  // 이 화면에서 `ICONS` 를 그리는 자리는 일곱이다: 사이드바의 branch·접기·상태·Claude 아이콘,
+  // 칸 헤더의 상태·Claude 아이콘, columns 보기의 workspace 헤더 상태 아이콘.
+  const families = await page.evaluate((glyphs) => {
+    const found: string[] = []
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode(); node; node = walker.nextNode())
+      if (glyphs.some((g) => node!.textContent!.includes(g)))
+        found.push(getComputedStyle(node.parentElement!).fontFamily)
+    return found
+  }, Object.values(ICONS))
+
+  expect(families).toEqual(Array(7).fill('"Symbols Nerd Font Mono"'))
 })
 
 test('고른 workspace 를 바꾸면 창 제목과 폴더 아이콘이 그것을 따른다', async ({
