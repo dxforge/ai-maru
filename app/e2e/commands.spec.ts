@@ -57,7 +57,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['previous-workspace', 'Previous Workspace', 'Shift+Command+['],
     ['toggle-sidebar', 'Toggle Sidebar', 'Command+B'],
     ['toggle-canvas', 'Toggle Canvas', 'Alt+Command+B'],
-    ['toggle-view-mode', 'Toggle View Mode', 'Control+Command+Enter'],
+    ['toggle-view-mode', 'Toggle View Mode', 'Command+\\'],
     ['focus-pane-left', 'Focus Pane Left', 'Alt+Command+Left'],
     ['focus-pane-right', 'Focus Pane Right', 'Alt+Command+Right'],
     ['focus-pane-up', 'Focus Pane Up', 'Alt+Command+Up'],
@@ -85,20 +85,21 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
   })
   await page.keyboard.type('echo pass-$((1+1))')
 
-  await page.keyboard.press('Control+Meta+Enter')
+  await page.keyboard.press('Meta+Backslash')
   await page.keyboard.press('Alt+Meta+ArrowLeft')
   await page.keyboard.press('Alt+Meta+KeyB')
   await page.keyboard.press('Meta+KeyB')
   await page.keyboard.press('Shift+Meta+BracketRight')
 
   expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual([
-    { code: 'Enter', prevented: false },
+    { code: 'Backslash', prevented: false },
     { code: 'ArrowLeft', prevented: false },
     { code: 'KeyB', prevented: false },
     { code: 'KeyB', prevented: false },
     { code: 'BracketRight', prevented: false }
   ])
-  await run(page, '3', 'pass-23')
+  // 키가 글자로 새면 줄 끝에 붙는다. 새어 나온 \ 는 뒤의 $ 를 이스케이프하므로 pass-24 가 찍히지 않는다.
+  await run(page, '$((2+2))', 'pass-24')
 })
 
 test('터미널에서 ⇧↩ 은 kitty 키보드 프로토콜을 켠 프로그램에만 CSI u 로 가고, 셸에는 ↩ 으로 간다', async ({
@@ -242,7 +243,7 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
     'Previous Workspace⇧⌘[',
     'Toggle Sidebar⌘B',
     'Toggle Canvas⌥⌘B',
-    'Toggle View Mode⌃⌘↩',
+    'Toggle View Mode⌘\\',
     'Focus Pane Left⌥⌘←',
     'Focus Pane Right⌥⌘→',
     'Focus Pane Up⌥⌘↑',
@@ -306,7 +307,7 @@ test('↓·↑ 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 
   await expect(items(page)).toHaveText([
     'Toggle Sidebar⌘B',
     'Toggle Canvas⌥⌘B',
-    'Toggle View Mode⌃⌘↩'
+    'Toggle View Mode⌘\\'
   ])
   for (const i of [1, 2, 0, 1]) {
     await page.keyboard.press('ArrowDown')
