@@ -119,12 +119,16 @@ window.maru.onPaneNew((id, { session, cwd, direction, command, full }) => {
   paneRequests.set(workspaces.splitFrom(from.key, direction, { startDir: cwd, command }, full), id)
 })
 
-// 재시작 직후에는 남은 세션이 보낸 `workspace:new` 가 화면을 되살리기 전에 올 수 있다. `workspaces.restore`
-// 가 목록을 통째로 바꾸므로 되살린 뒤에 연다.
 window.maru.onWorkspaceNew((id, { workspace, cwd, command }) => {
-  void restored.then(() =>
-    paneRequests.set(workspaces.openFrom(workspace, { startDir: cwd, command }), id)
-  )
+  paneRequests.set(workspaces.openFrom(workspace, { startDir: cwd, command }), id)
+})
+
+// `pane:cancel` 은 main 이 시간 초과한 요청의 id 를 싣는다. 그 요청으로 열어 아직 세션을 기다리는 pane 을 닫는다
+// (docs/architecture.md 의 "시간 초과한 pane 요청은 창이 취소한다").
+window.maru.onPaneCancel((id) => {
+  for (const [pane, request] of paneRequests) {
+    if (request === id) return removePane(pane, 'the request timed out')
+  }
 })
 
 window.maru.onPaneClose((id, session) => {
@@ -412,7 +416,7 @@ function screen(): ScreenState {
   }
 }
 
-const restored = window.maru.restoreScreen().then((s) => {
+void window.maru.restoreScreen().then((s) => {
   if (s?.workspaces.length) {
     workspaces.restore(s)
     sidebarOpen.value = s.sidebar.open
@@ -423,6 +427,8 @@ const restored = window.maru.restoreScreen().then((s) => {
     workspaces.open()
   }
   watch(screen, window.maru.saveScreen, { immediate: true })
+  // 되살린 터미널이 `session:open` 을 보낸 다음 tick 에 부른다(docs/architecture.md 의 "pane 요청은 창이 준비된 뒤에 넘긴다").
+  void nextTick(window.maru.paneReady)
 })
 </script>
 
