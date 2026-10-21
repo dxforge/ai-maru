@@ -34,6 +34,11 @@ describe('commandKeys', () => {
     expect(formatKeys(commandKeys('focus-pane-up')!)).toBe('⌥⌘↑')
     expect(formatKeys(commandKeys('focus-pane-down')!)).toBe('⌥⌘↓')
   })
+
+  it('보기 모드 전환은 ⌘\\ 다', () => {
+    expect(formatKeys(commandKeys('toggle-view-mode')!)).toBe('⌘\\')
+    expect(toAccelerator(commandKeys('toggle-view-mode')!)).toBe('Command+\\')
+  })
 })
 
 describe('toAccelerator', () => {
@@ -83,13 +88,15 @@ describe('matchesKeys', () => {
 
 describe('isAppKey', () => {
   it('명령이나 메뉴에 걸린 키만 참이다', () => {
-    expect(isAppKey(press('Enter', { ctrlKey: true, metaKey: true }))).toBe(true)
+    expect(isAppKey(press('Backslash', { metaKey: true }))).toBe(true)
     expect(isAppKey(press('KeyD', { metaKey: true }))).toBe(true)
     expect(isAppKey(press('BracketRight', { shiftKey: true, metaKey: true }))).toBe(true)
     expect(isAppKey(press('KeyC', { metaKey: true }))).toBe(true)
     expect(isAppKey(press('KeyA', { metaKey: true }))).toBe(true)
     expect(isAppKey(press('Enter'))).toBe(false)
     expect(isAppKey(press('Enter', { metaKey: true }))).toBe(false)
+    expect(isAppKey(press('Enter', { ctrlKey: true, metaKey: true }))).toBe(false)
+    expect(isAppKey(press('Enter', { shiftKey: true, metaKey: true }))).toBe(false)
   })
 
   it('⌘+ 는 ⇧ 를 누르든 안 누르든 앱의 키다', () => {
