@@ -36,11 +36,19 @@ describe('parseScreen', () => {
     ['명령이 문자열 배열이 아님', (s) => (s.workspaces[0].panes[1].command = [1])],
     ['선택이 정수가 아님', (s) => (s.selected = '1')],
     ['접은 목록이 없음', (s) => delete s.sidebar.folded],
-    ['보기 모드가 틀림', (s) => (s.viewMode = 'grid')]
+    ['보기 모드가 틀림', (s) => (s.viewMode = 'grid')],
+    ['Canvas 폭이 숫자가 아님', (s) => (s.canvas = { width: '300' })]
   ])('%s 이면 null', (_, spoil) => {
     const s = clone()
     spoil(s)
     expect(parseScreen(s)).toBeNull()
+  })
+
+  it('Canvas 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {
+    expect(parseScreen({ ...clone(), canvas: { width: 300 } })).toEqual({
+      ...screen,
+      canvas: { width: 300 }
+    })
   })
 
   it('객체가 아니면 null', () => {
@@ -50,10 +58,15 @@ describe('parseScreen', () => {
 })
 
 describe('parseViewPrefs', () => {
-  it('화면에서 보기 모드와 사이드바 열림·폭만 골라낸다', () => {
+  it('화면에서 보기 모드, 사이드바 열림·폭, Canvas 폭만 골라낸다', () => {
     expect(parseViewPrefs({ ...clone(), viewMode: 'columns' })).toEqual({
       viewMode: 'columns',
       sidebar: { open: true, width: 282 }
+    })
+    expect(parseViewPrefs({ ...clone(), canvas: { width: 300 } })).toEqual({
+      viewMode: 'single',
+      sidebar: { open: true, width: 282 },
+      canvas: { width: 300 }
     })
   })
 
@@ -79,6 +92,18 @@ describe('parseViewPrefs', () => {
       expect(parseViewPrefs({ sidebar: { open: true, width } })).toEqual({
         sidebar: { open: true, width: expected }
       })
+  })
+
+  it('Canvas 폭은 240 아래로 자르고 위로는 자르지 않으며, 숫자가 아니면 버린다', () => {
+    for (const [width, expected] of [
+      [0, 240],
+      [100, 240],
+      [300, 300],
+      [5000, 5000]
+    ])
+      expect(parseViewPrefs({ canvas: { width } })).toEqual({ canvas: { width: expected } })
+    expect(parseViewPrefs({ canvas: { width: '300' } })).toEqual({})
+    expect(parseViewPrefs({ canvas: 300 })).toEqual({})
   })
 
   it('객체가 아니면 빈 설정', () => {

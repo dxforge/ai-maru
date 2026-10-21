@@ -1,7 +1,18 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication } from '@playwright/test'
-import { clickMenu, dragResizer, expect, sidebarWidth, test, toggleView } from './app'
+import {
+  canvasWidth,
+  clickMenu,
+  dragHandle,
+  expect,
+  dragCanvas,
+  openCanvas,
+  sidebarResizer,
+  sidebarWidth,
+  test,
+  toggleView
+} from './app'
 
 type Rect = { x: number; y: number; width: number; height: number }
 type Method =
@@ -199,12 +210,25 @@ test('보기 모드와 사이드바 열림을 바꾸고 앱을 끝냈다가 다�
 test('사이드바 폭을 바꾸고 앱을 끝냈다가 다시 띄우면 그 폭으로 뜬다', async ({ launch }) => {
   const first = await launch()
   const before = await sidebarWidth(first.page)
-  await dragResizer(first.page, 60)
+  await dragHandle(first.page, sidebarResizer(first.page), 60)
   await expect.poll(() => sidebarWidth(first.page)).toBe(before + 60)
   await quitApp(first.app)
 
   const second = await launch()
   await expect.poll(() => sidebarWidth(second.page)).toBe(before + 60)
+})
+
+test('Canvas 폭을 바꾸고 앱을 끝냈다가 다시 띄우면 Canvas 가 그 폭으로 열린다', async ({
+  launch
+}) => {
+  const first = await launch()
+  await openCanvas(first)
+  const width = await dragCanvas(first.page, -70)
+  await quitApp(first.app)
+
+  const second = await launch()
+  await openCanvas(second)
+  await expect.poll(() => canvasWidth(second.page)).toBe(width)
 })
 
 test('기억한 사이드바 상태로 첫 화면부터 그려, 문서가 뜰 때 사이드바가 움직이지 않는다', async ({

@@ -222,13 +222,13 @@ test('명령 팔레트와 Canvas 패널은 앱 테마 색을 쓴다', async ({ l
     const css = (s: string) => getComputedStyle(document.querySelector(s)!)
     return {
       palette: [css('.palette').backgroundColor, css('.palette').borderTopColor],
-      canvas: [css('.canvas').color, css('.canvas').borderLeftColor],
+      canvas: css('.canvas').color,
       tokens: [token('--raised'), token('--line'), token('--fg')]
     }
   })
   const [raised, line, fg] = colors.tokens
   expect(colors.palette).toEqual([raised, line])
-  expect(colors.canvas).toEqual([fg, line])
+  expect(colors.canvas).toBe(fg)
 })
 
 test('터미널 스크롤바는 칸 폭에서 8px 를 차지하고, 막대는 그 안쪽에 그린다', async ({ launch }) => {
