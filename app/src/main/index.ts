@@ -253,6 +253,8 @@ function createWindow(): void {
     event.preventDefault()
     openExternal(url)
   })
+  // `will-navigate` 가 navigation 을 막으면 문서가 그대로이므로, 새 문서로 바뀐 뒤(`did-navigate`)에 `unready` 를 부른다.
+  win.webContents.on('did-navigate', panes.unready)
   win.webContents.setWindowOpenHandler(({ url }) => {
     openExternal(url)
     return { action: 'deny' }
@@ -374,6 +376,7 @@ function start(): void {
   // 셸이 뜨자마자 `maru` 를 불러도 닿게.
   const ready = Promise.all([leftovers, cliServer])
   ipcMain.on('pane:reply', (_event, id: number, reply: PaneReply) => panes.reply(id, reply))
+  ipcMain.on('pane:ready', () => panes.ready())
   ipcMain.handle('claude:statuses', () => claudeStatus.snapshot())
   ipcMain.handle('git:head', (_event, cwd: unknown) =>
     typeof cwd === 'string' ? gitHead(cwd) : null

@@ -6,19 +6,21 @@ import { createPanes, type PaneChannel } from './pane'
 const A = 's-0000000a'
 const B = 's-0000000b'
 
-function setup({ window = true } = {}) {
+function setup({ window = true, ready = true } = {}) {
   const sent: { channel: PaneChannel; id: number; arg: unknown }[] = []
+  const workspaces = new Map([[A, 'w-0000000a']])
   const panes = createPanes(
     (channel, id, arg) => {
       if (!window) return false
       sent.push({ channel, id, arg })
       return true
     },
-    (session) => (session === A ? 'w-0000000a' : undefined),
+    (session) => workspaces.get(session),
     1000
   )
+  if (ready) panes.ready()
   const answer = (reply: PaneReply) => panes.reply(sent.at(-1)!.id, reply)
-  return { ...panes, sent, answer }
+  return { ...panes, sent, answer, workspaces }
 }
 
 afterEach(() => vi.useRealTimers())
@@ -93,14 +95,105 @@ describe('pane.new', () => {
     )
   })
 
-  it('창이 답하지 않으면 기다리기를 그만두고, 늦게 온 답은 버린다', async () => {
+  it('창이 답하지 않으면 기다리기를 그만두고 창에 취소를 보내며, 늦게 온 답은 버린다', async () => {
     vi.useFakeTimers()
-    const { handlers, answer } = setup()
+    const { handlers, sent, reply } = setup()
     const done = handlers['pane.new']({ cwd: '/', direction: 'right' }, A) as Promise<unknown>
     const caught = done.catch((e: Error) => e.message)
     vi.advanceTimersByTime(1000)
     expect(await caught).toMatch('did not answer')
-    expect(() => answer({ session: B })).not.toThrow()
+    expect(sent.map(({ channel, id }) => [channel, id])).toEqual([
+      ['pane:new', 0],
+      ['pane:cancel', 0]
+    ])
+    expect(() => reply(0, { session: B })).not.toThrow()
+  })
+
+  it('창이 실패로 답하면 취소를 보내지 않는다', async () => {
+    const { handlers, sent, answer } = setup()
+    const failed = handlers['pane.new']({ cwd: '/', direction: 'right' }, A)
+    answer({ error: 'open_failed', message: 'cannot spawn' })
+    await expect(failed).rejects.toThrow('cannot spawn')
+    expect(sent.map((s) => s.channel)).toEqual(['pane:new'])
+  })
+})
+
+describe('창이 준비되기 전', () => {
+  it('요청을 쌓아 두었다가 준비되면 온 순서대로 넘긴다', async () => {
+    const { handlers, sent, ready, reply } = setup({ ready: false })
+    const first = handlers['pane.new']({ cwd: '/', direction: 'right' }, A)
+    const second = handlers['pane.close']({ target: B }, A)
+    expect(sent).toEqual([])
+    ready()
+    expect(sent.map(({ channel, id }) => [channel, id])).toEqual([
+      ['pane:new', 0],
+      ['pane:close', 1]
+    ])
+    reply(0, { session: B })
+    reply(1, null)
+    await expect(first).resolves.toEqual({ session: B })
+    await expect(second).resolves.toBeNull()
+  })
+
+  it('workspace 는 쌓을 때가 아니라 넘길 때 정한다', async () => {
+    const { handlers, sent, ready, answer, workspaces } = setup({ ready: false })
+    const done = handlers['workspace.new']({ cwd: '/' }, B)
+    workspaces.set(B, 'w-0000000b')
+    ready()
+    expect(sent[0].arg).toEqual({ workspace: 'w-0000000b', cwd: '/' })
+    answer({ session: A })
+    await done
+  })
+
+  it('기다리는 시간도 시간 초과에 들고, 시간 초과한 요청은 준비돼도 넘기지 않으며 취소도 보내지 않는다', async () => {
+    vi.useFakeTimers()
+    const { handlers, sent, ready } = setup({ ready: false })
+    const caught = (
+      handlers['pane.new']({ cwd: '/', direction: 'right' }, A) as Promise<unknown>
+    ).catch((e: Error) => e.message)
+    vi.advanceTimersByTime(1000)
+    expect(await caught).toMatch('did not answer')
+    ready()
+    expect(sent).toEqual([])
+  })
+
+  it('준비된 뒤 창이 없으면 쌓인 요청은 실패한다', async () => {
+    const { handlers, ready } = setup({ window: false, ready: false })
+    const done = handlers['pane.new']({ cwd: '/', direction: 'right' }, A)
+    ready()
+    await expect(done).rejects.toThrow('no window')
+  })
+
+  it('넘기다 던지면 그 요청만 실패하고 나머지는 넘긴다', async () => {
+    const sent: number[] = []
+    const panes = createPanes(
+      (_channel, id) => {
+        if (id === 0) throw new Error('boom')
+        sent.push(id)
+        return true
+      },
+      () => undefined,
+      1000
+    )
+    const first = panes.handlers['pane.close']({ target: B }, A)
+    const second = panes.handlers['pane.close']({ target: B }, A)
+    panes.ready()
+    await expect(first).rejects.toThrow('boom')
+    expect(sent).toEqual([1])
+    panes.reply(1, null)
+    await expect(second).resolves.toBeNull()
+  })
+
+  it('새 문서로 바뀌면 다시 준비될 때까지 쌓는다', async () => {
+    const { handlers, sent, ready, unready, reply } = setup()
+    unready()
+    const done = handlers['pane.close']({ target: B }, A)
+    expect(sent).toEqual([])
+    ready()
+    ready()
+    expect(sent).toHaveLength(1)
+    reply(0, null)
+    await done
   })
 })
 

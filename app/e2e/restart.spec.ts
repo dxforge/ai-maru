@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { ElectronApplication } from '@playwright/test'
 import { killSession } from '../src/main/session'
@@ -25,6 +25,7 @@ import {
   typesInto,
   workspaceGroups,
   workspaceItems,
+  workspaceViews,
   wrapSessionBin,
   type Launched
 } from './app'
@@ -109,6 +110,55 @@ test('재시작 뒤 maru pane new 가 되살린 pane 을 나눈다', async ({ la
   await page.keyboard.type(`"$MARU_CLI" pane new -- sh -c 'echo split-$((1+1)); sleep 5'\n`)
   await expect(panes(page)).toHaveCount(2)
   await expect(panes(page).nth(1).locator('.xterm-rows')).toContainText('split-2')
+})
+
+function callOnReturn(command: string, out: string): string {
+  const cli = '"$MARU_CLI"'
+  return (
+    `(while ${cli} ping >/dev/null 2>&1; do sleep 0.02; done; ` +
+    `until ${cli} ping >/dev/null 2>&1; do sleep 0.01; done; ` +
+    `${cli} ${command} >/dev/null 2>'${out}.err'; echo "code=$? $(cat '${out}.err')" > '${out}') &\n`
+  )
+}
+
+function readResult(out: string): () => string | null {
+  return () => (existsSync(out) ? readFileSync(out, 'utf8').trim() : null)
+}
+
+test('재시작 직후 선택하지 않은 workspace 의 남은 세션이 곧바로 부른 maru workspace new 는 그 workspace 뒤에 띄운다', async ({
+  launch,
+  dataDir
+}) => {
+  const first = await launch()
+  const { app, page } = first
+  await newWorkspace(first, 2)
+  await newWorkspace(first, 3)
+  await workspaceItems(page).nth(1).click()
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  const out = join(dataDir, 'workspace-new')
+  await page.keyboard.type(callOnReturn(`workspace new bash -c 'echo mark-new; read x'`, out))
+  await workspaceItems(page).nth(0).click()
+  await expect(workspaceViews(page).nth(0)).toHaveClass(/selected/)
+  await restartWith(app)
+  const { page: again } = await launch()
+  await expect.poll(readResult(out), { timeout: 15_000 }).toBe('code=0')
+  await expect(workspaceItems(again)).toHaveCount(4)
+  await expect(workspaceViews(again).nth(2).locator('.xterm-rows')).toContainText('mark-new')
+})
+
+test('재시작 직후 남은 세션이 곧바로 부른 maru pane new 는 그 pane 을 나눈다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await shellUp(page, 0)
+  const out = join(dataDir, 'pane-new')
+  await page.keyboard.type(callOnReturn(`pane new -- sh -c 'echo split-$((1+1)); sleep 5'`, out))
+  await restartWith(app)
+  const { page: again } = await launch()
+  await expect.poll(readResult(out), { timeout: 15_000 }).toBe('code=0')
+  await expect(panes(again)).toHaveCount(2)
+  await expect(panes(again).nth(1).locator('.xterm-rows')).toContainText('split-2')
 })
 
 test('재시작한 뒤의 종료는 세션을 끄고 restart 파일을 남기지 않는다', async ({

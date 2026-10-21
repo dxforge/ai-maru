@@ -12,7 +12,7 @@ import {
 // 안에 끝나거나 실패하므로 그보다는 길다.
 const REPLY_MS = 8_000
 
-export type PaneChannel = 'pane:new' | 'pane:close' | 'workspace:new'
+export type PaneChannel = 'pane:new' | 'pane:close' | 'workspace:new' | 'pane:cancel'
 
 const optionalCommand = (v: unknown): string[] | undefined =>
   v === undefined ? undefined : requireCommand(v)
@@ -20,19 +20,30 @@ const optionalCommand = (v: unknown): string[] | undefined =>
 /**
  * pane 은 renderer 가 들고 있다. `createPanes` 는 요청을 창에 넘기고 `reply` 로 받은 답을 돌려준다.
  * `workspaceOf` 는 세션(pane 이나 job)의 workspace id 를 돌려준다.
+ *
+ * 호출하는 쪽은 창이 준비됐다고 알리면 `ready` 를, 창이 새 문서로 바뀌면 `unready` 를 부른다. `ready` 를 부르기
+ * 전이나 `unready` 를 부른 뒤에 온 요청은 쌓아 두었다가 다음 `ready` 때 넘긴다(`docs/architecture.md` 의 "pane 요청은 창이 준비된 뒤에 넘긴다").
  */
 export function createPanes(
   send: (channel: PaneChannel, id: number, arg: unknown) => boolean,
   workspaceOf: (session: string) => string | undefined,
   replyMs = REPLY_MS
-): { handlers: Handlers; reply: (id: number, reply: PaneReply) => void } {
+): {
+  handlers: Handlers
+  reply: (id: number, reply: PaneReply) => void
+  ready: () => void
+  unready: () => void
+} {
   let nextId = 0
+  let isReady = false
   const pending = new Map<number, (reply: PaneReply) => void>()
+  const waiting = new Map<number, () => void>()
 
-  async function request(channel: PaneChannel, arg: unknown): Promise<PaneReply> {
+  // 되살린 pane 의 workspace 는 그 터미널이 `session:open` 을 보낸 뒤에야 main 이 안다. 그래서 `arg` 는 쌓을
+  // 때가 아니라 창에 넘길 때 만든다.
+  async function request(channel: PaneChannel, arg: () => unknown): Promise<PaneReply> {
     const id = nextId++
-    // 답은 IPC 로 나중에 오므로 보낸 뒤에 기다려도 놓치지 않는다.
-    if (!send(channel, id, arg)) throw new Error('no window to open the pane in')
+    let sent = false
     let timer: NodeJS.Timeout | undefined
     try {
       return await new Promise<PaneReply>((resolve, reject) => {
@@ -41,14 +52,30 @@ export function createPanes(
           () => reject(new Error(`the window did not answer within ${replyMs / 1000}s`)),
           replyMs
         )
+        const deliver = (): void => {
+          waiting.delete(id)
+          try {
+            sent = send(channel, id, arg())
+          } catch (err) {
+            return reject(err)
+          }
+          if (!sent) reject(new Error('no window to open the pane in'))
+        }
+        if (isReady) deliver()
+        else waiting.set(id, deliver)
       })
+    } catch (err) {
+      // 보낸 뒤의 실패는 시간 초과뿐이다(docs/architecture.md 의 "시간 초과한 pane 요청은 창이 취소한다").
+      if (sent) send('pane:cancel', id, null)
+      throw err
     } finally {
       clearTimeout(timer)
       pending.delete(id)
+      waiting.delete(id)
     }
   }
 
-  async function ask(channel: PaneChannel, arg: unknown): Promise<PaneReply> {
+  async function ask(channel: PaneChannel, arg: () => unknown): Promise<PaneReply> {
     const reply = await request(channel, arg)
     if (reply && 'error' in reply) {
       throw reply.error === 'no_pane' ? new InvalidParams(reply.message) : new Error(reply.message)
@@ -56,7 +83,10 @@ export function createPanes(
     return reply
   }
 
-  async function askSession(channel: PaneChannel, arg: unknown): Promise<{ session: string }> {
+  async function askSession(
+    channel: PaneChannel,
+    arg: () => unknown
+  ): Promise<{ session: string }> {
     const reply = await ask(channel, arg)
     if (!reply || !('session' in reply)) throw new Error('the window answered without a session')
     return { session: reply.session }
@@ -72,25 +102,30 @@ export function createPanes(
       const command = optionalCommand(params.command)
       const full = optionalBoolean(params.full, 'full')
       const req: PaneNewRequest = { session, cwd, direction, full, ...(command && { command }) }
-      return askSession('pane:new', req)
+      return askSession('pane:new', () => req)
     },
     'pane.close': async ({ target }) => {
       if (!isSessionId(target)) throw new InvalidParams('params.target must be a session id')
-      await ask('pane:close', target)
+      await ask('pane:close', () => target)
       return null
     },
     'workspace.new': async (params, session) => {
       const cwd = requireCwd(params.cwd)
       const command = optionalCommand(params.command)
-      const workspace = workspaceOf(session)
-      const req: WorkspaceNewRequest = {
-        cwd,
-        ...(workspace && { workspace }),
-        ...(command && { command })
-      }
-      return askSession('workspace:new', req)
+      return askSession('workspace:new', (): WorkspaceNewRequest => {
+        const workspace = workspaceOf(session)
+        return { cwd, ...(workspace && { workspace }), ...(command && { command }) }
+      })
     }
   }
 
-  return { handlers, reply: (id, reply) => pending.get(id)?.(reply) }
+  return {
+    handlers,
+    reply: (id, reply) => pending.get(id)?.(reply),
+    ready: () => {
+      isReady = true
+      for (const deliver of [...waiting.values()]) deliver()
+    },
+    unready: () => void (isReady = false)
+  }
 }

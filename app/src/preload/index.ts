@@ -42,7 +42,15 @@ const api = {
   onWorkspaceNew: (cb: (id: number, req: WorkspaceNewRequest) => void): void => {
     ipcRenderer.on('workspace:new', (_event, id: number, req: WorkspaceNewRequest) => cb(id, req))
   },
+  onPaneCancel: (cb: (id: number) => void): void => {
+    ipcRenderer.on('pane:cancel', (_event, id: number) => cb(id))
+  },
   paneReply: (id: number, reply: PaneReply): void => ipcRenderer.send('pane:reply', id, reply),
+  /**
+   * `onPaneNew`·`onPaneClose`·`onWorkspaceNew` 를 단 뒤에 부른다. main 은 이것을 받은 뒤에야 쌓아 둔
+   * `pane:new`·`pane:close`·`workspace:new` 를 보낸다.
+   */
+  paneReady: (): void => ipcRenderer.send('pane:ready'),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),
   setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),
   saveScreen: (screen: ScreenState): void => ipcRenderer.send('screen:state', screen),

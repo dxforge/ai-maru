@@ -129,6 +129,24 @@ test('세션을 띄우지 못하면 나눈 칸을 닫고 maru pane new 가 이�
   await expect(panes(page)).toHaveCount(1)
 })
 
+test('창이 시간 안에 답하지 못해 실패한 maru pane new 의 칸은 창이 늦게 열어도 닫는다', async ({
+  launch
+}) => {
+  test.setTimeout(40_000)
+  const { app, page } = await launch()
+  await page.keyboard.type(`sleep 1; maru pane new -- sh -c 'echo late; sleep 30'; echo code-$?\n`)
+  // renderer 메인 스레드를 10초 동안 블록해, `pane:new` 를 main 의 `REPLY_MS`(8초)가 지난 뒤에야 받게 한다.
+  await app.evaluate(({ BrowserWindow }) => {
+    void BrowserWindow.getAllWindows()[0].webContents.executeJavaScript(
+      '{ const t = Date.now(); while (Date.now() - t < 10000) {} }'
+    )
+  })
+  await expect(rows(page)).toContainText('did not answer', { timeout: 20_000 })
+  await expect(rows(page)).toContainText('code-1')
+  await page.waitForTimeout(500)
+  await expect(panes(page)).toHaveCount(1)
+})
+
 test('maru pane close 는 다른 칸도 자기 칸도 닫고, 없는 세션이면 실패한다', async ({ launch }) => {
   const { page } = await launch()
   await page.keyboard.type(`ID=$(maru pane new bash -c 'read x')\n`)
