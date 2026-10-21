@@ -137,6 +137,15 @@ export function slowSessionBin(dataDir: string): string {
   return wrapSessionBin(dataDir, 'slow-session', 'sleep 1.5')
 }
 
+/** `--` 뒤에 명령을 받은 세션만 stderr 에 `boom-2` 를 쓰고 실패한다. 처음 pane 의 셸은 뜬다. */
+export function failingCommandSessionBin(dataDir: string): string {
+  return wrapSessionBin(
+    dataDir,
+    'failing-session',
+    `case " $* " in *" -- "*) echo "boom-$((1+1))" >&2; exit 1;; esac`
+  )
+}
+
 export async function delaySessionPort(app: ElectronApplication, ms: number): Promise<void> {
   await app.evaluate(({ ipcMain }, ms) => {
     const [open] = ipcMain.listeners('session:open')

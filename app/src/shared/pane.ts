@@ -10,5 +10,11 @@ export type PaneNewRequest = {
   full: boolean
 }
 
+/**
+ * `workspace.new` 핸들러가 renderer 에 넘기는 요청이다. `workspace` 는 부른 세션(pane 이나 job)의
+ * workspace id 다. renderer 는 새 workspace 를 그 뒤에 놓는다. main 이 모르는 세션이면 `workspace` 는 없다.
+ */
+export type WorkspaceNewRequest = Pick<PaneNewRequest, 'cwd' | 'command'> & { workspace?: string }
+
 export type PaneReply =
   { session: string } | { error: 'no_pane' | 'open_failed'; message: string } | null

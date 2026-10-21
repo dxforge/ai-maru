@@ -115,12 +115,15 @@ function mainWindow(): BrowserWindow | undefined {
 
 const sessionWorkspaces = createSessionWorkspaces()
 
-const panes = createPanes((channel, id, arg) => {
-  const win = mainWindow()
-  if (!win || win.isDestroyed()) return false
-  win.webContents.send(channel, id, arg)
-  return true
-})
+const panes = createPanes(
+  (channel, id, arg) => {
+    const win = mainWindow()
+    if (!win || win.isDestroyed()) return false
+    win.webContents.send(channel, id, arg)
+    return true
+  },
+  (session) => jobs?.workspaceOf(session)
+)
 
 const devServer = Boolean(process.env.ELECTRON_RENDERER_URL)
 // `screen:state` 는 자주 오고 재시작 때만 읽으므로, `parseScreen` 은 읽을 때 부른다.

@@ -438,3 +438,96 @@ describe('panes', () => {
     expect(createWorkspaces().step(1)).toBeUndefined()
   })
 })
+
+describe('openFrom', () => {
+  function spawn(ws: Workspaces, from: number | undefined, init = {}): number {
+    const pane = ws.openFrom(ws.list.value.find((w) => w.key === from)?.id, init)
+    return ws.list.value.find((w) => w.panes.some((p) => p.key === pane))!.key
+  }
+
+  it('부른 workspace 바로 뒤에 칸 하나로 넣고, 선택과 포커스는 그대로다', () => {
+    const ws = opened(3)
+    const [w0, w1, w2] = keys(ws)
+    ws.split('right')
+    const before = { selected: ws.selectedKey.value, focused: selected(ws).focused }
+    const a = spawn(ws, w0, { startDir: '/s', command: ['x'] })
+    expect(keys(ws)).toEqual([w0, a, w1, w2])
+    expect(ws.selectedKey.value).toBe(before.selected)
+    expect(selected(ws).focused).toBe(before.focused)
+    const added = ws.list.value[1]
+    expect(added.panes).toHaveLength(1)
+    expect(added.focused).toBe(added.panes[0].key)
+    expect(added.panes[0]).toMatchObject({ startDir: '/s', command: ['x'] })
+    expect(added.id).toMatch(/^w-[0-9a-f]{8}$/)
+  })
+
+  it('같은 workspace 에서 여러 번 띄우면 띄운 순서대로 놓인다', () => {
+    const ws = opened(2)
+    const [d, e] = keys(ws)
+    const a = spawn(ws, d)
+    const b = spawn(ws, d)
+    const c = spawn(ws, d)
+    expect(keys(ws)).toEqual([d, a, b, c, e])
+  })
+
+  it('앞서 띄운 것이 띄운 것도 건너뛴다', () => {
+    const ws = opened(2)
+    const [d, e] = keys(ws)
+    const a = spawn(ws, d)
+    const a1 = spawn(ws, a)
+    const b = spawn(ws, d)
+    expect(keys(ws)).toEqual([d, a, a1, b, e])
+  })
+
+  it('앞서 띄운 것이 닫히면 남은 것 뒤에 넣는다', () => {
+    const ws = opened(2)
+    const [d, e] = keys(ws)
+    const a = spawn(ws, d)
+    const b = spawn(ws, d)
+    ws.closePane(ws.list.value[1].panes[0].key)
+    const c = spawn(ws, d)
+    expect(keys(ws)).toEqual([d, b, c, e])
+    expect(keys(ws)).not.toContain(a)
+  })
+
+  it('띄운 쪽이 닫혀도 그것이 띄운 것은 처음 부른 workspace 의 묶음에 남는다', () => {
+    const ws = opened(2)
+    const [d, e] = keys(ws)
+    const a = spawn(ws, d)
+    const a1 = spawn(ws, a)
+    ws.closePane(ws.list.value[1].panes[0].key)
+    const b = spawn(ws, d)
+    expect(keys(ws)).toEqual([d, a1, b, e])
+  })
+
+  it('부른 workspace 가 없거나 목록에 없으면 목록 끝에 붙이고 선택은 그대로다', () => {
+    const ws = opened(2)
+    const [w0, w1] = keys(ws)
+    ws.select(w0)
+    const a = spawn(ws, undefined)
+    const b = ws.openFrom('w-gone', {})
+    expect(keys(ws).slice(0, 3)).toEqual([w0, w1, a])
+    expect(ws.list.value[3].panes[0].key).toBe(b)
+    expect(ws.selectedKey.value).toBe(w0)
+  })
+
+  it('⌘N 으로 연 workspace 는 묶음에 들지 않는다', () => {
+    const ws = opened(1)
+    const [d] = keys(ws)
+    const a = spawn(ws, d)
+    ws.open()
+    const e = keys(ws).at(-1)!
+    const b = spawn(ws, d)
+    expect(keys(ws)).toEqual([d, a, b, e])
+  })
+
+  it('되살린 뒤에는 부른 workspace 바로 뒤에 넣는다', () => {
+    const from = opened(1)
+    const [d] = keys(from)
+    const a = spawn(from, d)
+    const to = createWorkspaces()
+    to.restore(from.snapshot())
+    const b = spawn(to, d)
+    expect(keys(to)).toEqual([d, b, a])
+  })
+})

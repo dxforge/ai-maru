@@ -51,6 +51,7 @@
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
 //! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `full`(bool, 선택) | `{"session":<새 세션 id>}` |
 //! | `pane.close` | `target`(세션 id) | `null` |
+//! | `workspace.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택) | `{"session":<새 세션 id>}` |
 //! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"session":<job 의 세션 id>}` |
 //! | `job.list` | 없음 | `{"jobs":[{"session","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
 //! | `job.read` | `target`(job 이름이나 세션 id) | `{"text":<글자>}` |
@@ -82,6 +83,15 @@
 //! `pane.close` 는 `target` 세션의 pane 을 닫고 그 세션을 끈다. `target` 의 pane 이 창에 없으면
 //! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 세션을 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
 //! 전에 끝날 수 있다.
+//!
+//! `workspace.new` 는 pane 하나인 workspace 를 만들고, 그 pane 에서 `pane.new` 처럼 세션을 띄운다.
+//! 명령이 끝나 pane 이 닫히면 workspace 도 닫힌다. 새 workspace 는 `session` 의 workspace 뒤에
+//! 놓는다. `session` 이 job 이면 그 job 의 workspace 다(`job.*` 와 같다). 그 workspace 가 앞서
+//! `workspace.new` 로 띄운 workspace(그것들이 다시 띄운 것 포함)가 뒤에 이어져 있으면 그것들 뒤에 놓아,
+//! 띄운 순서를 지킨다. 누가 띄웠는지는 앱 메모리에만 두므로, 재시작하기 전에 띄운 workspace 는 묶음에서
+//! 빠지고 재시작한 뒤 띄운 workspace 는 그것들 앞에 놓인다. `session` 의 workspace 를 모르면 목록 끝에 놓는다. 포커스와 선택한
+//! workspace 는 바꾸지 않는다. 답하는 때와 세션을 띄우지 못할 때는 `pane.new` 와 같고, 그때 닫는 pane 이
+//! workspace 의 하나뿐인 pane 이므로 workspace 도 닫힌다.
 //!
 //! `job.*` 는 화면에 없는 세션(job)을 다룬다. job 은 부른 세션의 workspace 가 갖는다 — 부른 세션이
 //! job 이면 그 job 의 workspace 다. 다른 workspace 의 job 은 목록에 없고 `target` 으로 가리켜도 없는
@@ -185,6 +195,11 @@ enum Command {
         #[command(subcommand)]
         command: PaneCommand,
     },
+    /// Open workspaces next to this terminal's workspace.
+    Workspace {
+        #[command(subcommand)]
+        command: WorkspaceCommand,
+    },
     /// Run commands in terminals that are not shown, and read their output.
     Job {
         #[command(subcommand)]
@@ -260,6 +275,26 @@ enum PaneCommand {
     Close {
         /// Session id of the pane to close, e.g. s-1a2b3c4d.
         session: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum WorkspaceCommand {
+    /// Open a workspace after this terminal's workspace and run COMMAND in its pane, or a
+    /// shell when COMMAND is omitted. The workspace closes when COMMAND exits. Focus and the
+    /// selected workspace stay where they are.
+    ///
+    /// Prints the new pane's session id; `maru inbox push` sends messages to it and
+    /// `maru pane close` closes it. Workspaces opened from the same workspace follow it in the
+    /// order they were opened. Options go before COMMAND; everything from COMMAND on is passed
+    /// to COMMAND. Use `sh -c '...'` for a pipeline.
+    New {
+        /// Directory to start in. Defaults to the current directory.
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Command and its arguments.
+        #[arg(trailing_var_arg = true)]
+        command: Vec<String>,
     },
 }
 
@@ -369,10 +404,7 @@ fn main() -> ExitCode {
 fn run(command: Command) -> Result<()> {
     match command {
         Command::Ping => {
-            let result = call(&target()?, "ping", Map::new())?;
-            let session = result["session"]
-                .as_str()
-                .ok_or_else(|| anyhow!("the app answered without a session: {result}"))?;
+            let session = session_of(call(&target()?, "ping", Map::new())?)?;
             writeln!(std::io::stdout(), "pong (session {session})")?;
         }
         Command::Canvas {
@@ -399,6 +431,12 @@ fn run(command: Command) -> Result<()> {
                 call(&target()?, "pane.close", target_params(session))?;
             }
         },
+        Command::Workspace {
+            command: WorkspaceCommand::New { cwd, command },
+        } => {
+            let session = workspace_new(cwd, command)?;
+            writeln!(std::io::stdout(), "{session}")?;
+        }
         Command::Job { command } => match command {
             JobCommand::New { name, cwd, command } => {
                 let session = job_new(name, cwd, command)?;
@@ -792,11 +830,17 @@ fn pane_new(cwd: Option<PathBuf>, down: bool, full: bool, command: Vec<String>) 
     if !command.is_empty() {
         params.insert("command".into(), command.into());
     }
-    let result = call(&target, "pane.new", params)?;
-    match result["session"].as_str() {
-        Some(session) => Ok(session.to_owned()),
-        None => bail!("the app answered without a session: {result}"),
+    session_of(call(&target, "pane.new", params)?)
+}
+
+fn workspace_new(cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
+    let target = target()?;
+    let mut params = Map::new();
+    params.insert("cwd".into(), start_dir(cwd)?.into());
+    if !command.is_empty() {
+        params.insert("command".into(), command.into());
     }
+    session_of(call(&target, "workspace.new", params)?)
 }
 
 fn job_new(name: Option<String>, cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
@@ -807,7 +851,10 @@ fn job_new(name: Option<String>, cwd: Option<PathBuf>, command: Vec<String>) -> 
     if let Some(name) = name {
         params.insert("name".into(), name.into());
     }
-    let result = call(&target, "job.new", params)?;
+    session_of(call(&target, "job.new", params)?)
+}
+
+fn session_of(result: Value) -> Result<String> {
     match result["session"].as_str() {
         Some(session) => Ok(session.to_owned()),
         None => bail!("the app answered without a session: {result}"),

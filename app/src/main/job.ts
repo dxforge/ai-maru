@@ -46,8 +46,12 @@ export function createJobs(deps: JobDeps) {
   const waits = new Map<string, () => void>()
   let saved = false
 
+  function workspaceOf(session: string): string | undefined {
+    return deps.workspaceOf(session) ?? jobs.find((j) => j.session === session)?.workspace
+  }
+
   function callerWorkspace(session: string): string {
-    const w = deps.workspaceOf(session) ?? jobs.find((j) => j.session === session)?.workspace
+    const w = workspaceOf(session)
     if (w === undefined) throw new InvalidParams(`session ${session} is not in a workspace`)
     return w
   }
@@ -182,6 +186,7 @@ export function createJobs(deps: JobDeps) {
 
   return {
     handlers,
+    workspaceOf,
     subscribed: (session: string): void => {
       for (const j of jobs) if (j.owner === session && j.pending) notify(j)
     },

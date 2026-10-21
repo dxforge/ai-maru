@@ -58,17 +58,51 @@ export function createWorkspaces(
     return list.value.find((w) => w.panes.some((p) => p.key === pane))
   }
 
-  function open(startDir?: string): void {
+  function create(init: Pick<Pane, 'startDir' | 'command'>): Workspace {
     const pane = nextKey++
     const key = nextKey++
-    list.value.push({
+    return {
       key,
       id: workspaceId(),
-      panes: [{ key: pane, sessionId: sessionId(), startDir }],
+      panes: [{ key: pane, sessionId: sessionId(), ...init }],
       layout: { pane },
       focused: pane
-    })
-    selectedKey.value = key
+    }
+  }
+
+  function open(startDir?: string): void {
+    const w = create({ startDir })
+    list.value.push(w)
+    selectedKey.value = w.key
+  }
+
+  // `openFrom` 으로 띄운 workspace → 부른 workspace. 재시작하면 잊는다. workspace 가 닫혀도 지우지 않는다.
+  // key 는 다시 쓰지 않으므로 지우지 않아도 다른 workspace 와 섞이지 않는다. 지우지 않으므로 띄운 쪽이 닫힌
+  // workspace 도 처음 부른 workspace 뒤의 묶음에 남는다.
+  const openedBy = new Map<number, number>()
+
+  function openedFrom(key: number, from: number): boolean {
+    for (let k = openedBy.get(key); k !== undefined; k = openedBy.get(k))
+      if (k === from) return true
+    return false
+  }
+
+  /**
+   * id 가 `from` 인 workspace 뒤에, 그 workspace 가 앞서 띄운 것들(그것들이 띄운 것 포함)을 지나 workspace 를
+   * 넣는다. 그 workspace 가 없으면 목록 끝에 넣는다. 선택과 포커스는 바꾸지 않고, 새 pane 의 key 를 돌려준다.
+   */
+  function openFrom(from: string | undefined, init: Pick<Pane, 'startDir' | 'command'>): number {
+    const w = create(init)
+    let at = list.value.findIndex((x) => x.id === from)
+    if (at === -1) {
+      at = list.value.length
+    } else {
+      const caller = list.value[at++].key
+      while (at < list.value.length && openedFrom(list.value[at].key, caller)) at++
+      openedBy.set(w.key, caller)
+    }
+    list.value.splice(at, 0, w)
+    return w.focused
   }
 
   function step(by: 1 | -1): number | undefined {
@@ -198,6 +232,7 @@ export function createWorkspaces(
     list: readonly(list),
     selectedKey: readonly(selectedKey),
     open,
+    openFrom,
     split,
     splitFrom,
     paneBySession,
