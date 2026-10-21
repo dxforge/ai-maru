@@ -162,13 +162,16 @@ const side = useTemplateRef<HTMLElement>('side')
 function drag(e: PointerEvent, panel: 'side' | 'canvas', move: (m: PointerEvent) => void): void {
   if (e.button !== 0) return
   resizing.value = panel
+  // 패널이 닫힌 뒤에도 포인터를 따라 폭을 바꾸면, 보이지 않는 폭이 바뀌어 저장된다.
+  const open = (): boolean => (panel === 'side' ? sidebarOpen.value : canvas.open.value)
+  const step = (m: PointerEvent): void => (open() ? move(m) : end())
   const end = (): void => {
-    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointermove', step)
     window.removeEventListener('pointerup', end)
     window.removeEventListener('pointercancel', end)
     resizing.value = null
   }
-  window.addEventListener('pointermove', move)
+  window.addEventListener('pointermove', step)
   window.addEventListener('pointerup', end)
   window.addEventListener('pointercancel', end)
 }
@@ -558,7 +561,12 @@ void window.maru.restoreScreen().then((s) => {
         </div>
       </div>
     </div>
-    <div v-if="canvas.open.value" class="resizer" @mousedown.prevent @pointerdown="resizeCanvas" />
+    <div
+      v-if="canvas.open.value"
+      class="resizer canvas-edge"
+      @mousedown.prevent
+      @pointerdown="resizeCanvas"
+    />
     <CanvasPanel
       ref="canvasPanel"
       :canvas="canvas"
@@ -592,14 +600,19 @@ void window.maru.restoreScreen().then((s) => {
   transition: none;
 }
 
+/* `.resizer` 는 패널 쪽에만 겹친다. 카드에 걸치면 맨 끝 터미널의 스크롤바를 가린다. */
 .resizer {
   -webkit-app-region: no-drag;
   flex: none;
-  /* 카드(`.terminals`)보다 위에 있어야 카드에 걸친 반쪽도 잡힌다. */
+  /* Canvas 쪽 경계는 DOM 에서 뒤에 오는 Canvas 보다 위에 그려야 포인터 이벤트를 받는다. */
   z-index: 2;
   width: 6px;
-  margin: 0 -3px;
+  margin-left: -6px;
   cursor: col-resize;
+}
+
+.resizer.canvas-edge {
+  margin: 0 -6px 0 0;
 }
 
 .terminals {

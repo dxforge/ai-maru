@@ -382,16 +382,6 @@ test('창이 좁아 사이드바가 창 폭의 반에 걸려 있어도, 경계�
   await expect.poll(() => sidebarWidth(page)).toBe(250)
 })
 
-test('사이드바 경계는 터미널 카드에 걸친 쪽을 잡아도 끌린다', async ({ launch }) => {
-  const { page } = await launch()
-  const before = await sidebarWidth(page)
-  const handle = (await sidebarResizer(page).boundingBox())!
-
-  await dragHandle(page, sidebarResizer(page), 40, { at: handle.width - 1 })
-
-  await expect.poll(() => sidebarWidth(page)).toBe(before + 40)
-})
-
 test('경계는 왼쪽 버튼으로 끌 때만 폭이 바뀐다', async ({ launch }) => {
   const { page } = await launch()
 

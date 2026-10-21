@@ -432,16 +432,16 @@ export async function canvasWidth(page: Page): Promise<number> {
   return (await canvasPanel(page).boundingBox())!.width
 }
 
-type Grab = { button?: 'left' | 'right'; at?: number }
+type Grab = { button?: 'left' | 'right' }
 
 export async function grabHandle(
   page: Page,
   handle: Locator,
   dx: number,
-  { button = 'left', at }: Grab = {}
+  { button = 'left' }: Grab = {}
 ): Promise<void> {
   const box = (await handle.boundingBox())!
-  const [x, y] = [box.x + (at ?? box.width / 2), box.y + box.height / 2]
+  const [x, y] = [box.x + box.width / 2, box.y + box.height / 2]
   await page.mouse.move(x, y)
   await page.mouse.down({ button })
   await page.mouse.move(x + dx, y, { steps: 4 })

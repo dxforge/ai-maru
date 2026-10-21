@@ -465,3 +465,40 @@ test('Canvas 를 닫다가 열고 다시 닫아도, 끝난 뒤 터미널은 닫�
   await expect(panel(page)).toBeHidden()
   await expect.poll(async () => (await shellSize(page)).cols).toBe(closed.cols)
 })
+
+test('사이드바·Canvas 경계는 터미널 카드에 걸치지 않아, 카드의 양 끝은 터미널이 받는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await openCanvas(launched)
+
+  const hits = await page.evaluate(() => {
+    const card = document.querySelector('.terminals')!.getBoundingClientRect()
+    const y = card.top + card.height / 2
+    return [card.left + 1, card.right - 1].map(
+      (x) => !!document.elementFromPoint(x, y)?.closest('.terminals')
+    )
+  })
+  expect(hits).toEqual([true, true])
+})
+
+test('끄는 도중 Canvas 를 닫으면 끌기가 끝나, 닫힌 뒤의 움직임은 폭을 바꾸지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await openCanvas(launched)
+  const before = await canvasWidth(page)
+  await grabHandle(page, canvasResizer(page), -50)
+
+  await clickMenu(app, 'toggle-canvas')
+  await expect(panel(page)).toBeHidden()
+  await page.mouse.move(100, 300, { steps: 4 })
+  await page.mouse.up()
+
+  await expect(panel(page)).not.toHaveClass(/resizing/)
+  await clickMenu(app, 'toggle-canvas')
+  await expect.poll(() => panel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
+  expect(await canvasWidth(page)).toBe(before + 50)
+})
