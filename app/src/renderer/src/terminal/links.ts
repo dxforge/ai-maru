@@ -13,7 +13,7 @@ const WEB_URL_RE = /https?:\/\/[^\s'"`)>\]},]+/g
 const URL_TRAILING_RE = /[.,;:!?]+$/
 const FILE_URL_RE = /file:\/\/\S+/g
 const ABS_PATH_RE =
-  /(?<![^\s:=(`'"])\/(?:[^\s:,;'"`)>\]{}]+\/)*[^\s:,;'"`)>\]{}]+\.[a-zA-Z0-9]+(?::\d+(?::\d+)?)?/g
+  /(?<![^\s:=(`'"])\/+(?:[^\s/:,;'"`)>\]{}]+\/+)*[^\s/:,;'"`)>\]{}]+\.[a-zA-Z0-9]+(?::\d+(?::\d+)?)?/g
 const REL_PATH_RE =
   /(?<![/\w.-])(?:[a-zA-Z0-9_@.-]+\/)+[a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+(?::\d+(?::\d+)?)?/g
 
@@ -147,9 +147,9 @@ function decorate(link: ILink, show: boolean): void {
 /**
  * 글자로 찍힌 URL·경로를 링크로 만들어 `term` 에 단다. OSC 8 링크는 xterm 의 provider 가 따로 만든다.
  *
- * 올린 링크 객체는 들고 있되 decorations 객체는 들지 않는다. xterm 은 `hover()` 를 부른 직후 `link.decorations` 를
+ * hover 중인 링크 객체는 들고 있되 decorations 객체는 들지 않는다. xterm 은 `hover()` 를 부른 직후 `link.decorations` 를
  * 밑줄을 그리는 setter 가 달린 자기 객체로 바꾸므로(`Linkifier._handleNewLink`), 그 전에 잡은 객체에 써도
- * 화면이 바뀌지 않는다. 올린 링크는 한 번에 하나다 — xterm 은 다음 `hover` 전에 `leave` 를 부른다.
+ * 화면이 바뀌지 않는다. hover 중인 링크는 한 번에 하나다. xterm 이 다음 `hover` 전에 `leave` 를 부르기 때문이다.
  */
 export function registerLinkProvider(
   term: Terminal,

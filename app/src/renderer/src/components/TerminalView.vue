@@ -83,8 +83,8 @@ function activateLink(event: MouseEvent, text: string): void {
     if (!r.ok) emit('linkFailed', r.reason)
   })
 }
-// OSC 8 링크는 라벨이 주소를 가리므로(`#12` → 이슈 주소), ⌘ 를 누른 채 올린 동안 주소를 보인다. 글자로 찍힌
-// 링크는 주소 자체라 보이지 않는다.
+// OSC 8 링크는 라벨이 주소를 가리므로(`#12` → 이슈 주소), ⌘ 를 누른 채 hover 하는 동안 주소를 보인다. 글자로 찍힌
+// 링크는 글자가 곧 주소라 따로 보이지 않는다.
 const hoveredUrl = ref<string | null>(null)
 term.options.linkHandler = createLinkHandler(activateLink, (url) => (hoveredUrl.value = url))
 const textLinks = registerLinkProvider(term, metaKey, activateLink)

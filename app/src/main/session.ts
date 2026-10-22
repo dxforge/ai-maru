@@ -213,7 +213,7 @@ export async function foregroundCwd(
   timeoutMs: number
 ): Promise<string | null> {
   const r = await askWithin(dir, id, { type: 'foreground' }, timeoutMs)
-  // 프로토콜 버전을 올리지 않아, 앱을 새로 깔아도 이 요청을 모르는 이전 maru-session 의 세션이 남아 있을 수 있다.
+  // `foreground` 를 더하며 `PROTOCOL_VERSION` 을 올리지 않았으므로, 앱을 새로 깔아도 이 요청을 모르는 이전 maru-session 의 세션이 남아 있을 수 있다.
   if (r.code === 'unknown_request') {
     throw new Error(`session ${id} runs an older maru-session; restart it to open relative paths`)
   }

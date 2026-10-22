@@ -1,11 +1,12 @@
 import { stat } from 'node:fs/promises'
+import { hostname } from 'node:os'
 import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CanvasDoc } from '../shared/canvas'
 import type { LinkOpenResult } from '../shared/link'
 import { canvasDocFor } from './canvas'
 
-/** `foreground` 요청은 ioctl 과 프로세스 조회뿐이라 바로 답한다. 세션이 멈춰 있을 때 클릭이 매달리지 않게 짧게 둔다. */
+/** `foreground` 요청은 ioctl 과 프로세스 조회뿐이라 바로 답한다. 세션이 멈춰 있어도 클릭이 오래 기다리지 않게 짧게 둔다. */
 export const LINK_REPLY_MS = 2_000
 
 export type LinkTarget = { kind: 'external'; url: string } | { kind: 'file'; path: string }
@@ -14,15 +15,22 @@ export type LinkTarget = { kind: 'external'; url: string } | { kind: 'file'; pat
 const SCHEME_RE = /^([a-zA-Z][a-zA-Z0-9+.-]*):/
 
 /**
- * 파일로 보는 것은 `file:` URL 과 scheme 이 없는 경로뿐이다. 그 밖의 scheme 은 이름을 가리지 않고 OS 에
- * 넘긴다 — `mailto:`·`vscode://` 를 경로로 오인하면 조용히 실패한다. 경로 뒤의 `:줄:칸` 은 뗀다. 호스트가
- * 붙은 `file://host/x` 는 `fileURLToPath` 가 throw 한다.
+ * 파일로 보는 것은 `file:` URL 과 scheme 이 없는 경로뿐이다. 그 밖의 scheme 은 이름을 가리지 않고 OS 에 넘긴다.
+ * `mailto:`·`vscode://` 를 경로로 잘못 보면 조용히 실패하기 때문이다. 경로 뒤의 `:줄:칸` 은 뗀다.
+ * `file://host/x` 의 호스트가 이 머신의 이름이면 지운다(GNU `ls --hyperlink` 가 이 꼴로 찍는다). 다른 호스트면
+ * `fileURLToPath` 가 throw 한다.
  */
 export function resolveLinkTarget(text: string): LinkTarget {
   const scheme = SCHEME_RE.exec(text)?.[1]?.toLowerCase()
   if (scheme && scheme !== 'file') return { kind: 'external', url: text }
-  const path = scheme === 'file' ? fileURLToPath(text) : text
+  const path = scheme === 'file' ? fileURLToPath(withoutOwnHost(text)) : text
   return { kind: 'file', path: path.replace(/:\d+(?::\d+)?$/, '') }
+}
+
+function withoutOwnHost(fileUrl: string): URL {
+  const url = new URL(fileUrl)
+  if (url.hostname.toLowerCase() === hostname().toLowerCase()) url.hostname = ''
+  return url
 }
 
 export type LinkOpener = {
@@ -34,8 +42,8 @@ export type LinkOpener = {
 }
 
 /**
- * 상대경로는 그 pane 의 foreground 프로세스의 cwd 기준이다 — 셸이 프롬프트마다 보내는 OSC 7 은 claude 가
- * 도는 동안 claude 가 바꾼 cwd(worktree 등)를 따라가지 못한다. 기준을 모르면 짐작하지 않는다.
+ * 상대경로는 그 pane 의 foreground 프로세스의 cwd 기준이다. 셸이 프롬프트마다 보내는 OSC 7 은 claude 가
+ * 도는 동안 claude 가 바꾼 cwd(worktree 등)를 따라가지 못하기 때문이다. 기준을 모르면 짐작하지 않는다.
  */
 export async function openLink(
   text: string,

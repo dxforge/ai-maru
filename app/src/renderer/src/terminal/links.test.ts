@@ -43,6 +43,17 @@ describe('detectLinks', () => {
     expect(texts('cd /tmp ; a/b ; v1.2.3 ; https://h.io/p/q.md')).toEqual(['https://h.io/p/q.md'])
   })
 
+  it('확장자 없는 경로 조각이 길게 이어진 줄도 바로 끝낸다', () => {
+    // 경로 조각을 나누는 방법이 여럿이면, 끝에 확장자가 없을 때 정규식의 백트래킹이 조각 수에 지수적으로 늘어난다.
+    const start = performance.now()
+    expect(texts(` ${'/ab'.repeat(30)} `)).toEqual([])
+    expect(performance.now() - start).toBeLessThan(100)
+  })
+
+  it('/ 가 겹친 절대경로도 통째로 찾는다', () => {
+    expect(texts('x /a//b.txt //c/d.md')).toEqual(['/a//b.txt', '//c/d.md'])
+  })
+
   it('위치를 문자열 인덱스로 주고 줄의 순서대로 돌려준다', () => {
     expect(detectLinks('x a/b.md y https://q.io')).toEqual([
       { text: 'a/b.md', startIndex: 2, endIndex: 8 },
@@ -205,7 +216,7 @@ describe('registerLinkProvider', () => {
     meta.press(false)
     expect(link.decorations).toEqual({ pointerCursor: false, underline: false })
 
-    // 올린 뒤 xterm 이 객체를 바꾸기 전에 누른 ⌘ 도 보인다.
+    // hover 한 뒤 xterm 이 객체를 바꾸기 전에 누른 ⌘ 도 보인다.
     meta.press(true)
     link.hover!({} as MouseEvent, link.text)
     link.decorations = { pointerCursor: false, underline: false }

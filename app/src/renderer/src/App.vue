@@ -139,7 +139,7 @@ function paneFailed(pane: number, message: string): void {
   if (paneRequests.has(pane)) removePane(pane, message)
 }
 
-// 글자 판정은 `a/b.ext` 같은 글을 경로로 오인할 수 있어, 조용히 실패하면 왜 안 열리는지 모른다.
+// 터미널 글자에서 찾은 링크는 `a/b.ext` 같은 글을 경로로 잘못 본 것일 수 있다. 실패를 알리지 않으면 왜 열리지 않는지 알 수 없다.
 function linkFailed(reason: string): void {
   toasts.put('link', { level: 'warning', title: "Couldn't open the link", lines: [reason] })
 }

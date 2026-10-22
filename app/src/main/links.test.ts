@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { CanvasDoc } from '../shared/canvas'
@@ -21,6 +21,21 @@ describe('resolveLinkTarget', () => {
       path: '/tmp/a b/c.md'
     })
     expect(resolveLinkTarget('FILE:///tmp/x.md')).toEqual({ kind: 'file', path: '/tmp/x.md' })
+  })
+
+  it('이 머신의 호스트 이름이 붙은 file: URL 은 경로로 푼다', () => {
+    expect(resolveLinkTarget(`file://${hostname()}/tmp/a%20b.md`)).toEqual({
+      kind: 'file',
+      path: '/tmp/a b.md'
+    })
+    expect(resolveLinkTarget(`file://${hostname().toUpperCase()}/tmp/x.md`)).toEqual({
+      kind: 'file',
+      path: '/tmp/x.md'
+    })
+  })
+
+  it('다른 호스트의 file: URL 은 풀지 않는다', () => {
+    expect(() => resolveLinkTarget('file://other-host.invalid/tmp/x.md')).toThrow()
   })
 
   it('경로 뒤의 :줄:칸 은 뗀다', () => {

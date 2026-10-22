@@ -15,7 +15,6 @@ import {
 
 type Opened = { opened?: string[]; paths?: string[] }
 
-/** `shell.openExternal`·`shell.openPath` 를 기록만 하게 바꾼다 — 테스트가 브라우저·Finder 를 띄우지 않게. */
 async function recordShell(app: ElectronApplication): Promise<void> {
   await app.evaluate(({ shell }) => {
     const g = globalThis as Opened
@@ -32,7 +31,10 @@ async function recordShell(app: ElectronApplication): Promise<void> {
 const opened = (app: ElectronApplication) => app.evaluate(() => (globalThis as Opened).opened)
 const paths = (app: ElectronApplication) => app.evaluate(() => (globalThis as Opened).paths)
 
-/** 화면에서 `text` 가 마지막으로 보이는 줄(친 명령이 아니라 출력)의 그 글자 둘째 셀 가운데. */
+/**
+ * 화면에서 `text` 가 마지막으로 보이는 줄(친 명령이 아니라 출력)의 그 글자 둘째 셀 가운데. 출력보다 먼저 기다림이
+ * 끝나면 명령 줄에서 찾으므로, `run` 이 기다리는 글자는 친 명령에 없는 글자(`done-$((1+1))` → `done-2`)로 둔다.
+ */
 async function pointAt(page: Page, text: string): Promise<{ x: number; y: number }> {
   const screen = (await page.locator('.terminal-view.active .xterm-screen').boundingBox())!
   const cell = await cellSize(page)
@@ -100,7 +102,6 @@ test('글자로 찍힌 URL 은 OS 로, .md 는 Canvas 로, 그 밖의 파일은 
   await recordShell(app)
   writeFileSync(join(dataDir, 'note.md'), '# From link')
   writeFileSync(join(dataDir, 'a.txt'), 'x')
-  // 기다리는 글자는 친 명령에 없는 것으로 — 명령이 돌기 전에 맞으면 링크를 명령 줄에서 찾는다.
   await run(
     page,
     `cd '${dataDir}'; echo https://example.com/text; echo "$PWD/note.md:3"; echo "$PWD/a.txt"; echo done-$((1+1))`,
@@ -146,8 +147,7 @@ test('못 여는 링크는 이유를 토스트로 보인다', async ({ launch, d
   await expect(toast(page).locator('.line')).toHaveText(`${dataDir}/none.md doesn't exist`)
 })
 
-// 재생에는 OSC 8 이 실리지 않는다 — `maru-session` 의 ghostty formatter 는 셀마다의 hyperlink 를 VT 로 내지 않는다.
-// 글자로 찍힌 링크는 재생된 글자에서 provider 가 다시 찾는다.
+// 재생에는 OSC 8 hyperlink 가 실리지 않는다(`maru-session` 모듈 doc 의 재생). 글자로 찍힌 링크는 재생된 글자에서 provider 가 다시 찾는다.
 test('재시작해 세션에 다시 붙어도 글자로 찍힌 링크는 열린다', async ({ launch }) => {
   const first = await launch()
   await activeTerminal(first.page)

@@ -1,9 +1,7 @@
 # 앱이 ZDOTDIR 로 이 파일을 읽힌다. 지워야 나머지 시작 파일이 사용자 자리에서 읽힌다.
 typeset -g _maru_zdotdir=$ZDOTDIR
 unset ZDOTDIR
-# claude 함수가 claude 에만 붙인 FORCE_HYPERLINK 를, claude 의 Bash 도구가 띄우는 이 셸에서 지운다. SessionStart hook 이
-# claude 의 세션 env 파일(`CLAUDE_ENV_FILE`)에 쓰는 방법은 쓸 수 없다 — claude 는 그 파일을 hook 이 끝나기 전에 한 번
-# 읽고 없음으로 캐시해 Bash 도구에 적용하지 않는다(2.1.308 실측).
+# claude 함수가 claude 에만 붙인 FORCE_HYPERLINK 를, claude 의 Bash 도구가 띄우는 이 셸에서 지운다.
 if [[ -n $MARU_CLAUDE_FORCED_HYPERLINK ]]; then
   unset FORCE_HYPERLINK MARU_CLAUDE_FORCED_HYPERLINK
 fi
@@ -42,16 +40,17 @@ add-zsh-hook precmd _maru_path
 
 # `name()` 꼴은 사용자 ~/.zshenv 의 claude alias 가 펼쳐져 parse error 가 난다.
 (( $+functions[claude] )) || function claude {
-  if [[ -z $MARU_CLI || -z $MARU_CLAUDE_PLUGIN ]]; then
+  # claude 안(CLAUDECODE)에서 부른 claude 는 이 pane 의 claude 가 아니다. 앱 plugin 의 hook 과 끝의 `claude exit` 가
+  # 바깥 claude 의 pane 상태를 덮거나 지우므로 그대로 넘긴다.
+  if [[ -z $MARU_CLI || -z $MARU_CLAUDE_PLUGIN || -n $CLAUDECODE ]]; then
     command claude "$@"
     return
   fi
-  # 이 앱의 터미널 env 에서는 claude 가 FORCE_HYPERLINK 가 있을 때만 OSC 8 링크를 찍는다. 값은 claude 프로세스에만
-  # 붙인다 — 자식에게 물려주면 Bash 도구가 돌리는 CLI 가 파이프에 OSC 8 을 섞는다. Bash 도구는 `$SHELL -l -c` 로 로그인
-  # 셸을 띄우므로, ZDOTDIR 을 앱 디렉토리로 되돌려 그 셸이 이 파일 맨 위에서 지우게 한다. 사용자가 정해 둔 값은 덮지
-  # 않고, claude 안(CLAUDECODE)에서 띄운 claude 는 출력이 파이프일 수 있어 붙이지 않는다.
+  # 이 앱의 터미널 env 에서는 claude 가 FORCE_HYPERLINK 가 있을 때만 OSC 8 링크를 찍는다. 값은 claude 프로세스에만 붙인다.
+  # 자식에게 물려주면 Bash 도구가 돌리는 CLI 가 파이프에 OSC 8 을 섞기 때문이다. zsh 는 로그인 여부와 상관없이 `$ZDOTDIR/.zshenv` 를 읽으므로,
+  # ZDOTDIR 을 앱 디렉토리로 되돌려 Bash 도구의 셸이 이 파일 맨 위에서 지우게 한다. 사용자가 정해 둔 값은 덮지 않는다.
   local -a forced=()
-  if [[ -z $CLAUDECODE && -z ${FORCE_HYPERLINK+set} ]]; then
+  if [[ -z ${FORCE_HYPERLINK+set} ]]; then
     forced=(FORCE_HYPERLINK=1 MARU_CLAUDE_FORCED_HYPERLINK=1 ZDOTDIR=$_maru_zdotdir)
   fi
   # claude 가 SessionEnd hook 없이 죽어도 앱이 표시를 지우게. Ctrl-C 로 셸도 SIGINT 를 받으면 함수의

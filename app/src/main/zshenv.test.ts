@@ -245,11 +245,13 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 claude 함수', () => {
     }
   )
 
-  it('claude 안(CLAUDECODE)에서 띄운 claude 에는 붙이지 않는다', () => {
+  it('claude 안(CLAUDECODE)에서 띄운 claude 는 plugin·env 없이 그대로 부르고 앱에 알리지 않는다', () => {
     const h = home({ '.zshrc': '' })
     const { bin, log } = fakes(h, recordHyperlink)
-    shellWith(h, { ...appEnv(bin), CLAUDECODE: '1' }, 'claude')
-    expect(readFileSync(log, 'utf8')).toContain('hyperlink=unset marker=unset zdotdir=unset\n')
+    shellWith(h, { ...appEnv(bin), CLAUDECODE: '1' }, 'claude --version')
+    expect(readFileSync(log, 'utf8')).toBe(
+      'claude --version\nhyperlink=unset marker=unset zdotdir=unset\n'
+    )
   })
 
   it('claude 의 Bash 도구가 띄우는 로그인 셸은 표식을 보고 FORCE_HYPERLINK 를 지운다', () => {
