@@ -65,10 +65,14 @@ fn start_in(tmp: tempfile::TempDir, extra: &[&std::ffi::OsStr]) -> Proc {
 }
 
 fn start_env(tmp: tempfile::TempDir, extra: &[&std::ffi::OsStr], env: &[(&str, &Path)]) -> Proc {
+    start_child(tmp, |dir, id| spawn_env(dir, id, extra, env))
+}
+
+fn start_child(tmp: tempfile::TempDir, spawn: impl FnOnce(&Path, &str) -> Child) -> Proc {
     let dir = tmp.path().join("s");
     let id = "sess-test".to_string();
     let mut p = Proc {
-        child: spawn_env(&dir, &id, extra, env),
+        child: spawn(&dir, &id),
         paths: Paths::new(&dir, &id).unwrap(),
         _tmp: tmp,
         dir,
@@ -714,34 +718,172 @@ fn a_command_runs_under_sh_when_the_shell_is_not_posix() {
     let fish = tmp.path().join("fish");
     std::fs::write(&fish, "#!/bin/sh\necho wrong-shell\nexit 1\n").unwrap();
     std::fs::set_permissions(&fish, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let dir = tmp.path().join("s");
-    let id = "sess-test".to_string();
     let script = r#"read line; printf '[%s]' "$@"; echo; exit 4"#;
-    let child = Command::new(env!("CARGO_BIN_EXE_maru-session"))
-        .args(["--id", &id])
-        .arg("--dir")
-        .arg(&dir)
-        .arg("--shell")
-        .arg(&fish)
-        .args(["--", "/bin/sh", "-c", script, "sh", "a b", "-x"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut p = Proc {
-        child,
-        paths: Paths::new(&dir, &id).unwrap(),
-        _tmp: tmp,
-        dir,
-        id,
-    };
-    p.wait_ready();
+    let mut p = start_child(tmp, |dir, id| {
+        Command::new(env!("CARGO_BIN_EXE_maru-session"))
+            .args(["--id", id])
+            .arg("--dir")
+            .arg(dir)
+            .arg("--shell")
+            .arg(&fish)
+            .args(["--", "/bin/sh", "-c", script, "sh", "a b", "-x"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    });
     let (mut c, _, _) = p.attach("primary", 80, 24);
     c.input("\n");
     c.output_until("[a b][-x]");
     assert_eq!(c.next_text()["code"], 4);
     assert!(p.wait().success());
+}
+
+fn start_without_shell_flag(
+    tmp: tempfile::TempDir,
+    shell: Option<&std::ffi::OsStr>,
+    extra: &[&std::ffi::OsStr],
+) -> Proc {
+    start_child(tmp, |dir, id| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_maru-session"));
+        cmd.args(["--id", id]).arg("--dir").arg(dir).args(extra);
+        match shell {
+            Some(s) => cmd.env("SHELL", s),
+            None => cmd.env_remove("SHELL"),
+        };
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    })
+}
+
+fn assert_falls_back_to_sh(shell: Option<&std::ffi::OsStr>) {
+    let p = start_without_shell_flag(tmpdir(), shell, &[]);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("echo \"a0=[$0]\"\n");
+    c.output_until("a0=[-sh]");
+}
+
+fn assert_falls_back_to_sh_and_sets_the_variable(shell: &std::ffi::OsStr) {
+    let p = start_without_shell_flag(tmpdir(), Some(shell), &[]);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("echo \"a0=[$0] sv=[$SHELL]\"\n");
+    c.output_until("a0=[-sh] sv=[/bin/sh]");
+}
+
+#[test]
+fn without_the_shell_flag_an_empty_shell_variable_falls_back_to_sh() {
+    assert_falls_back_to_sh_and_sets_the_variable("".as_ref());
+}
+
+#[test]
+fn without_the_shell_flag_a_missing_shell_variable_falls_back_to_sh() {
+    assert_falls_back_to_sh(None);
+}
+
+#[test]
+fn without_the_shell_flag_a_shell_variable_naming_a_missing_file_falls_back_to_sh() {
+    assert_falls_back_to_sh_and_sets_the_variable("/nonexistent/zsh".as_ref());
+}
+
+#[test]
+fn without_the_shell_flag_a_shell_variable_naming_a_non_executable_file_falls_back_to_sh() {
+    let tmp = tmpdir();
+    let file = tmp.path().join("zsh");
+    std::fs::write(&file, "#!/bin/sh\necho wrong-shell\n").unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_falls_back_to_sh_and_sets_the_variable(file.as_os_str());
+}
+
+#[test]
+fn without_the_shell_flag_a_shell_variable_naming_a_directory_falls_back_to_sh() {
+    let tmp = tmpdir();
+    assert_falls_back_to_sh_and_sets_the_variable(tmp.path().as_os_str());
+}
+
+#[test]
+fn without_the_shell_flag_a_bare_shell_name_is_looked_up_in_path() {
+    let p = start_without_shell_flag(tmpdir(), Some("sh".as_ref()), &[]);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("echo \"a0=[$0] sv=[$SHELL]\"\n");
+    c.output_until("a0=[-sh] sv=[sh]");
+}
+
+#[test]
+fn without_the_shell_flag_an_empty_shell_variable_runs_a_command_under_sh() {
+    let args = [
+        "--",
+        "/bin/sh",
+        "-c",
+        "read line; echo cmd-$((2+3)); exit 4",
+    ];
+    let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
+    let mut p = start_without_shell_flag(tmpdir(), Some("".as_ref()), &args);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("\n");
+    c.output_until("cmd-5");
+    assert_eq!(c.next_text()["code"], 4);
+    assert!(p.wait().success());
+}
+
+fn fake_shell(tmp: &tempfile::TempDir) -> PathBuf {
+    let shell = tmp.path().join("myshell");
+    std::fs::write(
+        &shell,
+        "#!/bin/sh\nread line\necho \"from-myshell sv=[$SHELL]\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+    shell
+}
+
+#[test]
+fn without_the_shell_flag_the_shell_variable_names_the_shell() {
+    let tmp = tmpdir();
+    let shell = fake_shell(&tmp);
+    let mut p = start_without_shell_flag(tmp, Some(shell.as_os_str()), &[]);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("\n");
+    c.output_until(&format!("from-myshell sv=[{}]", shell.display()));
+    assert!(p.wait().success());
+}
+
+#[test]
+fn the_shell_flag_wins_over_the_shell_variable() {
+    let tmp = tmpdir();
+    let shell = fake_shell(&tmp);
+    let p = start_env(tmp, &[], &[("SHELL", &shell)]);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("echo \"a0=[$0]\"\n");
+    c.output_until("a0=[-sh]");
+}
+
+#[test]
+fn the_shell_flag_leaves_an_empty_shell_variable_to_the_shell() {
+    let p = start_env(tmpdir(), &[], &[("SHELL", Path::new(""))]);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("echo \"a0=[$0] sv=[$SHELL]\"\n");
+    c.output_until("a0=[-sh] sv=[]");
+}
+
+#[test]
+fn a_shell_flag_naming_a_missing_file_fails() {
+    let tmp = tmpdir();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+        .args(["--id", "sess-test", "--shell", "/nonexistent/zsh"])
+        .arg("--dir")
+        .arg(tmp.path().join("s"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    assert!(!child.wait().unwrap().success());
+    let err = stderr(&mut child);
+    assert!(err.contains("cannot spawn /nonexistent/zsh"), "{err}");
 }
 
 #[test]
@@ -951,29 +1093,19 @@ fn cpu_seconds(pid: u32) -> f64 {
 }
 
 fn start_with_few_fds(stderr: Stdio) -> Proc {
-    let tmp = tmpdir();
-    let dir = tmp.path().join("s");
-    let id = "sess-test".to_string();
-    let child = Command::new("/bin/sh")
-        .args(["-c", "ulimit -n 64 && exec \"$0\" \"$@\""])
-        .arg(env!("CARGO_BIN_EXE_maru-session"))
-        .args(["--id", &id, "--shell", "/bin/sh"])
-        .arg("--dir")
-        .arg(&dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(stderr)
-        .spawn()
-        .unwrap();
-    let mut p = Proc {
-        child,
-        paths: Paths::new(&dir, &id).unwrap(),
-        _tmp: tmp,
-        dir,
-        id,
-    };
-    p.wait_ready();
-    p
+    start_child(tmpdir(), |dir, id| {
+        Command::new("/bin/sh")
+            .args(["-c", "ulimit -n 64 && exec \"$0\" \"$@\""])
+            .arg(env!("CARGO_BIN_EXE_maru-session"))
+            .args(["--id", id, "--shell", "/bin/sh"])
+            .arg("--dir")
+            .arg(dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(stderr)
+            .spawn()
+            .unwrap()
+    })
 }
 
 fn exhaust_fds(p: &Proc) -> Vec<UnixStream> {
