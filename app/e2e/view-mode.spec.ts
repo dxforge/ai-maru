@@ -283,7 +283,7 @@ test('columns 에서 앞의 workspace 가 닫혀도 포커스된 pane 이 화면
   await run(page, 'echo typed-$((1+1))', 'typed-2')
 })
 
-test('고전 스크롤바 설정의 columns 에서 가로 스크롤바는 기본보다 낮고, workspace 가 넘치기 시작해도 그 높이와 터미널의 줄 수는 그대로다', async ({
+test('고전 스크롤바 설정의 columns 에서 가로 스크롤바는 기본보다 낮고, workspace 가 넘치기 시작하거나 넘침이 그쳐도 그 높이와 터미널의 줄 수는 그대로다', async ({
   launch
 }) => {
   const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
@@ -308,9 +308,17 @@ test('고전 스크롤바 설정의 columns 에서 가로 스크롤바는 기본
 
   expect(await scrollbarHeight(page)).toBe(bar)
   expect((await shellSize(page)).rows).toBe(before.rows)
+
+  await workspaceItems(page).nth(1).click()
+  await page.keyboard.type('exit\n')
+  await expect(workspaceItems(page)).toHaveCount(1)
+  expect(await overflows(page)).toBe(false)
+
+  expect(await scrollbarHeight(page)).toBe(bar)
+  expect((await shellSize(page)).rows).toBe(before.rows)
 })
 
-test('고전 스크롤바 설정에서 columns 가 넘치지 않을 때도 가로 스크롤바의 트랙이 바탕과 다른 색으로 보이고, 넘치면 막대가 트랙과 다른 색으로 보인다', async ({
+test('고전 스크롤바 설정에서 columns 가 넘치지 않을 때도 가로 스크롤바의 트랙이 바탕과 다른 색으로 보이고, 넘치면 thumb 이 트랙과 다른 색으로 보인다', async ({
   launch
 }) => {
   const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
