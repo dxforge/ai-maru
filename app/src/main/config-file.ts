@@ -25,7 +25,7 @@ export function readConfigFile(path: string): ConfigRead {
 /**
  * 한 번의 저장에 오는 알림을 묶는 시간이다. libuv 는 FSEvents 알림을 0.05초(`latency`) 단위로 묶어 넘기므로,
  * 한 번의 저장이 50ms 간격의 두 묶음으로 나뉘어 오기도 한다(실측: 저장 45번 중 7번, 간격 47.3~51.8ms). 50ms
- * 로 두면 두 묶음 사이에 타이머가 터지므로 그 두 배로 둔다.
+ * 로 두면 두 묶음 사이에 타이머가 터지기도 하므로 그 두 배로 둔다.
  */
 export const CONFIG_SETTLE_MS = 100
 
