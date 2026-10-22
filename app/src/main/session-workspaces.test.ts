@@ -23,13 +23,13 @@ describe('createSessionWorkspaces', () => {
     expect(ws.workspaceOf('s-00000002')).toBe('w-00000001')
   })
 
-  it('workspace 의 마지막 세션을 끄면 그 workspace id 를 돌려준다', () => {
+  it('끈 key 의 세션 id 를 돌려주고, workspace 의 마지막 세션이면 그 workspace id 도 돌려준다', () => {
     const ws = createSessionWorkspaces()
     ws.open('k1', 's-00000001', 'w-00000001')
     ws.open('k2', 's-00000002', 'w-00000001')
     ws.open('k3', 's-00000003', 'w-00000002')
-    expect(ws.close('k1')).toBeUndefined()
-    expect(ws.close('k2')).toBe('w-00000001')
+    expect(ws.close('k1')).toEqual({ session: 's-00000001' })
+    expect(ws.close('k2')).toEqual({ session: 's-00000002', closed: 'w-00000001' })
     expect(ws.close('k2')).toBeUndefined()
     expect(ws.close('k-unknown')).toBeUndefined()
   })

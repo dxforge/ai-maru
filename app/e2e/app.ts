@@ -147,8 +147,14 @@ export function wrapSessionBin(dataDir: string, name: string, prelude: string): 
   return bin
 }
 
-export function slowSessionBin(dataDir: string): string {
-  return wrapSessionBin(dataDir, 'slow-session', 'sleep 1.5')
+export function slowSessionBin(dataDir: string, then = ''): string {
+  return wrapSessionBin(dataDir, 'slow-session', `sleep 1.5\n${then}`)
+}
+
+export function hostPid(app: ElectronApplication): Promise<number> {
+  return app.evaluate(
+    ({ app }) => app.getAppMetrics().find((m) => m.name === 'maru-session-host')!.pid
+  )
 }
 
 /** `--` 뒤에 명령을 받은 세션만 stderr 에 `boom-2` 를 쓰고 실패한다. 처음 pane 의 셸은 뜬다. */
