@@ -1,4 +1,8 @@
-import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
+import {
+  spawnSync,
+  type SpawnSyncOptionsWithStringEncoding,
+  type SpawnSyncReturns
+} from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
@@ -23,14 +27,23 @@ function home(files: Record<string, string>): string {
   return dir
 }
 
+/**
+ * 대화형 zsh 는 stdin 이 tty 가 아니어도 `/dev/tty` 가 열리면 거기서 읽으므로, 터미널 안에서 돌리면 stdin 의 명령을
+ * 받지 않고 멈춘다. `detached` 로 controlling tty 가 없는 새 세션에서 띄워 stdin 을 읽게 한다. `SpawnSyncOptions`
+ * 타입에는 `detached` 가 없지만, Node 의 `spawnSync` 도 이 옵션을 받아 새 세션에서 띄운다. `spawnSync` 가 timeout 에
+ * 보내는 기본 SIGTERM 은 대화형 zsh 가 무시하므로 SIGKILL 로 종료한다.
+ */
 function spawnZsh(args: string[], homeDir: string, cwd: string, env: object, input?: string) {
-  return spawnSync(ZSH, ['-l', '-i', ...args], {
+  const options: SpawnSyncOptionsWithStringEncoding & { detached: true } = {
     cwd,
     env: { HOME: homeDir, ZDOTDIR: zdotdir, PATH: '/usr/bin:/bin', HOST: 'mac', ...env },
     input,
     encoding: 'utf8',
-    timeout: 10_000
-  })
+    timeout: 10_000,
+    killSignal: 'SIGKILL',
+    detached: true
+  }
+  return spawnSync(ZSH, ['-l', '-i', ...args], options)
 }
 
 function spawnLogin(homeDir: string, command: string, cwd = homeDir, env = {}) {

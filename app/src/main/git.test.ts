@@ -15,6 +15,12 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { gitHead } from './git'
 
+// 테스트 하나가 진짜 git 을 많게는 7번 실행한다. load average 100 인 Mac 에서 `git symbolic-ref` 하나가 가장 오래
+// 걸린 것이 2984ms 였으므로(`git.ts` 의 `GIT_TIMEOUT_MS` 주석), 부하가 걸리면 테스트 하나가 vitest 기본 시간 제한
+// 5초를 넘길 수 있다. 2984ms 는 589번 가운데 가장 오래 걸린 값이라 7번이 모두 그만큼 걸리지는 않는다고 보고 15초로
+// 둔다.
+vi.setConfig({ testTimeout: 15_000 })
+
 const dirs: string[] = []
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -252,9 +258,11 @@ describe('reftable 저장소의 gitHead', () => {
     // 가짜 git(셸 스크립트)이 호출을 기록하기 전에 timeout 으로 종료되면 `calls` 가 비므로, 부하가 걸려도 기록할 수
     // 있게 2초를 준다.
     expect(await gitHead(dir, 2000)).toEqual({ repo: 'rt' })
-    expect(Date.now() - start).toBeLessThan(4000)
+    // 가짜 git 은 10초 뒤 스스로 끝나므로, `gitHead` 가 그보다 먼저 끝났으면 timeout 이 동작한 것이다. timeout 뒤
+    // 가짜 git 을 종료하고 그 종료를 기다리는 시간은 부하가 걸리면 늘어나므로, 상한을 2초 timeout 에 맞추지 않는다.
+    expect(Date.now() - start).toBeLessThan(9000)
     expect(fake.calls()).toHaveLength(1)
-  }, 15_000)
+  })
 
   it('HEAD 가 branch 를 가리키지 않는데 커밋 해시 읽기가 timeout 안에 끝나지 않으면 branch 없이 저장소 이름만 쓴다', async () => {
     const dir = repo('rt', 'reftable')
@@ -262,14 +270,14 @@ describe('reftable 저장소의 gitHead', () => {
     vi.stubEnv('PATH', fake.bin)
     const start = Date.now()
     expect(await gitHead(dir, 2000)).toEqual({ repo: 'rt' })
-    expect(Date.now() - start).toBeLessThan(4000)
+    expect(Date.now() - start).toBeLessThan(9000)
     expect(fake.calls()).toHaveLength(2)
-  }, 15_000)
+  })
 
   it('timeout 을 주지 않으면 기본값을 써서, 2초 넘게 걸린 git 의 답도 쓴다', async () => {
     const dir = repo('rt', 'reftable')
     const fake = fakeGit('/bin/sleep 2.2; echo refs/heads/slow')
     vi.stubEnv('PATH', fake.bin)
     expect(await gitHead(dir)).toEqual({ repo: 'rt', branch: 'slow' })
-  }, 15_000)
+  })
 })
