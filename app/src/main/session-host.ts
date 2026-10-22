@@ -12,7 +12,6 @@ import {
 
 export type OpenRequest = {
   type: 'open'
-  key: string
   id: string
   cwd?: string
   command?: string[]
@@ -21,10 +20,13 @@ export type OpenRequest = {
   bin: string
   setup: ShellSetup
 }
-export type KillRequest = { type: 'kill'; key: string; dir: string }
-type HostRequest = OpenRequest | KillRequest
+export type KillRequest = { type: 'kill'; id: string; dir: string }
+/** `quit` 을 받은 host 는 띄우는 중인 세션이 다 뜬 뒤에 끝난다. main 은 host 가 끝난 뒤에 레코드를 읽어야 그 세션까지 끈다(docs/architecture.md 의 "앱을 끄면 띄우던 세션도 뜬 뒤에 끈다"). */
+export type QuitRequest = { type: 'quit' }
+type HostRequest = OpenRequest | KillRequest | QuitRequest
 
-const opened = new Map<string, Promise<string | null>>()
+const spawning = new Map<string, Promise<void>>()
+let quitting = false
 
 function end(port: MessagePortMain, ...messages: object[]): void {
   for (const msg of messages) port.postMessage(JSON.stringify(msg))
@@ -32,49 +34,38 @@ function end(port: MessagePortMain, ...messages: object[]): void {
   port.close()
 }
 
-function serve(req: OpenRequest, port: MessagePortMain, sock: Socket, spawned: object): void {
-  // renderer 가 떠나 포트가 닫히면 `bridge` 가 소켓을 닫지만 세션은 살아 있으므로, main 이 끌 수 있게
-  // key 를 남긴다(docs/architecture.md 의 "문서가 바뀌면 이전 문서의 세션을 끈다").
-  let detached = false
-  port.on('close', () => (detached = true))
-  sock.on('close', () => detached || opened.delete(req.key))
-  port.postMessage(JSON.stringify({ type: 'spawned', id: req.id, ...spawned }))
+function serve(id: string, port: MessagePortMain, sock: Socket, spawned: object): void {
+  port.postMessage(JSON.stringify({ type: 'spawned', id, ...spawned }))
   bridge(sock, port)
 }
 
 /** renderer 가 cwd 를 이미 가지고 있으므로 `spawned` 에 cwd 를 싣지 않는다. */
 async function reattach(req: OpenRequest, port: MessagePortMain): Promise<void> {
-  opened.set(req.key, Promise.resolve(req.id))
   const sock = await connect(socketPath(req.dir, req.id)).catch(() => null)
-  if (sock) return serve(req, port, sock, {})
-  opened.delete(req.key)
+  if (sock) return serve(req.id, port, sock, {})
   end(port, { type: 'gone' })
 }
 
 async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
+  if (quitting) return end(port)
   if (req.attach) return reattach(req, port)
-  // 세션이 뜨는 동안 pane 을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 opened 에 넣는다.
-  const spawning = startDir(req.cwd).then(async (cwd) => {
+  const spawned = startDir(req.cwd).then(async (cwd) => {
     const state = await spawnSession(req.bin, req.dir, req.setup, req.id, cwd, req.command)
     return { cwd, state }
   })
-  opened.set(
-    req.key,
-    spawning.then(
-      () => req.id,
-      () => null
-    )
-  )
+  // 세션이 뜨는 동안 pane 을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 넣는다.
+  const done = (): void => void spawning.delete(req.id)
+  spawning.set(req.id, spawned.then(done, done))
   try {
-    const { cwd, state } = await spawning
+    const { cwd, state } = await spawned
     // 소켓을 본 뒤 붙기 전에 끝난 세션도, 띄운 명령이 그만큼 빨리 끝난 것으로 본다.
     const sock =
       state === 'live' ? await connect(socketPath(req.dir, req.id)).catch(() => null) : null
-    if (sock) return serve(req, port, sock, { cwd })
-    opened.delete(req.key)
+    if (sock) return serve(req.id, port, sock, { cwd })
+    // 붙지 못한 세션은 살아 있어도 pane 에는 끝났다고 알린다. pane 이 닫힐 때 오는 kill 을 기다리지 않고 여기서 끈다.
+    if (state === 'live') void killSession(req.dir, req.id)
     end(port, { type: 'spawned', id: req.id, cwd }, { type: 'exit', code: null, signal: null })
   } catch (err) {
-    opened.delete(req.key)
     end(port, {
       type: 'error',
       code: 'open_failed',
@@ -83,14 +74,20 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
   }
 }
 
-function kill(req: KillRequest): void {
-  const id = opened.get(req.key)
-  opened.delete(req.key)
-  void id?.then((id) => (id === null ? undefined : killSession(req.dir, id)))
+async function kill(req: KillRequest): Promise<void> {
+  await spawning.get(req.id)
+  await killSession(req.dir, req.id)
+}
+
+async function quit(): Promise<void> {
+  quitting = true
+  await Promise.all(spawning.values())
+  process.exit(0)
 }
 
 process.parentPort.on('message', (e) => {
   const req = e.data as HostRequest
   if (req.type === 'open') void open(req, e.ports[0])
-  else if (req.type === 'kill') kill(req)
+  else if (req.type === 'kill') void kill(req)
+  else if (req.type === 'quit') void quit()
 })

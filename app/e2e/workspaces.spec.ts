@@ -1,10 +1,10 @@
 import { rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import type { ElectronApplication } from '@playwright/test'
 import {
   activeTerminal,
   expect,
   gridRows,
+  hostPid,
   newWorkspace,
   pressNew,
   putCanvas,
@@ -20,12 +20,6 @@ import {
   workspaceItems,
   zshHome
 } from './app'
-
-function hostPid(app: ElectronApplication): Promise<number> {
-  return app.evaluate(
-    ({ app }) => app.getAppMetrics().find((m) => m.name === 'maru-session-host')!.pid
-  )
-}
 
 const homeName = basename(process.env.HOME!)
 

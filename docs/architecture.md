@@ -10,7 +10,15 @@ renderer 는 이 순서에 기댄다. host 가 죽으면 main 이 모든 창에 
 
 창이 새로 고쳐지면(dev 의 Vite 새로 고침 등) 새 문서는 세션을 새로 연다. 새 문서는 이전 문서가 연 세션을 모르므로 거기에 다시 붙지 않는다. 그래서 main 이 이전 문서의 세션을 끈다(`app/src/main/index.ts`).
 
-이전 문서가 떠나 포트가 닫히면 `bridge` 가 세션 소켓을 닫지만 세션 프로세스는 살아 있다. session host 는 이때 key 를 지우지 않고 남겨, 뒤에 오는 kill 이 세션 id 를 찾게 한다(`app/src/main/session-host.ts`). host 가 소켓이 닫힐 때 key 를 지우도록 바뀌면 이전 세션이 남는다.
+이전 문서가 떠나 포트가 닫히면 `bridge` 가 세션 소켓을 닫지만 세션 프로세스는 살아 있다.
+
+## kill 은 세션 id 로 보낸다
+
+main 은 kill 이 올 때까지 key 의 세션 id 를 기억하고(`app/src/main/session-workspaces.ts`), session host 에 보내는 kill 에 그 세션 id 를 싣는다. host 는 받은 id 로 세션을 끄므로, host 가 죽어 새로 떴어도 이전 host 가 연 세션을 끈다(`app/src/main/session-host.ts`). host 가 자기가 연 세션의 표에서 찾아 끄도록 바뀌면, host 가 새로 뜬 뒤에 닫은 pane 의 세션이 남는다.
+
+## 앱을 끄면 띄우던 세션도 뜬 뒤에 끈다
+
+main 은 `will-quit` 에서 session host 에 `quit` 을 보내고, host 가 끝난 뒤에 세션 디렉토리의 레코드를 읽어 세션을 끈다(`app/src/main/index.ts`). host 는 `quit` 을 받으면 새 open 을 받지 않고, 띄우던 세션이 다 뜬 뒤에 끝난다. main 이 직접 띄우는 job 도 같은 때에 새로 받지 않고, 띄우던 것이 다 뜨기를 기다린다. maru-session 은 레코드를 쓴 뒤에 소켓을 연다(`core/crates/maru-session/src/server.rs` 의 `publish`). host 와 main 은 소켓이 열린 것을 보고 세션이 떴다고 보므로, host 가 끝난 뒤에 main 이 읽는 레코드에는 띄우던 세션도 있다. `quit` 은 open 과 같은 `ready.then` 으로 보내므로 host 는 그 앞에 온 open 을 먼저 받는다. main 이 host 를 기다리지 않고 레코드를 읽도록 바뀌면, 앱이 끝난 뒤에 뜬 세션이 남는다.
 
 ## main 이 아는 세션의 workspace
 

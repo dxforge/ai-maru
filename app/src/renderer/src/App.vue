@@ -113,7 +113,7 @@ function removePane(
   message = 'the pane was closed before its session started'
 ): void {
   // 세션이 스스로 끝나 닫는 pane 도 kill 을 보낸다 — docs/architecture.md 의
-  // "main 이 아는 세션의 workspace". 이미 끝난 세션의 kill 은 host 가 무시한다(`kill`, `main/session-host.ts`).
+  // "main 이 아는 세션의 workspace". 이미 끝난 세션의 kill 은 세션 소켓에 닿지 못해 아무것도 하지 않는다(`kill`, `main/session-host.ts`).
   terminals.get(pane)?.kill()
   answerPaneRequest(pane, { error: 'open_failed', message })
   workspaces.closePane(pane)

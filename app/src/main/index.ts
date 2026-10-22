@@ -44,7 +44,7 @@ import {
   writeSessionInput,
   type CliAccess
 } from './session'
-import type { KillRequest, OpenRequest } from './session-host'
+import type { KillRequest, OpenRequest, QuitRequest } from './session-host'
 import { createSessionWorkspaces } from './session-workspaces'
 import {
   readViewPrefs,
@@ -374,16 +374,28 @@ function start(): void {
   const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
   // pane 의 셸과 같은 환경(LANG 보정 포함)으로 job 을 띄운다.
   const jobEnv = hostEnv()
+  // job 은 host 를 거치지 않으므로, 앱을 끌 때 main 이 띄우던 job 을 직접 기다린다.
+  const jobSpawns = new Set<Promise<void>>()
+  let quitting = false
   const jobTable = createJobs({
     newId: newSessionId,
     workspaceOf: sessionWorkspaces.workspaceOf,
     spawn: async (id, cwd, command) => {
       await ready
-      const dir = await startDir(cwd)
-      await spawnSession(sessionBin(), sessionDir(), setup, id, dir, command, {
-        keep: true,
-        env: jobEnv
-      })
+      if (quitting) throw new Error('AI Maru is quitting')
+      const spawned = startDir(cwd).then((dir) =>
+        spawnSession(sessionBin(), sessionDir(), setup, id, dir, command, {
+          keep: true,
+          env: jobEnv
+        })
+      )
+      const settled = spawned.then(
+        () => {},
+        () => {}
+      )
+      jobSpawns.add(settled)
+      void settled.then(() => jobSpawns.delete(settled))
+      await spawned
     },
     waitExit: (id) => waitSessionExit(sessionDir(), id),
     capture: (id) => captureSession(sessionDir(), id, JOB_REPLY_MS),
@@ -413,10 +425,11 @@ function start(): void {
   })
   // open 과 같은 `ready.then` 으로 보내야 host 가 그 open 을 먼저 받는다.
   const sendKill = (key: string): void => {
-    // workspace 의 마지막 pane 을 지우면 renderer 가 workspace 도 지운다(docs/architecture.md).
     const closed = sessionWorkspaces.close(key)
-    if (closed) void jobTable.closeWorkspace(closed)
-    const req: KillRequest = { type: 'kill', key, dir: sessionDir() }
+    if (!closed) return
+    // workspace 의 마지막 pane 을 지우면 renderer 가 workspace 도 지운다(docs/architecture.md).
+    if (closed.closed) void jobTable.closeWorkspace(closed.closed)
+    const req: KillRequest = { type: 'kill', id: closed.session, dir: sessionDir() }
     void ready.then(() => sessionHost().postMessage(req))
   }
   // docs/architecture.md 의 "문서가 바뀌면 이전 문서의 세션을 끈다".
@@ -444,7 +457,6 @@ function start(): void {
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
-      key,
       id,
       cwd,
       command,
@@ -465,6 +477,16 @@ function start(): void {
   })
 
   app.on('window-all-closed', () => app.quit())
+  // open 과 같은 `ready.then` 으로 보내야 host 가 그 앞의 open 을 먼저 받는다.
+  const stopHost = (): Promise<void> =>
+    ready.then(() => {
+      const proc = host
+      if (!proc) return
+      const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
+      const req: QuitRequest = { type: 'quit' }
+      proc.postMessage(req)
+      return exited
+    })
   // 세션은 앱과 따로 떠 있는 프로세스라 앱이 끝나도 남는다.
   let sessionsKilled = false
   app.on('will-quit', (event) => {
@@ -472,8 +494,10 @@ function start(): void {
     event.preventDefault()
     claudeStatus.close()
     stopConfig()
+    quitting = true
     void Promise.all([
-      keepSessions || killSessions(sessionDir()),
+      keepSessions ||
+        Promise.all([stopHost(), ...jobSpawns]).then(() => killSessions(sessionDir())),
       cliServer.then((server) => server?.close())
     ]).finally(() => {
       sessionsKilled = true
