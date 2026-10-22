@@ -46,6 +46,37 @@ async function calls(w: { count: () => number }, n: number): Promise<void> {
   expect(w.count()).toBe(n)
 }
 
+async function watchedAfter(from: number, path: string): Promise<void> {
+  const paths = (): unknown[] => vi.mocked(watch).mock.calls.map((c) => c[0])
+  await vi.waitFor(() => expect(paths().slice(from)).toContain(path), { timeout: 2000 })
+}
+
+/**
+ * 폴더가 생겨 `watchConfig` 가 폴더 감시를 다시 걸고, 그때 한 번 부르는 `onChange` 까지 지나간 뒤의 호출 수를
+ * 준다. 마지막 `watch` 호출만 보면 `watching()` 이 처음 건 `watch(dir)` 로도 참이 되므로, 이 함수를 부른 뒤의
+ * 호출을 본다.
+ */
+async function rewatched(w: { count: () => number }): Promise<number> {
+  const seen = w.count()
+  await watchedAfter(vi.mocked(watch).mock.calls.length, dir)
+  await vi.waitFor(() => expect(w.count()).toBeGreaterThan(seen), { timeout: 2000 })
+  await sleep(CONFIG_SETTLE_MS * 3)
+  return w.count()
+}
+
+function fakeWatching(): { notify: () => void; count: () => number } {
+  mkdirSync(dir)
+  let listener!: (event: string, name: string) => void
+  vi.mocked(watch).mockImplementationOnce(((_dir: string, l: typeof listener) => {
+    listener = l
+    return Object.assign(new EventEmitter(), { close: () => {} })
+  }) as never)
+  vi.useFakeTimers()
+  let n = 0
+  stop = watchConfig(dir, () => n++)
+  return { notify: () => listener('change', 'config.toml'), count: () => n }
+}
+
 describe('readConfigFile', () => {
   it('파일이 없으면 text 가 null 이고 오류가 없다', () => {
     expect(readConfigFile(file)).toEqual({ path: file, text: null })
@@ -74,32 +105,25 @@ describe('watchConfig', () => {
   })
 
   it('한 번의 저장 알림이 50ms 간격의 두 묶음으로 와도 한 번만 부른다', () => {
-    mkdirSync(dir)
-    let notify!: () => void
-    vi.mocked(watch).mockImplementationOnce(((
-      _dir: string,
-      listener: (e: string, n: string) => void
-    ) => {
-      notify = () => listener('change', 'config.toml')
-      return Object.assign(new EventEmitter(), { close: () => {} })
-    }) as never)
-    vi.useFakeTimers()
-    let n = 0
-    stop = watchConfig(dir, () => n++)
+    const { notify, count } = fakeWatching()
     notify()
     vi.advanceTimersByTime(50)
     notify()
     vi.advanceTimersByTime(CONFIG_SETTLE_MS)
-    expect(n).toBe(1)
+    expect(count()).toBe(1)
   })
 
-  it('한 번에 여러 번 쓰면 한 번만 부른다', async () => {
-    mkdirSync(dir)
-    writeFileSync(file, 'a = 1\n')
-    const w = await watching()
-    writeFileSync(file, '')
-    writeFileSync(file, 'a = 2\n')
-    await calls(w, 1)
+  // 실제 파일을 두 번 쓰면 그 사이에 테스트 프로세스가 `CONFIG_SETTLE_MS` 넘게 멈출 때 두 번 불리므로, 알림을 묶는
+  // 동작은 알림을 직접 보내 검사한다.
+  it('한 번에 여러 번 써서 알림이 잇달아 와도 묶는 시간이 지난 뒤 한 번만 부른다', () => {
+    const { notify, count } = fakeWatching()
+    for (let i = 0; i < 4; i++) notify()
+    vi.advanceTimersByTime(CONFIG_SETTLE_MS - 1)
+    expect(count()).toBe(0)
+    vi.advanceTimersByTime(1)
+    expect(count()).toBe(1)
+    vi.advanceTimersByTime(CONFIG_SETTLE_MS * 3)
+    expect(count()).toBe(1)
   })
 
   it('임시 파일을 rename 해 덮어써도 계속 부른다', async () => {
@@ -119,9 +143,7 @@ describe('watchConfig', () => {
   it('폴더가 없으면 폴더와 파일이 생길 때 부른다', async () => {
     const w = await watching()
     mkdirSync(dir)
-    await vi.waitFor(() => expect(w.count()).toBeGreaterThanOrEqual(1), { timeout: 2000 })
-    await sleep(CONFIG_SETTLE_MS * 2)
-    const before = w.count()
+    const before = await rewatched(w)
     writeFileSync(file, 'a = 1\n')
     await calls(w, before + 1)
   })
@@ -130,11 +152,14 @@ describe('watchConfig', () => {
     mkdirSync(dir)
     writeFileSync(file, 'a = 1\n')
     const w = await watching()
+    const from = vi.mocked(watch).mock.calls.length
     rmSync(dir, { recursive: true })
+    // `watching()` 전에 쓴 파일의 알림이 늦게 와 호출 수가 먼저 차면, 부모 폴더 감시로 넘어가기 전에 폴더를 다시
+    // 만들어 폴더 감시를 다시 거는 경로를 검사하지 못한다. 그래서 호출 수보다 부모 폴더 감시를 먼저 기다린다.
+    await watchedAfter(from, root)
     await vi.waitFor(() => expect(w.count()).toBeGreaterThanOrEqual(1), { timeout: 2000 })
     mkdirSync(dir)
-    await sleep(CONFIG_SETTLE_MS * 2)
-    const before = w.count()
+    const before = await rewatched(w)
     writeFileSync(file, 'a = 2\n')
     await calls(w, before + 1)
   })

@@ -97,8 +97,10 @@ for (const format of ['files', 'reftable'] as const) {
     await expect(branch(page)).toHaveText(/[0-9a-f]{7}$/, shellGit)
 
     await page.keyboard.type('git worktree add -q -b wt ../proj-wt && cd ../proj-wt\n')
-    await expect(workspaceItems(page)).toHaveText(['proj'])
+    // worktree 로 cd 하기 전에도 workspace 이름이 `proj` 이므로, branch 가 `wt` 로 바뀐 뒤에 이름을 확인한다.
     await expect(branch(page)).toHaveText(/wt$/, shellGit)
+    await expect(workspaceItems(page)).toHaveText(['proj'])
+    await expect(tip(page)).toHaveAttribute('title', 'proj — wt\n~/proj-wt')
   })
 }
 

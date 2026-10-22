@@ -244,13 +244,32 @@ describe('reftable 저장소의 gitHead', () => {
     expect(await gitHead(dir)).toEqual({ repo: 'rt' })
   })
 
-  it('git 이 2초 안에 끝나지 않으면 다시 실행하지 않고 branch 없이 저장소 이름만 쓴다', async () => {
+  it('git 이 timeout 안에 끝나지 않으면 다시 실행하지 않고 branch 없이 저장소 이름만 쓴다', async () => {
     const dir = repo('rt', 'reftable')
     const fake = fakeGit('/bin/sleep 10')
     vi.stubEnv('PATH', fake.bin)
     const start = Date.now()
-    expect(await gitHead(dir)).toEqual({ repo: 'rt' })
+    // 가짜 git(셸 스크립트)이 호출을 기록하기 전에 timeout 으로 종료되면 `calls` 가 비므로, 부하가 걸려도 기록할 수
+    // 있게 2초를 준다.
+    expect(await gitHead(dir, 2000)).toEqual({ repo: 'rt' })
     expect(Date.now() - start).toBeLessThan(4000)
     expect(fake.calls()).toHaveLength(1)
+  }, 15_000)
+
+  it('HEAD 가 branch 를 가리키지 않는데 커밋 해시 읽기가 timeout 안에 끝나지 않으면 branch 없이 저장소 이름만 쓴다', async () => {
+    const dir = repo('rt', 'reftable')
+    const fake = fakeGit(`case "$*" in *symbolic-ref*) exit 1 ;; *) /bin/sleep 10 ;; esac`)
+    vi.stubEnv('PATH', fake.bin)
+    const start = Date.now()
+    expect(await gitHead(dir, 2000)).toEqual({ repo: 'rt' })
+    expect(Date.now() - start).toBeLessThan(4000)
+    expect(fake.calls()).toHaveLength(2)
+  }, 15_000)
+
+  it('timeout 을 주지 않으면 기본값을 써서, 2초 넘게 걸린 git 의 답도 쓴다', async () => {
+    const dir = repo('rt', 'reftable')
+    const fake = fakeGit('/bin/sleep 2.2; echo refs/heads/slow')
+    vi.stubEnv('PATH', fake.bin)
+    expect(await gitHead(dir)).toEqual({ repo: 'rt', branch: 'slow' })
   }, 15_000)
 })

@@ -47,16 +47,23 @@ const REFTABLE_HEAD = 'ref: refs/heads/.invalid'
 const run = promisify(execFile)
 
 /**
+ * 멈춘 git 을 끝없이 기다리지 않기 위한 상한이므로 넉넉히 둔다. 기다리는 동안 같은 pane 에서 다시 읽기를 청하면 앞
+ * 답은 `lastRead`(`renderer/src/workspace/store.ts`)가 버린다. load average 100 인 Mac 에서 `git symbolic-ref` 를
+ * 589번 재니 가장 오래 걸린 것이 2984ms 였다. 그 세 배쯤으로 둔다.
+ */
+const GIT_TIMEOUT_MS = 10_000
+
+/**
  * lock 을 잡지 않는 `symbolic-ref`·`rev-parse` 로 읽는다. 앱이 lock 을 잡으면 그동안 사용자의 git 이
  * ref 를 쓰지 못하기 때문이다. git 이 나중에 optional lock 을 더해도 잡지 않도록 `--no-optional-locks` 를
  * 넘긴다. 앱 env 의 `GIT_COMMON_DIR` 같은 변수가 읽을 저장소를 바꾸지 않도록 `GIT_*` 는 넘기지 않는다.
  */
-async function readReftableHead(gitDir: string): Promise<string | undefined> {
+async function readReftableHead(gitDir: string, timeoutMs: number): Promise<string | undefined> {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')))
   const git = async (...args: string[]): Promise<string> => {
     const { stdout } = await run('git', ['--no-optional-locks', `--git-dir=${gitDir}`, ...args], {
       env,
-      timeout: 2000
+      timeout: timeoutMs
     })
     return stdout.trim()
   }
@@ -75,13 +82,14 @@ async function readReftableHead(gitDir: string): Promise<string | undefined> {
  * 설치 창이 뜬다. reftable 저장소의 HEAD 만은 `.git` 으로 읽을 수 없어 `git` 을 실행한다. reftable 저장소는
  * git 이 만드므로 git 이 설치되어 있다고 본다.
  */
-export async function gitHead(cwd: string): Promise<GitHead | null> {
+export async function gitHead(cwd: string, timeoutMs = GIT_TIMEOUT_MS): Promise<GitHead | null> {
   if (!isAbsolute(cwd)) return null
   const found = await findGitDir(await realpath(cwd).catch(() => cwd))
   if (!found) return null
   const common = await read(join(found.gitDir, 'commondir'))
   const repo = common ? commonName(resolve(found.gitDir, common)) : basename(found.top)
-  const head = found.head === REFTABLE_HEAD ? await readReftableHead(found.gitDir) : found.head
+  const head =
+    found.head === REFTABLE_HEAD ? await readReftableHead(found.gitDir, timeoutMs) : found.head
   if (!head) return { repo }
   const ref = /^ref: (.+)$/.exec(head)?.[1]
   return { repo, branch: ref ? ref.replace(/^refs\/heads\//, '') : head.slice(0, 7) }
