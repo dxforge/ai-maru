@@ -45,7 +45,7 @@ test('띄울 때 설정 파일의 글꼴·크기·줄 높이를 쓴다', async (
   const font = await terminalFont(page)
   expect(font.family).toMatch(/^Menlo, D2Coding/)
   expect(font.size).toBe('18px')
-  // 18px × 1.5 이면 행 높이는 27px 이고, 기본값(14px × 1.2)이면 17px 안팎이다.
+  // 이 설정이면 행 높이는 28px 이고, 기본값(14px, 1.2)이면 18px 이다.
   expect(font.row).toBeGreaterThanOrEqual(26)
   await expect(toast(page)).toHaveCount(0)
 })
