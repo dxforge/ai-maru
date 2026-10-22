@@ -20,27 +20,28 @@ const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 
 #[derive(clap::Args)]
 pub struct Options {
-    /// 소켓·레코드를 둘 디렉토리. 없으면 만들고 0700 으로 맞춘다.
+    /// Directory for the socket and the record. It is created when missing and set to mode 0700.
     #[arg(long)]
     pub dir: PathBuf,
-    /// 세션 id. 영숫자·'-'·'_' 1~64 자.
+    /// Session id: 1 to 64 ASCII letters, digits, '-' or '_'.
     #[arg(long)]
     pub id: String,
-    /// 로그인 셸로 띄울 셸. 기본은 $SHELL, 없으면 /bin/sh.
+    /// Shell to run as a login shell. Defaults to `$SHELL`, or `/bin/sh` when that is unset.
     #[arg(long)]
     pub shell: Option<PathBuf>,
-    /// 셸의 작업 디렉토리. 기본은 이 프로세스의 작업 디렉토리.
+    /// Working directory of the shell. Defaults to this process's working directory.
     #[arg(long)]
     pub cwd: Option<PathBuf>,
     #[arg(long, default_value_t = 80)]
     pub cols: u16,
     #[arg(long, default_value_t = 24)]
     pub rows: u16,
-    /// 셸이 끝나도 이 프로세스는 끝나지 않고 화면·종료 상태를 유지한다. `kill` 이나 종료 시그널로 끝난다.
+    /// Keep this process running after the shell exits, holding the screen and the exit status.
+    /// It ends on a `kill` request or a termination signal.
     #[arg(long)]
     pub keep: bool,
-    /// `--` 뒤에 주면 대화형 로그인 셸이 이 명령을 실행하고 끝난다. 셸이 sh·bash·zsh·ksh·dash 가
-    /// 아니면 `/bin/sh` 가 실행한다.
+    /// Given after `--`, the interactive login shell runs this command and exits. When the shell
+    /// is not sh, bash, zsh, ksh or dash, `/bin/sh` runs it instead.
     #[arg(last = true)]
     pub command: Vec<String>,
 }

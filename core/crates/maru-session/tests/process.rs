@@ -1114,3 +1114,36 @@ fn the_protocol_version_flag_does_not_combine() {
     assert!(!out.status.success());
     assert!(out.stdout.is_empty());
 }
+
+#[test]
+fn help_is_in_english_and_describes_every_option_but_the_size() {
+    let out = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+        .arg("--help")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let help = String::from_utf8(out.stdout).unwrap();
+    let hangul: String = help
+        .chars()
+        .filter(|c| ('\u{AC00}'..='\u{D7A3}').contains(c))
+        .collect();
+    assert!(hangul.is_empty(), "{help}");
+    for flag in [
+        "[COMMAND]...",
+        "--dir <DIR>",
+        "--id <ID>",
+        "--shell <SHELL>",
+        "--cwd <CWD>",
+        "--keep",
+    ] {
+        let line = help
+            .lines()
+            .map(str::trim_start)
+            .find(|l| l.starts_with(flag))
+            .unwrap_or_else(|| panic!("{flag} is missing:\n{help}"));
+        assert!(
+            !line[flag.len()..].trim().is_empty(),
+            "{flag} has no description:\n{help}"
+        );
+    }
+}
