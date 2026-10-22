@@ -681,6 +681,10 @@ void window.maru.restoreScreen().then((s) => {
   background: color-mix(in srgb, var(--side), var(--ground));
   /* 스크롤바가 자리를 차지하는 설정에서, 넘치기 시작하거나 그칠 때마다 터미널의 줄 수가 바뀌지 않게. */
   overflow-x: scroll;
+  scrollbar-width: thin;
+  /* 이 설정에서는 넘치지 않을 때도 트랙을 칠한다. 트랙이 투명하면 넘치기 시작할 때 빈 띠에 thumb 이 나타나고, 넘침이 그치면 사라지기 때문이다.
+     overlay 스크롤바 설정에서는 가만히 있을 때도 스크롤할 때도 트랙이 보이지 않았다. */
+  scrollbar-color: var(--thumb) var(--track);
 }
 
 .columns .panes {

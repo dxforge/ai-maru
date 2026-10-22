@@ -10,6 +10,7 @@ import {
   paneHeader,
   paneRows,
   pressNew,
+  screenshotPixels,
   shellRows,
   split,
   test,
@@ -156,34 +157,24 @@ test('사이드바의 상태 아이콘과 Claude 아이콘은 잉크의 가운�
 async function inkOffsets(page: Page, row: Locator, icons: readonly string[]): Promise<number[]> {
   const clip = (await row.boundingBox())!
   const boxes = await Promise.all(icons.map(async (s) => (await row.locator(s).boundingBox())!))
-  const png = await page.screenshot({ clip, scale: 'device' })
-  return page.evaluate(
-    async ({ b64, clip, boxes }) => {
-      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
-      const image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
-      const context = new OffscreenCanvas(image.width, image.height).getContext('2d')!
-      context.drawImage(image, 0, 0)
-      const data = context.getImageData(0, 0, image.width, image.height).data
-      const scale = image.width / clip.width
-      const at = (x: number, y: number) => {
-        const i = (y * image.width + x) * 4
-        return [data[i], data[i + 1], data[i + 2]]
-      }
-      const background = at(image.width - 1, 0)
-      return boxes.map((box) => {
-        const inked = (y: number) => {
-          for (
-            let x = Math.floor((box.x - clip.x) * scale);
-            x < (box.x + box.width - clip.x) * scale;
-            x++
-          )
-            if (at(x, y).some((v, i) => Math.abs(v - background[i]) > 30)) return true
-          return false
-        }
-        const rows = [...Array(image.height).keys()].filter(inked)
-        return (rows[0] + rows[rows.length - 1] + 1) / 2 / scale - clip.height / 2
-      })
-    },
-    { b64: png.toString('base64'), clip, boxes }
-  )
+  const image = await screenshotPixels(page, clip)
+  const scale = image.width / clip.width
+  const at = (x: number, y: number) => {
+    const i = (y * image.width + x) * 4
+    return image.data.slice(i, i + 3)
+  }
+  const background = at(image.width - 1, 0)
+  return boxes.map((box) => {
+    const inked = (y: number) => {
+      for (
+        let x = Math.floor((box.x - clip.x) * scale);
+        x < (box.x + box.width - clip.x) * scale;
+        x++
+      )
+        if (at(x, y).some((v, i) => Math.abs(v - background[i]) > 30)) return true
+      return false
+    }
+    const rows = [...Array(image.height).keys()].filter(inked)
+    return (rows[0] + rows[rows.length - 1] + 1) / 2 / scale - clip.height / 2
+  })
 }

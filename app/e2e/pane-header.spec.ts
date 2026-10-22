@@ -10,6 +10,7 @@ import {
   putCanvas,
   resizeBy,
   run,
+  screenshotPixels,
   setZoom,
   split,
   test,
@@ -428,15 +429,8 @@ test('포커스 없는 pane 의 스크롤바도 흐리게 덮는다', async ({ l
 })
 
 async function pixel(page: Page, x: number, y: number): Promise<number[]> {
-  const png = await page.screenshot({ clip: { x, y, width: 1, height: 1 } })
-  return page.evaluate(async (b64) => {
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
-    const image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
-    const canvas = new OffscreenCanvas(1, 1)
-    const context = canvas.getContext('2d')!
-    context.drawImage(image, 0, 0)
-    return [...context.getImageData(0, 0, 1, 1).data.slice(0, 3)]
-  }, png.toString('base64'))
+  const { data } = await screenshotPixels(page, { x, y, width: 1, height: 1 })
+  return data.slice(0, 3)
 }
 
 test('columns 에서 줌과 창 크기를 바꿔도 pane 경계는 행·열 격자에 놓인다', async ({ launch }) => {

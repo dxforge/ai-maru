@@ -231,6 +231,24 @@ export function attachFromOutside(sockPath: string, cols: number, rows: number):
   })
 }
 
+export type Pixels = { width: number; height: number; data: number[] }
+
+export async function screenshotPixels(
+  page: Page,
+  clip: { x: number; y: number; width: number; height: number },
+  scale: 'css' | 'device' = 'device'
+): Promise<Pixels> {
+  const png = await page.screenshot({ clip, scale })
+  return page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+    const image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
+    const context = new OffscreenCanvas(image.width, image.height).getContext('2d')!
+    context.drawImage(image, 0, 0)
+    const { data } = context.getImageData(0, 0, image.width, image.height)
+    return { width: image.width, height: image.height, data: [...data] }
+  }, png.toString('base64'))
+}
+
 export function panes(page: Page) {
   return page.locator('.panes.selected .pane')
 }

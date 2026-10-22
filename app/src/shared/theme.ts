@@ -88,6 +88,7 @@ export function uiColors(theme: TerminalTheme) {
     faint: mix(fg, bg, 0.55),
     dim: bg + '73',
     thumb: fg + THUMB_ALPHA,
+    track: fg + '0f',
     working: status(4),
     waiting: status(3),
     error: status(1),
