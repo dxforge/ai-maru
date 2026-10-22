@@ -116,6 +116,16 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 PATH', () => {
     expect(atPrompt(h, ['true'], appEnv(bin))).toBe(`mine ${bin}\nmine ${bin}\n`)
   })
 
+  it('패키징된 앱처럼 디렉토리에 공백이 있어도 통째로 옮긴다', () => {
+    const spaced = '/opt/AI Maru/bin'
+    expect(atPrompt(pushedBack(), ['print $path[1]'], appEnv(spaced))).toBe(`${spaced}\n`)
+  })
+
+  it('사용자가 globsubst·shwordsplit 을 켜도 같다', () => {
+    const h = pushedBack({ '.zshrc': 'setopt globsubst shwordsplit' })
+    expect(atPrompt(h, ['print $path[1]'], appEnv(bin))).toBe(`${bin}\n`)
+  })
+
   it('사용자 ~/.zshrc 가 PATH 를 통째로 다시 써도 되살린다', () => {
     const h = pushedBack({ '.zshrc': 'export PATH=/opt/mine:/usr/bin:/bin' })
     expect(atPrompt(h, ['print $PATH'], appEnv(bin))).toBe(`${bin}:/opt/mine:/usr/bin:/bin\n`)
