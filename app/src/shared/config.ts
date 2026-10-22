@@ -1,2 +1,2 @@
-/** main 이 읽은 `config.toml` 의 원문이다. TOML 파싱과 검사는 renderer 가 한다. main 에서 하면 TOML 파서가 `dependencies` 에 들어가 asar 구성이 바뀌기 때문이다. `text` 가 null 이고 `error` 가 없으면 파일이 없다. */
+/** main 이 읽은 `config.toml` 의 원문이다. TOML 파싱과 검사는 renderer 가 한다. `text` 가 null 이고 `error` 가 없으면 파일이 없다. */
 export type ConfigRead = { path: string; text: string | null; error?: string }

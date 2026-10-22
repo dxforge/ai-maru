@@ -45,7 +45,6 @@ export function createConfig(first: ConfigRead, report: (r: ConfigReport) => voi
   return { font: readonly(font), apply }
 }
 
-/** 알릴 것이 없으면 null 이다. `missing` 은 `names` 가운데 설치되지 않은 글꼴이다. */
 export function configToast(r: ConfigReport, missing: string[], detail: string): Toast | null {
   if (r.problem !== undefined)
     return {

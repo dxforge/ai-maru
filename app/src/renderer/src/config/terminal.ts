@@ -50,9 +50,8 @@ function isTable(v: unknown): v is Table {
 }
 
 /**
- * 쉼표로 이은 글꼴 이름을 나눠 이름마다 앞뒤 공백과 양끝을 감싼 같은 따옴표 한 쌍을 걷어 낸다.
- * CSS 값을 일찍 끝내거나 escape 하는 문자, 또는 CSS 문자열을 끝내는 줄바꿈 같은 제어 문자가 남거나 빈 이름이
- * 있으면 null 이다.
+ * 따옴표를 걷어 낸 이름에 CSS 값을 일찍 끝내거나 escape 하는 문자, 또는 CSS 문자열을 끝내는 줄바꿈 같은 제어
+ * 문자가 남거나 빈 이름이 있으면 null 이다.
  */
 export function fontNames(input: string): string[] | null {
   const names = input.split(',').map((part) => {

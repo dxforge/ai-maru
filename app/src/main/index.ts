@@ -359,10 +359,10 @@ function start(): void {
     return screen
   })
   ipcMain.on('screen:prefs', (event) => (event.returnValue = viewPrefs()))
-  // 내용이 같아도 저장할 때마다 보낸다. 사용자가 닫은 토스트도 같은 내용으로 다시 저장하면 다시 띄워야 하기 때문이다.
   const configPath = configFile()
   let config = readConfigFile(configPath)
   ipcMain.on('config:read', (event) => (event.returnValue = config))
+  // 내용이 같아도 저장할 때마다 보낸다. 사용자가 닫은 토스트도 같은 내용으로 다시 저장하면 다시 띄워야 하기 때문이다.
   const stopConfig = watchConfig(configDir(), () => {
     config = readConfigFile(configPath)
     const win = mainWindow()
