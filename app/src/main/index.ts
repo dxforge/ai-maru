@@ -12,7 +12,7 @@ import {
   utilityProcess,
   type UtilityProcess
 } from 'electron'
-import { canvasPut } from './canvas'
+import { canvasPut, putCanvas } from './canvas'
 import { createClaudeStatus } from './claude-status'
 import { AfterReply, CliError, listenCli, optionalBoolean, type Handlers } from './cli-server'
 import { configDir, configFile, readConfigFile, watchConfig } from './config-file'
@@ -23,6 +23,7 @@ import { createMonitor } from './monitor'
 import { isDevReload } from './navigation'
 import { createPanes } from './pane'
 import { createJobs, JOB_REPLY_MS } from './job'
+import { LINK_REPLY_MS, openLink } from './links'
 import {
   checkRestart,
   restartFile,
@@ -34,6 +35,7 @@ import {
 import {
   appSocketPath,
   captureSession,
+  foregroundCwd,
   killSession,
   killSessions,
   QUIT_TIMEOUT_MS,
@@ -421,6 +423,17 @@ function start(): void {
   ipcMain.handle('git:head', (_event, cwd: unknown) =>
     typeof cwd === 'string' ? gitHead(cwd) : null
   )
+  ipcMain.handle('link:open', (_event, text: unknown, session: unknown) => {
+    if (typeof text !== 'string' || typeof session !== 'string') {
+      return { ok: false, reason: 'not a link' }
+    }
+    return openLink(text, session, {
+      openExternal: (url) => shell.openExternal(url),
+      openPath: (path) => shell.openPath(path),
+      putCanvas: (doc) => putCanvas(mainWindow, doc),
+      foregroundCwd: (id) => foregroundCwd(sessionDir(), id, LINK_REPLY_MS)
+    })
+  })
   ipcMain.on('window:path', (event, path: unknown) => {
     if (process.platform === 'darwin' && typeof path === 'string')
       BrowserWindow.fromWebContents(event.sender)?.setRepresentedFilename(path)

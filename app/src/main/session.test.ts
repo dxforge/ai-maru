@@ -16,6 +16,7 @@ import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
 import { encodeFrame, FrameDecoder } from './frame'
 import {
   captureSession,
+  foregroundCwd,
   killSessions,
   readRecord,
   sessionEnv,
@@ -332,6 +333,47 @@ describe('waitSessionExit', () => {
   it('세션이 없으면 null 이다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-ask-'))
     expect(await waitSessionExit(dir, 's-0000000a').exit).toBeNull()
+  })
+})
+
+describe('foregroundCwd', () => {
+  it('foreground 프로세스의 cwd 를 청해 돌려준다', async () => {
+    const s = await frameSession((_req, sock) =>
+      send(sock, { type: 'foreground', pid: 7, cwd: '/w' })
+    )
+    try {
+      expect(await foregroundCwd(s.dir, s.id, 1000)).toBe('/w')
+      expect(s.requests[0]).toMatchObject({ type: 'foreground' })
+    } finally {
+      s.close()
+    }
+  })
+
+  it.each([{ cwd: null }, {}])('세션이 cwd 를 모르면(%j) null 이다', async (rest) => {
+    const s = await frameSession((_req, sock) =>
+      send(sock, { type: 'foreground', pid: 7, ...rest })
+    )
+    try {
+      expect(await foregroundCwd(s.dir, s.id, 1000)).toBeNull()
+    } finally {
+      s.close()
+    }
+  })
+
+  it('오류 답이나 시간 초과는 실패다', async () => {
+    const failing = await frameSession((_req, sock) =>
+      send(sock, { type: 'error', code: 'unknown_request', message: 'unknown type' })
+    )
+    const mute = await frameSession(() => {})
+    try {
+      await expect(foregroundCwd(failing.dir, failing.id, 1000)).rejects.toThrow(
+        'older maru-session'
+      )
+      await expect(foregroundCwd(mute.dir, mute.id, 50)).rejects.toThrow('did not answer')
+    } finally {
+      failing.close()
+      mute.close()
+    }
   })
 })
 

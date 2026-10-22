@@ -1,10 +1,14 @@
 <script lang="ts">
 import { shallowRef } from 'vue'
+import { trackMetaKey } from '../terminal/links'
 
 // 창 안의 어느 터미널도 WebGL addon 을 적용한 적이 없을 때 적용에 실패하면 켠다. 그동안은 renderer 가
 // 바뀔 일이 없으므로 모든 터미널이 DOM 의 셀 폭으로 열 수를 센다.
 const webglUnavailable = shallowRef(false)
 let webglLoaded = false
+const metaKey = trackMetaKey(window)
+const metaPressed = shallowRef(metaKey.pressed)
+metaKey.onChange((pressed) => (metaPressed.value = pressed))
 </script>
 
 <script setup lang="ts">
@@ -13,12 +17,13 @@ import { UnicodeGraphemesAddon } from '@xterm/addon-unicode-graphemes'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal, type IRenderDimensions } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { nextTick, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
 import { isAppKey, matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
 import { sameFont, type TerminalFont } from '../config/terminal'
 import { alignComposition } from '../terminal/composition'
+import { createLinkHandler, registerLinkProvider } from '../terminal/links'
 import { pastePaths } from '../terminal/paths'
 import { SCROLLBAR_WIDTH } from '../workspace/columns'
 import { osc7Path } from '../workspace/cwd'
@@ -51,6 +56,7 @@ const emit = defineEmits<{
   cwd: [cwd: string]
   spawned: []
   title: [title: string]
+  linkFailed: [reason: string]
   /** `floored` 면 셀 폭이 WebGL 이 내림한 값이고, `fitTerminal` 이 열 수를 이 폭으로 직접 나눈다. */
   cell: [cell: Size, floored: boolean]
 }>()
@@ -70,6 +76,18 @@ const term = new Terminal({
 })
 // 이 addon 을 빼거나 바꾸면 `maru-session` 과 글자 폭이 달라진다(`docs/architecture.md` 의 "글자 폭").
 term.loadAddon(new UnicodeGraphemesAddon())
+// 링크는 ⌘+클릭으로만 연다(Terminal.app·iTerm2 의 관행). 그냥 클릭은 터미널로 간다.
+function activateLink(event: MouseEvent, text: string): void {
+  if (!event.metaKey) return
+  void window.maru.openLink(text, sessionId).then((r) => {
+    if (!r.ok) emit('linkFailed', r.reason)
+  })
+}
+// OSC 8 링크는 라벨이 주소를 가리므로(`#12` → 이슈 주소), ⌘ 를 누른 채 hover 하는 동안 주소를 보인다. 글자로 찍힌
+// 링크는 글자가 곧 주소라 따로 보이지 않는다.
+const hoveredUrl = ref<string | null>(null)
+term.options.linkHandler = createLinkHandler(activateLink, (url) => (hoveredUrl.value = url))
+const textLinks = registerLinkProvider(term, metaKey, activateLink)
 const fit = new FitAddon()
 term.loadAddon(fit)
 const selectAllKeys = menuKeys('selectAll')!
@@ -300,6 +318,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   observer.disconnect()
   intersection?.disconnect()
+  textLinks.dispose()
   if (webgl) disposeWebgl()
   term.dispose()
 })
@@ -313,7 +332,9 @@ onBeforeUnmount(() => {
     @dragover="onDragOver"
     @drop="onDrop"
     @paste.capture="onPaste"
-  />
+  >
+    <div v-if="metaPressed && hoveredUrl" class="link-address">{{ hoveredUrl }}</div>
+  </div>
 </template>
 
 <style scoped>
@@ -325,6 +346,26 @@ onBeforeUnmount(() => {
 /* xterm 의 스크롤바(z-index 11)가 pane 을 흐리게 덮는 층(App.vue) 위로 올라오지 않게 쌓임 맥락을 따로 둔다. */
 .terminal-view {
   isolation: isolate;
+}
+
+/* 브라우저가 링크 주소를 보이는 자리(왼쪽 아래). 스크롤바(z-index 11)보다 위에 둔다. 마우스가 닿으면 링크를
+   떠난 것으로 쳐 사라지므로 마우스 이벤트를 받지 않는다. */
+.link-address {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 12;
+  max-width: calc(100% - 16px);
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 0 4px 0 0;
+  background: var(--raised);
+  color: var(--muted);
+  font: 11px/1.4 system-ui;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 
 .terminal-view :deep(.xterm) {

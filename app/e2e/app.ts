@@ -494,6 +494,14 @@ export function canvasPanel(page: Page): Locator {
   return page.locator('.canvas')
 }
 
+export function canvasTitles(page: Page): Locator {
+  return page.locator('.canvas .list button')
+}
+
+export function toast(page: Page): Locator {
+  return page.locator('.toast')
+}
+
 export function canvasResizer(page: Page): Locator {
   return page.locator('.resizer:has(+ .canvas)')
 }

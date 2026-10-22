@@ -146,6 +146,11 @@ function paneFailed(pane: number, message: string): void {
   if (paneRequests.has(pane)) removePane(pane, message)
 }
 
+// 터미널 글자에서 찾은 링크는 `a/b.ext` 같은 글을 경로로 잘못 본 것일 수 있다. 실패를 알리지 않으면 왜 열리지 않는지 알 수 없다.
+function linkFailed(reason: string): void {
+  toasts.put('link', { level: 'warning', title: "Couldn't open the link", lines: [reason] })
+}
+
 const noPane = (session: string): PaneReply => ({
   error: 'no_pane',
   message: `no pane for session ${session}`
@@ -614,6 +619,7 @@ void window.maru.restoreScreen().then((s) => {
                 @failed="(message) => paneFailed(p.key, message)"
                 @spawned="answerPaneRequest(p.key, { session: p.sessionId })"
                 @cwd="(dir) => workspaces.setCwd(p.key, dir)"
+                @link-failed="linkFailed"
                 @title="(title) => workspaces.setTitle(p.key, title)"
                 @cell="(c, floored) => setCell(fontOf(w), c, floored)"
               />

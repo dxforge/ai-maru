@@ -1,3 +1,4 @@
+use crate::procinfo;
 use crate::pty::{self, Pty};
 use crate::vt::{VtFormat, VtTerminal};
 use anyhow::Result;
@@ -7,7 +8,7 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::process::ExitStatusExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -22,6 +23,14 @@ const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(500);
 pub struct Exit {
     pub code: Option<i32>,
     pub signal: Option<i32>,
+}
+
+/// tty 의 foreground 프로세스 그룹 리더. 프롬프트에서는 셸, 명령이 돌고 있으면 그 명령이다.
+#[derive(Debug)]
+pub struct Foreground {
+    pub pid: i32,
+    /// 리더가 이미 끝났거나 읽을 수 없으면 None 이다.
+    pub cwd: Option<PathBuf>,
 }
 
 pub struct ReplayState {
@@ -267,6 +276,14 @@ impl Session {
         self.screen.lock().unwrap().vt.format(fmt)
     }
 
+    pub fn foreground(&self) -> Foreground {
+        let pid = self.pty.foreground_pgid().unwrap_or(self.shell_pid as i32);
+        Foreground {
+            pid,
+            cwd: procinfo::cwd(pid),
+        }
+    }
+
     pub fn subscribe_with_replay(&self, conn: u64) -> Result<(Vec<u8>, ReplayState, Arc<Output>)> {
         let mut screen = self.screen.lock().unwrap();
         let replay = screen.vt.replay()?;
@@ -375,11 +392,56 @@ mod tests {
     }
 
     fn with_session(f: impl FnOnce(&Arc<Session>)) {
-        let s = Session::spawn(Path::new("/bin/sh"), None, None, &[], 80, 24).unwrap();
+        with_session_in(None, f);
+    }
+
+    fn with_session_in(cwd: Option<&Path>, f: impl FnOnce(&Arc<Session>)) {
+        let s = Session::spawn(Path::new("/bin/sh"), None, cwd, &[], 80, 24).unwrap();
         f(&s);
         tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(s.terminate(Duration::from_secs(2)));
+    }
+
+    fn wait_foreground(s: &Session, pred: impl Fn(&Foreground) -> bool) -> Foreground {
+        for _ in 0..300 {
+            let fg = s.foreground();
+            if pred(&fg) {
+                return fg;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        s.foreground()
+    }
+
+    #[test]
+    fn the_foreground_is_the_shell_at_the_prompt_and_the_command_while_it_runs() {
+        let dir = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+        with_session_in(Some(&dir), |s| {
+            let shell = s.shell_pid as i32;
+
+            let fg = wait_foreground(s, |fg| fg.pid == shell && fg.cwd.is_some());
+            assert_eq!(fg.cwd.as_deref(), Some(dir.as_path()));
+
+            s.write(b"cd /\n").unwrap();
+            let fg = wait_foreground(s, |fg| fg.cwd.as_deref() == Some(Path::new("/")));
+            assert_eq!(fg.pid, shell, "cd 뒤에도 프롬프트에서는 셸이다");
+
+            s.write(b"sleep 5\n").unwrap();
+            let fg = wait_foreground(s, |fg| fg.pid != shell && fg.cwd.is_some());
+            assert_ne!(fg.pid, shell, "명령이 돌면 그 명령이다");
+            assert_eq!(fg.cwd.as_deref(), Some(Path::new("/")));
+        });
+    }
+
+    #[test]
+    fn the_foreground_has_no_cwd_once_the_shell_has_exited() {
+        let s = Session::spawn(Path::new("/bin/sh"), None, None, &[], 80, 24).unwrap();
+        s.write(b"exit\n").unwrap();
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(wait_exit(&mut s.exit_rx()));
+        assert_eq!(s.foreground().cwd, None);
     }
 
     #[test]

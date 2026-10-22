@@ -264,6 +264,15 @@ async fn handle(mut stream: UnixStream, session: Arc<Session>, kill_tx: mpsc::Se
                 Err(e) => error(&mut stream, "input_failed", &e.to_string()).await,
             }
         }
+        Some("foreground") => {
+            let fg = session.foreground();
+            let cwd = fg.cwd.map(|p| p.to_string_lossy().into_owned());
+            reply(
+                &mut stream,
+                json!({ "type": "foreground", "pid": fg.pid, "cwd": cwd }),
+            )
+            .await
+        }
         Some("capture") => match session.capture(req["unwrap"] == true) {
             Ok(text) => {
                 reply(

@@ -30,6 +30,7 @@
 //!   먼저 싣고 그 뒤에 대체 화면을 싣는다. 다만 대체 화면에 끝나지 않은 시퀀스가 64 KiB 를 넘게
 //!   걸려 있으면 일반 화면 없이 대체 화면만 싣는다. kitty 키보드 플래그 같은 입력 상태는 싣지
 //!   않으므로 완전 복원이 아니다.
+//!   셀에 걸린 OSC 8 hyperlink 는 싣지 않는다.
 //!
 //! # 프로토콜
 //!
@@ -44,6 +45,7 @@
 //! | `capture` (`unwrap`: bool, 선택) | `{"type":"capture","text":…}` |
 //! | `status` (`wait`: bool, 선택) | `{"type":"status","exit":null}` 또는 `{"type":"status","exit":{"code","signal"}}` |
 //! | `input` (`text`: 문자열) | 셸 입력으로 다 쓴 뒤 `{"type":"input"}` |
+//! | `foreground` | `{"type":"foreground","pid":…,"cwd":…}` |
 //! | `attach` (`role`: `primary`·`observer`, primary 면 `cols`·`rows`) | 아래 |
 //!
 //! `capture` 는 화면과 스크롤백을 스타일 없는 글자로 돌려준다. 행마다 줄을 끊고, `unwrap` 이 true 면
@@ -55,6 +57,10 @@
 //!
 //! `input` 은 attach 의 primary 자리와 상관없이 쓴다. 셸이 끝났으면 쓰지 않고 `exited` 로 거절한다.
 //! 요청한 쪽이 답을 기다리지 않고 연결을 끊어도 받은 입력은 끝까지 쓴다.
+//!
+//! `foreground` 는 tty 의 foreground 프로세스 그룹 리더의 `pid` 와 작업 디렉토리 `cwd` 를 돌려준다.
+//! 프롬프트에서는 셸이고, 명령이 돌고 있으면 그 명령이다. 리더가 이미 끝났거나(`a | b` 에서 `a` 가
+//! 먼저 끝남) 작업 디렉토리를 읽을 수 없으면 `cwd` 는 null 이다.
 //!
 //! `attach` 의 응답은 헤더 `{"type":"attached","protocol_version","tty","role","cols","rows",
 //! "cursor_x","cursor_y"}` 와 재생(Binary, 비어 있어도 보낸다)이고, 그 뒤로
@@ -81,6 +87,7 @@ macro_rules! log {
 mod attach;
 pub mod frame;
 pub mod paths;
+mod procinfo;
 mod pty;
 pub mod record;
 pub mod server;
