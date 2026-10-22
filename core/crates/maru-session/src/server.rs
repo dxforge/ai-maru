@@ -26,7 +26,7 @@ pub struct Options {
     /// Session id: 1 to 64 ASCII letters, digits, '-' or '_'.
     #[arg(long)]
     pub id: String,
-    /// Shell to run as a login shell. Defaults to `$SHELL`, or `/bin/sh` when that is unset.
+    /// Shell to run as a login shell. Defaults to `$SHELL`, or `/bin/sh` when that is unset or empty.
     #[arg(long)]
     pub shell: Option<PathBuf>,
     /// Working directory of the shell. Defaults to this process's working directory.
@@ -68,7 +68,11 @@ pub async fn run(opts: Options) -> Result<()> {
 
     let shell = opts
         .shell
-        .or_else(|| std::env::var_os("SHELL").map(PathBuf::from))
+        .or_else(|| {
+            std::env::var_os("SHELL")
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+        })
         .unwrap_or_else(|| PathBuf::from("/bin/sh"));
     let session = Session::spawn(
         &shell,
