@@ -120,6 +120,27 @@ test('프롬프트가 뜨지 않아도 Claude 의 상태가 바뀌면 branch 를
   await expect(branch(page)).toHaveText(/by-claude$/)
 })
 
+test('돌고 있는 프로그램이 다른 worktree 로 옮겨 간 채 Claude 의 상태가 바뀌면 그 프로그램의 cwd 로 branch 를 읽고, 프롬프트가 돌아오면 셸의 cwd 로 돌아간다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = repoHome(dataDir)
+  git(join(home, 'proj'), 'worktree', 'add', '-q', '-b', 'wt', '../proj-wt')
+  const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  await page.keyboard.type('cd proj\n')
+  await expect(branch(page)).toHaveText(/main$/)
+
+  // claude 가 EnterWorktree 로 cwd 를 옮긴 채 일하는 것처럼, 서브셸이 worktree 로 cd 한 뒤 hook 을 보내고 sleep 으로 프롬프트를
+  // 붙든다. 서브셸이 foreground 프로세스 그룹의 리더라 세션은 그 cwd 를 답한다. 프롬프트의 OSC 7 은 아직 `~/proj` 다.
+  const hook = claudeHook('UserPromptSubmit').trimEnd()
+  await page.keyboard.type(`(cd ../proj-wt && ${hook} && sleep 30)\n`)
+  await expect(paneRows(page)).toHaveClass(/working/)
+  await expect(tip(page)).toHaveAttribute('title', 'proj — wt\n~/proj-wt')
+
+  await page.keyboard.press('Control+C')
+  await expect(tip(page)).toHaveAttribute('title', 'proj — main\n~/proj')
+})
+
 test('경로는 workspace 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, columns 의 workspace 헤더에도 branch 가 붙는다', async ({
   launch,
   dataDir

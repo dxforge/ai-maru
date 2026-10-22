@@ -206,11 +206,14 @@ export async function captureSession(dir: string, id: string, timeoutMs: number)
   return r.text
 }
 
+/** `foreground` 요청은 ioctl 과 프로세스 조회뿐이라 바로 답한다. 세션이 멈춰 있어도 묻는 쪽(링크 클릭·branch 읽기)이 오래 기다리지 않게 짧게 둔다. */
+const FOREGROUND_REPLY_MS = 2_000
+
 /** foreground 프로세스(프롬프트에서는 셸, 명령이 돌면 그 명령)의 cwd. 세션이 모르면 null 이다. */
 export async function foregroundCwd(
   dir: string,
   id: string,
-  timeoutMs: number
+  timeoutMs = FOREGROUND_REPLY_MS
 ): Promise<string | null> {
   const r = await askWithin(dir, id, { type: 'foreground' }, timeoutMs)
   // `foreground` 를 더하며 `PROTOCOL_VERSION` 을 올리지 않았으므로, 앱을 새로 깔아도 이 요청을 모르는 이전 maru-session 의 세션이 남아 있을 수 있다.

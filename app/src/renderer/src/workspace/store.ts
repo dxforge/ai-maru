@@ -45,6 +45,7 @@ export function focusedPane(w: {
 
 export function createWorkspaces(
   readGit: (cwd: string) => Promise<GitHead | null> = async () => null,
+  foregroundCwd: (sessionId: string) => Promise<string | null> = async () => null,
   sessionId: () => string = newSessionId,
   workspaceId: () => string = () => randomId('w')
 ) {
@@ -180,24 +181,42 @@ export function createWorkspaces(
   }
 
   // pane 마다 마지막으로 청한 답만 쓴다. 답은 청한 순서대로 오지 않아, 늦게 온 답이 새 답을 덮을 수 있다.
-  // 읽지 못하면 저장소 밖으로 본다. 이전 디렉토리의 저장소가 새 디렉토리에 남지 않게.
-  function readGitFor(key: number, cwd: string): void {
+  function claim(key: number): () => boolean {
     const read = ++reads
     lastRead.set(key, read)
-    void readGit(cwd)
-      .catch(() => null)
-      .then((git) => setGit(key, read, git ?? undefined))
+    return () => lastRead.get(key) === read
   }
 
-  function setGit(key: number, read: number, git: GitHead | undefined): void {
+  // 읽지 못하면 저장소 밖으로 본다. 이전 디렉토리의 저장소가 새 디렉토리에 남지 않게 하기 위해서다.
+  function readGitFor(key: number, cwd: string): void {
+    const latest = claim(key)
+    void readGit(cwd)
+      .catch(() => null)
+      .then((git) => {
+        if (latest()) setGit(key, git ?? undefined)
+      })
+  }
+
+  function setGit(key: number, git: GitHead | undefined): void {
     const p = pane(key)
-    if (!p || lastRead.get(key) !== read) return
+    if (!p) return
     if (p.git?.repo !== git?.repo || p.git?.branch !== git?.branch) p.git = git
   }
 
+  /**
+   * pane 에서 돌고 있는 프로그램이 옮겨 간 디렉토리(claude 가 들어간 worktree 등)는 셸의 OSC 7 로 오지 않으므로,
+   * foreground 프로세스의 cwd 를 물어 그 pane 의 cwd 로 삼는다. 프롬프트의 셸은 OSC 7 과 같은 cwd 를 답한다.
+   */
   function refreshSession(sessionId: string): void {
-    for (const w of list.value)
-      for (const p of w.panes) if (p.sessionId === sessionId && p.cwd) readGitFor(p.key, p.cwd)
+    const p = paneBySession(sessionId)
+    if (!p) return
+    const latest = claim(p.key)
+    void foregroundCwd(sessionId)
+      .catch(() => null)
+      .then((cwd) => {
+        const dir = cwd ?? p.cwd
+        if (latest() && dir !== undefined) setCwd(p.key, dir)
+      })
   }
 
   function workspace(key: number): Workspace | undefined {

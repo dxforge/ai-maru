@@ -65,7 +65,7 @@ describe('snapshot·restore', () => {
 describe('workspaces', () => {
   it('pane 을 만들 때마다 그 세션의 id 를 새로 정한다', () => {
     let n = 0
-    const ws = createWorkspaces(undefined, () => `s-${++n}`)
+    const ws = createWorkspaces(undefined, undefined, () => `s-${++n}`)
     ws.open()
     ws.split('right')
     ws.splitFrom(selected(ws).panes[0].key, 'down', {})
@@ -87,7 +87,7 @@ describe('workspaces', () => {
 
   it('workspace 를 열 때마다 id 를 새로 정하고, 나눈 pane 은 workspace 의 id 를 바꾸지 않는다', () => {
     let n = 0
-    const ws = createWorkspaces(undefined, undefined, () => `w-${++n}`)
+    const ws = createWorkspaces(undefined, undefined, undefined, () => `w-${++n}`)
     ws.open()
     ws.split('right')
     ws.open()
@@ -274,18 +274,144 @@ describe('git', () => {
     expect(selected(ws).panes.map((p) => p.key)).toEqual([key])
   })
 
-  it('refreshSession 은 그 세션의 pane 만 다시 읽는다', () => {
+  function foreground() {
+    const asked: { sessionId: string; resolve: (cwd: string | null) => void }[] = []
+    const read = (sessionId: string) =>
+      new Promise<string | null>((resolve) => asked.push({ sessionId, resolve }))
+    const answer = async (cwd: string | null) => {
+      for (const a of asked.splice(0)) a.resolve(cwd)
+      await Promise.resolve()
+    }
+    return { read, asked, answer }
+  }
+
+  it('refreshSession 은 그 세션의 pane 만, foreground 프로세스의 cwd 로 옮기고 그 cwd 의 저장소를 읽는다', async () => {
     const r = reader()
-    const ws = createWorkspaces(r.read)
+    const fg = foreground()
+    const ws = createWorkspaces(r.read, fg.read)
     ws.open()
     const first = selected(ws).panes[0].key
     ws.split('right')
-    const second = selected(ws).panes[1].key
+    const second = selected(ws).panes[1]
     ws.setCwd(first, '/a')
-    ws.setCwd(second, '/b')
+    ws.setCwd(second.key, '/b')
     r.pending.length = 0
-    ws.refreshSession(selected(ws).panes[1].sessionId)
-    expect(r.pending.map((p) => p.cwd)).toEqual(['/b'])
+    ws.refreshSession(second.sessionId)
+    expect(fg.asked.map((a) => a.sessionId)).toEqual([second.sessionId])
+    await fg.answer('/wt')
+    expect(selected(ws).panes[1].cwd).toBe('/wt')
+    expect(r.pending.map((p) => p.cwd)).toEqual(['/wt'])
+    await r.answer('/wt', { repo: 'b', branch: 'wt' })
+    expect(selected(ws).panes[1].git).toEqual({ repo: 'b', branch: 'wt' })
+  })
+
+  it('foreground 의 cwd 를 모르거나 묻지 못하면 지금 cwd 로 다시 읽는다', async () => {
+    const r = reader()
+    const fg = foreground()
+    let fail = false
+    const ws = createWorkspaces(r.read, (id) =>
+      fail ? Promise.reject(new Error('not running')) : fg.read(id)
+    )
+    ws.open()
+    const p = selected(ws).panes[0]
+    ws.setCwd(p.key, '/a')
+    r.pending.length = 0
+
+    ws.refreshSession(p.sessionId)
+    expect(fg.asked).toHaveLength(1)
+    expect(r.pending).toEqual([])
+    await fg.answer(null)
+    expect(selected(ws).panes[0].cwd).toBe('/a')
+    expect(r.pending.map((x) => x.cwd)).toEqual(['/a'])
+
+    fail = true
+    r.pending.length = 0
+    ws.refreshSession(p.sessionId)
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(r.pending.map((x) => x.cwd)).toEqual(['/a'])
+  })
+
+  it('foreground 를 묻는 사이에 셸이 cwd 를 알려 오면 늦게 온 foreground 의 답은 버린다', async () => {
+    const r = reader()
+    const fg = foreground()
+    const ws = createWorkspaces(r.read, fg.read)
+    ws.open()
+    const p = selected(ws).panes[0]
+    ws.setCwd(p.key, '/a')
+    ws.refreshSession(p.sessionId)
+    expect(fg.asked.map((a) => a.sessionId)).toEqual([p.sessionId])
+    ws.setCwd(p.key, '/prompt')
+    r.pending.length = 0
+    await fg.answer('/wt')
+    expect(selected(ws).panes[0].cwd).toBe('/prompt')
+    expect(r.pending).toEqual([])
+  })
+
+  it('refreshSession 이 겹치면 먼저 물은 답은 버리고 나중 답만 쓴다', async () => {
+    const r = reader()
+    const fg = foreground()
+    const ws = createWorkspaces(r.read, fg.read)
+    ws.open()
+    const p = selected(ws).panes[0]
+    ws.setCwd(p.key, '/a')
+    r.pending.length = 0
+    ws.refreshSession(p.sessionId)
+    ws.refreshSession(p.sessionId)
+    const [older, newer] = fg.asked
+    newer.resolve('/second')
+    await Promise.resolve()
+    older.resolve('/first')
+    await Promise.resolve()
+    expect(selected(ws).panes[0].cwd).toBe('/second')
+    expect(r.pending.map((x) => x.cwd)).toEqual(['/second'])
+  })
+
+  it('foreground 를 묻는 사이에 pane 이 닫히면 늦은 답은 아무것도 바꾸지 않는다', async () => {
+    const r = reader()
+    const fg = foreground()
+    const ws = createWorkspaces(r.read, fg.read)
+    ws.open()
+    ws.split('right')
+    const p = selected(ws).panes[1]
+    ws.setCwd(p.key, '/a')
+    r.pending.length = 0
+    ws.refreshSession(p.sessionId)
+    expect(fg.asked.map((a) => a.sessionId)).toEqual([p.sessionId])
+    ws.closePane(p.key)
+    const before = JSON.stringify(ws.list.value)
+    await fg.answer('/wt')
+    expect(JSON.stringify(ws.list.value)).toBe(before)
+    expect(r.pending).toEqual([])
+  })
+
+  it('셸의 cwd 로 청한 git 읽기가 끝나기 전에 refreshSession 이 돌면 그 뒤 도착한 이전 git 답은 버린다', async () => {
+    const r = reader()
+    const fg = foreground()
+    const ws = createWorkspaces(r.read, fg.read)
+    ws.open()
+    const p = selected(ws).panes[0]
+    ws.setCwd(p.key, '/a')
+    ws.refreshSession(p.sessionId)
+    await fg.answer('/wt')
+    await r.answer('/wt', { repo: 'a', branch: 'wt' })
+    await r.answer('/a', { repo: 'a', branch: 'main' })
+    expect(selected(ws).panes[0].git).toEqual({ repo: 'a', branch: 'wt' })
+  })
+
+  it('cwd 를 아직 모르는 pane 도 foreground 가 답하면 cwd 를 달고, 답이 없으면 읽지 않는다', async () => {
+    const r = reader()
+    const fg = foreground()
+    const ws = createWorkspaces(r.read, fg.read)
+    ws.open()
+    const p = selected(ws).panes[0]
+    ws.refreshSession(p.sessionId)
+    await fg.answer(null)
+    expect(selected(ws).panes[0].cwd).toBeUndefined()
+    expect(r.pending).toEqual([])
+    ws.refreshSession(p.sessionId)
+    await fg.answer('/fresh')
+    expect(selected(ws).panes[0].cwd).toBe('/fresh')
+    expect(r.pending.map((x) => x.cwd)).toEqual(['/fresh'])
   })
 })
 
