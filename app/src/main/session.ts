@@ -244,10 +244,10 @@ export async function killSessions(
 }
 
 /**
- * 앱을 띄운 쪽의 세션에 속한 값들. 새 셸은 띄운 쪽의 Claude Code 세션이나 tmux 안에 있지 않다. 앱(`MARU_`)·
- * claude(`CLAUDE_`·`ANTHROPIC_`)·Electron 의 설정은 접두사로 뺀다. 물려주면 터미널에서 띄운 claude 가 띄운 쪽의
- * 설정 디렉토리·API 주소를 쓰고, hook 을 그 터미널의 앱으로 보내기 때문이다. 터미널은 로그인 셸이라 사용자가
- * rc 에서 export 한 값은 셸이 다시 세운다.
+ * 앱을 띄운 쪽의 세션에 속한 값들. 새 셸은 띄운 쪽의 Claude Code 세션이나 tmux 안에 있지 않다. claude 의
+ * 설정을 물려주면 터미널에서 띄운 claude 가 띄운 쪽의 설정 디렉토리·API 주소를 쓴다. 앱·Electron 의 설정을
+ * 물려주면 터미널에서 띄운 AI Maru 가 띄운 쪽 앱의 `MARU_SESSION_BIN`·`ELECTRON_RENDERER_URL` 같은 값을 읽는다.
+ * 터미널은 로그인 셸이라 사용자가 rc 에서 export 한 값은 셸이 다시 설정한다.
  */
 const INHERITED = new Set(['CLAUDECODE', 'CLAUDE_PID', 'TMUX', 'TMUX_PANE'])
 const INHERITED_PREFIXES = ['MARU_', 'CLAUDE_', 'ANTHROPIC_', 'ELECTRON_']
@@ -275,9 +275,8 @@ export function shellEnv(env: NodeJS.ProcessEnv, id: string, setup: ShellSetup):
     MARU_CLAUDE_PLUGIN: setup.claudePlugin,
     PATH: [dirname(setup.cli.bin), base.PATH].filter(Boolean).join(delimiter),
     ZDOTDIR: setup.zdotdir,
-    // 앱 터미널(xterm.js)의 능력이므로 띄운 쪽 터미널의 값은 덮는다.
-    COLORTERM: 'truecolor',
-    FORCE_HYPERLINK: '1'
+    // truecolor 는 앱 터미널(xterm.js)이 지원하므로 띄운 쪽 터미널의 값을 덮어쓴다.
+    COLORTERM: 'truecolor'
   }
 }
 

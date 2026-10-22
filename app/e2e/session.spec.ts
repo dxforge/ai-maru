@@ -135,14 +135,13 @@ test('앱을 띄운 터미널의 ZDOTDIR 과 CLAUDE_*·ANTHROPIC_*·MARU_*·ELEC
     CLAUDE_CONFIG_DIR: '/outer/claude',
     ANTHROPIC_BASE_URL: 'http://example.invalid',
     ELECTRON_NO_ATTACH_CONSOLE: '1',
-    COLORTERM: 'outer',
-    FORCE_HYPERLINK: '0'
+    COLORTERM: 'outer'
   })
   await expect(rows(page)).toContainText('rc-from-home')
   await run(
     page,
-    'echo "outer=[$CLAUDE_CONFIG_DIR|$ANTHROPIC_BASE_URL|$MARU_UNOBTRUSIVE|$ELECTRON_NO_ATTACH_CONSOLE] term=[$COLORTERM|$FORCE_HYPERLINK]" done-$((1+1))',
-    'outer=[|||] term=[truecolor|1] done-2'
+    'echo "outer=[$CLAUDE_CONFIG_DIR|$ANTHROPIC_BASE_URL|$MARU_UNOBTRUSIVE|$ELECTRON_NO_ATTACH_CONSOLE] term=[$COLORTERM]" done-$((1+1))',
+    'outer=[|||] term=[truecolor] done-2'
   )
   await expect(rows(page)).not.toContainText('rc-from-zdotdir')
 })
