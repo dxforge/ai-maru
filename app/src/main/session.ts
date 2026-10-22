@@ -11,9 +11,9 @@ import { isSessionId } from '../shared/session'
 import { encodeFrame, FrameDecoder } from './frame'
 
 const SPAWN_TIMEOUT_MS = 5000
-// 앱을 끌 때 main 이 host 와 띄우던 job 을 기다리는 상한이다. host 는 spawn 이 시간 제한으로 실패하면 그 세션에
-// SIGTERM 을 보내므로, 상한은 spawn 시간 제한보다 길어야 한다. host 의 시간 제한은 open 을 받고 시작 폴더를
-// 확인한 뒤에 시작하므로 2초를 더 둔다.
+// 앱을 끌 때 main 이 host 와 띄우던 job 을 기다리는 상한이다. `spawnSession` 은 시간 제한 안에 소켓이 열리지
+// 않으면 그 세션에 SIGTERM 을 보내므로, 상한은 spawn 시간 제한보다 길어야 한다. host 의 시간 제한은 open 을
+// 받고 시작 폴더를 확인한 뒤에 시작하므로 2초를 더 둔다.
 export const QUIT_TIMEOUT_MS = SPAWN_TIMEOUT_MS + 2000
 const SPAWN_POLL_MS = 50
 // maru-session 은 셸에 2초를 주고 연결을 1초 더 비운 뒤 끝난다.

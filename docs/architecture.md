@@ -16,7 +16,7 @@ main 은 kill 이 올 때까지 key 의 세션 id 를 기억하고(`app/src/main
 
 ## 앱을 끄면 띄우던 세션도 뜬 뒤에 끈다
 
-main 은 `will-quit` 에서 session host 에 `quit` 을 보내고, host 가 끝난 뒤에 세션 디렉토리의 레코드를 읽어 세션을 끈다(`app/src/main/index.ts`). host 는 `quit` 을 받으면 새 open 을 받지 않고, 띄우던 세션이 다 뜬 뒤에 끝난다. main 도 같은 때에 job 을 새로 띄우지 않고, 띄우던 job 이 다 뜨기를 기다린다. maru-session 은 레코드를 쓴 뒤에 소켓을 연다(`core/crates/maru-session/src/server.rs` 의 `publish`). host 와 main 은 소켓이 열린 것을 보고 세션이 떴다고 보므로, host 가 끝난 뒤에 main 이 읽는 레코드에는 띄우던 세션도 있다. `quit` 은 open 과 같은 `ready.then` 으로 보내므로 host 는 그 앞에 온 open 을 먼저 받는다. main 이 host 를 기다리지 않고 레코드를 읽도록 바뀌면, 앱이 끝난 뒤에 뜬 세션이 남는다. host 가 7초(`QUIT_TIMEOUT_MS`) 안에 끝나지 않으면 main 은 host 를 SIGKILL 로 끄고 레코드를 읽으므로, 그때 띄우던 세션은 다음 실행의 정리가 끈다. 이 상한은 spawn 시간 제한(5초)보다 길어서, 소켓을 열기 전에 멈춘 세션에 host 가 SIGTERM 을 보낼 때까지 기다린다. main 은 띄우던 job 도 같은 상한까지만 기다린다.
+main 은 `will-quit` 에서 session host 에 `quit` 을 보내고, host 가 끝난 뒤에 세션 디렉토리의 레코드를 읽어 세션을 끈다(`app/src/main/index.ts`). host 는 `quit` 을 받으면 새 open 을 받지 않고, 띄우던 세션이 다 뜬 뒤에 끝난다. main 도 같은 때에 job 을 새로 띄우지 않고, 띄우던 job 이 다 뜨기를 기다린다. maru-session 은 레코드를 쓴 뒤에 소켓을 연다(`core/crates/maru-session/src/server.rs` 의 `publish`). host 와 main 은 소켓이 열린 것을 보고 세션이 떴다고 보므로, host 가 끝난 뒤에 main 이 읽는 레코드에는 띄우던 세션도 있다. `quit` 은 open 과 같은 `ready.then` 으로 보내므로 host 는 그 앞에 온 open 을 먼저 받는다. main 이 host 를 기다리지 않고 레코드를 읽도록 바뀌면, 앱이 끝난 뒤에 뜬 세션이 남는다. host 가 `QUIT_TIMEOUT_MS` 안에 끝나지 않으면 main 은 host 를 SIGKILL 로 끄고 레코드를 읽는다. 그때 host 가 띄우던 세션은 남을 수 있다. 그 가운데 소켓을 연 세션은 다음 실행의 정리가 끈다. 이 상한은 spawn 시간 제한(`SPAWN_TIMEOUT_MS`)보다 길어서, 소켓을 열기 전에 멈춘 세션에 host 가 SIGTERM 을 보낼 때까지 기다린다. main 은 띄우던 job 도 같은 상한까지만 기다린다.
 
 ## main 이 아는 세션의 workspace
 

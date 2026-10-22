@@ -485,7 +485,7 @@ function start(): void {
       const proc = host
       if (!proc) return
       return new Promise<void>((resolve) => {
-        // 멈춘 host 를 기다리느라 앱이 꺼지지 않게 상한을 둔다. 그때 띄우던 세션은 다음 실행의 정리가 끈다.
+        // 멈춘 host 를 기다리느라 앱이 꺼지지 않게 상한을 둔다. 그때 띄우던 세션 가운데 소켓을 연 세션은 다음 실행의 정리가 끈다.
         const timer = setTimeout(() => {
           // 멈춘 프로세스는 SIGTERM 을 처리하지 못한다. host 가 방금 끝나 `exit` 이 아직 오지 않았으면 kill 이 실패한다.
           try {
