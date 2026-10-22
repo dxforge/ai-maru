@@ -1,6 +1,6 @@
 import { readonly, ref } from 'vue'
 import type { GitHead } from '../../../shared/git'
-import type { ScreenState } from '../../../shared/screen'
+import type { ScreenState, ScreenWorkspace } from '../../../shared/screen'
 import { newSessionId, randomId } from '../../../shared/session'
 import {
   neighbor,
@@ -8,7 +8,6 @@ import {
   splitPane,
   splitRoot,
   type FocusDirection,
-  type Layout,
   type SplitDirection,
   type Widths
 } from './layout'
@@ -32,7 +31,7 @@ export type Pane = {
 export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
 
 /** `panes` 는 연 순서다. 배치 순서로 그리면 나눌 때마다 터미널의 DOM 이 옮겨진다. */
-export type Workspace = { key: number; id: string; panes: Pane[]; layout: Layout; focused: number }
+export type Workspace = Omit<ScreenWorkspace, 'panes'> & { panes: Pane[] }
 
 export function focusedPane(w: {
   readonly panes: readonly Pane[]
@@ -76,17 +75,6 @@ export function createWorkspaces(
     selectedKey.value = w.key
   }
 
-  // `openFrom` 으로 띄운 workspace → 부른 workspace. 재시작하면 잊는다. workspace 가 닫혀도 지우지 않는다.
-  // key 는 다시 쓰지 않으므로 지우지 않아도 다른 workspace 와 섞이지 않는다. 지우지 않으므로 띄운 쪽이 닫힌
-  // workspace 도 처음 부른 workspace 뒤의 묶음에 남는다.
-  const openedBy = new Map<number, number>()
-
-  function openedFrom(key: number, from: number): boolean {
-    for (let k = openedBy.get(key); k !== undefined; k = openedBy.get(k))
-      if (k === from) return true
-    return false
-  }
-
   /**
    * id 가 `from` 인 workspace 뒤에, 그 workspace 가 앞서 띄운 것들(그것들이 띄운 것 포함)을 지나 workspace 를
    * 넣는다. 그 workspace 가 없으면 목록 끝에 넣는다. 선택과 포커스는 바꾸지 않고, 새 pane 의 key 를 돌려준다.
@@ -97,9 +85,12 @@ export function createWorkspaces(
     if (at === -1) {
       at = list.value.length
     } else {
+      // 띄운 것은 늘 부른 workspace 바로 뒤에 이어 놓이므로, 묶음은 부른 workspace 뒤에서 끊기지 않고 이어진다.
       const caller = list.value[at++].key
-      while (at < list.value.length && openedFrom(list.value[at].key, caller)) at++
-      openedBy.set(w.key, caller)
+      const group = new Set([caller])
+      while (at < list.value.length && group.has(list.value[at].openedBy!))
+        group.add(list.value[at++].key)
+      w.openedBy = caller
     }
     list.value.splice(at, 0, w)
     return w.focused
@@ -112,10 +103,13 @@ export function createWorkspaces(
     return list.value[(i + by + n) % n].key
   }
 
+  // 닫힌 workspace 가 띄운 것은 그것을 부른 workspace 가 띄운 것으로 옮겨, 처음 부른 workspace 뒤의 묶음에
+  // 남긴다. 닫힌 workspace 는 재시작 때 저장되지 않으므로, 그것을 가리킨 채로 두면 재시작 뒤 묶음이 끊긴다.
   function close(key: number): void {
     const i = list.value.findIndex((w) => w.key === key)
     if (i === -1) return
-    list.value.splice(i, 1)
+    const [closed] = list.value.splice(i, 1)
+    for (const w of list.value) if (w.openedBy === key) w.openedBy = closed.openedBy
     if (selectedKey.value !== key) return
     const next = list.value[i] ?? list.value[i - 1]
     selectedKey.value = next?.key ?? null

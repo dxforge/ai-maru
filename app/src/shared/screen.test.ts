@@ -37,7 +37,9 @@ describe('parseScreen', () => {
     ['선택이 정수가 아님', (s) => (s.selected = '1')],
     ['접은 목록이 없음', (s) => delete s.sidebar.folded],
     ['보기 모드가 틀림', (s) => (s.viewMode = 'grid')],
-    ['Canvas 폭이 숫자가 아님', (s) => (s.canvas = { width: '300' })]
+    ['Canvas 폭이 숫자가 아님', (s) => (s.canvas = { width: '300' })],
+    ['부른 workspace 가 문자열', (s) => (s.workspaces[0].openedBy = '1')],
+    ['부른 workspace 가 정수가 아님', (s) => (s.workspaces[0].openedBy = 1.5)]
   ])('%s 이면 null', (_, spoil) => {
     const s = clone()
     spoil(s)
@@ -49,6 +51,11 @@ describe('parseScreen', () => {
       ...screen,
       canvas: { width: 300 }
     })
+  })
+
+  it('부른 workspace 는 없어도 되고, 있으면 그대로 돌려준다', () => {
+    const s = { ...screen, workspaces: [{ ...screen.workspaces[0], openedBy: 3 }] }
+    expect(parseScreen(s)).toEqual(s)
   })
 
   it('객체가 아니면 null', () => {
