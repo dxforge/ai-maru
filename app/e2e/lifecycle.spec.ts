@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -183,7 +191,7 @@ test('job 이 뜨기 전에 앱을 끄면 그 job 의 세션은 뜬 뒤에 끝�
   expect(sockets(dataDir)).toEqual([])
 })
 
-test('세션을 잇는 utilityProcess 가 멈춰 있어도 앱은 5초 뒤에 꺼지고 세션을 끝낸다', async ({
+test('세션을 잇는 utilityProcess 가 멈춰 있어도 앱은 7초 뒤에 꺼지고 세션을 끝낸다', async ({
   launch,
   dataDir
 }) => {
@@ -206,6 +214,43 @@ test('세션을 잇는 utilityProcess 가 멈춰 있어도 앱은 5초 뒤에 �
   expect(sockets(dataDir)).toEqual([])
 })
 
+test('앱을 끌 때 소켓을 열기 전에 멈춘 세션은 host 가 spawn 시간 제한 뒤에 끝낸다', async ({
+  launch,
+  dataDir
+}) => {
+  const stall = join(dataDir, 'stall')
+  const pidFile = join(dataDir, 'stalled-pid')
+  const bin = wrapSessionBin(
+    dataDir,
+    'stalling-session',
+    `if [ -e '${stall}' ]; then echo $$ > '${pidFile}'; exec sleep 100; fi`
+  )
+  const { app, page } = await launch({ MARU_SESSION_BIN: bin })
+  await expect.poll(() => sockets(dataDir)).toHaveLength(1)
+  writeFileSync(stall, '')
+  const host = await hostPid(app)
+  // host 가 open 을 늦게 받게 해, host 의 spawn 시간 제한이 main 의 상한보다 1초 늦게 시작하게 한다.
+  process.kill(host, 'SIGSTOP')
+  let stalled = 0
+  try {
+    await split(app, page, 'split-right', 2)
+    await sleep(300)
+    const closed = app.close()
+    await sleep(1000)
+    process.kill(host, 'SIGCONT')
+    await closed
+    stalled = Number(readFileSync(pidFile, 'utf8'))
+    await expect.poll(() => alive(stalled), { timeout: 3000 }).toBe(false)
+  } finally {
+    for (const pid of [host, stalled])
+      try {
+        if (pid) process.kill(pid, pid === host ? 'SIGCONT' : 'SIGKILL')
+      } catch {
+        // 이미 끝났다.
+      }
+  }
+})
+
 test('세션을 잇는 utilityProcess 가 죽은 뒤에 닫은 pane 의 세션도 끝난다', async ({
   launch,
   dataDir
@@ -222,3 +267,12 @@ test('세션을 잇는 utilityProcess 가 죽은 뒤에 닫은 pane 의 세션�
   await expect(panes(page)).toHaveCount(1)
   await expect.poll(() => sockets(dataDir)).toHaveLength(1)
 })
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}

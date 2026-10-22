@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import {
   app,
   BrowserWindow,
@@ -35,6 +36,7 @@ import {
   captureSession,
   killSession,
   killSessions,
+  QUIT_TIMEOUT_MS,
   readRecord,
   sessionLive,
   spawnSession,
@@ -286,7 +288,6 @@ function createWindow(): void {
 }
 
 let host: UtilityProcess | null = null
-const HOST_QUIT_TIMEOUT_MS = 5000
 
 /**
  * Dock 에서 띄운 앱은 LANG 을 받지 못해, 로케일을 스스로 정하지 않는 셸(bash 등)이 US-ASCII 로 떠
@@ -486,10 +487,14 @@ function start(): void {
       return new Promise<void>((resolve) => {
         // 멈춘 host 를 기다리느라 앱이 꺼지지 않게 상한을 둔다. 그때 띄우던 세션은 다음 실행의 정리가 끈다.
         const timer = setTimeout(() => {
-          // 멈춘 프로세스는 SIGTERM 을 처리하지 못한다.
-          if (proc.pid) process.kill(proc.pid, 'SIGKILL')
+          // 멈춘 프로세스는 SIGTERM 을 처리하지 못한다. host 가 방금 끝나 `exit` 이 아직 오지 않았으면 kill 이 실패한다.
+          try {
+            if (proc.pid) process.kill(proc.pid, 'SIGKILL')
+          } catch {
+            // 이미 끝났다.
+          }
           resolve()
-        }, HOST_QUIT_TIMEOUT_MS)
+        }, QUIT_TIMEOUT_MS)
         proc.once('exit', () => {
           clearTimeout(timer)
           resolve()
@@ -508,7 +513,11 @@ function start(): void {
     quitting = true
     void Promise.all([
       keepSessions ||
-        Promise.all([stopHost(), ...jobSpawns]).then(() => killSessions(sessionDir())),
+        Promise.all([
+          stopHost(),
+          // job 의 시작 폴더 확인(`startDir`)에는 시간 제한이 없다. 응답하지 않는 마운트에 있는 job 때문에 앱이 꺼지지 않을 수 있으므로, host 와 같은 상한까지만 기다린다.
+          Promise.race([Promise.all(jobSpawns), sleep(QUIT_TIMEOUT_MS)])
+        ]).then(() => killSessions(sessionDir())),
       cliServer.then((server) => server?.close())
     ]).finally(() => {
       sessionsKilled = true
