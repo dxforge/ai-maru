@@ -2,8 +2,8 @@ import type { Layout } from './layout'
 import { isSessionId } from './session'
 
 /**
- * 재시작 전 앱이 쓰고 다시 뜬 앱이 읽으므로 두 앱의 빌드가 다를 수 있다. 모양을 바꾸면 버전을 올린다 —
- * 다시 뜬 앱은 모르는 버전을 되살리지 않는다.
+ * 재시작 전 앱이 쓰고 다시 뜬 앱이 읽으므로 두 앱의 빌드가 다를 수 있다. 다시 뜬 앱이 옛 모양을 읽지 못하게
+ * 바꾸면 버전을 올린다 — 다시 뜬 앱은 모르는 버전을 되살리지 않는다. 없어도 되는 필드를 더할 때는 올리지 않는다.
  */
 export const SCREEN_VERSION = 1
 
@@ -22,6 +22,11 @@ export type ScreenWorkspace = {
   panes: ScreenPane[]
   layout: Layout
   focused: number
+  /**
+   * `openFrom` 으로 띄웠을 때 부른 workspace 의 key 다. 부른 workspace 가 닫히면 그것을 부른 workspace 의 key 로
+   * 바뀌고, 부른 쪽이 모두 닫혔으면 없다. 이 필드를 더하기 전 빌드가 쓴 화면에도 없다.
+   */
+  openedBy?: number
 }
 
 export type ScreenState = {
@@ -52,6 +57,7 @@ type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isKey = (v: unknown): v is number => Number.isInteger(v)
 const optString = (v: unknown): boolean => v === undefined || typeof v === 'string'
+const optKey = (v: unknown): boolean => v === undefined || isKey(v)
 
 function isLayout(v: unknown): v is Layout {
   if (!isObj(v)) return false
@@ -81,7 +87,8 @@ function isWorkspace(v: unknown): v is ScreenWorkspace {
     v.panes.length > 0 &&
     v.panes.every(isPane) &&
     isLayout(v.layout) &&
-    isKey(v.focused)
+    isKey(v.focused) &&
+    optKey(v.openedBy)
   )
 }
 

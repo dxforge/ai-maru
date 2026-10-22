@@ -15,6 +15,12 @@ const keys = (ws: Workspaces) => ws.list.value.map((w) => w.key)
 const firstPanes = (ws: Workspaces) => ws.list.value.map((w) => w.panes[0])
 const selected = (ws: Workspaces) => ws.selected()!
 
+function restarted(from: Workspaces): Workspaces {
+  const to = createWorkspaces()
+  to.restore(from.snapshot())
+  return to
+}
+
 describe('snapshot·restore', () => {
   function arranged(): Workspaces {
     const ws = opened(2)
@@ -28,8 +34,7 @@ describe('snapshot·restore', () => {
 
   it('되살린 store 는 workspace·pane·배치·포커스·선택이 같다', () => {
     const from = arranged()
-    const to = createWorkspaces()
-    to.restore(from.snapshot())
+    const to = restarted(from)
     expect(to.snapshot()).toEqual(from.snapshot())
     expect(to.selected()!.key).toBe(from.selected()!.key)
     const pane = to.list.value[1].panes[1]
@@ -37,16 +42,14 @@ describe('snapshot·restore', () => {
   })
 
   it('되살린 pane 은 세션에 붙고, 스냅샷에는 붙기·git 을 싣지 않는다', () => {
-    const to = createWorkspaces()
-    to.restore(arranged().snapshot())
+    const to = restarted(arranged())
     expect(to.list.value.flatMap((w) => w.panes.map((p) => p.attach))).toEqual([true, true, true])
     for (const w of to.snapshot().workspaces)
       for (const p of w.panes) expect(Object.keys(p)).not.toContain('attach')
   })
 
   it('되살린 뒤 새로 연 workspace·pane 의 key 가 겹치지 않고 새 pane 은 세션을 띄운다', () => {
-    const to = createWorkspaces()
-    to.restore(arranged().snapshot())
+    const to = restarted(arranged())
     to.open()
     to.split('right')
     const all = to.list.value.flatMap((w) => [w.key, ...w.panes.map((p) => p.key)])
@@ -470,13 +473,20 @@ describe('openFrom', () => {
     expect(keys(ws)).toEqual([d, a, b, c, e])
   })
 
-  it('앞서 띄운 것이 띄운 것도 건너뛴다', () => {
-    const ws = opened(2)
-    const [d, e] = keys(ws)
-    const a = spawn(ws, d)
-    const a1 = spawn(ws, a)
+  const restarts: [string, (ws: Workspaces) => Workspaces][] = [
+    ['', (ws) => ws],
+    ['되살린 뒤에도 ', restarted]
+  ]
+
+  it.each(restarts)('%s앞서 띄운 것이 띄운 것도 건너뛴다', (_, through) => {
+    const from = opened(2)
+    const [d, e] = keys(from)
+    const a = spawn(from, d)
+    const a1 = spawn(from, a)
+    const ws = through(from)
     const b = spawn(ws, d)
-    expect(keys(ws)).toEqual([d, a, a1, b, e])
+    const a2 = spawn(ws, a)
+    expect(keys(ws)).toEqual([d, a, a1, a2, b, e])
   })
 
   it('앞서 띄운 것이 닫히면 남은 것 뒤에 넣는다', () => {
@@ -490,15 +500,19 @@ describe('openFrom', () => {
     expect(keys(ws)).not.toContain(a)
   })
 
-  it('띄운 쪽이 닫혀도 그것이 띄운 것은 처음 부른 workspace 의 묶음에 남는다', () => {
-    const ws = opened(2)
-    const [d, e] = keys(ws)
-    const a = spawn(ws, d)
-    const a1 = spawn(ws, a)
-    ws.closePane(ws.list.value[1].panes[0].key)
-    const b = spawn(ws, d)
-    expect(keys(ws)).toEqual([d, a1, b, e])
-  })
+  it.each(restarts)(
+    '%s띄운 쪽이 닫혀도 그것이 띄운 것은 처음 부른 workspace 의 묶음에 남는다',
+    (_, through) => {
+      const from = opened(2)
+      const [d, e] = keys(from)
+      const a = spawn(from, d)
+      const a1 = spawn(from, a)
+      from.closePane(from.list.value[1].panes[0].key)
+      const ws = through(from)
+      const b = spawn(ws, d)
+      expect(keys(ws)).toEqual([d, a1, b, e])
+    }
+  )
 
   it('부른 workspace 가 없거나 목록에 없으면 목록 끝에 붙이고 선택은 그대로다', () => {
     const ws = opened(2)
@@ -521,13 +535,33 @@ describe('openFrom', () => {
     expect(keys(ws)).toEqual([d, a, b, e])
   })
 
-  it('되살린 뒤에는 부른 workspace 바로 뒤에 넣는다', () => {
+  it('되살린 뒤 띄운 쪽을 닫아도 그것이 띄운 것은 처음 부른 workspace 의 묶음에 남는다', () => {
+    const from = opened(2)
+    const [d, e] = keys(from)
+    const a = spawn(from, d)
+    const a1 = spawn(from, a)
+    const ws = restarted(from)
+    ws.closePane(ws.list.value[1].panes[0].key)
+    const b = spawn(ws, d)
+    expect(keys(restarted(ws))).toEqual([d, a1, b, e])
+  })
+
+  it('부른 workspace 를 적지 않은 화면을 되살리면 부른 workspace 바로 뒤에 넣는다', () => {
     const from = opened(1)
     const [d] = keys(from)
     const a = spawn(from, d)
-    const to = createWorkspaces()
-    to.restore(from.snapshot())
-    const b = spawn(to, d)
-    expect(keys(to)).toEqual([d, b, a])
+    const screen = from.snapshot()
+    for (const w of screen.workspaces) delete w.openedBy
+    const ws = createWorkspaces()
+    ws.restore(screen)
+    const b = spawn(ws, d)
+    expect(keys(ws)).toEqual([d, b, a])
+  })
+
+  it('아무도 부르지 않은 workspace 가 닫히면 그것이 띄운 것은 어느 묶음에도 들지 않는다', () => {
+    const ws = opened(1)
+    spawn(ws, keys(ws)[0])
+    ws.closePane(ws.list.value[0].panes[0].key)
+    expect(restarted(ws).list.value[0].openedBy).toBeUndefined()
   })
 })

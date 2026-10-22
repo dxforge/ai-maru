@@ -3,6 +3,7 @@ import {
   expect,
   failingCommandSessionBin,
   newWorkspace,
+  restartWith,
   rows,
   run,
   test,
@@ -67,6 +68,18 @@ test('부른 workspace 뒤에 띄운 순서대로 놓이고, columns 에서는 �
   expect(xs).toEqual([...xs].sort((a, b) => a - b))
   expect(new Set(xs).size).toBe(6)
   await run(page, 'echo still-$((1+1))', 'still-2')
+})
+
+test('재시작한 뒤에도 부른 workspace 가 앞서 띄운 것 뒤에 놓는다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await page.keyboard.type(`maru workspace new ${marked('a1')} >/dev/null\n`)
+  await expectOrder(page, [null, 'a1'])
+
+  await restartWith(app)
+  const { page: again } = await launch()
+  await expectOrder(again, [null, 'a1'])
+  await again.keyboard.type(`maru workspace new ${marked('a2')} >/dev/null\n`)
+  await expectOrder(again, [null, 'a1', 'a2'])
 })
 
 test('명령이 끝나면 workspace 가 닫히고, 곧바로 끝나는 명령도 세션 id 를 찍고 성공한다', async ({
