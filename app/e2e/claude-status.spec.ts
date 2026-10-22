@@ -51,8 +51,8 @@ test('hook 없이 claude 의 상태 파일이 idle 이 되면 쉬는 중으로 �
   dataDir
 }) => {
   const config = claudeConfig(dataDir)
-  const { page } = await launch({ CLAUDE_CONFIG_DIR: config })
-  await page.keyboard.type(hook('UserPromptSubmit'))
+  const { page } = await launch()
+  await page.keyboard.type(hook('UserPromptSubmit', { config }))
   await expect(paneRows(page)).toHaveClass(/working/)
   claudeFile(config, 1, 'c-1', 'idle', Date.now() + 60_000)
   await expect(paneRows(page)).toHaveClass(/idle/)
@@ -136,9 +136,9 @@ test('사이드바의 상태 아이콘과 Claude 아이콘은 잉크의 가운�
 }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
-  await page.keyboard.type(hook('Stop', 'c-1'))
+  await page.keyboard.type(hook('Stop'))
   await split(app, page, 'split-down', 3)
-  await page.keyboard.type(hook('PermissionRequest', 'c-2'))
+  await page.keyboard.type(hook('PermissionRequest', { session: 'c-2' }))
   await expect(paneRows(page)).toHaveClass([/idle/, /waiting/])
   const shell = shellRows(page)
   const [idle, waiting] = [paneRows(page).nth(0), paneRows(page).nth(1)]

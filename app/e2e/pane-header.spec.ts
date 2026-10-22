@@ -116,10 +116,10 @@ test('columns 의 workspace 헤더는 pane 상태 가운데 waiting, working 순
   await expect(headers).toHaveCount(2)
   await expect(headers.nth(1).locator('.row-bar-icon')).toHaveText('')
 
-  await page.keyboard.type(claudeHook('UserPromptSubmit', 'c-1'))
+  await page.keyboard.type(claudeHook('UserPromptSubmit'))
   await expect(headers.nth(1)).toHaveClass(/working/)
   await split(app, page, 'split-down', 2)
-  await page.keyboard.type(claudeHook('PermissionRequest', 'c-2'))
+  await page.keyboard.type(claudeHook('PermissionRequest', { session: 'c-2' }))
   await expect(headers.nth(1)).toHaveClass(/waiting/)
   await expect(headers.nth(0)).not.toHaveClass(/working|waiting|idle/)
   await expect(headers.nth(0).locator('.row-bar-icon')).toHaveText('')

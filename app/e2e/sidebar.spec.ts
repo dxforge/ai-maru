@@ -227,9 +227,11 @@ async function collapse(app: ElectronApplication, page: Page): Promise<void> {
 }
 
 async function twoClaudes(app: ElectronApplication, page: Page): Promise<void> {
-  await page.keyboard.type(`${claudeHook('UserPromptSubmit', 'c-1').trimEnd()} && sleep 600\n`)
+  await page.keyboard.type(`${claudeHook('UserPromptSubmit').trimEnd()} && sleep 600\n`)
   await split(app, page, 'split-right', 2)
-  await page.keyboard.type(`${claudeHook('PermissionRequest', 'c-2').trimEnd()} && sleep 600\n`)
+  await page.keyboard.type(
+    `${claudeHook('PermissionRequest', { session: 'c-2' }).trimEnd()} && sleep 600\n`
+  )
   await expect(paneRows(page)).toHaveClass([/working/, /waiting/])
 }
 
