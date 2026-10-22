@@ -110,12 +110,23 @@ async function launchApp(
       MARU_DOM_RENDERER: '1',
       SHELL: '/bin/bash',
       BASH_SILENCE_DEPRECATION_WARNING: '1',
+      // 개발자의 `~/.ai-maru/config.toml` 을 읽지 않도록 테스트마다 다른 폴더를 준다. 폴더가 없는 채로 띄우는 테스트가 있으므로 폴더는 만들지 않는다.
+      MARU_CONFIG_DIR: join(dataDir, 'config'),
       ...env
     } as Record<string, string>
   })
   const page = await app.firstWindow()
   await page.waitForSelector('.xterm-screen')
   return { app, page }
+}
+
+export function configFile(dataDir: string): string {
+  return join(dataDir, 'config', 'config.toml')
+}
+
+export function writeConfig(dataDir: string, text: string): void {
+  mkdirSync(join(dataDir, 'config'), { recursive: true })
+  writeFileSync(configFile(dataDir), text)
 }
 
 /** 셸의 `$PWD` 와 견줄 수 있게 심볼릭 링크를 푼 경로를 준다. */

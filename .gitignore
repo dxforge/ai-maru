@@ -8,3 +8,4 @@ CLAUDE.local.md
 
 /docs/*
 !/docs/architecture.md
+!/docs/config.md

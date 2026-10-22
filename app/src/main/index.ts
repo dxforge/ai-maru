@@ -14,6 +14,7 @@ import {
 import { canvasPut } from './canvas'
 import { createClaudeStatus } from './claude-status'
 import { AfterReply, CliError, listenCli, optionalBoolean, type Handlers } from './cli-server'
+import { configDir, configFile, readConfigFile, watchConfig } from './config-file'
 import { gitHead } from './git'
 import { createInbox } from './inbox'
 import { installCommandMenu } from './menu'
@@ -358,6 +359,15 @@ function start(): void {
     return screen
   })
   ipcMain.on('screen:prefs', (event) => (event.returnValue = viewPrefs()))
+  const configPath = configFile()
+  let config = readConfigFile(configPath)
+  ipcMain.on('config:read', (event) => (event.returnValue = config))
+  // 내용이 같아도 저장할 때마다 보낸다. 사용자가 닫은 토스트도 같은 내용으로 다시 저장하면 다시 띄워야 하기 때문이다.
+  const stopConfig = watchConfig(configDir(), () => {
+    config = readConfigFile(configPath)
+    const win = mainWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
+  })
   ipcMain.on('screen:state', (_event, screen: unknown) => (lastScreen = screen))
   ipcMain.on('app:restart', () => void restartFromMenu())
   const cli = cliAccess()
@@ -461,6 +471,7 @@ function start(): void {
     if (sessionsKilled) return
     event.preventDefault()
     claudeStatus.close()
+    stopConfig()
     void Promise.all([
       keepSessions || killSessions(sessionDir()),
       cliServer.then((server) => server?.close())

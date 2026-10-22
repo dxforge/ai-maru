@@ -9,9 +9,20 @@ export const ICONS = {
   collapsed: '\uEAB6',
   idle: '\uEA71',
   working: '\uEB19',
-  waiting: '\uEAA2'
+  waiting: '\uEAA2',
+  error: '\uEA87',
+  warning: '\uEA6C',
+  close: '\uEA76'
 } as const satisfies Record<
-  'claude' | 'terminal' | 'branch' | 'expanded' | 'collapsed' | ClaudeState,
+  | 'claude'
+  | 'terminal'
+  | 'branch'
+  | 'expanded'
+  | 'collapsed'
+  | ClaudeState
+  | 'error'
+  | 'warning'
+  | 'close',
   string
 >
 
