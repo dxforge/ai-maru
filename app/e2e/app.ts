@@ -352,6 +352,11 @@ export function rows(page: Page) {
 
 let sizeMarker = 0
 
+/** 폭이 바뀐 직후의 크기는 셸이 SIGWINCH 를 받기 전일 수 있어 기대한 열 수가 될 때까지 다시 잰다. */
+export async function expectCols(page: Page, cols: number): Promise<void> {
+  await expect.poll(async () => (await shellSize(page)).cols).toBe(cols)
+}
+
 export async function shellSize(page: Page): Promise<{ rows: number; cols: number }> {
   const marker = `size${++sizeMarker}`
   await page.keyboard.type(`clear; echo ${marker}=$(stty size | tr ' ' x)\n`)
@@ -471,6 +476,10 @@ export async function resizeBy(app: ElectronApplication, dw: number, dh: number)
     },
     [dw, dh]
   )
+}
+
+export async function workspaceWidth(page: Page, i = 0): Promise<number> {
+  return (await workspaceViews(page).nth(i).boundingBox())!.width
 }
 
 export async function sidebarWidth(page: Page): Promise<number> {

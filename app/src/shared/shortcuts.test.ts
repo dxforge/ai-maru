@@ -39,6 +39,13 @@ describe('commandKeys', () => {
     expect(formatKeys(commandKeys('toggle-view-mode')!)).toBe('⌘\\')
     expect(toAccelerator(commandKeys('toggle-view-mode')!)).toBe('Command+\\')
   })
+
+  it('workspace 폭은 ⇧⌘. 와 ⇧⌘, 다', () => {
+    expect(toAccelerator(commandKeys('widen-workspace')!)).toBe('Shift+Command+.')
+    expect(toAccelerator(commandKeys('narrow-workspace')!)).toBe('Shift+Command+,')
+    expect(formatKeys(commandKeys('widen-workspace')!)).toBe('⇧⌘.')
+    expect(formatKeys(commandKeys('narrow-workspace')!)).toBe('⇧⌘,')
+  })
 })
 
 describe('toAccelerator', () => {
@@ -109,6 +116,12 @@ describe('isAppKey', () => {
       expect(isAppKey(press(code, { altKey: true, metaKey: true })), code).toBe(true)
       expect(isAppKey(press(code, { shiftKey: true, metaKey: true })), code).toBe(true)
     }
+  })
+
+  it('⇧⌘. 와 ⇧⌘, 는 앱의 키다', () => {
+    expect(isAppKey(press('Period', { shiftKey: true, metaKey: true }))).toBe(true)
+    expect(isAppKey(press('Comma', { shiftKey: true, metaKey: true }))).toBe(true)
+    expect(isAppKey(press('Period', { metaKey: true }))).toBe(false)
   })
 
   it('터미널이 바꿔 보내는 키는 앱의 키가 아니다', () => {

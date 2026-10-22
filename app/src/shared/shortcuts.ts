@@ -58,6 +58,8 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'increase-font-size', key: 'Plus', meta: true },
   { target: 'command', action: 'decrease-font-size', key: '-', meta: true },
   { target: 'command', action: 'reset-font-size', key: '0', meta: true },
+  { target: 'command', action: 'widen-workspace', key: '.', shift: true, meta: true },
+  { target: 'command', action: 'narrow-workspace', key: ',', shift: true, meta: true },
 
   // Electron 이 role 에 거는 기본 키와 같다.
   { target: 'menu', action: 'hide', key: 'H', meta: true },
@@ -117,6 +119,8 @@ const CODES: Record<string, string> = {
   ']': 'BracketRight',
   '[': 'BracketLeft',
   '\\': 'Backslash',
+  '.': 'Period',
+  ',': 'Comma',
   Left: 'ArrowLeft',
   Right: 'ArrowRight',
   Up: 'ArrowUp',

@@ -4,6 +4,7 @@ import {
   claudeHook,
   clickMenu,
   expect,
+  expectCols,
   newWorkspace,
   openPalette,
   paneRows,
@@ -22,11 +23,6 @@ import {
   workspaceViews,
   zshHome
 } from './app'
-
-/** 폭이 바뀐 직후의 크기는 셸이 SIGWINCH 를 받기 전일 수 있어 기대한 열 수가 될 때까지 다시 잰다. */
-async function expectCols(page: Page, cols: number): Promise<void> {
-  await expect.poll(async () => (await shellSize(page)).cols).toBe(cols)
-}
 
 async function inView(page: Page, el: Locator): Promise<boolean> {
   const area = (await page.locator('.terminals').boundingBox())!

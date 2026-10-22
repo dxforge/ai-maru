@@ -51,7 +51,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['split-down', 'Split Down', 'Shift+Command+D'],
     ['close-pane', 'Close Pane', 'Command+W']
   ])
-  expect(menus.view.slice(0, 14)).toEqual([
+  expect(menus.view.slice(0, 16)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
     ['next-workspace', 'Next Workspace', 'Shift+Command+]'],
     ['previous-workspace', 'Previous Workspace', 'Shift+Command+['],
@@ -65,6 +65,8 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['increase-font-size', 'Increase Font Size', 'Command+Plus'],
     ['decrease-font-size', 'Decrease Font Size', 'Command+-'],
     ['reset-font-size', 'Reset Font Size', 'Command+0'],
+    ['widen-workspace', 'Widen Workspace', 'Shift+Command+.'],
+    ['narrow-workspace', 'Narrow Workspace', 'Shift+Command+,'],
     ['-', '', null]
   ])
   expect(menus.lastTypes).not.toContain('separator')
@@ -99,6 +101,8 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
   await page.keyboard.press('Meta+Equal')
   await page.keyboard.press('Meta+Minus')
   await page.keyboard.press('Meta+Digit0')
+  await page.keyboard.press('Shift+Meta+Period')
+  await page.keyboard.press('Shift+Meta+Comma')
 
   expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual([
     { code: 'Backslash', prevented: false },
@@ -108,7 +112,9 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
     { code: 'BracketRight', prevented: false },
     { code: 'Equal', prevented: false },
     { code: 'Minus', prevented: false },
-    { code: 'Digit0', prevented: false }
+    { code: 'Digit0', prevented: false },
+    { code: 'Period', prevented: false },
+    { code: 'Comma', prevented: false }
   ])
   // 키가 글자로 새면 줄 끝에 붙는다. 새어 나온 \ 는 뒤의 $ 를 이스케이프하므로 pass-24 가 찍히지 않는다.
   await run(page, '$((2+2))', 'pass-24')
@@ -263,6 +269,8 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
     'Increase Font Size⌘+',
     'Decrease Font Size⌘-',
     'Reset Font Size⌘0',
+    'Widen Workspace⇧⌘.',
+    'Narrow Workspace⇧⌘,',
     'Restart'
   ])
   await expect(items(page).first()).toHaveClass(/selected/)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { columnsWidth } from './columns'
+import { columnsWidth, stepPaneCols } from './columns'
 
 describe('columnsWidth', () => {
   it('pane 마다 80열과 여백·스크롤바·0.5px 가 들어가는 가장 적은 셀 수만큼 잡는다', () => {
@@ -18,5 +18,33 @@ describe('columnsWidth', () => {
   it('WebGL 의 내림한 셀 폭이면 0.5px 를 더 두지 않아, 여백과 스크롤바가 셀의 배수여도 80열이다', () => {
     expect(columnsWidth(1, 8, true)).toBe(82 * 8)
     expect(columnsWidth(1, 8, false)).toBe(83 * 8)
+  })
+
+  it('pane 폭을 주면 80 대신 그 열 수로 잡고, 내림한 셀 폭이면 그 열 수에 한 열을 더 붙이지 않는다', () => {
+    expect(columnsWidth(1, 9, false, 110)).toBe(112 * 9)
+    expect(columnsWidth(2, 8, true, 144)).toBe(2 * 146 * 8)
+    expect(columnsWidth(1, 8, true, 110)).toBe(112 * 8)
+    expect(columnsWidth(1, 8, false, 110)).toBe(113 * 8)
+  })
+})
+
+describe('stepPaneCols', () => {
+  it('넓히기는 지금 폭보다 큰 가장 작은 정류장으로 간다', () => {
+    expect(stepPaneCols(80, 1)).toBe(110)
+    expect(stepPaneCols(110, 1)).toBe(144)
+    expect(stepPaneCols(100, 1)).toBe(110)
+  })
+
+  it('좁히기는 지금 폭보다 작은 가장 큰 정류장으로 간다', () => {
+    expect(stepPaneCols(144, -1)).toBe(110)
+    expect(stepPaneCols(110, -1)).toBe(80)
+    expect(stepPaneCols(100, -1)).toBe(80)
+  })
+
+  it('그런 정류장이 없으면 그대로다', () => {
+    expect(stepPaneCols(144, 1)).toBe(144)
+    expect(stepPaneCols(300, 1)).toBe(300)
+    expect(stepPaneCols(80, -1)).toBe(80)
+    expect(stepPaneCols(50, -1)).toBe(50)
   })
 })

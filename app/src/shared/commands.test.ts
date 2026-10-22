@@ -22,6 +22,8 @@ describe('filterCommands', () => {
       'Increase Font Size',
       'Decrease Font Size',
       'Reset Font Size',
+      'Widen Workspace',
+      'Narrow Workspace',
       'Restart'
     ]
     expect(titles('')).toEqual(all)

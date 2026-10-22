@@ -200,9 +200,20 @@ export function createWorkspaces(
       for (const p of w.panes) if (p.sessionId === sessionId && p.cwd) readGitFor(p.key, p.cwd)
   }
 
+  function workspace(key: number): Workspace | undefined {
+    return list.value.find((x) => x.key === key)
+  }
+
   function setFontSize(key: number, size: number | undefined): void {
-    const w = list.value.find((x) => x.key === key)
+    const w = workspace(key)
     if (w) w.fontSize = size
+  }
+
+  function setPaneCols(key: number, cols: number | undefined): void {
+    const w = workspace(key)
+    if (!w) return
+    if (cols === undefined) delete w.paneCols
+    else w.paneCols = cols
   }
 
   function setTitle(key: number, title: string): void {
@@ -244,6 +255,7 @@ export function createWorkspaces(
     setCwd,
     setTitle,
     setFontSize,
+    setPaneCols,
     snapshot,
     restore,
     refreshSession,
