@@ -32,6 +32,12 @@ describe('parseConfig', () => {
     expect(r.font.fontFamily).toBe(`'JetBrains Mono', 'Sarasa Term K', ${FAMILY}`)
   })
 
+  it('CSS generic family 키워드는 따옴표 없이 넣는다', () => {
+    const r = ok(`[terminal]\nfont-family = "ui-monospace, Menlo, 'Monospace', system-ui"\n`)
+    expect(r.font.fontFamily).toBe(`ui-monospace, 'Menlo', Monospace, system-ui, ${FAMILY}`)
+    expect(r.names).toEqual(['ui-monospace', 'Menlo', 'Monospace', 'system-ui'])
+  })
+
   // TOML 의 basic string 안이라 `\\n`·`\\t` 는 줄바꿈·탭이 된다.
   it.each(['Ha\\"ck', 'A;B', 'A\\\\B', 'A,,B', '  ', "'A", 'Menlo\\nX', 'A\\tB', '\\"A\\nB\\"'])(
     '받지 않는 문자나 빈 이름이 있으면 기본 글꼴을 쓴다: %s',

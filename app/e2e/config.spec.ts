@@ -216,6 +216,22 @@ test('라틴 글자가 없는 글꼴도 설치됐으면 알리지 않는다', as
   await expect(toast(page)).toHaveCount(0)
 })
 
+test('CSS generic family 키워드는 generic family 로 적용하고 알리지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  // Chromium 은 `ui-monospace` 를 지원하지 않아 다음 이름인 `serif` 로 그린다.
+  writeConfig(dataDir, '[terminal]\nfont-family = "ui-monospace, serif"\n')
+  const { page } = await launch()
+  await expect(toast(page)).toHaveCount(0)
+  // computed style 은 `'serif'` 도 따옴표 없이 보여 주므로 그린 폭으로 잰다. 글꼴 이름으로 넣으면 없는
+  // 글꼴이라 D2Coding 으로 그린다. generic family 로 넣으면 D2Coding 보다 넓은 serif 글꼴로 그려서,
+  // D2Coding 으로 바꾸면 셸이 본 열 수가 는다.
+  const before = await shellSize(page)
+  writeConfig(dataDir, '[terminal]\nfont-family = "D2Coding"\n')
+  await expect.poll(async () => (await shellSize(page)).cols).toBeGreaterThan(before.cols)
+})
+
 test('문제 줄이 많아도 토스트가 창 안에 남아 닫을 수 있다', async ({ launch, dataDir }) => {
   const keys = Array.from({ length: 40 }, (_, i) => `unknown-${i} = 1`).join('\n')
   writeConfig(dataDir, `[terminal]\n${keys}\n`)

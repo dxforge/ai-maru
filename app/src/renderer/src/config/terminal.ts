@@ -22,6 +22,27 @@ const RANGES = {
 
 const KEYS = new Set<string>(['font-family', ...Object.keys(RANGES)])
 
+// CSS Fonts 4 의 generic family 키워드다. 따옴표로 감싸면 그 이름의 글꼴을 찾으므로 감싸지 않고 넣는다.
+const GENERIC_FAMILIES = new Set([
+  'serif',
+  'sans-serif',
+  'monospace',
+  'cursive',
+  'fantasy',
+  'system-ui',
+  'ui-serif',
+  'ui-sans-serif',
+  'ui-monospace',
+  'ui-rounded',
+  'math',
+  'emoji',
+  'fangsong'
+])
+
+export function isGenericFamily(name: string): boolean {
+  return GENERIC_FAMILIES.has(name.toLowerCase())
+}
+
 type Table = Record<string, unknown>
 
 function isTable(v: unknown): v is Table {
@@ -66,7 +87,8 @@ export function parseConfig(text: string): ConfigResult {
     const parsed = fontNames(family)
     if (parsed) {
       names = parsed
-      font.fontFamily = [...parsed.map((n) => `'${n}'`), FONT_FAMILY].join(', ')
+      const css = parsed.map((n) => (isGenericFamily(n) ? n : `'${n}'`))
+      font.fontFamily = [...css, FONT_FAMILY].join(', ')
     } else {
       warnings.push(
         `terminal.font-family can't contain " ' ; \\, control characters or empty names, using the default.`

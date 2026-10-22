@@ -25,7 +25,7 @@ line-height = 1.3
 
 적은 글꼴은 기본 글꼴 목록 앞에 붙는다. 적은 글꼴에 없는 글자(한글, Nerd Font 아이콘 등)는 뒤의 기본 글꼴이 그린다. 이름은 따옴표로 감싸도 되고 감싸지 않아도 된다(`"'Sarasa Term K', Menlo"`). 이름 안에 `"` `'` `;` `\` 나 줄바꿈 같은 제어 문자가 있거나 빈 이름이 있으면 값 전체를 버리고 기본 글꼴을 쓴다.
 
-적은 이름은 모두 따옴표로 감싸 글꼴 이름으로 넣는다. 그래서 `monospace`·`ui-monospace` 같은 CSS generic family 이름은 generic family 로 적용되지 않는다. 토스트는 이 이름을 설치되지 않은 글꼴로 알린다.
+`serif`·`sans-serif`·`monospace`·`cursive`·`fantasy`·`system-ui`·`ui-serif`·`ui-sans-serif`·`ui-monospace`·`ui-rounded`·`math`·`emoji`·`fangsong` 은 CSS generic family 키워드로 넣는다. 따옴표로 감싸 적어도 키워드로 다룬다. 앱의 Chromium 은 `ui-serif`·`ui-sans-serif`·`ui-monospace`·`ui-rounded` 를 지원하지 않아 그다음 글꼴로 그린다. 그래서 macOS 의 시스템 고정폭 글꼴(SF Mono)은 `ui-monospace` 로 고를 수 없고, SF Mono 를 따로 설치하지 않았으면 `SF Mono` 라는 이름으로도 고를 수 없다. 키워드는 설치 여부를 알리지 않는다. 그 밖의 이름은 따옴표로 감싸 글꼴 이름으로 넣는다.
 
 ### 범위를 벗어나거나 잘못 적은 값
 
