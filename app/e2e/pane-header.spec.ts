@@ -20,7 +20,7 @@ import {
   workspaceViews
 } from './app'
 
-test('칸 머리는 OSC 0·2 로 받은 제목을, 받기 전에는 Shell 을 보이고, 칸의 디렉토리 이름을 보인다', async ({
+test('pane 헤더는 OSC 0·2 로 받은 제목을, 받기 전에는 Shell 을 보이고, pane 의 디렉토리 이름을 보인다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -55,7 +55,7 @@ test('앱이 뜰 때 그린 pane 헤더 아이콘도 함께 실은 Nerd Font 로
   expect(fonts.map((f) => f.familyName)).toEqual(['Symbols Nerd Font Mono'])
 })
 
-test('칸 머리를 누르면 그 칸이 포커스를 받고 키가 그리로 간다', async ({ launch }) => {
+test('pane 헤더를 누르면 그 pane 이 포커스를 받고 키가 그리로 간다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
 
@@ -66,7 +66,7 @@ test('칸 머리를 누르면 그 칸이 포커스를 받고 키가 그리로 �
   await typesInto(page, 1, 'again')
 })
 
-test('columns 에서 고르지 않은 workspace 의 칸 머리를 누르면 그 workspace 를 고르고 키가 그 칸으로 간다', async ({
+test('columns 에서 고르지 않은 workspace 의 pane 헤더를 누르면 그 workspace 를 고르고 키가 그 pane 으로 간다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -80,7 +80,9 @@ test('columns 에서 고르지 않은 workspace 의 칸 머리를 누르면 그 
   await typesInto(page, 0, 'other')
 })
 
-test('포커스를 옮기면 칸 머리의 강조와 다른 칸을 흐리게 덮는 층이 따라간다', async ({ launch }) => {
+test('포커스를 옮기면 pane 헤더의 강조와 다른 pane 을 흐리게 덮는 층이 따라간다', async ({
+  launch
+}) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   const state = () =>
@@ -103,7 +105,7 @@ test('포커스를 옮기면 칸 머리의 강조와 다른 칸을 흐리게 덮
   ])
 })
 
-test('columns 의 workspace 머리는 칸 상태 가운데 waiting, working 순으로 하나를 보이고, 없으면 비우며, 누르면 그 workspace 를 고른다', async ({
+test('columns 의 workspace 헤더는 pane 상태 가운데 waiting, working 순으로 하나를 보이고, 없으면 비우며, 누르면 그 workspace 를 고른다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -128,7 +130,7 @@ test('columns 의 workspace 머리는 칸 상태 가운데 waiting, working 순�
   await run(page, 'echo first-$((1+1))', 'first-2')
 })
 
-test('columns 의 workspace 머리는 idle 만 있으면 칸 머리와 같은 idle 아이콘을 같은 크기로 보인다', async ({
+test('columns 의 workspace 헤더는 idle 만 있으면 pane 헤더와 같은 idle 아이콘을 같은 크기로 보인다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -145,7 +147,7 @@ test('columns 의 workspace 머리는 idle 만 있으면 칸 머리와 같은 id
   )
 })
 
-test('칸 머리와 columns 의 workspace 머리는 글자 위에서도 기본 커서를 보이고, Canvas 글자에서 머리로 끌어도 머리 글자는 선택되지 않는다', async ({
+test('pane 헤더와 columns 의 workspace 헤더는 글자 위에서도 기본 커서를 보이고, Canvas 글자에서 헤더로 끌어도 헤더 글자는 선택되지 않는다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -189,7 +191,7 @@ test('칸 머리와 columns 의 workspace 머리는 글자 위에서도 기본 �
   }
 })
 
-test('Canvas 패널 머리에는 칸 머리의 모양이 걸리지 않는다', async ({ launch }) => {
+test('Canvas 패널 헤더에는 pane 헤더의 모양이 걸리지 않는다', async ({ launch }) => {
   const { app, page } = await launch()
   await clickMenu(app, 'toggle-canvas')
   const header = page.locator('.canvas header')
@@ -231,7 +233,9 @@ test('명령 팔레트와 Canvas 패널은 앱 테마 색을 쓴다', async ({ l
   expect(colors.canvas).toBe(fg)
 })
 
-test('터미널 스크롤바는 칸 폭에서 8px 를 차지하고, 막대는 그 안쪽에 그린다', async ({ launch }) => {
+test('터미널 스크롤바는 pane 폭에서 8px 를 차지하고, 막대는 그 안쪽에 그린다', async ({
+  launch
+}) => {
   const { page } = await launch()
   const [width, clip] = await page.evaluate(() => {
     const bar = document.querySelector('.terminal-view.active .xterm-scrollbar.xterm-vertical')!
@@ -258,7 +262,7 @@ test('터미널 왼쪽 여백도 터미널 배경으로 칠한다', async ({ lau
 async function measure(page: Page) {
   return page.evaluate(() => {
     const grid = document.querySelector('.panes.selected .grid')!.getBoundingClientRect()
-    // 칸 경계가 맞추는 격자. DOM 의 행 높이는 행 수에 따라 반올림이 달라 1px 의 몇 % 씩 어긋난다.
+    // pane 경계가 맞추는 격자. DOM 의 행 높이는 행 수에 따라 반올림이 달라 1px 의 몇 % 씩 어긋난다.
     const vars = getComputedStyle(document.querySelector('.app')!)
     const cellWidth = parseFloat(vars.getPropertyValue('--cell'))
     const unit = parseFloat(vars.getPropertyValue('--row'))
@@ -301,7 +305,7 @@ function expectRowsMatch(boxes: Awaited<ReturnType<typeof measure>>) {
   for (const b of boxes) expect(b.rows).toBe(Math.floor((b.bottom - b.top) / b.unit + 1e-6) - 1)
 }
 
-test('칸을 나누면 경계가 행·열 격자에 놓여 나란한 칸의 행이 이어지고, 경계선은 좌우 칸 사이에만 자리를 차지하지 않고 긋는다', async ({
+test('pane 을 나누면 경계가 행·열 격자에 놓여 나란한 pane 의 행이 이어지고, 경계선은 좌우 pane 사이에만 자리를 차지하지 않고 긋는다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -324,7 +328,7 @@ test('칸을 나누면 경계가 행·열 격자에 놓여 나란한 칸의 행�
   await expect(async () => expectRowsMatch(await measure(page))).toPass()
 })
 
-test('창 크기를 바꿔도 칸 경계는 행·열 격자에 놓인다', async ({ launch }) => {
+test('창 크기를 바꿔도 pane 경계는 행·열 격자에 놓인다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-down', 2)
   await clickMenu(app, 'focus-pane-up')
@@ -338,7 +342,7 @@ test('창 크기를 바꿔도 칸 경계는 행·열 격자에 놓인다', async
   await expect(panes(page)).toHaveCount(3)
 })
 
-test('사이드바나 Canvas 를 열고 닫아도 칸 경계는 행·열 격자에 놓인다', async ({ launch }) => {
+test('사이드바나 Canvas 를 열고 닫아도 pane 경계는 행·열 격자에 놓인다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await split(app, page, 'split-down', 3)
@@ -351,7 +355,7 @@ test('사이드바나 Canvas 를 열고 닫아도 칸 경계는 행·열 격자�
   }
 })
 
-test('칸을 닫으면 남은 칸이 다시 행·열 격자에 놓이고 행을 채운다', async ({ launch }) => {
+test('pane 을 닫으면 남은 pane 이 다시 행·열 격자에 놓이고 행을 채운다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await split(app, page, 'split-down', 3)
@@ -364,7 +368,7 @@ test('칸을 닫으면 남은 칸이 다시 행·열 격자에 놓이고 행을 
 })
 
 for (const level of [1.5, 0.5, -0.5]) {
-  test(`줌 ${level} 에서 행 높이가 소수이고 영역 높이가 행의 배수 근처여도, 모든 칸이 격자에 놓이고 머리를 뺀 높이를 행으로 채운다`, async ({
+  test(`줌 ${level} 에서 행 높이가 소수이고 영역 높이가 행의 배수 근처여도, 모든 pane 이 격자에 놓이고 헤더를 뺀 높이를 행으로 채운다`, async ({
     launch
   }) => {
     const { app, page } = await launch()
@@ -389,7 +393,7 @@ for (const level of [1.5, 0.5, -0.5]) {
   })
 }
 
-test('포커스 없는 칸의 스크롤바도 흐리게 덮는다', async ({ launch }) => {
+test('포커스 없는 pane 의 스크롤바도 흐리게 덮는다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await run(page, 'seq 1 300', '300')
@@ -435,7 +439,7 @@ async function pixel(page: Page, x: number, y: number): Promise<number[]> {
   }, png.toString('base64'))
 }
 
-test('columns 에서 줌과 창 크기를 바꿔도 칸 경계는 행·열 격자에 놓인다', async ({ launch }) => {
+test('columns 에서 줌과 창 크기를 바꿔도 pane 경계는 행·열 격자에 놓인다', async ({ launch }) => {
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
   await split(app, page, 'split-down', 2)
@@ -451,7 +455,7 @@ test('columns 에서 줌과 창 크기를 바꿔도 칸 경계는 행·열 격�
   await expect(async () => expectOnGrid(await measure(page))).toPass()
 })
 
-test('columns 에서 위아래로 나눈 위 칸에 포커스가 가도 칸 머리는 칸 맨 위에 있다', async ({
+test('columns 에서 위아래로 나눈 위 pane 에 포커스가 가도 pane 헤더는 pane 맨 위에 있다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -469,7 +473,7 @@ test('columns 에서 위아래로 나눈 위 칸에 포커스가 가도 칸 머�
   expect(offsets).toEqual([0, 0])
 })
 
-test('칸 머리는 터미널과 같은 글꼴·크기로 쓰고, columns 의 workspace 머리는 굵게 쓰며 한 행 안쪽에 밑줄을 긋는다', async ({
+test('pane 헤더는 터미널과 같은 글꼴·크기로 쓰고, columns 의 workspace 헤더는 굵게 쓰며 한 행 안쪽에 밑줄을 긋는다', async ({
   launch
 }) => {
   const { app, page } = await launch()

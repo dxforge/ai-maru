@@ -137,7 +137,7 @@ function checkCell(force = false): void {
   lastCell = c
   emit('cell', c, floorCell())
   if (!(changed || force) || !started) return
-  // App 이 새 셀 크기로 칸 배치를 고친 뒤에 맞춘다. 먼저 맞추면 옛 칸 높이로 한 번, 새 칸 높이로 또 한 번
+  // App 이 새 셀 크기로 pane 배치를 고친 뒤에 맞춘다. 먼저 맞추면 옛 pane 높이로 한 번, 새 pane 높이로 또 한 번
   // 프로그램에 resize 가 간다.
   void nextTick(() => host.value && session!.primary && fitTerminal())
 }
@@ -319,7 +319,7 @@ onBeforeUnmount(() => {
   inset: 0;
 }
 
-/* xterm 의 스크롤바(z-index 11)가 칸을 흐리게 덮는 층(App.vue) 위로 올라오지 않게 쌓임 맥락을 따로 둔다. */
+/* xterm 의 스크롤바(z-index 11)가 pane 을 흐리게 덮는 층(App.vue) 위로 올라오지 않게 쌓임 맥락을 따로 둔다. */
 .terminal-view {
   isolation: isolate;
 }

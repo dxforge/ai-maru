@@ -18,7 +18,7 @@ import {
   workspaceItems
 } from './app'
 
-test('hook 이 오면 사이드바의 칸 줄과 칸 머리의 상태가 바뀌고, claude exit 로 사라진다', async ({
+test('hook 이 오면 사이드바의 pane 줄과 pane 헤더의 상태가 바뀌고, claude exit 로 사라진다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -58,7 +58,7 @@ test('hook 없이 claude 의 상태 파일이 idle 이 되면 쉬는 중으로 �
   await expect(paneRows(page)).toHaveClass(/idle/)
 })
 
-test('칸 줄은 그 터미널의 workspace 아래에만, 칸 머리는 보이는 칸의 상태를 따른다', async ({
+test('pane 줄은 그 터미널의 workspace 아래에만, pane 헤더는 보이는 pane 의 상태를 따른다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -75,7 +75,9 @@ test('칸 줄은 그 터미널의 workspace 아래에만, 칸 머리는 보이�
   await expect(activeHeader(page)).toHaveClass(/working/)
 })
 
-test('셸 칸과 Claude 칸 모두 칸마다 줄이 있고, 포커스된 칸의 줄만 밝다', async ({ launch }) => {
+test('셸 pane 과 Claude pane 모두 pane 마다 줄이 있고, 포커스된 pane 의 줄만 밝다', async ({
+  launch
+}) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   const [left, right] = [0, 1].map((i) => paneHeader(page, i))
@@ -98,7 +100,7 @@ test('셸 칸과 Claude 칸 모두 칸마다 줄이 있고, 포커스된 칸의 
   await expect(shellRows(page)).not.toHaveClass(/focused/)
 })
 
-test('셸 칸의 줄을 눌러도 그 칸에 키 입력이 간다', async ({ launch }) => {
+test('셸 pane 의 줄을 눌러도 그 pane 에 키 입력이 간다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
 
@@ -108,7 +110,7 @@ test('셸 칸의 줄을 눌러도 그 칸에 키 입력이 간다', async ({ lau
   await typesInto(page, 0, 'shell-row')
 })
 
-test('칸 줄을 누르면 그 workspace 를 고르고 그 칸에 키 입력이 간다', async ({ launch }) => {
+test('pane 줄을 누르면 그 workspace 를 고르고 그 pane 에 키 입력이 간다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
   await split(app, page, 'split-right', 2)

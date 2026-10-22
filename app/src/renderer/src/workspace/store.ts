@@ -182,7 +182,7 @@ export function createWorkspaces(
     readGitFor(key, cwd)
   }
 
-  // 칸마다 마지막으로 청한 답만 쓴다. 답은 청한 순서대로 오지 않아, 늦게 온 답이 새 답을 덮을 수 있다.
+  // pane 마다 마지막으로 청한 답만 쓴다. 답은 청한 순서대로 오지 않아, 늦게 온 답이 새 답을 덮을 수 있다.
   // 읽지 못하면 저장소 밖으로 본다. 이전 디렉토리의 저장소가 새 디렉토리에 남지 않게.
   function readGitFor(key: number, cwd: string): void {
     const read = ++reads

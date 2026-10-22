@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { activeTerminal, expect, restartWith, test } from './app'
 
-// Unicode 14 이후에 추가된 emoji(🫠 등)는 `@xterm/addon-unicode-graphemes` 의 폭 표에 없어 1칸으로 세므로
+// Unicode 14 이후에 추가된 emoji(🫠 등)는 `@xterm/addon-unicode-graphemes` 의 폭 표에 없어 폭을 1로 세므로
 // 넣지 않는다.
 const SAMPLES: [name: string, text: string, cells: number][] = [
   ['check', '✅', 2],
@@ -28,7 +28,7 @@ async function cursorColumn(page: Page): Promise<number> {
   })
 }
 
-test('emoji·한글을 찍은 뒤 커서를 Claude Code 가 세는 칸에 둔다', async ({ launch }) => {
+test('emoji·한글을 찍은 뒤 커서를 Claude Code 가 세는 열에 둔다', async ({ launch }) => {
   const { page } = await launch()
   await activeTerminal(page)
   for (const [name, text, cells] of SAMPLES) {
@@ -39,7 +39,7 @@ test('emoji·한글을 찍은 뒤 커서를 Claude Code 가 세는 칸에 둔다
   }
 })
 
-test('emoji 를 찍고 재시작하면 maru-session 이 재생한 커서가 xterm 이 센 칸과 같다', async ({
+test('emoji 를 찍고 재시작하면 maru-session 이 재생한 커서가 xterm 이 센 열과 같다', async ({
   launch
 }) => {
   const first = await launch()

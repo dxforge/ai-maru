@@ -86,7 +86,7 @@ test('팔레트의 Toggle View Mode 도 view mode 를 바꾸고, 키는 터미�
   await expectCols(page, 80)
 })
 
-test('columns 에서 좌우로 나누면 고르지 않게 나눠도 칸마다 80열이다', async ({ launch }) => {
+test('columns 에서 좌우로 나누면 고르지 않게 나눠도 pane 마다 80열이다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
   await toggleView(launched, 'columns')
@@ -102,7 +102,7 @@ test('columns 에서 좌우로 나누면 고르지 않게 나눠도 칸마다 80
   }
 })
 
-test('columns 에서 위아래 두 쪽의 늘어선 칸 수가 다르면 적은 쪽 칸이 넓어진다', async ({
+test('columns 에서 위아래 두 쪽의 늘어선 pane 수가 다르면 적은 쪽 pane 이 넓어진다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -121,7 +121,7 @@ test('columns 에서 위아래 두 쪽의 늘어선 칸 수가 다르면 적은 
   expect(wide).toBeLessThan(170)
 })
 
-test('columns 에서 다른 workspace 의 칸을 누르면 그 workspace 를 선택하고 키가 그리로 간다', async ({
+test('columns 에서 다른 workspace 의 pane 을 누르면 그 workspace 를 선택하고 키가 그리로 간다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -140,7 +140,7 @@ test('columns 에서 다른 workspace 의 칸을 누르면 그 workspace 를 선
   await expect(workspaceViews(page).nth(1).locator('.pane')).toHaveCount(1)
 })
 
-test('columns 에서 위아래로 나눈 칸도 80열이고, 칸을 닫으면 workspace 폭이 다시 준다', async ({
+test('columns 에서 위아래로 나눈 pane 도 80열이고, pane 을 닫으면 workspace 폭이 다시 준다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -159,7 +159,7 @@ test('columns 에서 위아래로 나눈 칸도 80열이고, 칸을 닫으면 wo
   expect((await workspaceViews(page).first().boundingBox())!.width).toBe(one)
 })
 
-test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 칸이 보이도록 따라간다', async ({
+test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 pane 이 보이도록 따라간다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -192,7 +192,7 @@ test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 칸�
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
 })
 
-test('columns 에서 포커스가 같은 칸으로 돌아와도 스크롤한 자리는 그대로고, 사이드바의 칸 줄을 누르면 그 칸을 보인다', async ({
+test('columns 에서 포커스가 같은 pane 으로 돌아와도 스크롤한 자리는 그대로고, 사이드바의 pane 줄을 누르면 그 pane 을 보인다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -225,7 +225,7 @@ test('columns 에서 포커스가 같은 칸으로 돌아와도 스크롤한 자
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
 })
 
-test('columns 에서 칸의 디렉토리가 바뀌어도 스크롤한 자리는 그대로다', async ({
+test('columns 에서 pane 의 디렉토리가 바뀌어도 스크롤한 자리는 그대로다', async ({
   launch,
   dataDir
 }) => {
@@ -248,7 +248,7 @@ test('columns 에서 칸의 디렉토리가 바뀌어도 스크롤한 자리는 
   expect(await area.evaluate((el) => el.scrollLeft)).toBe(0)
 })
 
-test('columns 에서 앞의 workspace 가 닫혀도 포커스된 칸이 화면에 남고 키를 받는다', async ({
+test('columns 에서 앞의 workspace 가 닫혀도 포커스된 pane 이 화면에 남고 키를 받는다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -321,7 +321,7 @@ test('columns 에서 포커스를 따라 스크롤해도 선택한 workspace 의
   await expect.poll(left).toBeGreaterThanOrEqual(area.left)
 })
 
-test('columns 에서 줌을 바꿔도 칸은 80열이다', async ({ launch }) => {
+test('columns 에서 줌을 바꿔도 pane 은 80열이다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
   await toggleView(launched, 'columns')
@@ -335,7 +335,7 @@ test('columns 에서 줌을 바꿔도 칸은 80열이다', async ({ launch }) =>
   }
 })
 
-test('columns 에서 창 크기를 바꿔도 칸은 80열이다', async ({ launch }) => {
+test('columns 에서 창 크기를 바꿔도 pane 은 80열이다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
   await toggleView(launched, 'columns')

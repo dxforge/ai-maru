@@ -47,7 +47,6 @@ export function panes(layout: Layout): number[] {
   return 'pane' in layout ? [layout.pane] : [...panes(layout.first), ...panes(layout.second)]
 }
 
-/** 가로선 하나가 지나는 칸의 최대 개수. */
 export function columnCount(layout: Layout): number {
   if ('pane' in layout) return 1
   const [a, b] = [columnCount(layout.first), columnCount(layout.second)]

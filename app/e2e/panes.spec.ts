@@ -20,7 +20,7 @@ import {
   zshHome
 } from './app'
 
-test('⌘D 는 포커스가 있는 칸을 오른쪽으로 나눠 새 셸을 띄우고, 새 칸이 키를 받는다', async ({
+test('⌘D 는 포커스가 있는 pane 을 오른쪽으로 나눠 새 셸을 띄우고, 새 pane 이 키를 받는다', async ({
   launch,
   dataDir
 }) => {
@@ -61,7 +61,7 @@ test('⇧⌘D 는 아래로 나눈다', async ({ launch }) => {
   expect(half.rows).toBeGreaterThan(full.rows / 2 - 3)
 })
 
-test('⌘⌥방향키는 그 방향의 칸으로 포커스를 옮기고, 그 방향에 칸이 없으면 그대로 둔다', async ({
+test('⌘⌥방향키는 그 방향의 pane 으로 포커스를 옮기고, 그 방향에 pane 이 없으면 그대로 둔다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -83,7 +83,7 @@ test('⌘⌥방향키는 그 방향의 칸으로 포커스를 옮기고, 그 방
   await typesInto(page, 2, 'down')
 })
 
-test('터미널에서 ⇧⌘방향키도 그 방향의 칸으로 포커스를 옮긴다', async ({ launch }) => {
+test('터미널에서 ⇧⌘방향키도 그 방향의 pane 으로 포커스를 옮긴다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await split(app, page, 'split-down', 3)
@@ -99,7 +99,7 @@ test('터미널에서 ⇧⌘방향키도 그 방향의 칸으로 포커스를 �
   await typesInto(page, 2, 'down')
 })
 
-test('칸이 하나면 ⇧⌘방향키는 포커스를 그대로 두고 셸에 아무것도 보내지 않는다', async ({
+test('pane 이 하나면 ⇧⌘방향키는 포커스를 그대로 두고 셸에 아무것도 보내지 않는다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -110,7 +110,7 @@ test('칸이 하나면 ⇧⌘방향키는 포커스를 그대로 두고 셸에 �
   await run(page, '1))', 'edge-2')
 })
 
-test('포커스가 터미널 밖에 있어도 ⇧⌘방향키는 칸을 옮긴다', async ({ launch }) => {
+test('포커스가 터미널 밖에 있어도 ⇧⌘방향키는 pane 을 옮긴다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await putCanvas(app, { id: 'a', kind: 'markdown', text: 'x', title: 'A' })
@@ -119,7 +119,7 @@ test('포커스가 터미널 밖에 있어도 ⇧⌘방향키는 칸을 옮긴�
   await typesInto(page, 0, 'left')
 })
 
-test('칸을 누르면 그 칸이 포커스를 받는다', async ({ launch }) => {
+test('pane 을 누르면 그 pane 이 포커스를 받는다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await panes(page).nth(0).click()
@@ -128,7 +128,7 @@ test('칸을 누르면 그 칸이 포커스를 받는다', async ({ launch }) =>
   await typesInto(page, 1, 'clicked-right')
 })
 
-test('⌘W 는 포커스가 있는 칸의 세션을 끝내고 닫으며, 형제 칸이 자리와 포커스를 받는다', async ({
+test('⌘W 는 포커스가 있는 pane 의 세션을 끝내고 닫으며, 형제 pane 이 자리와 포커스를 받는다', async ({
   launch,
   dataDir
 }) => {
@@ -149,7 +149,7 @@ test('⌘W 는 포커스가 있는 칸의 세션을 끝내고 닫으며, 형제 
   await expect(workspaceItems(page)).toHaveCount(1)
 })
 
-test('마지막 칸을 ⌘W 로 닫으면 workspace 도 닫고 세션을 끝낸다', async ({ launch, dataDir }) => {
+test('마지막 pane 을 ⌘W 로 닫으면 workspace 도 닫고 세션을 끝낸다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await page.keyboard.type('X=first-$((1+1))\n')
   await pressNew(app)
@@ -200,7 +200,7 @@ test('세션에 붙기 전에 ⌘W 로 닫아도 그 세션은 끝난다', async
   await typesInto(page, 0, 'remaining')
 })
 
-test('포커스가 없는 칸의 셸이 끝나면 그 칸만 닫고, 포커스와 입력은 그대로다', async ({
+test('포커스가 없는 pane 의 셸이 끝나면 그 pane 만 닫고, 포커스와 입력은 그대로다', async ({
   launch,
   dataDir
 }) => {
@@ -215,7 +215,7 @@ test('포커스가 없는 칸의 셸이 끝나면 그 칸만 닫고, 포커스�
   await run(page, 'echo "x=$X"', 'x=right-2')
 })
 
-test('zsh 에서 새 칸은 포커스가 있던 칸의 디렉토리에서 시작하고, 이름과 ⌘N 은 포커스가 있는 칸을 따른다', async ({
+test('zsh 에서 새 pane 은 포커스가 있던 pane 의 디렉토리에서 시작하고, 이름과 ⌘N 은 포커스가 있는 pane 을 따른다', async ({
   launch,
   dataDir
 }) => {
@@ -240,7 +240,10 @@ test('zsh 에서 새 칸은 포커스가 있던 칸의 디렉토리에서 시작
   await run(page, '[ "$PWD" = "$HOME/other" ] && echo in-other-$((1+1))', 'in-other-2')
 })
 
-test('포커스가 있는 칸의 셸이 끝나면 형제 칸이 포커스를 받는다', async ({ launch, dataDir }) => {
+test('포커스가 있는 pane 의 셸이 끝나면 형제 pane 이 포커스를 받는다', async ({
+  launch,
+  dataDir
+}) => {
   const { app, page } = await launch()
   await page.keyboard.type('X=left-$((1+1))\n')
   await split(app, page, 'split-down', 2)
@@ -254,7 +257,7 @@ test('포커스가 있는 칸의 셸이 끝나면 형제 칸이 포커스를 받
   await run(page, 'echo "x=$X"', 'x=left-2')
 })
 
-test('다른 workspace 에 갔다 와도 포커스가 있던 칸이 키를 받는다', async ({ launch }) => {
+test('다른 workspace 에 갔다 와도 포커스가 있던 pane 이 키를 받는다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await clickMenu(app, 'focus-pane-left')
@@ -268,7 +271,7 @@ test('다른 workspace 에 갔다 와도 포커스가 있던 칸이 키를 받�
   await typesInto(page, 0, 'back')
 })
 
-test('보이지 않는 workspace 에서 포커스가 있던 칸의 셸이 끝나면, 돌아왔을 때 형제 칸이 키를 받는다', async ({
+test('보이지 않는 workspace 에서 포커스가 있던 pane 의 셸이 끝나면, 돌아왔을 때 형제 pane 이 키를 받는다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -286,7 +289,7 @@ test('보이지 않는 workspace 에서 포커스가 있던 칸의 셸이 끝나
   await typesInto(page, 0, 'left')
 })
 
-test('나눈 칸들은 창 크기를 따라 셸이 보는 크기가 바뀐다', async ({ launch }) => {
+test('나눈 pane 들은 창 크기를 따라 셸이 보는 크기가 바뀐다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await typesInto(page, 1, 'ready')
@@ -302,7 +305,9 @@ test('나눈 칸들은 창 크기를 따라 셸이 보는 크기가 바뀐다', 
   await expect.poll(async () => (await shellSize(page)).cols).toBeGreaterThan(right.cols)
 })
 
-test('팔레트가 열린 채 ⌘W 를 누르면 칸이 닫히고 키는 남은 칸으로 간다', async ({ launch }) => {
+test('팔레트가 열린 채 ⌘W 를 누르면 pane 이 닫히고 키는 남은 pane 으로 간다', async ({
+  launch
+}) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await typesInto(page, 1, 'right')

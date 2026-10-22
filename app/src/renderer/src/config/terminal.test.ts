@@ -97,7 +97,7 @@ describe('parseConfig', () => {
     expect(r.warnings).toEqual(['terminal must be a table, using the defaults.'])
   })
 
-  it('문법 오류는 줄과 칸을 준다', () => {
+  it('문법 오류는 줄과 열을 준다', () => {
     expect(parseConfig('[terminal]\nfont-size =\n')).toEqual({
       ok: false,
       problem: 'Line 2, column 12: invalid value'

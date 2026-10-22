@@ -4,7 +4,7 @@ import { ICONS, STATE_LABELS } from '../icons'
 import { workspaceName } from '../workspace/cwd'
 import type { Pane } from '../workspace/store'
 
-// 제목은 여기서 읽어, 제목이 바뀌면 이 머리만 다시 그린다.
+// 제목은 여기서 읽어, 제목이 바뀌면 이 헤더만 다시 그린다.
 const {
   state = undefined,
   pane,

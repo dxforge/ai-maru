@@ -130,7 +130,7 @@ for (const renderer of ['webgl', 'dom'] as const)
       expect(await settledInkTop(page, clip)).toBe(committed)
     })
 
-test('조합창은 터미널 배경에 밑줄로 두 칸을 덮어 그 아래의 커서를 가린다', async ({ launch }) => {
+test('조합창은 터미널 배경에 밑줄로 두 셀을 덮어 그 아래의 커서를 가린다', async ({ launch }) => {
   const launched = await launch({ MARU_DOM_RENDERER: '' })
   const { page } = launched
   await activeTerminal(page)
