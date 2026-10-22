@@ -16,7 +16,21 @@ const IMAGE_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml'
 }
 
-export async function putCanvas(win: BrowserWindow, doc: CanvasDoc): Promise<void> {
+/** Canvas 가 그릴 수 있는 파일(`.md`·이미지)이면 그 문서. id 는 경로라 같은 파일은 같은 문서를 바꾼다. */
+export async function canvasDocFor(path: string): Promise<CanvasDoc | null> {
+  const ext = extname(path).toLowerCase()
+  if (ext === '.md') {
+    return { id: path, kind: 'markdown', text: await readFile(path, 'utf8'), title: basename(path) }
+  }
+  return ext in IMAGE_TYPES ? { id: path, kind: 'image', path } : null
+}
+
+export async function putCanvas(
+  window: () => BrowserWindow | undefined,
+  doc: CanvasDoc
+): Promise<void> {
+  const win = window()
+  if (!win || win.isDestroyed()) throw new Error('no window to show the document in')
   win.webContents.send('canvas:put', await toItem(doc))
 }
 
@@ -31,15 +45,13 @@ export function canvasPut(window: () => BrowserWindow | undefined) {
     if (title !== undefined && typeof title !== 'string') {
       throw new InvalidParams('params.title must be a string')
     }
-    const win = window()
-    if (!win || win.isDestroyed()) throw new Error('no window to show the document in')
     const doc: CanvasMarkdown = {
       id: id ?? randomUUID(),
       kind: 'markdown',
       text,
       ...(title === undefined ? {} : { title })
     }
-    await putCanvas(win, doc)
+    await putCanvas(window, doc)
     return { id: doc.id }
   }
 }

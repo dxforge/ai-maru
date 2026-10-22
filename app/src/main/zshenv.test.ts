@@ -149,12 +149,16 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 PATH', () => {
   })
 })
 
-function fakes(dir: string, claudeExit: string): { bin: string; log: string } {
+function fakes(
+  dir: string,
+  claudeExit: string | ((log: string) => string)
+): { bin: string; log: string } {
   const bin = join(dir, 'fakebin')
   const log = join(dir, 'calls.log')
   mkdirSync(bin, { recursive: true })
   const record = (name: string) => `#!/bin/sh\necho "${name} $*" >> '${log}'\n`
-  writeFileSync(join(bin, 'claude'), `${record('claude')}${claudeExit}\n`, { mode: 0o755 })
+  const exit = typeof claudeExit === 'function' ? claudeExit(log) : claudeExit
+  writeFileSync(join(bin, 'claude'), `${record('claude')}${exit}\n`, { mode: 0o755 })
   writeFileSync(join(bin, 'maru'), record('maru'), { mode: 0o755 })
   return { bin, log }
 }
@@ -166,6 +170,10 @@ function appEnv(bin: string): Record<string, string> {
 /** 셸이 SIGINT 로 끝나는 경우도 보므로 종료 코드를 따지지 않는다. */
 function shellWith(homeDir: string, env: Record<string, string>, command: string): string {
   return spawnLogin(homeDir, command, homeDir, env).stdout
+}
+
+function loginShellWith(homeDir: string, env: Record<string, string>, command: string): string {
+  return stdoutOf(spawnLogin(homeDir, command, homeDir, env))
 }
 
 describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 claude 함수', () => {
@@ -213,6 +221,45 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 claude 함수', () => {
     const h = home({ '.zshenv': 'claude() { print mine }', '.zshrc': '' })
     const { bin } = fakes(h, 'exit 0')
     expect(shellWith(h, appEnv(bin), 'claude')).toBe('mine\n')
+  })
+
+  const recordHyperlink = (log: string) =>
+    `echo "hyperlink=\${FORCE_HYPERLINK-unset} marker=\${MARU_CLAUDE_FORCED_HYPERLINK-unset} zdotdir=\${ZDOTDIR-unset}" >> '${log}'; exit 0`
+
+  it('claude 에만 FORCE_HYPERLINK=1 과 표식·앱 ZDOTDIR 을 붙이고 셸에는 남기지 않는다', () => {
+    const h = home({ '.zshrc': '' })
+    const { bin, log } = fakes(h, recordHyperlink)
+    expect(
+      shellWith(h, appEnv(bin), 'claude; print shell=${FORCE_HYPERLINK-unset} ${ZDOTDIR-unset}')
+    ).toBe('shell=unset unset\n')
+    expect(readFileSync(log, 'utf8')).toContain(`hyperlink=1 marker=1 zdotdir=${zdotdir}\n`)
+  })
+
+  it.each(['0', ''])(
+    '사용자가 FORCE_HYPERLINK 를 %j 로 정해 두었으면 그 값을 두고 표식도 붙이지 않는다',
+    (value) => {
+      const h = home({ '.zshrc': '' })
+      const { bin, log } = fakes(h, recordHyperlink)
+      shellWith(h, { ...appEnv(bin), FORCE_HYPERLINK: value }, 'claude')
+      expect(readFileSync(log, 'utf8')).toContain(`hyperlink=${value} marker=unset zdotdir=unset\n`)
+    }
+  )
+
+  it('claude 안(CLAUDECODE)에서 띄운 claude 에는 붙이지 않는다', () => {
+    const h = home({ '.zshrc': '' })
+    const { bin, log } = fakes(h, recordHyperlink)
+    shellWith(h, { ...appEnv(bin), CLAUDECODE: '1' }, 'claude')
+    expect(readFileSync(log, 'utf8')).toContain('hyperlink=unset marker=unset zdotdir=unset\n')
+  })
+
+  it('claude 의 Bash 도구가 띄우는 로그인 셸은 표식을 보고 FORCE_HYPERLINK 를 지운다', () => {
+    const h = home({ '.zshrc': '' })
+    const forced = { FORCE_HYPERLINK: '1', MARU_CLAUDE_FORCED_HYPERLINK: '1' }
+    const print =
+      'print ${FORCE_HYPERLINK-unset} ${MARU_CLAUDE_FORCED_HYPERLINK-unset} ${ZDOTDIR-unset}'
+    expect(loginShellWith(h, forced, print)).toBe('unset unset unset\n')
+    // 표식이 없으면 사용자가 정한 값이라 둔다.
+    expect(loginShellWith(h, { FORCE_HYPERLINK: '1' }, print)).toBe('1 unset unset\n')
   })
 
   it('사용자 ~/.zshenv 의 claude alias 를 거쳐도 앱 plugin 이 실린다', () => {

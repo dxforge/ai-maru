@@ -28,14 +28,14 @@ describe('putCanvas', () => {
   it('마크다운은 받은 그대로 보낸다', async () => {
     const { win, sent } = fakeWindow()
     const doc = { id: 'a', kind: 'markdown', text: '# hi', title: 't' } as const
-    await putCanvas(win, doc)
+    await putCanvas(() => win, doc)
     expect(sent).toEqual([['canvas:put', doc]])
   })
 
   it('이미지는 부른 때의 파일 내용과 이름·형식을 보낸다', async () => {
     const { win, sent } = fakeWindow()
     const path = file('Shot.PNG', [1, 2, 3])
-    await putCanvas(win, { id: 'b', kind: 'image', path })
+    await putCanvas(() => win, { id: 'b', kind: 'image', path })
     writeFileSync(path, Buffer.from([9]))
     expect(sent).toEqual([
       [
@@ -54,7 +54,7 @@ describe('putCanvas', () => {
   it('없는 파일이면 throw 하고 아무것도 보내지 않는다', async () => {
     const { win, sent } = fakeWindow()
     const path = join(dir, 'none.png')
-    await expect(putCanvas(win, { id: 'c', kind: 'image', path })).rejects.toThrow()
+    await expect(putCanvas(() => win, { id: 'c', kind: 'image', path })).rejects.toThrow()
     expect(sent).toEqual([])
   })
 
@@ -62,14 +62,16 @@ describe('putCanvas', () => {
     const { win, sent } = fakeWindow()
     const path = join(dir, 'folder.png')
     mkdirSync(path)
-    await expect(putCanvas(win, { id: 'e', kind: 'image', path })).rejects.toThrow()
+    await expect(putCanvas(() => win, { id: 'e', kind: 'image', path })).rejects.toThrow()
     expect(sent).toEqual([])
   })
 
   it('이미지 확장자가 아니면 throw 하고 아무것도 보내지 않는다', async () => {
     const { win, sent } = fakeWindow()
     const path = file('notes.txt', [1])
-    await expect(putCanvas(win, { id: 'd', kind: 'image', path })).rejects.toThrow(/not an image/)
+    await expect(putCanvas(() => win, { id: 'd', kind: 'image', path })).rejects.toThrow(
+      /not an image/
+    )
     expect(sent).toEqual([])
   })
 })

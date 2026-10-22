@@ -4,6 +4,7 @@ import type { ClaudeState } from '../shared/claude'
 import type { ConfigRead } from '../shared/config'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
+import type { LinkOpenResult } from '../shared/link'
 import type { PaneNewRequest, PaneReply, WorkspaceNewRequest } from '../shared/pane'
 import type { ScreenState, ViewPrefs } from '../shared/screen'
 import type { SessionOpen } from '../shared/session'
@@ -61,6 +62,9 @@ const api = {
    */
   paneReady: (): void => ipcRenderer.send('pane:ready'),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),
+  /** 터미널 링크를 연다. 상대경로는 `sessionId` 의 foreground 프로세스의 cwd 기준이다. */
+  openLink: (text: string, sessionId: string): Promise<LinkOpenResult> =>
+    ipcRenderer.invoke('link:open', text, sessionId),
   setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),
   saveScreen: (screen: ScreenState): void => ipcRenderer.send('screen:state', screen),
   /**

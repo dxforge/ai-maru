@@ -139,6 +139,11 @@ function paneFailed(pane: number, message: string): void {
   if (paneRequests.has(pane)) removePane(pane, message)
 }
 
+// 글자 판정은 `a/b.ext` 같은 글을 경로로 오인할 수 있어, 조용히 실패하면 왜 안 열리는지 모른다.
+function linkFailed(reason: string): void {
+  toasts.put('link', { level: 'warning', title: "Couldn't open the link", lines: [reason] })
+}
+
 const noPane = (session: string): PaneReply => ({
   error: 'no_pane',
   message: `no pane for session ${session}`
@@ -605,6 +610,7 @@ void window.maru.restoreScreen().then((s) => {
                 @failed="(message) => paneFailed(p.key, message)"
                 @spawned="answerPaneRequest(p.key, { session: p.sessionId })"
                 @cwd="(dir) => workspaces.setCwd(p.key, dir)"
+                @link-failed="linkFailed"
                 @title="(title) => workspaces.setTitle(p.key, title)"
                 @cell="(c, floored) => setCell(fontOf(w), c, floored)"
               />

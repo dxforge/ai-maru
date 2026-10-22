@@ -196,12 +196,29 @@ export function waitSessionExit(
   return { exit, cancel }
 }
 
+function cannotRead(id: string, r: Reply): Error {
+  return new Error(`cannot read session ${id}: ${String(r.message ?? r.code)}`)
+}
+
 export async function captureSession(dir: string, id: string, timeoutMs: number): Promise<string> {
   const r = await askWithin(dir, id, { type: 'capture', unwrap: true }, timeoutMs)
-  if (r.type !== 'capture' || typeof r.text !== 'string') {
-    throw new Error(`cannot read session ${id}: ${String(r.message ?? r.code)}`)
-  }
+  if (r.type !== 'capture' || typeof r.text !== 'string') throw cannotRead(id, r)
   return r.text
+}
+
+/** foreground 프로세스(프롬프트에서는 셸, 명령이 돌면 그 명령)의 cwd. 세션이 모르면 null 이다. */
+export async function foregroundCwd(
+  dir: string,
+  id: string,
+  timeoutMs: number
+): Promise<string | null> {
+  const r = await askWithin(dir, id, { type: 'foreground' }, timeoutMs)
+  // 프로토콜 버전을 올리지 않아, 앱을 새로 깔아도 이 요청을 모르는 이전 maru-session 의 세션이 남아 있을 수 있다.
+  if (r.code === 'unknown_request') {
+    throw new Error(`session ${id} runs an older maru-session; restart it to open relative paths`)
+  }
+  if (r.type !== 'foreground') throw cannotRead(id, r)
+  return typeof r.cwd === 'string' ? r.cwd : null
 }
 
 export async function writeSessionInput(
