@@ -276,7 +276,10 @@ export function shellEnv(env: NodeJS.ProcessEnv, id: string, setup: ShellSetup):
     PATH: [dirname(setup.cli.bin), base.PATH].filter(Boolean).join(delimiter),
     ZDOTDIR: setup.zdotdir,
     // truecolor 는 앱 터미널(xterm.js)이 지원하므로 띄운 쪽 터미널의 값을 덮어쓴다.
-    COLORTERM: 'truecolor'
+    COLORTERM: 'truecolor',
+    // claude 는 TERM_PROGRAM 으로 알아보는 터미널이거나 이 값이 있을 때만 마크다운 취소선을 SGR 9 로 낸다. xterm.js 는
+    // SGR 9 를 그린다(`e2e/strikethrough.spec.ts`). `sessionEnv` 가 CLAUDE_ 를 거르므로 거른 뒤에 넣는다.
+    CLAUDE_CODE_FORCE_STRIKETHROUGH: '1'
   }
 }
 

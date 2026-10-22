@@ -237,11 +237,38 @@ export function attachFromOutside(sockPath: string, cols: number, rows: number):
   })
 }
 
+// xterm 이 그리는 canvas 가운데 render layer 가 아닌 것이 WebGL renderer 의 것이다.
+export const WEBGL_CANVAS = '.xterm-screen > canvas:not([class*="-layer"])'
+
+// 앱의 테마 배경(GHOSTTY). 이 색과 다른 픽셀을 글자가 그려진 픽셀로 본다.
+export const GROUND = [0x28, 0x2c, 0x34]
+
+export function isInk(data: number[], i: number): boolean {
+  return (
+    Math.abs(data[i] - GROUND[0]) +
+      Math.abs(data[i + 1] - GROUND[1]) +
+      Math.abs(data[i + 2] - GROUND[2]) >
+    96
+  )
+}
+
+export async function cellSize(page: Page): Promise<{ width: number; height: number }> {
+  return page.locator('.panes.selected').evaluate((el) => {
+    const s = getComputedStyle(el)
+    return {
+      width: parseFloat(s.getPropertyValue('--cell')),
+      height: parseFloat(s.getPropertyValue('--row'))
+    }
+  })
+}
+
+export type Box = { x: number; y: number; width: number; height: number }
+
 export type Pixels = { width: number; height: number; data: number[] }
 
 export async function screenshotPixels(
   page: Page,
-  clip: { x: number; y: number; width: number; height: number },
+  clip: Box,
   scale: 'css' | 'device' = 'device'
 ): Promise<Pixels> {
   const png = await page.screenshot({ clip, scale })
