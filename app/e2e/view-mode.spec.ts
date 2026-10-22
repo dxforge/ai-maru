@@ -342,7 +342,6 @@ test('고전 스크롤바 설정에서 columns 가 넘치지 않을 때도 가�
   await newWorkspace(launched, 2)
   await workspaceItems(page).first().click()
   await expect.poll(() => page.locator('.terminals').evaluate((el) => el.scrollLeft)).toBe(0)
-  // 맨 왼쪽까지 스크롤했으므로 thumb 은 왼쪽 끝에 있고, 오른쪽 끝에는 트랙만 보인다.
   const thumb = await reds(area.left + 40)
   const track = await reds(area.right - 40)
   expect(track.bar).toBe(empty.bar)
@@ -359,6 +358,34 @@ test('overlay 스크롤바 설정에서 columns 의 가로 스크롤바는 넘�
 
   expect(await overflows(page)).toBe(true)
   expect(await scrollbarHeight(page)).toBe(0)
+})
+
+test('overlay 스크롤바 설정에서 columns 의 트랙은 스크롤할 때 보이지 않고, 스크롤바에 마우스를 올린 채 스크롤하면 칠해진다', async ({
+  launch
+}) => {
+  const launched = await launch({}, undefined, OVERLAY_SCROLLBARS)
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await toggleView(launched, 'columns')
+  const area = await scrollArea(page)
+  const red = async (x: number): Promise<number> =>
+    (await screenshotPixels(page, { x, y: area.bottom - 4, width: 1, height: 1 }, 'css')).data[0]
+  // 새 workspace 의 pane 을 따라 맨 오른쪽까지 스크롤했으므로 thumb 은 오른쪽 끝에 있다.
+  const [track, thumb] = [area.left + 40, area.right - 40]
+  const middle = (area.left + area.right) / 2
+  // 처음 넘칠 때 나타난 스크롤바가 사라지면 두 자리 모두 바탕색이다.
+  await expect.poll(async () => (await red(thumb)) - (await red(track))).toBe(0)
+  const ground = await red(track)
+
+  await page.mouse.move(middle, area.bottom - 200)
+  await page.mouse.wheel(-60, 0)
+  await expect.poll(() => red(thumb)).not.toBe(ground)
+  expect(await red(track)).toBe(ground)
+
+  await expect.poll(() => red(thumb)).toBe(ground)
+  await page.mouse.move(middle, area.bottom - 4)
+  await page.mouse.wheel(-60, 0)
+  await expect.poll(() => red(track)).not.toBe(ground)
 })
 
 test('columns 에서 선택한 workspace 의 테두리는 아래 변도 스크롤 영역 안에 그려진다', async ({
