@@ -57,18 +57,31 @@ describe('utf8Locale', () => {
 })
 
 describe('sessionEnv', () => {
-  it('띄운 쪽 세션의 값은 빼고 나머지는 넘긴다', () => {
+  it('앱을 띄운 쪽의 Claude Code·tmux 세션 값은 빼고 나머지는 넘긴다', () => {
     const env = sessionEnv({
       PATH: '/bin',
-      CLAUDE_EFFORT: 'high',
-      AI_MARU_TTY: 't',
+      HOME: '/h',
       CLAUDECODE: '1',
       CLAUDE_PID: '1',
-      CLAUDE_CODE_SESSION_ID: 's',
       TMUX: '/tmp/t,0,0',
       TMUX_PANE: '%0'
     })
-    expect(env).toEqual({ PATH: '/bin', CLAUDE_EFFORT: 'high' })
+    expect(env).toEqual({ PATH: '/bin', HOME: '/h' })
+  })
+
+  it.each([
+    'CLAUDE_CONFIG_DIR',
+    'CLAUDE_CODE_SESSION_ID',
+    'ANTHROPIC_BASE_URL',
+    'MARU_SESSION_BIN',
+    'ELECTRON_RENDERER_URL'
+  ])('%s 처럼 앱·claude·Electron 의 접두사로 시작하는 값은 뺀다', (name) => {
+    expect(sessionEnv({ PATH: '/bin', [name]: 'x' })).toEqual({ PATH: '/bin' })
+  })
+
+  it('접두사가 이름 중간에 있는 값과 AI_MARU_ 로 시작하는 값은 넘긴다', () => {
+    const env = { MY_CLAUDE_X: 'x', XMARU_Y: 'y', AI_MARU_TTY: 't' }
+    expect(sessionEnv(env)).toEqual(env)
   })
 })
 
@@ -85,7 +98,8 @@ describe('shellEnv', () => {
       MARU_SESSION_ID: 's-1',
       MARU_CLI: '/build/bin/maru',
       MARU_CLAUDE_PLUGIN: '/res/claude-plugin',
-      ZDOTDIR: '/res/zsh'
+      ZDOTDIR: '/res/zsh',
+      COLORTERM: 'truecolor'
     })
   })
 
@@ -96,15 +110,19 @@ describe('shellEnv', () => {
         MARU_SOCKET: '/outer.sock',
         MARU_SESSION_ID: 's-outer',
         MARU_CLI: '/outer/maru',
-        MARU_CLAUDE_PLUGIN: '/outer/plugin'
+        MARU_CLAUDE_PLUGIN: '/outer/plugin',
+        COLORTERM: 'outer'
       },
       's-1',
       setup
     )
-    expect(env.MARU_SOCKET).toBe('/data/s/app.sock')
-    expect(env.MARU_SESSION_ID).toBe('s-1')
-    expect(env.MARU_CLI).toBe('/build/bin/maru')
-    expect(env.MARU_CLAUDE_PLUGIN).toBe('/res/claude-plugin')
+    expect(env).toMatchObject({
+      MARU_SOCKET: '/data/s/app.sock',
+      MARU_SESSION_ID: 's-1',
+      MARU_CLI: '/build/bin/maru',
+      MARU_CLAUDE_PLUGIN: '/res/claude-plugin',
+      COLORTERM: 'truecolor'
+    })
   })
 
   it('물려받은 ZDOTDIR 대신 앱의 zsh 디렉토리를 넣는다', () => {
@@ -116,8 +134,8 @@ describe('shellEnv', () => {
   })
 
   it('띄운 쪽 세션의 값은 여기서도 뺀다', () => {
-    expect(shellEnv({ PATH: '/bin', AI_MARU_TTY: 't' }, 's-1', setup)).not.toHaveProperty(
-      'AI_MARU_TTY'
+    expect(shellEnv({ PATH: '/bin', ANTHROPIC_BASE_URL: 'u' }, 's-1', setup)).not.toHaveProperty(
+      'ANTHROPIC_BASE_URL'
     )
   })
 })

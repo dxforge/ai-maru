@@ -271,8 +271,13 @@ export function activePane(page: Page) {
   return page.locator('.pane:has(.terminal-view.active)')
 }
 
-export function claudeHook(event: string, session = 'c-1'): string {
-  return `printf '%s' '{"hook_event_name":"${event}","session_id":"${session}"}' | "$MARU_CLI" claude hook\n`
+/** 앱은 `CLAUDE_CONFIG_DIR` 를 셸에 넘기지 않으므로, `config` 를 주면 hook 명령에 직접 붙인다. */
+export function claudeHook(
+  event: string,
+  { session = 'c-1', config }: { session?: string; config?: string } = {}
+): string {
+  const env = config ? `CLAUDE_CONFIG_DIR='${config}' ` : ''
+  return `printf '%s' '{"hook_event_name":"${event}","session_id":"${session}"}' | ${env}"$MARU_CLI" claude hook\n`
 }
 
 export function claudeConfig(dataDir: string): string {

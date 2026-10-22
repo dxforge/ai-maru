@@ -116,7 +116,10 @@ test('maru-session 을 띄울 수 없으면 터미널에 이유를 보인다', a
   await expect(rows(page)).toContainText('open_failed')
 })
 
-test('앱을 띄운 터미널의 ZDOTDIR·AI_MARU_* 는 셸에 넘기지 않는다', async ({ launch, dataDir }) => {
+test('앱을 띄운 터미널의 ZDOTDIR 과 CLAUDE_*·ANTHROPIC_*·MARU_*·ELECTRON_* 는 셸에 넘기지 않는다', async ({
+  launch,
+  dataDir
+}) => {
   test.skip(!existsSync('/bin/zsh'), 'zsh 가 없다')
   const home = join(dataDir, 'home')
   const zdotdir = join(dataDir, 'zdotdir')
@@ -129,12 +132,40 @@ test('앱을 띄운 터미널의 ZDOTDIR·AI_MARU_* 는 셸에 넘기지 않는�
     SHELL: '/bin/zsh',
     HOME: home,
     ZDOTDIR: zdotdir,
-    AI_MARU_TTY: 'ttys-outer'
+    CLAUDE_CONFIG_DIR: '/outer/claude',
+    ANTHROPIC_BASE_URL: 'http://example.invalid',
+    ELECTRON_NO_ATTACH_CONSOLE: '1',
+    COLORTERM: 'outer'
   })
   await expect(rows(page)).toContainText('rc-from-home')
-  await page.keyboard.type('echo "tty=[$AI_MARU_TTY]" done-$((1+1))\n')
-  await expect(rows(page)).toContainText('tty=[] done-2')
+  await run(
+    page,
+    'echo "outer=[$CLAUDE_CONFIG_DIR|$ANTHROPIC_BASE_URL|$MARU_UNOBTRUSIVE|$ELECTRON_NO_ATTACH_CONSOLE] term=[$COLORTERM]" done-$((1+1))',
+    'outer=[|||] term=[truecolor] done-2'
+  )
   await expect(rows(page)).not.toContainText('rc-from-zdotdir')
+})
+
+test('사용자가 rc 에서 export 한 CLAUDE_*·ANTHROPIC_* 는 셸이 다시 세운다', async ({
+  launch,
+  dataDir
+}) => {
+  test.skip(!existsSync('/bin/zsh'), 'zsh 가 없다')
+  const home = join(dataDir, 'home')
+  mkdirSync(home)
+  writeFileSync(join(home, '.zshenv'), 'export CLAUDE_CONFIG_DIR=/from/zshenv\n')
+  writeFileSync(join(home, '.zshrc'), 'export ANTHROPIC_BASE_URL=http://from.zshrc\n')
+  const { page } = await launch({
+    SHELL: '/bin/zsh',
+    HOME: home,
+    CLAUDE_CONFIG_DIR: '/outer/claude',
+    ANTHROPIC_BASE_URL: 'http://example.invalid'
+  })
+  await run(
+    page,
+    'echo "rc=[$CLAUDE_CONFIG_DIR|$ANTHROPIC_BASE_URL]" done-$((1+1))',
+    'rc=[/from/zshenv|http://from.zshrc] done-2'
+  )
 })
 
 test('LANG 없이 띄워도 셸은 UTF-8 로케일로 떠 한글을 받는다', async ({ launch }) => {
