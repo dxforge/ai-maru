@@ -23,11 +23,11 @@ export function readConfigFile(path: string): ConfigRead {
 }
 
 /**
- * 한 번의 저장에 오는 알림을 묶는 시간이다. vim `:w` 한 번에 알림 10개가 첫 알림부터 최대 40.9ms 에 걸쳐 왔다.
- * `writeFileSync` 와 임시 파일 `rename` 은 알림이 한꺼번에 왔다. 그래서 40.9ms 를 넘는 가장 작은 50ms 단위
- * 값으로 둔다.
+ * 한 번의 저장에 오는 알림을 묶는 시간이다. libuv 는 FSEvents 알림을 0.05초(`latency`) 단위로 묶어 넘기므로,
+ * 한 번의 저장이 50ms 간격의 두 묶음으로 나뉘어 오기도 한다(실측: 저장 45번 중 7번, 간격 47.3~51.8ms). 50ms
+ * 로 두면 두 묶음 사이에 타이머가 터지므로 그 두 배로 둔다.
  */
-export const CONFIG_SETTLE_MS = 50
+export const CONFIG_SETTLE_MS = 100
 
 /**
  * `dir` 안의 `config.toml` 이 생기거나 바뀌거나 지워지면 `onChange` 를 부른다. vim 처럼 파일을 지우고 새로

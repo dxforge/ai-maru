@@ -12,6 +12,7 @@ import {
   paneRows,
   panes,
   resizeBy,
+  rows,
   run,
   shellRows,
   shellSize,
@@ -29,6 +30,9 @@ import {
 function git(cwd: string, ...args: string[]): void {
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd })
 }
+
+// 셸에서 친 git 은 `/usr/bin/git`(xcrun shim)을 거치므로, 부하가 걸리면 `git switch` 한 번에 최대 3.6초 걸렸다. 15초는 그 값에 여유를 둔 것이고 잰 근거는 없다.
+const shellGit = { timeout: 15_000 }
 
 function repoHome(dataDir: string, format: 'files' | 'reftable' = 'files'): string {
   const home = zshHome(dataDir, 'proj', 'notes')
@@ -78,21 +82,23 @@ for (const format of ['files', 'reftable'] as const) {
     launch,
     dataDir
   }) => {
+    // 셸 git 을 세 번 기다리므로 `shellGit` 을 다 쓰면 기본 30초를 넘는다.
+    test.slow()
     const home = repoHome(dataDir, format)
     const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
     await page.keyboard.type('cd proj\n')
     await expect(branch(page)).toHaveText(/main$/)
 
     await page.keyboard.type('git switch -q -c feat/1-x\n')
-    await expect(branch(page)).toHaveText(/feat\/1-x$/)
+    await expect(branch(page)).toHaveText(/feat\/1-x$/, shellGit)
     await expect.poll(async () => (await win(app)).title).toBe('proj — feat/1-x')
 
     await page.keyboard.type('git switch -q --detach\n')
-    await expect(branch(page)).toHaveText(/[0-9a-f]{7}$/)
+    await expect(branch(page)).toHaveText(/[0-9a-f]{7}$/, shellGit)
 
     await page.keyboard.type('git worktree add -q -b wt ../proj-wt && cd ../proj-wt\n')
     await expect(workspaceItems(page)).toHaveText(['proj'])
-    await expect(branch(page)).toHaveText(/wt$/)
+    await expect(branch(page)).toHaveText(/wt$/, shellGit)
   })
 }
 
@@ -108,7 +114,7 @@ test('프롬프트가 뜨지 않아도 Claude 의 상태가 바뀌면 branch 를
   // claude 가 일하는 동안처럼 프롬프트가 돌아오지 않게 sleep 으로 붙든다.
   const hook = claudeHook('UserPromptSubmit').trimEnd()
   await page.keyboard.type(`git switch -q -c by-claude && ${hook} && sleep 30\n`)
-  await expect(paneRows(page)).toHaveClass(/working/)
+  await expect(paneRows(page)).toHaveClass(/working/, shellGit)
   await expect(branch(page)).toHaveText(/by-claude$/)
 })
 
@@ -192,7 +198,8 @@ test('branch 이름이 길면 branch 를 줄이고, 접기 화살표는 헤더 �
   const home = repoHome(dataDir)
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await page.keyboard.type('cd proj\n')
-  await run(page, `git switch -q -c ${'b'.repeat(120)}; echo ok-$((1+1))`, 'ok-2')
+  await page.keyboard.type(`git switch -q -c ${'b'.repeat(120)}; echo ok-$((1+1))\n`)
+  await expect(rows(page)).toContainText('ok-2', shellGit)
   await expect(branch(page)).toHaveText(/b{120}$/)
   const list = page.locator('.sidebar .list')
   expect(await list.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0)

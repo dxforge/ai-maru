@@ -1,8 +1,14 @@
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, watch, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CONFIG_SETTLE_MS, readConfigFile, watchConfig } from './config-file'
+
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  return { ...fs, watch: vi.fn(fs.watch) }
+})
 
 let root: string
 let dir: string
@@ -16,6 +22,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   stop?.()
   stop = undefined
   rmSync(root, { recursive: true, force: true })
@@ -66,6 +73,23 @@ describe('watchConfig', () => {
     await calls(w, 1)
   })
 
+  it('한 번의 저장 알림이 50ms 간격의 두 묶음으로 와도 한 번만 부른다', () => {
+    mkdirSync(dir)
+    let notify!: () => void
+    vi.mocked(watch).mockImplementationOnce(((_dir: string, listener: (e: string, n: string) => void) => {
+      notify = () => listener('change', 'config.toml')
+      return Object.assign(new EventEmitter(), { close: () => {} })
+    }) as never)
+    vi.useFakeTimers()
+    let n = 0
+    stop = watchConfig(dir, () => n++)
+    notify()
+    vi.advanceTimersByTime(50)
+    notify()
+    vi.advanceTimersByTime(CONFIG_SETTLE_MS)
+    expect(n).toBe(1)
+  })
+
   it('한 번에 여러 번 쓰면 한 번만 부른다', async () => {
     mkdirSync(dir)
     writeFileSync(file, 'a = 1\n')
@@ -93,7 +117,7 @@ describe('watchConfig', () => {
     const w = await watching()
     mkdirSync(dir)
     await vi.waitFor(() => expect(w.count()).toBeGreaterThanOrEqual(1), { timeout: 2000 })
-    await sleep(100)
+    await sleep(CONFIG_SETTLE_MS * 2)
     const before = w.count()
     writeFileSync(file, 'a = 1\n')
     await calls(w, before + 1)
@@ -106,7 +130,7 @@ describe('watchConfig', () => {
     rmSync(dir, { recursive: true })
     await vi.waitFor(() => expect(w.count()).toBeGreaterThanOrEqual(1), { timeout: 2000 })
     mkdirSync(dir)
-    await sleep(100)
+    await sleep(CONFIG_SETTLE_MS * 2)
     const before = w.count()
     writeFileSync(file, 'a = 2\n')
     await calls(w, before + 1)
