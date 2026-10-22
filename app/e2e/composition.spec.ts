@@ -1,22 +1,18 @@
 import type { CDPSession, Page } from '@playwright/test'
-import { activeTerminal, expect, screenshotPixels, test, type Launched } from './app'
+import {
+  activeTerminal,
+  cellSize,
+  expect,
+  GROUND,
+  isInk,
+  screenshotPixels,
+  test,
+  type Box,
+  type Launched
+} from './app'
 
-// 앱의 테마 배경(GHOSTTY). 이 색과 다른 픽셀을 글자가 그려진 픽셀로 본다.
-const GROUND = [0x28, 0x2c, 0x34]
 // 한 = U+D55C. 셸의 locale 과 상관없이 같은 바이트를 내도록 printf 의 8진 escape 로 쓴다.
 const PRINT_HAN = "printf '\\355\\225\\234\\n'"
-
-type Box = { x: number; y: number; width: number; height: number }
-
-async function cellSize(page: Page): Promise<{ width: number; height: number }> {
-  return page.locator('.panes.selected').evaluate((el) => {
-    const s = getComputedStyle(el)
-    return {
-      width: parseFloat(s.getPropertyValue('--cell')),
-      height: parseFloat(s.getPropertyValue('--row'))
-    }
-  })
-}
 
 /**
  * 커서 셀의 왼쪽 위와 `.xterm-screen` 의 왼쪽 끝. xterm 은 textarea 를 커서 셀에 둔다. `alignComposition` 은
@@ -36,14 +32,7 @@ async function cursor(page: Page): Promise<{ x: number; y: number; left: number 
 async function inkTop(page: Page, clip: Box): Promise<number> {
   const { data, width, height } = await screenshotPixels(page, clip)
   for (let y = 0; y < height; y++)
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4
-      const d =
-        Math.abs(data[i] - GROUND[0]) +
-        Math.abs(data[i + 1] - GROUND[1]) +
-        Math.abs(data[i + 2] - GROUND[2])
-      if (d > 96) return y
-    }
+    for (let x = 0; x < width; x++) if (isInk(data, (y * width + x) * 4)) return y
   return -1
 }
 

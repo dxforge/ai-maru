@@ -99,7 +99,8 @@ describe('shellEnv', () => {
       MARU_CLI: '/build/bin/maru',
       MARU_CLAUDE_PLUGIN: '/res/claude-plugin',
       ZDOTDIR: '/res/zsh',
-      COLORTERM: 'truecolor'
+      COLORTERM: 'truecolor',
+      CLAUDE_CODE_FORCE_STRIKETHROUGH: '1'
     })
   })
 
@@ -111,7 +112,8 @@ describe('shellEnv', () => {
         MARU_SESSION_ID: 's-outer',
         MARU_CLI: '/outer/maru',
         MARU_CLAUDE_PLUGIN: '/outer/plugin',
-        COLORTERM: 'outer'
+        COLORTERM: 'outer',
+        CLAUDE_CODE_FORCE_STRIKETHROUGH: 'outer'
       },
       's-1',
       setup
@@ -121,7 +123,8 @@ describe('shellEnv', () => {
       MARU_SESSION_ID: 's-1',
       MARU_CLI: '/build/bin/maru',
       MARU_CLAUDE_PLUGIN: '/res/claude-plugin',
-      COLORTERM: 'truecolor'
+      COLORTERM: 'truecolor',
+      CLAUDE_CODE_FORCE_STRIKETHROUGH: '1'
     })
   })
 

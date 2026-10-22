@@ -9,13 +9,11 @@ import {
   sttySize,
   test,
   toggleView,
+  WEBGL_CANVAS,
   workspaceItems,
   workspaceViews,
   type Launched
 } from './app'
-
-// xterm 이 그리는 canvas 가운데 render layer 가 아닌 것이 WebGL renderer 의 것이다.
-const WEBGL_CANVAS = '.xterm-screen > canvas:not([class*="-layer"])'
 
 type Renderer = 'webgl' | 'dom'
 
