@@ -116,9 +116,7 @@ async function screenWidth(
       el.getBoundingClientRect().width -
       parseFloat(style.paddingLeft) -
       parseFloat(style.paddingRight)
-    const cell = parseFloat(
-      getComputedStyle(document.querySelector('.app')!).getPropertyValue('--cell')
-    )
+    const cell = parseFloat(getComputedStyle(el).getPropertyValue('--cell'))
     return { screen: el.querySelector('.xterm-screen')!.getBoundingClientRect().width, room, cell }
   })
 }

@@ -19,9 +19,6 @@ export type MenuRole =
   | 'startSpeaking'
   | 'stopSpeaking'
   | 'toggleDevTools'
-  | 'resetZoom'
-  | 'zoomIn'
-  | 'zoomOut'
   | 'minimize'
   | 'zoom'
   | 'front'
@@ -58,6 +55,9 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'focus-pane-right', key: 'Right', shift: true, meta: true },
   { target: 'command', action: 'focus-pane-up', key: 'Up', shift: true, meta: true },
   { target: 'command', action: 'focus-pane-down', key: 'Down', shift: true, meta: true },
+  { target: 'command', action: 'increase-font-size', key: 'Plus', meta: true },
+  { target: 'command', action: 'decrease-font-size', key: '-', meta: true },
+  { target: 'command', action: 'reset-font-size', key: '0', meta: true },
 
   // Electron 이 role 에 거는 기본 키와 같다.
   { target: 'menu', action: 'hide', key: 'H', meta: true },
@@ -71,9 +71,6 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'menu', action: 'pasteAndMatchStyle', key: 'V', alt: true, shift: true, meta: true },
   { target: 'menu', action: 'selectAll', key: 'A', meta: true },
   { target: 'menu', action: 'toggleDevTools', key: 'I', alt: true, meta: true },
-  { target: 'menu', action: 'resetZoom', key: '0', meta: true },
-  { target: 'menu', action: 'zoomIn', key: 'Plus', meta: true },
-  { target: 'menu', action: 'zoomOut', key: '-', meta: true },
   { target: 'menu', action: 'toggle-full-screen', key: 'F', ctrl: true, meta: true },
   { target: 'menu', action: 'minimize', key: 'M', meta: true },
 

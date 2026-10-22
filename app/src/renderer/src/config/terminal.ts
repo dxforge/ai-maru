@@ -3,6 +3,10 @@ import { FONT_FAMILY, FONT_SIZE, LINE_HEIGHT } from '../font'
 
 export type TerminalFont = { fontFamily: string; fontSize: number; lineHeight: number }
 
+export function sameFont(a: TerminalFont, b: TerminalFont): boolean {
+  return a.fontFamily === b.fontFamily && a.fontSize === b.fontSize && a.lineHeight === b.lineHeight
+}
+
 export const DEFAULT_FONT: TerminalFont = {
   fontFamily: FONT_FAMILY,
   fontSize: FONT_SIZE,
@@ -21,6 +25,20 @@ const RANGES = {
 } as const
 
 const KEYS = new Set<string>(['font-family', ...Object.keys(RANGES)])
+
+export function stepFontSize(size: number, by: 1 | -1): number {
+  const { min, max } = RANGES['font-size']
+  return Math.min(max, Math.max(min, size + by))
+}
+
+/**
+ * workspace 에 둘 글꼴 크기다. 설정 파일의 크기와 같으면 `undefined` 를 돌려주므로, 그 workspace 는 설정 파일의
+ * `font-size` 가 바뀌면 따라간다. 소수 크기에 1px 씩 더하고 빼면 부동소수 오차가 쌓이므로 아주 작은 차이는 같은
+ * 크기로 본다.
+ */
+export function fontSizeOverride(size: number, configured: number): number | undefined {
+  return Math.abs(size - configured) < 1e-6 ? undefined : size
+}
 
 // CSS Fonts 4 의 generic family 키워드다. 따옴표로 감싸면 그 이름의 글꼴을 찾으므로 감싸지 않고 넣는다.
 const GENERIC_FAMILIES = new Set([

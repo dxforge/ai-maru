@@ -28,6 +28,7 @@ describe('snapshot·restore', () => {
     const p = selected(ws).panes[1]
     ws.setCwd(p.key, '/moved')
     ws.setTitle(p.key, 'vim')
+    ws.setFontSize(selected(ws).key, 18)
     ws.select(ws.list.value[0].key)
     return ws
   }
@@ -39,6 +40,7 @@ describe('snapshot·restore', () => {
     expect(to.selected()!.key).toBe(from.selected()!.key)
     const pane = to.list.value[1].panes[1]
     expect([pane.cwd, pane.title]).toEqual(['/moved', 'vim'])
+    expect(to.list.value.map((w) => w.fontSize)).toEqual([undefined, 18])
   })
 
   it('되살린 pane 은 세션에 붙고, 스냅샷에는 붙기·git 을 싣지 않는다', () => {
@@ -145,6 +147,26 @@ describe('workspaces', () => {
     expect(pane.cwd).toBeUndefined()
     ws.setCwd(pane.key, '/b')
     expect(firstPanes(ws)[0].cwd).toBe('/b')
+  })
+
+  it('setFontSize 는 그 workspace 의 글꼴 크기만 바꾸고, undefined 면 지운다', () => {
+    const ws = opened(2)
+    const [a] = keys(ws)
+    ws.setFontSize(a, 16)
+    expect(ws.list.value.map((w) => w.fontSize)).toEqual([16, undefined])
+    ws.setFontSize(a, undefined)
+    ws.setFontSize(-1, 20)
+    expect(ws.list.value.map((w) => w.fontSize)).toEqual([undefined, undefined])
+  })
+
+  it('나눈 pane 과 새로 연 workspace 는 글꼴 크기를 바꾸지 않는다', () => {
+    const ws = opened(1)
+    ws.setFontSize(selected(ws).key, 20)
+    ws.split('right')
+    expect(selected(ws).fontSize).toBe(20)
+    ws.open()
+    ws.openFrom(ws.list.value[0].id, {})
+    expect(ws.list.value.map((w) => w.fontSize)).toEqual([20, undefined, undefined])
   })
 
   it('setTitle 은 그 pane 의 제목만 바꾼다', () => {

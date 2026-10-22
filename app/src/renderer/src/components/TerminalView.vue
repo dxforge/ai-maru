@@ -17,7 +17,7 @@ import { nextTick, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue
 import { attach as attachTerminal, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
 import { isAppKey, matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
-import type { TerminalFont } from '../config/terminal'
+import { sameFont, type TerminalFont } from '../config/terminal'
 import { alignComposition } from '../terminal/composition'
 import { pastePaths } from '../terminal/paths'
 import { SCROLLBAR_WIDTH } from '../workspace/columns'
@@ -220,11 +220,14 @@ const intersection = window.maru.webgl
   : undefined
 watch(() => shown, updateRenderer)
 // xterm 은 줄 높이만 바뀌면 `onDimensionsChange` 를 내지 않으므로 여기서 `checkCell` 을 부른다.
+// App 은 크기를 바꾼 workspace 의 글꼴을 다시 그릴 때마다 새 객체로 넘기므로 값으로 견준다.
+// App 은 글꼴마다 셀 크기를 두므로, 셀 크기가 그대로여도 `cell` 을 내서 App 이 새 글꼴의 셀 크기를 기록하게 한다.
 watch(
   () => font,
-  (f) => {
+  (f, old) => {
+    if (sameFont(f, old)) return
     Object.assign(term.options, f)
-    checkCell()
+    checkCell(true)
   }
 )
 

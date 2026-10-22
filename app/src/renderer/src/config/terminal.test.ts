@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_FONT, fontNames, parseConfig } from './terminal'
+import { DEFAULT_FONT, fontNames, fontSizeOverride, parseConfig, stepFontSize } from './terminal'
 
 const FAMILY = "D2Coding, Menlo, 'Symbols Nerd Font Mono', monospace"
 
@@ -118,5 +118,36 @@ describe('fontNames', () => {
 
   it('양끝이 다른 따옴표는 걷어 내지 않아 받지 않는다', () => {
     expect(fontNames(`"A'`)).toBeNull()
+  })
+})
+
+describe('stepFontSize', () => {
+  it('1px 씩 키우고 줄이며, 소수 크기도 1px 씩 움직인다', () => {
+    expect(stepFontSize(14, 1)).toBe(15)
+    expect(stepFontSize(14, -1)).toBe(13)
+    expect(stepFontSize(13.5, 1)).toBe(14.5)
+  })
+
+  it('설정 파일의 font-size 와 같은 8–32 를 넘지 않는다', () => {
+    expect(stepFontSize(8, -1)).toBe(8)
+    expect(stepFontSize(32, 1)).toBe(32)
+    expect(stepFontSize(8.5, -1)).toBe(8)
+    expect(stepFontSize(31.5, 1)).toBe(32)
+  })
+})
+
+describe('fontSizeOverride', () => {
+  it('설정 파일의 크기와 다르면 그 크기를, 같으면 undefined 를 준다', () => {
+    expect(fontSizeOverride(15, 14)).toBe(15)
+    expect(fontSizeOverride(14, 14)).toBeUndefined()
+  })
+
+  it('소수 크기에서 1px 씩 오가며 쌓인 오차는 같은 크기로 본다', () => {
+    let size = 13.1
+    for (let i = 0; i < 5; i++) size = stepFontSize(size, 1)
+    for (let i = 0; i < 5; i++) size = stepFontSize(size, -1)
+    expect(size).not.toBe(13.1)
+    expect(fontSizeOverride(size, 13.1)).toBeUndefined()
+    expect(fontSizeOverride(stepFontSize(stepFontSize(15.15, 1), -1), 15.15)).toBeUndefined()
   })
 })

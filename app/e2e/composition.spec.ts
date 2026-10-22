@@ -9,7 +9,7 @@ const PRINT_HAN = "printf '\\355\\225\\234\\n'"
 type Box = { x: number; y: number; width: number; height: number }
 
 async function cellSize(page: Page): Promise<{ width: number; height: number }> {
-  return page.locator('.app').evaluate((el) => {
+  return page.locator('.panes.selected').evaluate((el) => {
     const s = getComputedStyle(el)
     return {
       width: parseFloat(s.getPropertyValue('--cell')),

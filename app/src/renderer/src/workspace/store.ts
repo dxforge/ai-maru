@@ -30,7 +30,10 @@ export type Pane = {
 
 export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
 
-/** `panes` 는 연 순서다. 배치 순서로 그리면 나눌 때마다 터미널의 DOM 이 옮겨진다. */
+/**
+ * `panes` 는 연 순서다. 배치 순서로 그리면 나눌 때마다 터미널의 DOM 이 옮겨진다. `fontSize` 는 ⌘+ / ⌘- 로 바꾼
+ * 터미널 글꼴 크기다. 없으면 설정 파일의 `font-size` 를 따른다.
+ */
 export type Workspace = Omit<ScreenWorkspace, 'panes'> & { panes: Pane[] }
 
 export function focusedPane(w: {
@@ -197,6 +200,11 @@ export function createWorkspaces(
       for (const p of w.panes) if (p.sessionId === sessionId && p.cwd) readGitFor(p.key, p.cwd)
   }
 
+  function setFontSize(key: number, size: number | undefined): void {
+    const w = list.value.find((x) => x.key === key)
+    if (w) w.fontSize = size
+  }
+
   function setTitle(key: number, title: string): void {
     const p = pane(key)
     if (p) p.title = title
@@ -235,6 +243,7 @@ export function createWorkspaces(
     moveFocus,
     setCwd,
     setTitle,
+    setFontSize,
     snapshot,
     restore,
     refreshSession,
