@@ -28,6 +28,8 @@ export type ScreenWorkspace = {
    */
   openedBy?: number
   fontSize?: number
+  /** columns 보기에서 늘어선 pane 하나가 받는 터미널 열 수. 없으면 `PANE_COLS`(`columns.ts`)다. */
+  paneCols?: number
 }
 
 export type ScreenState = {
@@ -90,7 +92,8 @@ function isWorkspace(v: unknown): v is ScreenWorkspace {
     isLayout(v.layout) &&
     isKey(v.focused) &&
     optKey(v.openedBy) &&
-    (v.fontSize === undefined || Number.isFinite(v.fontSize))
+    (v.fontSize === undefined || Number.isFinite(v.fontSize)) &&
+    (v.paneCols === undefined || (isKey(v.paneCols) && v.paneCols > 0))
   )
 }
 

@@ -31,7 +31,7 @@ import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { ICONS } from './icons'
 import { createToasts } from './toast/store'
-import { columnsWidth, terminalPadding } from './workspace/columns'
+import { columnsWidth, PANE_COLS, stepPaneCols, terminalPadding } from './workspace/columns'
 import { tildePath, windowTitle, workspaceLabel } from './workspace/cwd'
 import { snapRects, type Box, type Size } from './workspace/grid'
 import { columnCount, EPSILON, rects, type Layout, type Widths } from './workspace/layout'
@@ -71,6 +71,13 @@ function stepFont(by: 1 | -1): void {
 function resetFont(): void {
   const w = workspaces.selected()
   if (w) workspaces.setFontSize(w.key, undefined)
+}
+
+function stepWidth(by: 1 | -1): void {
+  const w = workspaces.selected()
+  if (!w || viewMode.value !== 'columns') return
+  const cols = stepPaneCols(w.paneCols ?? PANE_COLS, by)
+  workspaces.setPaneCols(w.key, cols === PANE_COLS ? undefined : cols)
 }
 
 function newWorkspace(): void {
@@ -368,7 +375,7 @@ const views = computed(() =>
     const font = fontOf(w)
     const cell = cellOf(font)
     const width = columns
-      ? columnsWidth(columnCount(w.layout), cell.width, cellFloored.value)
+      ? columnsWidth(columnCount(w.layout), cell.width, cellFloored.value, w.paneCols)
       : undefined
     const places = placements(
       w.layout,
@@ -479,6 +486,8 @@ const handlers: Record<CommandId, () => void> = {
   'increase-font-size': () => stepFont(1),
   'decrease-font-size': () => stepFont(-1),
   'reset-font-size': resetFont,
+  'widen-workspace': () => stepWidth(1),
+  'narrow-workspace': () => stepWidth(-1),
   restart: window.maru.restart
 }
 

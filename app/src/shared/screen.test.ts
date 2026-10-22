@@ -41,7 +41,11 @@ describe('parseScreen', () => {
     ['부른 workspace 가 문자열', (s) => (s.workspaces[0].openedBy = '1')],
     ['부른 workspace 가 정수가 아님', (s) => (s.workspaces[0].openedBy = 1.5)],
     ['글꼴 크기가 숫자가 아님', (s) => (s.workspaces[0].fontSize = '16')],
-    ['글꼴 크기가 유한하지 않음', (s) => (s.workspaces[0].fontSize = null)]
+    ['글꼴 크기가 유한하지 않음', (s) => (s.workspaces[0].fontSize = null)],
+    ['pane 폭이 숫자가 아님', (s) => (s.workspaces[0].paneCols = '110')],
+    ['pane 폭이 정수가 아님', (s) => (s.workspaces[0].paneCols = 110.5)],
+    ['pane 폭이 0', (s) => (s.workspaces[0].paneCols = 0)],
+    ['pane 폭이 음수', (s) => (s.workspaces[0].paneCols = -5)]
   ])('%s 이면 null', (_, spoil) => {
     const s = clone()
     spoil(s)
@@ -52,6 +56,12 @@ describe('parseScreen', () => {
     const s = clone() as ScreenState
     s.workspaces[0].fontSize = 16.5
     expect(parseScreen(s)!.workspaces[0].fontSize).toBe(16.5)
+  })
+
+  it('workspace 의 pane 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].paneCols = 110
+    expect(parseScreen(s)!.workspaces[0].paneCols).toBe(110)
   })
 
   it('Canvas 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {

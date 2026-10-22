@@ -16,6 +16,8 @@ export type CommandId =
   | 'increase-font-size'
   | 'decrease-font-size'
   | 'reset-font-size'
+  | 'widen-workspace'
+  | 'narrow-workspace'
   | 'restart'
 
 export type Command = {
@@ -43,6 +45,8 @@ export const commands: readonly Command[] = [
   { id: 'increase-font-size', title: 'Increase Font Size', menu: 'view' },
   { id: 'decrease-font-size', title: 'Decrease Font Size', menu: 'view' },
   { id: 'reset-font-size', title: 'Reset Font Size', menu: 'view' },
+  { id: 'widen-workspace', title: 'Widen Workspace', menu: 'view' },
+  { id: 'narrow-workspace', title: 'Narrow Workspace', menu: 'view' },
   { id: 'restart', title: 'Restart', menu: 'app' }
 ]
 
