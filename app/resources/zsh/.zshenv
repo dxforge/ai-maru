@@ -21,6 +21,18 @@ _maru_osc7() {
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _maru_osc7
 
+# 로그인 셸은 이 파일 뒤에 /etc/zprofile 을 읽는다. 거기서 path_helper 가 /etc/paths 의 디렉토리를 앞에 두므로,
+# 앱이 PATH 맨 앞에 붙인 maru 디렉토리가 뒤로 밀린다.
+# 시작 파일을 다 읽은 첫 프롬프트에서 한 번 다시 앞에 붙이고 빠진다 — 그 뒤 사용자가 바꾼 PATH 는 둔다.
+_maru_path() {
+  emulate -L zsh
+  add-zsh-hook -d precmd _maru_path
+  [[ -n $MARU_CLI ]] || return 0
+  local dir=${MARU_CLI:h}
+  path=($dir ${path:#$dir})
+}
+add-zsh-hook precmd _maru_path
+
 # `name()` 꼴은 사용자 ~/.zshenv 의 claude alias 가 펼쳐져 parse error 가 난다.
 (( $+functions[claude] )) || function claude {
   if [[ -z $MARU_CLI || -z $MARU_CLAUDE_PLUGIN ]]; then

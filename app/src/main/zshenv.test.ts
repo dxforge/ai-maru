@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
@@ -23,19 +23,37 @@ function home(files: Record<string, string>): string {
   return dir
 }
 
-function spawnLogin(homeDir: string, command: string, cwd = homeDir, env = {}) {
-  return spawnSync(ZSH, ['-l', '-i', '-c', command], {
+function spawnZsh(args: string[], homeDir: string, cwd: string, env: object, input?: string) {
+  return spawnSync(ZSH, ['-l', '-i', ...args], {
     cwd,
     env: { HOME: homeDir, ZDOTDIR: zdotdir, PATH: '/usr/bin:/bin', HOST: 'mac', ...env },
+    input,
     encoding: 'utf8',
     timeout: 10_000
   })
 }
 
-function loginShell(homeDir: string, command: string, cwd = homeDir): string {
-  const r = spawnLogin(homeDir, command, cwd)
+function spawnLogin(homeDir: string, command: string, cwd = homeDir, env = {}) {
+  return spawnZsh(['-c', command], homeDir, cwd, env)
+}
+
+function stdoutOf(r: SpawnSyncReturns<string>): string {
   if (r.status !== 0) throw new Error(`zsh exited ${r.status}: ${r.stderr}`)
   return r.stdout
+}
+
+function loginShell(homeDir: string, command: string, cwd = homeDir): string {
+  return stdoutOf(spawnLogin(homeDir, command, cwd))
+}
+
+/**
+ * 명령을 stdin 으로 넣어 프롬프트를 거치게 한다. `-c` 로 받은 명령 앞에서는 precmd 가 돌지 않는다.
+ * 돌려주는 stdout 에서 precmd 의 OSC 7 은 뺀다.
+ */
+function atPrompt(homeDir: string, commands: string[], env: object = {}): string {
+  const r = spawnZsh([], homeDir, homeDir, env, `${commands.join('\n')}\n`)
+  // eslint-disable-next-line no-control-regex
+  return stdoutOf(r).replace(/\x1b\]7;[^\x07]*\x07/g, '')
 }
 
 describe.skipIf(!existsSync(ZSH))('앱의 .zshenv', () => {
@@ -69,6 +87,55 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv', () => {
       '.zshrc': 'MARK=home'
     })
     expect(loginShell(h, 'print $MARK')).toBe('cfg\n')
+  })
+})
+
+describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 PATH', () => {
+  const bin = '/opt/maru'
+  /** 앱이 PATH 맨 앞에 붙인 maru 디렉토리를 `.zprofile` 이 뒤로 밀어낸 상태. macOS 의 path_helper 가 하는 일이다. */
+  const pushedBack = (files: Record<string, string> = {}) =>
+    home({ '.zprofile': 'path=(/opt/first $path)', '.zshrc': '', ...files })
+
+  it('시작 파일이 maru 디렉토리를 뒤로 밀어도 첫 프롬프트에는 맨 앞에 있다', () => {
+    expect(atPrompt(pushedBack(), ['print $path[1]'], appEnv(bin))).toBe(`${bin}\n`)
+  })
+
+  it('마지막에 읽는 ~/.zlogin 이 다시 밀어도 첫 프롬프트에는 맨 앞에 있다', () => {
+    const h = pushedBack({ '.zlogin': 'path=(/opt/last $path)' })
+    expect(atPrompt(h, ['print $path[1]'], appEnv(bin))).toBe(`${bin}\n`)
+  })
+
+  it('첫 프롬프트 뒤에는 precmd 에서 빠진다', () => {
+    expect(atPrompt(pushedBack(), ['print -l $precmd_functions'], appEnv(bin))).not.toContain(
+      '_maru_path'
+    )
+  })
+
+  it('빠지면서도 사용자가 뒤에 단 precmd hook 을 건너뛰지 않는다', () => {
+    const h = pushedBack({ '.zshrc': '_mine() { print mine $path[1] }; precmd_functions+=(_mine)' })
+    expect(atPrompt(h, ['true'], appEnv(bin))).toBe(`mine ${bin}\nmine ${bin}\n`)
+  })
+
+  it('사용자 ~/.zshrc 가 PATH 를 통째로 다시 써도 되살린다', () => {
+    const h = pushedBack({ '.zshrc': 'export PATH=/opt/mine:/usr/bin:/bin' })
+    expect(atPrompt(h, ['print $PATH'], appEnv(bin))).toBe(`${bin}:/opt/mine:/usr/bin:/bin\n`)
+  })
+
+  it('이미 PATH 에 있는 maru 디렉토리는 앞으로 옮기고 두 번 넣지 않는다', () => {
+    const h = pushedBack({ '.zshrc': `export PATH=/opt/mine:${bin}:/usr/bin:/bin` })
+    expect(atPrompt(h, ['print $PATH'], appEnv(bin))).toBe(`${bin}:/opt/mine:/usr/bin:/bin\n`)
+  })
+
+  it('사용자가 프롬프트에서 바꾼 PATH 는 다음 프롬프트에도 그대로다', () => {
+    expect(atPrompt(pushedBack(), ['path=(/opt/mine $path)', 'print $path[1]'], appEnv(bin))).toBe(
+      '/opt/mine\n'
+    )
+  })
+
+  it('앱 밖(MARU_CLI 없음)에서는 PATH 를 건드리지 않는다', () => {
+    expect(atPrompt(pushedBack(), ['print $path[1]'], { PATH: `${bin}:/usr/bin:/bin` })).toBe(
+      '/opt/first\n'
+    )
   })
 })
 
