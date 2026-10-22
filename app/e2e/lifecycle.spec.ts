@@ -183,6 +183,29 @@ test('job 이 뜨기 전에 앱을 끄면 그 job 의 세션은 뜬 뒤에 끝�
   expect(sockets(dataDir)).toEqual([])
 })
 
+test('세션을 잇는 utilityProcess 가 멈춰 있어도 앱은 5초 뒤에 꺼지고 세션을 끝낸다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app } = await launch()
+  await expect.poll(() => sockets(dataDir)).toHaveLength(1)
+  const pid = await hostPid(app)
+  process.kill(pid, 'SIGSTOP')
+  try {
+    const closed = app.close().then(() => 'closed')
+    const late = sleep(10_000).then(() => 'still open')
+    expect(await Promise.race([closed, late])).toBe('closed')
+  } finally {
+    // 앱이 host 를 끄지 못했으면 이어서 끝날 수 있게 깨운다.
+    try {
+      process.kill(pid, 'SIGCONT')
+    } catch {
+      // 이미 끝났다.
+    }
+  }
+  expect(sockets(dataDir)).toEqual([])
+})
+
 test('세션을 잇는 utilityProcess 가 죽은 뒤에 닫은 pane 의 세션도 끝난다', async ({
   launch,
   dataDir

@@ -53,7 +53,7 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
     const state = await spawnSession(req.bin, req.dir, req.setup, req.id, cwd, req.command)
     return { cwd, state }
   })
-  // 세션이 뜨는 동안 pane 을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 넣는다.
+  // 세션이 뜨는 동안 pane 을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 `spawning` 에 넣는다.
   const done = (): void => void spawning.delete(req.id)
   spawning.set(req.id, spawned.then(done, done))
   try {
@@ -62,7 +62,6 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
     const sock =
       state === 'live' ? await connect(socketPath(req.dir, req.id)).catch(() => null) : null
     if (sock) return serve(req.id, port, sock, { cwd })
-    // 붙지 못한 세션은 살아 있어도 pane 에는 끝났다고 알린다. pane 이 닫힐 때 오는 kill 을 기다리지 않고 여기서 끈다.
     if (state === 'live') void killSession(req.dir, req.id)
     end(port, { type: 'spawned', id: req.id, cwd }, { type: 'exit', code: null, signal: null })
   } catch (err) {

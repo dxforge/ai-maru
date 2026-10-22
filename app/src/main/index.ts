@@ -286,6 +286,7 @@ function createWindow(): void {
 }
 
 let host: UtilityProcess | null = null
+const HOST_QUIT_TIMEOUT_MS = 5000
 
 /**
  * Dock 에서 띄운 앱은 LANG 을 받지 못해, 로케일을 스스로 정하지 않는 셸(bash 등)이 US-ASCII 로 떠
@@ -482,10 +483,20 @@ function start(): void {
     ready.then(() => {
       const proc = host
       if (!proc) return
-      const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
-      const req: QuitRequest = { type: 'quit' }
-      proc.postMessage(req)
-      return exited
+      return new Promise<void>((resolve) => {
+        // 멈춘 host 를 기다리느라 앱이 꺼지지 않게 상한을 둔다. 그때 띄우던 세션은 다음 실행의 정리가 끈다.
+        const timer = setTimeout(() => {
+          // 멈춘 프로세스는 SIGTERM 을 처리하지 못한다.
+          if (proc.pid) process.kill(proc.pid, 'SIGKILL')
+          resolve()
+        }, HOST_QUIT_TIMEOUT_MS)
+        proc.once('exit', () => {
+          clearTimeout(timer)
+          resolve()
+        })
+        const req: QuitRequest = { type: 'quit' }
+        proc.postMessage(req)
+      })
     })
   // 세션은 앱과 따로 떠 있는 프로세스라 앱이 끝나도 남는다.
   let sessionsKilled = false
