@@ -39,11 +39,19 @@ describe('parseScreen', () => {
     ['보기 모드가 틀림', (s) => (s.viewMode = 'grid')],
     ['Canvas 폭이 숫자가 아님', (s) => (s.canvas = { width: '300' })],
     ['부른 workspace 가 문자열', (s) => (s.workspaces[0].openedBy = '1')],
-    ['부른 workspace 가 정수가 아님', (s) => (s.workspaces[0].openedBy = 1.5)]
+    ['부른 workspace 가 정수가 아님', (s) => (s.workspaces[0].openedBy = 1.5)],
+    ['글꼴 크기가 숫자가 아님', (s) => (s.workspaces[0].fontSize = '16')],
+    ['글꼴 크기가 유한하지 않음', (s) => (s.workspaces[0].fontSize = null)]
   ])('%s 이면 null', (_, spoil) => {
     const s = clone()
     spoil(s)
     expect(parseScreen(s)).toBeNull()
+  })
+
+  it('workspace 의 글꼴 크기는 없어도 되고, 있으면 그대로 돌려준다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].fontSize = 16.5
+    expect(parseScreen(s)!.workspaces[0].fontSize).toBe(16.5)
   })
 
   it('Canvas 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {

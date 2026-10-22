@@ -21,9 +21,7 @@ function octal(text: string): string {
 /** 커서가 있는 열. xterm 은 커서가 움직이면 textarea 를 `커서 열 × 셀 폭` 에 둔다. */
 async function cursorColumn(page: Page): Promise<number> {
   return page.locator('.terminal-view.active').evaluate((el) => {
-    const cell = parseFloat(
-      getComputedStyle(document.querySelector('.app')!).getPropertyValue('--cell')
-    )
+    const cell = parseFloat(getComputedStyle(el).getPropertyValue('--cell'))
     return Math.round(parseFloat(el.querySelector('textarea')!.style.left) / cell)
   })
 }

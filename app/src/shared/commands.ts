@@ -13,6 +13,9 @@ export type CommandId =
   | 'toggle-sidebar'
   | 'toggle-canvas'
   | 'toggle-view-mode'
+  | 'increase-font-size'
+  | 'decrease-font-size'
+  | 'reset-font-size'
   | 'restart'
 
 export type Command = {
@@ -37,6 +40,9 @@ export const commands: readonly Command[] = [
   { id: 'focus-pane-right', title: 'Focus Pane Right', menu: 'view' },
   { id: 'focus-pane-up', title: 'Focus Pane Up', menu: 'view' },
   { id: 'focus-pane-down', title: 'Focus Pane Down', menu: 'view' },
+  { id: 'increase-font-size', title: 'Increase Font Size', menu: 'view' },
+  { id: 'decrease-font-size', title: 'Decrease Font Size', menu: 'view' },
+  { id: 'reset-font-size', title: 'Reset Font Size', menu: 'view' },
   { id: 'restart', title: 'Restart', menu: 'app' }
 ]
 

@@ -19,6 +19,9 @@ describe('filterCommands', () => {
       'Focus Pane Right',
       'Focus Pane Up',
       'Focus Pane Down',
+      'Increase Font Size',
+      'Decrease Font Size',
+      'Reset Font Size',
       'Restart'
     ]
     expect(titles('')).toEqual(all)

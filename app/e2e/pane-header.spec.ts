@@ -263,7 +263,7 @@ async function measure(page: Page) {
   return page.evaluate(() => {
     const grid = document.querySelector('.panes.selected .grid')!.getBoundingClientRect()
     // pane 경계가 맞추는 격자. DOM 의 행 높이는 행 수에 따라 반올림이 달라 1px 의 몇 % 씩 어긋난다.
-    const vars = getComputedStyle(document.querySelector('.app')!)
+    const vars = getComputedStyle(document.querySelector('.panes.selected')!)
     const cellWidth = parseFloat(vars.getPropertyValue('--cell'))
     const unit = parseFloat(vars.getPropertyValue('--row'))
     return [...document.querySelectorAll('.panes.selected .pane')].map((pane) => {

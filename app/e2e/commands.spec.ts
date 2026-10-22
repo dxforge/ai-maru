@@ -26,7 +26,7 @@ async function typesIntoTerminal(page: Page, marker: string): Promise<void> {
   await run(page, `echo ${marker}-$((1+1))`, `${marker}-2`)
 }
 
-test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W 는 Close Window 가 아니며, 새로 고침은 메뉴에 없다', async ({
+test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W 는 Close Window 가 아니며, 새로 고침과 창 zoom 은 메뉴에 없다', async ({
   launch
 }) => {
   const { app } = await launch()
@@ -51,7 +51,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['split-down', 'Split Down', 'Shift+Command+D'],
     ['close-pane', 'Close Pane', 'Command+W']
   ])
-  expect(menus.view.slice(0, 11)).toEqual([
+  expect(menus.view.slice(0, 14)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
     ['next-workspace', 'Next Workspace', 'Shift+Command+]'],
     ['previous-workspace', 'Previous Workspace', 'Shift+Command+['],
@@ -62,6 +62,9 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['focus-pane-right', 'Focus Pane Right', 'Alt+Command+Right'],
     ['focus-pane-up', 'Focus Pane Up', 'Alt+Command+Up'],
     ['focus-pane-down', 'Focus Pane Down', 'Alt+Command+Down'],
+    ['increase-font-size', 'Increase Font Size', 'Command+Plus'],
+    ['decrease-font-size', 'Decrease Font Size', 'Command+-'],
+    ['reset-font-size', 'Reset Font Size', 'Command+0'],
     ['-', '', null]
   ])
   expect(menus.lastTypes).not.toContain('separator')
@@ -69,6 +72,9 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
   expect(menus.roles).not.toContain('reload')
   expect(menus.roles).not.toContain('forcereload')
   expect(menus.roles).toContain('toggledevtools')
+  expect(menus.roles).not.toContain('zoomin')
+  expect(menus.roles).not.toContain('zoomout')
+  expect(menus.roles).not.toContain('resetzoom')
 })
 
 test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않고 메뉴로 흘려보낸다', async ({
@@ -90,13 +96,19 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
   await page.keyboard.press('Alt+Meta+KeyB')
   await page.keyboard.press('Meta+KeyB')
   await page.keyboard.press('Shift+Meta+BracketRight')
+  await page.keyboard.press('Meta+Equal')
+  await page.keyboard.press('Meta+Minus')
+  await page.keyboard.press('Meta+Digit0')
 
   expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual([
     { code: 'Backslash', prevented: false },
     { code: 'ArrowLeft', prevented: false },
     { code: 'KeyB', prevented: false },
     { code: 'KeyB', prevented: false },
-    { code: 'BracketRight', prevented: false }
+    { code: 'BracketRight', prevented: false },
+    { code: 'Equal', prevented: false },
+    { code: 'Minus', prevented: false },
+    { code: 'Digit0', prevented: false }
   ])
   // 키가 글자로 새면 줄 끝에 붙는다. 새어 나온 \ 는 뒤의 $ 를 이스케이프하므로 pass-24 가 찍히지 않는다.
   await run(page, '$((2+2))', 'pass-24')
@@ -248,6 +260,9 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
     'Focus Pane Right⌥⌘→',
     'Focus Pane Up⌥⌘↑',
     'Focus Pane Down⌥⌘↓',
+    'Increase Font Size⌘+',
+    'Decrease Font Size⌘-',
+    'Reset Font Size⌘0',
     'Restart'
   ])
   await expect(items(page).first()).toHaveClass(/selected/)

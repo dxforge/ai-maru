@@ -27,6 +27,7 @@ export type ScreenWorkspace = {
    * 바뀌고, 부른 쪽이 모두 닫혔으면 없다. 이 필드를 더하기 전 빌드가 쓴 화면에도 없다.
    */
   openedBy?: number
+  fontSize?: number
 }
 
 export type ScreenState = {
@@ -88,7 +89,8 @@ function isWorkspace(v: unknown): v is ScreenWorkspace {
     v.panes.every(isPane) &&
     isLayout(v.layout) &&
     isKey(v.focused) &&
-    optKey(v.openedBy)
+    optKey(v.openedBy) &&
+    (v.fontSize === undefined || Number.isFinite(v.fontSize))
   )
 }
 

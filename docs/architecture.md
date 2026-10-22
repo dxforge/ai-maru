@@ -46,7 +46,7 @@ workspace 가 닫힌 것은 kill 로 안다. renderer 는 workspace 의 마지�
 
 ## pane 경계와 셀 격자
 
-나란히 놓인 pane 끼리 터미널 행이, 위아래로 놓인 pane 끼리 열이 이어지도록 pane 경계를 터미널 셀 크기의 배수에 둔다. 모든 터미널이 같은 글꼴을 쓰므로 `App.vue` 는 마지막으로 잰 값 하나를 `--row`·`--cell`·`--pad` 로 화면 전체에 둔다.
+나란히 놓인 pane 끼리 터미널 행이, 위아래로 놓인 pane 끼리 열이 이어지도록 pane 경계를 터미널 셀 크기의 배수에 둔다. ⌘+ / ⌘- 로 workspace 마다 글꼴 크기가 다를 수 있으므로 `App.vue` 는 글꼴마다 마지막으로 잰 셀 크기를 둔다. workspace 마다 그 글꼴의 셀 크기를 `--row`·`--cell`·`--pad` 로 그 workspace 의 `.panes` 요소에 둔다.
 
 pane 헤더는 터미널 한 행이다. 높이는 `--row` 이고 터미널과 같은 글꼴·크기로 쓰며, 터미널은 헤더 바로 아래 행에서 시작한다. pane 헤더·workspace 헤더처럼 격자 위에 놓이는 것은 터미널 글꼴을, 사이드바·팔레트·Canvas 처럼 격자 밖의 것은 system-ui 를 쓴다.
 

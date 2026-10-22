@@ -28,13 +28,14 @@ import TerminalView from './components/TerminalView.vue'
 import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
 import { configToast, createConfig } from './config/store'
+import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { ICONS } from './icons'
 import { createToasts } from './toast/store'
 import { columnsWidth, terminalPadding } from './workspace/columns'
 import { tildePath, windowTitle, workspaceLabel } from './workspace/cwd'
 import { snapRects, type Box, type Size } from './workspace/grid'
 import { columnCount, EPSILON, rects, type Layout, type Widths } from './workspace/layout'
-import { createWorkspaces, focusedPane } from './workspace/store'
+import { createWorkspaces, focusedPane, type Workspace } from './workspace/store'
 
 const canvas = createCanvas()
 window.maru.onCanvasPut(canvas.put)
@@ -58,6 +59,19 @@ const config = createConfig(window.maru.config, (r) => {
   else toasts.close('config')
 })
 window.maru.onConfig(config.apply)
+
+function stepFont(by: 1 | -1): void {
+  const w = workspaces.selected()
+  if (!w) return
+  const configured = config.font.value.fontSize
+  const size = stepFontSize(w.fontSize ?? configured, by)
+  workspaces.setFontSize(w.key, fontSizeOverride(size, configured))
+}
+
+function resetFont(): void {
+  const w = workspaces.selected()
+  if (w) workspaces.setFontSize(w.key, undefined)
+}
 
 function newWorkspace(): void {
   const w = workspaces.selected()
@@ -211,18 +225,34 @@ function resizeCanvas(e: PointerEvent): void {
 
 const viewMode = ref<'single' | 'columns'>(prefs.viewMode ?? 'columns')
 const widths = computed<Widths>(() => (viewMode.value === 'columns' ? 'columns' : 'half'))
-// 모든 터미널이 같은 글꼴을 쓰므로 마지막으로 잰 값 하나로 셈한다.
-const cell = ref<Size>({ width: 0, height: 0 })
+// 셀 크기는 글꼴이 정하므로 글꼴마다 마지막으로 잰 값 하나로 셈한다. 그래서 새로 연 workspace 도 같은 글꼴의 터미널이
+// 잰 값으로 바로 그린다.
+const cells = reactive(new Map<string, Size>())
 const cellFloored = ref(false)
 const FALLBACK_ROW = 18
-const row = computed(() => cell.value.height || FALLBACK_ROW)
-const gridVars = computed(() => ({
-  '--row': `${row.value}px`,
-  '--cell': `${cell.value.width}px`,
-  '--pad': `${terminalPadding(cell.value.width)}px`,
-  '--font-size': `${config.font.value.fontSize}px`,
-  '--font-family': config.font.value.fontFamily
-}))
+const NO_CELL: Size = { width: 0, height: 0 }
+
+const fontKey = (f: TerminalFont): string => `${f.fontFamily}\n${f.fontSize}\n${f.lineHeight}`
+const cellOf = (font: TerminalFont): Size => cells.get(fontKey(font)) ?? NO_CELL
+const rowOf = (cell: Size): number => cell.height || FALLBACK_ROW
+
+function fontOf(w: Pick<Workspace, 'fontSize'>): TerminalFont {
+  const font = config.font.value
+  return w.fontSize === undefined ? font : { ...font, fontSize: w.fontSize }
+}
+
+function gridVars(cell: Size, font: TerminalFont) {
+  return {
+    '--row': `${rowOf(cell)}px`,
+    '--cell': `${cell.width}px`,
+    '--pad': `${terminalPadding(cell.width)}px`,
+    '--font-size': `${font.fontSize}px`,
+    '--font-family': font.fontFamily
+  }
+}
+
+const sameSize = (a: Size | undefined, b: Size): boolean =>
+  a?.width === b.width && a.height === b.height
 
 /** workspace 마다 pane 이 놓이는 영역의 크기. CSS 가 정하는 헤더·여백을 JS 에서 다시 계산하지 않게 잰다. */
 const gridSizes = reactive(new Map<number, Size>())
@@ -257,7 +287,7 @@ const gridObserver = new ResizeObserver((entries) => {
     const key = gridKeys.get(target)
     if (key === undefined) continue
     const old = gridSizes.get(key)
-    if (old?.width !== width || old.height !== height) gridSizes.set(key, { width, height })
+    if (!sameSize(old, { width, height })) gridSizes.set(key, { width, height })
   }
 })
 function observeGrid(key: number, el: unknown): void {
@@ -287,8 +317,9 @@ function panelTransition(e: TransitionEvent): void {
   }
 }
 
-function setCell(c: Size, floored: boolean): void {
-  if (c.width !== cell.value.width || c.height !== cell.value.height) cell.value = c
+function setCell(font: TerminalFont, c: Size, floored: boolean): void {
+  const key = fontKey(font)
+  if (!sameSize(cells.get(key), c)) cells.set(key, c)
   cellFloored.value = floored
 }
 
@@ -307,12 +338,12 @@ function placement(b: Box, unit: string, bodyHeight?: number) {
 
 // FitAddon 은 pane 높이를 정수로 잘라 읽고 반올림한 셀 높이로 나눠 행 하나를 잃곤 하므로, 헤더 아래에 들어갈
 // 행 수보다 반 행 큰 높이를 주고 넘친 부분은 pane 이 가린다.
-function bodyHeight(b: Box): number {
-  const rows = Math.max(0, Math.floor(b.height / row.value - 1 + EPSILON))
-  return (rows + 0.5) * row.value
+function bodyHeight(b: Box, row: number): number {
+  const rows = Math.max(0, Math.floor(b.height / row - 1 + EPSILON))
+  return (rows + 0.5) * row
 }
 
-function placements(layout: Layout, size: Size | undefined, widths: Widths) {
+function placements(layout: Layout, size: Size | undefined, widths: Widths, cell: Size) {
   // 영역을 재기 전의 첫 렌더는 비율로 그린다. 0×0 으로 그리면 터미널이 그 크기로 세션을 연다.
   if (!size)
     return new Map(
@@ -322,9 +353,9 @@ function placements(layout: Layout, size: Size | undefined, widths: Widths) {
       ])
     )
   return new Map(
-    [...snapRects(layout, size, cell.value, widths)].map(([pane, b]) => [
+    [...snapRects(layout, size, cell, widths)].map(([pane, b]) => [
       pane,
-      placement(b, 'px', bodyHeight(b))
+      placement(b, 'px', bodyHeight(b, rowOf(cell)))
     ])
   )
 }
@@ -334,17 +365,22 @@ const views = computed(() =>
     const selected = w.key === workspaces.selectedKey.value
     const measured = gridSizes.get(w.key)
     const columns = viewMode.value === 'columns'
+    const font = fontOf(w)
+    const cell = cellOf(font)
     const width = columns
-      ? columnsWidth(columnCount(w.layout), cell.value.width, cellFloored.value)
+      ? columnsWidth(columnCount(w.layout), cell.width, cellFloored.value)
       : undefined
     const places = placements(
       w.layout,
       measured && (width === undefined ? measured : { width, height: measured.height }),
-      widths.value
+      widths.value,
+      cell
     )
     return {
       w,
       selected,
+      font,
+      vars: gridVars(cell, font),
       width: width === undefined ? undefined : `${width}px`,
       panes: w.panes.map((p) => ({
         p,
@@ -440,6 +476,9 @@ const handlers: Record<CommandId, () => void> = {
   'toggle-view-mode': () => {
     viewMode.value = viewMode.value === 'single' ? 'columns' : 'single'
   },
+  'increase-font-size': () => stepFont(1),
+  'decrease-font-size': () => stepFont(-1),
+  'reset-font-size': resetFont,
   restart: window.maru.restart
 }
 
@@ -490,12 +529,7 @@ void window.maru.restoreScreen().then((s) => {
 </script>
 
 <template>
-  <div
-    class="app"
-    :style="gridVars"
-    @transitionend="panelTransition"
-    @transitioncancel="panelTransition"
-  >
+  <div class="app" @transitionend="panelTransition" @transitioncancel="panelTransition">
     <div
       ref="side"
       class="side"
@@ -521,11 +555,11 @@ void window.maru.restoreScreen().then((s) => {
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />
     <div class="terminals" :class="viewMode" @wheel.capture="keepHorizontalScroll">
       <div
-        v-for="{ w, selected, width, panes } in views"
+        v-for="{ w, selected, width, font, vars, panes } in views"
         :key="w.key"
         class="panes"
         :class="{ selected }"
-        :style="{ width }"
+        :style="{ width, ...vars }"
       >
         <div
           v-if="viewMode === 'columns'"
@@ -566,13 +600,13 @@ void window.maru.restoreScreen().then((s) => {
                 :attach="p.attach"
                 :active="active"
                 :shown="selected || viewMode === 'columns'"
-                :font="config.font.value"
+                :font="font"
                 @exit="removePane(p.key)"
                 @failed="(message) => paneFailed(p.key, message)"
                 @spawned="answerPaneRequest(p.key, { session: p.sessionId })"
                 @cwd="(dir) => workspaces.setCwd(p.key, dir)"
                 @title="(title) => workspaces.setTitle(p.key, title)"
-                @cell="setCell"
+                @cell="(c, floored) => setCell(fontOf(w), c, floored)"
               />
             </div>
           </div>

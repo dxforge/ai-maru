@@ -1,7 +1,7 @@
 import { readonly, shallowRef } from 'vue'
 import type { ConfigRead } from '../../../shared/config'
 import type { Toast } from '../toast/store'
-import { DEFAULT_FONT, parseConfig, type TerminalFont } from './terminal'
+import { DEFAULT_FONT, parseConfig, sameFont } from './terminal'
 
 /**
  * `problem` 이 있으면 설정을 적용하지 못했다. 그때 `first` 면 기본값을, 아니면 앞의 값을 그대로 쓴다.
@@ -12,10 +12,6 @@ export type ConfigReport = {
   problem?: string
   warnings: string[]
   names: string[]
-}
-
-function sameFont(a: TerminalFont, b: TerminalFont): boolean {
-  return a.fontFamily === b.fontFamily && a.fontSize === b.fontSize && a.lineHeight === b.lineHeight
 }
 
 export function createConfig(first: ConfigRead, report: (r: ConfigReport) => void) {

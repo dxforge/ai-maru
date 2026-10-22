@@ -74,10 +74,6 @@ export function installCommandMenu(
           ...commandItems('view'),
           separator,
           ...(app.isPackaged ? [] : [role('toggleDevTools'), separator]),
-          role('resetZoom'),
-          role('zoomIn'),
-          role('zoomOut'),
-          separator,
           fullScreen
         ]
       },
