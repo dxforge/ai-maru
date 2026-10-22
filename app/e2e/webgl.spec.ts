@@ -123,7 +123,7 @@ async function screenWidth(
   })
 }
 
-test('WebGL 터미널은 칸 폭을 셀 단위로 채우고, renderer 가 바뀌어도 셸이 보는 열 수는 그대로다', async ({
+test('WebGL 터미널은 pane 폭을 셀 단위로 채우고, renderer 가 바뀌어도 셸이 보는 열 수는 그대로다', async ({
   launch,
   dataDir
 }) => {
@@ -148,7 +148,7 @@ test('WebGL 터미널은 칸 폭을 셀 단위로 채우고, renderer 가 바뀌
   expect(await sttySize(page, dataDir)).toEqual(before)
 })
 
-test('WebGL2 를 쓸 수 없으면 DOM 으로 그리고, 칸 폭을 DOM 의 셀 단위로 채우며 columns 의 칸은 80열이다', async ({
+test('WebGL2 를 쓸 수 없으면 DOM 으로 그리고, pane 폭을 DOM 의 셀 단위로 채우며 columns 의 pane 은 80열이다', async ({
   launch,
   dataDir
 }) => {
@@ -183,7 +183,7 @@ test('WebGL2 를 쓸 수 없으면 DOM 으로 그리고, 칸 폭을 DOM 의 셀 
   await expect.poll(async () => (await sttySize(page, dataDir)).cols).toBe(80)
 })
 
-test('WebGL 로 그려도 columns 의 칸은 80열이다', async ({ launch, dataDir }) => {
+test('WebGL 로 그려도 columns 의 pane 은 80열이다', async ({ launch, dataDir }) => {
   const launched = await launchWebgl(launch)
   await toggleView(launched, 'columns')
   await expect.poll(async () => (await sttySize(launched.page, dataDir)).cols).toBe(80)

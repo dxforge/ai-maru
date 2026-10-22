@@ -9,7 +9,7 @@ import {
   wrapSessionBin
 } from './app'
 
-test('세션은 그 칸의 workspace id 를 싣고 열리고, maru pane new 의 칸은 부른 칸의 workspace 를 따른다', async ({
+test('세션은 그 pane 의 workspace id 를 싣고 열리고, maru pane new 의 pane 은 부른 pane 의 workspace 를 따른다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -30,7 +30,7 @@ test('세션은 그 칸의 workspace id 를 싣고 열리고, maru pane new 의 
   expect(fourth).toBe(second)
 })
 
-test('셸이 스스로 끝나 칸이 닫혀도 그 세션의 끄기를 main 에 보낸다', async ({ launch }) => {
+test('셸이 스스로 끝나 pane 이 닫혀도 그 세션의 끄기를 main 에 보낸다', async ({ launch }) => {
   const { app, page } = await launch()
   const events = await recordSessions(app)
   await split(app, page, 'split-right', 2)
@@ -41,7 +41,7 @@ test('셸이 스스로 끝나 칸이 닫혀도 그 세션의 끄기를 main 에 
   await expect.poll(async () => (await events()).kills).toEqual([key])
 })
 
-test('maru pane new 의 세션이 뜨지 못해 칸이 닫혀도 그 세션의 끄기를 main 에 보낸다', async ({
+test('maru pane new 의 세션이 뜨지 못해 pane 이 닫혀도 그 세션의 끄기를 main 에 보낸다', async ({
   launch,
   dataDir
 }) => {

@@ -139,7 +139,7 @@ test('창을 새로 고쳐도 설정 글꼴로 그리고, 그 뒤의 저장도 �
   await expect.poll(() => fontSize(page)).toBe('12px')
 })
 
-test('칸 헤더도 설정 글꼴을 따른다', async ({ launch, dataDir }) => {
+test('pane 헤더도 설정 글꼴을 따른다', async ({ launch, dataDir }) => {
   const { page } = await launch()
   writeConfig(dataDir, '[terminal]\nfont-family = "Menlo"\nfont-size = 20\n')
   await expect.poll(() => fontSize(page)).toBe('20px')

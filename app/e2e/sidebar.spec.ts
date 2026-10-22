@@ -112,7 +112,7 @@ test('프롬프트가 뜨지 않아도 Claude 의 상태가 바뀌면 branch 를
   await expect(branch(page)).toHaveText(/by-claude$/)
 })
 
-test('경로는 workspace 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, columns 의 workspace 머리에도 branch 가 붙는다', async ({
+test('경로는 workspace 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, columns 의 workspace 헤더에도 branch 가 붙는다', async ({
   launch,
   dataDir
 }) => {
@@ -148,7 +148,7 @@ test('아이콘은 모두 앞 글꼴의 fallback 이 아니라 함께 실은 Ner
   await expect(page.locator('.workspace-header')).toHaveClass(/working/)
 
   // 이 화면에서 `ICONS` 를 그리는 자리는 일곱이다: 사이드바의 branch·접기·상태·Claude 아이콘,
-  // 칸 헤더의 상태·Claude 아이콘, columns 보기의 workspace 헤더 상태 아이콘.
+  // pane 헤더의 상태·Claude 아이콘, columns 보기의 workspace 헤더 상태 아이콘.
   const families = await page.evaluate((glyphs) => {
     const found: string[] = []
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
@@ -233,7 +233,7 @@ async function twoClaudes(app: ElectronApplication, page: Page): Promise<void> {
   await expect(paneRows(page)).toHaveClass([/working/, /waiting/])
 }
 
-test('접기 화살표는 workspace 의 칸 줄을 한 줄로 접고, 화살표나 그 줄을 누르면 편다', async ({
+test('접기 화살표는 workspace 의 pane 줄을 한 줄로 접고, 화살표나 그 줄을 누르면 편다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -258,7 +258,7 @@ test('접기 화살표는 workspace 의 칸 줄을 한 줄로 접고, 화살표�
   await expect(shellRows(page)).toHaveCount(1)
 })
 
-test('접은 사이드바는 같은 목록에서 글자만 빼고, 헤더는 workspace 를, 칸 줄은 그 칸을 고른다', async ({
+test('접은 사이드바는 같은 목록에서 글자만 빼고, 헤더는 workspace 를, pane 줄은 그 pane 을 고른다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -288,7 +288,7 @@ test('접은 사이드바는 같은 목록에서 글자만 빼고, 헤더는 wor
   await expect(collapsedGroups(page).nth(1)).toHaveClass(/selected/)
 })
 
-test('접고 펴도 칸 줄의 상태 아이콘과 구획 선은 같은 자리에 있다', async ({ launch }) => {
+test('접고 펴도 pane 줄의 상태 아이콘과 구획 선은 같은 자리에 있다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
   await twoClaudes(app, page)
@@ -484,7 +484,7 @@ test('목록을 스크롤해도 신호등 버튼 자리는 비어 있다', async
   expect(await underButtons()).toBeNull()
 })
 
-test('펼친 사이드바에서 접은 workspace 는 가장 급한 상태와 칸 수를 한 줄로 보인다', async ({
+test('펼친 사이드바에서 접은 workspace 는 가장 급한 상태와 pane 수를 한 줄로 보인다', async ({
   launch
 }) => {
   const { app, page } = await launch()

@@ -54,7 +54,7 @@ function domBaseline(view: HTMLElement): number {
 }
 
 /**
- * 확정되면 차지할 칸 수. xterm 이 공개하지 않는 `_core.unicodeService` 를 쓴다. 이 API 가 없어지면 `undefined` 를
+ * 확정되면 차지할 셀 수. xterm 이 공개하지 않는 `_core.unicodeService` 를 쓴다. 이 API 가 없어지면 `undefined` 를
  * 돌려주고, 호출하는 쪽은 조합창 폭을 정하지 않는다.
  */
 function cellCount(term: Terminal, text: string): number | undefined {
@@ -114,8 +114,8 @@ export function alignComposition(
             })
     }
     shift(view, offset)
-    // 조합창은 글자 폭만큼만 넓다. 한글이 두 칸보다 좁으면 두 번째 칸이 비어 반쪽 상자처럼 보인다.
-    // xterm 은 조합창 글자 양쪽에 U+200E 를 붙이고, `UnicodeGraphemesAddon` 은 이 글자를 1칸으로 센다. 그래서
+    // 조합창은 글자 폭만큼만 넓다. 한글이 두 셀보다 좁으면 두 번째 셀이 비어 반쪽 상자처럼 보인다.
+    // xterm 은 조합창 글자 양쪽에 U+200E 를 붙이고, `UnicodeGraphemesAddon` 은 이 글자의 폭을 1로 센다. 그래서
     // `textContent` 가 아니라 `e.data` 를 센다.
     const cells = cellCount(term, e.data)
     // xterm 은 조합창이 터미널 밖으로 넘치지 않게 `maxWidth` 를 커서 뒤 남은 폭으로 둔다. CSS 에서는 `min-width` 가

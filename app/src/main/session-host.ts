@@ -53,7 +53,7 @@ async function reattach(req: OpenRequest, port: MessagePortMain): Promise<void> 
 
 async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
   if (req.attach) return reattach(req, port)
-  // 세션이 뜨는 동안 칸을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 opened 에 넣는다.
+  // 세션이 뜨는 동안 pane 을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 opened 에 넣는다.
   const spawning = startDir(req.cwd).then(async (cwd) => {
     const state = await spawnSession(req.bin, req.dir, req.setup, req.id, cwd, req.command)
     return { cwd, state }

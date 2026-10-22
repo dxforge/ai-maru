@@ -17,7 +17,7 @@ import {
   zshHome
 } from './app'
 
-test('maru pane new 은 부른 칸 오른쪽에 명령을 띄워 그 세션 id 를 찍고, 포커스는 부른 칸에 남는다', async ({
+test('maru pane new 은 부른 pane 오른쪽에 명령을 띄워 그 세션 id 를 찍고, 포커스는 부른 pane 에 남는다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -37,7 +37,7 @@ test('maru pane new 은 부른 칸 오른쪽에 명령을 띄워 그 세션 id �
   await run(page, 'echo still-$((1+1))', 'still-2')
 })
 
-test('명령이 끝나면 칸이 닫히고, 명령 없이 부르면 셸을 띄운다', async ({ launch }) => {
+test('명령이 끝나면 pane 이 닫히고, 명령 없이 부르면 셸을 띄운다', async ({ launch }) => {
   const { page } = await launch()
   await page.keyboard.type(`maru pane new sh -c 'sleep 1; exit 3'\n`)
   await expect(panes(page)).toHaveCount(2)
@@ -52,7 +52,7 @@ test('명령이 끝나면 칸이 닫히고, 명령 없이 부르면 셸을 띄�
   await expect(panes(page)).toHaveCount(1)
 })
 
-test('곧바로 끝나는 명령도 그 세션 id 를 찍고 성공하며, 칸은 닫힌다', async ({ launch }) => {
+test('곧바로 끝나는 명령도 그 세션 id 를 찍고 성공하며, pane 은 닫힌다', async ({ launch }) => {
   const { page } = await launch()
   for (const command of ['true', 'echo hi', 'no-such-command-xyz']) {
     await page.keyboard.type(`clear; maru pane new ${command}; echo "code-$?"\n`)
@@ -61,7 +61,7 @@ test('곧바로 끝나는 명령도 그 세션 id 를 찍고 성공하며, 칸�
   }
 })
 
-test('한 칸에서 동시에 부른 maru pane new 는 저마다 자기 칸의 세션 id 를 받는다', async ({
+test('한 pane 에서 동시에 부른 maru pane new 는 저마다 자기 pane 의 세션 id 를 받는다', async ({
   launch,
   dataDir
 }) => {
@@ -106,7 +106,7 @@ test('--down 은 아래로 나누고, 시작 디렉토리는 --cwd 가 없으면
   await expect(paneRows(page, 2)).toContainText(`at=[${real}/sub]`)
 })
 
-test('선택하지 않은 workspace 의 칸에서 부르면 그 workspace 를 나누고, 선택은 그대로다', async ({
+test('선택하지 않은 workspace 의 pane 에서 부르면 그 workspace 를 나누고, 선택은 그대로다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -118,7 +118,7 @@ test('선택하지 않은 workspace 의 칸에서 부르면 그 workspace 를 �
   await expect(panes(page)).toHaveCount(1)
 })
 
-test('세션을 띄우지 못하면 나눈 칸을 닫고 maru pane new 가 이유와 함께 실패한다', async ({
+test('세션을 띄우지 못하면 나눈 pane 을 닫고 maru pane new 가 이유와 함께 실패한다', async ({
   launch,
   dataDir
 }) => {
@@ -129,7 +129,7 @@ test('세션을 띄우지 못하면 나눈 칸을 닫고 maru pane new 가 이�
   await expect(panes(page)).toHaveCount(1)
 })
 
-test('창이 시간 안에 답하지 못해 실패한 maru pane new 의 칸은 창이 늦게 열어도 닫는다', async ({
+test('창이 시간 안에 답하지 못해 실패한 maru pane new 의 pane 은 창이 늦게 열어도 닫는다', async ({
   launch
 }) => {
   test.setTimeout(40_000)
@@ -147,7 +147,9 @@ test('창이 시간 안에 답하지 못해 실패한 maru pane new 의 칸은 �
   await expect(panes(page)).toHaveCount(1)
 })
 
-test('maru pane close 는 다른 칸도 자기 칸도 닫고, 없는 세션이면 실패한다', async ({ launch }) => {
+test('maru pane close 는 다른 pane 도 자기 pane 도 닫고, 없는 세션이면 실패한다', async ({
+  launch
+}) => {
   const { page } = await launch()
   await page.keyboard.type(`ID=$(maru pane new bash -c 'read x')\n`)
   await expect(panes(page)).toHaveCount(2)
@@ -175,7 +177,7 @@ test('columns 에서 maru pane new 로 오른쪽에 나누면 workspace 가 넓�
     .toBeGreaterThan(one * 1.9)
 })
 
-test('columns 에서 maru pane new --full 은 아래로 나눈 칸에서 불러도 workspace 오른쪽 끝에 높이 전체로 붙는다', async ({
+test('columns 에서 maru pane new --full 은 아래로 나눈 pane 에서 불러도 workspace 오른쪽 끝에 높이 전체로 붙는다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -239,7 +241,7 @@ test('single 에서 maru pane new --full --down 은 workspace 아래쪽 끝에 �
     .toEqual([grid.x, grid.width, grid.y + grid.height])
 })
 
-test('maru pane new 이 찍은 id 로 그 칸에 inbox 메시지를 보낸다', async ({ launch }) => {
+test('maru pane new 이 찍은 id 로 그 pane 에 inbox 메시지를 보낸다', async ({ launch }) => {
   const { page } = await launch()
   await page.keyboard.type(
     `ID=$(maru pane new bash -c 'sleep 1; maru inbox read; read x'); maru inbox push "$ID" "hello-$((1+1))"\n`

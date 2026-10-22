@@ -56,7 +56,7 @@ describe('snapshot·restore', () => {
 })
 
 describe('workspaces', () => {
-  it('칸을 만들 때마다 그 세션의 id 를 새로 정한다', () => {
+  it('pane 을 만들 때마다 그 세션의 id 를 새로 정한다', () => {
     let n = 0
     const ws = createWorkspaces(undefined, () => `s-${++n}`)
     ws.open()
@@ -71,14 +71,14 @@ describe('workspaces', () => {
     ])
   })
 
-  it('기본 세션 id 는 세션 id 모양이고 칸마다 다르다', () => {
+  it('기본 세션 id 는 세션 id 모양이고 pane 마다 다르다', () => {
     const ws = opened(2)
     const [a, b] = firstPanes(ws).map((p) => p.sessionId)
     expect(isSessionId(a) && isSessionId(b)).toBe(true)
     expect(a).not.toBe(b)
   })
 
-  it('workspace 를 열 때마다 id 를 새로 정하고, 나눈 칸은 workspace 의 id 를 바꾸지 않는다', () => {
+  it('workspace 를 열 때마다 id 를 새로 정하고, 나눈 pane 은 workspace 의 id 를 바꾸지 않는다', () => {
     let n = 0
     const ws = createWorkspaces(undefined, undefined, () => `w-${++n}`)
     ws.open()
@@ -94,7 +94,7 @@ describe('workspaces', () => {
     expect(a).not.toBe(b)
   })
 
-  it('연 workspace 는 칸 하나로 목록 끝에 붙고 선택된다', () => {
+  it('연 workspace 는 pane 하나로 목록 끝에 붙고 선택된다', () => {
     const ws = opened(2)
     ws.open()
     expect(firstPanes(ws).map((p) => p.startDir)).toEqual(['/d-0', '/d-1', undefined])
@@ -103,7 +103,7 @@ describe('workspaces', () => {
     expect(selected(ws).focused).toBe(selected(ws).panes[0].key)
   })
 
-  it('선택한 workspace 의 마지막 칸이 닫히면 workspace 도 닫고 바로 아래 것을 선택한다', () => {
+  it('선택한 workspace 의 마지막 pane 이 닫히면 workspace 도 닫고 바로 아래 것을 선택한다', () => {
     const ws = opened(3)
     const [, middle, last] = keys(ws)
     ws.select(middle)
@@ -144,7 +144,7 @@ describe('workspaces', () => {
     expect(firstPanes(ws)[0].cwd).toBe('/b')
   })
 
-  it('setTitle 은 그 칸의 제목만 바꾼다', () => {
+  it('setTitle 은 그 pane 의 제목만 바꾼다', () => {
     const ws = opened(1)
     ws.split('right')
     ws.setTitle(selected(ws).panes[1].key, 'task')
@@ -207,7 +207,7 @@ describe('git', () => {
     expect(selected(ws).panes[0].git).toBe(before)
   })
 
-  it('다른 디렉토리로 옮긴 뒤 읽지 못하면 이전 저장소를 남기지 않고, 읽는 사이 닫힌 칸의 답은 버린다', async () => {
+  it('다른 디렉토리로 옮긴 뒤 읽지 못하면 이전 저장소를 남기지 않고, 읽는 사이 닫힌 pane 의 답은 버린다', async () => {
     const r = reader()
     let fail = false
     const ws = createWorkspaces((cwd) => (fail ? Promise.reject(new Error('x')) : r.read(cwd)))
@@ -229,7 +229,7 @@ describe('git', () => {
     expect(selected(ws).panes.map((p) => p.key)).toEqual([key])
   })
 
-  it('refreshSession 은 그 세션의 칸만 다시 읽는다', () => {
+  it('refreshSession 은 그 세션의 pane 만 다시 읽는다', () => {
     const r = reader()
     const ws = createWorkspaces(r.read)
     ws.open()
@@ -245,7 +245,7 @@ describe('git', () => {
 })
 
 describe('panes', () => {
-  it('나누면 새 칸이 포커스가 있던 칸의 cwd 에서 시작하고 포커스를 받는다', () => {
+  it('나누면 새 pane 이 포커스가 있던 pane 의 cwd 에서 시작하고 포커스를 받는다', () => {
     const ws = opened(1)
     const first = selected(ws).panes[0].key
     ws.setCwd(first, '/work')
@@ -263,14 +263,14 @@ describe('panes', () => {
     })
   })
 
-  it('cwd 를 아직 모르는 칸을 나누면 그 칸의 시작 디렉토리에서 시작한다', () => {
+  it('cwd 를 아직 모르는 pane 을 나누면 그 pane 의 시작 디렉토리에서 시작한다', () => {
     const ws = createWorkspaces()
     ws.open('/start')
     ws.split('down')
     expect(selected(ws).panes[1].startDir).toBe('/start')
   })
 
-  it('full 로 나누면 부른 칸의 workspace 전체를 나누고, 포커스와 선택은 그대로다', () => {
+  it('full 로 나누면 부른 pane 의 workspace 전체를 나누고, 포커스와 선택은 그대로다', () => {
     const ws = opened(2)
     ws.select(keys(ws)[0])
     ws.split('down')
@@ -292,7 +292,7 @@ describe('panes', () => {
     expect(ws.list.value.map((w) => w.panes.length)).toEqual([2, 1])
   })
 
-  it('포커스가 있는 칸을 닫으면 형제 칸이 자리와 포커스를 받는다', () => {
+  it('포커스가 있는 pane 을 닫으면 형제 pane 이 자리와 포커스를 받는다', () => {
     const ws = opened(1)
     const a = selected(ws).panes[0].key
     ws.split('right')
@@ -305,7 +305,7 @@ describe('panes', () => {
     expect(selected(ws).panes.map((p) => p.key)).toEqual([a, b])
   })
 
-  it('포커스가 없는 칸이 닫히면 포커스는 그대로다', () => {
+  it('포커스가 없는 pane 이 닫히면 포커스는 그대로다', () => {
     const ws = opened(1)
     const a = selected(ws).panes[0].key
     ws.split('right')
@@ -315,7 +315,7 @@ describe('panes', () => {
     expect(selected(ws).layout).toEqual({ pane: b })
   })
 
-  it('보이지 않는 workspace 의 칸이 닫혀도 선택은 그대로다', () => {
+  it('보이지 않는 workspace 의 pane 이 닫혀도 선택은 그대로다', () => {
     const ws = opened(2)
     ws.select(keys(ws)[0])
     ws.split('right')
@@ -326,7 +326,7 @@ describe('panes', () => {
     expect(ws.list.value[0].panes).toHaveLength(1)
   })
 
-  it('없는 칸을 닫거나 그 칸에 값을 달아도 아무것도 바뀌지 않는다', () => {
+  it('없는 pane 을 닫거나 그 pane 에 값을 달아도 아무것도 바뀌지 않는다', () => {
     const ws = opened(1)
     const before = JSON.stringify(ws.list.value)
     ws.closePane(999)
@@ -337,7 +337,7 @@ describe('panes', () => {
     expect(JSON.stringify(ws.list.value)).toBe(before)
   })
 
-  it('focusPane 은 그 칸의 workspace 에서 포커스를 옮긴다', () => {
+  it('focusPane 은 그 pane 의 workspace 에서 포커스를 옮긴다', () => {
     const ws = opened(1)
     const a = selected(ws).panes[0].key
     ws.split('right')
@@ -345,7 +345,7 @@ describe('panes', () => {
     expect(selected(ws).focused).toBe(a)
   })
 
-  it('moveFocus 는 그 방향에 칸이 있으면 옮기고 없으면 그대로 둔다', () => {
+  it('moveFocus 는 그 방향에 pane 이 있으면 옮기고 없으면 그대로 둔다', () => {
     const ws = opened(1)
     const a = selected(ws).panes[0].key
     ws.split('right')
@@ -358,13 +358,13 @@ describe('panes', () => {
     expect(selected(ws).focused).toBe(a)
   })
 
-  it('focusedPane 은 포커스가 있는 칸이다', () => {
+  it('focusedPane 은 포커스가 있는 pane 이다', () => {
     const ws = opened(1)
     ws.split('down')
     expect(focusedPane(selected(ws)).key).toBe(selected(ws).focused)
   })
 
-  it('splitFrom 은 선택되지 않은 workspace 의 칸도 나누고, 포커스와 선택은 그대로 둔다', () => {
+  it('splitFrom 은 선택되지 않은 workspace 의 pane 도 나누고, 포커스와 선택은 그대로 둔다', () => {
     const ws = opened(2)
     const [first, second] = keys(ws)
     const from = ws.list.value[0].panes[0].key
@@ -381,7 +381,7 @@ describe('panes', () => {
     expect(ws.selectedKey.value).toBe(second)
   })
 
-  it('splitFrom 은 포커스가 없는 칸을 나눈다', () => {
+  it('splitFrom 은 포커스가 없는 pane 을 나눈다', () => {
     const ws = opened(1)
     const a = selected(ws).focused
     ws.split('right')
@@ -395,7 +395,7 @@ describe('panes', () => {
     expect(selected(ws).focused).toBe(b)
   })
 
-  it('세션 id 로 어느 workspace 의 칸이든 찾는다', () => {
+  it('세션 id 로 어느 workspace 의 pane 이든 찾는다', () => {
     const ws = opened(2)
     const hidden = ws.list.value[0].panes[0]
     expect(ws.paneBySession(hidden.sessionId)?.key).toBe(hidden.key)
@@ -409,7 +409,7 @@ describe('panes', () => {
     expect(ws.list.value).toEqual([])
   })
 
-  it('보이지 않는 workspace 의 칸에 포커스를 주어도 선택은 그대로다', () => {
+  it('보이지 않는 workspace 의 pane 에 포커스를 주어도 선택은 그대로다', () => {
     const ws = opened(2)
     const [first, second] = keys(ws)
     const hidden = ws.list.value[0].panes[0].key
@@ -445,7 +445,7 @@ describe('openFrom', () => {
     return ws.list.value.find((w) => w.panes.some((p) => p.key === pane))!.key
   }
 
-  it('부른 workspace 바로 뒤에 칸 하나로 넣고, 선택과 포커스는 그대로다', () => {
+  it('부른 workspace 바로 뒤에 pane 하나로 넣고, 선택과 포커스는 그대로다', () => {
     const ws = opened(3)
     const [w0, w1, w2] = keys(ws)
     ws.split('right')

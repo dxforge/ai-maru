@@ -17,7 +17,7 @@ describe('mix', () => {
 })
 
 describe('uiColors', () => {
-  it('상태 색은 사이드바·칸·칸 머리 위에서 모두 3:1 이 넘으면 ANSI 색을 그대로 쓴다', () => {
+  it('상태 색은 사이드바·pane·pane 헤더 위에서 모두 3:1 이 넘으면 ANSI 색을 그대로 쓴다', () => {
     const ui = uiColors(GHOSTTY)
     expect([ui.waiting, ui.working]).toEqual([GHOSTTY.ansi[3], GHOSTTY.ansi[4]])
   })
@@ -28,7 +28,7 @@ describe('uiColors', () => {
     expect(ui.error).toBe(GHOSTTY.ansi[9])
   })
 
-  it('포커스된 칸 머리 위에서만 3:1 이 안 되어도 bright 색을 쓴다', () => {
+  it('포커스된 pane 헤더 위에서만 3:1 이 안 되어도 bright 색을 쓴다', () => {
     const ui = uiColors(GHOSTTY)
     const ansi = [...GHOSTTY.ansi]
     ansi[4] = GHOSTTY.ansi[1]
@@ -37,7 +37,7 @@ describe('uiColors', () => {
     expect(uiColors({ ...GHOSTTY, ansi }).working).toBe(ansi[12])
   })
 
-  it('포커스된 칸 머리는 다른 칸 머리보다 글자색에 가깝다', () => {
+  it('포커스된 pane 헤더는 다른 pane 헤더보다 글자색에 가깝다', () => {
     const ui = uiColors(GHOSTTY)
     expect(contrast(ui.hdrFocus, ui.fg)).toBeLessThan(contrast(ui.raised, ui.fg))
   })

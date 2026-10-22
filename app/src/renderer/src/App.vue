@@ -42,7 +42,7 @@ window.maru.onCanvasPut(canvas.put)
 const workspaces = createWorkspaces(window.maru.gitHead)
 
 const claude = createClaudeStatuses()
-// zsh 는 프롬프트마다 cwd 를 알려 와 그때 branch 를 다시 읽지만, Claude 를 띄운 칸에는 프롬프트가 뜨지 않아
+// zsh 는 프롬프트마다 cwd 를 알려 와 그때 branch 를 다시 읽지만, Claude 를 띄운 pane 에는 프롬프트가 뜨지 않아
 // 상태가 바뀔 때 읽는다. 그래서 Claude 가 한 상태에 머문 채 branch 를 바꾸면 다음 상태로 넘어갈 때 반영된다.
 window.maru.onClaudeStatus((session, state) => {
   claude.set(session, state)
@@ -80,7 +80,7 @@ async function focusSelected(): Promise<void> {
 }
 
 // 선택이 그대로인 클릭에서는 TerminalView 의 active watch 와 아래의 스크롤 watch 가 돌지 않아,
-// 여기서 포커스를 주고 스크롤로 밀려난 칸을 다시 보인다.
+// 여기서 포커스를 주고 스크롤로 밀려난 pane 을 다시 보인다.
 function selectWorkspace(key: number): void {
   workspaces.select(key)
   void focusSelected().then(revealFocused)
@@ -163,7 +163,7 @@ const folded = reactive(new Set<number>())
 function toggleFold(key: number): void {
   if (!folded.delete(key)) folded.add(key)
 }
-// 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 칸마다 열 수가 갈린다(#58).
+// 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 pane 마다 열 수가 갈린다(#58).
 const SIDEBAR_WIDTH = 282
 const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
 // 토스트는 사이드바 안쪽 양옆 12px 을 비운다.
@@ -224,11 +224,11 @@ const gridVars = computed(() => ({
   '--font-family': config.font.value.fontFamily
 }))
 
-/** workspace 마다 칸이 놓이는 영역의 크기. CSS 가 정하는 머리·여백을 JS 에서 다시 계산하지 않게 잰다. */
+/** workspace 마다 pane 이 놓이는 영역의 크기. CSS 가 정하는 헤더·여백을 JS 에서 다시 계산하지 않게 잰다. */
 const gridSizes = reactive(new Map<number, Size>())
 const gridEls = new Map<number, Element>()
 const gridKeys = new WeakMap<Element, number>()
-// 사이드바·Canvas 폭이 transition 으로 바뀌는 동안 칸 크기를 다시 재면 터미널이 프레임마다 맞춰져 PTY 크기가
+// 사이드바·Canvas 폭이 transition 으로 바뀌는 동안 pane 크기를 다시 재면 터미널이 프레임마다 맞춰져 PTY 크기가
 // 여러 번 바뀐다. 그동안은 재지 않고, 끝난 뒤 다시 잰다.
 const panels = (): Element[] => [side.value, canvasPanel.value?.panel].filter((el) => !!el)
 // `transitionrun` 은 transition 이 생긴 다음 프레임에 온다. 그래서 그것으로 움직임을 알면, 그 전 프레임의 크기로 터미널을
@@ -305,8 +305,8 @@ function placement(b: Box, unit: string, bodyHeight?: number) {
   }
 }
 
-// FitAddon 은 칸 높이를 정수로 잘라 읽고 반올림한 셀 높이로 나눠 행 하나를 잃곤 하므로, 머리 아래에 들어갈
-// 행 수보다 반 행 큰 높이를 주고 넘친 부분은 칸이 가린다.
+// FitAddon 은 pane 높이를 정수로 잘라 읽고 반올림한 셀 높이로 나눠 행 하나를 잃곤 하므로, 헤더 아래에 들어갈
+// 행 수보다 반 행 큰 높이를 주고 넘친 부분은 pane 이 가린다.
 function bodyHeight(b: Box): number {
   const rows = Math.max(0, Math.floor(b.height / row.value - 1 + EPSILON))
   return (rows + 0.5) * row.value
@@ -355,7 +355,7 @@ const views = computed(() =>
   })
 )
 
-// 스크롤 watch 가 views 를 지켜보므로, 칸의 cwd·branch 가 바뀔 때마다 스크롤이 돌지 않게 views 밖에 둔다.
+// 스크롤 watch 가 views 를 지켜보므로, pane 의 cwd·branch 가 바뀔 때마다 스크롤이 돌지 않게 views 밖에 둔다.
 const labels = computed(
   () => new Map(workspaces.list.value.map((w) => [w.key, workspaceLabel(focusedPane(w))]))
 )
@@ -372,8 +372,8 @@ const urgent = computed(() => {
   return map
 })
 
-// columns 에서는 다른 workspace 의 칸도 보여 눌러 포커스를 줄 수 있으므로, 그 workspace 를 선택한다.
-// 포커스가 같은 칸으로 돌아올 때도 불려, 여기서 칸을 다시 보이면 스크롤해 둔 자리를 잃는다.
+// columns 에서는 다른 workspace 의 pane 도 보여 눌러 포커스를 줄 수 있으므로, 그 workspace 를 선택한다.
+// 포커스가 같은 pane 으로 돌아올 때도 불려, 여기서 pane 을 다시 보이면 스크롤해 둔 자리를 잃는다.
 function focusPane(workspace: number, pane: number): void {
   workspaces.focusPane(pane)
   workspaces.select(workspace)
@@ -392,13 +392,13 @@ watchEffect(() => {
   window.maru.setWindowPath(p?.cwd ?? '')
 })
 
-// workspace 가 화면보다 넓을 수 있어, workspace 가 아니라 포커스된 칸이 보이게 한다.
+// workspace 가 화면보다 넓을 수 있어, workspace 가 아니라 포커스된 pane 이 보이게 한다.
 function revealFocused(): void {
   const w = workspaces.selected()
   if (viewMode.value === 'columns' && w)
     terminals.get(w.focused)?.$el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
-// 포커스가 그대로여도 앞의 workspace 가 닫히거나 폭이 바뀌면 칸이 밀려나 views 도 지켜본다.
+// 포커스가 그대로여도 앞의 workspace 가 닫히거나 폭이 바뀌면 pane 이 밀려나 views 도 지켜본다.
 watch([viewMode, () => workspaces.selected()?.focused, views], revealFocused, { flush: 'post' })
 
 // 마우스 트래킹이 켜진 터미널에서 xterm 은 모든 wheel 을 preventDefault 한다. 프로그램에는 deltaY 만
@@ -646,7 +646,7 @@ void window.maru.restoreScreen().then((s) => {
     0 4px 24px rgb(0 0 0 / 0.65);
 }
 
-/* 사이드바가 펴지는 동안 칸은 이전 폭으로 남아, 자르지 않으면 Canvas 를 덮는다. */
+/* 사이드바가 펴지는 동안 pane 은 이전 폭으로 남아, 자르지 않으면 Canvas 를 덮는다. */
 .single {
   overflow: clip;
 }
@@ -709,13 +709,13 @@ void window.maru.restoreScreen().then((s) => {
 
 .pane {
   position: absolute;
-  /* 다른 클라이언트가 primary 면 fit 하지 않아, 터미널이 칸보다 넓으면 옆 칸과 패널을 덮는다.
-     hidden 이면 칸이 스크롤 영역이 되어, 칸보다 큰 터미널을 scrollIntoView 할 때 머리가 밀려 올라간다. */
+  /* 다른 클라이언트가 primary 면 fit 하지 않아, 터미널이 pane 보다 넓으면 옆 pane 과 패널을 덮는다.
+     hidden 이면 pane 이 스크롤 영역이 되어, pane 보다 큰 터미널을 scrollIntoView 할 때 헤더가 밀려 올라간다. */
   overflow: clip;
   background: var(--ground);
 }
 
-/* 좌우 칸의 경계선. 자리를 차지하지 않게 겹친다 — docs/architecture.md 의 "칸 경계와 셀 격자". */
+/* 좌우 pane 의 경계선. 자리를 차지하지 않게 겹친다 — docs/architecture.md 의 "pane 경계와 셀 격자". */
 .edge-left::before {
   content: '';
   position: absolute;

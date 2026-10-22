@@ -3,7 +3,7 @@ import { EPSILON, rects, type Layout, type Widths } from './layout'
 export type Size = { width: number; height: number }
 export type Box = { left: number; top: number; width: number; height: number }
 
-/** 칸 경계를 셀의 배수로 반올림한 px 상자. workspace 끝에 닿는 경계는 그대로 둔다 — docs/architecture.md 의 "칸 경계와 셀 격자". */
+/** pane 경계를 셀의 배수로 반올림한 px 상자. workspace 끝에 닿는 경계는 그대로 둔다 — docs/architecture.md 의 "pane 경계와 셀 격자". */
 export function snapRects(
   layout: Layout,
   size: Size,
