@@ -1,5 +1,5 @@
 import type { CDPSession, Page } from '@playwright/test'
-import { activeTerminal, expect, test, type Launched } from './app'
+import { activeTerminal, expect, screenshotPixels, test, type Launched } from './app'
 
 // 앱의 테마 배경(GHOSTTY). 이 색과 다른 픽셀을 글자가 그려진 픽셀로 본다.
 const GROUND = [0x28, 0x2c, 0x34]
@@ -34,27 +34,17 @@ async function cursor(page: Page): Promise<{ x: number; y: number; left: number 
 }
 
 async function inkTop(page: Page, clip: Box): Promise<number> {
-  const png = (await page.screenshot({ clip })).toString('base64')
-  return page.evaluate(
-    async ({ png, ground }) => {
-      const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0))
-      const img = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
-      const ctx = new OffscreenCanvas(img.width, img.height).getContext('2d')!
-      ctx.drawImage(img, 0, 0)
-      const { data, width, height } = ctx.getImageData(0, 0, img.width, img.height)
-      for (let y = 0; y < height; y++)
-        for (let x = 0; x < width; x++) {
-          const i = (y * width + x) * 4
-          const d =
-            Math.abs(data[i] - ground[0]) +
-            Math.abs(data[i + 1] - ground[1]) +
-            Math.abs(data[i + 2] - ground[2])
-          if (d > 96) return y
-        }
-      return -1
-    },
-    { png, ground: GROUND }
-  )
+  const { data, width, height } = await screenshotPixels(page, clip)
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4
+      const d =
+        Math.abs(data[i] - GROUND[0]) +
+        Math.abs(data[i + 1] - GROUND[1]) +
+        Math.abs(data[i + 2] - GROUND[2])
+      if (d > 96) return y
+    }
+  return -1
 }
 
 /**

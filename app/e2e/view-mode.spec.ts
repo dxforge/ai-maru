@@ -11,6 +11,7 @@ import {
   resizeBy,
   rows,
   run,
+  screenshotPixels,
   shellSize,
   setZoom,
   split,
@@ -31,6 +32,20 @@ async function inView(page: Page, el: Locator): Promise<boolean> {
   const area = (await page.locator('.terminals').boundingBox())!
   const box = (await el.boundingBox())!
   return box.x >= area.x - 1 && box.x + box.width <= area.x + area.width + 1
+}
+
+// 이 앱을 띄우는 인자로 macOS 의 "스크롤 막대 보기" 설정을 바꾼다. Cocoa 가 `-키 값` 인자를 설정으로 읽기 때문이다.
+const CLASSIC_SCROLLBARS = ['-AppleShowScrollBars', 'Always']
+const OVERLAY_SCROLLBARS = ['-AppleShowScrollBars', 'WhenScrolling']
+
+async function scrollbarHeight(page: Page): Promise<number> {
+  return page
+    .locator('.terminals')
+    .evaluate((el) => (el as HTMLElement).offsetHeight - el.clientHeight)
+}
+
+async function overflows(page: Page): Promise<boolean> {
+  return page.locator('.terminals').evaluate((el) => el.scrollWidth > el.clientWidth)
 }
 
 async function scrollArea(page: Page): Promise<{ left: number; right: number; bottom: number }> {
@@ -168,7 +183,7 @@ test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 pane 
   await newWorkspace(launched, 3)
   await toggleView(launched, 'columns')
   const area = page.locator('.terminals')
-  expect(await area.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true)
+  expect(await overflows(page)).toBe(true)
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
   await expect.poll(() => inView(page, workspaceViews(page).nth(0))).toBe(false)
 
@@ -268,19 +283,109 @@ test('columns 에서 앞의 workspace 가 닫혀도 포커스된 pane 이 화면
   await run(page, 'echo typed-$((1+1))', 'typed-2')
 })
 
-test('columns 에서 workspace 가 넘치기 시작해도 터미널의 줄 수는 그대로다', async ({ launch }) => {
-  const launched = await launch()
+test('고전 스크롤바 설정의 columns 에서 가로 스크롤바는 기본보다 낮고, workspace 가 넘치기 시작하거나 넘침이 그쳐도 그 높이와 터미널의 줄 수는 그대로다', async ({
+  launch
+}) => {
+  const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
   const { page } = launched
   await toggleView(launched, 'columns')
+  const standard = await page.evaluate(() => {
+    const el = document.createElement('div')
+    el.style.overflowX = 'scroll'
+    document.body.append(el)
+    const height = el.offsetHeight - el.clientHeight
+    el.remove()
+    return height
+  })
+  const bar = await scrollbarHeight(page)
+  expect(bar).toBeGreaterThan(0)
+  expect(bar).toBeLessThan(standard)
   const before = await shellSize(page)
 
   await newWorkspace(launched, 2)
-  expect(await page.locator('.terminals').evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(
-    true
-  )
+  expect(await overflows(page)).toBe(true)
   await workspaceItems(page).first().click()
 
+  expect(await scrollbarHeight(page)).toBe(bar)
   expect((await shellSize(page)).rows).toBe(before.rows)
+
+  await workspaceItems(page).nth(1).click()
+  await page.keyboard.type('exit\n')
+  await expect(workspaceItems(page)).toHaveCount(1)
+  expect(await overflows(page)).toBe(false)
+
+  expect(await scrollbarHeight(page)).toBe(bar)
+  expect((await shellSize(page)).rows).toBe(before.rows)
+})
+
+test('고전 스크롤바 설정에서 columns 가 넘치지 않을 때도 가로 스크롤바의 트랙이 바탕과 다른 색으로 보이고, 넘치면 thumb 이 트랙과 다른 색으로 보인다', async ({
+  launch
+}) => {
+  const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  expect(await overflows(page)).toBe(false)
+  const area = await scrollArea(page)
+  const bar = await scrollbarHeight(page)
+  const reds = async (x: number): Promise<{ ground: number; bar: number }> => {
+    const { data } = await screenshotPixels(
+      page,
+      { x, y: area.bottom - 1, width: 1, height: bar + 1 },
+      'css'
+    )
+    return { ground: data[0], bar: data[(1 + Math.floor(bar / 2)) * 4] }
+  }
+
+  const empty = await reds(area.left + 40)
+  expect(empty.bar).not.toBe(empty.ground)
+
+  await newWorkspace(launched, 2)
+  await workspaceItems(page).first().click()
+  await expect.poll(() => page.locator('.terminals').evaluate((el) => el.scrollLeft)).toBe(0)
+  const thumb = await reds(area.left + 40)
+  const track = await reds(area.right - 40)
+  expect(track.bar).toBe(empty.bar)
+  expect(thumb.bar).not.toBe(track.bar)
+})
+
+test('overlay 스크롤바 설정에서 columns 의 가로 스크롤바는 넘쳐도 자리를 차지하지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch({}, undefined, OVERLAY_SCROLLBARS)
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await toggleView(launched, 'columns')
+
+  expect(await overflows(page)).toBe(true)
+  expect(await scrollbarHeight(page)).toBe(0)
+})
+
+test('overlay 스크롤바 설정에서 columns 의 트랙은 스크롤할 때 보이지 않고, 스크롤바에 마우스를 올린 채 스크롤하면 칠해진다', async ({
+  launch
+}) => {
+  const launched = await launch({}, undefined, OVERLAY_SCROLLBARS)
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await toggleView(launched, 'columns')
+  const area = await scrollArea(page)
+  const red = async (x: number): Promise<number> =>
+    (await screenshotPixels(page, { x, y: area.bottom - 4, width: 1, height: 1 }, 'css')).data[0]
+  // 새 workspace 의 pane 을 따라 맨 오른쪽까지 스크롤했으므로 thumb 은 오른쪽 끝에 있다.
+  const [track, thumb] = [area.left + 40, area.right - 40]
+  const middle = (area.left + area.right) / 2
+  // 처음 넘칠 때 나타난 스크롤바가 사라지면 두 자리 모두 바탕색이다.
+  await expect.poll(async () => (await red(thumb)) - (await red(track))).toBe(0)
+  const ground = await red(track)
+
+  await page.mouse.move(middle, area.bottom - 200)
+  await page.mouse.wheel(-60, 0)
+  await expect.poll(() => red(thumb)).not.toBe(ground)
+  expect(await red(track)).toBe(ground)
+
+  await expect.poll(() => red(thumb)).toBe(ground)
+  await page.mouse.move(middle, area.bottom - 4)
+  await page.mouse.wheel(-60, 0)
+  await expect.poll(() => red(track)).not.toBe(ground)
 })
 
 test('columns 에서 선택한 workspace 의 테두리는 아래 변도 스크롤 영역 안에 그려진다', async ({
