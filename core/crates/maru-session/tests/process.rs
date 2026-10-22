@@ -767,14 +767,49 @@ fn assert_falls_back_to_sh(shell: Option<&std::ffi::OsStr>) {
     c.output_until("a0=[-sh]");
 }
 
+fn assert_falls_back_to_sh_and_sets_the_variable(shell: &std::ffi::OsStr) {
+    let p = start_without_shell_flag(tmpdir(), Some(shell), &[]);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("echo \"a0=[$0] sv=[$SHELL]\"\n");
+    c.output_until("a0=[-sh] sv=[/bin/sh]");
+}
+
 #[test]
 fn without_the_shell_flag_an_empty_shell_variable_falls_back_to_sh() {
-    assert_falls_back_to_sh(Some("".as_ref()));
+    assert_falls_back_to_sh_and_sets_the_variable("".as_ref());
 }
 
 #[test]
 fn without_the_shell_flag_a_missing_shell_variable_falls_back_to_sh() {
     assert_falls_back_to_sh(None);
+}
+
+#[test]
+fn without_the_shell_flag_a_shell_variable_naming_a_missing_file_falls_back_to_sh() {
+    assert_falls_back_to_sh_and_sets_the_variable("/nonexistent/zsh".as_ref());
+}
+
+#[test]
+fn without_the_shell_flag_a_shell_variable_naming_a_non_executable_file_falls_back_to_sh() {
+    let tmp = tmpdir();
+    let file = tmp.path().join("zsh");
+    std::fs::write(&file, "#!/bin/sh\necho wrong-shell\n").unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_falls_back_to_sh_and_sets_the_variable(file.as_os_str());
+}
+
+#[test]
+fn without_the_shell_flag_a_shell_variable_naming_a_directory_falls_back_to_sh() {
+    let tmp = tmpdir();
+    assert_falls_back_to_sh_and_sets_the_variable(tmp.path().as_os_str());
+}
+
+#[test]
+fn without_the_shell_flag_a_bare_shell_name_is_looked_up_in_path() {
+    let p = start_without_shell_flag(tmpdir(), Some("sh".as_ref()), &[]);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("echo \"a0=[$0] sv=[$SHELL]\"\n");
+    c.output_until("a0=[-sh] sv=[sh]");
 }
 
 #[test]
@@ -796,7 +831,11 @@ fn without_the_shell_flag_an_empty_shell_variable_runs_a_command_under_sh() {
 
 fn fake_shell(tmp: &tempfile::TempDir) -> PathBuf {
     let shell = tmp.path().join("myshell");
-    std::fs::write(&shell, "#!/bin/sh\nread line\necho from-myshell\n").unwrap();
+    std::fs::write(
+        &shell,
+        "#!/bin/sh\nread line\necho \"from-myshell sv=[$SHELL]\"\n",
+    )
+    .unwrap();
     std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
     shell
 }
@@ -808,7 +847,7 @@ fn without_the_shell_flag_the_shell_variable_names_the_shell() {
     let mut p = start_without_shell_flag(tmp, Some(shell.as_os_str()), &[]);
     let (mut c, _, _) = p.attach("primary", 80, 24);
     c.input("\n");
-    c.output_until("from-myshell");
+    c.output_until(&format!("from-myshell sv=[{}]", shell.display()));
     assert!(p.wait().success());
 }
 
@@ -820,6 +859,31 @@ fn the_shell_flag_wins_over_the_shell_variable() {
     let (mut c, _, _) = p.attach("primary", 80, 24);
     c.input("echo \"a0=[$0]\"\n");
     c.output_until("a0=[-sh]");
+}
+
+#[test]
+fn the_shell_flag_leaves_an_empty_shell_variable_to_the_shell() {
+    let p = start_env(tmpdir(), &[], &[("SHELL", Path::new(""))]);
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("echo \"a0=[$0] sv=[$SHELL]\"\n");
+    c.output_until("a0=[-sh] sv=[]");
+}
+
+#[test]
+fn a_shell_flag_naming_a_missing_file_fails() {
+    let tmp = tmpdir();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+        .args(["--id", "sess-test", "--shell", "/nonexistent/zsh"])
+        .arg("--dir")
+        .arg(tmp.path().join("s"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    assert!(!child.wait().unwrap().success());
+    let err = stderr(&mut child);
+    assert!(err.contains("cannot spawn /nonexistent/zsh"), "{err}");
 }
 
 #[test]

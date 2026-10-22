@@ -5,7 +5,9 @@ use crate::record::{self, Record};
 use crate::session::{Session, wait_exit};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::os::unix::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
@@ -26,7 +28,8 @@ pub struct Options {
     /// Session id: 1 to 64 ASCII letters, digits, '-' or '_'.
     #[arg(long)]
     pub id: String,
-    /// Shell to run as a login shell. Defaults to `$SHELL`, or `/bin/sh` when that is unset or empty.
+    /// Shell to run as a login shell. Defaults to `$SHELL`, or `/bin/sh` when that is unset, empty
+    /// or not executable; in the last two cases the shell also gets `SHELL=/bin/sh`.
     #[arg(long)]
     pub shell: Option<PathBuf>,
     /// Working directory of the shell. Defaults to this process's working directory.
@@ -66,16 +69,10 @@ pub async fn run(opts: Options) -> Result<()> {
     }
     std::fs::remove_file(&paths.socket).ok();
 
-    let shell = opts
-        .shell
-        .or_else(|| {
-            std::env::var_os("SHELL")
-                .filter(|s| !s.is_empty())
-                .map(PathBuf::from)
-        })
-        .unwrap_or_else(|| PathBuf::from("/bin/sh"));
+    let (shell, shell_var) = choose_shell(opts.shell, std::env::var_os("SHELL"));
     let session = Session::spawn(
         &shell,
+        shell_var.as_deref(),
         opts.cwd.as_deref(),
         &opts.command,
         opts.cols,
@@ -138,6 +135,33 @@ pub async fn run(opts: Options) -> Result<()> {
     })
     .await;
     Ok(())
+}
+
+/// `SHELL` 이 비었거나 실행할 수 없으면 자식의 `SHELL` 을 `/bin/sh` 로 바꿔 넣는다.
+/// 셸 안에서 `$SHELL` 을 실행하는 프로그램이 같은 값을 실행하다 실패하기 때문이다.
+fn choose_shell(flag: Option<PathBuf>, var: Option<OsString>) -> (PathBuf, Option<PathBuf>) {
+    const FALLBACK: &str = "/bin/sh";
+    if let Some(shell) = flag {
+        return (shell, None);
+    }
+    match var {
+        None => (PathBuf::from(FALLBACK), None),
+        Some(v) if is_executable(Path::new(&v)) => (PathBuf::from(v), None),
+        Some(_) => (PathBuf::from(FALLBACK), Some(PathBuf::from(FALLBACK))),
+    }
+}
+
+fn is_executable(path: &Path) -> bool {
+    let file =
+        |p: &Path| p.is_file() && nix::unistd::access(p, nix::unistd::AccessFlags::X_OK).is_ok();
+    if path.as_os_str().is_empty() {
+        return false;
+    }
+    if path.as_os_str().as_bytes().contains(&b'/') {
+        return file(path);
+    }
+    std::env::var_os("PATH")
+        .is_some_and(|dirs| std::env::split_paths(&dirs).any(|d| file(&d.join(path))))
 }
 
 fn publish(id: &str, paths: &Paths, session: &Session) -> Result<UnixListener> {

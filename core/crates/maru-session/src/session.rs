@@ -140,6 +140,7 @@ struct Screen {
 impl Session {
     pub fn spawn(
         shell: &Path,
+        shell_var: Option<&Path>,
         cwd: Option<&Path>,
         command: &[String],
         cols: u16,
@@ -152,7 +153,7 @@ impl Session {
             rows,
             outputs: Vec::new(),
         }));
-        let spawned = pty::spawn(shell, cwd, command, cols, rows)?;
+        let spawned = pty::spawn(shell, shell_var, cwd, command, cols, rows)?;
         let shell_pid = spawned.child.id();
         let (exit_tx, exit_rx) = watch::channel(None);
         let (drained_tx, drained_rx) = std::sync::mpsc::channel::<()>();
@@ -374,7 +375,7 @@ mod tests {
     }
 
     fn with_session(f: impl FnOnce(&Arc<Session>)) {
-        let s = Session::spawn(Path::new("/bin/sh"), None, &[], 80, 24).unwrap();
+        let s = Session::spawn(Path::new("/bin/sh"), None, None, &[], 80, 24).unwrap();
         f(&s);
         tokio::runtime::Runtime::new()
             .unwrap()

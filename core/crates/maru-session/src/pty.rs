@@ -31,6 +31,7 @@ fn winsize(cols: u16, rows: u16) -> nix::pty::Winsize {
 
 pub fn spawn(
     shell: &Path,
+    shell_var: Option<&Path>,
     cwd: Option<&Path>,
     command: &[String],
     cols: u16,
@@ -78,6 +79,9 @@ pub fn spawn(
         .stdin(Stdio::from(pair.slave.try_clone()?))
         .stdout(Stdio::from(pair.slave.try_clone()?))
         .stderr(Stdio::from(pair.slave));
+    if let Some(v) = shell_var {
+        cmd.env("SHELL", v);
+    }
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
