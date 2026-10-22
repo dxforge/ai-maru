@@ -202,7 +202,7 @@ test('설치되지 않은 글꼴은 알리고, 설치된 글꼴은 알리지 않
   writeConfig(dataDir, '[terminal]\nfont-family = "Menlo, No Such Font Maru"\n')
   const { page } = await launch()
   await expect(toast(page)).toHaveClass(/warning/)
-  await expect(toast(page)).toContainText('Font "No Such Font Maru" is not installed.')
+  await expect(toast(page)).toContainText('Font "No Such Font Maru" is not available.')
   await expect(toast(page)).not.toContainText('Font "Menlo"')
   writeConfig(dataDir, '[terminal]\nfont-family = "Menlo"\n')
   await expect(toast(page)).toHaveCount(0)
@@ -216,14 +216,18 @@ test('라틴 글자가 없는 글꼴도 설치됐으면 알리지 않는다', as
   await expect(toast(page)).toHaveCount(0)
 })
 
-test('CSS generic family 키워드는 generic family 로 적용하고 알리지 않는다', async ({
+test('CSS generic family 키워드는 generic family 로 적용하고, 쓸 수 없는 키워드만 알린다', async ({
   launch,
   dataDir
 }) => {
+  writeConfig(dataDir, '[terminal]\nfont-family = "monospace"\n')
+  const { page } = await launch()
+  expect(await terminalFont(page).then((f) => f.family)).toMatch(/^monospace, D2Coding/)
+  await expect(toast(page)).toHaveCount(0)
   // Chromium 은 `ui-monospace` 를 지원하지 않아 다음 이름인 `serif` 로 그린다.
   writeConfig(dataDir, '[terminal]\nfont-family = "ui-monospace, serif"\n')
-  const { page } = await launch()
-  await expect(toast(page)).toHaveCount(0)
+  await expect(toast(page)).toContainText('Font "ui-monospace" is not available.')
+  await expect(toast(page)).not.toContainText('Font "serif"')
   // computed style 은 `'serif'` 도 따옴표 없이 보여 주므로 그린 폭으로 잰다. 글꼴 이름으로 넣으면 없는
   // 글꼴이라 D2Coding 으로 그린다. generic family 로 넣으면 D2Coding 보다 넓은 serif 글꼴로 그려서,
   // D2Coding 으로 바꾸면 셸이 본 열 수가 는다.

@@ -75,7 +75,7 @@ describe('configToast', () => {
     expect(configToast({ ...report, warnings: ['Unknown key ui.'] }, ['Foo'], '~/x')).toEqual({
       level: 'warning',
       title: 'Applied config.toml with warnings',
-      lines: ['Unknown key ui.', 'Font "Foo" is not installed.'],
+      lines: ['Unknown key ui.', 'Font "Foo" is not available.'],
       detail: '~/x'
     })
   })

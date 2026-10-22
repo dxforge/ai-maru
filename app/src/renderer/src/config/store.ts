@@ -53,7 +53,7 @@ export function configToast(r: ConfigReport, missing: string[], detail: string):
       lines: [r.problem, r.first ? 'Using the default settings.' : 'Kept the previous settings.'],
       detail
     }
-  const lines = [...r.warnings, ...missing.map((name) => `Font "${name}" is not installed.`)]
+  const lines = [...r.warnings, ...missing.map((name) => `Font "${name}" is not available.`)]
   if (!lines.length) return null
   return { level: 'warning', title: 'Applied config.toml with warnings', lines, detail }
 }

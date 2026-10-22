@@ -63,8 +63,8 @@ const emit = defineEmits<{ close: [id: string] }>()
   color: var(--waiting);
 }
 
-/* 줄이 많아도 닫기 버튼이 창 밖으로 나가지 않게 내용만 스크롤한다. 80px 는 토스트의 위아래 여백과 창 아래 12px 를
-   넉넉히 덮는 값이다. */
+/* 줄이 많아도 닫기 버튼이 창 밖으로 나가지 않게 내용만 스크롤한다. 80px 는 토스트의 위아래 padding(22px)·border(2px)와
+   창 아래 12px 를 더한 36px 보다 크게 잡은 값이다. */
 .body {
   flex: 1;
   min-width: 0;

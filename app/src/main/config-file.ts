@@ -23,16 +23,16 @@ export function readConfigFile(path: string): ConfigRead {
 }
 
 /**
- * 한 번의 저장에 오는 알림을 묶는 시간이다. vim `:w` 한 번에 알림 10개가 첫 알림부터 최대 40.9ms 에 걸쳐 왔고,
+ * 한 번의 저장에 오는 알림을 묶는 시간이다. vim `:w` 한 번에 알림 10개가 첫 알림부터 최대 40.9ms 에 걸쳐 왔다.
  * `writeFileSync` 와 임시 파일 `rename` 은 알림이 한꺼번에 왔다. 그래서 40.9ms 를 넘는 가장 작은 50ms 단위
  * 값으로 둔다.
  */
 export const CONFIG_SETTLE_MS = 50
 
 /**
- * `dir` 안의 `config.toml` 이 생기거나 바뀌거나 지워지면 `onChange` 를 부른다. 돌려준 함수가 감시를 끈다.
- * vim 처럼 파일을 지우고 새로 쓰는 저장에서 파일 감시는 끊기므로 폴더를 지켜본다. 폴더가 없으면 부모를
- * 지켜보다 폴더가 생기면 옮겨 간다.
+ * `dir` 안의 `config.toml` 이 생기거나 바뀌거나 지워지면 `onChange` 를 부른다. vim 처럼 파일을 지우고 새로
+ * 쓰는 저장에서는 파일 감시가 끊기므로 폴더를 감시한다. 폴더가 없으면 부모 폴더를 감시하다가 폴더가 생기면 그
+ * 폴더를 감시한다.
  */
 export function watchConfig(dir: string, onChange: () => void): () => void {
   let watcher: FSWatcher | undefined

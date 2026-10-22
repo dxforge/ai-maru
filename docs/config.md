@@ -25,7 +25,9 @@ line-height = 1.3
 
 적은 글꼴은 기본 글꼴 목록 앞에 붙는다. 적은 글꼴에 없는 글자(한글, Nerd Font 아이콘 등)는 뒤의 기본 글꼴이 그린다. 이름은 따옴표로 감싸도 되고 감싸지 않아도 된다(`"'Sarasa Term K', Menlo"`). 이름 안에 `"` `'` `;` `\` 나 줄바꿈 같은 제어 문자가 있거나 빈 이름이 있으면 값 전체를 버리고 기본 글꼴을 쓴다.
 
-`serif`·`sans-serif`·`monospace`·`cursive`·`fantasy`·`system-ui`·`ui-serif`·`ui-sans-serif`·`ui-monospace`·`ui-rounded`·`math`·`emoji`·`fangsong` 은 CSS generic family 키워드로 넣는다. 따옴표로 감싸 적어도 키워드로 다룬다. 앱의 Chromium 은 `ui-serif`·`ui-sans-serif`·`ui-monospace`·`ui-rounded` 를 지원하지 않아 그다음 글꼴로 그린다. 그래서 macOS 의 시스템 고정폭 글꼴(SF Mono)은 `ui-monospace` 로 고를 수 없고, SF Mono 를 따로 설치하지 않았으면 `SF Mono` 라는 이름으로도 고를 수 없다. 키워드는 설치 여부를 알리지 않는다. 그 밖의 이름은 따옴표로 감싸 글꼴 이름으로 넣는다.
+`serif`·`sans-serif`·`monospace`·`cursive`·`fantasy`·`system-ui`·`ui-serif`·`ui-sans-serif`·`ui-monospace`·`ui-rounded`·`math`·`emoji`·`fangsong` 은 CSS generic family 키워드로 넣는다. 따옴표로 감싸 적어도 키워드로 다룬다. 앱의 Chromium 은 `ui-serif`·`ui-sans-serif`·`ui-monospace`·`ui-rounded` 를 지원하지 않아 그다음 글꼴로 그린다. 그래서 macOS 의 시스템 고정폭 글꼴(SF Mono)은 `ui-monospace` 로 고를 수 없다. 그 밖의 이름은 따옴표로 감싸 글꼴 이름으로 넣는다.
+
+앱은 적은 이름마다 그린 글자 폭을 재서 쓸 수 없는 글꼴과 키워드를 토스트로 알린다. 위의 `ui-` 키워드 넷과 `math`·`emoji`·`fangsong` 도 토스트에 나온다. 이 셋을 앱의 Chromium 이 지원하는지는 확인하지 않았다.
 
 ### 범위를 벗어나거나 잘못 적은 값
 
@@ -43,5 +45,5 @@ line-height = 1.3
 
 창 왼쪽 아래에 토스트가 뜬다. 문제가 남아 있는 동안 떠 있고, 고쳐서 문제 없이 읽히면 닫힌다. 닫기 버튼으로 닫아도 다시 저장하면 다시 뜬다.
 
-- TOML 문법 오류나 읽기 오류: 줄·칸이나 오류 메시지를 보인다. 마지막으로 적용한 값을 그대로 쓴다. 앱을 띄울 때 오류가 있으면 기본값을 쓴다.
-- 범위를 벗어나 맞춘 값, 기본값을 쓴 값, 모르는 키, 이 Mac 에 설치되지 않은 글꼴: 값을 적용한 뒤 무엇이 달랐는지 보인다.
+- TOML 문법 오류나 읽기 오류: 줄·열 번호나 오류 메시지를 보인다. 마지막으로 적용한 값을 그대로 쓴다. 앱을 띄울 때 오류가 있으면 기본값을 쓴다.
+- 범위를 벗어나 맞춘 값, 기본값을 쓴 값, 모르는 키, 쓸 수 없는 글꼴과 키워드: 값을 적용한 뒤 무엇이 달랐는지 보인다.

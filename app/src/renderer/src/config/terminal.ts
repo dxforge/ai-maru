@@ -9,7 +9,7 @@ export const DEFAULT_FONT: TerminalFont = {
   lineHeight: LINE_HEIGHT
 }
 
-/** `names` 는 사용자가 적은 글꼴 이름이다. `missingFonts`(`fonts.ts`)가 설치 여부를 잴 때 쓴다. */
+/** `names` 는 사용자가 적은 글꼴 이름이다. `missingFonts`(`fonts.ts`)가 쓸 수 있는지 잴 때 쓴다. */
 export type ConfigResult =
   | { ok: false; problem: string }
   | { ok: true; font: TerminalFont; names: string[]; warnings: string[] }

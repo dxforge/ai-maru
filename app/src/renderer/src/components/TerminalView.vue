@@ -127,8 +127,7 @@ const cell = (d: IRenderDimensions): Size => ({
 let lastCell: Size | undefined
 /**
  * 창을 DPR 이 다른 화면으로 옮기거나 글꼴 설정이 바뀌면 셀 크기가 바뀐다. 이때 pane 크기는 그대로라
- * `ResizeObserver` 가 돌지 않으므로, 이 함수가 열·행 수를 다시 맞춘다. xterm 은 줄 높이만 바뀔 때
- * `onDimensionsChange` 를 내지 않으므로, 글꼴 설정을 바꾸는 쪽도 이 함수를 부른다.
+ * `ResizeObserver` 가 돌지 않으므로, 이 함수가 열·행 수를 다시 맞춘다.
  */
 function checkCell(force = false): void {
   if (!term.dimensions) return
@@ -220,6 +219,7 @@ const intersection = window.maru.webgl
     })
   : undefined
 watch(() => shown, updateRenderer)
+// xterm 은 줄 높이만 바뀌면 `onDimensionsChange` 를 내지 않으므로 여기서 `checkCell` 을 부른다.
 watch(
   () => font,
   (f) => {

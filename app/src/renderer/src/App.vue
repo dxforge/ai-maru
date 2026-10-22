@@ -166,7 +166,7 @@ function toggleFold(key: number): void {
 // 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 칸마다 열 수가 갈린다(#58).
 const SIDEBAR_WIDTH = 282
 const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
-// 토스트는 사이드바 안쪽 양옆 12px 을 비운다. 사이드바를 접거나 좁혀도 기본 폭일 때보다 좁히지 않는다.
+// 토스트는 사이드바 안쪽 양옆 12px 을 비운다.
 const toastWidth = computed(
   () => Math.max(sidebarOpen.value ? sidebarWidth.value : 0, SIDEBAR_WIDTH) - 24
 )
