@@ -76,7 +76,10 @@ describe('watchConfig', () => {
   it('한 번의 저장 알림이 50ms 간격의 두 묶음으로 와도 한 번만 부른다', () => {
     mkdirSync(dir)
     let notify!: () => void
-    vi.mocked(watch).mockImplementationOnce(((_dir: string, listener: (e: string, n: string) => void) => {
+    vi.mocked(watch).mockImplementationOnce(((
+      _dir: string,
+      listener: (e: string, n: string) => void
+    ) => {
       notify = () => listener('change', 'config.toml')
       return Object.assign(new EventEmitter(), { close: () => {} })
     }) as never)
