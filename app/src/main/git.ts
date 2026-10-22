@@ -47,8 +47,9 @@ const REFTABLE_HEAD = 'ref: refs/heads/.invalid'
 const run = promisify(execFile)
 
 /**
- * 멈춘 git 에 매달리지 않기 위한 상한이라 넉넉히 둔다 — 늦게 온 답은 `lastRead`(`renderer/src/workspace/store.ts`)가
- * 버린다. 부하가 걸린 Mac(load 100)에서 `git symbolic-ref` 를 589번 재니 최대 2984ms 였다. 그 세 배쯤으로 둔다.
+ * 멈춘 git 을 끝없이 기다리지 않기 위한 상한이므로 넉넉히 둔다. 기다리는 동안 같은 pane 에서 다시 읽기를 청하면 앞
+ * 답은 `lastRead`(`renderer/src/workspace/store.ts`)가 버린다. load average 100 인 Mac 에서 `git symbolic-ref` 를
+ * 589번 재니 가장 오래 걸린 것이 2984ms 였다. 그 세 배쯤으로 둔다.
  */
 const GIT_TIMEOUT_MS = 10_000
 

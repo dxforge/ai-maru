@@ -46,14 +46,19 @@ async function calls(w: { count: () => number }, n: number): Promise<void> {
   expect(w.count()).toBe(n)
 }
 
+async function watchedAfter(from: number, path: string): Promise<void> {
+  const paths = (): unknown[] => vi.mocked(watch).mock.calls.map((c) => c[0])
+  await vi.waitFor(() => expect(paths().slice(from)).toContain(path), { timeout: 2000 })
+}
+
 /**
- * 폴더가 생겨 `watchConfig` 가 폴더 감시를 다시 걸고(마지막 `watch` 호출이 `dir`), 그때 한 번 부르는 `onChange`
- * 가 지나간 뒤 호출 수가 머문 값을 준다. 고정 시간을 기다리는 것은 폴더가 생겼다는 알림이 그 안에 온다는 가정이라,
- * 알림이 늦으면 그 호출을 세기 전에 다음 검사로 넘어간다.
+ * 폴더가 생겨 `watchConfig` 가 폴더 감시를 다시 걸고, 그때 한 번 부르는 `onChange` 까지 지나간 뒤의 호출 수를
+ * 준다. 마지막 `watch` 호출만 보면 `watching()` 이 처음 건 `watch(dir)` 로도 참이 되므로, 이 함수를 부른 뒤의
+ * 호출을 본다.
  */
 async function rewatched(w: { count: () => number }): Promise<number> {
   const seen = w.count()
-  await vi.waitFor(() => expect(vi.mocked(watch).mock.lastCall?.[0]).toBe(dir), { timeout: 2000 })
+  await watchedAfter(vi.mocked(watch).mock.calls.length, dir)
   await vi.waitFor(() => expect(w.count()).toBeGreaterThan(seen), { timeout: 2000 })
   await sleep(CONFIG_SETTLE_MS * 3)
   return w.count()
@@ -108,8 +113,8 @@ describe('watchConfig', () => {
     expect(count()).toBe(1)
   })
 
-  // 실제 파일을 두 번 쓰면 그 사이에 테스트 프로세스가 `CONFIG_SETTLE_MS` 넘게 밀릴 때 두 번 불리므로, 묶는 동작은
-  // 알림을 직접 보내 잰다.
+  // 실제 파일을 두 번 쓰면 그 사이에 테스트 프로세스가 `CONFIG_SETTLE_MS` 넘게 멈출 때 두 번 불리므로, 알림을 묶는
+  // 동작은 알림을 직접 보내 검사한다.
   it('한 번에 여러 번 써서 알림이 잇달아 와도 묶는 시간이 지난 뒤 한 번만 부른다', () => {
     const { notify, count } = fakeWatching()
     for (let i = 0; i < 4; i++) notify()
@@ -147,7 +152,11 @@ describe('watchConfig', () => {
     mkdirSync(dir)
     writeFileSync(file, 'a = 1\n')
     const w = await watching()
+    const from = vi.mocked(watch).mock.calls.length
     rmSync(dir, { recursive: true })
+    // `watching()` 전에 쓴 파일의 알림이 늦게 와 호출 수가 먼저 차면, 부모 폴더 감시로 넘어가기 전에 폴더를 다시
+    // 만들어 폴더 감시를 다시 거는 경로를 검사하지 못한다. 그래서 호출 수보다 부모 폴더 감시를 먼저 기다린다.
+    await watchedAfter(from, root)
     await vi.waitFor(() => expect(w.count()).toBeGreaterThanOrEqual(1), { timeout: 2000 })
     mkdirSync(dir)
     const before = await rewatched(w)
