@@ -15,6 +15,10 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { gitHead } from './git'
 
+// 테스트마다 진짜 git 을 1~4번 실행한다. load average 100 인 Mac 에서 `git symbolic-ref` 하나가 최대 2984ms
+// 걸렸으므로(`git.ts` 의 `GIT_TIMEOUT_MS` 주석), 기본 5초로는 부하에서 넘긴다.
+vi.setConfig({ testTimeout: 15_000 })
+
 const dirs: string[] = []
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -254,7 +258,7 @@ describe('reftable 저장소의 gitHead', () => {
     expect(await gitHead(dir, 2000)).toEqual({ repo: 'rt' })
     expect(Date.now() - start).toBeLessThan(4000)
     expect(fake.calls()).toHaveLength(1)
-  }, 15_000)
+  })
 
   it('HEAD 가 branch 를 가리키지 않는데 커밋 해시 읽기가 timeout 안에 끝나지 않으면 branch 없이 저장소 이름만 쓴다', async () => {
     const dir = repo('rt', 'reftable')
@@ -264,12 +268,12 @@ describe('reftable 저장소의 gitHead', () => {
     expect(await gitHead(dir, 2000)).toEqual({ repo: 'rt' })
     expect(Date.now() - start).toBeLessThan(4000)
     expect(fake.calls()).toHaveLength(2)
-  }, 15_000)
+  })
 
   it('timeout 을 주지 않으면 기본값을 써서, 2초 넘게 걸린 git 의 답도 쓴다', async () => {
     const dir = repo('rt', 'reftable')
     const fake = fakeGit('/bin/sleep 2.2; echo refs/heads/slow')
     vi.stubEnv('PATH', fake.bin)
     expect(await gitHead(dir)).toEqual({ repo: 'rt', branch: 'slow' })
-  }, 15_000)
+  })
 })
