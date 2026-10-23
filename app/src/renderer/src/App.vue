@@ -59,7 +59,7 @@ const config = createConfig(window.maru.config, (r) => {
   else toasts.close('config')
 })
 window.maru.onConfig(config.apply)
-const headerBottom = computed(() => config.header.value === 'bottom')
+const headerBottom = computed(() => config.layout.value.header === 'bottom')
 
 function stepFont(by: 1 | -1): void {
   const w = workspaces.selected()
@@ -655,7 +655,13 @@ void window.maru.restoreScreen().then((s) => {
       :width="toastWidth"
       @close="toasts.close"
     />
-    <CommandPalette v-if="paletteOpen" ref="palette" @run="runCommand" @close="closePalette" />
+    <CommandPalette
+      v-if="paletteOpen"
+      ref="palette"
+      :position="config.layout.value.palette"
+      @run="runCommand"
+      @close="closePalette"
+    />
   </div>
 </template>
 

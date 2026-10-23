@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { configToast, createConfig, type ConfigReport } from './store'
-import { DEFAULT_FONT } from './terminal'
+import { DEFAULT_FONT, DEFAULT_LAYOUT } from './terminal'
 
 const PATH = '/h/.ai-maru/config.toml'
 
@@ -38,17 +38,24 @@ describe('createConfig', () => {
     expect(config.font.value).toEqual(DEFAULT_FONT)
   })
 
-  it('띄울 때 문법 오류면 헤더는 아래다', () => {
-    expect(setup('[layout\n').config.header.value).toBe('bottom')
+  it('띄울 때 문법 오류면 헤더와 팔레트는 아래다', () => {
+    expect(setup('[layout\n').config.layout.value).toEqual(DEFAULT_LAYOUT)
   })
 
-  it('헤더 위치를 읽고, 문법 오류면 앞의 값을 두며, 파일이 지워지면 아래로 돌아간다', () => {
-    const { config } = setup('[layout]\nheader = "top"\n')
-    expect(config.header.value).toBe('top')
+  it('헤더·팔레트 위치를 읽고, 문법 오류면 앞의 값을 두며, 파일이 지워지면 아래로 돌아간다', () => {
+    const { config } = setup('[layout]\nheader = "top"\npalette = "top"\n')
+    expect(config.layout.value).toEqual({ header: 'top', palette: 'top' })
     config.apply({ path: PATH, text: '[layout]\nheader =\n' })
-    expect(config.header.value).toBe('top')
+    expect(config.layout.value).toEqual({ header: 'top', palette: 'top' })
     config.apply({ path: PATH, text: null })
-    expect(config.header.value).toBe('bottom')
+    expect(config.layout.value).toEqual(DEFAULT_LAYOUT)
+  })
+
+  it('같은 값이면 layout 을 바꾸지 않는다', () => {
+    const { config } = setup('[layout]\nheader = "top"\n')
+    const before = config.layout.value
+    config.apply({ path: PATH, text: '[layout]\nheader = "top"\n' })
+    expect(config.layout.value).toBe(before)
   })
 
   it('같은 값이면 font 를 바꾸지 않는다', () => {

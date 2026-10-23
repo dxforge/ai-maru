@@ -13,15 +13,21 @@ export const DEFAULT_FONT: TerminalFont = {
   lineHeight: LINE_HEIGHT
 }
 
-/** pane 헤더와 columns 보기의 workspace 헤더가 놓이는 쪽이다. */
-export type HeaderPosition = 'top' | 'bottom'
+export type Position = 'top' | 'bottom'
 
-export const DEFAULT_HEADER: HeaderPosition = 'bottom'
+/** `header` 는 pane 헤더와 columns 보기의 workspace 헤더, `palette` 는 명령 팔레트가 놓이는 쪽이다. */
+export type LayoutConfig = { header: Position; palette: Position }
+
+export const DEFAULT_LAYOUT: LayoutConfig = { header: 'bottom', palette: 'bottom' }
+
+export function sameLayout(a: LayoutConfig, b: LayoutConfig): boolean {
+  return a.header === b.header && a.palette === b.palette
+}
 
 /** `names` 는 사용자가 적은 글꼴 이름이다. `missingFonts`(`fonts.ts`)가 쓸 수 있는지 잴 때 쓴다. */
 export type ConfigResult =
   | { ok: false; problem: string }
-  | { ok: true; font: TerminalFont; header: HeaderPosition; names: string[]; warnings: string[] }
+  | { ok: true; font: TerminalFont; layout: LayoutConfig; names: string[]; warnings: string[] }
 
 // xterm 은 1 보다 작은 `lineHeight` 를 받으면 오류를 던지므로 줄 높이 하한을 1 로 둔다.
 const RANGES = {
@@ -31,7 +37,7 @@ const RANGES = {
 
 const TABLES = {
   terminal: new Set<string>(['font-family', ...Object.keys(RANGES)]),
-  layout: new Set<string>(['header'])
+  layout: new Set<string>(Object.keys(DEFAULT_LAYOUT))
 }
 
 export function stepFontSize(size: number, by: 1 | -1): number {
@@ -102,8 +108,8 @@ export function parseConfig(text: string): ConfigResult {
   for (const key of Object.keys(doc))
     if (!Object.hasOwn(TABLES, key)) warnings.push(`Unknown key ${key}.`)
   const { font, names } = parseTerminal(table(doc, 'terminal', warnings), warnings)
-  const header = parseLayout(table(doc, 'layout', warnings), warnings)
-  return { ok: true, font, header, names, warnings }
+  const layout = parseLayout(table(doc, 'layout', warnings), warnings)
+  return { ok: true, font, layout, names, warnings }
 }
 
 function table(doc: Table, name: keyof typeof TABLES, warnings: string[]): Table {
@@ -117,12 +123,15 @@ function table(doc: Table, name: keyof typeof TABLES, warnings: string[]): Table
   return value
 }
 
-function parseLayout(layout: Table, warnings: string[]): HeaderPosition {
-  const header = layout.header
-  if (header === undefined) return DEFAULT_HEADER
-  if (header === 'top' || header === 'bottom') return header
-  warnings.push(`layout.header must be "top" or "bottom", using ${DEFAULT_HEADER}.`)
-  return DEFAULT_HEADER
+function parseLayout(layout: Table, warnings: string[]): LayoutConfig {
+  const result = { ...DEFAULT_LAYOUT }
+  for (const key of Object.keys(DEFAULT_LAYOUT) as (keyof LayoutConfig)[]) {
+    const value = layout[key]
+    if (value === undefined) continue
+    if (value === 'top' || value === 'bottom') result[key] = value
+    else warnings.push(`layout.${key} must be "top" or "bottom", using ${DEFAULT_LAYOUT[key]}.`)
+  }
+  return result
 }
 
 function parseTerminal(

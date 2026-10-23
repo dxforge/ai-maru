@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_FONT, fontNames, fontSizeOverride, parseConfig, stepFontSize } from './terminal'
+import {
+  DEFAULT_FONT,
+  DEFAULT_LAYOUT,
+  fontNames,
+  fontSizeOverride,
+  parseConfig,
+  stepFontSize
+} from './terminal'
 
 const FAMILY = "D2Coding, Menlo, 'Symbols Nerd Font Mono', monospace"
 
@@ -14,11 +21,12 @@ describe('parseConfig', () => {
     expect(parseConfig('')).toEqual({
       ok: true,
       font: DEFAULT_FONT,
-      header: 'bottom',
+      layout: DEFAULT_LAYOUT,
       names: [],
       warnings: []
     })
     expect(DEFAULT_FONT).toEqual({ fontFamily: FAMILY, fontSize: 14, lineHeight: 1.2 })
+    expect(DEFAULT_LAYOUT).toEqual({ header: 'bottom', palette: 'bottom' })
   })
 
   it('세 키를 읽는다', () => {
@@ -101,24 +109,27 @@ describe('parseConfig', () => {
     ])
   })
 
-  it.each(['top', 'bottom'] as const)('layout.header 를 읽는다: %s', (value) => {
-    const r = ok(`[layout]\nheader = "${value}"\n`)
-    expect(r.header).toBe(value)
+  it.each(['header', 'palette'] as const)('layout.%s 를 따로 읽는다', (key) => {
+    const r = ok(`[layout]\n${key} = "top"\n`)
+    expect(r.layout).toEqual({ ...DEFAULT_LAYOUT, [key]: 'top' })
     expect(r.warnings).toEqual([])
   })
 
-  it.each(['"Top"', '"left"', '1', 'true'])(
-    'layout.header 가 top·bottom 이 아니면 bottom 을 쓴다: %s',
+  it.each(['"Top"', '"left"', '1', 'true', '["top"]'])(
+    'layout.header·palette 가 top·bottom 이 아니면 bottom 을 쓴다: %s',
     (value) => {
-      const r = ok(`[layout]\nheader = ${value}\n`)
-      expect(r.header).toBe('bottom')
-      expect(r.warnings).toEqual(['layout.header must be "top" or "bottom", using bottom.'])
+      const r = ok(`[layout]\nheader = ${value}\npalette = ${value}\n`)
+      expect(r.layout).toEqual(DEFAULT_LAYOUT)
+      expect(r.warnings).toEqual([
+        'layout.header must be "top" or "bottom", using bottom.',
+        'layout.palette must be "top" or "bottom", using bottom.'
+      ])
     }
   )
 
   it('layout 이 표가 아니면 기본값을 쓴다', () => {
     const r = ok('layout = "top"\n')
-    expect(r.header).toBe('bottom')
+    expect(r.layout).toEqual(DEFAULT_LAYOUT)
     expect(r.warnings).toEqual(['layout must be a table, using the defaults.'])
   })
 

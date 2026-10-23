@@ -11,7 +11,8 @@ import {
   shellSize,
   test,
   workspaceGroups,
-  workspaceItems
+  workspaceItems,
+  writeConfig
 } from './app'
 
 function palette(page: Page) {
@@ -317,39 +318,86 @@ test('팔레트에서 Enter 로 New Workspace 를 실행하면 팔레트가 닫�
   await typesIntoTerminal(page, 'new')
 })
 
-test('↓·↑ 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 뒤 키는 터미널로 간다', async ({
+for (const [position, label, arrows, next, previous] of [
+  ['bottom', '아래', '↑·↓', 'ArrowUp', 'ArrowDown'],
+  ['top', '위', '↓·↑', 'ArrowDown', 'ArrowUp']
+] as const) {
+  test(`팔레트가 ${label}일 때 ${arrows} 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 뒤 키는 터미널로 간다`, async ({
+    launch,
+    dataDir
+  }) => {
+    if (position === 'top') writeConfig(dataDir, '[layout]\npalette = "top"\n')
+    const launched = await launch()
+    const { page } = launched
+    const canvas = page.locator('aside.canvas')
+    await expect(canvas).toBeHidden()
+
+    await openPalette(launched)
+    await page.keyboard.type('toggle')
+    await expect(items(page)).toHaveText([
+      'Toggle Sidebar⌘B',
+      'Toggle Canvas⌥⌘B',
+      'Toggle View Mode⌘\\'
+    ])
+    for (const i of [1, 2, 0, 1]) {
+      await page.keyboard.press(next)
+      await expect(items(page).nth(i)).toHaveClass(/selected/)
+    }
+    await page.keyboard.press('Enter')
+    await expect(palette(page)).toHaveCount(0)
+    await expect(canvas).toBeVisible()
+    await typesIntoTerminal(page, 'shown')
+
+    await openPalette(launched)
+    await page.keyboard.type('toggle')
+    for (const i of [2, 1]) {
+      await page.keyboard.press(previous)
+      await expect(items(page).nth(i)).toHaveClass(/selected/)
+    }
+    await page.keyboard.press('Enter')
+    await expect(canvas).toBeHidden()
+    await typesIntoTerminal(page, 'hidden')
+  })
+}
+
+/** `gap` 은 첫 후보(또는 빈 줄)의 아래에서 입력줄의 위까지다. 입력줄이 아래면 입력줄의 여백 6px 이고, 위면 음수다. */
+function paletteLayout(page: Page) {
+  return page.evaluate(() => {
+    const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect()
+    const box = rect('.palette')
+    const query = rect('.palette .query')
+    const first = rect('.palette .item, .palette .empty')
+    return { top: box.top, bottom: innerHeight - box.bottom, gap: query.top - first.bottom }
+  })
+}
+
+test('팔레트는 기본으로 창 아래 8px 안쪽에 뜨고, 입력줄이 맨 아래, 첫 후보와 빈 줄은 그 바로 위에 놓인다', async ({
   launch
 }) => {
   const launched = await launch()
   const { page } = launched
-  const canvas = page.locator('aside.canvas')
-  await expect(canvas).toBeHidden()
-
   await openPalette(launched)
-  await page.keyboard.type('toggle')
-  await expect(items(page)).toHaveText([
-    'Toggle Sidebar⌘B',
-    'Toggle Canvas⌥⌘B',
-    'Toggle View Mode⌘\\'
-  ])
-  for (const i of [1, 2, 0, 1]) {
-    await page.keyboard.press('ArrowDown')
-    await expect(items(page).nth(i)).toHaveClass(/selected/)
-  }
-  await page.keyboard.press('Enter')
-  await expect(palette(page)).toHaveCount(0)
-  await expect(canvas).toBeVisible()
-  await typesIntoTerminal(page, 'shown')
+  await expect(items(page).first()).toHaveClass(/selected/)
+  expect(await paletteLayout(page)).toMatchObject({ bottom: 8, gap: 6 })
+  await page.keyboard.type('xyz')
+  await expect(palette(page)).toContainText('No matching commands')
+  expect(await paletteLayout(page)).toMatchObject({ gap: 6 })
+})
 
+test('layout.palette = "top" 이면 팔레트는 창 위 8px 안쪽에 뜨고 입력줄이 맨 위에 놓이며, 열린 채로 고쳐도 옮긴다', async ({
+  launch,
+  dataDir
+}) => {
+  writeConfig(dataDir, '[layout]\npalette = "top"\n')
+  const launched = await launch()
+  const { page } = launched
   await openPalette(launched)
-  await page.keyboard.type('toggle')
-  for (const i of [2, 1]) {
-    await page.keyboard.press('ArrowUp')
-    await expect(items(page).nth(i)).toHaveClass(/selected/)
-  }
-  await page.keyboard.press('Enter')
-  await expect(canvas).toBeHidden()
-  await typesIntoTerminal(page, 'hidden')
+  const above = await paletteLayout(page)
+  expect(above.top).toBe(8)
+  expect(above.gap).toBeLessThan(0)
+  writeConfig(dataDir, '[layout]\npalette = "bottom"\n')
+  await expect.poll(() => paletteLayout(page)).toMatchObject({ bottom: 8, gap: 6 })
+  await expect(palette(page).locator('.query')).toBeFocused()
 })
 
 test('항목을 누르거나, 마우스를 올린 항목에서 Enter 를 누르면 그 명령을 실행한다', async ({
