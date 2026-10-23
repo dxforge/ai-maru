@@ -305,11 +305,12 @@ impl VtTerminal {
                 &mut out_len,
             )
         };
-        if rc == ffi::GHOSTTY_NO_VALUE {
-            return Ok(Vec::new());
-        }
-        if rc != ffi::GHOSTTY_SUCCESS || out_ptr.is_null() {
+        if rc != ffi::GHOSTTY_SUCCESS {
             bail!("ghostty_formatter_format_alloc rc={rc}");
+        }
+        // 빈 출력은 NULL 과 0 으로 온다.
+        if out_ptr.is_null() {
+            return Ok(Vec::new());
         }
         // SAFETY: 성공 시 (out_ptr, out_len) 은 유효하다. 복사한 뒤 같은 할당자·길이로 해제한다.
         let raw = unsafe { std::slice::from_raw_parts(out_ptr, out_len) };
@@ -537,6 +538,63 @@ mod tests {
         let mut c = term();
         c.write(&payload);
         c
+    }
+
+    fn assert_replay_keeps_links(t: &VtTerminal, uris: &[&str]) {
+        let s = vt(&replayed(t));
+        assert_eq!(s, vt(t));
+        for uri in uris {
+            assert!(s.contains(uri), "{uri}: {s:?}");
+        }
+    }
+
+    // 닫힌 링크는 커서 상태가 아니라 셀에만 남으므로, 셀마다의 hyperlink 를 싣는지 본다.
+    #[test]
+    fn replay_carries_the_hyperlinks_of_cells() {
+        let mut t = term();
+        t.write(b"see \x1b]8;;https://example.com/osc\x1b\\repo#1\x1b]8;;\x1b\\ and ");
+        t.write(b"\x1b]8;id=xyz;https://example.com/id\x1b\\same\x1b]8;;\x1b\\ done\r\n$ ");
+        assert_replay_keeps_links(
+            &t,
+            &["https://example.com/osc", "id=xyz;https://example.com/id"],
+        );
+    }
+
+    #[test]
+    fn replay_keeps_links_in_scrollback_and_across_wrapped_rows() {
+        let mut t = term();
+        t.write(b"\x1b]8;;https://example.com/old\x1b\\old\x1b]8;;\x1b\\\r\n");
+        for i in 0..100 {
+            t.write(format!("line{i}\r\n").as_bytes());
+        }
+        t.write("x".repeat(78).as_bytes());
+        t.write(b"\x1b]8;;https://example.com/wrap\x1b\\WRAP\x1b]8;;\x1b\\\r\n$ ");
+        assert_replay_keeps_links(&t, &["https://example.com/old", "https://example.com/wrap"]);
+    }
+
+    #[test]
+    fn replay_keeps_links_on_and_behind_the_alternate_screen() {
+        let mut t = term();
+        t.write(b"\x1b]8;;https://example.com/behind\x1b\\behind\x1b]8;;\x1b\\\r\n$ vim\r\n");
+        t.write(b"\x1b[?1049h\x1b[H~ \x1b]8;;https://example.com/on\x1b\\on\x1b]8;;\x1b\\ ~");
+        let mut c = replayed(&t);
+        assert!(vt(&c).contains("https://example.com/on"), "{:?}", vt(&c));
+        c.write(b"\x1b[?1049l");
+        assert!(
+            vt(&c).contains("https://example.com/behind"),
+            "{:?}",
+            vt(&c)
+        );
+    }
+
+    #[test]
+    fn blank_screens_format_to_nothing_and_replay_as_themselves() {
+        for content in [&b""[..], b"   \r\n\t\r\n\x1b[41m   \x1b[0m"] {
+            let mut t = term();
+            t.write(content);
+            assert_eq!(t.format(VtFormat::Plain).unwrap(), b"", "{content:?}");
+            assert_primary_replay_matches(&mut t);
+        }
     }
 
     #[test]

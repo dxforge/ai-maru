@@ -167,12 +167,14 @@ mod tests {
         let json = unsafe { std::ffi::CStr::from_ptr(ghostty_type_json()) }
             .to_str()
             .unwrap();
-        let layouts: serde_json::Value = serde_json::from_str(json).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(json).unwrap();
+        assert_eq!(manifest["schema"], 1);
+        let layouts = &manifest["types"];
 
         macro_rules! check {
             ($ty:ident { $($field:ident),* $(,)? }) => {
                 assert_layout(
-                    &layouts,
+                    layouts,
                     stringify!($ty),
                     size_of::<$ty>(),
                     align_of::<$ty>(),
