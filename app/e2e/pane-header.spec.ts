@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import {
   activeHeader,
+  canvasPanel,
   claudeHook,
   clickMenu,
   expect,
@@ -18,7 +19,8 @@ import {
   typesInto,
   workspaceGroups,
   workspaceItems,
-  workspaceViews
+  workspaceViews,
+  writeConfig
 } from './app'
 
 test('pane 헤더는 OSC 0·2 로 받은 제목을, 받기 전에는 Shell 을 보이고, pane 의 디렉토리 이름을 보인다', async ({
@@ -156,6 +158,8 @@ test('pane 헤더와 columns 의 workspace 헤더는 글자 위에서도 기본 
   await putCanvas(app, { id: 'a', kind: 'markdown', text: '# canvas-heading\n' })
   const heading = page.locator('.canvas .markdown h1')
   await expect(heading).toBeVisible()
+  // 패널이 열리는 transition 동안 제목이 왼쪽으로 움직여, 잰 자리에서 누르면 다른 글자가 잡힌다.
+  await expect.poll(() => canvasPanel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
   for (const s of ['.pane-header .title', '.pane-header .cwd', '.workspace-header .name']) {
     const text = page.locator(s)
     expect(await text.evaluate((e) => getComputedStyle(e).cursor)).toBe('default')
@@ -171,9 +175,14 @@ test('pane 헤더와 columns 의 workspace 헤더는 글자 위에서도 기본 
         { s, end }
       )
     ).toBe(true)
+    // 제목을 처음부터 끝까지 고른 뒤 Canvas 안에서 헤더 높이까지 내려가 헤더 행을 따라 끈다. 터미널 위를 지나면 선택이
+    // 풀리기 때문이다. 앞 반복의 선택이 남은 글자를 누르면 drag-and-drop 이 시작되므로 먼저 지운다.
+    await page.evaluate(() => getSelection()!.removeAllRanges())
     const from = (await heading.boundingBox())!
-    await page.mouse.move(from.x + from.width - 1, from.y + from.height / 2)
+    await page.mouse.move(from.x + 1, from.y + from.height / 2)
     await page.mouse.down()
+    await page.mouse.move(from.x + from.width - 1, from.y + from.height / 2, { steps: 4 })
+    await page.mouse.move(from.x + 1, end.y, { steps: 4 })
     await page.mouse.move(end.x, end.y, { steps: 10 })
     await page.mouse.up()
 
@@ -277,6 +286,7 @@ async function measure(page: Page) {
         right: box.right - grid.left,
         top: box.top - grid.top,
         bottom: box.bottom - grid.top,
+        headTop: head.top - grid.top,
         headHeight: head.height,
         rows,
         firstRow: row.top - grid.top,
@@ -293,10 +303,19 @@ async function measure(page: Page) {
 /** 레이아웃이 px 를 1/64 단위로 반올림하므로, 셀의 배수에서 벗어난 정도를 셀에 대한 비율로 본다. */
 const offGrid = (px: number, cell: number): number => Math.abs(px / cell - Math.round(px / cell))
 
-function expectOnGrid(boxes: Awaited<ReturnType<typeof measure>>) {
+function expectOnGrid(
+  boxes: Awaited<ReturnType<typeof measure>>,
+  header: 'bottom' | 'top' = 'bottom'
+) {
   for (const b of boxes) {
     expect(b.headHeight).toBeCloseTo(b.rowHeight, 1)
-    expect(b.firstRow).toBeCloseTo(b.top + b.rowHeight, 1)
+    if (header === 'bottom') {
+      expect(b.headTop).toBeCloseTo(b.bottom - b.rowHeight, 1)
+      expect(b.firstRow).toBeCloseTo(b.top, 1)
+    } else {
+      expect(b.headTop).toBeCloseTo(b.top, 1)
+      expect(b.firstRow).toBeCloseTo(b.top + b.rowHeight, 1)
+    }
     expect(offGrid(b.top, b.unit)).toBeLessThan(0.01)
     expect(offGrid(b.left, b.cellWidth)).toBeLessThan(0.01)
   }
@@ -306,28 +325,32 @@ function expectRowsMatch(boxes: Awaited<ReturnType<typeof measure>>) {
   for (const b of boxes) expect(b.rows).toBe(Math.floor((b.bottom - b.top) / b.unit + 1e-6) - 1)
 }
 
-test('pane 을 나누면 경계가 행·열 격자에 놓여 나란한 pane 의 행이 이어지고, 경계선은 좌우 pane 사이에만 자리를 차지하지 않고 긋는다', async ({
-  launch
-}) => {
-  const { app, page } = await launch()
-  await split(app, page, 'split-right', 2)
-  await split(app, page, 'split-down', 3)
+for (const header of ['bottom', 'top'] as const) {
+  test(`헤더가 ${header === 'bottom' ? '아래' : '위'}일 때 pane 을 나누면 경계가 행·열 격자에 놓여 나란한 pane 의 행이 이어지고, 경계선은 좌우 pane 사이에만 자리를 차지하지 않고 긋는다`, async ({
+    launch,
+    dataDir
+  }) => {
+    if (header === 'top') writeConfig(dataDir, '[layout]\nheader = "top"\n')
+    const { app, page } = await launch()
+    await split(app, page, 'split-right', 2)
+    await split(app, page, 'split-down', 3)
 
-  const [left, topRight, bottomRight] = await measure(page)
-  expectOnGrid([left, topRight, bottomRight])
-  expect(topRight.left).toBeCloseTo(left.right, 1)
-  expect(bottomRight.top).toBeCloseTo(topRight.bottom, 1)
-  expect(topRight.right).toBeCloseTo(left.gridWidth, 1)
-  expect(bottomRight.bottom).toBeCloseTo(left.gridHeight, 1)
-  expect(left.bottom).toBeCloseTo(left.gridHeight, 1)
-  const lines = await page.evaluate(() =>
-    [...document.querySelectorAll('.panes.selected .pane')].map(
-      (p) => getComputedStyle(p, '::before').content
+    const [left, topRight, bottomRight] = await measure(page)
+    expectOnGrid([left, topRight, bottomRight], header)
+    expect(topRight.left).toBeCloseTo(left.right, 1)
+    expect(bottomRight.top).toBeCloseTo(topRight.bottom, 1)
+    expect(topRight.right).toBeCloseTo(left.gridWidth, 1)
+    expect(bottomRight.bottom).toBeCloseTo(left.gridHeight, 1)
+    expect(left.bottom).toBeCloseTo(left.gridHeight, 1)
+    const lines = await page.evaluate(() =>
+      [...document.querySelectorAll('.panes.selected .pane')].map(
+        (p) => getComputedStyle(p, '::before').content
+      )
     )
-  )
-  expect(lines).toEqual(['none', '""', '""'])
-  await expect(async () => expectRowsMatch(await measure(page))).toPass()
-})
+    expect(lines).toEqual(['none', '""', '""'])
+    await expect(async () => expectRowsMatch(await measure(page))).toPass()
+  })
+}
 
 test('창 크기를 바꿔도 pane 경계는 행·열 격자에 놓인다', async ({ launch }) => {
   const { app, page } = await launch()
@@ -449,25 +472,91 @@ test('columns 에서 줌과 창 크기를 바꿔도 pane 경계는 행·열 격�
   await expect(async () => expectOnGrid(await measure(page))).toPass()
 })
 
-test('columns 에서 위아래로 나눈 위 pane 에 포커스가 가도 pane 헤더는 pane 맨 위에 있다', async ({
+for (const header of ['bottom', 'top'] as const) {
+  test(`columns 에서 위아래로 나눈 위 pane 에 포커스가 가도 pane 헤더는 pane 맨 ${header === 'bottom' ? '아래' : '위'}에 있다`, async ({
+    launch,
+    dataDir
+  }) => {
+    if (header === 'top') writeConfig(dataDir, '[layout]\nheader = "top"\n')
+    const { app, page } = await launch()
+    await toggleView({ app, page }, 'columns')
+    await split(app, page, 'split-down', 2)
+    await clickMenu(app, 'focus-pane-up')
+    await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
+
+    for (const b of await measure(page))
+      expect(
+        header === 'bottom' ? b.bottom - b.headTop - b.headHeight : b.headTop - b.top
+      ).toBeCloseTo(0, 1)
+  })
+}
+
+test('pane 헤더는 기본으로 pane 맨 아래에 있고 본문의 넘친 반 행을 덮으며, 위아래로 나누면 위 pane 의 헤더가 경계가 된다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-down', 2)
+  const [top, bottom] = await measure(page)
+  expectOnGrid([top, bottom])
+  expect(top.headTop + top.headHeight).toBeCloseTo(bottom.top, 1)
+
+  const covered = await page.evaluate(() => {
+    const pane = document.querySelector('.panes.selected .pane')!
+    const head = pane.querySelector('.pane-header')!
+    const body = pane.querySelector('.body')!.getBoundingClientRect()
+    const r = head.getBoundingClientRect()
+    return {
+      overlap: body.bottom - r.top,
+      hit: head.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
+    }
+  })
+  expect(covered.overlap).toBeGreaterThan(0)
+  expect(covered.hit).toBe(true)
+})
+
+test('columns 의 workspace 헤더는 기본으로 카드 맨 아래, pane 헤더 아래에 놓인다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
-  await split(app, page, 'split-down', 2)
-  await clickMenu(app, 'focus-pane-up')
-  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
+  const header = page.locator('.workspace-header')
+  await expect(header).toHaveCount(1)
 
-  const offsets = await page.evaluate(() =>
-    [...document.querySelectorAll('.panes.selected .pane')].map(
-      (p) =>
-        p.querySelector('.pane-header')!.getBoundingClientRect().top - p.getBoundingClientRect().top
-    )
-  )
-  expect(offsets).toEqual([0, 0])
+  const layout = await page.evaluate(() => {
+    const card = document.querySelector('.panes.selected')!.getBoundingClientRect()
+    const r = document.querySelector('.workspace-header')!.getBoundingClientRect()
+    const pane = document.querySelector('.pane-header')!.getBoundingClientRect()
+    return { gap: card.bottom - r.bottom, above: r.top - pane.bottom }
+  })
+  expect(layout).toEqual({ gap: 0, above: 0 })
 })
 
-test('pane 헤더는 터미널과 같은 글꼴·크기로 쓰고, columns 의 workspace 헤더는 굵게 쓰며 한 행 안쪽에 밑줄을 긋는다', async ({
+test('헤더가 위면 columns 의 workspace 헤더는 카드 맨 위, pane 헤더 위에 놓이고 한 행 안쪽 아래에 선을 긋는다', async ({
+  launch,
+  dataDir
+}) => {
+  writeConfig(dataDir, '[layout]\nheader = "top"\n')
+  const { app, page } = await launch()
+  await toggleView({ app, page }, 'columns')
+  const header = page.locator('.workspace-header')
+  await expect(header).toHaveCount(1)
+
+  const layout = await page.evaluate(() => {
+    const card = document.querySelector('.panes.selected')!.getBoundingClientRect()
+    const head = document.querySelector('.workspace-header')!
+    const r = head.getBoundingClientRect()
+    const pane = document.querySelector('.pane-header')!.getBoundingClientRect()
+    return {
+      gap: r.top - card.top,
+      below: pane.top - r.bottom,
+      line: getComputedStyle(head).boxShadow
+    }
+  })
+  expect(layout).toMatchObject({ gap: 0, below: 0 })
+  expect(layout.line).toMatch(/0px -1px 0px 0px inset$/)
+})
+
+test('pane 헤더는 터미널과 같은 글꼴·크기로 쓰고, columns 의 workspace 헤더는 굵게 쓰며 한 행 안쪽 위에 선을 긋는다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -493,6 +582,6 @@ test('pane 헤더는 터미널과 같은 글꼴·크기로 쓰고, columns 의 w
   })
   expect(style.title).toEqual(style.terminal)
   expect(style.name).toEqual([...style.terminal, '700'])
-  expect(style.underline).toContain('inset')
+  expect(style.underline).toMatch(/0px 1px 0px 0px inset$/)
   expect(style.headerHeight).toBe(style.paneHeaderHeight)
 })

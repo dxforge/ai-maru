@@ -1,6 +1,7 @@
 import { readonly, shallowRef } from 'vue'
 import type { ConfigRead } from '../../../shared/config'
 import type { Toast } from '../toast/store'
+import { DEFAULT_LAYOUT, sameLayout } from './layout'
 import { DEFAULT_FONT, parseConfig, sameFont } from './terminal'
 
 /**
@@ -16,6 +17,7 @@ export type ConfigReport = {
 
 export function createConfig(first: ConfigRead, report: (r: ConfigReport) => void) {
   const font = shallowRef(DEFAULT_FONT)
+  const layout = shallowRef(DEFAULT_LAYOUT)
   let applied = false
 
   function apply(read: ConfigRead): void {
@@ -26,6 +28,8 @@ export function createConfig(first: ConfigRead, report: (r: ConfigReport) => voi
       const next = ok?.font ?? DEFAULT_FONT
       // 같은 값이면 터미널이 다시 맞추지 않게 바꾸지 않는다.
       if (!sameFont(font.value, next)) font.value = next
+      const nextLayout = ok?.layout ?? DEFAULT_LAYOUT
+      if (!sameLayout(layout.value, nextLayout)) layout.value = nextLayout
     }
     report({
       path: read.path,
@@ -38,7 +42,7 @@ export function createConfig(first: ConfigRead, report: (r: ConfigReport) => voi
   }
 
   apply(first)
-  return { font: readonly(font), apply }
+  return { font: readonly(font), layout: readonly(layout), apply }
 }
 
 export function configToast(r: ConfigReport, missing: string[], detail: string): Toast | null {

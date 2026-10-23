@@ -7,6 +7,10 @@ AI Maru 는 `~/.ai-maru/config.toml` 을 읽는다. 앱은 이 폴더와 파일�
 font-family = "JetBrains Mono"
 font-size = 13
 line-height = 1.3
+
+[layout]
+header = "top"
+palette = "top"
 ```
 
 `MARU_CONFIG_DIR` 환경 변수를 주면 `~/.ai-maru` 대신 그 폴더의 `config.toml` 을 읽는다.
@@ -18,8 +22,16 @@ line-height = 1.3
 | `terminal.font-family` | `D2Coding, Menlo, 'Symbols Nerd Font Mono', monospace` | 글꼴 이름. 쉼표로 이어 여러 개를 적을 수 있다. |
 | `terminal.font-size` | `14` | 8–32 의 숫자(px). 소수도 받는다. |
 | `terminal.line-height` | `1.2` | 1–2 의 숫자. 글자 높이에 곱한 값이 행 높이다. 글자 높이는 글꼴이 정하고 글꼴 크기보다 조금 크다(기본 글꼴 14px 이면 15px). |
+| `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 columns 보기의 workspace 헤더를 pane·workspace 의 아래에 둘지 위에 둘지. |
+| `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트를 창의 아래에 띄울지 위에 띄울지. |
 
 pane 헤더와 workspace 헤더도 터미널의 글꼴과 크기를 따른다.
+
+### `header` 와 `palette`
+
+Claude Code 의 입력창은 터미널 아래에 있어 시선이 아래에 머무르므로, 헤더와 명령 팔레트도 기본값으로 아래에 둔다.
+
+팔레트가 아래면 입력줄이 팔레트 맨 아래에 있고, 후보는 그 위에 놓인다. 가장 잘 맞는 후보가 입력줄 바로 위이고, ↑ 가 다음 후보를 고른다. 위면 입력줄이 맨 위에 있고 ↓ 가 다음 후보를 고른다.
 
 ### `font-family`
 
@@ -32,7 +44,7 @@ pane 헤더와 workspace 헤더도 터미널의 글꼴과 크기를 따른다.
 ### 범위를 벗어나거나 잘못 적은 값
 
 - 범위를 벗어난 숫자는 가까운 끝값으로 맞춘다(`font-size = 40` 이면 32).
-- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다.
+- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적어도 기본값을 쓴다.
 - 모르는 키는 무시한다.
 
 ## 고치면 바로 적용된다

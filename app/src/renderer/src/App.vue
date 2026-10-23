@@ -59,6 +59,7 @@ const config = createConfig(window.maru.config, (r) => {
   else toasts.close('config')
 })
 window.maru.onConfig(config.apply)
+const headerBottom = computed(() => config.layout.value.header === 'bottom')
 
 function stepFont(by: 1 | -1): void {
   const w = workspaces.selected()
@@ -343,13 +344,13 @@ function placement(b: Box, unit: string, bodyHeight?: number) {
       width: `${b.width}${unit}`,
       height: `${b.height}${unit}`
     },
-    body: bodyHeight === undefined ? { bottom: '0' } : { height: `${bodyHeight}px` },
+    body: bodyHeight === undefined ? {} : { height: `${bodyHeight}px` },
     edge: b.left > 0
   }
 }
 
-// FitAddon 은 pane 높이를 정수로 잘라 읽고 반올림한 셀 높이로 나눠 행 하나를 잃곤 하므로, 헤더 아래에 들어갈
-// 행 수보다 반 행 큰 높이를 주고 넘친 부분은 pane 이 가린다.
+// FitAddon 은 pane 높이를 정수로 잘라 읽고 반올림한 셀 높이로 나눠 행 하나를 잃곤 하므로, 헤더를 뺀 행 수보다
+// 반 행 큰 높이를 준다. 넘친 반 행은 헤더가 아래면 헤더가 덮고, 위면 pane 이 자른다.
 function bodyHeight(b: Box, row: number): number {
   const rows = Math.max(0, Math.floor(b.height / row - 1 + EPSILON))
   return (rows + 0.5) * row
@@ -543,7 +544,12 @@ void window.maru.restoreScreen().then((s) => {
 </script>
 
 <template>
-  <div class="app" @transitionend="panelTransition" @transitioncancel="panelTransition">
+  <div
+    class="app"
+    :class="{ 'header-bottom': headerBottom }"
+    @transitionend="panelTransition"
+    @transitioncancel="panelTransition"
+  >
     <div
       ref="side"
       class="side"
@@ -641,7 +647,13 @@ void window.maru.restoreScreen().then((s) => {
       :resizing="resizing === 'canvas'"
     />
     <ToastStack :toasts="toasts.list.value" :width="toastWidth" @close="toasts.close" />
-    <CommandPalette v-if="paletteOpen" ref="palette" @run="runCommand" @close="closePalette" />
+    <CommandPalette
+      v-if="paletteOpen"
+      ref="palette"
+      :position="config.layout.value.palette"
+      @run="runCommand"
+      @close="closePalette"
+    />
   </div>
 </template>
 
@@ -753,6 +765,11 @@ void window.maru.restoreScreen().then((s) => {
   box-shadow: inset 0 -1px 0 var(--line);
 }
 
+.header-bottom .workspace-header {
+  order: 1;
+  box-shadow: inset 0 1px 0 var(--line);
+}
+
 .workspace-header .name {
   font-weight: bold;
 }
@@ -776,16 +793,38 @@ void window.maru.restoreScreen().then((s) => {
   top: 0;
   bottom: 0;
   left: 0;
-  z-index: 2;
+  z-index: 3;
   width: 1px;
   background: var(--line);
 }
 
+/* 헤더는 본문 위에 겹친다. 본문은 `bodyHeight` 가 준 반 행만큼 pane 을 넘칠 수 있다. 헤더가 아래면 넘친 부분을 헤더가 덮고,
+   위면 pane 이 자른다. */
+.pane-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+}
+
+/* 영역을 재기 전에는 본문이 pane 아래 끝까지 채운다. 잰 뒤에는 `placement` 가 준 height 가 bottom 보다 앞선다. */
 .body {
   position: absolute;
   top: var(--row);
+  bottom: 0;
   left: 0;
   right: 0;
+}
+
+.header-bottom .pane-header {
+  top: auto;
+  bottom: 0;
+}
+
+.header-bottom .body {
+  top: 0;
+  bottom: var(--row);
 }
 
 .pane:not(.focused) > .body::after {

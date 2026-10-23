@@ -48,9 +48,9 @@ workspace 가 닫힌 것은 kill 로 안다. renderer 는 workspace 의 마지�
 
 나란히 놓인 pane 끼리 터미널 행이, 위아래로 놓인 pane 끼리 열이 이어지도록 pane 경계를 터미널 셀 크기의 배수에 둔다. ⌘+ / ⌘- 로 workspace 마다 글꼴 크기가 다를 수 있으므로 `App.vue` 는 글꼴마다 마지막으로 잰 셀 크기를 둔다. workspace 마다 그 글꼴의 셀 크기를 `--row`·`--cell`·`--pad` 로 그 workspace 의 `.panes` 요소에 둔다.
 
-pane 헤더는 터미널 한 행이다. 높이는 `--row` 이고 터미널과 같은 글꼴·크기로 쓰며, 터미널은 헤더 바로 아래 행에서 시작한다. pane 헤더·workspace 헤더처럼 격자 위에 놓이는 것은 터미널 글꼴을, 사이드바·팔레트·Canvas 처럼 격자 밖의 것은 system-ui 를 쓴다.
+pane 헤더는 터미널 한 행이다. 높이는 `--row` 이고 터미널과 같은 글꼴·크기로 쓴다. 헤더는 `config.toml` 의 `layout.header` 에 따라 pane 의 맨 아래(기본값)나 맨 위에 놓이고(`docs/config.md`), 터미널은 나머지 행을 쓴다. columns 보기의 workspace 헤더도 같은 쪽에 놓인다. pane 헤더·workspace 헤더처럼 격자 위에 놓이는 것은 터미널 글꼴을, 사이드바·팔레트·Canvas 처럼 격자 밖의 것은 system-ui 를 쓴다.
 
-경계선은 자리를 차지하지 않는다. 1px 라도 자리를 차지하면 그 뒤 pane 이 격자에서 밀리기 때문이다. 좌우 pane 의 경계선은 오른쪽 pane 의 터미널 왼쪽 여백 위에 겹쳐 그리고, 위아래 pane 은 아래 pane 의 헤더가 경계가 된다.
+경계선은 자리를 차지하지 않는다. 1px 라도 자리를 차지하면 그 뒤 pane 이 격자에서 밀리기 때문이다. 좌우 pane 의 경계선은 오른쪽 pane 의 터미널 왼쪽 여백 위에 겹쳐 그리고, 위아래 pane 은 헤더가 아래면 위 pane 의 헤더가, 위면 아래 pane 의 헤더가 경계가 된다.
 
 ## 글자 폭
 

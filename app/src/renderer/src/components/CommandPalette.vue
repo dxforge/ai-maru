@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { available, filterCommands, type CommandId } from '../../../shared/commands'
 import { commandKeys, formatKeys } from '../../../shared/shortcuts'
+import type { Position } from '../config/layout'
 
+const { position } = defineProps<{ position: Position }>()
 const emit = defineEmits<{ run: [id: CommandId]; close: [] }>()
 
 const input = useTemplateRef<HTMLInputElement>('input')
@@ -14,6 +16,11 @@ const matches = computed(() =>
     .map((c) => ({ ...c, keys: commandKeys(c.id) }))
 )
 watch(query, () => (index.value = 0))
+
+const list = useTemplateRef<HTMLUListElement>('list')
+watch(index, () =>
+  nextTick(() => list.value?.querySelector('.selected')?.scrollIntoView({ block: 'nearest' }))
+)
 
 const focus = (): void => input.value?.focus()
 defineExpose({ focus })
@@ -30,11 +37,13 @@ function onWindowFocus(): void {
 onMounted(() => window.addEventListener('focus', onWindowFocus))
 onUnmounted(() => window.removeEventListener('focus', onWindowFocus))
 
+// 화살표는 화면 방향대로 움직인다. 팔레트가 아래면 후보가 입력줄 위에 첫 후보부터 위로 놓이므로 ↓ 가 앞 후보다.
 function onKeydown(e: KeyboardEvent): void {
   if (e.isComposing) return
   const n = matches.value.length
-  if (e.key === 'ArrowDown' && n) index.value = (index.value + 1) % n
-  else if (e.key === 'ArrowUp' && n) index.value = (index.value - 1 + n) % n
+  const down = position === 'bottom' ? -1 : 1
+  if (e.key === 'ArrowDown' && n) index.value = (index.value + down + n) % n
+  else if (e.key === 'ArrowUp' && n) index.value = (index.value - down + n) % n
   else if (e.key === 'Enter' && n) emit('run', matches.value[index.value].id)
   else if (e.key === 'Escape') emit('close')
   else return
@@ -43,7 +52,7 @@ function onKeydown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="backdrop" @mousedown.self.prevent="emit('close')">
+  <div class="backdrop" :class="position" @mousedown.self.prevent="emit('close')">
     <div class="palette" @mousedown="(e) => e.target !== input && e.preventDefault()">
       <input
         ref="input"
@@ -54,7 +63,7 @@ function onKeydown(e: KeyboardEvent): void {
         @keydown="onKeydown"
         @blur="onBlur"
       />
-      <ul class="list">
+      <ul ref="list" class="list">
         <li
           v-for="(c, i) in matches"
           :key="c.id"
@@ -80,11 +89,21 @@ function onKeydown(e: KeyboardEvent): void {
   position: fixed;
   inset: 0;
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+
+.bottom {
+  justify-content: flex-end;
 }
 
 .palette {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   width: min(500px, calc(100% - 32px));
-  margin: 8px auto 0;
+  max-height: calc(100% - 16px);
+  margin: 8px auto;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--raised);
@@ -96,6 +115,7 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 .query {
+  flex: none;
   box-sizing: border-box;
   width: calc(100% - 12px);
   margin: 6px;
@@ -113,9 +133,21 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 .list {
+  min-height: 0;
   margin: 0;
   padding: 0 0 4px;
+  overflow-y: auto;
   list-style: none;
+}
+
+.bottom .palette,
+.bottom .list {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.bottom .list {
+  padding: 4px 0 0;
 }
 
 .item,

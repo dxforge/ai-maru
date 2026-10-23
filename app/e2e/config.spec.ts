@@ -1,17 +1,28 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import type { Page } from '@playwright/test'
 import {
+  activePane,
   activeTerminal,
   clickMenu,
   configFile,
   expect,
   newWorkspace,
+  openCanvas,
   shellSize,
   sidebarWidth,
   test,
+  toast,
   toggleView,
   writeConfig
 } from './app'
+
+function headerOffsets(page: Page) {
+  return activePane(page).evaluate((pane) => {
+    const box = pane.getBoundingClientRect()
+    const head = pane.querySelector('.pane-header')!.getBoundingClientRect()
+    return { top: head.top - box.top, bottom: box.bottom - head.bottom }
+  })
+}
 
 async function terminalFont(page: Page) {
   return page.evaluate(() => {
@@ -26,10 +37,6 @@ async function terminalFont(page: Page) {
 }
 
 const fontSize = async (page: Page): Promise<string> => (await terminalFont(page)).size
-
-function toast(page: Page) {
-  return page.locator('.toast')
-}
 
 test('설정 파일이 없으면 지금 기본값으로 그린다', async ({ launch }) => {
   const { page } = await launch()
@@ -149,6 +156,36 @@ test('pane 헤더도 설정 글꼴을 따른다', async ({ launch, dataDir }) =>
   })
   const font = await terminalFont(page)
   expect(header).toEqual([font.family, font.size])
+})
+
+test('헤더는 기본으로 pane 아래에 있고, layout.header = "top" 으로 고치면 바로 위로 옮기며, 토스트는 두 위치 모두 왼쪽 아래에 뜬다', async ({
+  launch,
+  dataDir
+}) => {
+  const { page } = await launch()
+  await expect.poll(() => headerOffsets(page)).toMatchObject({ bottom: 0 })
+  expect((await headerOffsets(page)).top).toBeGreaterThan(0)
+  const corner = async () => {
+    const box = (await toast(page).boundingBox())!
+    return { x: box.x, bottom: box.y + box.height }
+  }
+  const bottomLeft = { x: 12, bottom: await page.evaluate(() => innerHeight - 12) }
+
+  writeConfig(dataDir, '[layout]\nheader = "top"\n[terminal]\nfont-size = 40\n')
+  await expect.poll(() => headerOffsets(page)).toMatchObject({ top: 0 })
+  expect((await headerOffsets(page)).bottom).toBeGreaterThan(0)
+  await expect.poll(corner).toEqual(bottomLeft)
+
+  writeConfig(dataDir, '[layout]\nheader = "bottom"\n[terminal]\nfont-size = 40\n')
+  await expect.poll(() => headerOffsets(page)).toMatchObject({ bottom: 0 })
+  await expect.poll(corner).toEqual(bottomLeft)
+})
+
+test('layout.header 가 top·bottom 이 아니면 알리고 아래에 둔다', async ({ launch, dataDir }) => {
+  writeConfig(dataDir, '[layout]\nheader = "left"\n')
+  const { page } = await launch()
+  await expect(toast(page)).toContainText('layout.header must be "top" or "bottom", using bottom.')
+  expect((await headerOffsets(page)).bottom).toBe(0)
 })
 
 test('문법 오류는 줄을 알리고 앞의 값을 두며, 고치면 토스트가 닫힌다', async ({
@@ -272,6 +309,20 @@ test('띄울 때 설정 파일을 읽을 수 없으면 기본값을 쓴다고 �
   await expect(toast(page)).toContainText('EISDIR')
   await expect(toast(page)).toContainText('Using the default settings.')
   expect(await fontSize(page)).toBe('14px')
+})
+
+test('토스트가 떠 있어도 Canvas 헤더의 닫기 버튼으로 Canvas 를 닫는다', async ({
+  launch,
+  dataDir
+}) => {
+  writeConfig(dataDir, '[terminal]\nfont-size = 40\n')
+  const launched = await launch()
+  const { page } = launched
+  await expect(toast(page)).toHaveCount(1)
+  await openCanvas(launched)
+  await page.locator('.canvas .close').click()
+  await expect(page.locator('aside.canvas')).toBeHidden()
+  await expect(toast(page)).toHaveCount(1)
 })
 
 test('토스트는 사이드바 왼쪽 아래 안쪽에 뜨고, 사이드바를 접으면 258px 폭이다', async ({
