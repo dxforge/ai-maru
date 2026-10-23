@@ -18,7 +18,10 @@ function press(code: string, mods: Partial<KeyEventLike> = {}): KeyEventLike {
 
 describe('shortcuts', () => {
   it('한 키 조합은 한 곳에서만 받는다', () => {
-    const combos = shortcuts.map((s) => toAccelerator(s))
+    // accelerator 문자열이 달라도(Plus 와 Shift+=) 같은 키 조합일 수 있으므로 자판 위치와 modifier 로 견준다.
+    const combos = shortcuts.map((s) =>
+      [keyCode(s.key), !!s.ctrl, !!s.alt, !!s.shift || s.key === 'Plus', !!s.meta].join()
+    )
     expect(new Set(combos).size).toBe(combos.length)
   })
 
