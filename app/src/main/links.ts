@@ -6,9 +6,6 @@ import type { CanvasDoc } from '../shared/canvas'
 import type { LinkOpenResult } from '../shared/link'
 import { canvasDocFor } from './canvas'
 
-/** `foreground` 요청은 ioctl 과 프로세스 조회뿐이라 바로 답한다. 세션이 멈춰 있어도 클릭이 오래 기다리지 않게 짧게 둔다. */
-export const LINK_REPLY_MS = 2_000
-
 export type LinkTarget = { kind: 'external'; url: string } | { kind: 'file'; path: string }
 
 // RFC 3986 scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )

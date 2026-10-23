@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { closeSync, constants, existsSync, mkdirSync, openSync } from 'node:fs'
-import { access, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { access, readdir, readFile, realpath, rm, stat } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
@@ -206,11 +206,14 @@ export async function captureSession(dir: string, id: string, timeoutMs: number)
   return r.text
 }
 
+/** `foreground` 요청은 ioctl 과 프로세스 조회뿐이라 바로 답한다. 세션이 멈춰 있어도 묻는 쪽(링크 클릭·branch 읽기)이 오래 기다리지 않게 짧게 둔다. */
+const FOREGROUND_REPLY_MS = 2_000
+
 /** foreground 프로세스(프롬프트에서는 셸, 명령이 돌면 그 명령)의 cwd. 세션이 모르면 null 이다. */
 export async function foregroundCwd(
   dir: string,
   id: string,
-  timeoutMs: number
+  timeoutMs = FOREGROUND_REPLY_MS
 ): Promise<string | null> {
   const r = await askWithin(dir, id, { type: 'foreground' }, timeoutMs)
   // `foreground` 를 더하며 `PROTOCOL_VERSION` 을 올리지 않았으므로, 앱을 새로 깔아도 이 요청을 모르는 이전 maru-session 의 세션이 남아 있을 수 있다.
@@ -219,6 +222,16 @@ export async function foregroundCwd(
   }
   if (r.type !== 'foreground') throw cannotRead(id, r)
   return typeof r.cwd === 'string' ? r.cwd : null
+}
+
+/**
+ * `dir` 이 `cwd` 와 같은 디렉토리면 `cwd` 를, 아니면 `dir` 을 돌려준다. `foreground` 는 실제 경로를 답하고 셸의 OSC 7 은
+ * `$PWD` 를 주므로, 셸이 심볼릭 링크 경로에 있으면 같은 디렉토리라도 두 경로가 다르다.
+ */
+export async function sameDirAs(dir: string, cwd: string): Promise<string> {
+  const real = (path: string): Promise<string | null> => realpath(path).catch(() => null)
+  const [a, b] = await Promise.all([real(dir), real(cwd)])
+  return a !== null && a === b ? cwd : dir
 }
 
 export async function writeSessionInput(

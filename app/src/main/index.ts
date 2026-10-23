@@ -23,7 +23,7 @@ import { createMonitor } from './monitor'
 import { isDevReload } from './navigation'
 import { createPanes } from './pane'
 import { createJobs, JOB_REPLY_MS } from './job'
-import { LINK_REPLY_MS, openLink } from './links'
+import { openLink } from './links'
 import {
   checkRestart,
   restartFile,
@@ -40,6 +40,7 @@ import {
   killSessions,
   QUIT_TIMEOUT_MS,
   readRecord,
+  sameDirAs,
   sessionLive,
   spawnSession,
   startDir,
@@ -423,6 +424,12 @@ function start(): void {
   ipcMain.handle('git:head', (_event, cwd: unknown) =>
     typeof cwd === 'string' ? gitHead(cwd) : null
   )
+  const readForeground = (id: string): Promise<string | null> => foregroundCwd(sessionDir(), id)
+  ipcMain.handle('session:foreground', async (_event, session: unknown, cwd: unknown) => {
+    if (typeof session !== 'string') return null
+    const dir = await readForeground(session)
+    return dir !== null && typeof cwd === 'string' ? sameDirAs(dir, cwd) : dir
+  })
   ipcMain.handle('link:open', (_event, text: unknown, session: unknown) => {
     if (typeof text !== 'string' || typeof session !== 'string') {
       return { ok: false, reason: 'not a link' }
@@ -431,7 +438,7 @@ function start(): void {
       openExternal: (url) => shell.openExternal(url),
       openPath: (path) => shell.openPath(path),
       putCanvas: (doc) => putCanvas(mainWindow, doc),
-      foregroundCwd: (id) => foregroundCwd(sessionDir(), id, LINK_REPLY_MS)
+      foregroundCwd: readForeground
     })
   })
   ipcMain.on('window:path', (event, path: unknown) => {
