@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PaneReply } from '../shared/pane'
-import { InvalidParams } from './cli-server'
+import { CliError, InvalidParams } from './cli-server'
 import { createPanes, type PaneChannel } from './pane'
 
 const A = 's-0000000a'
@@ -86,6 +86,19 @@ describe('pane.new', () => {
     const err = await failed.catch((e: Error) => e)
     expect(err).not.toBeInstanceOf(InvalidParams)
     expect((err as Error).message).toBe('cannot spawn')
+  })
+
+  it('나눌 자리가 없으면 no_space 로 실패한다', async () => {
+    const { handlers, answer } = setup()
+    const cramped = handlers['pane.new']({ cwd: '/', direction: 'right' }, A) as Promise<unknown>
+    answer({ error: 'no_space', message: 'no space for a new pane' })
+    const err = await cramped.catch((e: Error) => e)
+    expect(err).toBeInstanceOf(CliError)
+    expect(err).toMatchObject({
+      code: -32001,
+      reason: 'no_space',
+      message: 'no space for a new pane'
+    })
   })
 
   it('창이 없으면 바로 실패한다', async () => {

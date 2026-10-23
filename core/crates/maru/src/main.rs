@@ -78,7 +78,9 @@
 //! 붙인다. 포커스와 선택한 workspace 는 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
 //! 그 명령을 실행한다(셸이 sh·bash·zsh·ksh·dash 가 아니면 `/bin/sh` 가 실행한다). 명령이 끝나면 셸과
 //! 함께 pane 이 닫힌다. 새 세션이 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. `session` 의 pane 이 창에
-//! 없으면 `invalid_params` 로 답한다. 세션을 띄우지 못하면 나눈 pane 을 닫고 `internal_error` 로 답한다.
+//! 없으면 `invalid_params` 로 답한다. 나눈 pane 들이 하한(터미널 20열 × 5행) 아래로 내려가 나눌 자리가
+//! 없으면 -32001 `no_space` 로 답하고 pane 을 열지 않는다. 세션을 띄우지 못하면 나눈 pane 을 닫고
+//! `internal_error` 로 답한다.
 //!
 //! `pane.close` 는 `target` 세션의 pane 을 닫고 그 세션을 끈다. `target` 의 pane 이 창에 없으면
 //! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 세션을 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
