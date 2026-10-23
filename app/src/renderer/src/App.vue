@@ -59,6 +59,7 @@ const config = createConfig(window.maru.config, (r) => {
   else toasts.close('config')
 })
 window.maru.onConfig(config.apply)
+const headerBottom = computed(() => config.header.value === 'bottom')
 
 function stepFont(by: 1 | -1): void {
   const w = workspaces.selected()
@@ -192,9 +193,12 @@ function toggleFold(key: number): void {
 // 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 pane 마다 열 수가 갈린다(#58).
 const SIDEBAR_WIDTH = 282
 const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
-// 토스트는 사이드바 안쪽 양옆 12px 을 비운다.
-const toastWidth = computed(
-  () => Math.max(sidebarOpen.value ? sidebarWidth.value : 0, SIDEBAR_WIDTH) - 24
+// 사이드바 왼쪽 아래의 토스트는 사이드바 안쪽 양옆 12px 을 비운다. 창 오른쪽 위의 토스트는 사이드바 밖이라 기본 사이드바에서의
+// 폭으로 둔다.
+const toastWidth = computed(() =>
+  headerBottom.value
+    ? SIDEBAR_WIDTH - 24
+    : Math.max(sidebarOpen.value ? sidebarWidth.value : 0, SIDEBAR_WIDTH) - 24
 )
 // 신호등 버튼 묶음 폭에 양옆 12px 씩을 더한 폭이다.
 const RAIL_WIDTH = 85
@@ -343,7 +347,7 @@ function placement(b: Box, unit: string, bodyHeight?: number) {
       width: `${b.width}${unit}`,
       height: `${b.height}${unit}`
     },
-    body: bodyHeight === undefined ? { bottom: '0' } : { height: `${bodyHeight}px` },
+    body: bodyHeight === undefined ? {} : { height: `${bodyHeight}px` },
     edge: b.left > 0
   }
 }
@@ -543,7 +547,12 @@ void window.maru.restoreScreen().then((s) => {
 </script>
 
 <template>
-  <div class="app" @transitionend="panelTransition" @transitioncancel="panelTransition">
+  <div
+    class="app"
+    :class="{ 'header-bottom': headerBottom }"
+    @transitionend="panelTransition"
+    @transitioncancel="panelTransition"
+  >
     <div
       ref="side"
       class="side"
@@ -640,7 +649,12 @@ void window.maru.restoreScreen().then((s) => {
       :width="canvasWidth"
       :resizing="resizing === 'canvas'"
     />
-    <ToastStack :toasts="toasts.list.value" :width="toastWidth" @close="toasts.close" />
+    <ToastStack
+      :toasts="toasts.list.value"
+      :corner="headerBottom ? 'top-right' : 'bottom-left'"
+      :width="toastWidth"
+      @close="toasts.close"
+    />
     <CommandPalette v-if="paletteOpen" ref="palette" @run="runCommand" @close="closePalette" />
   </div>
 </template>
@@ -753,6 +767,11 @@ void window.maru.restoreScreen().then((s) => {
   box-shadow: inset 0 -1px 0 var(--line);
 }
 
+.header-bottom .workspace-header {
+  order: 1;
+  box-shadow: inset 0 1px 0 var(--line);
+}
+
 .workspace-header .name {
   font-weight: bold;
 }
@@ -776,16 +795,38 @@ void window.maru.restoreScreen().then((s) => {
   top: 0;
   bottom: 0;
   left: 0;
-  z-index: 2;
+  z-index: 3;
   width: 1px;
   background: var(--line);
 }
 
+/* 헤더는 본문 위에 겹친다. 본문은 `bodyHeight` 가 준 반 행만큼 pane 을 넘칠 수 있다. 헤더가 아래면 넘친 부분을 헤더가 덮고,
+   위면 pane 이 자른다. */
+.pane-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+}
+
+/* 영역을 재기 전에는 아래까지 채우고, 잰 뒤에는 `placement` 의 height 가 bottom 보다 앞선다. */
 .body {
   position: absolute;
   top: var(--row);
+  bottom: 0;
   left: 0;
   right: 0;
+}
+
+.header-bottom .pane-header {
+  top: auto;
+  bottom: 0;
+}
+
+.header-bottom .body {
+  top: 0;
+  bottom: var(--row);
 }
 
 .pane:not(.focused) > .body::after {

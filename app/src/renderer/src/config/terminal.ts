@@ -13,10 +13,15 @@ export const DEFAULT_FONT: TerminalFont = {
   lineHeight: LINE_HEIGHT
 }
 
+/** pane 헤더와 columns 보기의 workspace 헤더가 놓이는 쪽이다. */
+export type HeaderPosition = 'top' | 'bottom'
+
+export const DEFAULT_HEADER: HeaderPosition = 'bottom'
+
 /** `names` 는 사용자가 적은 글꼴 이름이다. `missingFonts`(`fonts.ts`)가 쓸 수 있는지 잴 때 쓴다. */
 export type ConfigResult =
   | { ok: false; problem: string }
-  | { ok: true; font: TerminalFont; names: string[]; warnings: string[] }
+  | { ok: true; font: TerminalFont; header: HeaderPosition; names: string[]; warnings: string[] }
 
 // xterm 은 1 보다 작은 `lineHeight` 를 받으면 오류를 던지므로 줄 높이 하한을 1 로 둔다.
 const RANGES = {
@@ -24,7 +29,10 @@ const RANGES = {
   'line-height': { key: 'lineHeight', min: 1, max: 2 }
 } as const
 
-const KEYS = new Set<string>(['font-family', ...Object.keys(RANGES)])
+const TABLES = {
+  terminal: new Set<string>(['font-family', ...Object.keys(RANGES)]),
+  layout: new Set<string>(['header'])
+}
 
 export function stepFontSize(size: number, by: 1 | -1): number {
   const { min, max } = RANGES['font-size']
@@ -90,15 +98,39 @@ export function parseConfig(text: string): ConfigResult {
     const message = err.message.split('\n')[0].replace(/^Invalid TOML document: /, '')
     return { ok: false, problem: `Line ${err.line}, column ${err.column}: ${message}` }
   }
-  const font = { ...DEFAULT_FONT }
   const warnings: string[] = []
-  let names: string[] = []
-  for (const key of Object.keys(doc)) if (key !== 'terminal') warnings.push(`Unknown key ${key}.`)
-  const terminal = doc.terminal ?? {}
-  if (!isTable(terminal)) {
-    warnings.push('terminal must be a table, using the defaults.')
-    return { ok: true, font, names, warnings }
+  for (const key of Object.keys(doc))
+    if (!Object.hasOwn(TABLES, key)) warnings.push(`Unknown key ${key}.`)
+  const { font, names } = parseTerminal(table(doc, 'terminal', warnings), warnings)
+  const header = parseLayout(table(doc, 'layout', warnings), warnings)
+  return { ok: true, font, header, names, warnings }
+}
+
+function table(doc: Table, name: keyof typeof TABLES, warnings: string[]): Table {
+  const value = doc[name] ?? {}
+  if (!isTable(value)) {
+    warnings.push(`${name} must be a table, using the defaults.`)
+    return {}
   }
+  for (const key of Object.keys(value))
+    if (!TABLES[name].has(key)) warnings.push(`Unknown key ${name}.${key}.`)
+  return value
+}
+
+function parseLayout(layout: Table, warnings: string[]): HeaderPosition {
+  const header = layout.header
+  if (header === undefined) return DEFAULT_HEADER
+  if (header === 'top' || header === 'bottom') return header
+  warnings.push(`layout.header must be "top" or "bottom", using ${DEFAULT_HEADER}.`)
+  return DEFAULT_HEADER
+}
+
+function parseTerminal(
+  terminal: Table,
+  warnings: string[]
+): { font: TerminalFont; names: string[] } {
+  const font = { ...DEFAULT_FONT }
+  let names: string[] = []
   const family = terminal['font-family']
   if (typeof family === 'string') {
     const parsed = fontNames(family)
@@ -125,7 +157,5 @@ export function parseConfig(text: string): ConfigResult {
     if (font[key] !== value)
       warnings.push(`terminal.${name} = ${value} is outside ${min}–${max}, using ${font[key]}.`)
   }
-  for (const key of Object.keys(terminal))
-    if (!KEYS.has(key)) warnings.push(`Unknown key terminal.${key}.`)
-  return { ok: true, font, names, warnings }
+  return { font, names }
 }

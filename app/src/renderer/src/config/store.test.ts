@@ -38,6 +38,19 @@ describe('createConfig', () => {
     expect(config.font.value).toEqual(DEFAULT_FONT)
   })
 
+  it('띄울 때 문법 오류면 헤더는 아래다', () => {
+    expect(setup('[layout\n').config.header.value).toBe('bottom')
+  })
+
+  it('헤더 위치를 읽고, 문법 오류면 앞의 값을 두며, 파일이 지워지면 아래로 돌아간다', () => {
+    const { config } = setup('[layout]\nheader = "top"\n')
+    expect(config.header.value).toBe('top')
+    config.apply({ path: PATH, text: '[layout]\nheader =\n' })
+    expect(config.header.value).toBe('top')
+    config.apply({ path: PATH, text: null })
+    expect(config.header.value).toBe('bottom')
+  })
+
   it('같은 값이면 font 를 바꾸지 않는다', () => {
     const { config } = setup('[terminal]\nfont-size = 18\n')
     const before = config.font.value

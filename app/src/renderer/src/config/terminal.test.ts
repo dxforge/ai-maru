@@ -11,7 +11,13 @@ function ok(text: string) {
 
 describe('parseConfig', () => {
   it('빈 문자열은 기본값이고 경고가 없다', () => {
-    expect(parseConfig('')).toEqual({ ok: true, font: DEFAULT_FONT, names: [], warnings: [] })
+    expect(parseConfig('')).toEqual({
+      ok: true,
+      font: DEFAULT_FONT,
+      header: 'bottom',
+      names: [],
+      warnings: []
+    })
     expect(DEFAULT_FONT).toEqual({ fontFamily: FAMILY, fontSize: 14, lineHeight: 1.2 })
   })
 
@@ -89,6 +95,31 @@ describe('parseConfig', () => {
     expect(ok('[terminal]\nfont_size = 13\n').warnings).toEqual(['Unknown key terminal.font_size.'])
     expect(ok('[ui]\nx = 1\n').warnings).toEqual(['Unknown key ui.'])
     expect(ok('title = "x"\n').warnings).toEqual(['Unknown key title.'])
+    expect(ok('[constructor]\nx = 1\n').warnings).toEqual(['Unknown key constructor.'])
+    expect(ok('[layout]\nheader-position = "top"\n').warnings).toEqual([
+      'Unknown key layout.header-position.'
+    ])
+  })
+
+  it.each(['top', 'bottom'] as const)('layout.header 를 읽는다: %s', (value) => {
+    const r = ok(`[layout]\nheader = "${value}"\n`)
+    expect(r.header).toBe(value)
+    expect(r.warnings).toEqual([])
+  })
+
+  it.each(['"Top"', '"left"', '1', 'true'])(
+    'layout.header 가 top·bottom 이 아니면 bottom 을 쓴다: %s',
+    (value) => {
+      const r = ok(`[layout]\nheader = ${value}\n`)
+      expect(r.header).toBe('bottom')
+      expect(r.warnings).toEqual(['layout.header must be "top" or "bottom", using bottom.'])
+    }
+  )
+
+  it('layout 이 표가 아니면 기본값을 쓴다', () => {
+    const r = ok('layout = "top"\n')
+    expect(r.header).toBe('bottom')
+    expect(r.warnings).toEqual(['layout must be a table, using the defaults.'])
   })
 
   it('terminal 이 표가 아니면 기본값을 쓴다', () => {
