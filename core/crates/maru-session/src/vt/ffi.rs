@@ -145,6 +145,7 @@ pub struct GhosttyTerminalScrollbar {
 
 /// `ghostty_mode_new(2027, false)`. DEC private mode 는 ANSI 비트(최상위)가 0 이라 번호 그대로다.
 pub const GHOSTTY_MODE_GRAPHEME_CLUSTER: u16 = 2027;
+pub const GHOSTTY_MODE_ORIGIN: u16 = 6;
 
 #[repr(C)]
 pub struct GhosttyTerminalModeConfig {
@@ -167,12 +168,14 @@ mod tests {
         let json = unsafe { std::ffi::CStr::from_ptr(ghostty_type_json()) }
             .to_str()
             .unwrap();
-        let layouts: serde_json::Value = serde_json::from_str(json).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(json).unwrap();
+        assert_eq!(manifest["schema"], 1);
+        let layouts = &manifest["types"];
 
         macro_rules! check {
             ($ty:ident { $($field:ident),* $(,)? }) => {
                 assert_layout(
-                    &layouts,
+                    layouts,
                     stringify!($ty),
                     size_of::<$ty>(),
                     align_of::<$ty>(),

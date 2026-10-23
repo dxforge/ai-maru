@@ -147,18 +147,31 @@ test('못 여는 링크는 이유를 토스트로 보인다', async ({ launch, d
   await expect(toast(page).locator('.line')).toHaveText(`${dataDir}/none.md doesn't exist`)
 })
 
-// 재생에는 OSC 8 hyperlink 가 실리지 않는다(`maru-session` 모듈 doc 의 재생). 글자로 찍힌 링크는 재생된 글자에서 provider 가 다시 찾는다.
-test('재시작해 세션에 다시 붙어도 글자로 찍힌 링크는 열린다', async ({ launch }) => {
-  const first = await launch()
-  await activeTerminal(first.page)
-  await run(first.page, 'echo https://example.com/kept; echo done-$((1+1))', 'done-2')
+for (const [kind, print, text, url] of [
+  [
+    'OSC 8 링크',
+    OSC8('https://example.com/replayed', 'repo#9'),
+    'repo#9',
+    'https://example.com/replayed'
+  ],
+  [
+    '글자로 찍힌 링크',
+    'echo https://example.com/kept',
+    'example.com/kept',
+    'https://example.com/kept'
+  ]
+] as const)
+  test(`재시작해 세션에 다시 붙어도 ${kind}는 열린다`, async ({ launch }) => {
+    const first = await launch()
+    await activeTerminal(first.page)
+    await run(first.page, `${print}; echo done-$((1+1))`, 'done-2')
 
-  await restartWith(first.app)
-  const { app, page } = await launch()
-  await activeTerminal(page)
-  await expect(rows(page)).toContainText('example.com/kept')
-  await recordShell(app)
+    await restartWith(first.app)
+    const { app, page } = await launch()
+    await activeTerminal(page)
+    await expect(rows(page)).toContainText(text)
+    await recordShell(app)
 
-  await metaClick(page, 'example.com/kept')
-  await expect.poll(() => opened(app)).toEqual(['https://example.com/kept'])
-})
+    await metaClick(page, text)
+    await expect.poll(() => opened(app)).toEqual([url])
+  })
