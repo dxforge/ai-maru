@@ -80,6 +80,12 @@ describe('snapRects', () => {
     const twoRight: Layout = { split: 'right', first: { pane: 1 }, second: { pane: 2 } }
     const twoThree: Layout = { split: 'right', first: { pane: 2 }, second: { pane: 3 } }
     const threeRight: Layout = { split: 'right', first: { pane: 1 }, second: twoThree }
+    const twoDown: Layout = { split: 'down', first: { pane: 1 }, second: { pane: 2 } }
+    const threeDown: Layout = {
+      split: 'down',
+      first: { pane: 1 },
+      second: { split: 'down', first: { pane: 2 }, second: { pane: 3 } }
+    }
 
     it('pane 하나는 workspace 가 하한보다 작아도 하한 크기다', () => {
       expect(snapRects({ pane: 1 }, { width: 100, height: 50 }, cell, 'half', min).get(1)).toEqual({
@@ -97,6 +103,12 @@ describe('snapRects', () => {
         [24, 23],
         [47, 23]
       ])
+      const stacked = snapRects(threeDown, { width: 800, height: 20 * 18 }, cell, 'half', min)
+      expect([...stacked.values()].map((b) => [b.top / 18, b.height / 18])).toEqual([
+        [0, 8],
+        [8, 6],
+        [14, 6]
+      ])
     })
 
     it('양쪽에 하한을 줄 자리가 없으면 각자 하한을 받고 뒤쪽이 workspace 밖으로 나간다', () => {
@@ -106,13 +118,7 @@ describe('snapRects', () => {
         [23, 23],
         [46, 23]
       ])
-      const stacked = snapRects(
-        { split: 'down', first: { pane: 1 }, second: { pane: 2 } },
-        { width: 800, height: 5 * 18 },
-        cell,
-        'half',
-        min
-      )
+      const stacked = snapRects(twoDown, { width: 800, height: 5 * 18 }, cell, 'half', min)
       expect(stacked.get(1)).toEqual({ left: 0, top: 0, width: 800, height: 6 * 18 })
       expect(stacked.get(2)).toEqual({ left: 0, top: 6 * 18, width: 800, height: 6 * 18 })
     })
@@ -163,6 +169,8 @@ describe('snapRects', () => {
       it('형제 pane 이 내줄 수 있는 자리까지 센다', () => {
         expect(split(twoRight, 2, 'right', size(69))).toBe(true)
         expect(split(twoRight, 2, 'right', size(68))).toBe(false)
+        expect(split(twoDown, 2, 'down', size(100, 18 * 18))).toBe(true)
+        expect(split(twoDown, 2, 'down', size(100, 18 * 18 - 1))).toBe(false)
       })
 
       it('workspace 전체를 나누면 있던 pane 들이 필요한 크기와 새 pane 의 하한이 들어가야 한다', () => {

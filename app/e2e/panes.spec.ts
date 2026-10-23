@@ -400,6 +400,26 @@ test('창이 낮아져도 pane 은 헤더를 뺀 5행 아래로 내려가지 않
   await expect.poll(async () => (await shellSize(page)).rows).toBe(5)
 })
 
+test('글꼴을 키워 pane 들이 들어가지 않게 돼도 pane 은 5행에서 멈추고 아래 pane 이 workspace 밖으로 나간다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-down', 2)
+  await resizeBy(app, 0, -350)
+  await expect.poll(async () => (await shellSize(page)).rows).toBeGreaterThan(5)
+
+  // 글꼴 크기의 상한(32)까지 키운다.
+  for (let i = 0; i < 18; i++) await clickMenu(app, 'increase-font-size')
+
+  await expect.poll(async () => (await shellSize(page)).rows).toBe(5)
+  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
+  const [top, bottom] = [await paneBox(page, 0), await paneBox(page, 1)]
+  expect(bottom.y).toBe(top.y + top.height)
+  expect(bottom.y + bottom.height).toBeGreaterThan(grid.y + grid.height)
+  await clickMenu(app, 'focus-pane-up')
+  await expect.poll(async () => (await shellSize(page)).rows).toBe(5)
+})
+
 test('columns 에서는 창이 좁아도 좌우로 나눌 수 있다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
