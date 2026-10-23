@@ -1,6 +1,6 @@
 export type Position = 'top' | 'bottom'
 
-/** `header` 는 pane 헤더와 columns 보기의 workspace 헤더, `palette` 는 명령 팔레트가 놓이는 쪽이다. */
+/** `header` 는 pane 헤더와 workspace 헤더, `palette` 는 명령 팔레트가 놓이는 쪽이다. */
 export type LayoutConfig = { header: Position; palette: Position }
 
 export const DEFAULT_LAYOUT: LayoutConfig = { header: 'bottom', palette: 'bottom' }

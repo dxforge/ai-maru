@@ -5,11 +5,13 @@ async function measure(app: ElectronApplication) {
   return (await app.firstWindow()).evaluate(() => {
     const screen = document.querySelector('.xterm-screen')!.getBoundingClientRect()
     const rows = document.querySelector('.xterm-rows')!.children.length
-    const header = document.querySelector('.pane-header')!.getBoundingClientRect()
+    const headers = ['.pane-header', '.workspace-header'].map(
+      (s) => document.querySelector(s)!.getBoundingClientRect().height
+    )
     return {
       winWidth: innerWidth,
       winHeight: innerHeight,
-      headerHeight: header.height,
+      headersHeight: headers[0] + headers[1],
       width: screen.width,
       height: screen.height,
       rows,
@@ -21,7 +23,7 @@ async function measure(app: ElectronApplication) {
 function expectFilled(m: Awaited<ReturnType<typeof measure>>) {
   expect(m.width).toBeLessThanOrEqual(m.winWidth)
   expect(m.height).toBeLessThanOrEqual(m.winHeight)
-  expect(m.winHeight - m.headerHeight - m.height).toBeLessThan(m.cellHeight)
+  expect(m.winHeight - m.headersHeight - m.height).toBeLessThan(m.cellHeight)
 }
 
 test('창을 열면 터미널이 창의 높이를 줄 단위로 채운다', async ({ launch }) => {

@@ -23,6 +23,15 @@ import {
   writeConfig
 } from './app'
 
+function headerBelowPane(page: Page): Promise<{ gap: number; above: number }> {
+  return page.evaluate(() => {
+    const card = document.querySelector('.panes.selected')!
+    const r = card.querySelector('.workspace-header')!.getBoundingClientRect()
+    const pane = card.querySelector('.pane-header')!.getBoundingClientRect()
+    return { gap: card.getBoundingClientRect().bottom - r.bottom, above: r.top - pane.bottom }
+  })
+}
+
 test('pane 헤더는 OSC 0·2 로 받은 제목을, 받기 전에는 Shell 을 보이고, pane 의 디렉토리 이름을 보인다', async ({
   launch
 }) => {
@@ -131,6 +140,34 @@ test('columns 의 workspace 헤더는 pane 상태 가운데 waiting, working 순
 
   await expect(workspaceGroups(page).nth(0)).toHaveClass(/selected/)
   await run(page, 'echo first-$((1+1))', 'first-2')
+})
+
+test('single 보기에서도 선택된 workspace 의 헤더만 이름·상태를 보이고, 카드 맨 아래 pane 헤더 아래에 놓이며, 사이드바를 접어도 남고, 눌러도 키 입력이 터미널에 남는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await newWorkspace(launched, 2)
+  const headers = page.locator('.workspace-header')
+  await expect(headers).toHaveCount(2)
+  await expect(headers.nth(1)).toBeVisible()
+  await expect(headers.nth(0)).toBeHidden()
+  await expect(headers.nth(1)).toHaveClass(/focused/)
+  await expect(headers.nth(1).locator('.name')).toHaveText(
+    await workspaceItems(page).nth(1).innerText()
+  )
+  await expect(headers.nth(1).locator('.row-bar-icon')).toHaveText('')
+
+  await page.keyboard.type(claudeHook('UserPromptSubmit'))
+  await expect(headers.nth(1)).toHaveClass(/working/)
+  expect(await headerBelowPane(page)).toEqual({ gap: 0, above: 0 })
+
+  await clickMenu(app, 'toggle-sidebar')
+  await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
+  await expect(headers.nth(1)).toBeVisible()
+
+  await headers.nth(1).click()
+  await run(page, 'echo keep-$((1+1))', 'keep-2')
 })
 
 test('columns 의 workspace 헤더는 idle 만 있으면 pane 헤더와 같은 idle 아이콘을 같은 크기로 보인다', async ({
@@ -519,16 +556,8 @@ test('columns 의 workspace 헤더는 기본으로 카드 맨 아래, pane 헤�
 }) => {
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
-  const header = page.locator('.workspace-header')
-  await expect(header).toHaveCount(1)
-
-  const layout = await page.evaluate(() => {
-    const card = document.querySelector('.panes.selected')!.getBoundingClientRect()
-    const r = document.querySelector('.workspace-header')!.getBoundingClientRect()
-    const pane = document.querySelector('.pane-header')!.getBoundingClientRect()
-    return { gap: card.bottom - r.bottom, above: r.top - pane.bottom }
-  })
-  expect(layout).toEqual({ gap: 0, above: 0 })
+  await expect(page.locator('.workspace-header')).toHaveCount(1)
+  expect(await headerBelowPane(page)).toEqual({ gap: 0, above: 0 })
 })
 
 test('헤더가 위면 columns 의 workspace 헤더는 카드 맨 위, pane 헤더 위에 놓이고 한 행 안쪽 아래에 선을 긋는다', async ({

@@ -22,7 +22,7 @@ palette = "top"
 | `terminal.font-family` | `D2Coding, Menlo, 'Symbols Nerd Font Mono', monospace` | 글꼴 이름. 쉼표로 이어 여러 개를 적을 수 있다. |
 | `terminal.font-size` | `14` | 8–32 의 숫자(px). 소수도 받는다. |
 | `terminal.line-height` | `1.2` | 1–2 의 숫자. 글자 높이에 곱한 값이 행 높이다. 글자 높이는 글꼴이 정하고 글꼴 크기보다 조금 크다(기본 글꼴 14px 이면 15px). |
-| `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 columns 보기의 workspace 헤더를 pane·workspace 의 아래에 둘지 위에 둘지. |
+| `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 workspace 헤더를 pane·workspace 의 아래에 둘지 위에 둘지. |
 | `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트를 창의 아래에 띄울지 위에 띄울지. |
 
 pane 헤더와 workspace 헤더도 터미널의 글꼴과 크기를 따른다.
