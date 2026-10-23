@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { available, filterCommands, type CommandId } from '../../../shared/commands'
 import { commandKeys, formatKeys } from '../../../shared/shortcuts'
 import type { Position } from '../config/layout'
@@ -16,6 +16,11 @@ const matches = computed(() =>
     .map((c) => ({ ...c, keys: commandKeys(c.id) }))
 )
 watch(query, () => (index.value = 0))
+
+const list = useTemplateRef<HTMLUListElement>('list')
+watch(index, () =>
+  nextTick(() => list.value?.querySelector('.selected')?.scrollIntoView({ block: 'nearest' }))
+)
 
 const focus = (): void => input.value?.focus()
 defineExpose({ focus })
@@ -58,7 +63,7 @@ function onKeydown(e: KeyboardEvent): void {
         @keydown="onKeydown"
         @blur="onBlur"
       />
-      <ul class="list">
+      <ul ref="list" class="list">
         <li
           v-for="(c, i) in matches"
           :key="c.id"
@@ -93,7 +98,11 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 .palette {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   width: min(500px, calc(100% - 32px));
+  max-height: calc(100% - 16px);
   margin: 8px auto;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -106,6 +115,7 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 .query {
+  flex: none;
   box-sizing: border-box;
   width: calc(100% - 12px);
   margin: 6px;
@@ -123,8 +133,10 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 .list {
+  min-height: 0;
   margin: 0;
   padding: 0 0 4px;
+  overflow-y: auto;
   list-style: none;
 }
 

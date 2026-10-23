@@ -6,6 +6,7 @@ import {
   dragRegion,
   expect,
   openPalette,
+  resizeBy,
   rows,
   run,
   shellSize,
@@ -399,6 +400,37 @@ test('layout.palette = "top" 이면 팔레트는 창 위 8px 안쪽에 뜨고 �
   await expect.poll(() => paletteLayout(page)).toMatchObject({ bottom: 8, gap: 6 })
   await expect(palette(page).locator('.query')).toBeFocused()
 })
+
+for (const [position, label, toLast] of [
+  ['bottom', '아래', 'ArrowDown'],
+  ['top', '위', 'ArrowUp']
+] as const) {
+  test(`팔레트가 ${label}일 때 창이 낮아도 팔레트는 창 안에 남고, 화살표로 고른 후보가 보이도록 목록이 스크롤된다`, async ({
+    launch,
+    dataDir
+  }) => {
+    writeConfig(dataDir, `[layout]\npalette = "${position}"\n`)
+    const launched = await launch()
+    const { app, page } = launched
+    await resizeBy(app, 0, -400)
+    await expect.poll(() => page.evaluate(() => innerHeight)).toBeLessThan(400)
+    await openPalette(launched)
+    const inside = await paletteLayout(page)
+    expect(inside.top).toBeGreaterThanOrEqual(8)
+    expect(inside.bottom).toBeGreaterThanOrEqual(8)
+
+    await page.keyboard.press(toLast)
+    const last = items(page).last()
+    await expect(last).toHaveClass(/selected/)
+    const list = (await palette(page).locator('.list').boundingBox())!
+    await expect
+      .poll(async () => {
+        const box = (await last.boundingBox())!
+        return box.y >= list.y && box.y + box.height <= list.y + list.height
+      })
+      .toBe(true)
+  })
+}
 
 test('항목을 누르거나, 마우스를 올린 항목에서 Enter 를 누르면 그 명령을 실행한다', async ({
   launch
