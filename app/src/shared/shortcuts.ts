@@ -58,6 +58,11 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'increase-font-size', key: 'Plus', meta: true },
   { target: 'command', action: 'decrease-font-size', key: '-', meta: true },
   { target: 'command', action: 'reset-font-size', key: '0', meta: true },
+  // ⌘+ 는 ⇧⌘= 로 치므로, 그 ⇧ 를 쥔 채 이어 누른 ⇧⌘- / ⇧⌘0 과 ⇧ 없이 누른 ⌘= 도 받는다.
+  // 메뉴는 위 줄의 키만 받고, 이 줄의 키는 창이 keydown 으로 받는다(`secondaryCommand`).
+  { target: 'command', action: 'increase-font-size', key: '=', meta: true },
+  { target: 'command', action: 'decrease-font-size', key: '-', shift: true, meta: true },
+  { target: 'command', action: 'reset-font-size', key: '0', shift: true, meta: true },
   { target: 'command', action: 'widen-workspace', key: '.', shift: true, meta: true },
   { target: 'command', action: 'narrow-workspace', key: ',', shift: true, meta: true },
 
@@ -115,6 +120,7 @@ const CODES: Record<string, string> = {
   Enter: 'Enter',
   Backspace: 'Backspace',
   Plus: 'Equal',
+  '=': 'Equal',
   '-': 'Minus',
   ']': 'BracketRight',
   '[': 'BracketLeft',
@@ -148,8 +154,8 @@ export function matchesKeys(e: KeyEventLike, k: Keys): boolean {
     e.code === keyCode(k.key) &&
     e.ctrlKey === !!k.ctrl &&
     e.altKey === !!k.alt &&
-    // `+` 는 `=` 자리에 ⇧ 를 눌러 친다. 메뉴의 Command+Plus 는 ⌘= 로 불리지만, ⇧⌘= 도 프로그램에 `=` 로 가지 않게 한다.
-    (k.key === 'Plus' || e.shiftKey === !!k.shift) &&
+    // `+` 는 `=` 자리에 ⇧ 를 눌러 친다. accelerator 에는 Plus 로 걸고, keydown 에는 ⇧ 가 눌린 `=` 로 맞춘다.
+    e.shiftKey === (!!k.shift || k.key === 'Plus') &&
     e.metaKey === !!k.meta
   )
 }
@@ -161,7 +167,7 @@ export function isAppKey(e: KeyEventLike): boolean {
 // 메뉴 항목 하나에는 accelerator 를 하나만 걸 수 있으므로, 메뉴에 걸지 못한 키는 창이 keydown 으로 받는다.
 export function secondaryCommand(e: KeyEventLike): CommandId | undefined {
   for (const s of shortcuts)
-    if (s.target === 'command' && s !== commandKeys(s.action) && matchesKeys(e, s)) return s.action
+    if (s.target === 'command' && matchesKeys(e, s) && s !== commandKeys(s.action)) return s.action
   return undefined
 }
 

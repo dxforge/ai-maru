@@ -509,7 +509,7 @@ function isTextInput(t: EventTarget | null): boolean {
   if (t instanceof HTMLTextAreaElement) return !t.classList.contains('xterm-helper-textarea')
   return t instanceof HTMLInputElement || (t instanceof HTMLElement && t.isContentEditable)
 }
-// 입력창에서는 ⇧⌘방향키를 입력창에 맡겨 macOS 의 텍스트 선택 키로 쓰게 한다.
+// ⇧⌘방향키는 macOS 의 텍스트 선택 키이므로, 입력창에 포커스가 있으면 `secondaryCommand` 의 키는 입력창에 맡긴다. 메뉴에 건 키는 입력창에서도 돈다.
 window.addEventListener('keydown', (e) => {
   const id = secondaryCommand(e)
   if (id === undefined || isTextInput(e.target)) return

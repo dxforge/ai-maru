@@ -55,7 +55,7 @@ Claude Code 의 입력창은 터미널 아래에 있어 시선이 아래에 머�
 
 ## 단축키로 글꼴 크기 바꾸기
 
-⌘+ / ⌘- 는 선택한 workspace 의 모든 터미널 글꼴 크기를 1px 씩 바꾸고, ⌘0 은 `font-size` 로 되돌린다. 범위는 `font-size` 와 같은 8–32 다. 바꾼 크기는 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다. 새로 연 workspace 는 `font-size` 로 시작한다.
+⌘+ / ⌘- 는 선택한 workspace 의 모든 터미널 글꼴 크기를 1px 씩 바꾸고, ⌘0 은 `font-size` 로 되돌린다. ⌘= 도 글꼴을 키운다. ⌘+ 의 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 은 ⌘- / ⌘0 과 같이 동작한다. 범위는 `font-size` 와 같은 8–32 다. 바꾼 크기는 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다. 새로 연 workspace 는 `font-size` 로 시작한다.
 
 ## 문제가 있으면
 
