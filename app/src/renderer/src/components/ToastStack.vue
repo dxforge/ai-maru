@@ -2,16 +2,12 @@
 import { ICONS } from '../icons'
 import type { ToastEntry } from '../toast/store'
 
-const { toasts, corner, width } = defineProps<{
-  toasts: readonly ToastEntry[]
-  corner: 'bottom-left' | 'top-right'
-  width: number
-}>()
+const { toasts, width } = defineProps<{ toasts: readonly ToastEntry[]; width: number }>()
 const emit = defineEmits<{ close: [id: string] }>()
 </script>
 
 <template>
-  <div v-if="toasts.length" class="toast-stack" :class="corner" :style="{ width: `${width}px` }">
+  <div v-if="toasts.length" class="toast-stack" :style="{ width: `${width}px` }">
     <div v-for="t in toasts" :key="t.id" class="toast" :class="t.level" role="status">
       <span class="icon nerd-icon">{{ ICONS[t.level] }}</span>
       <div class="body">
@@ -27,24 +23,16 @@ const emit = defineEmits<{ close: [id: string] }>()
 </template>
 
 <style scoped>
-/* 사이드바나 Canvas 헤더 위에 뜨므로, 그 drag 영역이 클릭을 창 끌기로 가져가지 않게 no-drag 로 둔다. */
+/* 사이드바 위에 뜨므로, 사이드바의 drag 영역이 클릭을 창 끌기로 가져가지 않게 no-drag 로 둔다. */
 .toast-stack {
   -webkit-app-region: no-drag;
   position: absolute;
+  left: 12px;
+  bottom: 12px;
   z-index: 3;
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.bottom-left {
-  left: 12px;
-  bottom: 12px;
-}
-
-.top-right {
-  top: 12px;
-  right: 12px;
 }
 
 .toast {

@@ -1,7 +1,8 @@
 import { readonly, shallowRef } from 'vue'
 import type { ConfigRead } from '../../../shared/config'
 import type { Toast } from '../toast/store'
-import { DEFAULT_FONT, DEFAULT_LAYOUT, parseConfig, sameFont, sameLayout } from './terminal'
+import { DEFAULT_LAYOUT, sameLayout } from './layout'
+import { DEFAULT_FONT, parseConfig, sameFont } from './terminal'
 
 /**
  * `problem` 이 있으면 설정을 적용하지 못했다. 그때 `first` 면 기본값을, 아니면 앞의 값을 그대로 쓴다.

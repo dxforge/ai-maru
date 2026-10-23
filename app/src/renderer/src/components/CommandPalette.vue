@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { available, filterCommands, type CommandId } from '../../../shared/commands'
 import { commandKeys, formatKeys } from '../../../shared/shortcuts'
-import type { Position } from '../config/terminal'
+import type { Position } from '../config/layout'
 
 const { position } = defineProps<{ position: Position }>()
 const emit = defineEmits<{ run: [id: CommandId]; close: [] }>()

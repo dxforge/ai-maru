@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { configToast, createConfig, type ConfigReport } from './store'
-import { DEFAULT_FONT, DEFAULT_LAYOUT } from './terminal'
+import { DEFAULT_LAYOUT } from './layout'
+import { DEFAULT_FONT } from './terminal'
 
 const PATH = '/h/.ai-maru/config.toml'
 

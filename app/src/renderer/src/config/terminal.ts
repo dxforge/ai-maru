@@ -1,5 +1,6 @@
 import { parse, TomlError } from 'smol-toml'
 import { FONT_FAMILY, FONT_SIZE, LINE_HEIGHT } from '../font'
+import { DEFAULT_LAYOUT, parseLayout, type LayoutConfig } from './layout'
 
 export type TerminalFont = { fontFamily: string; fontSize: number; lineHeight: number }
 
@@ -11,17 +12,6 @@ export const DEFAULT_FONT: TerminalFont = {
   fontFamily: FONT_FAMILY,
   fontSize: FONT_SIZE,
   lineHeight: LINE_HEIGHT
-}
-
-export type Position = 'top' | 'bottom'
-
-/** `header` 는 pane 헤더와 columns 보기의 workspace 헤더, `palette` 는 명령 팔레트가 놓이는 쪽이다. */
-export type LayoutConfig = { header: Position; palette: Position }
-
-export const DEFAULT_LAYOUT: LayoutConfig = { header: 'bottom', palette: 'bottom' }
-
-export function sameLayout(a: LayoutConfig, b: LayoutConfig): boolean {
-  return a.header === b.header && a.palette === b.palette
 }
 
 /** `names` 는 사용자가 적은 글꼴 이름이다. `missingFonts`(`fonts.ts`)가 쓸 수 있는지 잴 때 쓴다. */
@@ -121,17 +111,6 @@ function table(doc: Table, name: keyof typeof TABLES, warnings: string[]): Table
   for (const key of Object.keys(value))
     if (!TABLES[name].has(key)) warnings.push(`Unknown key ${name}.${key}.`)
   return value
-}
-
-function parseLayout(layout: Table, warnings: string[]): LayoutConfig {
-  const result = { ...DEFAULT_LAYOUT }
-  for (const key of Object.keys(DEFAULT_LAYOUT) as (keyof LayoutConfig)[]) {
-    const value = layout[key]
-    if (value === undefined) continue
-    if (value === 'top' || value === 'bottom') result[key] = value
-    else warnings.push(`layout.${key} must be "top" or "bottom", using ${DEFAULT_LAYOUT[key]}.`)
-  }
-  return result
 }
 
 function parseTerminal(

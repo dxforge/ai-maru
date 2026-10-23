@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  DEFAULT_FONT,
-  DEFAULT_LAYOUT,
-  fontNames,
-  fontSizeOverride,
-  parseConfig,
-  stepFontSize
-} from './terminal'
+import { DEFAULT_LAYOUT } from './layout'
+import { DEFAULT_FONT, fontNames, fontSizeOverride, parseConfig, stepFontSize } from './terminal'
 
 const FAMILY = "D2Coding, Menlo, 'Symbols Nerd Font Mono', monospace"
 
