@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { closeSync, constants, existsSync, mkdirSync, openSync } from 'node:fs'
-import { access, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { access, readdir, readFile, realpath, rm, stat } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
@@ -222,6 +222,16 @@ export async function foregroundCwd(
   }
   if (r.type !== 'foreground') throw cannotRead(id, r)
   return typeof r.cwd === 'string' ? r.cwd : null
+}
+
+/**
+ * `dir` 이 `cwd` 와 같은 디렉토리면 `cwd` 를, 아니면 `dir` 을 돌려준다. `foreground` 는 실제 경로를 답하고 셸의 OSC 7 은
+ * `$PWD` 를 주므로, 셸이 심볼릭 링크 경로에 있으면 같은 디렉토리라도 두 경로가 다르다.
+ */
+export async function sameDirAs(dir: string, cwd: string): Promise<string> {
+  const real = (path: string): Promise<string | null> => realpath(path).catch(() => null)
+  const [a, b] = await Promise.all([real(dir), real(cwd)])
+  return a !== null && a === b ? cwd : dir
 }
 
 export async function writeSessionInput(

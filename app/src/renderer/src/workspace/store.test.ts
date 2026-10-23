@@ -275,9 +275,13 @@ describe('git', () => {
   })
 
   function foreground() {
-    const asked: { sessionId: string; resolve: (cwd: string | null) => void }[] = []
-    const read = (sessionId: string) =>
-      new Promise<string | null>((resolve) => asked.push({ sessionId, resolve }))
+    const asked: {
+      sessionId: string
+      cwd: string | undefined
+      resolve: (cwd: string | null) => void
+    }[] = []
+    const read = (sessionId: string, cwd?: string) =>
+      new Promise<string | null>((resolve) => asked.push({ sessionId, cwd, resolve }))
     const answer = async (cwd: string | null) => {
       for (const a of asked.splice(0)) a.resolve(cwd)
       await Promise.resolve()
@@ -285,7 +289,7 @@ describe('git', () => {
     return { read, asked, answer }
   }
 
-  it('refreshSession 은 그 세션의 pane 만, foreground 프로세스의 cwd 로 옮기고 그 cwd 의 저장소를 읽는다', async () => {
+  it('refreshSession 은 그 세션의 pane 만, 지금 cwd 를 함께 넘겨 물은 foreground 프로세스의 cwd 로 옮기고 그 cwd 의 저장소를 읽는다', async () => {
     const r = reader()
     const fg = foreground()
     const ws = createWorkspaces(r.read, fg.read)
@@ -297,7 +301,7 @@ describe('git', () => {
     ws.setCwd(second.key, '/b')
     r.pending.length = 0
     ws.refreshSession(second.sessionId)
-    expect(fg.asked.map((a) => a.sessionId)).toEqual([second.sessionId])
+    expect(fg.asked.map((a) => [a.sessionId, a.cwd])).toEqual([[second.sessionId, '/b']])
     await fg.answer('/wt')
     expect(selected(ws).panes[1].cwd).toBe('/wt')
     expect(r.pending.map((p) => p.cwd)).toEqual(['/wt'])
@@ -361,7 +365,7 @@ describe('git', () => {
     newer.resolve('/second')
     await Promise.resolve()
     older.resolve('/first')
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve))
     expect(selected(ws).panes[0].cwd).toBe('/second')
     expect(r.pending.map((x) => x.cwd)).toEqual(['/second'])
   })

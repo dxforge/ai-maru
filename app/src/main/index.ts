@@ -40,6 +40,7 @@ import {
   killSessions,
   QUIT_TIMEOUT_MS,
   readRecord,
+  sameDirAs,
   sessionLive,
   spawnSession,
   startDir,
@@ -424,9 +425,11 @@ function start(): void {
     typeof cwd === 'string' ? gitHead(cwd) : null
   )
   const readForeground = (id: string): Promise<string | null> => foregroundCwd(sessionDir(), id)
-  ipcMain.handle('session:foreground', (_event, session: unknown) =>
-    typeof session === 'string' ? readForeground(session) : null
-  )
+  ipcMain.handle('session:foreground', async (_event, session: unknown, cwd: unknown) => {
+    if (typeof session !== 'string') return null
+    const dir = await readForeground(session)
+    return dir !== null && typeof cwd === 'string' ? sameDirAs(dir, cwd) : dir
+  })
   ipcMain.handle('link:open', (_event, text: unknown, session: unknown) => {
     if (typeof text !== 'string' || typeof session !== 'string') {
       return { ok: false, reason: 'not a link' }

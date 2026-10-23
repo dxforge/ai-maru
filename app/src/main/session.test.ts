@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync
 } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
@@ -19,6 +20,7 @@ import {
   foregroundCwd,
   killSessions,
   readRecord,
+  sameDirAs,
   sessionEnv,
   shellEnv,
   socketPath,
@@ -373,6 +375,22 @@ describe('foregroundCwd', () => {
     } finally {
       failing.close()
       mute.close()
+    }
+  })
+})
+
+describe('sameDirAs', () => {
+  it('같은 디렉토리를 가리키면 넘긴 cwd 의 경로를, 다르거나 없는 디렉토리면 foreground 의 경로를 돌려준다', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'maru-samedir-'))
+    mkdirSync(join(root, 'real'))
+    mkdirSync(join(root, 'other'))
+    symlinkSync(join(root, 'real'), join(root, 'link'))
+    try {
+      expect(await sameDirAs(join(root, 'real'), join(root, 'link'))).toBe(join(root, 'link'))
+      expect(await sameDirAs(join(root, 'other'), join(root, 'link'))).toBe(join(root, 'other'))
+      expect(await sameDirAs(join(root, 'gone'), join(root, 'gone'))).toBe(join(root, 'gone'))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

@@ -62,9 +62,12 @@ const api = {
    */
   paneReady: (): void => ipcRenderer.send('pane:ready'),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),
-  /** 그 세션의 foreground 프로세스의 cwd. 세션이 모르면 null 이고, 세션에 닿지 못하면 reject 한다. */
-  foregroundCwd: (sessionId: string): Promise<string | null> =>
-    ipcRenderer.invoke('session:foreground', sessionId),
+  /**
+   * `sessionId` 세션의 foreground 프로세스의 cwd 다. `cwd` 와 같은 디렉토리면 `cwd` 를 그대로 돌려준다.
+   * 세션이 모르면 null 이고, 세션에 닿지 못하면 reject 한다.
+   */
+  foregroundCwd: (sessionId: string, cwd?: string): Promise<string | null> =>
+    ipcRenderer.invoke('session:foreground', sessionId, cwd),
   /** 터미널 링크를 연다. 상대경로는 `sessionId` 의 foreground 프로세스의 cwd 기준이다. */
   openLink: (text: string, sessionId: string): Promise<LinkOpenResult> =>
     ipcRenderer.invoke('link:open', text, sessionId),

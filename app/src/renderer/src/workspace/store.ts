@@ -45,7 +45,7 @@ export function focusedPane(w: {
 
 export function createWorkspaces(
   readGit: (cwd: string) => Promise<GitHead | null> = async () => null,
-  foregroundCwd: (sessionId: string) => Promise<string | null> = async () => null,
+  foregroundCwd: (sessionId: string, cwd?: string) => Promise<string | null> = async () => null,
   sessionId: () => string = newSessionId,
   workspaceId: () => string = () => randomId('w')
 ) {
@@ -205,13 +205,14 @@ export function createWorkspaces(
 
   /**
    * pane 에서 돌고 있는 프로그램이 옮겨 간 디렉토리(claude 가 들어간 worktree 등)는 셸의 OSC 7 로 오지 않으므로,
-   * foreground 프로세스의 cwd 를 물어 그 pane 의 cwd 로 삼는다. 프롬프트의 셸은 OSC 7 과 같은 cwd 를 답한다.
+   * foreground 프로세스의 cwd 를 물어 그 pane 의 cwd 로 삼는다. 프롬프트에서는 셸이 foreground 이므로, 답은 OSC 7 과 같은 디렉토리다.
+   * 지금 cwd 를 함께 넘겨, 같은 디렉토리면 그 경로를 그대로 받는다. 셸이 심볼릭 링크 경로에 있을 때 경로가 실제 경로로 바뀌지 않게 하기 위해서다.
    */
   function refreshSession(sessionId: string): void {
     const p = paneBySession(sessionId)
     if (!p) return
     const latest = claim(p.key)
-    void foregroundCwd(sessionId)
+    void foregroundCwd(sessionId, p.cwd)
       .catch(() => null)
       .then((cwd) => {
         const dir = cwd ?? p.cwd
