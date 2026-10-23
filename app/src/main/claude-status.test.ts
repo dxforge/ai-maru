@@ -28,14 +28,16 @@ function statusFile(dir: string, pid: number, body: object | string): void {
 function setup() {
   let t = 1000
   const sent: [string, ClaudeState | null][] = []
+  const moved: string[] = []
   const s = createClaudeStatus({
     notify: (id, st) => sent.push([id, st]),
+    moved: (id) => moved.push(id),
     now: () => t,
     intervalMs: 60_000
   })
   const hook = (event: string, claude = 'c-1', dir = '/cfg') =>
     s.handlers['claude.hook']({ event, claude_session: claude, config_dir: dir }, 's-1')
-  return { s, sent, hook, tick: (ms: number) => (t += ms), now: () => t }
+  return { s, sent, moved, hook, tick: (ms: number) => (t += ms), now: () => t }
 }
 
 describe('claude-status 의 hook', () => {
@@ -128,6 +130,86 @@ describe('claude-status 의 상태 파일 폴링', () => {
     statusFile(dir, 10, { sessionId: 'c-1', status: 'idle', statusUpdatedAt: now() })
     await s.poll()
     expect(s.snapshot()).toEqual({ 's-1': 'idle' })
+    s.close()
+  })
+
+  it('파일의 cwd 가 지난번 읽은 것과 다르면 알리고, 처음 읽은 것과 같은 것은 알리지 않는다', async () => {
+    const { s, moved, hook } = setup()
+    const dir = configDir()
+    await hook('UserPromptSubmit', 'c-1', dir)
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: 1, cwd: '/a' })
+    await s.poll()
+    await s.poll()
+    expect(moved).toEqual([])
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: 1, cwd: '/b' })
+    await s.poll()
+    await s.poll()
+    expect(moved).toEqual(['s-1'])
+    s.close()
+  })
+
+  it('cwd 는 hook 보다 오래된 파일에서도 따르고, cwd 가 없거나 문자열이 아니면 넘긴다', async () => {
+    const { s, moved, hook, now } = setup()
+    const dir = configDir()
+    await hook('UserPromptSubmit', 'c-1', dir)
+    const at = now() - 1
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'idle', statusUpdatedAt: at })
+    await s.poll()
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'idle', statusUpdatedAt: at, cwd: '/a' })
+    await s.poll()
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'idle', statusUpdatedAt: at, cwd: 7 })
+    await s.poll()
+    expect(moved).toEqual([])
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'idle', statusUpdatedAt: at, cwd: '/b' })
+    await s.poll()
+    expect(moved).toEqual(['s-1'])
+    expect(s.snapshot()).toEqual({ 's-1': 'working' })
+    s.close()
+  })
+
+  it('같은 읽기에서 상태도 바뀌면 상태만 알린다', async () => {
+    const { s, sent, moved, hook, tick, now } = setup()
+    const dir = configDir()
+    await hook('UserPromptSubmit', 'c-1', dir)
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: 1, cwd: '/a' })
+    await s.poll()
+    tick(1)
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'waiting', statusUpdatedAt: now(), cwd: '/b' })
+    await s.poll()
+    expect(sent).toEqual([
+      ['s-1', 'working'],
+      ['s-1', 'waiting']
+    ])
+    expect(moved).toEqual([])
+    s.close()
+  })
+
+  it('파일의 상태가 지금 상태와 같아 알리지 않은 읽기에서 cwd 가 바뀌면 알린다', async () => {
+    const { s, sent, moved, hook, tick, now } = setup()
+    const dir = configDir()
+    await hook('UserPromptSubmit', 'c-1', dir)
+    tick(1)
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: now(), cwd: '/a' })
+    await s.poll()
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: now(), cwd: '/b' })
+    await s.poll()
+    expect(sent).toEqual([['s-1', 'working']])
+    expect(moved).toEqual(['s-1'])
+    s.close()
+  })
+
+  it('되살린 항목은 첫 읽기의 cwd 를 기준으로만 두고, 그 뒤 바뀌면 알린다', async () => {
+    const { s, moved } = setup()
+    const dir = configDir()
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: 1, cwd: '/a' })
+    await s.restore({
+      version: 1,
+      sessions: { 's-1': { state: 'working', claudeSession: 'c-1', configDir: dir, since: 0 } }
+    })
+    expect(moved).toEqual([])
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: 1, cwd: '/b' })
+    await s.poll()
+    expect(moved).toEqual(['s-1'])
     s.close()
   })
 
@@ -303,6 +385,36 @@ describe('claude-status 의 상태 파일 폴링', () => {
     await polled
     expect(s.snapshot()).toEqual({})
     expect(sent.at(-1)).toEqual(['s-1', null])
+    s.close()
+  })
+
+  it('읽는 동안 claude.exit 가 오면 읽은 cwd 변화도 버린다', async () => {
+    const { s, moved, hook } = setup()
+    const dir = configDir()
+    await hook('UserPromptSubmit', 'c-1', dir)
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: 1, cwd: '/a' })
+    await s.poll()
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: 1, cwd: '/b' })
+    const polled = s.poll()
+    await s.handlers['claude.exit']({}, 's-1')
+    await polled
+    expect(moved).toEqual([])
+    s.close()
+  })
+
+  it('claude 세션이 바뀌어 파일을 다시 찾아도 cwd 는 지난번 읽은 것과 견준다', async () => {
+    const { s, moved, hook } = setup()
+    const dir = configDir()
+    await hook('UserPromptSubmit', 'c-1', dir)
+    statusFile(dir, 10, { sessionId: 'c-1', status: 'busy', statusUpdatedAt: 1, cwd: '/a' })
+    await s.poll()
+    await hook('UserPromptSubmit', 'c-2', dir)
+    statusFile(dir, 10, { sessionId: 'c-2', status: 'busy', statusUpdatedAt: 1, cwd: '/a' })
+    await s.poll()
+    expect(moved).toEqual([])
+    statusFile(dir, 10, { sessionId: 'c-2', status: 'busy', statusUpdatedAt: 1, cwd: '/b' })
+    await s.poll()
+    expect(moved).toEqual(['s-1'])
     s.close()
   })
 
