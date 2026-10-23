@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { symlinkSync } from 'node:fs'
+import { symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { ICONS } from '../src/renderer/src/icons'
 import {
+  claudeConfig,
+  claudeFileCommand,
   claudeHook,
   clickMenu,
   dragHandle,
@@ -160,6 +162,30 @@ test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어
   await expect(paneRows(page)).toHaveClass(/working/, shellGit)
   await expect(tip(page)).toHaveAttribute('title', 'proj — by-claude\n~/link')
   expect((await win(app)).path).toBe(join(home, 'link'))
+})
+
+test('maru workspace new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른 worktree 로 옮겨 가면, 상태 파일의 cwd 가 바뀔 때 그 workspace 의 branch 를 프로그램의 cwd 로 읽는다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = repoHome(dataDir)
+  const config = claudeConfig(dataDir)
+  git(join(home, 'proj'), 'worktree', 'add', '-q', '-b', 'wt', '../proj-wt')
+  // claude 가 셸 없이 pane 의 명령으로 떠서, 한 턴 안에서 EnterWorktree 로 cwd 를 옮기는 상황을 흉내 낸다. 프롬프트가 없으므로
+  // OSC 7 은 오지 않고, 옮긴 뒤 hook 도 오지 않는다. 파일의 idle 은 hook 보다 오래돼 상태는 working 그대로다.
+  // 앱은 hook 뒤 1초 안에 파일을 처음 읽어 그 cwd 를 기준으로 두므로, 옮기기는 그 뒤여야 한다. 3초는 거기에 2초 여유를 둔 것이다.
+  const writeStatus = claudeFileCommand(config, 1, 'c-1', 'idle', 1)
+  writeFileSync(
+    join(home, 'claude.sh'),
+    `${writeStatus}\n${claudeHook('UserPromptSubmit', { config })}sleep 3\ncd ../proj-wt && ${writeStatus}\nsleep 30\n`
+  )
+  const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  await page.keyboard.type('maru workspace new --cwd ~/proj bash ~/claude.sh >/dev/null\n')
+  const opened = workspaceGroups(page).nth(1).locator('.workspace')
+  await expect(paneRows(page)).toHaveClass(/working/)
+  await expect(opened).toHaveAttribute('title', 'proj — main\n~/proj')
+  await expect(opened).toHaveAttribute('title', 'proj — wt\n~/proj-wt')
+  await expect(paneRows(page)).toHaveClass(/working/)
 })
 
 test('경로는 workspace 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, columns 의 workspace 헤더에도 branch 가 붙는다', async ({

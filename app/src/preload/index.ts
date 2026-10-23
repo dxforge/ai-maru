@@ -43,6 +43,10 @@ const api = {
       cb(session, state)
     )
   },
+  /** 그 터미널의 claude 가 상태는 그대로인 채 작업 디렉토리를 옮겼다. */
+  onClaudeMoved: (cb: (session: string) => void): void => {
+    ipcRenderer.on('claude:moved', (_event, session: string) => cb(session))
+  },
   onPaneNew: (cb: (id: number, req: PaneNewRequest) => void): void => {
     ipcRenderer.on('pane:new', (_event, id: number, req: PaneNewRequest) => cb(id, req))
   },

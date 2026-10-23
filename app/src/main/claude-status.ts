@@ -33,12 +33,17 @@ type Saved = {
   file?: string
 }
 
-type Entry = Saved & { polling: boolean }
+type Entry = Saved & { polling: boolean; cwd?: string }
 
 /** 재시작 전 앱이 쓰고 다시 뜬 앱이 읽는다. 모양을 바꾸면 버전을 올린다. */
 export type ClaudeFile = { version: 1; sessions: Record<string, Saved> }
 
-type FileStatus = { sessionId?: unknown; status?: unknown; statusUpdatedAt?: unknown }
+type FileStatus = {
+  sessionId?: unknown
+  status?: unknown
+  statusUpdatedAt?: unknown
+  cwd?: unknown
+}
 
 export type ClaudeStatus = {
   handlers: Handlers
@@ -87,10 +92,13 @@ async function find(e: Entry): Promise<FileStatus | 'gone' | null> {
 
 export function createClaudeStatus({
   notify,
+  moved,
   now = Date.now,
   intervalMs = 1000
 }: {
   notify: (session: string, state: ClaudeState | null) => void
+  /** 상태 파일에서 읽은 claude 의 작업 디렉토리가 지난번 읽은 것과 다르면 부른다. 같은 읽기에서 상태도 바뀌었으면 `notify` 만 부른다. */
+  moved: (session: string) => void
   now?: () => number
   intervalMs?: number
 }): ClaudeStatus {
@@ -109,20 +117,32 @@ export function createClaudeStatus({
     else if (!timer) timer = setInterval(() => void poll(), intervalMs)
   }
 
-  function set(session: string, e: Entry, state: ClaudeState): void {
+  function set(session: string, e: Entry, state: ClaudeState): boolean {
     const changed = entries.get(session)?.state !== state
     e.state = state
     e.polling = state !== 'idle'
     entries.set(session, e)
     if (changed) notify(session, state)
     schedule()
+    return changed
   }
 
+  /**
+   * 파일의 `cwd` 도 `status` 처럼 문서에 없는 값이다. claude 는 한 상태에 머문 채 디렉토리를 옮길 수 있고(worktree 로
+   * 들어가는 등) 그때는 hook 이 오지 않으므로, 읽은 `cwd` 가 지난번과 다르면 알린다. 상태와 달리 hook 시각과 견주지
+   * 않는다. 처음 읽은 `cwd` 는 견줄 기준으로만 둔다 — 항목을 만든 hook 이 이미 알렸기 때문이다. 같은 읽기에서 상태도
+   * 바뀌어 알렸으면 `notify` 를 받은 쪽이 그때 다시 읽으므로 따로 알리지 않는다.
+   */
   function follow(session: string, e: Entry, s: FileStatus): void {
+    const was = e.cwd
+    if (typeof s.cwd === 'string') e.cwd = s.cwd
     const state = FILE_STATES.get(s.status)
-    if (state && typeof s.statusUpdatedAt === 'number' && s.statusUpdatedAt > e.since) {
+    const notified =
+      state !== undefined &&
+      typeof s.statusUpdatedAt === 'number' &&
+      s.statusUpdatedAt > e.since &&
       set(session, e, state)
-    }
+    if (was !== undefined && e.cwd !== was && !notified) moved(session)
   }
 
   async function pollOne(session: string, e: Entry): Promise<void> {

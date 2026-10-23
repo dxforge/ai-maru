@@ -313,6 +313,10 @@ export function claudeConfig(dataDir: string): string {
   return config
 }
 
+function claudeFileJson(sessionId: string, status: string, at: number, cwd?: string): string {
+  return JSON.stringify({ sessionId, status, statusUpdatedAt: at, ...(cwd && { cwd }) })
+}
+
 export function claudeFile(
   config: string,
   pid: number,
@@ -320,10 +324,18 @@ export function claudeFile(
   status: string,
   at: number
 ): void {
-  writeFileSync(
-    join(config, 'sessions', `${pid}.json`),
-    JSON.stringify({ sessionId, status, statusUpdatedAt: at })
-  )
+  writeFileSync(join(config, 'sessions', `${pid}.json`), claudeFileJson(sessionId, status, at))
+}
+
+export function claudeFileCommand(
+  config: string,
+  pid: number,
+  sessionId: string,
+  status: string,
+  at: number
+): string {
+  const json = claudeFileJson(sessionId, status, at, '%s')
+  return `printf '${json}' "$PWD" > '${join(config, 'sessions', `${pid}.json`)}'`
 }
 
 export function activeHeader(page: Page) {

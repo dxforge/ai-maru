@@ -44,11 +44,13 @@ const workspaces = createWorkspaces(window.maru.gitHead, window.maru.foregroundC
 
 const claude = createClaudeStatuses()
 // zsh 는 프롬프트마다 cwd 를 알려 와 그때 branch 를 다시 읽지만, Claude 를 띄운 pane 에는 프롬프트가 뜨지 않아
-// 상태가 바뀔 때 읽는다. 그래서 Claude 가 한 상태에 머문 채 branch 나 디렉토리를 바꾸면 다음 상태로 넘어갈 때 반영된다.
+// 상태가 바뀔 때와 Claude 가 상태 파일에 쓴 디렉토리가 바뀔 때 읽는다. 그래서 Claude 가 한 상태에 머문 채 branch 를
+// 바꾸면 다음 상태로 넘어갈 때 반영된다.
 window.maru.onClaudeStatus((session, state) => {
   claude.set(session, state)
   workspaces.refreshSession(session)
 })
+window.maru.onClaudeMoved(workspaces.refreshSession)
 void window.maru.claudeStatuses().then(claude.replace)
 const home = window.maru.home
 

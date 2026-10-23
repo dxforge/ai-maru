@@ -94,12 +94,15 @@ function cliAccess(): CliAccess {
   }
 }
 
-const claudeStatus = createClaudeStatus({
-  notify: (session, state) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send('claude:status', session, state)
-    }
+function sendToWindows(channel: string, ...args: unknown[]): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(channel, ...args)
   }
+}
+
+const claudeStatus = createClaudeStatus({
+  notify: (session, state) => sendToWindows('claude:status', session, state),
+  moved: (session) => sendToWindows('claude:moved', session)
 })
 
 // 재시작한 앱의 monitor 는 표를 되살리기 전에도 붙으므로, 보류한 알림은 되살린 뒤에 보낸다.
@@ -315,9 +318,7 @@ function sessionHost(): UtilityProcess {
     proc.once('exit', () => {
       host = null
       // 포트의 반대쪽이 사라져도 renderer 의 MessagePort 는 알려 주지 않는다.
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.isDestroyed()) win.webContents.send('session:lost')
-      }
+      sendToWindows('session:lost')
     })
     host = proc
   }
