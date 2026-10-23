@@ -193,12 +193,9 @@ function toggleFold(key: number): void {
 // 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 pane 마다 열 수가 갈린다(#58).
 const SIDEBAR_WIDTH = 282
 const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
-// 사이드바 왼쪽 아래의 토스트는 사이드바 안쪽 양옆 12px 을 비운다. 창 오른쪽 위의 토스트는 사이드바 밖이라 기본 사이드바에서의
-// 폭으로 둔다.
-const toastWidth = computed(() =>
-  headerBottom.value
-    ? SIDEBAR_WIDTH - 24
-    : Math.max(sidebarOpen.value ? sidebarWidth.value : 0, SIDEBAR_WIDTH) - 24
+// 토스트는 사이드바 안쪽 양옆 12px 을 비운다.
+const toastWidth = computed(
+  () => Math.max(sidebarOpen.value ? sidebarWidth.value : 0, SIDEBAR_WIDTH) - 24
 )
 // 신호등 버튼 묶음 폭에 양옆 12px 씩을 더한 폭이다.
 const RAIL_WIDTH = 85
@@ -352,8 +349,8 @@ function placement(b: Box, unit: string, bodyHeight?: number) {
   }
 }
 
-// FitAddon 은 pane 높이를 정수로 잘라 읽고 반올림한 셀 높이로 나눠 행 하나를 잃곤 하므로, 헤더 아래에 들어갈
-// 행 수보다 반 행 큰 높이를 주고 넘친 부분은 pane 이 가린다.
+// FitAddon 은 pane 높이를 정수로 잘라 읽고 반올림한 셀 높이로 나눠 행 하나를 잃곤 하므로, 헤더를 뺀 행 수보다
+// 반 행 큰 높이를 준다. 넘친 반 행은 헤더가 아래면 헤더가 덮고, 위면 pane 이 자른다.
 function bodyHeight(b: Box, row: number): number {
   const rows = Math.max(0, Math.floor(b.height / row - 1 + EPSILON))
   return (rows + 0.5) * row
@@ -649,12 +646,7 @@ void window.maru.restoreScreen().then((s) => {
       :width="canvasWidth"
       :resizing="resizing === 'canvas'"
     />
-    <ToastStack
-      :toasts="toasts.list.value"
-      :corner="headerBottom ? 'top-right' : 'bottom-left'"
-      :width="toastWidth"
-      @close="toasts.close"
-    />
+    <ToastStack :toasts="toasts.list.value" :width="toastWidth" @close="toasts.close" />
     <CommandPalette
       v-if="paletteOpen"
       ref="palette"
@@ -816,7 +808,7 @@ void window.maru.restoreScreen().then((s) => {
   z-index: 2;
 }
 
-/* 영역을 재기 전에는 아래까지 채우고, 잰 뒤에는 `placement` 의 height 가 bottom 보다 앞선다. */
+/* 영역을 재기 전에는 본문이 pane 아래 끝까지 채운다. 잰 뒤에는 `placement` 가 준 height 가 bottom 보다 앞선다. */
 .body {
   position: absolute;
   top: var(--row);

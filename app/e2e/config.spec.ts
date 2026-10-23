@@ -5,12 +5,10 @@ import {
   activeTerminal,
   clickMenu,
   configFile,
-  dragHandle,
   expect,
   newWorkspace,
   openCanvas,
   shellSize,
-  sidebarResizer,
   sidebarWidth,
   test,
   toast,
@@ -160,26 +158,27 @@ test('pane 헤더도 설정 글꼴을 따른다', async ({ launch, dataDir }) =>
   expect(header).toEqual([font.family, font.size])
 })
 
-test('헤더는 기본으로 pane 아래에 있고, layout.header = "top" 으로 고치면 바로 위로 옮기며 토스트도 자리를 옮긴다', async ({
+test('헤더는 기본으로 pane 아래에 있고, layout.header = "top" 으로 고치면 바로 위로 옮기며, 토스트는 두 위치 모두 왼쪽 아래에 뜬다', async ({
   launch,
   dataDir
 }) => {
   const { page } = await launch()
   await expect.poll(() => headerOffsets(page)).toMatchObject({ bottom: 0 })
   expect((await headerOffsets(page)).top).toBeGreaterThan(0)
+  const corner = async () => {
+    const box = (await toast(page).boundingBox())!
+    return { x: box.x, bottom: box.y + box.height }
+  }
+  const bottomLeft = { x: 12, bottom: await page.evaluate(() => innerHeight - 12) }
 
   writeConfig(dataDir, '[layout]\nheader = "top"\n[terminal]\nfont-size = 40\n')
-
   await expect.poll(() => headerOffsets(page)).toMatchObject({ top: 0 })
   expect((await headerOffsets(page)).bottom).toBeGreaterThan(0)
-  const bottomEdge = async () => {
-    const box = (await toast(page).boundingBox())!
-    return box.y + box.height
-  }
-  await expect.poll(bottomEdge).toBe(await page.evaluate(() => innerHeight - 12))
+  await expect.poll(corner).toEqual(bottomLeft)
+
   writeConfig(dataDir, '[layout]\nheader = "bottom"\n[terminal]\nfont-size = 40\n')
   await expect.poll(() => headerOffsets(page)).toMatchObject({ bottom: 0 })
-  await expect.poll(async () => (await toast(page).boundingBox())!.y).toBe(12)
+  await expect.poll(corner).toEqual(bottomLeft)
 })
 
 test('layout.header 가 top·bottom 이 아니면 알리고 아래에 둔다', async ({ launch, dataDir }) => {
@@ -312,7 +311,7 @@ test('띄울 때 설정 파일을 읽을 수 없으면 기본값을 쓴다고 �
   expect(await fontSize(page)).toBe('14px')
 })
 
-test('헤더가 아래면 토스트는 창 오른쪽 위 안쪽에 258px 폭으로 뜨고, 사이드바를 넓혀도 그대로이며, Canvas 헤더 위에서도 닫힌다', async ({
+test('토스트가 떠 있어도 Canvas 헤더의 닫기 버튼으로 Canvas 를 닫는다', async ({
   launch,
   dataDir
 }) => {
@@ -320,29 +319,17 @@ test('헤더가 아래면 토스트는 창 오른쪽 위 안쪽에 258px 폭으�
   const launched = await launch()
   const { page } = launched
   await expect(toast(page)).toHaveCount(1)
-  const box = (await toast(page).boundingBox())!
-  const width = await page.evaluate(() => innerWidth)
-  expect(box.y).toBe(12)
-  expect(box.x + box.width).toBe(width - 12)
-  expect(box.width).toBe(258)
-  await dragHandle(page, sidebarResizer(page), 120)
-  await expect.poll(() => sidebarWidth(page)).toBeGreaterThan(282 + 100)
-  expect((await toast(page).boundingBox())!.width).toBe(258)
-
-  // Canvas 헤더는 창을 끄는 drag 영역이라, 그 위에 뜬 토스트의 버튼이 눌리는지 본다.
   await openCanvas(launched)
-  const bar = (await page.locator('.canvas .bar').boundingBox())!
-  const after = (await toast(page).boundingBox())!
-  expect(after.y).toBeLessThan(bar.y + bar.height)
-  await page.getByRole('button', { name: 'Dismiss' }).click()
-  await expect(toast(page)).toHaveCount(0)
+  await page.locator('.canvas .close').click()
+  await expect(page.locator('aside.canvas')).toBeHidden()
+  await expect(toast(page)).toHaveCount(1)
 })
 
-test('헤더가 위면 토스트는 사이드바 왼쪽 아래 안쪽에 뜨고, 사이드바를 접으면 258px 폭이다', async ({
+test('토스트는 사이드바 왼쪽 아래 안쪽에 뜨고, 사이드바를 접으면 258px 폭이다', async ({
   launch,
   dataDir
 }) => {
-  writeConfig(dataDir, '[terminal]\nfont-size = 40\n[layout]\nheader = "top"\n')
+  writeConfig(dataDir, '[terminal]\nfont-size = 40\n')
   const { app, page } = await launch()
   await expect(toast(page)).toHaveCount(1)
   const box = (await toast(page).boundingBox())!
