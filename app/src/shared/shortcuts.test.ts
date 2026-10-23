@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   commandKeys,
   formatKeys,
-  isAppKey,
   keyCode,
   matchesKeys,
   shortcuts,
@@ -102,46 +101,6 @@ describe('matchesKeys', () => {
     expect(matchesKeys(press('Equal', { metaKey: true }), plus)).toBe(false)
     expect(matchesKeys(press('Equal', { metaKey: true }), equal)).toBe(true)
     expect(matchesKeys(press('Equal', { metaKey: true, shiftKey: true }), equal)).toBe(false)
-  })
-})
-
-describe('isAppKey', () => {
-  it('명령이나 메뉴에 걸린 키만 참이다', () => {
-    expect(isAppKey(press('Backslash', { metaKey: true }))).toBe(true)
-    expect(isAppKey(press('KeyD', { metaKey: true }))).toBe(true)
-    expect(isAppKey(press('BracketRight', { shiftKey: true, metaKey: true }))).toBe(true)
-    expect(isAppKey(press('KeyC', { metaKey: true }))).toBe(true)
-    expect(isAppKey(press('KeyA', { metaKey: true }))).toBe(true)
-    expect(isAppKey(press('Enter'))).toBe(false)
-    expect(isAppKey(press('Enter', { metaKey: true }))).toBe(false)
-    expect(isAppKey(press('Enter', { ctrlKey: true, metaKey: true }))).toBe(false)
-    expect(isAppKey(press('Enter', { shiftKey: true, metaKey: true }))).toBe(false)
-  })
-
-  it('⌘+ / ⌘- / ⌘0 은 ⇧ 를 누르든 안 누르든 앱의 키다', () => {
-    for (const code of ['Equal', 'Minus', 'Digit0']) {
-      expect(isAppKey(press(code, { metaKey: true })), code).toBe(true)
-      expect(isAppKey(press(code, { shiftKey: true, metaKey: true })), code).toBe(true)
-      expect(isAppKey(press(code, { altKey: true, metaKey: true })), code).toBe(false)
-    }
-  })
-
-  it('⌥⌘방향키와 ⇧⌘방향키는 앱의 키다', () => {
-    for (const code of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) {
-      expect(isAppKey(press(code, { altKey: true, metaKey: true })), code).toBe(true)
-      expect(isAppKey(press(code, { shiftKey: true, metaKey: true })), code).toBe(true)
-    }
-  })
-
-  it('⇧⌘. 와 ⇧⌘, 는 앱의 키다', () => {
-    expect(isAppKey(press('Period', { shiftKey: true, metaKey: true }))).toBe(true)
-    expect(isAppKey(press('Comma', { shiftKey: true, metaKey: true }))).toBe(true)
-    expect(isAppKey(press('Period', { metaKey: true }))).toBe(false)
-  })
-
-  it('터미널이 바꿔 보내는 키는 앱의 키가 아니다', () => {
-    expect(isAppKey(press('Backspace', { metaKey: true }))).toBe(false)
-    expect(isAppKey(press('ArrowLeft', { metaKey: true }))).toBe(false)
   })
 })
 

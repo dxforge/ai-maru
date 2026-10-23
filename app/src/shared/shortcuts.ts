@@ -160,10 +160,6 @@ export function matchesKeys(e: KeyEventLike, k: Keys): boolean {
   )
 }
 
-export function isAppKey(e: KeyEventLike): boolean {
-  return shortcuts.some((s) => s.target !== 'terminal' && matchesKeys(e, s))
-}
-
 // 메뉴 항목 하나에는 accelerator 를 하나만 걸 수 있으므로, 메뉴에 걸지 못한 키는 창이 keydown 으로 받는다.
 export function secondaryCommand(e: KeyEventLike): CommandId | undefined {
   for (const s of shortcuts)
