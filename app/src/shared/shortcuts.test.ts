@@ -91,6 +91,15 @@ describe('matchesKeys', () => {
     expect(matchesKeys(press('KeyD', { metaKey: true, altKey: true }), keys)).toBe(false)
     expect(matchesKeys(press('KeyD', { metaKey: true, ctrlKey: true }), keys)).toBe(false)
   })
+
+  it('Plus 는 ⇧ 를 누른 = 이고, = 은 ⇧ 를 누르지 않은 = 이다', () => {
+    const plus = { key: 'Plus', meta: true } as const
+    const equal = { key: '=', meta: true } as const
+    expect(matchesKeys(press('Equal', { metaKey: true, shiftKey: true }), plus)).toBe(true)
+    expect(matchesKeys(press('Equal', { metaKey: true }), plus)).toBe(false)
+    expect(matchesKeys(press('Equal', { metaKey: true }), equal)).toBe(true)
+    expect(matchesKeys(press('Equal', { metaKey: true, shiftKey: true }), equal)).toBe(false)
+  })
 })
 
 describe('isAppKey', () => {
@@ -106,9 +115,12 @@ describe('isAppKey', () => {
     expect(isAppKey(press('Enter', { shiftKey: true, metaKey: true }))).toBe(false)
   })
 
-  it('⌘+ 는 ⇧ 를 누르든 안 누르든 앱의 키다', () => {
-    expect(isAppKey(press('Equal', { metaKey: true }))).toBe(true)
-    expect(isAppKey(press('Equal', { shiftKey: true, metaKey: true }))).toBe(true)
+  it('⌘+ / ⌘- / ⌘0 은 ⇧ 를 누르든 안 누르든 앱의 키다', () => {
+    for (const code of ['Equal', 'Minus', 'Digit0']) {
+      expect(isAppKey(press(code, { metaKey: true })), code).toBe(true)
+      expect(isAppKey(press(code, { shiftKey: true, metaKey: true })), code).toBe(true)
+      expect(isAppKey(press(code, { altKey: true, metaKey: true })), code).toBe(false)
+    }
   })
 
   it('⌥⌘방향키와 ⇧⌘방향키는 앱의 키다', () => {
@@ -146,12 +158,25 @@ describe('secondaryCommand', () => {
     )
   })
 
+  it('⌘= 과 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 은 글꼴 크기 명령이다', () => {
+    expect(secondaryCommand(press('Equal', { metaKey: true }))).toBe('increase-font-size')
+    expect(secondaryCommand(press('Minus', { shiftKey: true, metaKey: true }))).toBe(
+      'decrease-font-size'
+    )
+    expect(secondaryCommand(press('Digit0', { shiftKey: true, metaKey: true }))).toBe(
+      'reset-font-size'
+    )
+  })
+
   it('메뉴에 건 키는 돌려주지 않는다', () => {
     expect(secondaryCommand(press('ArrowLeft', { altKey: true, metaKey: true }))).toBeUndefined()
     expect(
       secondaryCommand(press('BracketRight', { shiftKey: true, metaKey: true }))
     ).toBeUndefined()
     expect(secondaryCommand(press('ArrowLeft', { metaKey: true }))).toBeUndefined()
+    expect(secondaryCommand(press('Equal', { shiftKey: true, metaKey: true }))).toBeUndefined()
+    expect(secondaryCommand(press('Minus', { metaKey: true }))).toBeUndefined()
+    expect(secondaryCommand(press('Digit0', { metaKey: true }))).toBeUndefined()
   })
 })
 

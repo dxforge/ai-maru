@@ -177,6 +177,35 @@ test('명령 팔레트에서 Increase·Decrease·Reset Font Size 를 실행한�
   }
 })
 
+// ⌘+ / ⌘- / ⌘0 자체는 macOS 메뉴가 받으므로 Playwright 키로는 재지 못한다. 메뉴에 걸리지 않아 창이 받는 키만 잰다.
+test('⌘= 과 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 도 터미널에서 글꼴 크기를 바꾼다', async ({ launch }) => {
+  const { page } = await launch()
+  await activeTerminal(page)
+  for (const [key, size] of [
+    ['Meta+Equal', '15px'],
+    ['Meta+Equal', '16px'],
+    ['Shift+Meta+Minus', '15px'],
+    ['Shift+Meta+Digit0', '14px']
+  ]) {
+    await page.keyboard.press(key)
+    await expect.poll(() => fontSizes(page)).toEqual([[size]])
+  }
+})
+
+test('팔레트 입력창에 포커스가 있으면 ⌘= / ⇧⌘- / ⇧⌘0 은 글꼴 크기를 바꾸지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await openPalette(launched)
+  await page.keyboard.type('canv')
+  for (const key of ['Meta+Equal', 'Shift+Meta+Minus', 'Shift+Meta+Digit0'])
+    await page.keyboard.press(key)
+  await expect(page.locator('.palette .query')).toHaveValue('canv')
+  await expect(page.locator('.palette .query')).toBeFocused()
+  expect(await fontSizes(page)).toEqual([['14px']])
+})
+
 test('설정 파일의 글꼴을 바꿔도 셀 크기가 같으면 columns 카드 폭과 셸이 본 크기가 그대로다', async ({
   launch,
   dataDir

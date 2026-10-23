@@ -79,7 +79,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
   expect(menus.roles).not.toContain('resetzoom')
 })
 
-test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않고 메뉴로 흘려보낸다', async ({
+test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않고 메뉴나 창으로 흘려보낸다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -211,7 +211,7 @@ test('터미널에서 ⌥ 는 Meta 로 가서 ⌥P 는 ESC p 를 보낸다', asy
   await expect(rows(page)).toContainText("got=$'\\Ep'")
 })
 
-test('kitty 키보드 모드인 프로그램이 떠 있어도 메뉴의 키는 프로그램으로 가지 않고 메뉴로 흘려보낸다', async ({
+test('kitty 키보드 모드인 프로그램이 떠 있어도 앱의 키는 프로그램으로 가지 않고 메뉴나 창으로 흘려보낸다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -229,11 +229,21 @@ test('kitty 키보드 모드인 프로그램이 떠 있어도 메뉴의 키는 �
     })
   })
 
-  for (const key of ['KeyC', 'KeyQ', 'KeyZ', 'Equal', 'Shift+Equal'])
-    await page.keyboard.press(`Meta+${key}`)
+  const keys = [
+    'KeyC',
+    'KeyQ',
+    'KeyZ',
+    'Equal',
+    'Shift+Equal',
+    'Minus',
+    'Shift+Minus',
+    'Digit0',
+    'Shift+Digit0'
+  ]
+  for (const key of keys) await page.keyboard.press(`Meta+${key}`)
 
   expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual(
-    ['KeyC', 'KeyQ', 'KeyZ', 'Equal', 'Equal'].map((code) => ({ code, prevented: false }))
+    keys.map((key) => ({ code: key.replace('Shift+', ''), prevented: false }))
   )
   await expect(rows(page)).toContainText("got=''")
 })
