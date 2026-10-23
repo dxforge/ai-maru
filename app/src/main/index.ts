@@ -325,8 +325,11 @@ function sessionHost(): UtilityProcess {
   return host
 }
 
-// 두 번째 실행이 같은 세션 디렉토리에서 세션을 하나 더 띄우지 않게.
+// 두 번째 실행이 같은 세션 디렉토리에서 세션을 하나 더 띄우지 않게 끝낸다.
 if (!app.requestSingleInstanceLock()) {
+  console.error(
+    `maru: another instance is using ${app.getPath('userData')}; quitting. Start with --user-data-dir=<dir> (pnpm dev -- --user-data-dir=<dir>) to run alongside it.`
+  )
   app.quit()
 } else {
   app.on('second-instance', () => {
