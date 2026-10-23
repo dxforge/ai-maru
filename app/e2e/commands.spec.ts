@@ -28,6 +28,13 @@ async function typesIntoTerminal(page: Page, marker: string): Promise<void> {
   await run(page, `echo ${marker}-$((1+1))`, `${marker}-2`)
 }
 
+async function armKitty(page: Page, flags: number, read: string): Promise<void> {
+  await page.keyboard.type(
+    `printf '\\033[>${flags}u'; echo armed-$((1+1)); IFS= read -rs ${read} k; printf '\\033[<u'; printf 'got=%q\\n' "$k"\n`
+  )
+  await expect(rows(page)).toContainText('armed-2')
+}
+
 test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W 는 Close Window 가 아니며, 새로 고침과 창 zoom 은 메뉴에 없다', async ({
   launch
 }) => {
@@ -131,10 +138,7 @@ test('터미널에서 ⇧↩ 은 kitty 키보드 프로토콜을 켠 프로그�
   await page.keyboard.press('Shift+Enter')
   await expect(rows(page)).toContainText('plain-2')
 
-  await page.keyboard.type(
-    "printf '\\033[>1u'; echo armed-$((1+1)); IFS= read -rsn7 k; printf '\\033[<u'; printf 'got=%q\\n' \"$k\"\n"
-  )
-  await expect(rows(page)).toContainText('armed-2')
+  await armKitty(page, 1, '-n7')
   await page.keyboard.press('Shift+Enter')
 
   await expect(rows(page)).toContainText("got=$'\\E[13;2u'")
@@ -213,24 +217,23 @@ test('터미널에서 ⌥ 는 Meta 로 가서 ⌥P 는 ESC p 를 보낸다', asy
   await expect(rows(page)).toContainText("got=$'\\Ep'")
 })
 
-test('kitty 키보드 모드인 프로그램이 떠 있어도 앱의 키는 프로그램으로 가지 않고 메뉴나 창으로 흘려보낸다', async ({
+test('kitty 키보드 모드인 프로그램이 떠 있어도 ⌘ 조합은 프로그램으로 가지 않고 메뉴나 창으로 흘려보낸다', async ({
   launch
 }) => {
   const { page } = await launch()
   await activeTerminal(page)
-  await page.keyboard.type(
-    "printf '\\033[>1u'; echo armed-$((1+1)); IFS= read -rs -t 2 -n6 k; printf '\\033[<u'; printf 'got=%q\\n' \"$k\"\n"
-  )
-  await expect(rows(page)).toContainText('armed-2')
+  // ⌘ 조합의 누름이나 뗌(flag 2)이 하나라도 새면 그 ESC 가 먼저 읽힌다. 새지 않으면 뒤에 누르는 x 를 읽고 바로 끝난다.
+  await armKitty(page, 3, '-t 2 -n1')
   await page.evaluate(() => {
     const seen: { code: string; prevented: boolean }[] = []
     Object.assign(window, { seen })
     document.addEventListener('keydown', (e) => {
-      if (e.metaKey && !['Meta', 'Shift'].includes(e.key))
+      if (e.metaKey && !['Meta', 'Shift', 'Alt'].includes(e.key))
         seen.push({ code: e.code, prevented: e.defaultPrevented })
     })
   })
 
+  // KeyC 부터 Shift+Digit0 까지는 단축키 표(shortcuts.ts)에 있는 키, KeyE 부터는 표에 없는 키다.
   const keys = [
     'KeyC',
     'KeyQ',
@@ -240,24 +243,95 @@ test('kitty 키보드 모드인 프로그램이 떠 있어도 앱의 키는 프�
     'Minus',
     'Shift+Minus',
     'Digit0',
-    'Shift+Digit0'
+    'Shift+Digit0',
+    'KeyE',
+    'Slash',
+    'Digit1',
+    'ArrowUp',
+    'Enter',
+    'Shift+KeyK',
+    'Alt+KeyE'
   ]
   for (const key of keys) await page.keyboard.press(`Meta+${key}`)
+  await page.keyboard.press('KeyX')
 
   expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual(
-    keys.map((key) => ({ code: key.replace('Shift+', ''), prevented: false }))
+    keys.map((key) => ({ code: key.split('+').at(-1), prevented: false }))
   )
-  await expect(rows(page)).toContainText("got=''")
+  await expect(rows(page)).toContainText('got=x')
 })
 
-test('터미널에서 ⌘A 는 터미널의 내용을 모두 고른다', async ({ launch }) => {
+test('kitty 키보드 모드가 아닌 프로그램에도 표에 없는 ⌘↩ 은 가지 않는다', async ({ launch }) => {
+  const { page } = await launch()
+  await activeTerminal(page)
+  await page.keyboard.type('IFS= read -rs -t 2 -n1 k; printf \'got=%q\\n\' "$k"\n')
+
+  await page.keyboard.press('Meta+Enter')
+  await page.keyboard.press('KeyX')
+
+  await expect(rows(page)).toContainText('got=x')
+})
+
+test('kitty 키보드 모드인 프로그램은 ⌘ 와, ⌘ 를 쥔 채 누른 ⇧·⌥·⌃ 같은 modifier 단독 누름은 받는다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await activeTerminal(page)
+  await armKitty(page, 8, '-t 2 -n43')
+
+  await page.keyboard.down('Meta')
+  await page.keyboard.press('Shift')
+  await page.keyboard.press('Alt')
+  await page.keyboard.press('Control')
+  await page.keyboard.up('Meta')
+
+  await expect(rows(page)).toContainText(
+    "got=$'\\E[57444;9u\\E[57441;10u\\E[57443;11u\\E[57442;13u'"
+  )
+})
+
+const selection = (page: Page) => page.locator('.terminal-view.active .xterm-selection div')
+
+test('터미널에서 ⌘A 는 터미널의 내용을 모두 고르고, ⇧⌘A 는 고르지 않는다', async ({ launch }) => {
   const { page } = await launch()
   await run(page, 'echo all-$((1+1))', 'all-2')
-  await expect(page.locator('.terminal-view.active .xterm-selection div')).toHaveCount(0)
+  await expect(selection(page)).toHaveCount(0)
+
+  await page.keyboard.press('Shift+Meta+KeyA')
+  await expect(selection(page)).toHaveCount(0)
 
   await page.keyboard.press('Meta+KeyA')
+  await expect(selection(page)).not.toHaveCount(0)
+})
 
-  await expect(page.locator('.terminal-view.active .xterm-selection div')).not.toHaveCount(0)
+// Playwright 의 keyboard 는 자판 배열을 바꿀 수 없으므로, 그 자판이 보낼 code 와 key 를 CDP 로 따로 넣는다.
+async function pressMetaKey(page: Page, code: string, key: string): Promise<void> {
+  const cdp = await page.context().newCDPSession(page)
+  const event = { modifiers: 4, windowsVirtualKeyCode: 65, code, key }
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...event })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...event })
+  await cdp.detach()
+}
+
+test('⌘A 는 글자로 맞추고, 글자가 라틴 글자가 아닐 때만 자판 위치로 맞춘다', async ({ launch }) => {
+  const { page } = await launch()
+  await run(page, 'echo all-$((1+1))', 'all-2')
+  await expect(selection(page)).toHaveCount(0)
+
+  // Turkish-F: KeyA 자리의 글자가 U 다. ⌘U 는 Select All 이 아니다.
+  await pressMetaKey(page, 'KeyA', 'u')
+  await expect(selection(page)).toHaveCount(0)
+
+  // AZERTY: A 가 KeyQ 자리에 있다.
+  await pressMetaKey(page, 'KeyQ', 'a')
+  await expect(selection(page)).not.toHaveCount(0)
+
+  await page.locator('.terminal-view.active .xterm-screen').click()
+  await expect(selection(page)).toHaveCount(0)
+
+  // 라틴 글자가 없는 자판: KeyA 자리에서 라틴이 아닌 글자가 온다.
+  await pressMetaKey(page, 'KeyA', 'ф')
+  await expect(selection(page)).not.toHaveCount(0)
 })
 
 test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력한 단어로 거른다', async ({ launch }) => {

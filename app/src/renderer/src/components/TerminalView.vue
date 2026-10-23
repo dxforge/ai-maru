@@ -20,7 +20,7 @@ import '@xterm/xterm/css/xterm.css'
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
-import { isAppKey, matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
+import { matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
 import { sameFont, type TerminalFont } from '../config/terminal'
 import { alignComposition } from '../terminal/composition'
 import { createLinkHandler, registerLinkProvider } from '../terminal/links'
@@ -91,6 +91,14 @@ const textLinks = registerLinkProvider(term, metaKey, activateLink)
 const fit = new FitAddon()
 term.loadAddon(fit)
 const selectAllKeys = menuKeys('selectAll')!
+// 메뉴는 자판 위치가 아니라 글자로 맞추므로(AZERTY 의 A 는 KeyQ 자리) 글자로 맞춘다. 라틴 글자가 없는 자판에서
+// ⌘ 를 쥐었을 때 `e.key` 가 무엇으로 오는지는 확인하지 않아, 글자가 라틴 글자가 아닐 때만 자판 위치(`KeyA`)로 맞춘다.
+function isSelectAll(e: KeyboardEvent): boolean {
+  if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false
+  if (/^[a-z]$/i.test(e.key)) return e.key.toUpperCase() === selectAllKeys.key
+  return matchesKeys(e, selectAllKeys)
+}
+const MODIFIERS = new Set(['Meta', 'Shift', 'Alt', 'Control'])
 // xterm 은 조합한 글자를 compositionend 다음 setTimeout(0) 에 보내고, 아래 handler 가 false 를 내면
 // 조합을 먼저 끝내지도 않는다. 그 사이에 보낸 키는 조합한 글자보다 앞서 가므로, 조합한 글자가 간 뒤로 미룬다.
 let composing = false
@@ -120,11 +128,12 @@ term.attachCustomKeyEventHandler((e) => {
     e.preventDefault()
     return false
   }
-  // kitty 키보드 모드에서 xterm 은 ⌘C 같은 키도 프로그램에 보내며 preventDefault 하므로,
-  // 그대로 두면 메뉴에 닿지 않는다.
-  if (!isAppKey(e)) return true
+  // ⌘ 조합은 앱이 가진다. kitty 키보드 모드에서 xterm 은 ⌘ 조합도 프로그램에 보내며 preventDefault 하므로,
+  // 그대로 두면 메뉴에 닿지 않는다. 메뉴는 글자로 맞추므로 표(`shortcuts.ts`, 자판 위치)로는 가려낼 수 없다.
+  // modifier 만 누른 것은 메뉴가 받지 않으므로 xterm 에 준다 — kitty 모드 프로그램은 modifier 의 누름·뗌도 받는다.
+  if (!e.metaKey || MODIFIERS.has(e.key)) return true
   // 메뉴의 Select All 은 포커스된 입력창(xterm 의 숨은 textarea)의 글자만 골라 터미널 내용은 고르지 않는다.
-  if (e.type === 'keydown' && matchesKeys(e, selectAllKeys)) term.selectAll()
+  if (e.type === 'keydown' && isSelectAll(e)) term.selectAll()
   return false
 })
 term.parser.registerOscHandler(7, (data) => {
