@@ -1,11 +1,26 @@
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+.env
+.env.*
+.envrc
+mise.local.toml
+*.pem
+*.key
 CLAUDE.local.md
+
 /core/target/
 
 .claude/*
 !.claude/settings.json
 !.claude/rules/
 
-/docs/*
-!/docs/architecture.md
-!/docs/config.md
+/docs/superpowers/
