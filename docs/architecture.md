@@ -52,6 +52,8 @@ pane 헤더는 터미널 한 행이다. 높이는 `--row` 이고 터미널과 �
 
 경계선은 자리를 차지하지 않는다. 1px 라도 자리를 차지하면 그 뒤 pane 이 격자에서 밀리기 때문이다. 좌우 pane 의 경계선은 오른쪽 pane 의 터미널 왼쪽 여백 위에 겹쳐 그리고, 위아래 pane 은 헤더가 아래면 위 pane 의 헤더가, 위면 아래 pane 의 헤더가 경계가 된다.
 
+pane 은 터미널 20열 × 5행(`PANE_MIN`(`app/src/shared/layout.ts`)) 아래로 내려가지 않는다. 열은 왼쪽 여백·스크롤바를 뺀 터미널 열, 행은 헤더를 뺀 터미널 행이다. `snapRects`(`grid.ts`)는 나눈 두 쪽에 각각 그 쪽 pane 들이 필요한 크기(`required`)를 준다. 창·사이드바·글꼴 크기가 바뀌어 workspace 가 그 크기보다 작아지면 뒤쪽 pane 이 workspace 끝 밖으로 나가 잘린다. workspace 안에서 스크롤하지 않는다. 나눠서 밖으로 나가는 길이가 늘어나는 split 은 `canSplit` 이 거절한다. 단축키·메뉴는 토스트를 띄우고, `maru pane new` 는 `no_space` 오류를 받는다. columns 보기의 좌우 split 은 workspace 가 그만큼 넓어지므로 거절하지 않는다.
+
 ## 글자 폭
 
 renderer 의 xterm 과 `maru-session` 의 VT 는 글자마다 차지하는 셀 수를 같은 규칙으로 센다. 둘이 다르게 세면 재생한 화면에서 그 글자 뒤의 글자가 밀린다. 둘 다 grapheme cluster 를 한 글자로 센다. 피부색 수식자나 ZWJ 로 이은 emoji, VS16 이 붙은 글자는 폭이 2다. xterm 은 `@xterm/addon-unicode-graphemes`(`TerminalView.vue`)로, `maru-session` 은 VT 를 만들 때 mode 2027 을 기본값으로 켜서 센다(`core/crates/maru-session/src/vt/mod.rs`).

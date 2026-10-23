@@ -9,6 +9,7 @@ import {
   paneBox as box,
   panes,
   paneTerminalRows as paneRows,
+  resizeGridTo,
   rows,
   run,
   test,
@@ -255,4 +256,20 @@ test('명령은 사용자가 칠 때처럼 셸의 rc 를 읽은 뒤 돈다', asy
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await page.keyboard.type('maru pane new from_rc\n')
   await expect(paneRows(page, 1)).toContainText('rc-fn-2')
+})
+
+test('maru pane new 은 나눌 자리가 없으면 no space 오류로 끝나고 pane 을 열지 않는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  // 하한 두 개(46셀)는 들어가고 세 개(69셀)는 들어가지 않는 폭이다.
+  await resizeGridTo(app, page, 58)
+  await clickMenu(app, 'split-right')
+  await expect(panes(page)).toHaveCount(2)
+
+  await run(page, `maru pane new bash -c 'read x'; echo code-$?`, 'no space for a new pane')
+  await expect(rows(page)).toContainText('code-1')
+  await run(page, `maru pane new --full bash -c 'read x'; echo full-$?`, 'full-1')
+
+  await expect(panes(page)).toHaveCount(2)
 })

@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { columnsWidth, stepPaneCols } from './columns'
+import { columnsWidth, paneCells, stepPaneCols } from './columns'
+
+describe('paneCells', () => {
+  it('열 수에 여백·스크롤바·0.5px 가 들어가는 셀 수를 더한다', () => {
+    expect(paneCells(20, 9, false)).toBe(22)
+    expect(paneCells(20, 8, false)).toBe(23)
+    expect(paneCells(20, 8, true)).toBe(22)
+  })
+
+  it('셀 폭을 모르면 0 이다', () => {
+    expect(paneCells(20, 0, false)).toBe(0)
+  })
+})
 
 describe('columnsWidth', () => {
   it('pane 마다 80열과 여백·스크롤바·0.5px 가 들어가는 가장 적은 셀 수만큼 잡는다', () => {
