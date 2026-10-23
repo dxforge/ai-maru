@@ -478,6 +478,16 @@ export async function resizeBy(app: ElectronApplication, dw: number, dh: number)
   )
 }
 
+export async function resizeGridTo(
+  app: ElectronApplication,
+  page: Page,
+  cells: number
+): Promise<void> {
+  const cell = await cellSize(page)
+  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
+  await resizeBy(app, Math.round(cells * cell.width - grid.width), 0)
+}
+
 export async function workspaceWidth(page: Page, i = 0): Promise<number> {
   return (await workspaceViews(page).nth(i).boundingBox())!.width
 }

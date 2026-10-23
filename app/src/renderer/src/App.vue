@@ -10,6 +10,7 @@ import {
   watchEffect
 } from 'vue'
 import { available, commands, type CommandId } from '../../shared/commands'
+import { PANE_MIN } from '../../shared/layout'
 import type { PaneReply } from '../../shared/pane'
 import {
   clampCanvasWidth,
@@ -31,10 +32,25 @@ import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { ICONS } from './icons'
 import { createToasts } from './toast/store'
-import { columnsWidth, PANE_COLS, stepPaneCols, terminalPadding } from './workspace/columns'
+import {
+  columnsWidth,
+  PANE_COLS,
+  paneCells,
+  stepPaneCols,
+  terminalPadding
+} from './workspace/columns'
 import { tildePath, windowTitle, workspaceLabel } from './workspace/cwd'
-import { snapRects, type Box, type Size } from './workspace/grid'
-import { columnCount, EPSILON, rects, type Layout, type Widths } from './workspace/layout'
+import { canSplit, snapRects, type Box, type Size } from './workspace/grid'
+import {
+  columnCount,
+  EPSILON,
+  rects,
+  splitPane,
+  splitRoot,
+  type Layout,
+  type SplitDirection,
+  type Widths
+} from './workspace/layout'
 import { createWorkspaces, focusedPane, type Workspace } from './workspace/store'
 
 const canvas = createCanvas()
@@ -159,6 +175,9 @@ const noPane = (session: string): PaneReply => ({
 window.maru.onPaneNew((id, { session, cwd, direction, command, full }) => {
   const from = workspaces.paneBySession(session)
   if (!from) return window.maru.paneReply(id, noPane(session))
+  if (!roomFor(from.key, direction, full)) {
+    return window.maru.paneReply(id, { error: 'no_space', message: 'no space for a new pane' })
+  }
   paneRequests.set(workspaces.splitFrom(from.key, direction, { startDir: cwd, command }, full), id)
 })
 
@@ -365,26 +384,66 @@ function placements(layout: Layout, size: Size | undefined, widths: Widths, cell
       ])
     )
   return new Map(
-    [...snapRects(layout, size, cell, widths)].map(([pane, b]) => [
+    [...snapRects(layout, size, cell, widths, paneMin(cell))].map(([pane, b]) => [
       pane,
       placement(b, 'px', bodyHeight(b, rowOf(cell)))
     ])
   )
 }
 
+function paneMin(cell: Size): Size {
+  return {
+    width: paneCells(PANE_MIN.cols, cell.width, cellFloored.value) * cell.width,
+    height: (PANE_MIN.rows + 1) * cell.height
+  }
+}
+
+function columnsWidthOf(layout: Layout, paneCols: number | undefined, cell: Size) {
+  if (viewMode.value !== 'columns') return undefined
+  return columnsWidth(columnCount(layout), cell.width, cellFloored.value, paneCols)
+}
+
+function areaOf(layout: Layout, paneCols: number | undefined, cell: Size, measured: Size): Size {
+  return {
+    width: columnsWidthOf(layout, paneCols, cell) ?? measured.width,
+    height: measured.height
+  }
+}
+
+function roomFor(from: number, direction: SplitDirection, full: boolean): boolean {
+  const w = workspaces.owner(from)
+  const measured = w && gridSizes.get(w.key)
+  if (!w || !measured) return true
+  const cell = cellOf(fontOf(w))
+  const next = full ? splitRoot(w.layout, -1, direction) : splitPane(w.layout, from, -1, direction)
+  const area = (layout: Layout): Size => areaOf(layout, w.paneCols, cell, measured)
+  return canSplit(w.layout, area(w.layout), next, area(next), paneMin(cell))
+}
+
+function splitSelected(direction: SplitDirection): void {
+  const w = workspaces.selected()
+  if (!w) return
+  if (!roomFor(w.focused, direction, false)) {
+    return toasts.put('split', {
+      level: 'warning',
+      title: 'No space for a new pane',
+      lines: [`Each pane keeps at least ${PANE_MIN.cols} columns and ${PANE_MIN.rows} rows.`]
+    })
+  }
+  toasts.close('split')
+  workspaces.split(direction)
+}
+
 const views = computed(() =>
   workspaces.list.value.map((w) => {
     const selected = w.key === workspaces.selectedKey.value
     const measured = gridSizes.get(w.key)
-    const columns = viewMode.value === 'columns'
     const font = fontOf(w)
     const cell = cellOf(font)
-    const width = columns
-      ? columnsWidth(columnCount(w.layout), cell.width, cellFloored.value, w.paneCols)
-      : undefined
+    const width = columnsWidthOf(w.layout, w.paneCols, cell)
     const places = placements(
       w.layout,
-      measured && (width === undefined ? measured : { width, height: measured.height }),
+      measured && areaOf(w.layout, w.paneCols, cell, measured),
       widths.value,
       cell
     )
@@ -468,8 +527,8 @@ function closePalette(): void {
 
 const handlers: Record<CommandId, () => void> = {
   'new-workspace': newWorkspace,
-  'split-right': () => workspaces.split('right'),
-  'split-down': () => workspaces.split('down'),
+  'split-right': () => splitSelected('right'),
+  'split-down': () => splitSelected('down'),
   'close-pane': closePane,
   'next-workspace': () => stepWorkspace(1),
   'previous-workspace': () => stepWorkspace(-1),

@@ -272,6 +272,7 @@ export function createWorkspaces(
     closePane,
     focusPane,
     moveFocus,
+    owner,
     setCwd,
     setTitle,
     setFontSize,

@@ -1,6 +1,7 @@
 import type { PaneNewRequest, PaneReply, WorkspaceNewRequest } from '../shared/pane'
 import { isSessionId } from '../shared/session'
 import {
+  CliError,
   InvalidParams,
   optionalBoolean,
   requireCommand,
@@ -78,7 +79,9 @@ export function createPanes(
   async function ask(channel: PaneChannel, arg: () => unknown): Promise<PaneReply> {
     const reply = await request(channel, arg)
     if (reply && 'error' in reply) {
-      throw reply.error === 'no_pane' ? new InvalidParams(reply.message) : new Error(reply.message)
+      if (reply.error === 'no_pane') throw new InvalidParams(reply.message)
+      if (reply.error === 'no_space') throw new CliError(-32001, 'no_space', reply.message)
+      throw new Error(reply.message)
     }
     return reply
   }

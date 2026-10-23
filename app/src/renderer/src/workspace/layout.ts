@@ -53,6 +53,12 @@ export function columnCount(layout: Layout): number {
   return layout.split === 'right' ? a + b : Math.max(a, b)
 }
 
+export function share(layout: Extract<Layout, { split: SplitDirection }>, widths: Widths): number {
+  if (layout.split !== 'right' || widths !== 'columns') return 0.5
+  const first = columnCount(layout.first)
+  return first / (first + columnCount(layout.second))
+}
+
 export function rects(
   layout: Layout,
   widths: Widths = 'half',
@@ -61,11 +67,7 @@ export function rects(
   if ('pane' in layout) return new Map([[layout.pane, at]])
   let a: Rect, b: Rect
   if (layout.split === 'right') {
-    let w = at.w / 2
-    if (widths === 'columns') {
-      const first = columnCount(layout.first)
-      w = (at.w * first) / (first + columnCount(layout.second))
-    }
+    const w = at.w * share(layout, widths)
     a = { ...at, w }
     b = { ...at, x: at.x + w, w: at.w - w }
   } else {
