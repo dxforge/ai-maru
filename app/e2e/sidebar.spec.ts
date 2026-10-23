@@ -23,7 +23,6 @@ import {
   sidebarWidth,
   split,
   test,
-  toggleView,
   watchTerminalWidths,
   workspaceGroups,
   workspaceItems,
@@ -188,7 +187,7 @@ test('maru workspace new 로 바로 띄운 Claude 가 한 상태에 머문 채 �
   await expect(paneRows(page)).toHaveClass(/working/)
 })
 
-test('경로는 workspace 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, columns 의 workspace 헤더에도 branch 가 붙는다', async ({
+test('경로는 workspace 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, workspace 헤더에도 branch 가 붙는다', async ({
   launch,
   dataDir
 }) => {
@@ -206,8 +205,9 @@ test('경로는 workspace 마다 헤더 툴팁에 있고, 헤더를 눌러도 �
   await expect(workspaceGroups(page).nth(0)).toHaveClass(/selected/)
   await run(page, 'echo path-$((1+1))', 'path-2')
 
-  await toggleView(launched, 'columns')
-  await expect(page.locator('.workspace-header .branch')).toHaveText(['main'])
+  const branches = page.locator('.workspace-header .branch')
+  await expect(branches).toHaveText(['main'])
+  await expect(branches).toBeVisible()
 })
 
 test('아이콘은 모두 앞 글꼴의 fallback 이 아니라 함께 실은 Nerd Font 를 글꼴로 정해 그린다', async ({
@@ -219,12 +219,11 @@ test('아이콘은 모두 앞 글꼴의 fallback 이 아니라 함께 실은 Ner
   const { page } = launched
   await page.keyboard.type('cd proj\n')
   await expect(branch(page)).toHaveText(/main$/)
-  await toggleView(launched, 'columns')
   await page.keyboard.type(claudeHook('UserPromptSubmit'))
   await expect(page.locator('.workspace-header')).toHaveClass(/working/)
 
   // 이 화면에서 `ICONS` 를 그리는 자리는 일곱이다: 사이드바의 branch·접기·상태·Claude 아이콘,
-  // pane 헤더의 상태·Claude 아이콘, columns 보기의 workspace 헤더 상태 아이콘.
+  // pane 헤더의 상태·Claude 아이콘, workspace 헤더 상태 아이콘.
   const families = await page.evaluate((glyphs) => {
     const found: string[] = []
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)

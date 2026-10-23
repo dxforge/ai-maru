@@ -643,7 +643,6 @@ void window.maru.restoreScreen().then((s) => {
         :style="{ width, ...vars }"
       >
         <div
-          v-if="viewMode === 'columns'"
           class="row-bar workspace-header"
           :class="[urgent.get(w.key), { focused: selected }]"
           @mousedown.prevent="selectWorkspace(w.key)"
