@@ -9,6 +9,7 @@ import {
   rmSync,
   writeFileSync
 } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { createConnection, type AddressInfo, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -70,6 +71,7 @@ export const test = base.extend<Fixtures>({
     await use(dir)
     // 앱을 강제로 끝낸 테스트는 pty 를 남긴다.
     await killPtys(ptyDir(dir))
+    rmSync(runBase(dir), { recursive: true, force: true, maxRetries: 3 })
     rmSync(dir, { recursive: true, force: true, maxRetries: 3 })
   },
   launch: async ({ dataDir }, use) => {
@@ -205,7 +207,11 @@ export async function recordPtys(app: ElectronApplication): Promise<() => Promis
 }
 
 function runBase(dataDir: string): string {
-  return join(dataDir, 'run')
+  // `os.tmpdir()` 가 길면 그 아래 dataDir 의 소켓 경로가 한도(macOS 103바이트)를 넘으므로, 길이가 정해진 `/tmp` 아래에 둔다.
+  return join(
+    '/tmp',
+    `maru-e2e-run-${createHash('sha256').update(dataDir).digest('hex').slice(0, 8)}`
+  )
 }
 
 export function ptyDir(dataDir: string): string {

@@ -108,9 +108,9 @@
 //! - `job.kill` 은 돌고 있으면 끝내고, 끝난 뒤 목록에서 지우고 답한다.
 //!
 //! `app.restart` 는 pty 를 끄지 않고 앱을 다시 띄운다. 다시 뜬 앱은 workspace·cell·pane 을
-//! 되살리고 같은 pty 에 다시 붙는다. 앱은 답을 보낸 뒤에 끝난다. 설치된 앱이 떠 있는 pty 와 pty
-//! 프로토콜 버전이 다르면 다시 뜬 앱은 그 pty 에 붙지 못한다. 이때 `kill_ptys` 가 true 가 아니면
-//! 재시작하지 않고 -32001 `ptys_would_end` 로 답한다(`data.ptys` 는 꺼질 pty 수). `kill_ptys`
+//! 되살리고 같은 pty 에 다시 붙는다. 앱은 답을 보낸 뒤에 끝난다. 설치된 앱의 `maru-pty` 와
+//! 떠 있는 pty 의 프로토콜 버전이 다르면 다시 뜬 앱은 그 pty 에 붙지 못한다.
+//! 이때 `kill_ptys` 가 true 가 아니면 재시작하지 않고 -32001 `ptys_would_end` 로 답한다(`data.ptys` 는 꺼질 pty 수). `kill_ptys`
 //! 가 true 면 재시작하고 다시 뜬 앱이 그 pty 를 끈다. 재시작할 수 없으면(dev 서버로 띄웠거나 창이 아직
 //! 배치를 알리지 않았으면) -32001 `restart_unavailable` 로 답한다. 되살릴 화면을 저장하지 못하면 재시작하지
 //! 않고 `internal_error` 로 답한다.

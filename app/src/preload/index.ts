@@ -55,7 +55,7 @@ const api = {
   paneReady: (): void => ipcRenderer.send('pane:ready'),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),
   /**
-   * `ptyId` pty 의 foreground 프로세스의 cwd 다. `cwd` 와 같은 디렉토리면 `cwd` 를 그대로 돌려준다.
+   * `ptyId` 의 foreground 프로세스의 cwd 다. `cwd` 와 같은 디렉토리면 `cwd` 를 그대로 돌려준다.
    * pty 가 모르면 null 이고, pty 에 닿지 못하면 reject 한다.
    */
   foregroundCwd: (ptyId: string, cwd?: string): Promise<string | null> =>
