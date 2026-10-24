@@ -1,7 +1,7 @@
 export const PANE_COLS = 80
 
 /**
- * Widen·Narrow Workspace 가 옮겨 가는 pane 폭(열 수)이다. Claude Code 는 `/diff` 패널과 mod 의 docked pane 을
+ * Widen·Narrow Cell 이 옮겨 가는 pane 폭(열 수)이다. Claude Code 는 `/diff` 패널과 mod 의 docked pane 을
  * 110열부터, mod 가 스스로 연 pane 의 dock 은 144열부터 그린다(2.1.308 의 문자열로 확인).
  */
 const PANE_COLS_STOPS: readonly number[] = [PANE_COLS, 110, 144]
@@ -21,10 +21,10 @@ export function terminalPadding(cellWidth: number): number {
 }
 
 /**
- * 터미널 `cols` 열이 들어가는 pane 의 폭(셀 수). 여백과 스크롤바를 빼면 `cols` 열이 남는다. FitAddon 이 나누는
- * 셀 폭은 지금 열 수로 반올림한 값이라 실제와 열 수 전체로 0.5px 까지 어긋나므로 그만큼을 더 둔다. `floored` 면
- * `fitTerminal`(`TerminalView.vue`)이 열 수를 이 셀 폭으로 직접 나누므로 더 두지 않는다. 더 두면 여백과
- * 스크롤바가 셀의 배수일 때 한 셀이 더 붙어 `cols + 1` 열이 된다. 셀 폭을 모르면 0 이다.
+ * 터미널 `cols` 열이 들어가는 pane 의 폭(글자 칸 수). 여백과 스크롤바를 빼면 `cols` 열이 남는다. FitAddon 이 나누는
+ * 글자 칸 폭은 지금 열 수로 반올림한 값이라 실제와 열 수 전체로 0.5px 까지 어긋나므로 그만큼을 더 둔다. `floored` 면
+ * `fitTerminal`(`TerminalView.vue`)이 열 수를 이 글자 칸 폭으로 직접 나누므로 더 두지 않는다. 더 두면 여백과
+ * 스크롤바가 글자 칸의 배수일 때 한 글자 칸이 더 붙어 `cols + 1` 열이 된다. 글자 칸 폭을 모르면 0 이다.
  */
 export function paneCells(cols: number, cellWidth: number, floored: boolean): number {
   if (cellWidth <= 0) return 0
@@ -33,7 +33,7 @@ export function paneCells(cols: number, cellWidth: number, floored: boolean): nu
   return Math.ceil(cols + extra)
 }
 
-/** columns 에서 pane 이 `columns` 개 늘어선 workspace 의 폭(px). pane 폭은 셀의 배수다. */
+/** columns 에서 pane 이 `columns` 개 늘어선 cell 의 폭(px). pane 폭은 글자 칸의 배수다. */
 export function columnsWidth(
   columns: number,
   cellWidth: number,

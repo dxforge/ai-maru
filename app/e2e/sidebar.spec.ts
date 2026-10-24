@@ -24,8 +24,10 @@ import {
   split,
   test,
   watchTerminalWidths,
-  workspaceGroups,
-  workspaceItems,
+  cellGroups,
+  cellItems,
+  newCell,
+  workspaceNames,
   zshHome
 } from './app'
 
@@ -43,11 +45,9 @@ function repoHome(dataDir: string, format: 'files' | 'reftable' = 'files'): stri
   return home
 }
 
-const branch = (page: Page) =>
-  workspaceGroups(page).and(page.locator('.selected')).locator('.branch')
-const heads = (page: Page) => workspaceGroups(page).locator('.workspace')
-const tip = (page: Page) =>
-  workspaceGroups(page).and(page.locator('.selected')).locator('.workspace')
+const branch = (page: Page) => cellGroups(page).and(page.locator('.selected')).locator('.branch')
+const heads = (page: Page) => cellGroups(page).locator('.cell')
+const tip = (page: Page) => cellGroups(page).and(page.locator('.selected')).locator('.cell')
 
 function win(app: ElectronApplication) {
   return app.evaluate(({ BrowserWindow }) => {
@@ -62,21 +62,51 @@ test('저장소 안에서는 저장소 이름과 branch 를, 밖에서는 디렉
 }) => {
   const home = repoHome(dataDir)
   const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
-  await expect(workspaceItems(page)).toHaveText(['home'])
+  await expect(cellItems(page)).toHaveText(['home'])
   await expect(branch(page)).toHaveCount(0)
   await expect(tip(page)).toHaveAttribute('title', 'home\n~')
 
   await page.keyboard.type('cd proj/.git\n')
   await page.keyboard.type('cd ..; mkdir -p a/b; cd a/b\n')
-  await expect(workspaceItems(page)).toHaveText(['proj'])
+  await expect(cellItems(page)).toHaveText(['proj'])
   await expect(branch(page)).toHaveText(/main$/)
   await expect(tip(page)).toHaveAttribute('title', 'proj — main\n~/proj/a/b')
   await expect.poll(() => win(app)).toEqual({ title: 'proj — main', path: join(home, 'proj/a/b') })
 
   await page.keyboard.type('cd ~/notes\n')
-  await expect(workspaceItems(page)).toHaveText(['notes'])
+  await expect(cellItems(page)).toHaveText(['notes'])
   await expect(branch(page)).toHaveCount(0)
   await expect.poll(() => win(app)).toEqual({ title: 'notes', path: join(home, 'notes') })
+})
+
+test('workspace 이름 줄은 첫 cell 의 첫 pane 의 저장소 이름(저장소 밖이면 디렉토리 이름)이고 branch 가 없으며, 접은 사이드바에서는 숨는다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = repoHome(dataDir)
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { app, page } = launched
+  await page.keyboard.type('cd proj\n')
+  await expect(branch(page)).toHaveText(/main$/)
+  await expect(workspaceNames(page)).toHaveText(['proj'])
+
+  await newCell(launched, 2)
+  await page.keyboard.type('cd ~/notes\n')
+  await expect(cellItems(page)).toHaveText(['proj', 'notes'])
+  await expect(workspaceNames(page)).toHaveText(['proj'])
+
+  await cellItems(page).nth(0).click()
+  await page.keyboard.type('cd ~/notes\n')
+  await expect(workspaceNames(page)).toHaveText(['notes'])
+  await page.keyboard.type('cd ~\n')
+  await expect(workspaceNames(page)).toHaveText(['home'])
+
+  await page.keyboard.type('exit\n')
+  await expect(cellItems(page)).toHaveText(['notes'])
+  await expect(workspaceNames(page)).toHaveText(['notes'])
+
+  await collapse(app, page)
+  await expect(workspaceNames(page)).toHaveCSS('opacity', '0')
 })
 
 for (const format of ['files', 'reftable'] as const) {
@@ -99,9 +129,9 @@ for (const format of ['files', 'reftable'] as const) {
     await expect(branch(page)).toHaveText(/[0-9a-f]{7}$/, shellGit)
 
     await page.keyboard.type('git worktree add -q -b wt ../proj-wt && cd ../proj-wt\n')
-    // worktree 로 cd 하기 전에도 workspace 이름이 `proj` 이므로, branch 가 `wt` 로 바뀐 뒤에 이름을 확인한다.
+    // worktree 로 cd 하기 전에도 cell 이름이 `proj` 이므로, branch 가 `wt` 로 바뀐 뒤에 이름을 확인한다.
     await expect(branch(page)).toHaveText(/wt$/, shellGit)
-    await expect(workspaceItems(page)).toHaveText(['proj'])
+    await expect(cellItems(page)).toHaveText(['proj'])
     await expect(tip(page)).toHaveAttribute('title', 'proj — wt\n~/proj-wt')
   })
 }
@@ -163,7 +193,7 @@ test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어
   expect((await win(app)).path).toBe(join(home, 'link'))
 })
 
-test('maru workspace new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른 worktree 로 옮겨 가면, 상태 파일의 cwd 가 바뀔 때 그 workspace 의 branch 를 프로그램의 cwd 로 읽는다', async ({
+test('maru cell new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른 worktree 로 옮겨 가면, 상태 파일의 cwd 가 바뀔 때 그 cell 의 branch 를 프로그램의 cwd 로 읽는다', async ({
   launch,
   dataDir
 }) => {
@@ -179,15 +209,15 @@ test('maru workspace new 로 바로 띄운 Claude 가 한 상태에 머문 채 �
     `${writeStatus}\n${claudeHook('UserPromptSubmit', { config })}sleep 3\ncd ../proj-wt && ${writeStatus}\nsleep 30\n`
   )
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
-  await page.keyboard.type('maru workspace new --cwd ~/proj bash ~/claude.sh >/dev/null\n')
-  const opened = workspaceGroups(page).nth(1).locator('.workspace')
+  await page.keyboard.type('maru cell new --cwd ~/proj bash ~/claude.sh >/dev/null\n')
+  const opened = cellGroups(page).nth(1).locator('.cell')
   await expect(paneRows(page)).toHaveClass(/working/)
   await expect(opened).toHaveAttribute('title', 'proj — main\n~/proj')
   await expect(opened).toHaveAttribute('title', 'proj — wt\n~/proj-wt')
   await expect(paneRows(page)).toHaveClass(/working/)
 })
 
-test('경로는 workspace 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, workspace 헤더에도 branch 가 붙는다', async ({
+test('경로는 cell 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, cell 헤더에도 branch 가 붙는다', async ({
   launch,
   dataDir
 }) => {
@@ -202,10 +232,10 @@ test('경로는 workspace 마다 헤더 툴팁에 있고, 헤더를 눌러도 �
   await expect(heads(page).nth(0)).toHaveAttribute('title', 'proj — main\n~/proj')
 
   await heads(page).nth(0).click()
-  await expect(workspaceGroups(page).nth(0)).toHaveClass(/selected/)
+  await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
   await run(page, 'echo path-$((1+1))', 'path-2')
 
-  const branches = page.locator('.workspace-header .branch')
+  const branches = page.locator('.cell-header .branch')
   await expect(branches).toHaveText(['main'])
   await expect(branches).toBeVisible()
 })
@@ -220,10 +250,10 @@ test('아이콘은 모두 앞 글꼴의 fallback 이 아니라 함께 실은 Ner
   await page.keyboard.type('cd proj\n')
   await expect(branch(page)).toHaveText(/main$/)
   await page.keyboard.type(claudeHook('UserPromptSubmit'))
-  await expect(page.locator('.workspace-header')).toHaveClass(/working/)
+  await expect(page.locator('.cell-header')).toHaveClass(/working/)
 
   // 이 화면에서 `ICONS` 를 그리는 자리는 일곱이다: 사이드바의 branch·접기·상태·Claude 아이콘,
-  // pane 헤더의 상태·Claude 아이콘, workspace 헤더 상태 아이콘.
+  // pane 헤더의 상태·Claude 아이콘, cell 헤더 상태 아이콘.
   const families = await page.evaluate((glyphs) => {
     const found: string[] = []
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
@@ -236,10 +266,7 @@ test('아이콘은 모두 앞 글꼴의 fallback 이 아니라 함께 실은 Ner
   expect(families).toEqual(Array(7).fill('"Symbols Nerd Font Mono"'))
 })
 
-test('고른 workspace 를 바꾸면 창 제목과 폴더 아이콘이 그것을 따른다', async ({
-  launch,
-  dataDir
-}) => {
+test('고른 cell 을 바꾸면 창 제목과 폴더 아이콘이 그것을 따른다', async ({ launch, dataDir }) => {
   const home = repoHome(dataDir)
   const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
   const { app, page } = launched
@@ -249,9 +276,9 @@ test('고른 workspace 를 바꾸면 창 제목과 폴더 아이콘이 그것을
   await page.keyboard.type('cd ~/notes\n')
   await expect.poll(() => win(app)).toEqual({ title: 'notes', path: join(home, 'notes') })
 
-  await workspaceItems(page).nth(0).click()
+  await cellItems(page).nth(0).click()
   await expect.poll(() => win(app)).toEqual({ title: 'proj — main', path: join(home, 'proj') })
-  await workspaceItems(page).nth(1).click()
+  await cellItems(page).nth(1).click()
   await expect.poll(() => win(app)).toEqual({ title: 'notes', path: join(home, 'notes') })
 })
 
@@ -281,7 +308,7 @@ test('branch 이름이 길면 branch 를 줄이고, 접기 화살표는 헤더 �
   expect(fit).toEqual({ foldInside: true, branchCut: true })
 })
 
-test('마지막 workspace 를 닫으면 창 제목과 폴더 아이콘이 앱의 것으로 돌아온다', async ({
+test('마지막 cell 을 닫으면 창 제목과 폴더 아이콘이 앱의 것으로 돌아온다', async ({
   launch,
   dataDir
 }) => {
@@ -290,7 +317,7 @@ test('마지막 workspace 를 닫으면 창 제목과 폴더 아이콘이 앱의
   await page.keyboard.type('cd proj\n')
   await expect.poll(async () => (await win(app)).title).toBe('proj — main')
   await page.keyboard.type('exit\n')
-  await expect(workspaceItems(page)).toHaveCount(0)
+  await expect(cellItems(page)).toHaveCount(0)
   await expect.poll(() => win(app)).toEqual({ title: 'AI Maru', path: '' })
 })
 
@@ -311,14 +338,14 @@ async function twoClaudes(app: ElectronApplication, page: Page): Promise<void> {
   await expect(paneRows(page)).toHaveClass([/working/, /waiting/])
 }
 
-test('접기 화살표는 workspace 의 pane 줄을 한 줄로 접고, 화살표나 그 줄을 누르면 편다', async ({
+test('접기 화살표는 cell 의 pane 줄을 한 줄로 접고, 화살표나 그 줄을 누르면 편다', async ({
   launch
 }) => {
   const launched = await launch()
   const { app, page } = launched
   await twoClaudes(app, page)
   await newWorkspace(launched, 2)
-  const fold = workspaceGroups(page).locator('.fold')
+  const fold = cellGroups(page).locator('.fold')
   await expect(fold).toHaveCount(2)
 
   await fold.nth(0).click()
@@ -330,13 +357,13 @@ test('접기 화살표는 workspace 의 pane 줄을 한 줄로 접고, 화살표
 
   await fold.nth(1).click()
   await expect(shellRows(page)).toHaveCount(0)
-  const summary = workspaceGroups(page).nth(1).locator('.summary')
+  const summary = cellGroups(page).nth(1).locator('.summary')
   await expect(summary).toHaveText(/Shell 1/)
   await summary.click()
   await expect(shellRows(page)).toHaveCount(1)
 })
 
-test('접은 사이드바는 같은 목록에서 글자만 빼고, 헤더는 workspace 를, pane 줄은 그 pane 을 고른다', async ({
+test('접은 사이드바는 같은 목록에서 글자만 빼고, 헤더는 cell 을, pane 줄은 그 pane 을 고른다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -344,8 +371,8 @@ test('접은 사이드바는 같은 목록에서 글자만 빼고, 헤더는 wor
   await twoClaudes(app, page)
   await newWorkspace(launched, 2)
   // 셸이 cwd 를 알리기 전에는 이름이 Shell 이다.
-  await expect(workspaceItems(page).nth(1)).not.toHaveText('Shell')
-  const names = await workspaceItems(page).allInnerTexts()
+  await expect(cellItems(page).nth(1)).not.toHaveText('Shell')
+  const names = await cellItems(page).allInnerTexts()
 
   await collapse(app, page)
 
@@ -362,7 +389,7 @@ test('접은 사이드바는 같은 목록에서 글자만 빼고, 헤더는 wor
 
   await expect(collapsedGroups(page).nth(0)).toHaveClass(/selected/)
   await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
-  await collapsedGroups(page).nth(1).locator('.workspace').click()
+  await collapsedGroups(page).nth(1).locator('.cell').click()
   await expect(collapsedGroups(page).nth(1)).toHaveClass(/selected/)
 })
 
@@ -386,10 +413,10 @@ test('접고 펴도 pane 줄의 상태 아이콘과 구획 선은 같은 자리�
   expect(await marks()).toEqual(expanded)
 })
 
-test('접은 workspace 는 접은 사이드바에서도 가장 급한 상태 하나로 보인다', async ({ launch }) => {
+test('접은 cell 은 접은 사이드바에서도 가장 급한 상태 하나로 보인다', async ({ launch }) => {
   const { app, page } = await launch()
   await twoClaudes(app, page)
-  await workspaceGroups(page).locator('.fold').click()
+  await cellGroups(page).locator('.fold').click()
 
   await collapse(app, page)
 
@@ -562,26 +589,24 @@ test('목록을 스크롤해도 신호등 버튼 자리는 비어 있다', async
   expect(await underButtons()).toBeNull()
 })
 
-test('펼친 사이드바에서 접은 workspace 는 가장 급한 상태와 pane 수를 한 줄로 보인다', async ({
+test('펼친 사이드바에서 접은 cell 은 가장 급한 상태와 pane 수를 한 줄로 보인다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   await twoClaudes(app, page)
 
-  await workspaceGroups(page).locator('.fold').click()
+  await cellGroups(page).locator('.fold').click()
 
-  const summary = workspaceGroups(page).locator('.summary')
+  const summary = cellGroups(page).locator('.summary')
   await expect(summary).toHaveClass(/waiting/)
   await expect(summary).toHaveText(/Claude 2/)
 })
 
-test('접은 workspace 는 Claude 가 끝나도 접힌 채로, 요약 줄이 셸 수로 바뀐다', async ({
-  launch
-}) => {
+test('접은 cell 은 Claude 가 끝나도 접힌 채로, 요약 줄이 셸 수로 바뀐다', async ({ launch }) => {
   const { page } = await launch()
   await page.keyboard.type(claudeHook('UserPromptSubmit'))
-  await workspaceGroups(page).locator('.fold').click()
-  const summary = workspaceGroups(page).locator('.summary')
+  await cellGroups(page).locator('.fold').click()
+  const summary = cellGroups(page).locator('.summary')
   await expect(summary).toHaveText(/Claude 1/)
 
   await page.keyboard.type('"$MARU_CLI" claude exit\n')
@@ -602,7 +627,7 @@ test('사이드바와 접은 사이드바의 빈 곳으로 창을 끌고, 누르
       .evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-app-region'))
 
   expect(await region('.sidebar')).toBe('drag')
-  expect(await region('.sidebar .workspace')).toBe('no-drag')
+  expect(await region('.sidebar .cell')).toBe('no-drag')
   expect(await region('.resizer')).toBe('no-drag')
   await collapse(app, page)
   expect(await region('.sidebar')).toBe('drag')

@@ -7,7 +7,7 @@ import type { Terminal } from '@xterm/xterm'
 
 export interface BaselineInput {
   dpr: number
-  /** `dimensions.device.char.top`: renderer 가 셀 안에 글자 상자를 놓는 위치. */
+  /** `dimensions.device.char.top`: renderer 가 글자 칸 안에 글자 상자를 놓는 위치. */
   charTop: number
   /** `dimensions.device.char.height`: renderer 는 이 상자의 아래 끝에 ideographic 기준선을 둔다. */
   charHeight: number
@@ -54,7 +54,7 @@ function domBaseline(view: HTMLElement): number {
 }
 
 /**
- * 확정되면 차지할 셀 수. xterm 이 공개하지 않는 `_core.unicodeService` 를 쓴다. 이 API 가 없어지면 `undefined` 를
+ * 확정되면 차지할 글자 칸 수. xterm 이 공개하지 않는 `_core.unicodeService` 를 쓴다. 이 API 가 없어지면 `undefined` 를
  * 돌려주고, 호출하는 쪽은 조합창 폭을 정하지 않는다.
  */
 function cellCount(term: Terminal, text: string): number | undefined {
@@ -67,7 +67,7 @@ function cellCount(term: Terminal, text: string): number | undefined {
 }
 
 function shift(view: HTMLElement, offset: number): void {
-  // 조합창을 통째로 옮기면 비켜난 만큼 그 아래의 커서가 드러난다. 그래서 배경은 셀을 덮은 채 여백으로 글자만 옮긴다.
+  // 조합창을 통째로 옮기면 비켜난 만큼 그 아래의 커서가 드러난다. 그래서 배경은 글자 칸을 덮은 채 여백으로 글자만 옮긴다.
   view.style.paddingTop = offset > 0 ? `${offset}px` : ''
   view.style.marginTop = offset < 0 ? `${offset}px` : ''
   view.style.paddingBottom = offset < 0 ? `${-offset}px` : ''
@@ -93,7 +93,7 @@ export function alignComposition(
     const dpr = devicePixelRatio
     const canvas = webglCanvas()
     const overflow = canvas ? canvas.height - dims.device.canvas.height : 0
-    // xterm 이 조합창의 줄 높이를 셀 높이로 정하므로 `view.style.lineHeight` 가 lineHeight·fontSize 변화를 반영한다.
+    // xterm 이 조합창의 줄 높이를 글자 칸 높이로 정하므로 `view.style.lineHeight` 가 lineHeight·fontSize 변화를 반영한다.
     const next = [dpr, term.options.fontFamily, term.options.fontSize, view.style.lineHeight]
       .concat(canvas ? [dims.device.char.top, dims.device.char.height, overflow] : [])
       .join('|')
@@ -114,7 +114,7 @@ export function alignComposition(
             })
     }
     shift(view, offset)
-    // 조합창은 글자 폭만큼만 넓다. 한글이 두 셀보다 좁으면 두 번째 셀이 비어 반쪽 상자처럼 보인다.
+    // 조합창은 글자 폭만큼만 넓다. 한글이 두 글자 칸보다 좁으면 두 번째 글자 칸이 비어 반쪽 상자처럼 보인다.
     // xterm 은 조합창 글자 양쪽에 U+200E 를 붙이고, `UnicodeGraphemesAddon` 은 이 글자의 폭을 1로 센다. 그래서
     // `textContent` 가 아니라 `e.data` 를 센다.
     const cells = cellCount(term, e.data)

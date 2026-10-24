@@ -21,7 +21,7 @@ import {
   toast,
   toggleView,
   typesInto,
-  workspaceItems,
+  cellItems,
   zshHome
 } from './app'
 
@@ -46,7 +46,7 @@ test('⌘D 는 포커스가 있는 pane 을 오른쪽으로 나눠 새 셸을 �
   expect(half.cols).toBeLessThan(full.cols / 2 + 1)
   expect(half.cols).toBeGreaterThan(full.cols / 2 - 3)
   expect(sockets(dataDir)).toHaveLength(2)
-  await expect(workspaceItems(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(1)
 })
 
 test('⇧⌘D 는 아래로 나눈다', async ({ launch }) => {
@@ -151,25 +151,25 @@ test('⌘W 는 포커스가 있는 pane 의 세션을 끝내고 닫으며, 형�
   await typesInto(page, 0, 'sibling')
   await run(page, 'echo "x=$X"', 'x=kept-2')
   expect(await shellSize(page)).toEqual(full)
-  await expect(workspaceItems(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(1)
 })
 
-test('마지막 pane 을 ⌘W 로 닫으면 workspace 도 닫고 세션을 끝낸다', async ({ launch, dataDir }) => {
+test('마지막 pane 을 ⌘W 로 닫으면 cell 도 닫고 세션을 끝낸다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await page.keyboard.type('X=first-$((1+1))\n')
   await pressNew(app)
-  await expect(workspaceItems(page)).toHaveCount(2)
+  await expect(cellItems(page)).toHaveCount(2)
   await activeTerminal(page)
   await run(page, 'echo second-$((1+1))', 'second-2')
 
   await clickMenu(app, 'close-pane')
 
-  await expect(workspaceItems(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(1)
   await expect.poll(() => sockets(dataDir)).toHaveLength(1)
   await run(page, 'echo "x=$X"', 'x=first-2')
 
   await clickMenu(app, 'close-pane')
-  await expect(workspaceItems(page)).toHaveCount(0)
+  await expect(cellItems(page)).toHaveCount(0)
   await expect(page.locator('.terminal-view')).toHaveCount(0)
   await expect.poll(() => sockets(dataDir)).toHaveLength(0)
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
@@ -227,20 +227,20 @@ test('zsh 에서 새 pane 은 포커스가 있던 pane 의 디렉토리에서 �
   const home = zshHome(dataDir, 'proj', 'other')
   const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await page.keyboard.type('cd proj\n')
-  await expect(workspaceItems(page)).toHaveText(['proj'])
+  await expect(cellItems(page)).toHaveText(['proj'])
 
   await split(app, page, 'split-down', 2)
   await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
   await page.keyboard.type('cd ~/other\n')
-  await expect(workspaceItems(page)).toHaveText(['other'])
+  await expect(cellItems(page)).toHaveText(['other'])
 
   await clickMenu(app, 'focus-pane-up')
-  await expect(workspaceItems(page)).toHaveText(['proj'])
+  await expect(cellItems(page)).toHaveText(['proj'])
   await panes(page).nth(1).click()
-  await expect(workspaceItems(page)).toHaveText(['other'])
+  await expect(cellItems(page)).toHaveText(['other'])
 
   await pressNew(app)
-  await expect(workspaceItems(page)).toHaveText(['other', 'other'])
+  await expect(cellItems(page)).toHaveText(['other', 'other'])
   await activeTerminal(page)
   await run(page, '[ "$PWD" = "$HOME/other" ] && echo in-other-$((1+1))', 'in-other-2')
 })
@@ -262,21 +262,21 @@ test('포커스가 있는 pane 의 셸이 끝나면 형제 pane 이 포커스를
   await run(page, 'echo "x=$X"', 'x=left-2')
 })
 
-test('다른 workspace 에 갔다 와도 포커스가 있던 pane 이 키를 받는다', async ({ launch }) => {
+test('다른 cell 에 갔다 와도 포커스가 있던 pane 이 키를 받는다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await clickMenu(app, 'focus-pane-left')
   await typesInto(page, 0, 'before')
   await pressNew(app)
-  await expect(workspaceItems(page)).toHaveCount(2)
+  await expect(cellItems(page)).toHaveCount(2)
   await activeTerminal(page)
 
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
 
   await typesInto(page, 0, 'back')
 })
 
-test('보이지 않는 workspace 에서 포커스가 있던 pane 의 셸이 끝나면, 돌아왔을 때 형제 pane 이 키를 받는다', async ({
+test('보이지 않는 cell 에서 포커스가 있던 pane 의 셸이 끝나면, 돌아왔을 때 형제 pane 이 키를 받는다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -284,11 +284,11 @@ test('보이지 않는 workspace 에서 포커스가 있던 pane 의 셸이 끝�
   await typesInto(page, 1, 'right')
   await page.keyboard.type('sleep 1; exit\n')
   await pressNew(app)
-  await expect(workspaceItems(page)).toHaveCount(2)
+  await expect(cellItems(page)).toHaveCount(2)
   await activeTerminal(page)
   await page.waitForTimeout(1500)
 
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
 
   await expect(panes(page)).toHaveCount(1)
   await typesInto(page, 0, 'left')
@@ -329,7 +329,7 @@ test('나눈 두 쪽에 20열이 들어가지 않으면 split 을 거절하고 �
   launch
 }) => {
   const { app, page } = await launch()
-  // 하한 두 개(46셀)는 들어가고 세 개(69셀)는 들어가지 않는 폭이다.
+  // 하한 두 개(글자 칸 46개)는 들어가고 세 개(글자 칸 69개)는 들어가지 않는 폭이다.
   await resizeGridTo(app, page, 58)
   await split(app, page, 'split-right', 2)
   await expect(toast(page)).toHaveCount(0)
@@ -364,7 +364,7 @@ test('columns 에서 높이가 모자라면 아래로 나누기를 거절한다'
   await expect(panes(page)).toHaveCount(2)
 })
 
-test('창이 좁아져도 pane 은 20열 아래로 내려가지 않고, 들어가지 않는 pane 은 workspace 밖으로 나간다', async ({
+test('창이 좁아져도 pane 은 20열 아래로 내려가지 않고, 들어가지 않는 pane 은 cell 밖으로 나간다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -381,7 +381,7 @@ test('창이 좁아져도 pane 은 20열 아래로 내려가지 않고, 들어�
   await clickMenu(app, 'focus-pane-left')
   await expectCols(page, 20)
 
-  // 넘친 workspace 에서도 밖으로 나가는 길이가 늘지 않는 split 은 거절하지 않는다(docs/architecture.md 의 "pane 경계와 셀 격자").
+  // 넘친 cell 에서도 밖으로 나가는 길이가 늘지 않는 split 은 거절하지 않는다(docs/architecture.md 의 "pane 경계와 글자 칸 격자").
   await clickMenu(app, 'split-right')
   await expect(toast(page)).toContainText('No space for a new pane')
   await expect(panes(page)).toHaveCount(2)
@@ -400,7 +400,7 @@ test('창이 낮아져도 pane 은 헤더를 뺀 5행 아래로 내려가지 않
   await expect.poll(async () => (await shellSize(page)).rows).toBe(5)
 })
 
-test('글꼴을 키워 pane 들이 들어가지 않게 돼도 pane 은 5행에서 멈추고 아래 pane 이 workspace 밖으로 나간다', async ({
+test('글꼴을 키워 pane 들이 들어가지 않게 돼도 pane 은 5행에서 멈추고 아래 pane 이 cell 밖으로 나간다', async ({
   launch
 }) => {
   const { app, page } = await launch()

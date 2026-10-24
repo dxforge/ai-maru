@@ -42,11 +42,16 @@ describe('commandKeys', () => {
     expect(toAccelerator(commandKeys('toggle-view-mode')!)).toBe('Command+\\')
   })
 
-  it('workspace 폭은 ⇧⌘. 와 ⇧⌘, 다', () => {
-    expect(toAccelerator(commandKeys('widen-workspace')!)).toBe('Shift+Command+.')
-    expect(toAccelerator(commandKeys('narrow-workspace')!)).toBe('Shift+Command+,')
-    expect(formatKeys(commandKeys('widen-workspace')!)).toBe('⇧⌘.')
-    expect(formatKeys(commandKeys('narrow-workspace')!)).toBe('⇧⌘,')
+  it('새 cell 은 ⌘T 다', () => {
+    expect(formatKeys(commandKeys('new-cell')!)).toBe('⌘T')
+    expect(toAccelerator(commandKeys('new-cell')!)).toBe('Command+T')
+  })
+
+  it('cell 폭은 ⇧⌘. 와 ⇧⌘, 다', () => {
+    expect(toAccelerator(commandKeys('widen-cell')!)).toBe('Shift+Command+.')
+    expect(toAccelerator(commandKeys('narrow-cell')!)).toBe('Shift+Command+,')
+    expect(formatKeys(commandKeys('widen-cell')!)).toBe('⇧⌘.')
+    expect(formatKeys(commandKeys('narrow-cell')!)).toBe('⇧⌘,')
   })
 })
 

@@ -1,7 +1,8 @@
 export type CommandId =
   | 'new-workspace'
-  | 'next-workspace'
-  | 'previous-workspace'
+  | 'new-cell'
+  | 'next-cell'
+  | 'previous-cell'
   | 'split-right'
   | 'split-down'
   | 'close-pane'
@@ -16,8 +17,8 @@ export type CommandId =
   | 'increase-font-size'
   | 'decrease-font-size'
   | 'reset-font-size'
-  | 'widen-workspace'
-  | 'narrow-workspace'
+  | 'widen-cell'
+  | 'narrow-cell'
   | 'restart'
 
 export type Command = {
@@ -29,12 +30,13 @@ export type Command = {
 
 export const commands: readonly Command[] = [
   { id: 'new-workspace', title: 'New Workspace', menu: 'file' },
+  { id: 'new-cell', title: 'New Cell', menu: 'file' },
   { id: 'split-right', title: 'Split Right', menu: 'file' },
   { id: 'split-down', title: 'Split Down', menu: 'file' },
   { id: 'close-pane', title: 'Close Pane', menu: 'file' },
   { id: 'command-palette', title: 'Command Palette…', menu: 'view', palette: false },
-  { id: 'next-workspace', title: 'Next Workspace', menu: 'view' },
-  { id: 'previous-workspace', title: 'Previous Workspace', menu: 'view' },
+  { id: 'next-cell', title: 'Next Cell', menu: 'view' },
+  { id: 'previous-cell', title: 'Previous Cell', menu: 'view' },
   { id: 'toggle-sidebar', title: 'Toggle Sidebar', menu: 'view' },
   { id: 'toggle-canvas', title: 'Toggle Canvas', menu: 'view' },
   { id: 'toggle-view-mode', title: 'Toggle View Mode', menu: 'view' },
@@ -45,8 +47,8 @@ export const commands: readonly Command[] = [
   { id: 'increase-font-size', title: 'Increase Font Size', menu: 'view' },
   { id: 'decrease-font-size', title: 'Decrease Font Size', menu: 'view' },
   { id: 'reset-font-size', title: 'Reset Font Size', menu: 'view' },
-  { id: 'widen-workspace', title: 'Widen Workspace', menu: 'view' },
-  { id: 'narrow-workspace', title: 'Narrow Workspace', menu: 'view' },
+  { id: 'widen-cell', title: 'Widen Cell', menu: 'view' },
+  { id: 'narrow-cell', title: 'Narrow Cell', menu: 'view' },
   { id: 'restart', title: 'Restart', menu: 'app' }
 ]
 

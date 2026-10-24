@@ -1,6 +1,6 @@
 import { readonly, ref } from 'vue'
 import type { GitHead } from '../../../shared/git'
-import type { ScreenState, ScreenWorkspace } from '../../../shared/screen'
+import type { ScreenCell, ScreenState, ScreenWorkspace } from '../../../shared/screen'
 import { newSessionId, randomId } from '../../../shared/session'
 import {
   neighbor,
@@ -34,19 +34,27 @@ export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
  * `panes` 는 연 순서다. 배치 순서로 그리면 나눌 때마다 터미널의 DOM 이 옮겨진다. `fontSize` 는 ⌘+ / ⌘- 로 바꾼
  * 터미널 글꼴 크기다. 없으면 설정 파일의 `font-size` 를 따른다.
  */
-export type Workspace = Omit<ScreenWorkspace, 'panes'> & { panes: Pane[] }
+export type Cell = Omit<ScreenCell, 'panes'> & { panes: Pane[] }
 
-export function focusedPane(w: {
+/** `cells` 는 비지 않는다 — 마지막 cell 이 닫히면 workspace 도 닫힌다. */
+export type Workspace = Omit<ScreenWorkspace, 'cells'> & { cells: Cell[] }
+
+export function focusedPane(c: {
   readonly panes: readonly Pane[]
   readonly focused: number
 }): Pane {
-  return w.panes.find((p) => p.key === w.focused)!
+  return c.panes.find((p) => p.key === c.focused)!
+}
+
+export function startDirOf(p: Pick<Pane, 'cwd' | 'startDir'>): string | undefined {
+  return p.cwd ?? p.startDir
 }
 
 export function createWorkspaces(
   readGit: (cwd: string) => Promise<GitHead | null> = async () => null,
   foregroundCwd: (sessionId: string, cwd?: string) => Promise<string | null> = async () => null,
   sessionId: () => string = newSessionId,
+  cellId: () => string = () => randomId('c'),
   workspaceId: () => string = () => randomId('w')
 ) {
   const list = ref<Workspace[]>([])
@@ -55,75 +63,108 @@ export function createWorkspaces(
   let reads = 0
   const lastRead = new Map<number, number>()
 
-  const selected = (): Workspace | undefined => list.value.find((w) => w.key === selectedKey.value)
+  const cells = (): Cell[] => list.value.flatMap((w) => w.cells)
 
-  function owner(pane: number): Workspace | undefined {
-    return list.value.find((w) => w.panes.some((p) => p.key === pane))
+  const cell = (key: number): Cell | undefined => cells().find((c) => c.key === key)
+
+  const selected = (): Cell | undefined =>
+    selectedKey.value === null ? undefined : cell(selectedKey.value)
+
+  function owner(pane: number): Cell | undefined {
+    return cells().find((c) => c.panes.some((p) => p.key === pane))
   }
 
-  function create(init: Pick<Pane, 'startDir' | 'command'>): Workspace {
+  function workspaceOf(cell: number): Workspace | undefined {
+    return list.value.find((w) => w.cells.some((c) => c.key === cell))
+  }
+
+  function createCell(init: Pick<Pane, 'startDir' | 'command'>): Cell {
     const pane = nextKey++
     const key = nextKey++
     return {
       key,
-      id: workspaceId(),
+      id: cellId(),
       panes: [{ key: pane, sessionId: sessionId(), ...init }],
       layout: { pane },
       focused: pane
     }
   }
 
+  function createWorkspace(cell: Cell): Workspace {
+    return { key: nextKey++, id: workspaceId(), cells: [cell] }
+  }
+
   function open(startDir?: string): void {
-    const w = create({ startDir })
-    list.value.push(w)
-    selectedKey.value = w.key
+    const c = createCell({ startDir })
+    list.value.push(createWorkspace(c))
+    selectedKey.value = c.key
   }
 
   /**
-   * id 가 `from` 인 workspace 뒤에, 그 workspace 가 앞서 띄운 것들(그것들이 띄운 것 포함)을 지나 workspace 를
-   * 넣는다. 그 workspace 가 없으면 목록 끝에 넣는다. 선택과 포커스는 바꾸지 않고, 새 pane 의 key 를 돌려준다.
+   * id 가 `from` 인 cell 의 workspace 에서, 그 cell 뒤에 그 cell 이 앞서 띄운 것들(그것들이 띄운 것 포함)을 지나
+   * cell 을 넣는다. 그 cell 이 없으면 새 workspace 를 목록 끝에 만들어 넣는다. 선택과 포커스는 바꾸지 않고,
+   * 새 pane 의 key 를 돌려준다.
    */
-  function openFrom(from: string | undefined, init: Pick<Pane, 'startDir' | 'command'>): number {
-    const w = create(init)
-    let at = list.value.findIndex((x) => x.id === from)
-    if (at === -1) {
-      at = list.value.length
-    } else {
-      // 띄운 것은 늘 부른 workspace 바로 뒤에 이어 놓이므로, 묶음은 부른 workspace 뒤에서 끊기지 않고 이어진다.
-      const caller = list.value[at++].key
-      const group = new Set([caller])
-      while (at < list.value.length && group.has(list.value[at].openedBy!))
-        group.add(list.value[at++].key)
-      w.openedBy = caller
+  function openCellFrom(
+    from: string | undefined,
+    init: Pick<Pane, 'startDir' | 'command'>
+  ): number {
+    return insertCell(from, init).focused
+  }
+
+  function insertCell(from: string | undefined, init: Pick<Pane, 'startDir' | 'command'>): Cell {
+    const c = createCell(init)
+    const w = list.value.find((x) => x.cells.some((y) => y.id === from))
+    if (!w) {
+      list.value.push(createWorkspace(c))
+      return c
     }
-    list.value.splice(at, 0, w)
-    return w.focused
+    let at = w.cells.findIndex((x) => x.id === from)
+    // 띄운 것은 늘 부른 cell 바로 뒤에 이어 놓이므로, 묶음은 부른 cell 뒤에서 끊기지 않고 이어진다.
+    const caller = w.cells[at++].key
+    const group = new Set([caller])
+    while (at < w.cells.length && group.has(w.cells[at].openedBy!)) group.add(w.cells[at++].key)
+    c.openedBy = caller
+    w.cells.splice(at, 0, c)
+    return c
+  }
+
+  function openCell(startDir?: string): void {
+    const from = selected()
+    if (!from) return open(startDir)
+    selectedKey.value = insertCell(from.id, { startDir }).key
   }
 
   function step(by: 1 | -1): number | undefined {
-    const n = list.value.length
+    const all = cells()
+    const n = all.length
     if (!n) return undefined
-    const i = list.value.findIndex((w) => w.key === selectedKey.value)
-    return list.value[(i + by + n) % n].key
+    const i = all.findIndex((c) => c.key === selectedKey.value)
+    return all[(i + by + n) % n].key
   }
 
-  // 닫힌 workspace 가 띄운 것은 그것을 부른 workspace 가 띄운 것으로 옮겨, 처음 부른 workspace 뒤의 묶음에
-  // 남긴다. 닫힌 workspace 는 재시작 때 저장되지 않으므로, 그것을 가리킨 채로 두면 재시작 뒤 묶음이 끊긴다.
+  // 닫힌 cell 이 띄운 것은 그것을 부른 cell 이 띄운 것으로 옮겨, 처음 부른 cell 뒤의 묶음에 남긴다. 닫힌 cell 은
+  // 재시작 때 저장되지 않으므로, 그것을 가리킨 채로 두면 재시작 뒤 묶음이 끊긴다.
   function close(key: number): void {
-    const i = list.value.findIndex((w) => w.key === key)
-    if (i === -1) return
-    const [closed] = list.value.splice(i, 1)
-    for (const w of list.value) if (w.openedBy === key) w.openedBy = closed.openedBy
+    const w = workspaceOf(key)
+    if (!w) return
+    const i = cells().findIndex((c) => c.key === key)
+    const [closed] = w.cells.splice(
+      w.cells.findIndex((c) => c.key === key),
+      1
+    )
+    if (!w.cells.length) list.value.splice(list.value.indexOf(w), 1)
+    for (const c of w.cells) if (c.openedBy === key) c.openedBy = closed.openedBy
     if (selectedKey.value !== key) return
-    const next = list.value[i] ?? list.value[i - 1]
-    selectedKey.value = next?.key ?? null
+    const rest = cells()
+    selectedKey.value = (rest[i] ?? rest[i - 1])?.key ?? null
   }
 
   function split(direction: SplitDirection): void {
-    const w = selected()
-    if (!w) return
-    const from = focusedPane(w)
-    w.focused = splitFrom(from.key, direction, { startDir: from.cwd ?? from.startDir })
+    const c = selected()
+    if (!c) return
+    const from = focusedPane(c)
+    c.focused = splitFrom(from.key, direction, { startDir: startDirOf(from) })
   }
 
   function splitFrom(
@@ -132,41 +173,41 @@ export function createWorkspaces(
     init: Pick<Pane, 'startDir' | 'command'>,
     full = false
   ): number {
-    const w = owner(from)!
+    const c = owner(from)!
     const pane = nextKey++
-    w.panes.push({ key: pane, sessionId: sessionId(), ...init })
-    w.layout = full
-      ? splitRoot(w.layout, pane, direction)
-      : splitPane(w.layout, from, pane, direction)
+    c.panes.push({ key: pane, sessionId: sessionId(), ...init })
+    c.layout = full
+      ? splitRoot(c.layout, pane, direction)
+      : splitPane(c.layout, from, pane, direction)
     return pane
   }
 
   function paneBySession(id: string): Pane | undefined {
-    for (const w of list.value) for (const p of w.panes) if (p.sessionId === id) return p
+    for (const c of cells()) for (const p of c.panes) if (p.sessionId === id) return p
     return undefined
   }
 
   function closePane(pane: number): void {
     lastRead.delete(pane)
-    const w = owner(pane)
-    if (!w) return
-    if (w.panes.length === 1) return close(w.key)
-    const removed = removePane(w.layout, pane)
+    const c = owner(pane)
+    if (!c) return
+    if (c.panes.length === 1) return close(c.key)
+    const removed = removePane(c.layout, pane)
     if (!removed) return
-    w.panes = w.panes.filter((p) => p.key !== pane)
-    w.layout = removed.layout
-    if (w.focused === pane) w.focused = removed.next
+    c.panes = c.panes.filter((p) => p.key !== pane)
+    c.layout = removed.layout
+    if (c.focused === pane) c.focused = removed.next
   }
 
   function focusPane(pane: number): void {
-    const w = owner(pane)
-    if (w) w.focused = pane
+    const c = owner(pane)
+    if (c) c.focused = pane
   }
 
   function moveFocus(direction: FocusDirection, widths: Widths = 'half'): void {
-    const w = selected()
-    const to = w && neighbor(w.layout, w.focused, direction, widths)
-    if (to !== undefined) w!.focused = to
+    const c = selected()
+    const to = c && neighbor(c.layout, c.focused, direction, widths)
+    if (to !== undefined) c!.focused = to
   }
 
   function pane(key: number): Pane | undefined {
@@ -220,20 +261,16 @@ export function createWorkspaces(
       })
   }
 
-  function workspace(key: number): Workspace | undefined {
-    return list.value.find((x) => x.key === key)
-  }
-
   function setFontSize(key: number, size: number | undefined): void {
-    const w = workspace(key)
-    if (w) w.fontSize = size
+    const c = cell(key)
+    if (c) c.fontSize = size
   }
 
   function setPaneCols(key: number, cols: number | undefined): void {
-    const w = workspace(key)
-    if (!w) return
-    if (cols === undefined) delete w.paneCols
-    else w.paneCols = cols
+    const c = cell(key)
+    if (!c) return
+    if (cols === undefined) delete c.paneCols
+    else c.paneCols = cols
   }
 
   function setTitle(key: number, title: string): void {
@@ -253,19 +290,24 @@ export function createWorkspaces(
   function restore(screen: WorkspacesScreen): void {
     list.value = screen.workspaces.map((w) => ({
       ...w,
-      panes: w.panes.map((p) => ({ ...p, attach: true }))
+      cells: w.cells.map((c) => ({ ...c, panes: c.panes.map((p) => ({ ...p, attach: true })) }))
     }))
     selectedKey.value = screen.selected
-    const keys = screen.workspaces.flatMap((w) => [w.key, ...w.panes.map((p) => p.key)])
+    const keys = screen.workspaces.flatMap((w) => [
+      w.key,
+      ...w.cells.flatMap((c) => [c.key, ...c.panes.map((p) => p.key)])
+    ])
     nextKey = Math.max(nextKey, ...keys.map((k) => k + 1))
-    for (const w of list.value) for (const p of w.panes) if (p.cwd) readGitFor(p.key, p.cwd)
+    for (const c of cells()) for (const p of c.panes) if (p.cwd) readGitFor(p.key, p.cwd)
   }
 
   return {
     list: readonly(list),
     selectedKey: readonly(selectedKey),
+    cells,
     open,
-    openFrom,
+    openCell,
+    openCellFrom,
     split,
     splitFrom,
     paneBySession,
@@ -273,6 +315,7 @@ export function createWorkspaces(
     focusPane,
     moveFocus,
     owner,
+    workspaceOf,
     setCwd,
     setTitle,
     setFontSize,

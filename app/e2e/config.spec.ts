@@ -103,23 +103,20 @@ test('파일을 지우면 기본값으로 돌아간다', async ({ launch, dataDi
   await expect.poll(() => fontSize(page)).toBe('14px')
 })
 
-test('single 보기의 숨은 workspace 도 새 크기로 맞춘다', async ({ launch, dataDir }) => {
+test('single 보기의 숨은 cell 도 새 크기로 맞춘다', async ({ launch, dataDir }) => {
   const launched = await launch()
   const { app, page } = launched
   await newWorkspace(launched, 2)
   writeConfig(dataDir, '[terminal]\nfont-size = 20\n')
   await expect.poll(() => fontSize(page)).toBe('20px')
   const shown = await shellSize(page)
-  await clickMenu(app, 'previous-workspace')
+  await clickMenu(app, 'previous-cell')
   await activeTerminal(page)
   expect(await fontSize(page)).toBe('20px')
   await expect.poll(() => shellSize(page)).toEqual(shown)
 })
 
-test('columns 보기에서 화면 밖에 있던 workspace 도 줄 높이에 맞춘다', async ({
-  launch,
-  dataDir
-}) => {
+test('columns 보기에서 화면 밖에 있던 cell 도 줄 높이에 맞춘다', async ({ launch, dataDir }) => {
   const launched = await launch()
   const { app, page } = launched
   await toggleView(launched, 'columns')
@@ -130,8 +127,8 @@ test('columns 보기에서 화면 밖에 있던 workspace 도 줄 높이에 맞�
   writeConfig(dataDir, '[terminal]\nline-height = 2\n')
   await expect.poll(async () => (await terminalFont(page)).row).toBeGreaterThanOrEqual(28)
   const shown = await shellSize(page)
-  await clickMenu(app, 'previous-workspace')
-  await clickMenu(app, 'previous-workspace')
+  await clickMenu(app, 'previous-cell')
+  await clickMenu(app, 'previous-cell')
   await activeTerminal(page)
   await expect.poll(() => shellSize(page)).toEqual(shown)
 })

@@ -18,9 +18,9 @@ import {
   split,
   test,
   toggleView,
-  workspaceGroups,
-  workspaceItems,
-  workspaceViews,
+  cellGroups,
+  cellItems,
+  cellViews,
   zshHome
 } from './app'
 
@@ -52,7 +52,7 @@ async function scrollArea(page: Page): Promise<{ left: number; right: number; bo
   })
 }
 
-test('View 메뉴의 Toggle View Mode 는 workspace 를 가로로 늘어놓아 80열로 보이고, 다시 누르면 선택한 것만 보인다', async ({
+test('View 메뉴의 Toggle View Mode 는 cell 을 가로로 늘어놓아 80열로 보이고, 다시 누르면 선택한 것만 보인다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -64,24 +64,24 @@ test('View 메뉴의 Toggle View Mode 는 workspace 를 가로로 늘어놓아 8
 
   await toggleView(launched, 'columns')
 
-  await expect(workspaceViews(page).nth(0)).toBeVisible()
-  await expect(workspaceViews(page).nth(1)).toBeVisible()
+  await expect(cellViews(page).nth(0)).toBeVisible()
+  await expect(cellViews(page).nth(1)).toBeVisible()
   const [a, b] = [
-    (await workspaceViews(page).nth(0).boundingBox())!,
-    (await workspaceViews(page).nth(1).boundingBox())!
+    (await cellViews(page).nth(0).boundingBox())!,
+    (await cellViews(page).nth(1).boundingBox())!
   ]
   expect(b.x).toBeGreaterThanOrEqual(a.x + a.width)
   expect(b.y).toBe(a.y)
   expect(b.height).toBe(a.height)
   await expectCols(page, 80)
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
   await expectCols(page, 80)
   await run(page, 'echo "x=$X"', 'x=a-2')
 
   await toggleView(launched, 'single')
 
-  await expect(workspaceViews(page).nth(0)).toBeVisible()
-  await expect(workspaceViews(page).nth(1)).toBeHidden()
+  await expect(cellViews(page).nth(0)).toBeVisible()
+  await expect(cellViews(page).nth(1)).toBeHidden()
   expect(await page.locator('.terminals').evaluate((el) => el.scrollLeft)).toBe(0)
   await expectCols(page, single.cols)
 })
@@ -132,7 +132,7 @@ test('columns 에서 위아래 두 쪽의 늘어선 pane 수가 다르면 적은
   expect(wide).toBeLessThan(170)
 })
 
-test('columns 에서 다른 workspace 의 pane 을 누르면 그 workspace 를 선택하고 키가 그리로 간다', async ({
+test('columns 에서 다른 cell 의 pane 을 누르면 그 cell 을 선택하고 키가 그리로 간다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -142,32 +142,32 @@ test('columns 에서 다른 workspace 의 pane 을 누르면 그 workspace 를 �
   await run(page, 'X=b-$((2+2)); echo set-$((2+3))', 'set-5')
   await toggleView(launched, 'columns')
 
-  await workspaceViews(page).nth(0).locator('.pane').click()
+  await cellViews(page).nth(0).locator('.pane').click()
 
-  await expect(workspaceGroups(page).first()).toHaveClass(/selected/)
-  await expect(workspaceGroups(page).nth(1)).not.toHaveClass(/selected/)
+  await expect(cellGroups(page).first()).toHaveClass(/selected/)
+  await expect(cellGroups(page).nth(1)).not.toHaveClass(/selected/)
   await run(page, 'echo "x=$X"', 'x=a-2')
   await split(launched.app, page, 'split-right', 2)
-  await expect(workspaceViews(page).nth(1).locator('.pane')).toHaveCount(1)
+  await expect(cellViews(page).nth(1).locator('.pane')).toHaveCount(1)
 })
 
-test('columns 에서 위아래로 나눈 pane 도 80열이고, pane 을 닫으면 workspace 폭이 다시 준다', async ({
+test('columns 에서 위아래로 나눈 pane 도 80열이고, pane 을 닫으면 cell 폭이 다시 준다', async ({
   launch
 }) => {
   const launched = await launch()
   const { app, page } = launched
   await toggleView(launched, 'columns')
-  const one = (await workspaceViews(page).first().boundingBox())!.width
+  const one = (await cellViews(page).first().boundingBox())!.width
 
   await split(app, page, 'split-right', 2)
-  expect((await workspaceViews(page).first().boundingBox())!.width).toBeGreaterThan(one * 1.9)
+  expect((await cellViews(page).first().boundingBox())!.width).toBeGreaterThan(one * 1.9)
   await clickMenu(app, 'close-pane')
   await expect(panes(page)).toHaveCount(1)
-  await expect.poll(async () => (await workspaceViews(page).first().boundingBox())!.width).toBe(one)
+  await expect.poll(async () => (await cellViews(page).first().boundingBox())!.width).toBe(one)
 
   await split(app, page, 'split-down', 2)
   await expectCols(page, 80)
-  expect((await workspaceViews(page).first().boundingBox())!.width).toBe(one)
+  expect((await cellViews(page).first().boundingBox())!.width).toBe(one)
 })
 
 test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 pane 이 보이도록 따라간다', async ({
@@ -181,15 +181,15 @@ test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 pane 
   const area = page.locator('.terminals')
   expect(await overflows(page)).toBe(true)
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
-  await expect.poll(() => inView(page, workspaceViews(page).nth(0))).toBe(false)
+  await expect.poll(() => inView(page, cellViews(page).nth(0))).toBe(false)
 
-  await workspaceItems(page).first().click()
-  await expect.poll(() => inView(page, workspaceViews(page).nth(0))).toBe(true)
+  await cellItems(page).first().click()
+  await expect.poll(() => inView(page, cellViews(page).nth(0))).toBe(true)
 
   await newWorkspace(launched, 4)
-  await expect.poll(() => inView(page, workspaceViews(page).nth(3))).toBe(true)
+  await expect.poll(() => inView(page, cellViews(page).nth(3))).toBe(true)
 
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
   await split(app, page, 'split-right', 2)
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
   await expect.poll(() => inView(page, panes(page).nth(0))).toBe(false)
@@ -199,7 +199,7 @@ test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 pane 
 
   await area.evaluate((el) => (el.scrollLeft = el.scrollWidth))
   await expect.poll(() => inView(page, activePane(page))).toBe(false)
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
 })
 
@@ -213,7 +213,7 @@ test('columns 에서 포커스가 같은 pane 으로 돌아와도 스크롤한 �
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
   await toggleView(launched, 'columns')
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
 
   const area = page.locator('.terminals')
@@ -245,7 +245,7 @@ test('columns 에서 pane 의 디렉토리가 바뀌어도 스크롤한 자리�
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
   await toggleView(launched, 'columns')
-  const names = page.locator('.workspace-header .name')
+  const names = page.locator('.cell-header .name')
   await expect(names).toHaveText(['home', 'home', 'home'])
   await page.keyboard.type('sleep 2; cd notes\n')
 
@@ -259,7 +259,7 @@ test('columns 에서 pane 의 디렉토리가 바뀌어도 스크롤한 자리�
   expect(await area.evaluate((el) => el.scrollLeft)).toBe(0)
 })
 
-test('columns 에서 앞의 workspace 가 닫혀도 포커스된 pane 이 화면에 남고 키를 받는다', async ({
+test('columns 에서 앞의 cell 이 닫혀도 포커스된 pane 이 화면에 남고 키를 받는다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -267,19 +267,19 @@ test('columns 에서 앞의 workspace 가 닫혀도 포커스된 pane 이 화면
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
   await toggleView(launched, 'columns')
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
   await page.keyboard.type('sleep 1.5; exit\n')
-  await workspaceItems(page).nth(1).click()
+  await cellItems(page).nth(1).click()
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
 
-  await expect(workspaceItems(page)).toHaveCount(2)
+  await expect(cellItems(page)).toHaveCount(2)
 
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
-  await expect(workspaceGroups(page).first()).toHaveClass(/selected/)
+  await expect(cellGroups(page).first()).toHaveClass(/selected/)
   await run(page, 'echo typed-$((1+1))', 'typed-2')
 })
 
-test('고전 스크롤바 설정의 columns 에서 가로 스크롤바는 기본보다 낮고, workspace 가 넘치기 시작하거나 넘침이 그쳐도 그 높이와 터미널의 줄 수는 그대로다', async ({
+test('고전 스크롤바 설정의 columns 에서 가로 스크롤바는 기본보다 낮고, cell 이 넘치기 시작하거나 넘침이 그쳐도 그 높이와 터미널의 줄 수는 그대로다', async ({
   launch
 }) => {
   const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
@@ -300,14 +300,14 @@ test('고전 스크롤바 설정의 columns 에서 가로 스크롤바는 기본
 
   await newWorkspace(launched, 2)
   expect(await overflows(page)).toBe(true)
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
 
   expect(await scrollbarHeight(page)).toBe(bar)
   expect((await shellSize(page)).rows).toBe(before.rows)
 
-  await workspaceItems(page).nth(1).click()
+  await cellItems(page).nth(1).click()
   await page.keyboard.type('exit\n')
-  await expect(workspaceItems(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(1)
   expect(await overflows(page)).toBe(false)
 
   expect(await scrollbarHeight(page)).toBe(bar)
@@ -336,7 +336,7 @@ test('고전 스크롤바 설정에서 columns 가 넘치지 않을 때도 가�
   expect(empty.bar).not.toBe(empty.ground)
 
   await newWorkspace(launched, 2)
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
   await expect.poll(() => page.locator('.terminals').evaluate((el) => el.scrollLeft)).toBe(0)
   const thumb = await reds(area.left + 40)
   const track = await reds(area.right - 40)
@@ -366,7 +366,7 @@ test('overlay 스크롤바 설정에서 columns 의 트랙은 스크롤할 때 �
   const area = await scrollArea(page)
   const red = async (x: number): Promise<number> =>
     (await screenshotPixels(page, { x, y: area.bottom - 4, width: 1, height: 1 }, 'css')).data[0]
-  // 새 workspace 의 pane 을 따라 맨 오른쪽까지 스크롤했으므로 thumb 은 오른쪽 끝에 있다.
+  // 새 cell 의 pane 을 따라 맨 오른쪽까지 스크롤했으므로 thumb 은 오른쪽 끝에 있다.
   const [track, thumb] = [area.left + 40, area.right - 40]
   const middle = (area.left + area.right) / 2
   // 처음 넘칠 때 나타난 스크롤바가 사라지면 두 자리 모두 바탕색이다.
@@ -384,7 +384,7 @@ test('overlay 스크롤바 설정에서 columns 의 트랙은 스크롤할 때 �
   await expect.poll(() => red(track)).not.toBe(ground)
 })
 
-test('columns 에서 선택한 workspace 의 테두리는 아래 변도 스크롤 영역 안에 그려진다', async ({
+test('columns 에서 선택한 cell 의 테두리는 아래 변도 스크롤 영역 안에 그려진다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -393,12 +393,12 @@ test('columns 에서 선택한 workspace 의 테두리는 아래 변도 스크�
 
   // 테두리는 카드 바깥 1px 의 box-shadow 라, 스크롤 영역이 자르지 않으려면 그 1px 이 영역 안에 있어야 한다.
   const area = await scrollArea(page)
-  const card = (await workspaceViews(page).first().boundingBox())!
+  const card = (await cellViews(page).first().boundingBox())!
   expect(card.y + card.height + 1).toBeLessThanOrEqual(area.bottom)
   expect(card.x - 1).toBeGreaterThanOrEqual(area.left)
 })
 
-test('columns 에서 포커스를 따라 스크롤해도 선택한 workspace 의 옆 테두리는 스크롤 영역 안에 그려진다', async ({
+test('columns 에서 포커스를 따라 스크롤해도 선택한 cell 의 옆 테두리는 스크롤 영역 안에 그려진다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -406,19 +406,19 @@ test('columns 에서 포커스를 따라 스크롤해도 선택한 workspace 의
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
   await toggleView(launched, 'columns')
-  await workspaceItems(page).first().click()
-  await expect.poll(() => inView(page, workspaceViews(page).nth(0))).toBe(true)
+  await cellItems(page).first().click()
+  await expect.poll(() => inView(page, cellViews(page).nth(0))).toBe(true)
 
   const area = await scrollArea(page)
   const right = async (): Promise<number> => {
-    const card = (await workspaceViews(page).nth(2).boundingBox())!
+    const card = (await cellViews(page).nth(2).boundingBox())!
     return card.x + card.width + 1
   }
-  await workspaceItems(page).nth(2).click()
+  await cellItems(page).nth(2).click()
   await expect.poll(right).toBeLessThanOrEqual(area.right)
 
-  const left = async (): Promise<number> => (await workspaceViews(page).nth(0).boundingBox())!.x - 1
-  await workspaceItems(page).first().click()
+  const left = async (): Promise<number> => (await cellViews(page).nth(0).boundingBox())!.x - 1
+  await cellItems(page).first().click()
   await expect.poll(left).toBeGreaterThanOrEqual(area.left)
 })
 
@@ -456,7 +456,7 @@ test('columns 에서 마우스 트래킹을 켠 터미널 위에서도 가로 �
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
   await toggleView(launched, 'columns')
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
   const area = page.locator('.terminals')
   await expect.poll(() => area.evaluate((el) => el.scrollLeft)).toBe(0)
   await run(page, "printf '\\033[?1000h'; echo on-$((1+1))", 'on-2')
@@ -482,7 +482,7 @@ test('columns 에서 마우스 트래킹 없는 alt buffer 위의 가로 스와�
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
   await toggleView(launched, 'columns')
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
   const area = page.locator('.terminals')
   await expect.poll(() => area.evaluate((el) => el.scrollLeft)).toBe(0)
   await run(page, "printf '\\033[?1049h'; echo alt-$((1+1)); cat -v", 'alt-2')

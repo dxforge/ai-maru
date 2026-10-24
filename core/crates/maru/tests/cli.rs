@@ -1218,8 +1218,8 @@ fn pane_new_resolves_a_relative_cwd_and_splits_down() {
 }
 
 #[test]
-fn pane_and_workspace_new_reject_an_unknown_option_before_the_command() {
-    for new in [["pane", "new"], ["workspace", "new"]] {
+fn pane_and_cell_new_reject_an_unknown_option_before_the_command() {
+    for new in [["pane", "new"], ["cell", "new"]] {
         let out = maru(None, &[&new[..], &["--dwon", "claude"]].concat());
         assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
         assert!(stderr(&out).contains("--dwon"), "{}", stderr(&out));
@@ -1239,7 +1239,7 @@ fn pane_new_without_a_command_sends_none() {
 }
 
 #[test]
-fn pane_new_full_asks_to_split_the_workspace_and_leaves_a_later_full_to_the_command() {
+fn pane_new_full_asks_to_split_the_cell_and_leaves_a_later_full_to_the_command() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
@@ -1256,13 +1256,13 @@ fn pane_new_full_asks_to_split_the_workspace_and_leaves_a_later_full_to_the_comm
 }
 
 #[test]
-fn pane_and_workspace_new_refuse_a_cwd_that_is_not_a_directory_before_asking_the_app() {
+fn pane_and_cell_new_refuse_a_cwd_that_is_not_a_directory_before_asking_the_app() {
     let tmp = tmpdir();
     let file = tmp.path().join("file");
     std::fs::write(&file, "").unwrap();
     // 아무도 듣지 않는 소켓이라, 앱에 닿으려 했다면 다른 오류가 난다.
     let sock = sock_in(&tmp);
-    for new in [["pane", "new"], ["workspace", "new"]] {
+    for new in [["pane", "new"], ["cell", "new"]] {
         for cwd in [&file, &tmp.path().join("missing")] {
             let out = maru_in(
                 tmp.path(),
@@ -1275,8 +1275,8 @@ fn pane_and_workspace_new_refuse_a_cwd_that_is_not_a_directory_before_asking_the
 }
 
 #[test]
-fn pane_and_workspace_new_fail_on_an_answer_without_a_session() {
-    for new in [["pane", "new"], ["workspace", "new"]] {
+fn pane_and_cell_new_fail_on_an_answer_without_a_session() {
+    for new in [["pane", "new"], ["cell", "new"]] {
         let tmp = tmpdir();
         let sock = sock_in(&tmp);
         let server = serve_once(&sock, |req| result(req, Value::Null));
@@ -1322,19 +1322,19 @@ fn app_restart_shows_the_apps_reason() {
 }
 
 #[test]
-fn workspace_new_sends_where_it_was_called_and_the_command_then_prints_the_session() {
+fn cell_new_sends_where_it_was_called_and_the_command_then_prints_the_session() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
     let out = maru_in(
         tmp.path(),
         &sock,
-        &["workspace", "new", "claude", "--cwd", "x", "a b"],
+        &["cell", "new", "claude", "--cwd", "x", "a b"],
     );
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out), "s-0000000c\n");
-    assert_eq!(req["method"], "workspace.new");
+    assert_eq!(req["method"], "cell.new");
     assert_eq!(req["params"]["session"], SESSION);
     let cwd = std::fs::canonicalize(tmp.path()).unwrap();
     assert_eq!(req["params"]["cwd"], cwd.to_str().unwrap());
@@ -1345,7 +1345,7 @@ fn workspace_new_sends_where_it_was_called_and_the_command_then_prints_the_sessi
 }
 
 #[test]
-fn workspace_new_resolves_a_relative_cwd() {
+fn cell_new_resolves_a_relative_cwd() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     std::fs::create_dir(tmp.path().join("sub")).unwrap();
@@ -1353,7 +1353,7 @@ fn workspace_new_resolves_a_relative_cwd() {
     let out = maru_in(
         tmp.path(),
         &sock,
-        &["workspace", "new", "--cwd", "sub", "--", "-x"],
+        &["cell", "new", "--cwd", "sub", "--", "-x"],
     );
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
@@ -1363,14 +1363,25 @@ fn workspace_new_resolves_a_relative_cwd() {
 }
 
 #[test]
-fn workspace_new_without_a_command_sends_none() {
+fn cell_new_without_a_command_sends_none() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
-    let out = maru_in(tmp.path(), &sock, &["workspace", "new"]);
+    let out = maru_in(tmp.path(), &sock, &["cell", "new"]);
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(req["params"].get("command").is_none(), "{req}");
+}
+
+#[test]
+fn workspace_new_is_gone() {
+    let out = maru(None, &["workspace", "new"]);
+    assert_ne!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("unrecognized subcommand"),
+        "{}",
+        stderr(&out)
+    );
 }
 
 #[test]
@@ -1573,11 +1584,11 @@ fn job_errors_pass_the_message_through() {
         error(
             req,
             -32001,
-            "job dev is running in this workspace",
+            "job dev is running in this cell",
             json!({ "code": "job_name_taken" }),
         )
     });
     let out = maru_in(tmp.path(), &sock, &["job", "new", "--name", "dev", "true"]);
     server.join().unwrap();
-    assert_fails_with(&out, "maru: job dev is running in this workspace");
+    assert_fails_with(&out, "maru: job dev is running in this cell");
 }

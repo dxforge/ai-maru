@@ -1,5 +1,6 @@
 import {
   expect,
+  newCell,
   newWorkspace,
   panes,
   recordSessions,
@@ -9,7 +10,7 @@ import {
   wrapSessionBin
 } from './app'
 
-test('세션은 그 pane 의 workspace id 를 싣고 열리고, maru pane new 의 pane 은 부른 pane 의 workspace 를 따른다', async ({
+test('세션은 그 pane 의 cell id 를 싣고 열리고, maru pane new 의 pane 은 부른 pane 의 cell 을 따른다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -21,13 +22,17 @@ test('세션은 그 pane 의 workspace id 를 싣고 열리고, maru pane new �
   await page.keyboard.type('maru pane new\n')
   await expect(panes(page)).toHaveCount(3)
 
-  await expect.poll(async () => (await events()).opens.length).toBe(4)
-  const [first, second, third, fourth] = (await events()).opens.map((o) => o.workspace)
-  expect(first).toBeTruthy()
-  expect(second).toBeTruthy()
+  await newCell(launched, 3)
+
+  await expect.poll(async () => (await events()).opens.length).toBe(5)
+  const [first, second, third, fourth, fifth] = (await events()).opens.map((o) => o.cell)
+  expect(first).toMatch(/^c-[0-9a-f]{8}$/)
+  expect(second).toMatch(/^c-[0-9a-f]{8}$/)
   expect(second).not.toBe(first)
   expect(third).toBe(second)
   expect(fourth).toBe(second)
+  expect(fifth).toMatch(/^c-[0-9a-f]{8}$/)
+  expect(fifth).not.toBe(second)
 })
 
 test('셸이 스스로 끝나 pane 이 닫혀도 그 세션의 끄기를 main 에 보낸다', async ({ launch }) => {

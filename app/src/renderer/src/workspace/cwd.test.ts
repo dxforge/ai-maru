@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { osc7Path, tildePath, windowTitle, workspaceLabel, workspaceName } from './cwd'
+import { cellLabel, dirName, osc7Path, tildePath, windowTitle, workspaceName } from './cwd'
 
 describe('osc7Path', () => {
   it('호스트가 빈 file URL 에서 경로를 꺼낸다', () => {
@@ -23,32 +23,42 @@ describe('osc7Path', () => {
   })
 })
 
-describe('workspaceName', () => {
+describe('dirName', () => {
   it('경로의 마지막 이름이다', () => {
-    expect(workspaceName('/tmp/a/src')).toBe('src')
-    expect(workspaceName('/tmp/a/src/')).toBe('src')
+    expect(dirName('/tmp/a/src')).toBe('src')
+    expect(dirName('/tmp/a/src/')).toBe('src')
   })
 
   it('루트는 / 다', () => {
-    expect(workspaceName('/')).toBe('/')
+    expect(dirName('/')).toBe('/')
   })
 
   it('모르면 Shell 이다', () => {
-    expect(workspaceName(undefined)).toBe('Shell')
+    expect(dirName(undefined)).toBe('Shell')
   })
 })
 
-describe('workspaceLabel', () => {
+describe('cellLabel', () => {
   it('저장소 안이면 디렉토리 이름 대신 저장소 이름과 branch 다', () => {
     const git = { repo: 'ai-maru', branch: 'feat/1-x' }
-    expect(workspaceLabel({ cwd: '/r/ai-maru/app', git })).toEqual({
+    expect(cellLabel({ cwd: '/r/ai-maru/app', git })).toEqual({
       name: 'ai-maru',
       branch: 'feat/1-x'
     })
   })
 
   it('저장소 밖이거나 아직 모르면 디렉토리 이름만이다', () => {
-    expect(workspaceLabel({ cwd: '/tmp/notes' })).toEqual({ name: 'notes' })
+    expect(cellLabel({ cwd: '/tmp/notes' })).toEqual({ name: 'notes' })
+  })
+})
+
+describe('workspaceName', () => {
+  it('저장소 안이면 branch 없이 저장소 이름, 밖이면 디렉토리 이름, 모르면 Shell 이다', () => {
+    expect(workspaceName({ cwd: '/r/ai-maru/app', git: { repo: 'ai-maru', branch: 'main' } })).toBe(
+      'ai-maru'
+    )
+    expect(workspaceName({ cwd: '/tmp/notes' })).toBe('notes')
+    expect(workspaceName({})).toBe('Shell')
   })
 })
 

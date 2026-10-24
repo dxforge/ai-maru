@@ -74,7 +74,7 @@ const buffer = (lines: LineLike<CellLike>[]): BufferLike => ({ getLine: (y) => l
 
 describe('readWrappedLine·linkRange', () => {
   it('넓은 글자 뒤의 링크는 글자 인덱스보다 뒤 열에 놓인다', () => {
-    // "한 a/b.md" — 한(2셀) 공백 a/b.md
+    // "한 a/b.md" — 한(폭 2) 공백 a/b.md
     const l = line(['한', '', ' ', 'a', '/', 'b', '.', 'm', 'd', ' ', ' '])
     const { text, cells } = readWrappedLine(buffer([l]), 1)
     expect(text).toBe('한 a/b.md')
@@ -85,7 +85,7 @@ describe('readWrappedLine·linkRange', () => {
     })
   })
 
-  it('surrogate pair 는 두 반쪽이 같은 셀이고, 넓은 글자로 끝나는 링크는 둘째 셀까지다', () => {
+  it('surrogate pair 는 두 반쪽이 같은 글자 칸이고, 넓은 글자로 끝나는 링크는 둘째 글자 칸까지다', () => {
     const l = line(['😀', '', 'x', '한', ''])
     const { text, cells } = readWrappedLine(buffer([l]), 1)
     expect(text).toBe('😀x한')
@@ -93,7 +93,7 @@ describe('readWrappedLine·linkRange', () => {
     expect(linkRange(cells, 2, 4)).toEqual({ start: { x: 3, y: 1 }, end: { x: 5, y: 1 } })
   })
 
-  it('빈 셀은 공백이고 끝의 공백은 뗀다', () => {
+  it('빈 글자 칸은 공백이고 끝의 공백은 뗀다', () => {
     const l: LineLike<CellLike> = {
       length: 3,
       isWrapped: false,
@@ -170,7 +170,7 @@ const register = (
 ) => registerLinkProvider(term as unknown as Terminal, meta, activate)
 
 describe('registerLinkProvider', () => {
-  it('줄의 링크마다 1 기반 셀 범위를 주고, 링크가 없는 줄과 버퍼 밖의 줄은 undefined 다', () => {
+  it('줄의 링크마다 1 기반 글자 칸 범위를 주고, 링크가 없는 줄과 버퍼 밖의 줄은 undefined 다', () => {
     const term = fakeTerm(['go /a/b.md now', 'plain'])
     register(term, fakeMeta())
     const links = provided(term, 1)!

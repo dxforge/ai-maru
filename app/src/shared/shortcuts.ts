@@ -36,12 +36,13 @@ export type Shortcut = Keys &
 
 export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'new-workspace', key: 'N', meta: true },
+  { target: 'command', action: 'new-cell', key: 'T', meta: true },
   { target: 'command', action: 'split-right', key: 'D', meta: true },
   { target: 'command', action: 'split-down', key: 'D', shift: true, meta: true },
   { target: 'command', action: 'close-pane', key: 'W', meta: true },
   { target: 'command', action: 'command-palette', key: 'P', shift: true, meta: true },
-  { target: 'command', action: 'next-workspace', key: ']', shift: true, meta: true },
-  { target: 'command', action: 'previous-workspace', key: '[', shift: true, meta: true },
+  { target: 'command', action: 'next-cell', key: ']', shift: true, meta: true },
+  { target: 'command', action: 'previous-cell', key: '[', shift: true, meta: true },
   { target: 'command', action: 'toggle-sidebar', key: 'B', meta: true },
   { target: 'command', action: 'toggle-canvas', key: 'B', alt: true, meta: true },
   { target: 'command', action: 'toggle-view-mode', key: '\\', meta: true },
@@ -49,7 +50,7 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'focus-pane-right', key: 'Right', alt: true, meta: true },
   { target: 'command', action: 'focus-pane-up', key: 'Up', alt: true, meta: true },
   { target: 'command', action: 'focus-pane-down', key: 'Down', alt: true, meta: true },
-  // workspace 이동(⇧⌘[ / ⇧⌘])과 modifier 를 맞춰 ⇧⌘방향키로도 받는다.
+  // cell 이동(⇧⌘[ / ⇧⌘])과 modifier 를 맞춰 ⇧⌘방향키로도 받는다.
   // ⌥⌘ 줄 뒤에 두어 메뉴와 명령 팔레트에는 ⌥⌘방향키가 보이게 한다.
   { target: 'command', action: 'focus-pane-left', key: 'Left', shift: true, meta: true },
   { target: 'command', action: 'focus-pane-right', key: 'Right', shift: true, meta: true },
@@ -63,8 +64,8 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'increase-font-size', key: '=', meta: true },
   { target: 'command', action: 'decrease-font-size', key: '-', shift: true, meta: true },
   { target: 'command', action: 'reset-font-size', key: '0', shift: true, meta: true },
-  { target: 'command', action: 'widen-workspace', key: '.', shift: true, meta: true },
-  { target: 'command', action: 'narrow-workspace', key: ',', shift: true, meta: true },
+  { target: 'command', action: 'widen-cell', key: '.', shift: true, meta: true },
+  { target: 'command', action: 'narrow-cell', key: ',', shift: true, meta: true },
 
   // Electron 이 role 에 거는 기본 키와 같다.
   { target: 'menu', action: 'hide', key: 'H', meta: true },

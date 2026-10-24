@@ -5,7 +5,7 @@ async function measure(app: ElectronApplication) {
   return (await app.firstWindow()).evaluate(() => {
     const screen = document.querySelector('.xterm-screen')!.getBoundingClientRect()
     const rows = document.querySelector('.xterm-rows')!.children.length
-    const headers = ['.pane-header', '.workspace-header'].map(
+    const headers = ['.pane-header', '.cell-header'].map(
       (s) => document.querySelector(s)!.getBoundingClientRect().height
     )
     return {
@@ -50,7 +50,7 @@ for (const [label, dw, dh] of [
 
     expect(after.winWidth).toBe(before.winWidth + dw)
     expectFilled(after)
-    // 열 수의 증감은 창 너비의 증감과 한 셀 안쪽으로 맞아야 한다 — 셀 너비는 셀 높이보다 작다.
+    // 열 수의 증감은 창 너비의 증감과 한 글자 칸 안쪽으로 맞아야 한다 — 글자 칸 너비는 글자 칸 높이보다 작다.
     expect(Math.abs(after.width - before.width - dw)).toBeLessThan(after.cellHeight)
   })
 }

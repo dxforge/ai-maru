@@ -15,8 +15,8 @@ import {
   split,
   test,
   typesInto,
-  workspaceGroups as groups,
-  workspaceItems
+  cellGroups as groups,
+  cellItems
 } from './app'
 
 test('hook 이 오면 사이드바의 pane 줄과 pane 헤더의 상태가 바뀌고, claude exit 로 사라진다', async ({
@@ -59,20 +59,20 @@ test('hook 없이 claude 의 상태 파일이 idle 이 되면 쉬는 중으로 �
   await expect(paneRows(page)).toHaveClass(/idle/)
 })
 
-test('pane 줄은 그 터미널의 workspace 아래에만, pane 헤더는 보이는 pane 의 상태를 따른다', async ({
+test('pane 줄은 그 터미널의 cell 아래에만, pane 헤더는 보이는 pane 의 상태를 따른다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   await pressNew(app)
-  await expect(workspaceItems(page)).toHaveCount(2)
+  await expect(cellItems(page)).toHaveCount(2)
   await page.waitForSelector('.terminal-view.active .xterm-screen')
   await page.keyboard.type(hook('UserPromptSubmit'))
   await expect(groups(page).nth(1).locator('.pane-row')).toHaveClass(/working/)
   await expect(groups(page).nth(0).locator('.pane-row')).toHaveClass(/shell/)
   await expect(activeHeader(page)).toHaveClass(/working/)
-  await workspaceItems(page).nth(0).click()
+  await cellItems(page).nth(0).click()
   await expect(activeHeader(page)).not.toHaveClass(/working/)
-  await workspaceItems(page).nth(1).click()
+  await cellItems(page).nth(1).click()
   await expect(activeHeader(page)).toHaveClass(/working/)
 })
 
@@ -111,7 +111,7 @@ test('셸 pane 의 줄을 눌러도 그 pane 에 키 입력이 간다', async ({
   await typesInto(page, 0, 'shell-row')
 })
 
-test('pane 줄을 누르면 그 workspace 를 고르고 그 pane 에 키 입력이 간다', async ({ launch }) => {
+test('pane 줄을 누르면 그 cell 을 고르고 그 pane 에 키 입력이 간다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
   await split(app, page, 'split-right', 2)

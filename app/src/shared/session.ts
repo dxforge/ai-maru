@@ -1,7 +1,7 @@
 /** `attach` 면 세션을 띄우지 않고 떠 있는 `id` 의 세션에 붙는다(재시작으로 되살린 pane). */
 export type SessionOpen = {
   id: string
-  workspace: string
+  cell: string
   cwd?: string
   command?: string[]
   attach?: boolean

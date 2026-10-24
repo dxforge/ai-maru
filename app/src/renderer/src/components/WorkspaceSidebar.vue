@@ -2,8 +2,8 @@
 import { computed, type DeepReadonly } from 'vue'
 import type { ClaudeState } from '../../../shared/claude'
 import { ICONS, STATE_LABELS } from '../icons'
-import { tildePath, windowTitle, workspaceLabel } from '../workspace/cwd'
-import { focusedPane, type Pane, type Workspace } from '../workspace/store'
+import { cellLabel, tildePath, windowTitle, workspaceName } from '../workspace/cwd'
+import { focusedPane, type Cell, type Pane, type Workspace } from '../workspace/store'
 
 const {
   workspaces,
@@ -24,9 +24,9 @@ const {
 }>()
 
 const emit = defineEmits<{
-  select: [workspace: number]
-  focus: [workspace: number, pane: number]
-  fold: [workspace: number]
+  select: [cell: number]
+  focus: [cell: number, pane: number]
+  fold: [cell: number]
 }>()
 
 type Row = {
@@ -50,42 +50,48 @@ function paneRow(p: DeepReadonly<Pane>, s: ClaudeState | undefined, focused: boo
   }
 }
 
-function summaryRow(w: DeepReadonly<Workspace>): Row {
-  const claude = w.panes.filter((p) => state(p.sessionId)).length
+function summaryRow(c: DeepReadonly<Cell>): Row {
+  const claude = c.panes.filter((p) => state(p.sessionId)).length
   const counts: [number, string][] = [
     [claude, 'Claude'],
-    [w.panes.length - claude, 'Shell']
+    [c.panes.length - claude, 'Shell']
   ]
   const text = counts
     .filter(([n]) => n)
     .map(([n, what]) => `${what} ${n}`)
     .join(' · ')
-  return { key: 'summary', state: urgent.get(w.key), focused: false, text, aria: `Expand: ${text}` }
+  return { key: 'summary', state: urgent.get(c.key), focused: false, text, aria: `Expand: ${text}` }
+}
+
+function cellGroup(c: DeepReadonly<Cell>) {
+  const selected = c.key === selectedKey
+  const current = focusedPane(c)
+  const label = cellLabel(current)
+  const title = windowTitle(label)
+  const f = folded.has(c.key)
+  return {
+    c,
+    selected,
+    label,
+    tip: current.cwd ? `${title}\n${tildePath(current.cwd, home)}` : title,
+    folded: f,
+    rows: f
+      ? [summaryRow(c)]
+      : c.panes.map((p) => paneRow(p, state(p.sessionId), selected && p === current))
+  }
 }
 
 const groups = computed(() =>
-  workspaces.map((w) => {
-    const selected = w.key === selectedKey
-    const current = focusedPane(w)
-    const label = workspaceLabel(current)
-    const title = windowTitle(label)
-    const f = folded.has(w.key)
-    return {
-      w,
-      selected,
-      label,
-      tip: current.cwd ? `${title}\n${tildePath(current.cwd, home)}` : title,
-      folded: f,
-      rows: f
-        ? [summaryRow(w)]
-        : w.panes.map((p) => paneRow(p, state(p.sessionId), selected && p === current))
-    }
-  })
+  workspaces.map((w) => ({
+    w,
+    name: workspaceName(w.cells[0].panes[0]),
+    cells: w.cells.map(cellGroup)
+  }))
 )
 
-function press(workspace: number, row: Row): void {
-  if (row.pane === undefined) emit('fold', workspace)
-  else emit('focus', workspace, row.pane)
+function press(cell: number, row: Row): void {
+  if (row.pane === undefined) emit('fold', cell)
+  else emit('focus', cell, row.pane)
 }
 </script>
 
@@ -93,58 +99,61 @@ function press(workspace: number, row: Row): void {
   <nav class="sidebar" :class="{ collapsed }">
     <div class="titlebar" />
     <div class="list">
-      <div
-        v-for="{ w, selected, label, tip, folded: f, rows } in groups"
-        :key="w.key"
-        class="group"
-        :class="{ selected }"
-      >
-        <div class="head">
-          <button
-            class="workspace"
-            :title="tip"
-            :aria-label="tip"
-            @mousedown.prevent
-            @click="emit('select', w.key)"
-          >
-            <span class="name">{{ label.name }}</span>
-            <span v-if="label.branch" class="branch"
-              ><span class="nerd-icon">{{ ICONS.branch }}</span
-              ><span class="branch-name">{{ label.branch }}</span></span
+      <div v-for="{ w, name, cells } in groups" :key="w.key" class="workspace">
+        <div class="workspace-name fade">{{ name }}</div>
+        <div
+          v-for="{ c, selected, label, tip, folded: f, rows } in cells"
+          :key="c.key"
+          class="group"
+          :class="{ selected }"
+        >
+          <div class="head">
+            <button
+              class="cell"
+              :title="tip"
+              :aria-label="tip"
+              @mousedown.prevent
+              @click="emit('select', c.key)"
             >
-          </button>
+              <span class="name">{{ label.name }}</span>
+              <span v-if="label.branch" class="branch"
+                ><span class="nerd-icon">{{ ICONS.branch }}</span
+                ><span class="branch-name">{{ label.branch }}</span></span
+              >
+            </button>
+            <button
+              class="fold"
+              :aria-label="f ? 'Expand' : 'Collapse'"
+              :aria-expanded="!f"
+              @mousedown.prevent
+              @click="emit('fold', c.key)"
+            >
+              <span class="nerd-icon">{{ f ? ICONS.collapsed : ICONS.expanded }}</span>
+            </button>
+          </div>
           <button
-            class="fold"
-            :aria-label="f ? 'Expand' : 'Collapse'"
-            :aria-expanded="!f"
+            v-for="r in rows"
+            :key="r.key"
+            class="row"
+            :class="[
+              r.pane === undefined ? 'summary' : 'pane-row',
+              r.state ?? 'shell',
+              { focused: r.focused }
+            ]"
+            :title="r.aria"
+            :aria-label="r.aria"
             @mousedown.prevent
-            @click="emit('fold', w.key)"
+            @click="press(c.key, r)"
           >
-            <span class="nerd-icon">{{ f ? ICONS.collapsed : ICONS.expanded }}</span>
+            <span class="state status-icon nerd-icon" :title="r.state && STATE_LABELS[r.state]">{{
+              r.state ? ICONS[r.state] : ICONS.terminal
+            }}</span>
+            <span class="title fade">{{ r.text }}</span>
+            <span v-if="r.state && r.pane !== undefined" class="app fade nerd-icon">{{
+              ICONS.claude
+            }}</span>
           </button>
         </div>
-        <button
-          v-for="r in rows"
-          :key="r.key"
-          class="row"
-          :class="[
-            r.pane === undefined ? 'summary' : 'pane-row',
-            r.state ?? 'shell',
-            { focused: r.focused }
-          ]"
-          :title="r.aria"
-          :aria-label="r.aria"
-          @mousedown.prevent
-          @click="press(w.key, r)"
-        >
-          <span class="state status-icon nerd-icon" :title="r.state && STATE_LABELS[r.state]">{{
-            r.state ? ICONS[r.state] : ICONS.terminal
-          }}</span>
-          <span class="title fade">{{ r.text }}</span>
-          <span v-if="r.state && r.pane !== undefined" class="app fade nerd-icon">{{
-            ICONS.claude
-          }}</span>
-        </button>
       </div>
     </div>
   </nav>
@@ -182,8 +191,20 @@ function press(workspace: number, row: Row): void {
   padding: 4px 0;
 }
 
-.group + .group {
+.group + .group,
+.workspace + .workspace {
   border-top: 1px solid var(--line);
+}
+
+.workspace-name {
+  height: 26px;
+  line-height: 26px;
+  padding: 0 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--faint);
 }
 
 button {
@@ -210,7 +231,7 @@ button {
   display: flex;
 }
 
-.workspace {
+.cell {
   flex: 1;
   min-width: 0;
   gap: 6px;
@@ -314,7 +335,7 @@ button {
   opacity: 0;
 }
 
-.collapsed .workspace {
+.collapsed .cell {
   justify-content: center;
   padding: 0 6px;
 }

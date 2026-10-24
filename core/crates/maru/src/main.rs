@@ -51,7 +51,7 @@
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
 //! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `full`(bool, 선택) | `{"session":<새 세션 id>}` |
 //! | `pane.close` | `target`(세션 id) | `null` |
-//! | `workspace.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택) | `{"session":<새 세션 id>}` |
+//! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택) | `{"session":<새 세션 id>}` |
 //! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"session":<job 의 세션 id>}` |
 //! | `job.list` | 없음 | `{"jobs":[{"session","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
 //! | `job.read` | `target`(job 이름이나 세션 id) | `{"text":<글자>}` |
@@ -74,8 +74,8 @@
 //! 지운다. 보관은 앱 메모리에만 한다.
 //!
 //! `pane.new` 는 `session` 의 pane 을 `direction` 쪽으로 나누고, 새 pane 에서 `cwd` 를 시작 디렉토리로
-//! 세션을 띄운다. `full` 이 true 면 그 pane 이 든 workspace 전체를 나눠 새 pane 을 `direction` 쪽 끝에
-//! 붙인다. 포커스와 선택한 workspace 는 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
+//! 세션을 띄운다. `full` 이 true 면 그 pane 이 든 cell 전체를 나눠 새 pane 을 `direction` 쪽 끝에
+//! 붙인다. 포커스와 선택한 cell 은 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
 //! 그 명령을 실행한다(셸이 sh·bash·zsh·ksh·dash 가 아니면 `/bin/sh` 가 실행한다). 명령이 끝나면 셸과
 //! 함께 pane 이 닫힌다. 새 세션이 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. `session` 의 pane 이 창에
 //! 없으면 `invalid_params` 로 답한다. 나눈 pane 들이 하한(터미널 20열 × 5행) 아래로 내려가 나눌 자리가
@@ -86,26 +86,26 @@
 //! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 세션을 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
 //! 전에 끝날 수 있다.
 //!
-//! `workspace.new` 는 pane 하나인 workspace 를 만들고, 그 pane 에서 `pane.new` 처럼 세션을 띄운다.
-//! 명령이 끝나 pane 이 닫히면 workspace 도 닫힌다. 새 workspace 는 `session` 의 workspace 뒤에
-//! 놓는다. `session` 이 job 이면 그 job 의 workspace 다(`job.*` 와 같다). 그 workspace 가 앞서
-//! `workspace.new` 로 띄운 workspace(그것들이 다시 띄운 것 포함)가 뒤에 이어져 있으면 그것들 뒤에 놓아,
-//! 띄운 순서를 지킨다. 누가 띄웠는지는 앱 메모리에만 두므로, 재시작하기 전에 띄운 workspace 는 묶음에서
-//! 빠지고 재시작한 뒤 띄운 workspace 는 그것들 앞에 놓인다. `session` 의 workspace 를 모르면 목록 끝에 놓는다. 포커스와 선택한
-//! workspace 는 바꾸지 않는다. 답하는 때와 세션을 띄우지 못할 때는 `pane.new` 와 같고, 그때 닫는 pane 이
-//! workspace 의 하나뿐인 pane 이므로 workspace 도 닫힌다.
+//! `cell.new` 는 pane 하나인 cell 을 만들어 `session` 의 cell 뒤에 넣고, 그 pane 에서 `pane.new` 처럼
+//! 세션을 띄운다. `session` 이 job 이면 그 job 의 cell 이다(`job.*` 와 같다). 그 cell 이 앞서 띄운
+//! cell(`cell.new` 나 New Cell 로 연 것, 그것들이 다시 띄운 것 포함)이 뒤에 이어져 있으면 그것들 뒤에 놓아,
+//! 띄운 순서를 지킨다.
+//! `session` 의 cell 을 모르면 새 workspace 를 목록 끝에 만들어 거기에 넣는다. 포커스와 선택한 cell 은
+//! 바꾸지 않는다. 명령이 끝나 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이면 workspace 도
+//! 닫힌다. 답하는 때와 세션을 띄우지 못할 때는 `pane.new` 와 같고, 그때 닫는 pane 이 cell 의 하나뿐인
+//! pane 이므로 cell 도 닫힌다.
 //!
-//! `job.*` 는 화면에 없는 세션(job)을 다룬다. job 은 부른 세션의 workspace 가 갖는다 — 부른 세션이
-//! job 이면 그 job 의 workspace 다. 다른 workspace 의 job 은 목록에 없고 `target` 으로 가리켜도 없는
-//! job 이다. workspace 의 마지막 pane 이 닫히면 그 workspace 의 job 을 끈다. 앱을 끝내면 job 도 끝나고,
+//! `job.*` 는 화면에 없는 세션(job)을 다룬다. job 은 부른 세션의 cell 이 갖는다 — 부른 세션이
+//! job 이면 그 job 의 cell 이다. 다른 cell 의 job 은 목록에 없고 `target` 으로 가리켜도 없는
+//! job 이다. cell 의 마지막 pane 이 닫히면 그 cell 의 job 을 끈다. 앱을 끝내면 job 도 끝나고,
 //! `app.restart` 는 pane 처럼 job 을 남긴다.
 //!
 //! - `job.new` 는 `pane.new` 처럼 대화형 로그인 셸이 `command` 를 실행하는 세션을 80×24 로 띄운다. 답의
 //!   `session` 은 그 세션의 id 다. `name` 은 1~64자의 영숫자·`.`·`_`·`-` 이고 영숫자로
-//!   시작하며 세션 id 모양이 아니어야 한다(`target` 이 둘 다 받으므로). 같은 workspace 에서 그 이름의
+//!   시작하며 세션 id 모양이 아니어야 한다(`target` 이 둘 다 받으므로). 같은 cell 에서 그 이름의
 //!   job 이 돌고 있으면 -32001 `job_name_taken`, 끝났으면 그 job 을 지우고 띄운다.
 //! - 셸이 끝나도 job 은 목록에 남고 `job.read` 로 출력을 읽을 수 있다. `job.kill` 하거나, 같은 이름으로
-//!   `job.new` 하거나, workspace 가 닫히면 빠진다. `code`·`signal` 은 끝난 job 의 종료 상태이고 돌고
+//!   `job.new` 하거나, cell 이 닫히면 빠진다. `code`·`signal` 은 끝난 job 의 종료 상태이고 돌고
 //!   있으면 null 이다.
 //! - `target` 이 `s-` 와 hex 8자리면 세션 id 로, 아니면 이름으로 찾는다. 없으면 `invalid_params` 다.
 //! - `job.read` 는 스크롤백과 화면을 스타일 없는 글자로 돌려준다. 화면 폭에서 접힌 줄은 잇는다.
@@ -115,7 +115,7 @@
 //!   (`MAX_CANON`, macOS 에서 1024바이트)를 넘는 한 줄이 닿지 않는다.
 //! - `job.kill` 은 돌고 있으면 끝내고, 끝난 뒤 목록에서 지우고 답한다.
 //!
-//! `app.restart` 는 터미널 세션을 끄지 않고 앱을 다시 띄운다. 다시 뜬 앱은 workspace 와 pane 을
+//! `app.restart` 는 터미널 세션을 끄지 않고 앱을 다시 띄운다. 다시 뜬 앱은 workspace·cell·pane 을
 //! 되살리고 같은 세션에 다시 붙는다. 앱은 답을 보낸 뒤에 끝난다. 설치된 앱이 떠 있는 세션과 세션
 //! 프로토콜 버전이 다르면 다시 뜬 앱은 그 세션에 붙지 못한다. 이때 `kill_sessions` 가 true 가 아니면
 //! 재시작하지 않고 -32001 `sessions_would_end` 로 답한다(`data.sessions` 는 꺼질 세션 수). `kill_sessions`
@@ -134,7 +134,7 @@
 //!   포인트를 넘으면 앞 240 만 싣고 `"truncated":true` 와 `"note"`(`maru inbox read` 안내)를 붙인다.
 //! - job 의 셸이 스스로 끝나면 그 job 을 띄운 세션에 `{"event":"job","session":<job 의 세션 id>,
 //!   "name":<이름, 없으면 뺀다>,"code","signal"}` 을 보낸다. 그 세션에 구독이 없으면 보류했다가
-//!   구독이 생길 때 보낸다. `job.kill` 이나 workspace 닫기로 끝난 job 은 알리지 않는다.
+//!   구독이 생길 때 보낸다. `job.kill` 이나 cell 닫기로 끝난 job 은 알리지 않는다.
 //!
 //! # claude monitor
 //!
@@ -197,10 +197,10 @@ enum Command {
         #[command(subcommand)]
         command: PaneCommand,
     },
-    /// Open workspaces next to this terminal's workspace.
-    Workspace {
+    /// Open cells in this terminal's workspace.
+    Cell {
         #[command(subcommand)]
-        command: WorkspaceCommand,
+        command: CellCommand,
     },
     /// Run commands in terminals that are not shown, and read their output.
     Job {
@@ -265,7 +265,7 @@ enum PaneCommand {
         /// Split below instead of to the right.
         #[arg(long)]
         down: bool,
-        /// Split the whole workspace instead of this pane, adding the new pane at its right
+        /// Split the whole cell instead of this pane, adding the new pane at its right
         /// end (bottom end with --down).
         #[arg(long)]
         full: bool,
@@ -281,14 +281,14 @@ enum PaneCommand {
 }
 
 #[derive(Subcommand)]
-enum WorkspaceCommand {
-    /// Open a workspace after this terminal's workspace and run COMMAND in its pane, or a
-    /// shell when COMMAND is omitted. The workspace closes when COMMAND exits. Focus and the
-    /// selected workspace stay where they are.
+enum CellCommand {
+    /// Open a cell after this terminal's cell and run COMMAND in its pane, or a shell when
+    /// COMMAND is omitted. The cell closes when COMMAND exits. Focus and the selected cell stay
+    /// where they are.
     ///
     /// Prints the new pane's session id; `maru inbox push` sends messages to it and
-    /// `maru pane close` closes it. Workspaces opened from the same workspace follow it in the
-    /// order they were opened. Options go before COMMAND; everything from COMMAND on is passed
+    /// `maru pane close` closes it. Cells opened from the same cell follow it in the order they
+    /// were opened. Options go before COMMAND; everything from COMMAND on is passed
     /// to COMMAND. Use `sh -c '...'` for a pipeline.
     New {
         /// Directory to start in. Defaults to the current directory.
@@ -302,15 +302,15 @@ enum WorkspaceCommand {
 
 #[derive(Subcommand)]
 enum JobCommand {
-    /// Run COMMAND in a terminal that is not shown. The job belongs to this terminal's
-    /// workspace and ends when the workspace closes.
+    /// Run COMMAND in a terminal that is not shown. The job belongs to this terminal's cell
+    /// and ends when the cell closes.
     ///
     /// Prints the job's session id. Options go before COMMAND; everything from COMMAND on is
     /// passed to COMMAND. A job that exits on its own stays listed with its output, and this
     /// terminal gets a `job` notification. A name that a running job holds is refused; a
     /// job that has exited gives its name to the new one.
     New {
-        /// Name to refer to the job by, unique in this workspace.
+        /// Name to refer to the job by, unique in this cell.
         #[arg(long)]
         name: Option<String>,
         /// Directory to start in. Defaults to the current directory.
@@ -320,7 +320,7 @@ enum JobCommand {
         #[arg(trailing_var_arg = true, required = true)]
         command: Vec<String>,
     },
-    /// List this workspace's jobs in the order they started.
+    /// List this cell's jobs in the order they started.
     List,
     /// Print a job's scrollback and screen as text.
     Read {
@@ -351,7 +351,7 @@ enum JobCommand {
 #[derive(Subcommand)]
 enum AppCommand {
     /// Restart the app and keep its terminals running. The restarted app restores the
-    /// workspaces and panes and reattaches them to their terminals.
+    /// workspaces, cells and panes and reattaches them to their terminals.
     ///
     /// Refuses when the installed app cannot reattach to the running terminals; pass
     /// --kill-sessions to restart anyway and end them.
@@ -433,10 +433,10 @@ fn run(command: Command) -> Result<()> {
                 call(&target()?, "pane.close", target_params(session))?;
             }
         },
-        Command::Workspace {
-            command: WorkspaceCommand::New { cwd, command },
+        Command::Cell {
+            command: CellCommand::New { cwd, command },
         } => {
-            let session = workspace_new(cwd, command)?;
+            let session = cell_new(cwd, command)?;
             writeln!(std::io::stdout(), "{session}")?;
         }
         Command::Job { command } => match command {
@@ -835,14 +835,14 @@ fn pane_new(cwd: Option<PathBuf>, down: bool, full: bool, command: Vec<String>) 
     session_of(call(&target, "pane.new", params)?)
 }
 
-fn workspace_new(cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
+fn cell_new(cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
     let target = target()?;
     let mut params = Map::new();
     params.insert("cwd".into(), start_dir(cwd)?.into());
     if !command.is_empty() {
         params.insert("command".into(), command.into());
     }
-    session_of(call(&target, "workspace.new", params)?)
+    session_of(call(&target, "cell.new", params)?)
 }
 
 fn job_new(name: Option<String>, cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {

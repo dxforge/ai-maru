@@ -8,19 +8,19 @@ const B = 's-0000000b'
 
 function setup({ window = true, ready = true } = {}) {
   const sent: { channel: PaneChannel; id: number; arg: unknown }[] = []
-  const workspaces = new Map([[A, 'w-0000000a']])
+  const cells = new Map([[A, 'c-0000000a']])
   const panes = createPanes(
     (channel, id, arg) => {
       if (!window) return false
       sent.push({ channel, id, arg })
       return true
     },
-    (session) => workspaces.get(session),
+    (session) => cells.get(session),
     1000
   )
   if (ready) panes.ready()
   const answer = (reply: PaneReply) => panes.reply(sent.at(-1)!.id, reply)
-  return { ...panes, sent, answer, workspaces }
+  return { ...panes, sent, answer, cells }
 }
 
 afterEach(() => vi.useRealTimers())
@@ -148,12 +148,12 @@ describe('창이 준비되기 전', () => {
     await expect(second).resolves.toBeNull()
   })
 
-  it('workspace 는 쌓을 때가 아니라 넘길 때 정한다', async () => {
-    const { handlers, sent, ready, answer, workspaces } = setup({ ready: false })
-    const done = handlers['workspace.new']({ cwd: '/' }, B)
-    workspaces.set(B, 'w-0000000b')
+  it('cell 은 쌓을 때가 아니라 넘길 때 정한다', async () => {
+    const { handlers, sent, ready, answer, cells } = setup({ ready: false })
+    const done = handlers['cell.new']({ cwd: '/' }, B)
+    cells.set(B, 'c-0000000b')
     ready()
-    expect(sent[0].arg).toEqual({ workspace: 'w-0000000b', cwd: '/' })
+    expect(sent[0].arg).toEqual({ cell: 'c-0000000b', cwd: '/' })
     answer({ session: A })
     await done
   })
@@ -210,24 +210,24 @@ describe('창이 준비되기 전', () => {
   })
 })
 
-describe('workspace.new', () => {
-  it('부른 세션의 workspace 와 함께 창에 넘기고, 창이 알려 준 새 세션을 돌려준다', async () => {
+describe('cell.new', () => {
+  it('부른 세션의 cell 과 함께 창에 넘기고, 창이 알려 준 새 세션을 돌려준다', async () => {
     const { handlers, sent, answer } = setup()
-    const done = handlers['workspace.new']({ cwd: '/a b', command: ['x', ''] }, A)
+    const done = handlers['cell.new']({ cwd: '/a b', command: ['x', ''] }, A)
     expect(sent).toEqual([
       {
-        channel: 'workspace:new',
+        channel: 'cell:new',
         id: 0,
-        arg: { workspace: 'w-0000000a', cwd: '/a b', command: ['x', ''] }
+        arg: { cell: 'c-0000000a', cwd: '/a b', command: ['x', ''] }
       }
     ])
     answer({ session: B })
     await expect(done).resolves.toEqual({ session: B })
   })
 
-  it('명령이 없거나 부른 세션의 workspace 를 모르면 창에도 넘기지 않는다', async () => {
+  it('명령이 없거나 부른 세션의 cell 을 모르면 창에도 넘기지 않는다', async () => {
     const { handlers, sent, answer } = setup()
-    const done = handlers['workspace.new']({ cwd: '/' }, B) as Promise<unknown>
+    const done = handlers['cell.new']({ cwd: '/' }, B) as Promise<unknown>
     expect(sent[0].arg).toEqual({ cwd: '/' })
     answer({ session: A })
     await done
@@ -241,13 +241,13 @@ describe('workspace.new', () => {
     [{ cwd: '/', command: ['ls', 1] }]
   ])('맞지 않는 params %j 는 창에 넘기지 않고 거절한다', async (params) => {
     const { handlers, sent } = setup()
-    await expect(handlers['workspace.new'](params, A)).rejects.toBeInstanceOf(InvalidParams)
+    await expect(handlers['cell.new'](params, A)).rejects.toBeInstanceOf(InvalidParams)
     expect(sent).toEqual([])
   })
 
   it('창이 세션 없이 답하면 실패한다', async () => {
     const { handlers, answer } = setup()
-    const empty = handlers['workspace.new']({ cwd: '/' }, A)
+    const empty = handlers['cell.new']({ cwd: '/' }, A)
     answer(null)
     await expect(empty).rejects.toThrow('without a session')
   })

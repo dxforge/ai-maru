@@ -54,7 +54,9 @@ export async function takeRestart(path: string): Promise<RestartState | null> {
 }
 
 export function screenSessions(screen: ScreenState | null): Set<string> {
-  return new Set(screen?.workspaces.flatMap((w) => w.panes.map((p) => p.sessionId)))
+  return new Set(
+    screen?.workspaces.flatMap((w) => w.cells.flatMap((c) => c.panes.map((p) => p.sessionId)))
+  )
 }
 
 const run = promisify(execFile)

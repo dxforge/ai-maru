@@ -15,7 +15,7 @@ import {
 const PRINT_HAN = "printf '\\355\\225\\234\\n'"
 
 /**
- * 커서 셀의 왼쪽 위와 `.xterm-screen` 의 왼쪽 끝. xterm 은 textarea 를 커서 셀에 둔다. `alignComposition` 은
+ * 커서 글자 칸의 왼쪽 위와 `.xterm-screen` 의 왼쪽 끝. xterm 은 textarea 를 커서 글자 칸에 둔다. `alignComposition` 은
  * 조합창만 옮기고 textarea 는 옮기지 않는다.
  */
 async function cursor(page: Page): Promise<{ x: number; y: number; left: number }> {
@@ -109,7 +109,9 @@ for (const renderer of ['webgl', 'dom'] as const)
       expect(await settledInkTop(page, clip)).toBe(committed)
     })
 
-test('조합창은 터미널 배경에 밑줄로 두 셀을 덮어 그 아래의 커서를 가린다', async ({ launch }) => {
+test('조합창은 터미널 배경에 밑줄로 두 글자 칸을 덮어 그 아래의 커서를 가린다', async ({
+  launch
+}) => {
   const launched = await launch({ MARU_DOM_RENDERER: '' })
   const { page } = launched
   await activeTerminal(page)

@@ -17,16 +17,16 @@ import {
   test,
   toggleView,
   typesInto,
-  workspaceGroups,
-  workspaceItems,
-  workspaceViews,
+  cellGroups,
+  cellItems,
+  cellViews,
   writeConfig
 } from './app'
 
 function headerBelowPane(page: Page): Promise<{ gap: number; above: number }> {
   return page.evaluate(() => {
     const card = document.querySelector('.panes.selected')!
-    const r = card.querySelector('.workspace-header')!.getBoundingClientRect()
+    const r = card.querySelector('.cell-header')!.getBoundingClientRect()
     const pane = card.querySelector('.pane-header')!.getBoundingClientRect()
     return { gap: card.getBoundingClientRect().bottom - r.bottom, above: r.top - pane.bottom }
   })
@@ -37,10 +37,8 @@ test('pane 헤더는 OSC 0·2 로 받은 제목을, 받기 전에는 Shell 을 �
 }) => {
   const { page } = await launch()
   await expect(activeHeader(page).locator('.title')).toHaveText('Shell')
-  await expect(workspaceItems(page)).not.toHaveText('Shell')
-  await expect(activeHeader(page).locator('.cwd')).toHaveText(
-    await workspaceItems(page).innerText()
-  )
+  await expect(cellItems(page)).not.toHaveText('Shell')
+  await expect(activeHeader(page).locator('.cwd')).toHaveText(await cellItems(page).innerText())
 
   await page.keyboard.type("printf '\\033]2;task-%s\\007' $((1+1))\n")
 
@@ -78,7 +76,7 @@ test('pane 헤더를 누르면 그 pane 이 포커스를 받고 키가 그리로
   await typesInto(page, 1, 'again')
 })
 
-test('columns 에서 고르지 않은 workspace 의 pane 헤더를 누르면 그 workspace 를 고르고 키가 그 pane 으로 간다', async ({
+test('columns 에서 고르지 않은 cell 의 pane 헤더를 누르면 그 cell 을 고르고 키가 그 pane 으로 간다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -86,9 +84,9 @@ test('columns 에서 고르지 않은 workspace 의 pane 헤더를 누르면 그
   await newWorkspace(launched, 2)
   await toggleView({ app, page }, 'columns')
 
-  await workspaceViews(page).nth(0).locator('.pane-header').click()
+  await cellViews(page).nth(0).locator('.pane-header').click()
 
-  await expect(workspaceGroups(page).nth(0)).toHaveClass(/selected/)
+  await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
   await typesInto(page, 0, 'other')
 })
 
@@ -117,14 +115,14 @@ test('포커스를 옮기면 pane 헤더의 강조와 다른 pane 을 흐리게 
   ])
 })
 
-test('columns 의 workspace 헤더는 pane 상태 가운데 waiting, working 순으로 하나를 보이고, 없으면 비우며, 누르면 그 workspace 를 고른다', async ({
+test('columns 의 cell 헤더는 pane 상태 가운데 waiting, working 순으로 하나를 보이고, 없으면 비우며, 누르면 그 cell 을 고른다', async ({
   launch
 }) => {
   const launched = await launch()
   const { app, page } = launched
   await newWorkspace(launched, 2)
   await toggleView({ app, page }, 'columns')
-  const headers = page.locator('.workspace-header')
+  const headers = page.locator('.cell-header')
   await expect(headers).toHaveCount(2)
   await expect(headers.nth(1).locator('.row-bar-icon')).toHaveText('')
 
@@ -138,24 +136,22 @@ test('columns 의 workspace 헤더는 pane 상태 가운데 waiting, working 순
 
   await headers.nth(0).click()
 
-  await expect(workspaceGroups(page).nth(0)).toHaveClass(/selected/)
+  await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
   await run(page, 'echo first-$((1+1))', 'first-2')
 })
 
-test('single 보기에서도 선택된 workspace 의 헤더만 이름·상태를 보이고, 카드 맨 아래 pane 헤더 아래에 놓이며, 사이드바를 접어도 남고, 눌러도 키 입력이 터미널에 남는다', async ({
+test('single 보기에서도 선택된 cell 의 헤더만 이름·상태를 보이고, 카드 맨 아래 pane 헤더 아래에 놓이며, 사이드바를 접어도 남고, 눌러도 키 입력이 터미널에 남는다', async ({
   launch
 }) => {
   const launched = await launch()
   const { app, page } = launched
   await newWorkspace(launched, 2)
-  const headers = page.locator('.workspace-header')
+  const headers = page.locator('.cell-header')
   await expect(headers).toHaveCount(2)
   await expect(headers.nth(1)).toBeVisible()
   await expect(headers.nth(0)).toBeHidden()
   await expect(headers.nth(1)).toHaveClass(/focused/)
-  await expect(headers.nth(1).locator('.name')).toHaveText(
-    await workspaceItems(page).nth(1).innerText()
-  )
+  await expect(headers.nth(1).locator('.name')).toHaveText(await cellItems(page).nth(1).innerText())
   await expect(headers.nth(1).locator('.row-bar-icon')).toHaveText('')
 
   await page.keyboard.type(claudeHook('UserPromptSubmit'))
@@ -170,24 +166,24 @@ test('single 보기에서도 선택된 workspace 의 헤더만 이름·상태를
   await run(page, 'echo keep-$((1+1))', 'keep-2')
 })
 
-test('columns 의 workspace 헤더는 idle 만 있으면 pane 헤더와 같은 idle 아이콘을 같은 크기로 보인다', async ({
+test('columns 의 cell 헤더는 idle 만 있으면 pane 헤더와 같은 idle 아이콘을 같은 크기로 보인다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
   await page.keyboard.type(claudeHook('Stop'))
-  const workspaceIcon = page.locator('.workspace-header .row-bar-icon')
+  const cellIcon = page.locator('.cell-header .row-bar-icon')
   const paneIcon = activeHeader(page).locator('.row-bar-icon')
-  await expect(page.locator('.workspace-header')).toHaveClass(/idle/)
+  await expect(page.locator('.cell-header')).toHaveClass(/idle/)
   await expect(activeHeader(page)).toHaveClass(/idle/)
 
-  await expect(workspaceIcon).toHaveText(await paneIcon.innerText())
-  expect(await workspaceIcon.evaluate((e) => getComputedStyle(e).fontSize)).toBe(
+  await expect(cellIcon).toHaveText(await paneIcon.innerText())
+  expect(await cellIcon.evaluate((e) => getComputedStyle(e).fontSize)).toBe(
     await paneIcon.evaluate((e) => getComputedStyle(e).fontSize)
   )
 })
 
-test('pane 헤더와 columns 의 workspace 헤더는 글자 위에서도 기본 커서를 보이고, Canvas 글자에서 헤더로 끌어도 헤더 글자는 선택되지 않는다', async ({
+test('pane 헤더와 columns 의 cell 헤더는 글자 위에서도 기본 커서를 보이고, Canvas 글자에서 헤더로 끌어도 헤더 글자는 선택되지 않는다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -197,7 +193,7 @@ test('pane 헤더와 columns 의 workspace 헤더는 글자 위에서도 기본 
   await expect(heading).toBeVisible()
   // 패널이 열리는 transition 동안 제목이 왼쪽으로 움직여, 잰 자리에서 누르면 다른 글자가 잡힌다.
   await expect.poll(() => canvasPanel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
-  for (const s of ['.pane-header .title', '.pane-header .cwd', '.workspace-header .name']) {
+  for (const s of ['.pane-header .title', '.pane-header .cwd', '.cell-header .name']) {
     const text = page.locator(s)
     expect(await text.evaluate((e) => getComputedStyle(e).cursor)).toBe('default')
 
@@ -337,7 +333,7 @@ async function measure(page: Page) {
   })
 }
 
-/** 레이아웃이 px 를 1/64 단위로 반올림하므로, 셀의 배수에서 벗어난 정도를 셀에 대한 비율로 본다. */
+/** 레이아웃이 px 를 1/64 단위로 반올림하므로, 글자 칸의 배수에서 벗어난 정도를 글자 칸에 대한 비율로 본다. */
 const offGrid = (px: number, cell: number): number => Math.abs(px / cell - Math.round(px / cell))
 
 function expectOnGrid(
@@ -551,28 +547,28 @@ test('pane 헤더는 기본으로 pane 맨 아래에 있고 본문의 넘친 반
   expect(covered.hit).toBe(true)
 })
 
-test('columns 의 workspace 헤더는 기본으로 카드 맨 아래, pane 헤더 아래에 놓인다', async ({
+test('columns 의 cell 헤더는 기본으로 카드 맨 아래, pane 헤더 아래에 놓인다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
-  await expect(page.locator('.workspace-header')).toHaveCount(1)
+  await expect(page.locator('.cell-header')).toHaveCount(1)
   expect(await headerBelowPane(page)).toEqual({ gap: 0, above: 0 })
 })
 
-test('헤더가 위면 columns 의 workspace 헤더는 카드 맨 위, pane 헤더 위에 놓이고 한 행 안쪽 아래에 선을 긋는다', async ({
+test('헤더가 위면 columns 의 cell 헤더는 카드 맨 위, pane 헤더 위에 놓이고 한 행 안쪽 아래에 선을 긋는다', async ({
   launch,
   dataDir
 }) => {
   writeConfig(dataDir, '[layout]\nheader = "top"\n')
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
-  const header = page.locator('.workspace-header')
+  const header = page.locator('.cell-header')
   await expect(header).toHaveCount(1)
 
   const layout = await page.evaluate(() => {
     const card = document.querySelector('.panes.selected')!.getBoundingClientRect()
-    const head = document.querySelector('.workspace-header')!
+    const head = document.querySelector('.cell-header')!
     const r = head.getBoundingClientRect()
     const pane = document.querySelector('.pane-header')!.getBoundingClientRect()
     return {
@@ -585,27 +581,27 @@ test('헤더가 위면 columns 의 workspace 헤더는 카드 맨 위, pane 헤�
   expect(layout.line).toMatch(/0px -1px 0px 0px inset$/)
 })
 
-test('pane 헤더는 터미널과 같은 글꼴·크기로 쓰고, columns 의 workspace 헤더는 굵게 쓰며 한 행 안쪽 위에 선을 긋는다', async ({
+test('pane 헤더는 터미널과 같은 글꼴·크기로 쓰고, columns 의 cell 헤더는 굵게 쓰며 한 행 안쪽 위에 선을 긋는다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
-  await expect(page.locator('.workspace-header')).toHaveCount(1)
+  await expect(page.locator('.cell-header')).toHaveCount(1)
 
   const style = await page.evaluate(() => {
     const css = (s: string) => getComputedStyle(document.querySelector(s)!)
     const [terminal, title, name, header] = [
       css('.xterm-rows'),
       css('.pane-header .title'),
-      css('.workspace-header .name'),
-      css('.workspace-header')
+      css('.cell-header .name'),
+      css('.cell-header')
     ]
     return {
       terminal: [terminal.fontFamily, terminal.fontSize],
       title: [title.fontFamily, title.fontSize],
       name: [name.fontFamily, name.fontSize, name.fontWeight],
       underline: header.boxShadow,
-      headerHeight: document.querySelector('.workspace-header')!.getBoundingClientRect().height,
+      headerHeight: document.querySelector('.cell-header')!.getBoundingClientRect().height,
       paneHeaderHeight: document.querySelector('.pane-header')!.getBoundingClientRect().height
     }
   })

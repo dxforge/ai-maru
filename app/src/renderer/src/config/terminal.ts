@@ -36,7 +36,7 @@ export function stepFontSize(size: number, by: 1 | -1): number {
 }
 
 /**
- * workspace 에 둘 글꼴 크기다. 설정 파일의 크기와 같으면 `undefined` 를 돌려주므로, 그 workspace 는 설정 파일의
+ * cell 에 둘 글꼴 크기다. 설정 파일의 크기와 같으면 `undefined` 를 돌려주므로, 그 cell 은 설정 파일의
  * `font-size` 가 바뀌면 따라간다. 소수 크기에 1px 씩 더하고 빼면 부동소수 오차가 쌓이므로 아주 작은 차이는 같은
  * 크기로 본다.
  */
