@@ -1,14 +1,14 @@
 import type { Terminal } from '@xterm/xterm'
 import { parseProgramStatus, type ProgramStatusRecord } from '../../../shared/program-status'
 import { PROTOCOL_VERSION } from '../../../shared/protocol'
-import type { SessionConnection } from './connection'
+import type { PtyConnection } from './connection'
 
 export type AttachHandlers = {
   onExit(): void
   /** 되살린 pane 이 붙으면 `cwd` 가 없다. */
   onSpawned(id: string, cwd: string | undefined): void
   onOpenFailed(message: string): void
-  /** 세션의 OSC 7501 레코드 전체. 붙을 때와 바뀔 때마다 온다. */
+  /** pty 의 OSC 7501 레코드 전체. 붙을 때와 바뀔 때마다 온다. */
   onProgramStatus(records: ProgramStatusRecord[]): void
   /** 레코드가 있는 동안 foreground 의 cwd 가 바뀌었다. resync 뒤에도 온다 — 밀린 동안 버려진 알림이 있을 수 있기 때문이다. */
   onForeground(): void
@@ -16,24 +16,20 @@ export type AttachHandlers = {
 
 export type Attachment = {
   readonly primary: boolean
-  /** 터미널의 지금 크기로 세션에 붙는다. 그 전의 입력은 모아 두었다가 붙은 뒤에 보낸다. */
+  /** 터미널의 지금 크기로 pty 에 붙는다. 그 전의 입력은 모아 두었다가 붙은 뒤에 보낸다. */
   start(): void
 }
 
-export function attach(
-  term: Terminal,
-  conn: SessionConnection,
-  handlers: AttachHandlers
-): Attachment {
+export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHandlers): Attachment {
   const encoder = new TextEncoder()
   let primary = true
-  // maru-session 은 첫 프레임이 JSON 요청이 아니면 bad_request 로 연결을 끊는다.
+  // maru-pty 는 첫 프레임이 JSON 요청이 아니면 bad_request 로 연결을 끊는다.
   let queued: Uint8Array[] | undefined = []
   const input = (bytes: Uint8Array): void => {
     if (queued) queued.push(bytes)
     else if (primary) conn.send(bytes)
   }
-  // 셸이 끝났거나 되살린 세션이 없다 — 그 뒤 연결이 닫히는 것은 끊김이 아니다.
+  // 셸이 끝났거나 되살린 pty 가 없다 — 그 뒤 연결이 닫히는 것은 끊김이 아니다.
   let ended = false
   let spawned = false
   let failed = false
@@ -86,19 +82,19 @@ export function attach(
       // 되살린 pane 은 지우지 않고 이유를 보인다 — 말없이 사라지면 재시작 전 배치와 달라 헷갈린다.
       case 'gone':
         ended = true
-        term.write('\r\n[the session ended while the app was restarting]\r\n')
+        term.write('\r\n[the pty ended while the app was restarting]\r\n')
         break
       case 'error':
-        term.write(`\r\n[maru-session: ${m.code}] ${m.message ?? ''}\r\n`)
+        term.write(`\r\n[maru-pty: ${m.code}] ${m.message ?? ''}\r\n`)
         if (m.code === 'open_failed') openFailed(m.message ?? '')
         break
     }
   })
   conn.onClose(() => {
     if (ended) return
-    term.write('\r\n[disconnected from the session]\r\n')
-    // session host 가 죽으면 open_failed 없이 닫힌다.
-    if (!spawned) openFailed('disconnected before the session started')
+    term.write('\r\n[disconnected from the pty]\r\n')
+    // pty host 가 죽으면 open_failed 없이 닫힌다.
+    if (!spawned) openFailed('disconnected before the pty started')
   })
 
   term.onData((data) => input(encoder.encode(data)))

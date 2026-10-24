@@ -17,37 +17,37 @@ function rec(partial: Partial<ProgramStatusRecord> & Pick<ProgramStatusRecord, '
 describe('program statuses', () => {
   it('루트 레코드의 상태를 돌려주고, 루트가 없으면 undefined 다', () => {
     const s = createProgramStatuses()
-    s.set('s-1', [rec({ id: 'build', state: 'working' })])
-    expect(s.state('s-1')).toBeUndefined()
-    s.set('s-1', [
+    s.set('p-1', [rec({ id: 'build', state: 'working' })])
+    expect(s.state('p-1')).toBeUndefined()
+    s.set('p-1', [
       rec({ state: 'blocked', kind: 'permission' }),
       rec({ id: 'build', state: 'working' })
     ])
-    expect(s.state('s-1')).toBe('blocked')
-    expect(s.records('s-1')).toHaveLength(2)
+    expect(s.state('p-1')).toBe('blocked')
+    expect(s.records('p-1')).toHaveLength(2)
   })
 
-  it('빈 목록을 받으면 상태가 없어지고, remove 로 세션을 지운다', () => {
+  it('빈 목록을 받으면 상태가 없어지고, remove 로 pty 를 지운다', () => {
     const s = createProgramStatuses()
-    s.set('s-1', [rec({ state: 'done' })])
-    s.set('s-2', [rec({ state: 'idle' })])
-    s.set('s-1', [])
-    expect(s.state('s-1')).toBeUndefined()
-    expect(s.records('s-1')).toEqual([])
-    s.remove('s-2')
-    expect(s.state('s-2')).toBeUndefined()
+    s.set('p-1', [rec({ state: 'done' })])
+    s.set('p-2', [rec({ state: 'idle' })])
+    s.set('p-1', [])
+    expect(s.state('p-1')).toBeUndefined()
+    expect(s.records('p-1')).toEqual([])
+    s.remove('p-2')
+    expect(s.state('p-2')).toBeUndefined()
   })
 
-  it('세션 id 가 아직 없으면 상태도 없다', () => {
+  it('pty id 가 아직 없으면 상태도 없다', () => {
     expect(createProgramStatuses().state(undefined)).toBeUndefined()
   })
 
   it('root 는 루트 레코드를 돌려준다', () => {
     const s = createProgramStatuses()
-    s.set('s-1', [rec({ id: 'build', state: 'working', app: 'make' })])
-    expect(s.root('s-1')).toBeUndefined()
-    s.set('s-1', [rec({ state: 'idle', app: 'make' }), rec({ id: 'build', state: 'working' })])
-    expect(s.root('s-1')?.app).toBe('make')
+    s.set('p-1', [rec({ id: 'build', state: 'working', app: 'make' })])
+    expect(s.root('p-1')).toBeUndefined()
+    s.set('p-1', [rec({ state: 'idle', app: 'make' }), rec({ id: 'build', state: 'working' })])
+    expect(s.root('p-1')?.app).toBe('make')
   })
 })
 

@@ -18,8 +18,8 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal, type IRenderDimensions, type ITheme } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
-import { attach as attachTerminal, type Attachment } from '../session/attach'
-import { openSession, type SessionConnection } from '../session/connection'
+import { attach as attachTerminal, type Attachment } from '../pty/attach'
+import { openPty, type PtyConnection } from '../pty/connection'
 import type { ProgramStatusRecord } from '../../../shared/program-status'
 import { matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
 import { sameFont, type TerminalFont } from '../config/terminal'
@@ -31,7 +31,7 @@ import { osc7Path } from '../workspace/cwd'
 import type { Size } from '../workspace/grid'
 
 const {
-  sessionId,
+  ptyId,
   cellId,
   startDir = undefined,
   command = undefined,
@@ -41,7 +41,7 @@ const {
   font,
   theme
 } = defineProps<{
-  sessionId: string
+  ptyId: string
   cellId: string
   startDir?: string
   command?: readonly string[]
@@ -78,12 +78,12 @@ const term = new Terminal({
   // `UnicodeGraphemesAddon` 이 쓰는 `term.unicode` 가 proposed API 라서, 끄면 `loadAddon` 이 예외를 던진다.
   allowProposedApi: true
 })
-// 이 addon 을 빼거나 바꾸면 `maru-session` 과 글자 폭이 달라진다(`docs/architecture.md` 의 "글자 폭").
+// 이 addon 을 빼거나 바꾸면 `maru-pty` 와 글자 폭이 달라진다(`docs/architecture.md` 의 "글자 폭").
 term.loadAddon(new UnicodeGraphemesAddon())
 // 링크는 ⌘+클릭으로만 연다(Terminal.app·iTerm2 의 관행). 그냥 클릭은 터미널로 간다.
 function activateLink(event: MouseEvent, text: string): void {
   if (!event.metaKey) return
-  void window.maru.openLink(text, sessionId).then((r) => {
+  void window.maru.openLink(text, ptyId).then((r) => {
     if (!r.ok) emit('linkFailed', r.reason)
   })
 }
@@ -170,7 +170,7 @@ function checkCell(force = false): void {
   if (!(changed || force) || !started) return
   // App 이 새 글자 칸 크기로 pane 배치를 고친 뒤에 맞춘다. 먼저 맞추면 옛 pane 높이로 한 번, 새 pane 높이로 또 한 번
   // 프로그램에 resize 가 간다.
-  void nextTick(() => host.value && session!.primary && fitTerminal())
+  void nextTick(() => host.value && pty!.primary && fitTerminal())
 }
 term.onDimensionsChange(() => checkCell())
 function fitTerminal(): void {
@@ -185,19 +185,19 @@ function fitTerminal(): void {
     SCROLLBAR_WIDTH
   term.resize(Math.max(2, Math.floor(width / cell(term.dimensions).width)), size.rows)
 }
-let session: Attachment | null = null
+let pty: Attachment | null = null
 let started = false
 const observer = new ResizeObserver(() => {
   if (!started) {
     // columns 보기는 글자 폭을 재기 전 pane 폭이 0 이다. 그때 붙으면 FitAddon 의 최소인 2열로 붙는다.
-    // 세션은 그 폭으로 행마다 개행을 넣어 재생하므로 뒤에 넓혀도 펼쳐지지 않는다.
+    // pty 는 그 폭으로 행마다 개행을 넣어 재생하므로 뒤에 넓혀도 펼쳐지지 않는다.
     if (host.value!.clientWidth === 0) return
     started = true
     fitTerminal()
-    session!.start()
+    pty!.start()
     return
   }
-  if (session!.primary) fitTerminal()
+  if (pty!.primary) fitTerminal()
 })
 
 // Chromium 이 동시에 유지하는 WebGL context 는 16개뿐이라, 보이는 터미널만 WebGL 로 그리고 나머지는 DOM 으로 둔다.
@@ -292,7 +292,7 @@ function onPaste(e: ClipboardEvent): void {
   e.stopPropagation()
 }
 
-let conn: SessionConnection | undefined
+let conn: PtyConnection | undefined
 
 defineExpose({ focus: () => term.focus(), kill: () => conn?.kill() })
 
@@ -310,14 +310,14 @@ onMounted(() => {
   intersection?.observe(host.value!)
   if (active) term.focus()
   // reactive 배열의 proxy 는 IPC 로 보낼 수 없다.
-  conn = openSession({
-    id: sessionId,
+  conn = openPty({
+    id: ptyId,
     cell: cellId,
     cwd: startDir,
     command: command && [...command],
     attach
   })
-  session = attachTerminal(term, conn, {
+  pty = attachTerminal(term, conn, {
     onExit: () => emit('exit'),
     onOpenFailed: (message) => emit('failed', message),
     onSpawned: (_id, dir) => {
@@ -328,7 +328,7 @@ onMounted(() => {
     onForeground: () => emit('foreground')
   })
   // 조합한 글자는 다음 키가 오면 그 키보다 먼저 setTimeout 을 기다리지 않고 간다. 그 바로 뒤에 보낸다.
-  // 세션에 보내는 attach 의 listener 보다 뒤에 걸어야 미룬 키가 조합한 글자 뒤로 간다.
+  // pty 에 보내는 attach 의 listener 보다 뒤에 걸어야 미룬 키가 조합한 글자 뒤로 간다.
   term.onData(() => {
     if (!composing) flushAfterComposition()
   })

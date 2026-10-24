@@ -1,7 +1,7 @@
-use maru_session::PROTOCOL_VERSION;
-use maru_session::frame::{TAG_BINARY, TAG_TEXT, decode_header, encode};
-use maru_session::paths::Paths;
-use maru_session::record::{self, Record};
+use maru_pty::PROTOCOL_VERSION;
+use maru_pty::frame::{TAG_BINARY, TAG_TEXT, decode_header, encode};
+use maru_pty::paths::Paths;
+use maru_pty::record::{self, Record};
 use nix::sys::signal::{Signal, kill, killpg};
 use nix::unistd::Pid;
 use serde_json::{Value, json};
@@ -31,7 +31,7 @@ fn spawn_with(dir: &Path, id: &str, extra: &[&std::ffi::OsStr]) -> Child {
 }
 
 fn spawn_env(dir: &Path, id: &str, extra: &[&std::ffi::OsStr], env: &[(&str, &Path)]) -> Child {
-    Command::new(env!("CARGO_BIN_EXE_maru-session"))
+    Command::new(env!("CARGO_BIN_EXE_maru-pty"))
         .args([
             "--id", id, "--shell", "/bin/sh", "--cols", "80", "--rows", "24",
         ])
@@ -39,7 +39,7 @@ fn spawn_env(dir: &Path, id: &str, extra: &[&std::ffi::OsStr], env: &[(&str, &Pa
         .arg(dir)
         .args(extra)
         .envs(env.iter().copied())
-        // 셸의 TERM 이 상속값이 아니라 세션 프로세스가 정한 값인지 보려고 일부러 다르게 둔다.
+        // 셸의 TERM 이 상속값이 아니라 pty 프로세스가 정한 값인지 보려고 일부러 다르게 둔다.
         .env("TERM", "dumb")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -70,7 +70,7 @@ fn start_env(tmp: tempfile::TempDir, extra: &[&std::ffi::OsStr], env: &[(&str, &
 
 fn start_child(tmp: tempfile::TempDir, spawn: impl FnOnce(&Path, &str) -> Child) -> Proc {
     let dir = tmp.path().join("s");
-    let id = "sess-test".to_string();
+    let id = "pty-test".to_string();
     let mut p = Proc {
         child: spawn(&dir, &id),
         paths: Paths::new(&dir, &id).unwrap(),
@@ -88,7 +88,7 @@ impl Proc {
         while UnixStream::connect(self.socket()).is_err() {
             assert!(
                 self.child.try_wait().unwrap().is_none(),
-                "세션 프로세스가 준비 전에 끝났다"
+                "pty 프로세스가 준비 전에 끝났다"
             );
             assert!(Instant::now() < deadline, "소켓이 열리지 않았다");
             std::thread::sleep(Duration::from_millis(10));
@@ -150,7 +150,7 @@ impl Proc {
             if let Some(s) = self.child.try_wait().unwrap() {
                 return s;
             }
-            assert!(Instant::now() < deadline, "세션 프로세스가 끝나지 않았다");
+            assert!(Instant::now() < deadline, "pty 프로세스가 끝나지 않았다");
             std::thread::sleep(Duration::from_millis(20));
         }
     }
@@ -467,8 +467,8 @@ fn sigterm_right_after_the_record_appears_still_cleans_up() {
     for _ in 0..30 {
         let tmp = tmpdir();
         let dir = tmp.path().join("s");
-        let paths = Paths::new(&dir, "sess-test").unwrap();
-        let mut child = spawn(&dir, "sess-test");
+        let paths = Paths::new(&dir, "pty-test").unwrap();
+        let mut child = spawn(&dir, "pty-test");
         let deadline = Instant::now() + WAIT;
         let rec = loop {
             if let Ok(rec) = record::read(&paths.record) {
@@ -545,7 +545,7 @@ fn status_wait_answers_when_the_shell_exits() {
 }
 
 #[test]
-fn status_wait_closes_without_an_answer_when_the_session_ends_the_shell() {
+fn status_wait_closes_without_an_answer_when_the_pty_ends_the_shell() {
     for how in ["kill", "SIGTERM"] {
         let mut p = start_keep("sleep 30");
         let mut waiting = p.connect();
@@ -653,7 +653,7 @@ fn a_command_that_fails_at_once_still_ends_the_process_with_zero() {
     let dir = tmp.path().join("s");
     let args = ["--", "/bin/sh", "-c", "exit 5"];
     let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
-    let mut child = spawn_with(&dir, "sess-test", &args);
+    let mut child = spawn_with(&dir, "pty-test", &args);
     let status = child.wait().unwrap();
     assert!(status.success(), "{status:?}: {}", stderr(&mut child));
 }
@@ -710,7 +710,7 @@ fn a_second_process_does_not_take_over_a_live_socket() {
 fn an_overlong_socket_path_fails_before_spawning_a_shell() {
     let tmp = tmpdir();
     let dir = tmp.path().join("x".repeat(100));
-    let mut child = spawn(&dir, "sess-test");
+    let mut child = spawn(&dir, "pty-test");
     assert!(!child.wait().unwrap().success());
     let err = stderr(&mut child);
     assert!(err.contains("shorten"), "{err}");
@@ -770,7 +770,7 @@ fn a_command_runs_under_sh_when_the_shell_is_not_posix() {
     std::fs::set_permissions(&fish, std::fs::Permissions::from_mode(0o755)).unwrap();
     let script = r#"read line; printf '[%s]' "$@"; echo; exit 4"#;
     let mut p = start_child(tmp, |dir, id| {
-        Command::new(env!("CARGO_BIN_EXE_maru-session"))
+        Command::new(env!("CARGO_BIN_EXE_maru-pty"))
             .args(["--id", id])
             .arg("--dir")
             .arg(dir)
@@ -796,7 +796,7 @@ fn start_without_shell_flag(
     extra: &[&std::ffi::OsStr],
 ) -> Proc {
     start_child(tmp, |dir, id| {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_maru-session"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_maru-pty"));
         cmd.args(["--id", id]).arg("--dir").arg(dir).args(extra);
         match shell {
             Some(s) => cmd.env("SHELL", s),
@@ -922,8 +922,8 @@ fn the_shell_flag_leaves_an_empty_shell_variable_to_the_shell() {
 #[test]
 fn a_shell_flag_naming_a_missing_file_fails() {
     let tmp = tmpdir();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_maru-session"))
-        .args(["--id", "sess-test", "--shell", "/nonexistent/zsh"])
+    let mut child = Command::new(env!("CARGO_BIN_EXE_maru-pty"))
+        .args(["--id", "pty-test", "--shell", "/nonexistent/zsh"])
         .arg("--dir")
         .arg(tmp.path().join("s"))
         .stdin(Stdio::null())
@@ -1088,9 +1088,9 @@ fn concurrent_kills_all_get_an_answer() {
 fn a_failed_bind_removes_the_record_it_wrote() {
     let tmp = tmpdir();
     let dir = tmp.path().join("s");
-    let paths = Paths::new(&dir, "sess-test").unwrap();
+    let paths = Paths::new(&dir, "pty-test").unwrap();
     std::fs::create_dir_all(&paths.socket).unwrap();
-    let mut child = spawn(&dir, "sess-test");
+    let mut child = spawn(&dir, "pty-test");
     assert!(!child.wait().unwrap().success());
     let err = stderr(&mut child);
     assert!(err.contains("bind"), "{err}");
@@ -1117,8 +1117,8 @@ fn sizes_beyond_the_limit_are_refused() {
 
     let tmp = tmpdir();
     let dir = tmp.path().join("s");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_maru-session"))
-        .args(["--id", "sess-test", "--shell", "/bin/sh", "--cols", "4097"])
+    let mut child = Command::new(env!("CARGO_BIN_EXE_maru-pty"))
+        .args(["--id", "pty-test", "--shell", "/bin/sh", "--cols", "4097"])
         .arg("--dir")
         .arg(&dir)
         .stderr(Stdio::piped())
@@ -1127,7 +1127,7 @@ fn sizes_beyond_the_limit_are_refused() {
     assert!(!child.wait().unwrap().success());
     let err = stderr(&mut child);
     assert!(err.contains("4097"), "{err}");
-    assert!(!Paths::new(&dir, "sess-test").unwrap().record.exists());
+    assert!(!Paths::new(&dir, "pty-test").unwrap().record.exists());
 }
 
 fn cpu_seconds(pid: u32) -> f64 {
@@ -1147,7 +1147,7 @@ fn start_with_few_fds(stderr: Stdio) -> Proc {
     start_child(tmpdir(), |dir, id| {
         Command::new("/bin/sh")
             .args(["-c", "ulimit -n 64 && exec \"$0\" \"$@\""])
-            .arg(env!("CARGO_BIN_EXE_maru-session"))
+            .arg(env!("CARGO_BIN_EXE_maru-pty"))
             .args(["--id", id, "--shell", "/bin/sh"])
             .arg("--dir")
             .arg(dir)
@@ -1261,7 +1261,7 @@ fn attaching_on_the_alternate_screen_replays_the_primary_screen_first() {
 
 #[test]
 fn protocol_version_prints_the_version_without_dir_or_id() {
-    let out = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+    let out = Command::new(env!("CARGO_BIN_EXE_maru-pty"))
         .arg("--protocol-version")
         .output()
         .unwrap();
@@ -1278,7 +1278,7 @@ fn protocol_version_prints_the_version_without_dir_or_id() {
 
 #[test]
 fn without_arguments_it_fails_without_printing() {
-    let out = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+    let out = Command::new(env!("CARGO_BIN_EXE_maru-pty"))
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(2));
@@ -1288,9 +1288,9 @@ fn without_arguments_it_fails_without_printing() {
 #[test]
 fn the_protocol_version_flag_does_not_combine() {
     let tmp = tmpdir();
-    let out = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+    let out = Command::new(env!("CARGO_BIN_EXE_maru-pty"))
         .arg("--protocol-version")
-        .args(["--id", "sess-test", "--dir"])
+        .args(["--id", "pty-test", "--dir"])
         .arg(tmp.path())
         .output()
         .unwrap();
@@ -1300,7 +1300,7 @@ fn the_protocol_version_flag_does_not_combine() {
 
 #[test]
 fn help_is_in_english_and_describes_every_option_but_the_size() {
-    let out = Command::new(env!("CARGO_BIN_EXE_maru-session"))
+    let out = Command::new(env!("CARGO_BIN_EXE_maru-pty"))
         .arg("--help")
         .output()
         .unwrap();

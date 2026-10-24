@@ -12,8 +12,8 @@ const screen: ScreenState = {
           key: 3,
           id: 'c-00000001',
           panes: [
-            { key: 0, sessionId: 's-0000000a', startDir: '/a', cwd: '/b', title: 't' },
-            { key: 2, sessionId: 's-0000000b', command: ['sh', '-c', 'true'] }
+            { key: 0, ptyId: 'p-0000000a', startDir: '/a', cwd: '/b', title: 't' },
+            { key: 2, ptyId: 'p-0000000b', command: ['sh', '-c', 'true'] }
           ],
           layout: { split: 'down', first: { pane: 0 }, second: { pane: 2 } },
           focused: 0
@@ -37,7 +37,8 @@ describe('parseScreen', () => {
   it.each<[string, (s: Record<string, any>) => void]>([
     ['버전이 다름', (s) => (s.version = SCREEN_VERSION + 1)],
     ['이전 빌드의 버전 1', (s) => (s.version = 1)],
-    ['세션 id 모양이 아님', (s) => (s.workspaces[0].cells[0].panes[0].sessionId = '../x')],
+    ['pane 에 sessionId 를 쓰던 이전 빌드의 버전 2', (s) => (s.version = 2)],
+    ['pty id 모양이 아님', (s) => (s.workspaces[0].cells[0].panes[0].ptyId = '../x')],
     ['pane 이 없는 cell', (s) => (s.workspaces[0].cells[0].panes = [])],
     ['cell 이 없는 workspace', (s) => (s.workspaces[0].cells = [])],
     ['workspace id 가 문자열이 아님', (s) => (s.workspaces[0].id = 1)],

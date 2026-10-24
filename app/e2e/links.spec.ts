@@ -161,7 +161,7 @@ for (const [kind, print, text, url] of [
     'https://example.com/kept'
   ]
 ] as const)
-  test(`재시작해 세션에 다시 붙어도 ${kind}는 열린다`, async ({ launch }) => {
+  test(`재시작해 pty 에 다시 붙어도 ${kind}는 열린다`, async ({ launch }) => {
     const first = await launch()
     await activeTerminal(first.page)
     await run(first.page, `${print}; echo done-$((1+1))`, 'done-2')

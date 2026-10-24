@@ -1,15 +1,15 @@
 import type { Layout } from './layout'
-import { isSessionId } from './session'
+import { isPtyId } from './pty'
 
 /**
  * 재시작 전 앱이 쓰고 다시 뜬 앱이 읽으므로 두 앱의 빌드가 다를 수 있다. 다시 뜬 앱이 옛 모양을 읽지 못하게
  * 바꾸면 버전을 올린다 — 다시 뜬 앱은 모르는 버전을 되살리지 않는다. 없어도 되는 필드를 더할 때는 올리지 않는다.
  */
-export const SCREEN_VERSION = 2
+export const SCREEN_VERSION = 3
 
 export type ScreenPane = {
   key: number
-  sessionId: string
+  ptyId: string
   startDir?: string
   command?: string[]
   cwd?: string
@@ -79,7 +79,7 @@ function isPane(v: unknown): v is ScreenPane {
   return (
     isObj(v) &&
     isKey(v.key) &&
-    isSessionId(v.sessionId) &&
+    isPtyId(v.ptyId) &&
     optString(v.startDir) &&
     optString(v.cwd) &&
     optString(v.title) &&

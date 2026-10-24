@@ -1,5 +1,5 @@
 use crate::frame::{TAG_BINARY, TAG_TEXT, error, read_frame, write_frame, write_json};
-use crate::session::{Output, Recv, Session, wait_exit};
+use crate::pty::{Output, Pty, Recv, wait_exit};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -12,7 +12,7 @@ const VT_RESET: &[u8] = b"\x1bc";
 /// 성공해도 되돌리지 않는다 — 못 따라잡는 소비자에게 덤프를 계속 보내며 부하를 키우지 않게.
 const MAX_RESYNCS: u32 = 5;
 
-pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
+pub async fn run(stream: UnixStream, pty: Arc<Pty>, req: &Value) {
     let (mut rd, mut wr) = stream.into_split();
 
     let mut primary = match req["role"].as_str() {
@@ -27,21 +27,21 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
             return;
         }
     };
-    let conn = session.next_conn_id();
-    let mut primary_rx = session.primary_rx();
+    let conn = pty.next_conn_id();
+    let mut primary_rx = pty.primary_rx();
     if primary {
         let size = match (dim(&req["cols"]), dim(&req["rows"])) {
             (Some(c @ 1..), Some(r @ 1..)) => Some((c, r)),
             _ => None,
         };
         // 스냅샷 전에 맞춘다. 뒤에 하면 옛 격자로 뜬 재생을 새 격자로 그리게 된다.
-        if let Err(e) = session.claim_primary(conn, size) {
-            log!("maru-session: attach resize failed: {e:#}");
+        if let Err(e) = pty.claim_primary(conn, size) {
+            log!("maru-pty: attach resize failed: {e:#}");
         }
     }
 
-    let Some(mut output) = replay(&mut wr, &session, conn, false).await else {
-        session.release_primary(conn);
+    let Some(mut output) = replay(&mut wr, &pty, conn, false).await else {
+        pty.release_primary(conn);
         return;
     };
 
@@ -54,19 +54,19 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
         }
     });
 
-    let mut exit_rx = session.exit_rx();
+    let mut exit_rx = pty.exit_rx();
     let mut resyncs = 0;
     loop {
         tokio::select! {
             r = output.recv() => {
-                if !forward(&mut wr, &session, conn, &mut output, &mut resyncs, r).await {
+                if !forward(&mut wr, &pty, conn, &mut output, &mut resyncs, r).await {
                     break;
                 }
             },
 
             incoming = in_rx.recv() => match incoming {
-                Some((TAG_BINARY, bytes)) if session.is_primary(conn) => {
-                    let s = session.clone();
+                Some((TAG_BINARY, bytes)) if pty.is_primary(conn) => {
+                    let s = pty.clone();
                     let _ = tokio::task::spawn_blocking(move || s.write(&bytes)).await;
                 }
                 Some((TAG_TEXT, text)) => {
@@ -74,7 +74,7 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
                         && v["type"] == "resize"
                         && let (Some(c @ 1..), Some(r @ 1..)) = (dim(&v["cols"]), dim(&v["rows"]))
                     {
-                        let _ = session.resize_if_primary(conn, c, r);
+                        let _ = pty.resize_if_primary(conn, c, r);
                     }
                 }
                 Some(_) => {}
@@ -82,7 +82,7 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
             },
 
             Ok(_) = primary_rx.changed(), if primary => {
-                if !session.is_primary(conn) {
+                if !pty.is_primary(conn) {
                     primary = false;
                     if write_json(&mut wr, &json!({ "type": "role", "role": "observer" })).await.is_err() {
                         break;
@@ -95,7 +95,7 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
                 // select! 는 준비된 갈래를 무작위로 고르므로 남은 출력을 먼저 내보낸다.
                 let mut flushed = true;
                 while flushed && let Some(r) = output.try_recv() {
-                    flushed = forward(&mut wr, &session, conn, &mut output, &mut resyncs, r).await;
+                    flushed = forward(&mut wr, &pty, conn, &mut output, &mut resyncs, r).await;
                 }
                 if flushed {
                     let mut body = serde_json::to_value(exit).unwrap();
@@ -106,7 +106,7 @@ pub async fn run(stream: UnixStream, session: Arc<Session>, req: &Value) {
             }
         }
     }
-    session.release_primary(conn);
+    pty.release_primary(conn);
     // 리더 태스크가 읽기 절반을 들고 있어 멈추지 않으면 클라이언트가 조용한 동안 fd 가 안 닫힌다.
     reader.abort();
     let _ = wr.shutdown().await;
@@ -118,7 +118,7 @@ fn dim(v: &Value) -> Option<u16> {
 
 async fn forward(
     wr: &mut OwnedWriteHalf,
-    session: &Session,
+    pty: &Pty,
     conn: u64,
     output: &mut Arc<Output>,
     resyncs: &mut u32,
@@ -132,7 +132,7 @@ async fn forward(
                 .is_ok()
         }
         Recv::Text(text) => write_frame(wr, TAG_TEXT, text.as_bytes()).await.is_ok(),
-        Recv::Lagged => match resync(wr, session, conn, resyncs).await {
+        Recv::Lagged => match resync(wr, pty, conn, resyncs).await {
             Some(new) => {
                 *output = new;
                 true
@@ -144,11 +144,11 @@ async fn forward(
 
 async fn replay(
     wr: &mut OwnedWriteHalf,
-    session: &Session,
+    pty: &Pty,
     conn: u64,
     resync: bool,
 ) -> Option<Arc<Output>> {
-    let (payload, st, status, output) = match session.subscribe_with_replay(conn) {
+    let (payload, st, status, output) = match pty.subscribe_with_replay(conn) {
         Ok(v) => v,
         Err(e) => {
             let _ = write_json(wr, &error("capture_failed", &format!("{e:#}"))).await;
@@ -164,8 +164,8 @@ async fn replay(
     });
     if !resync {
         header["protocol_version"] = json!(crate::PROTOCOL_VERSION);
-        header["tty"] = json!(session.tty);
-        header["role"] = json!(if session.is_primary(conn) {
+        header["tty"] = json!(pty.tty);
+        header["role"] = json!(if pty.is_primary(conn) {
             "primary"
         } else {
             "observer"
@@ -185,7 +185,7 @@ async fn replay(
 
 async fn resync(
     wr: &mut OwnedWriteHalf,
-    session: &Session,
+    pty: &Pty,
     conn: u64,
     count: &mut u32,
 ) -> Option<Arc<Output>> {
@@ -201,5 +201,5 @@ async fn resync(
         .await;
         return None;
     }
-    replay(wr, session, conn, true).await
+    replay(wr, pty, conn, true).await
 }

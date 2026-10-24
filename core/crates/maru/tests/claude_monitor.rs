@@ -38,7 +38,7 @@ impl Claude {
             .env("MARU_CLI", env!("CARGO_BIN_EXE_maru"))
             // 앱 터미널 밖이면 monitor 가 바로 끝난다. 듣는 앱이 없으면 stdout 이 닫힐 때까지 기다린다.
             .env("MARU_SOCKET", cwd.path().join("app.sock"))
-            .env("MARU_SESSION_ID", "s-test")
+            .env("MARU_PTY_ID", "p-test")
             .stdin(Stdio::from(pty.slave.try_clone().unwrap()))
             .stdout(Stdio::from(pty.slave.try_clone().unwrap()))
             .stderr(Stdio::from(pty.slave));
@@ -215,7 +215,7 @@ fn the_monitor_ends_when_claude_is_killed() {
     assert_gone_after(Signal::SIGKILL);
 }
 
-/// 세션을 끝낼 때 `maru-session` 은 포그라운드의 claude 에 SIGHUP 을 보낸다.
+/// pty 를 끝낼 때 `maru-pty` 는 포그라운드의 claude 에 SIGHUP 을 보낸다.
 #[test]
 #[ignore = "needs a logged-in claude on PATH"]
 fn the_monitor_ends_when_claudes_terminal_hangs_up() {

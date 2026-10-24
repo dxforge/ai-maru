@@ -3,7 +3,7 @@ import {
   cellItems,
   cellViews,
   expect,
-  failingCommandSessionBin,
+  failingCommandPtyBin,
   marked,
   newWorkspace,
   restartWith,
@@ -14,7 +14,7 @@ import {
   workspaceNames
 } from './app'
 
-// cell 의 순서는 각 cell 에 찍힌 `mark-<name>` 으로 확인한다. 사이드바 이름은 OSC 7 로 바꿀 수 있지만, 세션이
+// cell 의 순서는 각 cell 에 찍힌 `mark-<name>` 으로 확인한다. 사이드바 이름은 OSC 7 로 바꿀 수 있지만, pty 가
 // renderer 에 붙기 전에 보낸 OSC 7 은 renderer 에 닿지 않는다.
 
 async function expectOrder(page: Page, marks: (string | null)[]): Promise<void> {
@@ -26,16 +26,16 @@ async function expectOrder(page: Page, marks: (string | null)[]): Promise<void> 
   }
 }
 
-test('maru cell new 는 부른 cell 뒤에 cell 을 더해 명령을 띄우고 세션 id 를 찍으며, 선택과 포커스는 부른 쪽에 남는다', async ({
+test('maru cell new 는 부른 cell 뒤에 cell 을 더해 명령을 띄우고 pty id 를 찍으며, 선택과 포커스는 부른 쪽에 남는다', async ({
   launch
 }) => {
   const { page } = await launch()
   await page.keyboard.type(
-    `ID=$(maru cell new bash -c 'echo "me=[$MARU_SESSION_ID]"; read x'); echo "got=[$ID]"\n`
+    `ID=$(maru cell new bash -c 'echo "me=[$MARU_PTY_ID]"; read x'); echo "got=[$ID]"\n`
   )
   await expect(cellItems(page)).toHaveCount(2)
   await expect(workspaceNames(page)).toHaveCount(1)
-  const got = /got=\[(s-[0-9a-f]{8})\]/
+  const got = /got=\[(p-[0-9a-f]{8})\]/
   await expect(rows(page)).toContainText(got)
   const id = (await rows(page).innerText()).match(got)![1]
   await expect(cellViews(page).nth(1).locator('.xterm-rows')).toContainText(`me=[${id}]`)
@@ -87,7 +87,7 @@ test('재시작한 뒤에도 부른 cell 이 앞서 띄운 것 뒤에 놓는다'
   await expect(workspaceNames(again)).toHaveCount(1)
 })
 
-test('명령이 끝나면 cell 이 닫히고, 곧바로 끝나는 명령도 세션 id 를 찍고 성공한다', async ({
+test('명령이 끝나면 cell 이 닫히고, 곧바로 끝나는 명령도 pty id 를 찍고 성공한다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -97,7 +97,7 @@ test('명령이 끝나면 cell 이 닫히고, 곧바로 끝나는 명령도 세�
   await expect(workspaceNames(page)).toHaveCount(1)
   for (const command of ['true', 'no-such-command-xyz']) {
     await page.keyboard.type(`clear; maru cell new ${command}; echo "code-$?"\n`)
-    await expect(rows(page)).toContainText(/s-[0-9a-f]{8}\s*code-0/)
+    await expect(rows(page)).toContainText(/p-[0-9a-f]{8}\s*code-0/)
     await expect(cellItems(page)).toHaveCount(1)
   }
 })
@@ -150,11 +150,11 @@ test('띄운 cell 에서 연 job 은 그 cell 에 속한다', async ({ launch })
   await run(page, 'maru job list', 'no jobs')
 })
 
-test('세션을 띄우지 못하면 cell 을 닫고 maru cell new 가 이유와 함께 실패한다', async ({
+test('pty 를 띄우지 못하면 cell 을 닫고 maru cell new 가 이유와 함께 실패한다', async ({
   launch,
   dataDir
 }) => {
-  const { page } = await launch({ MARU_SESSION_BIN: failingCommandSessionBin(dataDir) })
+  const { page } = await launch({ MARU_PTY_BIN: failingCommandPtyBin(dataDir) })
   await page.keyboard.type('maru cell new true; echo code-$?\n')
   await expect(rows(page)).toContainText('boom-2')
   await expect(rows(page)).toContainText('code-1')

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GitHead } from '../../../shared/git'
-import { isSessionId } from '../../../shared/session'
+import { isPtyId } from '../../../shared/pty'
 import { createWorkspaces, focusedPane } from './store'
 
 function opened(n: number) {
@@ -46,7 +46,7 @@ describe('snapshot·restore', () => {
     expect(to.cells().map((w) => w.paneCols)).toEqual([undefined, 110])
   })
 
-  it('되살린 pane 은 세션에 붙고, 스냅샷에는 붙기·git 을 싣지 않는다', () => {
+  it('되살린 pane 은 pty 에 붙고, 스냅샷에는 붙기·git 을 싣지 않는다', () => {
     const to = restarted(arranged())
     expect(to.cells().flatMap((w) => w.panes.map((p) => p.attach))).toEqual([true, true, true])
     for (const w of to.snapshot().workspaces)
@@ -54,7 +54,7 @@ describe('snapshot·restore', () => {
         for (const p of c.panes) expect(Object.keys(p)).not.toContain('attach')
   })
 
-  it('되살린 뒤 새로 연 workspace·cell·pane 의 key 가 겹치지 않고 새 pane 은 세션을 띄운다', () => {
+  it('되살린 뒤 새로 연 workspace·cell·pane 의 key 가 겹치지 않고 새 pane 은 pty 를 띄운다', () => {
     const to = restarted(arranged())
     to.open()
     to.openCell()
@@ -77,25 +77,25 @@ describe('snapshot·restore', () => {
 })
 
 describe('workspaces', () => {
-  it('pane 을 만들 때마다 그 세션의 id 를 새로 정한다', () => {
+  it('pane 을 만들 때마다 그 pty 의 id 를 새로 정한다', () => {
     let n = 0
-    const ws = createWorkspaces(undefined, undefined, () => `s-${++n}`)
+    const ws = createWorkspaces(undefined, undefined, () => `p-${++n}`)
     ws.open()
     ws.split('right')
     ws.splitFrom(selected(ws).panes[0].key, 'down', {})
     ws.open()
-    expect(ws.cells().flatMap((w) => w.panes.map((p) => p.sessionId))).toEqual([
-      's-1',
-      's-2',
-      's-3',
-      's-4'
+    expect(ws.cells().flatMap((w) => w.panes.map((p) => p.ptyId))).toEqual([
+      'p-1',
+      'p-2',
+      'p-3',
+      'p-4'
     ])
   })
 
-  it('기본 세션 id 는 세션 id 모양이고 pane 마다 다르다', () => {
+  it('기본 pty id 는 pty id 모양이고 pane 마다 다르다', () => {
     const ws = opened(2)
-    const [a, b] = firstPanes(ws).map((p) => p.sessionId)
-    expect(isSessionId(a) && isSessionId(b)).toBe(true)
+    const [a, b] = firstPanes(ws).map((p) => p.ptyId)
+    expect(isPtyId(a) && isPtyId(b)).toBe(true)
     expect(a).not.toBe(b)
   })
 
@@ -372,12 +372,12 @@ describe('git', () => {
 
   function foreground() {
     const asked: {
-      sessionId: string
+      ptyId: string
       cwd: string | undefined
       resolve: (cwd: string | null) => void
     }[] = []
-    const read = (sessionId: string, cwd?: string) =>
-      new Promise<string | null>((resolve) => asked.push({ sessionId, cwd, resolve }))
+    const read = (ptyId: string, cwd?: string) =>
+      new Promise<string | null>((resolve) => asked.push({ ptyId, cwd, resolve }))
     const answer = async (cwd: string | null) => {
       for (const a of asked.splice(0)) a.resolve(cwd)
       await Promise.resolve()
@@ -385,7 +385,7 @@ describe('git', () => {
     return { read, asked, answer }
   }
 
-  it('refreshSession 은 그 세션의 pane 만, 지금 cwd 를 함께 넘겨 물은 foreground 프로세스의 cwd 로 옮기고 그 cwd 의 저장소를 읽는다', async () => {
+  it('refreshPty 는 그 pty 의 pane 만, 지금 cwd 를 함께 넘겨 물은 foreground 프로세스의 cwd 로 옮기고 그 cwd 의 저장소를 읽는다', async () => {
     const r = reader()
     const fg = foreground()
     const ws = createWorkspaces(r.read, fg.read)
@@ -396,8 +396,8 @@ describe('git', () => {
     ws.setCwd(first, '/a')
     ws.setCwd(second.key, '/b')
     r.pending.length = 0
-    ws.refreshSession(second.sessionId)
-    expect(fg.asked.map((a) => [a.sessionId, a.cwd])).toEqual([[second.sessionId, '/b']])
+    ws.refreshPty(second.ptyId)
+    expect(fg.asked.map((a) => [a.ptyId, a.cwd])).toEqual([[second.ptyId, '/b']])
     await fg.answer('/wt')
     expect(selected(ws).panes[1].cwd).toBe('/wt')
     expect(r.pending.map((p) => p.cwd)).toEqual(['/wt'])
@@ -417,7 +417,7 @@ describe('git', () => {
     ws.setCwd(p.key, '/a')
     r.pending.length = 0
 
-    ws.refreshSession(p.sessionId)
+    ws.refreshPty(p.ptyId)
     expect(fg.asked).toHaveLength(1)
     expect(r.pending).toEqual([])
     await fg.answer(null)
@@ -426,7 +426,7 @@ describe('git', () => {
 
     fail = true
     r.pending.length = 0
-    ws.refreshSession(p.sessionId)
+    ws.refreshPty(p.ptyId)
     await new Promise((resolve) => setTimeout(resolve))
     expect(r.pending.map((x) => x.cwd)).toEqual(['/a'])
   })
@@ -438,8 +438,8 @@ describe('git', () => {
     ws.open()
     const p = selected(ws).panes[0]
     ws.setCwd(p.key, '/a')
-    ws.refreshSession(p.sessionId)
-    expect(fg.asked.map((a) => a.sessionId)).toEqual([p.sessionId])
+    ws.refreshPty(p.ptyId)
+    expect(fg.asked.map((a) => a.ptyId)).toEqual([p.ptyId])
     ws.setCwd(p.key, '/prompt')
     r.pending.length = 0
     await fg.answer('/wt')
@@ -447,7 +447,7 @@ describe('git', () => {
     expect(r.pending).toEqual([])
   })
 
-  it('refreshSession 이 겹치면 먼저 물은 답은 버리고 나중 답만 쓴다', async () => {
+  it('refreshPty 가 겹치면 먼저 물은 답은 버리고 나중 답만 쓴다', async () => {
     const r = reader()
     const fg = foreground()
     const ws = createWorkspaces(r.read, fg.read)
@@ -455,8 +455,8 @@ describe('git', () => {
     const p = selected(ws).panes[0]
     ws.setCwd(p.key, '/a')
     r.pending.length = 0
-    ws.refreshSession(p.sessionId)
-    ws.refreshSession(p.sessionId)
+    ws.refreshPty(p.ptyId)
+    ws.refreshPty(p.ptyId)
     const [older, newer] = fg.asked
     newer.resolve('/second')
     await Promise.resolve()
@@ -475,8 +475,8 @@ describe('git', () => {
     const p = selected(ws).panes[1]
     ws.setCwd(p.key, '/a')
     r.pending.length = 0
-    ws.refreshSession(p.sessionId)
-    expect(fg.asked.map((a) => a.sessionId)).toEqual([p.sessionId])
+    ws.refreshPty(p.ptyId)
+    expect(fg.asked.map((a) => a.ptyId)).toEqual([p.ptyId])
     ws.closePane(p.key)
     const before = JSON.stringify(ws.cells())
     await fg.answer('/wt')
@@ -484,14 +484,14 @@ describe('git', () => {
     expect(r.pending).toEqual([])
   })
 
-  it('셸의 cwd 로 청한 git 읽기가 끝나기 전에 refreshSession 이 돌면 그 뒤 도착한 이전 git 답은 버린다', async () => {
+  it('셸의 cwd 로 청한 git 읽기가 끝나기 전에 refreshPty 가 돌면 그 뒤 도착한 이전 git 답은 버린다', async () => {
     const r = reader()
     const fg = foreground()
     const ws = createWorkspaces(r.read, fg.read)
     ws.open()
     const p = selected(ws).panes[0]
     ws.setCwd(p.key, '/a')
-    ws.refreshSession(p.sessionId)
+    ws.refreshPty(p.ptyId)
     await fg.answer('/wt')
     await r.answer('/wt', { repo: 'a', branch: 'wt' })
     await r.answer('/a', { repo: 'a', branch: 'main' })
@@ -504,11 +504,11 @@ describe('git', () => {
     const ws = createWorkspaces(r.read, fg.read)
     ws.open()
     const p = selected(ws).panes[0]
-    ws.refreshSession(p.sessionId)
+    ws.refreshPty(p.ptyId)
     await fg.answer(null)
     expect(selected(ws).panes[0].cwd).toBeUndefined()
     expect(r.pending).toEqual([])
-    ws.refreshSession(p.sessionId)
+    ws.refreshPty(p.ptyId)
     await fg.answer('/fresh')
     expect(selected(ws).panes[0].cwd).toBe('/fresh')
     expect(r.pending.map((x) => x.cwd)).toEqual(['/fresh'])
@@ -525,7 +525,7 @@ describe('panes', () => {
     expect(w.panes).toHaveLength(2)
     const added = w.panes[1]
     expect(added.startDir).toBe('/work')
-    expect(added.sessionId).not.toBe(w.panes[0].sessionId)
+    expect(added.ptyId).not.toBe(w.panes[0].ptyId)
     expect(w.focused).toBe(added.key)
     expect(w.layout).toEqual({
       split: 'right',
@@ -603,7 +603,7 @@ describe('panes', () => {
     ws.closePane(999)
     ws.setCwd(999, '/x')
     ws.setTitle(999, 'x')
-    ws.refreshSession('s-x')
+    ws.refreshPty('p-x')
     ws.focusPane(999)
     expect(JSON.stringify(ws.cells())).toBe(before)
   })
@@ -644,7 +644,7 @@ describe('panes', () => {
     expect(w.layout).toEqual({ split: 'down', first: { pane: from }, second: { pane } })
     expect(w.panes.at(-1)).toEqual({
       key: pane,
-      sessionId: expect.any(String),
+      ptyId: expect.any(String),
       startDir: '/x',
       command: ['ls', '-l']
     })
@@ -666,11 +666,11 @@ describe('panes', () => {
     expect(selected(ws).focused).toBe(b)
   })
 
-  it('세션 id 로 어느 cell 의 pane 이든 찾는다', () => {
+  it('pty id 로 어느 cell 의 pane 이든 찾는다', () => {
     const ws = opened(2)
     const hidden = ws.cells()[0].panes[0]
-    expect(ws.paneBySession(hidden.sessionId)?.key).toBe(hidden.key)
-    expect(ws.paneBySession('s-00000000')).toBeUndefined()
+    expect(ws.paneByPty(hidden.ptyId)?.key).toBe(hidden.key)
+    expect(ws.paneByPty('p-00000000')).toBeUndefined()
   })
 
   it('선택된 cell 이 없으면 split·moveFocus 는 아무것도 바꾸지 않는다', () => {

@@ -11,8 +11,9 @@
   },
   "include": [
     "src/shared/**/*",
+    "src/main/config-file.ts",
     "src/main/frame.ts",
-    "src/main/session.ts",
+    "src/main/pty.ts",
     "src/renderer/src/icons.ts",
     "src/renderer/src/workspace/columns.ts",
     "playwright.config.ts",

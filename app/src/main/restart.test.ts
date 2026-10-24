@@ -9,13 +9,13 @@ import type { JobsFile } from './job'
 import {
   checkRestart,
   restartFile,
-  screenSessions,
-  sessionProtocol,
+  screenPtys,
+  ptyProtocol,
   takeRestart,
   writeRestart,
   type RestartState
 } from './restart'
-import { socketPath } from './session'
+import { socketPath } from './pty'
 
 const screen: ScreenState = {
   version: SCREEN_VERSION,
@@ -28,8 +28,8 @@ const screen: ScreenState = {
           key: 1,
           id: 'c-00000001',
           panes: [
-            { key: 0, sessionId: 's-0000000a', cwd: '/tmp' },
-            { key: 2, sessionId: 's-0000000b', command: ['sh', '-c', 'true'], title: 't' }
+            { key: 0, ptyId: 'p-0000000a', cwd: '/tmp' },
+            { key: 2, ptyId: 'p-0000000b', command: ['sh', '-c', 'true'], title: 't' }
           ],
           layout: { split: 'right', first: { pane: 0 }, second: { pane: 2 } },
           focused: 2
@@ -37,7 +37,7 @@ const screen: ScreenState = {
         {
           key: 4,
           id: 'c-00000002',
-          panes: [{ key: 5, sessionId: 's-0000000c' }],
+          panes: [{ key: 5, ptyId: 'p-0000000c' }],
           layout: { pane: 5 },
           focused: 5
         }
@@ -56,7 +56,7 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 function fakeBin(output: string): string {
-  const bin = join(dir, 'maru-session')
+  const bin = join(dir, 'maru-pty')
   writeFileSync(bin, `#!/bin/sh\necho ${output}\n`)
   chmodSync(bin, 0o755)
   return bin
@@ -64,12 +64,12 @@ function fakeBin(output: string): string {
 
 describe('restart 파일', () => {
   const jobs: JobsFile = {
-    version: 2,
+    version: 3,
     jobs: [
       {
-        session: 's-0000000a',
+        pty: 'p-0000000a',
         cell: 'c-1',
-        owner: 's-0000000b',
+        owner: 'p-0000000b',
         command: ['x'],
         pending: false
       }
@@ -123,31 +123,31 @@ describe('restart 파일', () => {
     await expect(writeRestart(path, state)).rejects.toThrow()
   })
 
-  it('화면의 모든 cell 에서 세션 id 를 모은다', () => {
-    expect(screenSessions(screen)).toEqual(new Set(['s-0000000a', 's-0000000b', 's-0000000c']))
-    expect(screenSessions(null)).toEqual(new Set())
+  it('화면의 모든 cell 에서 pty id 를 모은다', () => {
+    expect(screenPtys(screen)).toEqual(new Set(['p-0000000a', 'p-0000000b', 'p-0000000c']))
+    expect(screenPtys(null)).toEqual(new Set())
   })
 })
 
-describe('sessionProtocol', () => {
+describe('ptyProtocol', () => {
   it('바이너리가 알려 준 버전을 읽고, 못 읽으면 null 이다', async () => {
-    expect(await sessionProtocol(fakeBin('7'))).toBe(7)
-    expect(await sessionProtocol(fakeBin('nope'))).toBeNull()
-    expect(await sessionProtocol(fakeBin(''))).toBeNull()
-    expect(await sessionProtocol(join(dir, 'missing'))).toBeNull()
+    expect(await ptyProtocol(fakeBin('7'))).toBe(7)
+    expect(await ptyProtocol(fakeBin('nope'))).toBeNull()
+    expect(await ptyProtocol(fakeBin(''))).toBeNull()
+    expect(await ptyProtocol(join(dir, 'missing'))).toBeNull()
   })
 })
 
 describe('checkRestart', () => {
-  const sessions = (): string => join(dir, 's')
+  const ptyDir = (): string => join(dir, 'run')
 
   it('dev 서버로 띄웠거나 받은 화면이 없으면 재시작하지 않는다', async () => {
     const bin = fakeBin(String(PROTOCOL_VERSION))
-    expect(await checkRestart({ devServer: true, screen, bin, dir: sessions() })).toEqual({
+    expect(await checkRestart({ devServer: true, screen, bin, dir: ptyDir() })).toEqual({
       ok: false,
       reason: 'dev_server'
     })
-    expect(await checkRestart({ devServer: false, screen: null, bin, dir: sessions() })).toEqual({
+    expect(await checkRestart({ devServer: false, screen: null, bin, dir: ptyDir() })).toEqual({
       ok: false,
       reason: 'no_screen'
     })
@@ -155,32 +155,32 @@ describe('checkRestart', () => {
 
   it('버전이 같으면 재시작한다', async () => {
     const bin = fakeBin(String(PROTOCOL_VERSION))
-    expect(await checkRestart({ devServer: false, screen, bin, dir: sessions() })).toEqual({
+    expect(await checkRestart({ devServer: false, screen, bin, dir: ptyDir() })).toEqual({
       ok: true
     })
   })
 
-  it('버전이 달라도 산 세션이 없으면 재시작한다', async () => {
+  it('버전이 달라도 산 pty 가 없으면 재시작한다', async () => {
     const bin = fakeBin(String(PROTOCOL_VERSION + 1))
-    expect(await checkRestart({ devServer: false, screen, bin, dir: sessions() })).toEqual({
+    expect(await checkRestart({ devServer: false, screen, bin, dir: ptyDir() })).toEqual({
       ok: true
     })
   })
 
-  it('버전이 다르고 산 세션이 있으면 꺼질 세션 수를 알린다', async () => {
+  it('버전이 다르고 산 pty 가 있으면 꺼질 pty 수를 알린다', async () => {
     const bin = fakeBin(String(PROTOCOL_VERSION + 1))
     const d = mkdtempSync(join(tmpdir(), 'maru-live-'))
     const server = createServer((s) => s.destroy())
-    await new Promise<void>((r) => server.listen(socketPath(d, 's-0000000a'), r))
+    await new Promise<void>((r) => server.listen(socketPath(d, 'p-0000000a'), r))
     writeFileSync(
-      join(d, 's-0000000a.json'),
-      JSON.stringify({ protocol_version: PROTOCOL_VERSION, id: 's-0000000a', pid: process.pid })
+      join(d, 'p-0000000a.json'),
+      JSON.stringify({ protocol_version: PROTOCOL_VERSION, id: 'p-0000000a', pid: process.pid })
     )
     try {
       expect(await checkRestart({ devServer: false, screen, bin, dir: d })).toEqual({
         ok: false,
         reason: 'incompatible',
-        sessions: 1,
+        ptys: 1,
         protocol: PROTOCOL_VERSION + 1
       })
     } finally {

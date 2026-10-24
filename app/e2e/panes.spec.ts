@@ -2,7 +2,7 @@ import {
   activeTerminal,
   cellSize,
   clickMenu,
-  delaySessionPort,
+  delayPtyPort,
   expect,
   expectCols,
   openPalette,
@@ -14,7 +14,7 @@ import {
   resizeGridTo,
   run,
   shellSize,
-  slowSessionBin,
+  slowPtyBin,
   sockets,
   split,
   test,
@@ -133,7 +133,7 @@ test('pane 을 누르면 그 pane 이 포커스를 받는다', async ({ launch }
   await typesInto(page, 1, 'clicked-right')
 })
 
-test('⌘W 는 포커스가 있는 pane 의 세션을 끝내고 닫으며, 형제 pane 이 자리와 포커스를 받는다', async ({
+test('⌘W 는 포커스가 있는 pane 의 pty 를 끝내고 닫으며, 형제 pane 이 자리와 포커스를 받는다', async ({
   launch,
   dataDir
 }) => {
@@ -154,7 +154,7 @@ test('⌘W 는 포커스가 있는 pane 의 세션을 끝내고 닫으며, 형�
   await expect(cellItems(page)).toHaveCount(1)
 })
 
-test('마지막 pane 을 ⌘W 로 닫으면 cell 도 닫고 세션을 끝낸다', async ({ launch, dataDir }) => {
+test('마지막 pane 을 ⌘W 로 닫으면 cell 도 닫고 pty 를 끝낸다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await page.keyboard.type('X=first-$((1+1))\n')
   await pressNew(app)
@@ -175,8 +175,8 @@ test('마지막 pane 을 ⌘W 로 닫으면 cell 도 닫고 세션을 끝낸다'
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
 })
 
-test('셸이 뜨기 전에 ⌘W 로 닫아도 그 세션은 뜬 뒤에 끝난다', async ({ launch, dataDir }) => {
-  const { app, page } = await launch({ MARU_SESSION_BIN: slowSessionBin(dataDir) })
+test('셸이 뜨기 전에 ⌘W 로 닫아도 그 pty 는 뜬 뒤에 끝난다', async ({ launch, dataDir }) => {
+  const { app, page } = await launch({ MARU_PTY_BIN: slowPtyBin(dataDir) })
   await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
   await clickMenu(app, 'split-right')
   await expect(panes(page)).toHaveCount(2)
@@ -184,16 +184,16 @@ test('셸이 뜨기 전에 ⌘W 로 닫아도 그 세션은 뜬 뒤에 끝난다
   await clickMenu(app, 'close-pane')
 
   await expect(panes(page)).toHaveCount(1)
-  // 띄우던 세션이 소켓을 연 뒤에 끝나야 하므로 그 시간이 지나도록 본다.
+  // 띄우던 pty 가 소켓을 연 뒤에 끝나야 하므로 그 시간이 지나도록 본다.
   await page.waitForTimeout(2500)
   await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
   await typesInto(page, 0, 'remaining')
 })
 
-test('세션에 붙기 전에 ⌘W 로 닫아도 그 세션은 끝난다', async ({ launch, dataDir }) => {
+test('pty 에 붙기 전에 ⌘W 로 닫아도 그 pty 는 끝난다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
-  await delaySessionPort(app, 1500)
+  await delayPtyPort(app, 1500)
   await clickMenu(app, 'split-right')
   await expect(panes(page)).toHaveCount(2)
 

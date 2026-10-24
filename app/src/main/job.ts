@@ -6,38 +6,38 @@ import {
   requireCwd,
   type Handlers
 } from './cli-server'
-import type { SessionExit } from './session'
-import { isSessionId } from '../shared/session'
+import type { PtyExit } from './pty'
+import { isPtyId } from '../shared/pty'
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 
-/** 세션의 답을 기다리는 상한. `maru` 의 `TIMEOUT`(main.rs)이 10초이므로 시간 초과 오류가 그 안에 닿게 한다. */
+/** pty 의 답을 기다리는 상한. `maru` 의 `TIMEOUT`(main.rs)이 10초이므로 시간 초과 오류가 그 안에 닿게 한다. */
 export const JOB_REPLY_MS = 8_000
 
-/** `owner` 는 `job.new` 를 부른 세션이다. `pending` 은 끝났지만 아직 `owner` 에 알리지 못했다는 표시다. */
+/** `owner` 는 `job.new` 를 부른 pty 다. `pending` 은 끝났지만 아직 `owner` 에 알리지 못했다는 표시다. */
 export type JobRecord = {
-  session: string
+  pty: string
   name?: string
   cell: string
   owner: string
   command: string[]
-  exit?: SessionExit
+  exit?: PtyExit
   pending: boolean
 }
 
 /** 재시작 전 앱이 쓰고 다시 뜬 앱이 읽는다. 모양을 바꾸면 버전을 올린다. */
-export type JobsFile = { version: 2; jobs: JobRecord[] }
+export type JobsFile = { version: 3; jobs: JobRecord[] }
 
 export type JobDeps = {
   newId: () => string
-  cellOf: (session: string) => string | undefined
-  /** `maru-session --keep` 으로 띄운다. 소켓이 열린 뒤에 끝난다. */
+  cellOf: (pty: string) => string | undefined
+  /** `maru-pty --keep` 으로 띄운다. 소켓이 열린 뒤에 끝난다. */
   spawn: (id: string, cwd: string, command: string[]) => Promise<void>
-  waitExit: (id: string) => { exit: Promise<SessionExit | null>; cancel: () => void }
+  waitExit: (id: string) => { exit: Promise<PtyExit | null>; cancel: () => void }
   capture: (id: string) => Promise<string>
   input: (id: string, text: string) => Promise<'written' | 'exited'>
   kill: (id: string) => Promise<void>
-  emit: (session: string, event: object) => boolean
+  emit: (pty: string, event: object) => boolean
 }
 
 /** 계약은 `main.rs`(`core/crates/maru/src/main.rs`)의 모듈 doc 에 있다. 표는 띄운 순서다. */
@@ -46,52 +46,52 @@ export function createJobs(deps: JobDeps) {
   const waits = new Map<string, () => void>()
   let saved = false
 
-  function cellOf(session: string): string | undefined {
-    return deps.cellOf(session) ?? jobs.find((j) => j.session === session)?.cell
+  function cellOf(pty: string): string | undefined {
+    return deps.cellOf(pty) ?? jobs.find((j) => j.pty === pty)?.cell
   }
 
-  function callerCell(session: string): string {
-    const c = cellOf(session)
-    if (c === undefined) throw new InvalidParams(`session ${session} is not in a cell`)
+  function callerCell(pty: string): string {
+    const c = cellOf(pty)
+    if (c === undefined) throw new InvalidParams(`pty ${pty} is not in a cell`)
     return c
   }
 
   function find(cell: string, target: unknown): JobRecord {
     if (typeof target !== 'string' || target === '') {
-      throw new InvalidParams('params.target must be a job name or session id')
+      throw new InvalidParams('params.target must be a job name or pty id')
     }
-    const key = isSessionId(target) ? 'session' : 'name'
+    const key = isPtyId(target) ? 'pty' : 'name'
     const job = jobs.find((j) => j.cell === cell && j[key] === target)
     if (!job) throw new InvalidParams(`no job ${target} in this cell`)
     return job
   }
 
-  function stopWaiting(session: string): void {
-    const cancel = waits.get(session)
-    waits.delete(session)
+  function stopWaiting(pty: string): void {
+    const cancel = waits.get(pty)
+    waits.delete(pty)
     cancel?.()
   }
 
   function remove(job: JobRecord): void {
     const i = jobs.indexOf(job)
     if (i !== -1) jobs.splice(i, 1)
-    stopWaiting(job.session)
+    stopWaiting(job.pty)
   }
 
   function notify(job: JobRecord): void {
-    const { session, name, exit } = job
-    const event = { event: 'job', session, ...(name !== undefined && { name }), ...exit }
+    const { pty, name, exit } = job
+    const event = { event: 'job', pty, ...(name !== undefined && { name }), ...exit }
     job.pending = !deps.emit(job.owner, event)
   }
 
   function watch(job: JobRecord): void {
-    const { exit, cancel } = deps.waitExit(job.session)
-    waits.set(job.session, cancel)
+    const { exit, cancel } = deps.waitExit(job.pty)
+    waits.set(job.pty, cancel)
     void exit.then((e) => {
       // `stopWaiting` 이 닫은 wait 는 null 로 끝나므로 버린다.
-      if (waits.get(job.session) !== cancel) return
-      waits.delete(job.session)
-      // 세션이 셸을 끝냈거나 사라졌다. 스스로 끝난 것이 아니므로 알리지 않는다.
+      if (waits.get(job.pty) !== cancel) return
+      waits.delete(job.pty)
+      // pty 가 셸을 끝냈거나 사라졌다. 스스로 끝난 것이 아니므로 알리지 않는다.
       if (!e) return remove(job)
       job.exit = { code: e.code, signal: e.signal }
       notify(job)
@@ -100,7 +100,7 @@ export function createJobs(deps: JobDeps) {
 
   function view(j: JobRecord): object {
     return {
-      session: j.session,
+      pty: j.pty,
       ...(j.name !== undefined && { name: j.name }),
       command: j.command,
       state: j.exit ? 'exited' : 'running',
@@ -110,29 +110,26 @@ export function createJobs(deps: JobDeps) {
   }
 
   const handlers: Handlers = {
-    'job.new': async (params, session) => {
+    'job.new': async (params, pty) => {
       const command = requireCommand(params.command)
       const cwd = requireCwd(params.cwd)
       const { name } = params
-      if (
-        name !== undefined &&
-        (typeof name !== 'string' || !NAME.test(name) || isSessionId(name))
-      ) {
+      if (name !== undefined && (typeof name !== 'string' || !NAME.test(name) || isPtyId(name))) {
         throw new InvalidParams(
-          'params.name must be 1-64 letters, digits, ".", "_" or "-", start with a letter or digit, and not look like a session id'
+          'params.name must be 1-64 letters, digits, ".", "_" or "-", start with a letter or digit, and not look like a pty id'
         )
       }
-      const cell = callerCell(session)
+      const cell = callerCell(pty)
       const same =
         name === undefined ? undefined : jobs.find((j) => j.cell === cell && j.name === name)
       if (same && !same.exit) {
         throw new CliError(-32001, 'job_name_taken', `job ${name} is running in this cell`)
       }
       const job: JobRecord = {
-        session: deps.newId(),
+        pty: deps.newId(),
         ...(name !== undefined && { name }),
         cell,
-        owner: session,
+        owner: pty,
         command,
         pending: false
       }
@@ -140,43 +137,43 @@ export function createJobs(deps: JobDeps) {
       if (same) remove(same)
       jobs.push(job)
       try {
-        if (same) await deps.kill(same.session)
-        await deps.spawn(job.session, cwd, command)
+        if (same) await deps.kill(same.pty)
+        await deps.spawn(job.pty, cwd, command)
       } catch (err) {
         remove(job)
         throw err
       }
       // 띄우는 동안 kill·cell 닫기가 지웠으면, 그때는 소켓이 없어 끄지 못했다.
       if (!jobs.includes(job)) {
-        await deps.kill(job.session)
-        throw new Error(`job ${name ?? job.session} was killed while it started`)
+        await deps.kill(job.pty)
+        throw new Error(`job ${name ?? job.pty} was killed while it started`)
       }
       // `save` 가 표를 넘긴 뒤면 다시 뜬 앱이 이 job 을 기다리므로, 여기서도 기다리면 두 번 알릴 수 있다.
       if (!saved) watch(job)
-      return { session: job.session }
+      return { pty: job.pty }
     },
-    'job.list': (_params, session) => {
-      const cell = callerCell(session)
+    'job.list': (_params, pty) => {
+      const cell = callerCell(pty)
       return { jobs: jobs.filter((j) => j.cell === cell).map(view) }
     },
-    'job.read': async ({ target }, session) => {
-      const job = find(callerCell(session), target)
-      return { text: await deps.capture(job.session) }
+    'job.read': async ({ target }, pty) => {
+      const job = find(callerCell(pty), target)
+      return { text: await deps.capture(job.pty) }
     },
-    'job.send': async ({ target, text }, session) => {
-      const job = find(callerCell(session), target)
+    'job.send': async ({ target, text }, pty) => {
+      const job = find(callerCell(pty), target)
       if (typeof text !== 'string') throw new InvalidParams('params.text must be a string')
       const exited = (): CliError =>
         new CliError(-32001, 'job_exited', `job ${String(target)} has exited`)
       if (job.exit) throw exited()
-      if ((await deps.input(job.session, text)) === 'exited') throw exited()
+      if ((await deps.input(job.pty, text)) === 'exited') throw exited()
       return null
     },
-    'job.kill': async ({ target }, session) => {
-      const job = find(callerCell(session), target)
+    'job.kill': async ({ target }, pty) => {
+      const job = find(callerCell(pty), target)
       // 끝날 때까지 목록에 두어, 그 사이 같은 이름의 new 가 아직 도는 프로세스 옆에 뜨지 않게 한다.
-      stopWaiting(job.session)
-      await deps.kill(job.session)
+      stopWaiting(job.pty)
+      await deps.kill(job.pty)
       remove(job)
       return null
     }
@@ -185,23 +182,23 @@ export function createJobs(deps: JobDeps) {
   return {
     handlers,
     cellOf,
-    subscribed: (session: string): void => {
-      for (const j of jobs) if (j.owner === session && j.pending) notify(j)
+    subscribed: (pty: string): void => {
+      for (const j of jobs) if (j.owner === pty && j.pending) notify(j)
     },
     closeCell: async (cell: string): Promise<void> => {
       const closing = jobs.filter((j) => j.cell === cell)
       for (const j of closing) remove(j)
-      await Promise.all(closing.map((j) => deps.kill(j.session)))
+      await Promise.all(closing.map((j) => deps.kill(j.pty)))
     },
     /** wait 를 먼저 닫는다 — 쓴 뒤에 끝난 job 은 다시 뜬 앱의 wait 가 받아 한 번만 알린다. */
     save: (): JobsFile => {
       saved = true
-      for (const session of [...waits.keys()]) stopWaiting(session)
-      return structuredClone({ version: 2, jobs })
+      for (const pty of [...waits.keys()]) stopWaiting(pty)
+      return structuredClone({ version: 3, jobs })
     },
     resume: (): void => {
       saved = false
-      for (const j of jobs) if (!j.exit && !waits.has(j.session)) watch(j)
+      for (const j of jobs) if (!j.exit && !waits.has(j.pty)) watch(j)
     },
     restore: (file: JobsFile): void => {
       jobs.push(...file.jobs)
@@ -217,10 +214,10 @@ const isCode = (v: unknown): boolean => v === null || Number.isInteger(v)
 function isJob(v: unknown): v is JobRecord {
   return (
     isObj(v) &&
-    isSessionId(v.session) &&
+    isPtyId(v.pty) &&
     (v.name === undefined || typeof v.name === 'string') &&
     typeof v.cell === 'string' &&
-    isSessionId(v.owner) &&
+    isPtyId(v.owner) &&
     isCommand(v.command) &&
     (v.exit === undefined || (isObj(v.exit) && isCode(v.exit.code) && isCode(v.exit.signal))) &&
     typeof v.pending === 'boolean'
@@ -228,6 +225,6 @@ function isJob(v: unknown): v is JobRecord {
 }
 
 export function parseJobsFile(v: unknown): JobsFile | null {
-  if (!isObj(v) || v.version !== 2 || !Array.isArray(v.jobs) || !v.jobs.every(isJob)) return null
+  if (!isObj(v) || v.version !== 3 || !Array.isArray(v.jobs) || !v.jobs.every(isJob)) return null
   return v as JobsFile
 }

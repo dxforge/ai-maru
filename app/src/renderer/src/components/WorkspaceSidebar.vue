@@ -17,7 +17,7 @@ const {
 } = defineProps<{
   workspaces: readonly DeepReadonly<Workspace>[]
   selectedKey: number | null
-  root: (session?: string) => ProgramStatusRecord | undefined
+  root: (pty?: string) => ProgramStatusRecord | undefined
   urgent: ReadonlyMap<number, ProgramStatusState>
   folded: ReadonlySet<number>
   collapsed: boolean
@@ -41,7 +41,7 @@ type Row = {
 }
 
 function paneRow(p: DeepReadonly<Pane>, focused: boolean): Row {
-  const r = root(p.sessionId)
+  const r = root(p.ptyId)
   const s = r?.state
   const text = p.title || (r ? programName(r.app) : 'Shell')
   return {
@@ -59,7 +59,7 @@ function summaryRow(c: DeepReadonly<Cell>): Row {
   const counts = new Map<string, number>()
   let shells = 0
   for (const p of c.panes) {
-    const r = root(p.sessionId)
+    const r = root(p.ptyId)
     if (!r) shells++
     else counts.set(programName(r.app), (counts.get(programName(r.app)) ?? 0) + 1)
   }

@@ -37,7 +37,7 @@ test('emoji·한글을 찍은 뒤 커서를 Claude Code 가 세는 열에 둔다
   }
 })
 
-test('emoji 를 찍고 재시작하면 maru-session 이 재생한 커서가 xterm 이 센 열과 같다', async ({
+test('emoji 를 찍고 재시작하면 maru-pty 가 재생한 커서가 xterm 이 센 열과 같다', async ({
   launch
 }) => {
   const first = await launch()

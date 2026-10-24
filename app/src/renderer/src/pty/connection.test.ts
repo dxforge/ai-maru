@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openSession, type SessionMessage } from './connection'
+import { openPty, type PtyMessage } from './connection'
 
 function fakeWindow() {
   const listeners = new Set<(e: MessageEvent) => void>()
@@ -9,8 +9,8 @@ function fakeWindow() {
     addEventListener: (_type: string, cb: (e: MessageEvent) => void) => listeners.add(cb),
     removeEventListener: (_type: string, cb: (e: MessageEvent) => void) => listeners.delete(cb),
     maru: {
-      openSession: (key: string) => opened.push(key),
-      killSession: (key: string) => killed.push(key)
+      openPty: (key: string) => opened.push(key),
+      killPty: (key: string) => killed.push(key)
     }
   }
   const post = (data: unknown, ports: MessagePort[] = []): void => {
@@ -22,15 +22,15 @@ function fakeWindow() {
     killed,
     givePort(key = opened[0]): MessagePort {
       const { port1, port2 } = new MessageChannel()
-      post({ type: 'session:port', key }, [port2])
+      post({ type: 'pty:port', key }, [port2])
       return port1
     },
-    lose: () => post('session:lost')
+    lose: () => post('pty:lost')
   }
 }
 
-function received(port: MessagePort, count: number): Promise<SessionMessage[]> {
-  const got: SessionMessage[] = []
+function received(port: MessagePort, count: number): Promise<PtyMessage[]> {
+  const got: PtyMessage[] = []
   return new Promise((resolve) => {
     port.onmessage = ({ data }) => {
       got.push(data)
@@ -41,10 +41,10 @@ function received(port: MessagePort, count: number): Promise<SessionMessage[]> {
 
 afterEach(() => vi.unstubAllGlobals())
 
-describe('openSession', () => {
+describe('openPty', () => {
   it('포트가 오기 전에 보낸 메시지를 포트가 온 뒤 보낸 순서대로 보낸다', async () => {
     const win = fakeWindow()
-    const conn = openSession({ id: 's-00000001', cell: 'c-00000001' })
+    const conn = openPty({ id: 'p-00000001', cell: 'c-00000001' })
     const key = new Uint8Array([107])
     conn.send('{"type":"attach"}')
     conn.send(key)
@@ -54,13 +54,13 @@ describe('openSession', () => {
     port.close()
   })
 
-  it('다른 세션의 포트는 받지 않는다', async () => {
+  it('다른 pty 의 포트는 받지 않는다', async () => {
     const win = fakeWindow()
-    const conn = openSession({ id: 's-00000001', cell: 'c-00000001' })
+    const conn = openPty({ id: 'p-00000001', cell: 'c-00000001' })
     conn.send('mine')
     const other = win.givePort('other')
     const port = win.givePort()
-    const otherGot: SessionMessage[] = []
+    const otherGot: PtyMessage[] = []
     other.onmessage = ({ data }) => otherGot.push(data)
     expect(await received(port, 1)).toEqual(['mine'])
     expect(otherGot).toEqual([])
@@ -68,9 +68,9 @@ describe('openSession', () => {
     port.close()
   })
 
-  it('포트가 오기 전의 session:lost 로는 닫히지 않고, 온 뒤의 것으로 닫힌다', () => {
+  it('포트가 오기 전의 pty:lost 로는 닫히지 않고, 온 뒤의 것으로 닫힌다', () => {
     const win = fakeWindow()
-    const conn = openSession({ id: 's-00000001', cell: 'c-00000001' })
+    const conn = openPty({ id: 'p-00000001', cell: 'c-00000001' })
     let closes = 0
     conn.onClose(() => closes++)
     win.lose()
@@ -80,9 +80,9 @@ describe('openSession', () => {
     expect(closes).toBe(1)
   })
 
-  it('포트가 오기 전에도 그 세션을 끝낼 수 있다', () => {
+  it('포트가 오기 전에도 그 pty 를 끝낼 수 있다', () => {
     const win = fakeWindow()
-    openSession({ id: 's-00000001', cell: 'c-00000001' }).kill()
+    openPty({ id: 'p-00000001', cell: 'c-00000001' }).kill()
     expect(win.killed).toEqual(win.opened)
     expect(win.killed).toHaveLength(1)
   })

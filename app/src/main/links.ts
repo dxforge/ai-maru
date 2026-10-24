@@ -35,7 +35,7 @@ export type LinkOpener = {
   /** `shell.openPath` — 실패하면 그 이유, 열었으면 빈 문자열. */
   openPath(path: string): Promise<string>
   putCanvas(doc: CanvasDoc): Promise<void>
-  foregroundCwd(sessionId: string): Promise<string | null>
+  foregroundCwd(ptyId: string): Promise<string | null>
 }
 
 /**
@@ -44,17 +44,17 @@ export type LinkOpener = {
  */
 export async function openLink(
   text: string,
-  sessionId: string,
+  ptyId: string,
   opener: LinkOpener
 ): Promise<LinkOpenResult> {
   try {
-    return await open(text, sessionId, opener)
+    return await open(text, ptyId, opener)
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) }
   }
 }
 
-async function open(text: string, sessionId: string, opener: LinkOpener): Promise<LinkOpenResult> {
+async function open(text: string, ptyId: string, opener: LinkOpener): Promise<LinkOpenResult> {
   const target = resolveLinkTarget(text)
   if (target.kind === 'external') {
     await opener.openExternal(target.url)
@@ -62,7 +62,7 @@ async function open(text: string, sessionId: string, opener: LinkOpener): Promis
   }
   let path = target.path
   if (!isAbsolute(path)) {
-    const cwd = await opener.foregroundCwd(sessionId)
+    const cwd = await opener.foregroundCwd(ptyId)
     if (!cwd) return { ok: false, reason: `Can't tell which directory ${path} is relative to` }
     path = resolve(cwd, path)
   }

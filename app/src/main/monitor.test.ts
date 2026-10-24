@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { InvalidParams, Subscription } from './cli-server'
 import { createMonitor } from './monitor'
 
-const B = 's-0000000b'
-const C = 's-0000000c'
+const B = 'p-0000000b'
+const C = 'p-0000000c'
 
 function setup() {
   const monitor = createMonitor({ shellPidOf: async (s) => (s === B ? 42 : null) })
-  const subscribe = async (session: string, ancestors: unknown) => {
-    const sub = await monitor.handlers['monitor.subscribe']({ ancestors }, session)
+  const subscribe = async (pty: string, ancestors: unknown) => {
+    const sub = await monitor.handlers['monitor.subscribe']({ ancestors }, pty)
     expect(sub).toBeInstanceOf(Subscription)
     const got: object[] = []
     let open = true
@@ -27,17 +27,17 @@ describe('monitor.subscribe', () => {
     }
   )
 
-  it('세션의 셸 pid 가 조상에 없으면 거절한다', async () => {
+  it('pty 의 셸 pid 가 조상에 없으면 거절한다', async () => {
     const { subscribe } = setup()
-    await expect(subscribe(B, [7, 8])).rejects.toThrow(`not running under session ${B}'s shell`)
+    await expect(subscribe(B, [7, 8])).rejects.toThrow(`not running under pty ${B}'s shell`)
   })
 
-  it('세션 레코드가 없으면 거절한다', async () => {
+  it('pty 레코드가 없으면 거절한다', async () => {
     const { subscribe } = setup()
     await expect(subscribe(C, [42])).rejects.toThrow(InvalidParams)
   })
 
-  it('세션 id 모양이 아니면 거절한다', async () => {
+  it('pty id 모양이 아니면 거절한다', async () => {
     const { subscribe } = setup()
     await expect(subscribe('../x', [42])).rejects.toThrow(InvalidParams)
   })
@@ -56,9 +56,9 @@ describe('onSubscribe', () => {
     const seen: string[] = []
     const monitor = createMonitor({
       shellPidOf: async () => 42,
-      onSubscribe: (session) => {
-        seen.push(session)
-        expect(monitor.emit(session, { event: 'job' })).toBe(true)
+      onSubscribe: (pty) => {
+        seen.push(pty)
+        expect(monitor.emit(pty, { event: 'job' })).toBe(true)
       }
     })
     const sub = (await monitor.handlers['monitor.subscribe'](

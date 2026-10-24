@@ -12,8 +12,8 @@ import {
   resizeBy,
   rows,
   run,
-  sessionFiles,
-  slowSessionBin,
+  ptyFiles,
+  slowPtyBin,
   shellSize,
   sockets,
   test,
@@ -36,7 +36,7 @@ test('앱을 켜면 홈 디렉토리에서 cell 하나를 연다', async ({ laun
   expect(sockets(dataDir)).toHaveLength(1)
 })
 
-test('bash 에서 ⌘N 은 cd 와 상관없이 홈 디렉토리에서 새 세션으로 새 workspace 를 열고 그것을 선택한다', async ({
+test('bash 에서 ⌘N 은 cd 와 상관없이 홈 디렉토리에서 새 pty 로 새 workspace 를 열고 그것을 선택한다', async ({
   launch,
   dataDir
 }) => {
@@ -100,7 +100,7 @@ test('마지막 workspace 가 닫혀도 창은 열려 있고, ⌘N 으로 다시
 
   await expect(cellItems(page)).toHaveCount(0)
   await expect(page.locator('.terminal-view')).toHaveCount(0)
-  await expect.poll(() => sessionFiles(dataDir)).toEqual(['app.sock'])
+  await expect.poll(() => ptyFiles(dataDir)).toEqual(['app.sock'])
   await page.waitForTimeout(500)
   expect(closed).toBe(false)
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
@@ -109,7 +109,7 @@ test('마지막 workspace 가 닫혀도 창은 열려 있고, ⌘N 으로 다시
   await run(page, 'echo again-$((4+4))', 'again-8')
 })
 
-test('앱을 끄면 열린 cell 의 세션을 모두 종료한다', async ({ launch, dataDir }) => {
+test('앱을 끄면 열린 cell 의 pty 를 모두 종료한다', async ({ launch, dataDir }) => {
   const launched = await launch()
   const { app, page } = launched
   await newWorkspace(launched, 2)
@@ -119,16 +119,16 @@ test('앱을 끄면 열린 cell 의 세션을 모두 종료한다', async ({ lau
 
   await app.close()
 
-  expect(sessionFiles(dataDir)).toEqual([])
+  expect(ptyFiles(dataDir)).toEqual([])
 })
 
-test('세션을 잇는 utilityProcess 가 죽어도 cell 은 닫지 않는다', async ({ launch }) => {
+test('pty 를 잇는 utilityProcess 가 죽어도 cell 은 닫지 않는다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
   await newWorkspace(launched, 2)
   await run(page, 'echo set-$((3+3))', 'set-6')
   process.kill(await hostPid(app), 'SIGKILL')
-  await expect(rows(page)).toContainText('disconnected from the session')
+  await expect(rows(page)).toContainText('disconnected from the pty')
   await expect(cellItems(page)).toHaveCount(2)
 })
 
@@ -233,7 +233,7 @@ test('zsh 에서 ⌘N 을 연달아 눌러도 선택된 cell 의 디렉토리에
   const { app, page } = await launch({
     SHELL: '/bin/zsh',
     HOME: home,
-    MARU_SESSION_BIN: slowSessionBin(dataDir)
+    MARU_PTY_BIN: slowPtyBin(dataDir)
   })
   await expect(rows(page)).toContainText('%', { timeout: 10_000 })
   await page.keyboard.type('cd proj\n')

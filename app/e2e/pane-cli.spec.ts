@@ -4,7 +4,7 @@ import {
   activePane,
   clickMenu,
   expect,
-  failingCommandSessionBin,
+  failingCommandPtyBin,
   newWorkspace,
   paneBox as box,
   panes,
@@ -18,16 +18,16 @@ import {
   zshHome
 } from './app'
 
-test('maru pane new 은 부른 pane 오른쪽에 명령을 띄워 그 세션 id 를 찍고, 포커스는 부른 pane 에 남는다', async ({
+test('maru pane new 은 부른 pane 오른쪽에 명령을 띄워 그 pty id 를 찍고, 포커스는 부른 pane 에 남는다', async ({
   launch
 }) => {
   const { page } = await launch()
   await page.keyboard.type(
-    `ID=$(maru pane new bash -c 'echo "me=[$MARU_SESSION_ID]"; read x'); echo "got=[$ID]"\n`
+    `ID=$(maru pane new bash -c 'echo "me=[$MARU_PTY_ID]"; read x'); echo "got=[$ID]"\n`
   )
   await expect(panes(page)).toHaveCount(2)
-  await expect(paneRows(page, 1)).toContainText(/me=\[s-[0-9a-f]{8}\]/)
-  const me = (await paneRows(page, 1).innerText()).match(/me=\[(s-[0-9a-f]{8})\]/)![1]
+  await expect(paneRows(page, 1)).toContainText(/me=\[p-[0-9a-f]{8}\]/)
+  const me = (await paneRows(page, 1).innerText()).match(/me=\[(p-[0-9a-f]{8})\]/)![1]
   await expect(rows(page)).toContainText(`got=[${me}]`)
 
   const [left, right] = [await box(page, 0), await box(page, 1)]
@@ -53,27 +53,27 @@ test('명령이 끝나면 pane 이 닫히고, 명령 없이 부르면 셸을 띄
   await expect(panes(page)).toHaveCount(1)
 })
 
-test('곧바로 끝나는 명령도 그 세션 id 를 찍고 성공하며, pane 은 닫힌다', async ({ launch }) => {
+test('곧바로 끝나는 명령도 그 pty id 를 찍고 성공하며, pane 은 닫힌다', async ({ launch }) => {
   const { page } = await launch()
   for (const command of ['true', 'echo hi', 'no-such-command-xyz']) {
     await page.keyboard.type(`clear; maru pane new ${command}; echo "code-$?"\n`)
-    await expect(rows(page)).toContainText(/s-[0-9a-f]{8}\s*code-0/)
+    await expect(rows(page)).toContainText(/p-[0-9a-f]{8}\s*code-0/)
     await expect(panes(page)).toHaveCount(1)
   }
 })
 
-test('한 pane 에서 동시에 부른 maru pane new 는 저마다 자기 pane 의 세션 id 를 받는다', async ({
+test('한 pane 에서 동시에 부른 maru pane new 는 저마다 자기 pane 의 pty id 를 받는다', async ({
   launch,
   dataDir
 }) => {
   const { page } = await launch()
-  const cmd = `maru pane new bash -c 'echo "me=[$MARU_SESSION_ID]"; read x'`
+  const cmd = `maru pane new bash -c 'echo "me=[$MARU_PTY_ID]"; read x'`
   await page.keyboard.type(
     `cd '${dataDir}'; ${cmd} > a & ${cmd} > b; wait; echo "got=[$(cat a)][$(cat b)]"\n`
   )
   await expect(panes(page)).toHaveCount(3)
-  await expect(rows(page)).toContainText(/got=\[s-[0-9a-f]{8}\]\[s-[0-9a-f]{8}\]/)
-  const [, a, b] = (await rows(page).textContent())!.match(/got=\[(s-\w+)\]\[(s-\w+)\]/)!
+  await expect(rows(page)).toContainText(/got=\[p-[0-9a-f]{8}\]\[p-[0-9a-f]{8}\]/)
+  const [, a, b] = (await rows(page).textContent())!.match(/got=\[(p-\w+)\]\[(p-\w+)\]/)!
   expect(a).not.toBe(b)
   const me = new RegExp(`me=\\[(${a}|${b})\\]`)
   await expect(paneRows(page, 1)).toContainText(me)
@@ -119,11 +119,11 @@ test('선택하지 않은 cell 의 pane 에서 부르면 그 cell 을 나누고,
   await expect(panes(page)).toHaveCount(1)
 })
 
-test('세션을 띄우지 못하면 나눈 pane 을 닫고 maru pane new 가 이유와 함께 실패한다', async ({
+test('pty 를 띄우지 못하면 나눈 pane 을 닫고 maru pane new 가 이유와 함께 실패한다', async ({
   launch,
   dataDir
 }) => {
-  const { page } = await launch({ MARU_SESSION_BIN: failingCommandSessionBin(dataDir) })
+  const { page } = await launch({ MARU_PTY_BIN: failingCommandPtyBin(dataDir) })
   await page.keyboard.type('maru pane new true; echo code-$?\n')
   await expect(rows(page)).toContainText('boom-2')
   await expect(rows(page)).toContainText('code-1')
@@ -148,7 +148,7 @@ test('창이 시간 안에 답하지 못해 실패한 maru pane new 의 pane 은
   await expect(panes(page)).toHaveCount(1)
 })
 
-test('maru pane close 는 다른 pane 도 자기 pane 도 닫고, 없는 세션이면 실패한다', async ({
+test('maru pane close 는 다른 pane 도 자기 pane 도 닫고, 없는 pty 면 실패한다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -157,12 +157,12 @@ test('maru pane close 는 다른 pane 도 자기 pane 도 닫고, 없는 세션�
   await run(page, 'maru pane close "$ID"; echo closed-$?', 'closed-0')
   await expect(panes(page)).toHaveCount(1)
 
-  await page.keyboard.type(`maru pane new bash -c 'maru pane close "$MARU_SESSION_ID"; sleep 30'\n`)
+  await page.keyboard.type(`maru pane new bash -c 'maru pane close "$MARU_PTY_ID"; sleep 30'\n`)
   await expect(panes(page)).toHaveCount(2)
   await expect(panes(page)).toHaveCount(1)
 
-  await page.keyboard.type('maru pane close s-00000000; echo code-$?\n')
-  await expect(rows(page)).toContainText('no pane for session s-00000000')
+  await page.keyboard.type('maru pane close p-00000000; echo code-$?\n')
+  await expect(rows(page)).toContainText('no pane for pty p-00000000')
   await expect(rows(page)).toContainText('code-1')
 })
 

@@ -1,9 +1,9 @@
 //! 앱이 띄운 터미널 안에서 앱에 요청을 보내는 CLI.
 //!
-//! 앱은 세션을 띄울 때 셸에 다음을 넣는다. 둘 중 하나라도 없으면 앱 터미널 밖이다.
+//! 앱은 pty 를 띄울 때 셸에 다음을 넣는다. 둘 중 하나라도 없으면 앱 터미널 밖이다.
 //!
 //! - `MARU_SOCKET` — 앱이 듣는 유닉스 도메인 소켓 경로
-//! - `MARU_SESSION_ID` — 그 터미널의 세션 id
+//! - `MARU_PTY_ID` — 그 터미널의 pty id
 //!
 //! 앱의 zsh 함수와 claude plugin 이 쓰는 값도 넣는다.
 //!
@@ -17,11 +17,11 @@
 //! 요청(notification)은 실행만 하고 답 없이 닫는다. batch 는 받지 않는다. 10초 동안 오가는 것이
 //! 없으면 앱이 연결을 끊는다. `monitor.subscribe` 만 다르다(아래).
 //!
-//! 모든 요청의 `params` 는 객체이고 `protocol_version`·`session`(세션 id)을 싣는다.
+//! 모든 요청의 `params` 는 객체이고 `protocol_version`·`pty`(pty id)를 싣는다.
 //!
 //! ```text
-//! → {"jsonrpc":"2.0","id":1,"method":"ping","params":{"protocol_version":1,"session":"s-1a2b3c4d"}}
-//! ← {"jsonrpc":"2.0","id":1,"result":{"session":"s-1a2b3c4d"}}
+//! → {"jsonrpc":"2.0","id":1,"method":"ping","params":{"protocol_version":1,"pty":"p-1a2b3c4d"}}
+//! ← {"jsonrpc":"2.0","id":1,"result":{"pty":"p-1a2b3c4d"}}
 //! ```
 //!
 //! 실패는 표준 `error.code` 에 앱이 정한 이유를 `error.data.code` 문자열로 붙인다.
@@ -42,90 +42,90 @@
 //!
 //! | 메서드 | `params`(공통 외) | `result` |
 //! |---|---|---|
-//! | `ping` | 없음 | `{"session":<받은 세션 id>}` |
+//! | `ping` | 없음 | `{"pty":<받은 pty id>}` |
 //! | `canvas.put` | `text`(문자열), `id`(빈 문자열이 아닌 문자열, 선택), `title`(문자열, 선택) | `{"id":<문서 id>}` |
-//! | `inbox.push` | `to`(세션 id), `text`(빈 문자열이 아닌 문자열) | `null` |
-//! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 세션 id>,"text":<본문>}…]}` |
+//! | `inbox.push` | `to`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
+//! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 pty id>,"text":<본문>}…]}` |
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
-//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `full`(bool, 선택) | `{"session":<새 세션 id>}` |
-//! | `pane.close` | `target`(세션 id) | `null` |
-//! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택) | `{"session":<새 세션 id>}` |
-//! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"session":<job 의 세션 id>}` |
-//! | `job.list` | 없음 | `{"jobs":[{"session","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
-//! | `job.read` | `target`(job 이름이나 세션 id) | `{"text":<글자>}` |
+//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `full`(bool, 선택) | `{"pty":<새 pty id>}` |
+//! | `pane.close` | `target`(pty id) | `null` |
+//! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택) | `{"pty":<새 pty id>}` |
+//! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"pty":<job 의 pty id>}` |
+//! | `job.list` | 없음 | `{"jobs":[{"pty","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
+//! | `job.read` | `target`(job 이름이나 pty id) | `{"text":<글자>}` |
 //! | `job.send` | `target`, `text`(문자열) | `null` |
 //! | `job.kill` | `target` | `null` |
-//! | `app.restart` | `kill_sessions`(bool, 선택) | `null` |
+//! | `app.restart` | `kill_ptys`(bool, 선택) | `null` |
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
 //! `id` 가 없으면 앱이 새 id 를 만든다. id 는 형식 없는 문자열이다.
 //!
-//! `inbox.push` 는 `to` 세션에 메시지를 보낸다. `to` 가 `s-` 와 hex 8자리가 아니거나 그 세션이 끝났으면
+//! `inbox.push` 는 `to` pty 에 메시지를 보낸다. `to` 가 `p-` 와 hex 8자리가 아니거나 그 pty 가 끝났으면
 //! `invalid_params` 다. `to` 를 구독하는 연결이 있으면 알림을 보내고, 본문이 알림에 다 실렸으면 읽은
 //! 것으로 쳐서 보관하지 않는다. 그 밖의 메시지는 보관하고 `inbox.read` 가 오래된 것부터 돌려준 뒤
 //! 지운다. 보관은 앱 메모리에만 한다.
 //!
-//! `pane.new` 는 `session` 의 pane 을 `direction` 쪽으로 나누고, 새 pane 에서 `cwd` 를 시작 디렉토리로
-//! 세션을 띄운다. `full` 이 true 면 그 pane 이 든 cell 전체를 나눠 새 pane 을 `direction` 쪽 끝에
+//! `pane.new` 는 `pty` 의 pane 을 `direction` 쪽으로 나누고, 새 pane 에서 `cwd` 를 시작 디렉토리로
+//! pty 를 띄운다. `full` 이 true 면 그 pane 이 든 cell 전체를 나눠 새 pane 을 `direction` 쪽 끝에
 //! 붙인다. 포커스와 선택한 cell 은 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
 //! 그 명령을 실행한다(셸이 sh·bash·zsh·ksh·dash 가 아니면 `/bin/sh` 가 실행한다). 명령이 끝나면 셸과
-//! 함께 pane 이 닫힌다. 새 세션이 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. `session` 의 pane 이 창에
+//! 함께 pane 이 닫힌다. 새 pty 가 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. `pty` 의 pane 이 창에
 //! 없으면 `invalid_params` 로 답한다. 나눈 pane 들이 하한(터미널 20열 × 5행) 아래로 내려가 나눌 자리가
-//! 없으면 -32001 `no_space` 로 답하고 pane 을 열지 않는다. 세션을 띄우지 못하면 나눈 pane 을 닫고
+//! 없으면 -32001 `no_space` 로 답하고 pane 을 열지 않는다. pty 를 띄우지 못하면 나눈 pane 을 닫고
 //! `internal_error` 로 답한다.
 //!
-//! `pane.close` 는 `target` 세션의 pane 을 닫고 그 세션을 끈다. `target` 의 pane 이 창에 없으면
-//! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 세션을 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
+//! `pane.close` 는 `target` pty 의 pane 을 닫고 그 pty 를 끈다. `target` 의 pane 이 창에 없으면
+//! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 pty 를 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
 //! 전에 끝날 수 있다.
 //!
-//! `cell.new` 는 pane 하나인 cell 을 만들어 `session` 의 cell 뒤에 넣고, 그 pane 에서 `pane.new` 처럼
-//! 세션을 띄운다. `session` 이 job 이면 그 job 의 cell 이다(`job.*` 와 같다). 그 cell 이 앞서 띄운
+//! `cell.new` 는 pane 하나인 cell 을 만들어 `pty` 의 cell 뒤에 넣고, 그 pane 에서 `pane.new` 처럼
+//! pty 를 띄운다. `pty` 가 job 이면 그 job 의 cell 이다(`job.*` 와 같다). 그 cell 이 앞서 띄운
 //! cell(`cell.new` 나 New Cell 로 연 것, 그것들이 다시 띄운 것 포함)이 뒤에 이어져 있으면 그것들 뒤에 놓아,
 //! 띄운 순서를 지킨다.
-//! `session` 의 cell 을 모르면 새 workspace 를 목록 끝에 만들어 거기에 넣는다. 포커스와 선택한 cell 은
+//! `pty` 의 cell 을 모르면 새 workspace 를 목록 끝에 만들어 거기에 넣는다. 포커스와 선택한 cell 은
 //! 바꾸지 않는다. 명령이 끝나 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이면 workspace 도
-//! 닫힌다. 답하는 때와 세션을 띄우지 못할 때는 `pane.new` 와 같고, 그때 닫는 pane 이 cell 의 하나뿐인
+//! 닫힌다. 답하는 때와 pty 를 띄우지 못할 때는 `pane.new` 와 같고, 그때 닫는 pane 이 cell 의 하나뿐인
 //! pane 이므로 cell 도 닫힌다.
 //!
-//! `job.*` 는 화면에 없는 세션(job)을 다룬다. job 은 부른 세션의 cell 이 갖는다 — 부른 세션이
+//! `job.*` 는 화면에 없는 pty(job)를 다룬다. job 은 부른 pty 의 cell 이 갖는다 — 부른 pty 가
 //! job 이면 그 job 의 cell 이다. 다른 cell 의 job 은 목록에 없고 `target` 으로 가리켜도 없는
 //! job 이다. cell 의 마지막 pane 이 닫히면 그 cell 의 job 을 끈다. 앱을 끝내면 job 도 끝나고,
 //! `app.restart` 는 pane 처럼 job 을 남긴다.
 //!
-//! - `job.new` 는 `pane.new` 처럼 대화형 로그인 셸이 `command` 를 실행하는 세션을 80×24 로 띄운다. 답의
-//!   `session` 은 그 세션의 id 다. `name` 은 1~64자의 영숫자·`.`·`_`·`-` 이고 영숫자로
-//!   시작하며 세션 id 모양이 아니어야 한다(`target` 이 둘 다 받으므로). 같은 cell 에서 그 이름의
+//! - `job.new` 는 `pane.new` 처럼 대화형 로그인 셸이 `command` 를 실행하는 pty 를 80×24 로 띄운다. 답의
+//!   `pty` 는 그 pty 의 id 다. `name` 은 1~64자의 영숫자·`.`·`_`·`-` 이고 영숫자로
+//!   시작하며 pty id 모양이 아니어야 한다(`target` 이 둘 다 받으므로). 같은 cell 에서 그 이름의
 //!   job 이 돌고 있으면 -32001 `job_name_taken`, 끝났으면 그 job 을 지우고 띄운다.
 //! - 셸이 끝나도 job 은 목록에 남고 `job.read` 로 출력을 읽을 수 있다. `job.kill` 하거나, 같은 이름으로
 //!   `job.new` 하거나, cell 이 닫히면 빠진다. `code`·`signal` 은 끝난 job 의 종료 상태이고 돌고
 //!   있으면 null 이다.
-//! - `target` 이 `s-` 와 hex 8자리면 세션 id 로, 아니면 이름으로 찾는다. 없으면 `invalid_params` 다.
+//! - `target` 이 `p-` 와 hex 8자리면 pty id 로, 아니면 이름으로 찾는다. 없으면 `invalid_params` 다.
 //! - `job.read` 는 스크롤백과 화면을 스타일 없는 글자로 돌려준다. 화면 폭에서 접힌 줄은 잇는다.
 //! - `job.send` 는 `text` 를 그대로 입력한다(Enter 는 CLI 가 붙인다). 끝난 job 이면 -32001
 //!   `job_exited` 다. 프로그램이 입력을 읽지 않아 8초 안에 다 쓰지 못하면 `internal_error` 로 답하지만,
-//!   입력은 세션에 남아 프로그램이 읽을 때 들어간다. 줄 단위로 읽는 프로그램에는 PTY 의 줄 버퍼
+//!   입력은 pty 에 남아 프로그램이 읽을 때 들어간다. 줄 단위로 읽는 프로그램에는 PTY 의 줄 버퍼
 //!   (`MAX_CANON`, macOS 에서 1024바이트)를 넘는 한 줄이 닿지 않는다.
 //! - `job.kill` 은 돌고 있으면 끝내고, 끝난 뒤 목록에서 지우고 답한다.
 //!
-//! `app.restart` 는 터미널 세션을 끄지 않고 앱을 다시 띄운다. 다시 뜬 앱은 workspace·cell·pane 을
-//! 되살리고 같은 세션에 다시 붙는다. 앱은 답을 보낸 뒤에 끝난다. 설치된 앱이 떠 있는 세션과 세션
-//! 프로토콜 버전이 다르면 다시 뜬 앱은 그 세션에 붙지 못한다. 이때 `kill_sessions` 가 true 가 아니면
-//! 재시작하지 않고 -32001 `sessions_would_end` 로 답한다(`data.sessions` 는 꺼질 세션 수). `kill_sessions`
-//! 가 true 면 재시작하고 다시 뜬 앱이 그 세션을 끈다. 재시작할 수 없으면(dev 서버로 띄웠거나 창이 아직
+//! `app.restart` 는 pty 를 끄지 않고 앱을 다시 띄운다. 다시 뜬 앱은 workspace·cell·pane 을
+//! 되살리고 같은 pty 에 다시 붙는다. 앱은 답을 보낸 뒤에 끝난다. 설치된 앱의 `maru-pty` 와
+//! 떠 있는 pty 의 프로토콜 버전이 다르면 다시 뜬 앱은 그 pty 에 붙지 못한다.
+//! 이때 `kill_ptys` 가 true 가 아니면 재시작하지 않고 -32001 `ptys_would_end` 로 답한다(`data.ptys` 는 꺼질 pty 수). `kill_ptys`
+//! 가 true 면 재시작하고 다시 뜬 앱이 그 pty 를 끈다. 재시작할 수 없으면(dev 서버로 띄웠거나 창이 아직
 //! 배치를 알리지 않았으면) -32001 `restart_unavailable` 로 답한다. 되살릴 화면을 저장하지 못하면 재시작하지
 //! 않고 `internal_error` 로 답한다.
 //!
 //! `monitor.subscribe` 는 `result` 를 보낸 뒤 연결을 닫지 않고, 알림이 생길 때마다
 //! `{"jsonrpc":"2.0","method":"monitor.event","params":<알림>}` 한 줄을 보낸다. 이 연결은 10초 끊기가
 //! 없고, 어느 쪽이든 닫으면 구독이 풀린다. `ancestors` 는 구독하는 프로세스의 부모부터 위로 올라간 pid
-//! 들이고, 그 세션의 셸 pid 가 없으면 `invalid_params` 로 거절한다. 알림은 `event` 로 종류를 가리는
+//! 들이고, 그 pty 의 셸 pid 가 없으면 `invalid_params` 로 거절한다. 알림은 `event` 로 종류를 가리는
 //! 객체다. 알림의 종류는 `method` 가 아니라 `event` 로 더한다 — 재시작 뒤에도 도는 이전
 //! `maru claude monitor` 는 모르는 `method` 를 버린다.
 //!
-//! - inbox 의 알림은 `{"event":"inbox","from":<보낸 세션 id>,"body":<본문>}` 이고, 본문이 240 코드
+//! - inbox 의 알림은 `{"event":"inbox","from":<보낸 pty id>,"body":<본문>}` 이고, 본문이 240 코드
 //!   포인트를 넘으면 앞 240 만 싣고 `"truncated":true` 와 `"note"`(`maru inbox read` 안내)를 붙인다.
-//! - job 의 셸이 스스로 끝나면 그 job 을 띄운 세션에 `{"event":"job","session":<job 의 세션 id>,
-//!   "name":<이름, 없으면 뺀다>,"code","signal"}` 을 보낸다. 그 세션에 구독이 없으면 보류했다가
+//! - job 의 셸이 스스로 끝나면 그 job 을 띄운 pty 에 `{"event":"job","pty":<job 의 pty id>,
+//!   "name":<이름, 없으면 뺀다>,"code","signal"}` 을 보낸다. 그 pty 에 구독이 없으면 보류했다가
 //!   구독이 생길 때 보낸다. `job.kill` 이나 cell 닫기로 끝난 job 은 알리지 않는다.
 //!
 //! # claude monitor
@@ -224,14 +224,14 @@ enum ClaudeCommand {
 
 #[derive(Subcommand)]
 enum InboxCommand {
-    /// Send a message to another terminal session.
+    /// Send a message to another terminal.
     ///
     /// Reads MESSAGE, or stdin when MESSAGE is omitted or `-`. A claude running in that
     /// terminal gets it as a notification, cut after 240 characters; `maru inbox read` there
     /// shows the whole message.
     Push {
-        /// Session id of the receiving terminal, e.g. s-1a2b3c4d.
-        session: String,
+        /// Pty id of the receiving terminal, e.g. p-1a2b3c4d.
+        pty: String,
         /// Message text. It may start with `-`.
         #[arg(allow_hyphen_values = true)]
         message: Option<String>,
@@ -245,7 +245,7 @@ enum PaneCommand {
     /// Split this terminal's pane and run COMMAND in the new pane, or a shell when COMMAND
     /// is omitted. The pane closes when COMMAND exits. Focus stays where it is.
     ///
-    /// Prints the new pane's session id; `maru inbox push` sends messages to it and
+    /// Prints the new pane's pty id; `maru inbox push` sends messages to it and
     /// `maru pane close` closes it. Options go before COMMAND; everything from COMMAND on is
     /// passed to COMMAND. Use `sh -c '...'` for a pipeline.
     New {
@@ -263,10 +263,10 @@ enum PaneCommand {
         #[arg(trailing_var_arg = true)]
         command: Vec<String>,
     },
-    /// Close the pane of a terminal session, any pane in this window.
+    /// Close the pane of a pty, any pane in this window.
     Close {
-        /// Session id of the pane to close, e.g. s-1a2b3c4d.
-        session: String,
+        /// Pty id of the pane to close, e.g. p-1a2b3c4d.
+        pty: String,
     },
 }
 
@@ -276,7 +276,7 @@ enum CellCommand {
     /// COMMAND is omitted. The cell closes when COMMAND exits. Focus and the selected cell stay
     /// where they are.
     ///
-    /// Prints the new pane's session id; `maru inbox push` sends messages to it and
+    /// Prints the new pane's pty id; `maru inbox push` sends messages to it and
     /// `maru pane close` closes it. Cells opened from the same cell follow it in the order they
     /// were opened. Options go before COMMAND; everything from COMMAND on is passed
     /// to COMMAND. Use `sh -c '...'` for a pipeline.
@@ -295,7 +295,7 @@ enum JobCommand {
     /// Run COMMAND in a terminal that is not shown. The job belongs to this terminal's cell
     /// and ends when the cell closes.
     ///
-    /// Prints the job's session id. Options go before COMMAND; everything from COMMAND on is
+    /// Prints the job's pty id. Options go before COMMAND; everything from COMMAND on is
     /// passed to COMMAND. A job that exits on its own stays listed with its output, and this
     /// terminal gets a `job` notification. A name that a running job holds is refused; a
     /// job that has exited gives its name to the new one.
@@ -314,7 +314,7 @@ enum JobCommand {
     List,
     /// Print a job's scrollback and screen as text.
     Read {
-        /// Job name or session id.
+        /// Job name or pty id.
         job: String,
     },
     /// Type TEXT into a job and press Enter.
@@ -325,7 +325,7 @@ enum JobCommand {
         /// Do not press Enter after TEXT.
         #[arg(long)]
         no_enter: bool,
-        /// Job name or session id.
+        /// Job name or pty id.
         job: String,
         /// Text to type. It may start with `-`.
         #[arg(allow_hyphen_values = true)]
@@ -333,7 +333,7 @@ enum JobCommand {
     },
     /// End a job if it is running and remove it from the list.
     Kill {
-        /// Job name or session id.
+        /// Job name or pty id.
         job: String,
     },
 }
@@ -344,11 +344,11 @@ enum AppCommand {
     /// workspaces, cells and panes and reattaches them to their terminals.
     ///
     /// Refuses when the installed app cannot reattach to the running terminals; pass
-    /// --kill-sessions to restart anyway and end them.
+    /// --kill-ptys to restart anyway and end them.
     Restart {
         /// Restart even if the terminals would end.
         #[arg(long)]
-        kill_sessions: bool,
+        kill_ptys: bool,
     },
 }
 
@@ -396,8 +396,8 @@ fn main() -> ExitCode {
 fn run(command: Command) -> Result<()> {
     match command {
         Command::Ping => {
-            let session = session_of(call(&target()?, "ping", Map::new())?)?;
-            writeln!(std::io::stdout(), "pong (session {session})")?;
+            let pty = pty_of(call(&target()?, "ping", Map::new())?)?;
+            writeln!(std::io::stdout(), "pong (pty {pty})")?;
         }
         Command::Canvas {
             command: CanvasCommand::Put { id, title, file },
@@ -406,7 +406,7 @@ fn run(command: Command) -> Result<()> {
             writeln!(std::io::stdout(), "{id}")?;
         }
         Command::Inbox { command } => match command {
-            InboxCommand::Push { session, message } => inbox_push(session, message)?,
+            InboxCommand::Push { pty, message } => inbox_push(pty, message)?,
             InboxCommand::Read => inbox_read()?,
         },
         Command::Pane { command } => match command {
@@ -416,23 +416,23 @@ fn run(command: Command) -> Result<()> {
                 full,
                 command,
             } => {
-                let session = pane_new(cwd, down, full, command)?;
-                writeln!(std::io::stdout(), "{session}")?;
+                let pty = pane_new(cwd, down, full, command)?;
+                writeln!(std::io::stdout(), "{pty}")?;
             }
-            PaneCommand::Close { session } => {
-                call(&target()?, "pane.close", target_params(session))?;
+            PaneCommand::Close { pty } => {
+                call(&target()?, "pane.close", target_params(pty))?;
             }
         },
         Command::Cell {
             command: CellCommand::New { cwd, command },
         } => {
-            let session = cell_new(cwd, command)?;
-            writeln!(std::io::stdout(), "{session}")?;
+            let pty = cell_new(cwd, command)?;
+            writeln!(std::io::stdout(), "{pty}")?;
         }
         Command::Job { command } => match command {
             JobCommand::New { name, cwd, command } => {
-                let session = job_new(name, cwd, command)?;
-                writeln!(std::io::stdout(), "{session}")?;
+                let pty = job_new(name, cwd, command)?;
+                writeln!(std::io::stdout(), "{pty}")?;
             }
             JobCommand::List => job_list()?,
             JobCommand::Read { job } => {
@@ -456,10 +456,10 @@ fn run(command: Command) -> Result<()> {
             }
         },
         Command::App {
-            command: AppCommand::Restart { kill_sessions },
+            command: AppCommand::Restart { kill_ptys },
         } => {
             let mut params = Map::new();
-            params.insert("kill_sessions".into(), kill_sessions.into());
+            params.insert("kill_ptys".into(), kill_ptys.into());
             call(&target()?, "app.restart", params)?;
         }
         Command::Claude { command } => match command {
@@ -481,11 +481,11 @@ fn claude_hook() -> Result<()> {
     if event == "SessionStart" {
         write!(
             std::io::stdout(),
-            "You are in AI Maru terminal session {}. Messages from other sessions arrive as\n\
-             monitor notifications. Send: `maru inbox push <session> <message>`. Unread: `maru inbox read`.\n\
+            "You are in AI Maru pty {}. Messages from other ptys arrive as\n\
+             monitor notifications. Send: `maru inbox push <pty> <message>`. Unread: `maru inbox read`.\n\
              Background processes (dev servers, builds, watchers): `maru job new --name <name> <command>`.\n\
              When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n",
-            target.session
+            target.pty
         )?;
     }
     Ok(())
@@ -753,7 +753,7 @@ fn inbox_push(to: String, message: Option<String>) -> Result<()> {
     let text = match message.filter(|m| m != "-") {
         Some(text) => text,
         None => read_stdin(
-            "give a MESSAGE or pipe the message into stdin, e.g. `maru inbox push s-1a2b3c4d hello`",
+            "give a MESSAGE or pipe the message into stdin, e.g. `maru inbox push p-1a2b3c4d hello`",
         )?,
     };
     if text.trim().is_empty() {
@@ -795,7 +795,7 @@ fn pane_new(cwd: Option<PathBuf>, down: bool, full: bool, command: Vec<String>) 
     if !command.is_empty() {
         params.insert("command".into(), command.into());
     }
-    session_of(call(&target, "pane.new", params)?)
+    pty_of(call(&target, "pane.new", params)?)
 }
 
 fn cell_new(cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
@@ -805,7 +805,7 @@ fn cell_new(cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
     if !command.is_empty() {
         params.insert("command".into(), command.into());
     }
-    session_of(call(&target, "cell.new", params)?)
+    pty_of(call(&target, "cell.new", params)?)
 }
 
 fn job_new(name: Option<String>, cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
@@ -816,13 +816,13 @@ fn job_new(name: Option<String>, cwd: Option<PathBuf>, command: Vec<String>) -> 
     if let Some(name) = name {
         params.insert("name".into(), name.into());
     }
-    session_of(call(&target, "job.new", params)?)
+    pty_of(call(&target, "job.new", params)?)
 }
 
-fn session_of(result: Value) -> Result<String> {
-    match result["session"].as_str() {
-        Some(session) => Ok(session.to_owned()),
-        None => bail!("the app answered without a session: {result}"),
+fn pty_of(result: Value) -> Result<String> {
+    match result["pty"].as_str() {
+        Some(pty) => Ok(pty.to_owned()),
+        None => bail!("the app answered without a pty: {result}"),
     }
 }
 
@@ -870,7 +870,7 @@ fn job_list() -> Result<()> {
         writeln!(std::io::stderr(), "no jobs")?;
         return Ok(());
     }
-    let header = ["SESSION", "NAME", "STATE", "COMMAND"].map(String::from);
+    let header = ["PTY", "NAME", "STATE", "COMMAND"].map(String::from);
     let mut widths = [0; 3];
     for row in std::iter::once(&header).chain(&rows) {
         for (w, cell) in widths.iter_mut().zip(row) {
@@ -889,7 +889,7 @@ fn job_list() -> Result<()> {
 
 fn job_row(job: &Value) -> Result<[String; 4]> {
     let fail = || anyhow!("the app answered with a job it cannot print: {job}");
-    let session = job["session"].as_str().ok_or_else(fail)?;
+    let pty = job["pty"].as_str().ok_or_else(fail)?;
     let name = match &job["name"] {
         Value::Null => "-",
         Value::String(name) => name,
@@ -914,7 +914,7 @@ fn job_row(job: &Value) -> Result<[String; 4]> {
         (Some("exited"), None, Some(signal)) => format!("signal {signal}"),
         _ => return Err(fail()),
     };
-    Ok([session.to_owned(), name.to_owned(), state, command])
+    Ok([pty.to_owned(), name.to_owned(), state, command])
 }
 
 /// 셸에 다시 넣으면 같은 인자가 되게 쓴다.
@@ -961,19 +961,19 @@ fn env_var(name: &str) -> Option<String> {
 
 struct Target {
     socket: String,
-    session: String,
+    pty: String,
 }
 
 fn target() -> Result<Target> {
-    let (Some(socket), Some(session)) = (env_var("MARU_SOCKET"), env_var("MARU_SESSION_ID")) else {
-        bail!("not inside an AI Maru terminal (MARU_SOCKET and MARU_SESSION_ID are not set)");
+    let (Some(socket), Some(pty)) = (env_var("MARU_SOCKET"), env_var("MARU_PTY_ID")) else {
+        bail!("not inside an AI Maru terminal (MARU_SOCKET and MARU_PTY_ID are not set)");
     };
-    Ok(Target { socket, session })
+    Ok(Target { socket, pty })
 }
 
 fn request_line(target: &Target, method: &str, mut params: Map<String, Value>) -> String {
     params.insert("protocol_version".into(), PROTOCOL_VERSION.into());
-    params.insert("session".into(), target.session.as_str().into());
+    params.insert("pty".into(), target.pty.as_str().into());
     let request = json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params });
     let mut line = request.to_string();
     line.push('\n');

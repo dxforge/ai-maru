@@ -57,12 +57,12 @@ const workspaces = createWorkspaces(window.maru.gitHead, window.maru.foregroundC
 
 const statuses = createProgramStatuses()
 // zsh 는 프롬프트마다 cwd 를 알려 와 그때 branch 를 다시 읽지만, Claude 를 띄운 pane 에는 프롬프트가 뜨지 않아
-// 루트 레코드의 상태가 바뀔 때와 세션이 `foreground` 로 디렉토리 이동을 알릴 때 읽는다. 한 턴에 `msg` 만 다른
+// 루트 레코드의 상태가 바뀔 때와 pty 가 `foreground` 로 디렉토리 이동을 알릴 때 읽는다. 한 턴에 `msg` 만 다른
 // working 보고가 여러 번 오므로 레코드가 올 때마다 읽지는 않는다.
-function onProgramStatus(session: string, records: ProgramStatusRecord[]): void {
-  const was = statuses.state(session)
-  statuses.set(session, records)
-  if (statuses.state(session) !== was) workspaces.refreshSession(session)
+function onProgramStatus(pty: string, records: ProgramStatusRecord[]): void {
+  const was = statuses.state(pty)
+  statuses.set(pty, records)
+  if (statuses.state(pty) !== was) workspaces.refreshPty(pty)
 }
 const home = window.maru.home
 
@@ -157,7 +157,7 @@ function closePane(): void {
   void focusSelected()
 }
 
-// `maru pane new`·`maru cell new` 로 열어 세션이 뜨기를 기다리는 pane → 답할 요청 id.
+// `maru pane new`·`maru cell new` 로 열어 pty 가 뜨기를 기다리는 pane → 답할 요청 id.
 const paneRequests = new Map<number, number>()
 
 function answerPaneRequest(pane: number, reply: PaneReply): void {
@@ -167,16 +167,13 @@ function answerPaneRequest(pane: number, reply: PaneReply): void {
   window.maru.paneReply(id, reply)
 }
 
-function removePane(
-  pane: number,
-  message = 'the pane was closed before its session started'
-): void {
-  // 세션이 스스로 끝나 닫는 pane 도 kill 을 보낸다 — docs/architecture.md 의
-  // "main 이 아는 세션의 cell". 이미 끝난 세션의 kill 은 세션 소켓에 닿지 못해 아무것도 하지 않는다(`main/session.ts` 의 `requestKill`).
+function removePane(pane: number, message = 'the pane was closed before its pty started'): void {
+  // pty 가 스스로 끝나 닫는 pane 도 kill 을 보낸다 — docs/architecture.md 의
+  // "main 이 아는 pty 의 cell". 이미 끝난 pty 의 kill 은 pty 소켓에 닿지 못해 아무것도 하지 않는다(`main/pty.ts` 의 `requestKill`).
   terminals.get(pane)?.kill()
   answerPaneRequest(pane, { error: 'open_failed', message })
-  const session = workspaces.pane(pane)?.sessionId
-  if (session) statuses.remove(session)
+  const pty = workspaces.pane(pane)?.ptyId
+  if (pty) statuses.remove(pty)
   workspaces.closePane(pane)
 }
 
@@ -191,14 +188,14 @@ function linkFailed(reason: string): void {
   toasts.put('link', { level: 'warning', title: "Couldn't open the link", lines: [reason] })
 }
 
-const noPane = (session: string): PaneReply => ({
+const noPane = (pty: string): PaneReply => ({
   error: 'no_pane',
-  message: `no pane for session ${session}`
+  message: `no pane for pty ${pty}`
 })
 
-window.maru.onPaneNew((id, { session, cwd, direction, command, full }) => {
-  const from = workspaces.paneBySession(session)
-  if (!from) return window.maru.paneReply(id, noPane(session))
+window.maru.onPaneNew((id, { pty, cwd, direction, command, full }) => {
+  const from = workspaces.paneByPty(pty)
+  if (!from) return window.maru.paneReply(id, noPane(pty))
   if (!roomFor(from.key, direction, full)) {
     return window.maru.paneReply(id, { error: 'no_space', message: 'no space for a new pane' })
   }
@@ -209,7 +206,7 @@ window.maru.onCellNew((id, { cell, cwd, command }) => {
   paneRequests.set(workspaces.openCellFrom(cell, { startDir: cwd, command }), id)
 })
 
-// `pane:cancel` 은 main 이 시간 초과한 요청의 id 를 싣는다. 그 요청으로 열어 아직 세션을 기다리는 pane 을 닫는다
+// `pane:cancel` 은 main 이 시간 초과한 요청의 id 를 싣는다. 그 요청으로 열어 아직 pty 를 기다리는 pane 을 닫는다
 // (docs/architecture.md 의 "시간 초과한 pane 요청은 창이 취소한다").
 window.maru.onPaneCancel((id) => {
   for (const [pane, request] of paneRequests) {
@@ -217,10 +214,10 @@ window.maru.onPaneCancel((id) => {
   }
 })
 
-window.maru.onPaneClose((id, session) => {
-  const pane = workspaces.paneBySession(session)
-  if (!pane) return window.maru.paneReply(id, noPane(session))
-  // 자기 pane 을 닫는 CLI 는 세션과 함께 끝나므로 끄기 전에 답한다.
+window.maru.onPaneClose((id, pty) => {
+  const pane = workspaces.paneByPty(pty)
+  if (!pane) return window.maru.paneReply(id, noPane(pty))
+  // 자기 pane 을 닫는 CLI 는 pty 와 함께 끝나므로 끄기 전에 답한다.
   window.maru.paneReply(id, null)
   removePane(pane.key)
 })
@@ -403,7 +400,7 @@ function bodyHeight(b: Box, row: number): number {
 }
 
 function placements(layout: Layout, size: Size | undefined, widths: Widths, cell: Size) {
-  // 영역을 재기 전의 첫 렌더는 비율로 그린다. 0×0 으로 그리면 터미널이 그 크기로 세션을 연다.
+  // 영역을 재기 전의 첫 렌더는 비율로 그린다. 0×0 으로 그리면 터미널이 그 크기로 pty 를 연다.
   if (!size)
     return new Map(
       [...rects(layout, widths)].map(([pane, r]) => [
@@ -501,7 +498,7 @@ const URGENCY = ['blocked', 'error', 'done', 'working', 'idle'] as const
 const urgent = computed(() => {
   const map = new Map<number, (typeof URGENCY)[number]>()
   for (const c of workspaces.cells()) {
-    const states = new Set(c.panes.map((p) => statuses.state(p.sessionId)))
+    const states = new Set(c.panes.map((p) => statuses.state(p.ptyId)))
     const state = URGENCY.find((s) => states.has(s))
     if (state) map.set(c.key, state)
   }
@@ -626,7 +623,7 @@ void window.maru.restoreScreen().then((s) => {
     workspaces.open()
   }
   watch(screen, window.maru.saveScreen, { immediate: true })
-  // 되살린 터미널이 `session:open` 을 보낸 다음 tick 에 부른다(docs/architecture.md 의 "pane 요청은 창이 준비된 뒤에 넘긴다").
+  // 되살린 터미널이 `pty:open` 을 보낸 다음 tick 에 부른다(docs/architecture.md 의 "pane 요청은 창이 준비된 뒤에 넘긴다").
   void nextTick(window.maru.paneReady)
 })
 </script>
@@ -692,7 +689,7 @@ void window.maru.restoreScreen().then((s) => {
             @focusin="focusPane(c.key, p.key)"
           >
             <PaneHeader
-              :status="statuses.root(p.sessionId)"
+              :status="statuses.root(p.ptyId)"
               :pane="p"
               :focused="active"
               @mousedown.prevent="terminals.get(p.key)?.focus()"
@@ -700,7 +697,7 @@ void window.maru.restoreScreen().then((s) => {
             <div class="body" :style="body">
               <TerminalView
                 :ref="(t) => setTerminal(p.key, t)"
-                :session-id="p.sessionId"
+                :pty-id="p.ptyId"
                 :cell-id="c.id"
                 :start-dir="p.startDir"
                 :command="p.command"
@@ -711,10 +708,10 @@ void window.maru.restoreScreen().then((s) => {
                 :theme="terminalTheme"
                 @exit="removePane(p.key)"
                 @failed="(message) => paneFailed(p.key, message)"
-                @spawned="answerPaneRequest(p.key, { session: p.sessionId })"
+                @spawned="answerPaneRequest(p.key, { pty: p.ptyId })"
                 @cwd="(dir) => workspaces.setCwd(p.key, dir)"
-                @program-status="(records) => onProgramStatus(p.sessionId, records)"
-                @foreground="workspaces.refreshSession(p.sessionId)"
+                @program-status="(records) => onProgramStatus(p.ptyId, records)"
+                @foreground="workspaces.refreshPty(p.ptyId)"
                 @link-failed="linkFailed"
                 @title="(title) => workspaces.setTitle(p.key, title)"
                 @cell="(size, floored) => setCell(fontOf(c), size, floored)"

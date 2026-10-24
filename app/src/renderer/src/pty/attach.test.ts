@@ -1,7 +1,7 @@
 import type { Terminal } from '@xterm/xterm'
 import { describe, expect, it } from 'vitest'
 import { attach } from './attach'
-import type { SessionConnection, SessionMessage } from './connection'
+import type { PtyConnection, PtyMessage } from './connection'
 
 function fakeTerminal(cols: number, rows: number) {
   const term = {
@@ -32,15 +32,15 @@ function fakeTerminal(cols: number, rows: number) {
 }
 
 function fakeConnection() {
-  let deliver: (msg: SessionMessage) => void = () => {}
+  let deliver: (msg: PtyMessage) => void = () => {}
   let close: () => void = () => {}
-  const conn: SessionConnection = {
+  const conn: PtyConnection = {
     send: () => {},
     onMessage: (cb) => (deliver = cb),
     onClose: (cb) => (close = cb),
     kill: () => {}
   }
-  return { conn, deliver: (msg: SessionMessage) => deliver(msg), close: () => close() }
+  return { conn, deliver: (msg: PtyMessage) => deliver(msg), close: () => close() }
 }
 
 const handlers = {
@@ -54,16 +54,16 @@ const handlers = {
 describe('attach', () => {
   it('붙기 전의 입력은 attach 요청 뒤에 보내고, 붙기 전의 resize 는 보내지 않는다', () => {
     const term = fakeTerminal(80, 24)
-    const sent: SessionMessage[] = []
-    const conn: SessionConnection = { ...fakeConnection().conn, send: (msg) => sent.push(msg) }
-    const session = attach(term as unknown as Terminal, conn, handlers)
+    const sent: PtyMessage[] = []
+    const conn: PtyConnection = { ...fakeConnection().conn, send: (msg) => sent.push(msg) }
+    const pty = attach(term as unknown as Terminal, conn, handlers)
     term.type('a')
     term.binary('m')
     term.resize(100, 24)
     term.resized({ cols: 100, rows: 24 })
     expect(sent).toEqual([])
-    session.start()
-    session.start()
+    pty.start()
+    pty.start()
     term.type('b')
     expect(
       sent.map((m) => (typeof m === 'string' ? JSON.parse(m) : new TextDecoder().decode(m)))
@@ -87,7 +87,7 @@ describe('attach', () => {
     expect([term.cols, term.rows]).toEqual([100, 30])
   })
 
-  // 출력이 이어지는 세션에서는 재생과 그 뒤 출력이 한 메시지로 올 수 있다.
+  // 출력이 이어지는 pty 에서는 재생과 그 뒤 출력이 한 메시지로 올 수 있다.
   it('재생이 든 메시지 뒤에 자기 시퀀스를 덧쓰지 않는다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver } = fakeConnection()
@@ -106,7 +106,7 @@ describe('attach', () => {
     expect(term.written).toEqual([replayAndOutput])
   })
 
-  it('되살린 세션이 없으면 이유만 보이고 pane 을 닫거나 실패로 알리지 않는다', () => {
+  it('되살린 pty 가 없으면 이유만 보이고 pane 을 닫거나 실패로 알리지 않는다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver, close } = fakeConnection()
     const calls: string[] = []
@@ -119,7 +119,7 @@ describe('attach', () => {
     deliver(JSON.stringify({ type: 'gone' }))
     close()
     expect(calls).toEqual([])
-    expect(term.written).toEqual(['\r\n[the session ended while the app was restarting]\r\n'])
+    expect(term.written).toEqual(['\r\n[the pty ended while the app was restarting]\r\n'])
   })
 
   it('셸이 끝난 뒤 연결이 닫히면 끊김을 보이지 않는다', () => {
@@ -138,10 +138,10 @@ describe('attach', () => {
     const { conn, close } = fakeConnection()
     attach(term as unknown as Terminal, conn, handlers)
     close()
-    expect(String(term.written)).toContain('disconnected from the session')
+    expect(String(term.written)).toContain('disconnected from the pty')
   })
 
-  it('새로 띄운 세션의 디렉토리를 알리고 터미널에는 쓰지 않는다', () => {
+  it('새로 띄운 pty 의 디렉토리를 알리고 터미널에는 쓰지 않는다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver } = fakeConnection()
     const spawned: string[] = []
@@ -149,12 +149,12 @@ describe('attach', () => {
       ...handlers,
       onSpawned: (id, cwd) => spawned.push(`${id} ${cwd}`)
     })
-    deliver(JSON.stringify({ type: 'spawned', id: 's-1', cwd: '/a b' }))
-    expect(spawned).toEqual(['s-1 /a b'])
+    deliver(JSON.stringify({ type: 'spawned', id: 'p-1', cwd: '/a b' }))
+    expect(spawned).toEqual(['p-1 /a b'])
     expect(term.written).toEqual([])
   })
 
-  it('세션을 띄우지 못했다는 오류만 알리고, 오류는 어느 것이든 터미널에 쓴다', () => {
+  it('pty 를 띄우지 못했다는 오류만 알리고, 오류는 어느 것이든 터미널에 쓴다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver } = fakeConnection()
     const failed: string[] = []
@@ -168,9 +168,9 @@ describe('attach', () => {
     expect(term.written).toHaveLength(2)
   })
 
-  it('세션이 뜨기 전에 exit 없이 닫히면 띄우지 못한 것으로 알리고, 뜬 뒤에 닫히면 알리지 않는다', () => {
+  it('pty 가 뜨기 전에 exit 없이 닫히면 띄우지 못한 것으로 알리고, 뜬 뒤에 닫히면 알리지 않는다', () => {
     for (const [spawnFirst, expected] of [
-      [false, ['disconnected before the session started']],
+      [false, ['disconnected before the pty started']],
       [true, []]
     ] as const) {
       const term = fakeTerminal(80, 24)
@@ -180,7 +180,7 @@ describe('attach', () => {
         ...handlers,
         onOpenFailed: (message) => failed.push(message)
       })
-      if (spawnFirst) deliver(JSON.stringify({ type: 'spawned', id: 's-1', cwd: '/' }))
+      if (spawnFirst) deliver(JSON.stringify({ type: 'spawned', id: 'p-1', cwd: '/' }))
       close()
       expect(failed).toEqual(expected)
     }

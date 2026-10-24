@@ -8,7 +8,7 @@ export const CLI_PROTOCOL_VERSION = 1
 const MAX_LINE = 16 * 1024 * 1024
 const IDLE_MS = 10_000
 
-export type Handlers = Record<string, (params: Record<string, unknown>, session: string) => unknown>
+export type Handlers = Record<string, (params: Record<string, unknown>, pty: string) => unknown>
 export type CliServer = { close: () => Promise<void> }
 
 export class InvalidParams extends Error {}
@@ -98,11 +98,11 @@ async function dispatch(
   if (!handler) {
     return failure(id, -32601, 'unknown_method', `unknown method: ${method}`)
   }
-  if (typeof params.session !== 'string' || params.session === '') {
-    return failure(id, -32602, 'invalid_params', 'params.session must be a session id')
+  if (typeof params.pty !== 'string' || params.pty === '') {
+    return failure(id, -32602, 'invalid_params', 'params.pty must be a pty id')
   }
   try {
-    return { id, result: (await handler(params, params.session)) ?? null }
+    return { id, result: (await handler(params, params.pty)) ?? null }
   } catch (err) {
     if (err instanceof InvalidParams) return failure(id, -32602, 'invalid_params', err.message)
     if (err instanceof CliError) return failure(id, err.code, err.reason, err.message, err.data)

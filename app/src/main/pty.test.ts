@@ -10,26 +10,27 @@ import {
   writeFileSync
 } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
 import { encodeFrame, FrameDecoder } from './frame'
 import {
-  captureSession,
+  capturePty,
   foregroundCwd,
-  killSessions,
+  killPtys,
   readRecord,
+  runDir,
   sameDirAs,
-  sessionEnv,
+  ptyEnv,
   shellEnv,
   socketPath,
-  spawnSession,
+  spawnPty,
   startDir,
   utf8Locale,
-  waitSessionExit,
-  writeSessionInput
-} from './session'
+  waitPtyExit,
+  writePtyInput
+} from './pty'
 
 const hang = vi.hoisted(() => ({ path: undefined as string | undefined }))
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -39,6 +40,22 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     access: (path: string, mode?: number) =>
       path === hang.path ? new Promise<void>(() => {}) : real.access(path, mode)
   }
+})
+
+describe('runDir', () => {
+  it('MARU_RUN_DIR 가 없거나 비었으면 ~/.ai-maru/run 아래, userData 경로의 해시 8자리 디렉토리다', () => {
+    const want = join(homedir(), '.ai-maru', 'run', '6a50dc85')
+    expect(runDir('/a', {})).toBe(want)
+    expect(runDir('/a', { MARU_RUN_DIR: '' })).toBe(want)
+  })
+
+  it('MARU_RUN_DIR 가 있으면 그 아래다', () => {
+    expect(runDir('/a', { MARU_RUN_DIR: '/r' })).toBe('/r/6a50dc85')
+  })
+
+  it('userData 가 다르면 디렉토리도 다르다', () => {
+    expect(runDir('/a', {})).not.toBe(runDir('/b', {}))
+  })
 })
 
 describe('utf8Locale', () => {
@@ -59,9 +76,9 @@ describe('utf8Locale', () => {
   })
 })
 
-describe('sessionEnv', () => {
+describe('ptyEnv', () => {
   it('앱을 띄운 쪽의 Claude Code·tmux 세션 값은 빼고 나머지는 넘긴다', () => {
-    const env = sessionEnv({
+    const env = ptyEnv({
       PATH: '/bin',
       HOME: '/h',
       CLAUDECODE: '1',
@@ -76,29 +93,29 @@ describe('sessionEnv', () => {
     'CLAUDE_CONFIG_DIR',
     'CLAUDE_CODE_SESSION_ID',
     'ANTHROPIC_BASE_URL',
-    'MARU_SESSION_BIN',
+    'MARU_PTY_BIN',
     'ELECTRON_RENDERER_URL'
   ])('%s 처럼 앱·claude·Electron 의 접두사로 시작하는 값은 뺀다', (name) => {
-    expect(sessionEnv({ PATH: '/bin', [name]: 'x' })).toEqual({ PATH: '/bin' })
+    expect(ptyEnv({ PATH: '/bin', [name]: 'x' })).toEqual({ PATH: '/bin' })
   })
 
   it('접두사가 이름 중간에 있는 값과 AI_MARU_ 로 시작하는 값은 넘긴다', () => {
     const env = { MY_CLAUDE_X: 'x', XMARU_Y: 'y', AI_MARU_TTY: 't' }
-    expect(sessionEnv(env)).toEqual(env)
+    expect(ptyEnv(env)).toEqual(env)
   })
 })
 
 describe('shellEnv', () => {
-  const cli = { socket: '/data/s/app.sock', bin: '/build/bin/maru' }
+  const cli = { socket: '/run/app.sock', bin: '/build/bin/maru' }
   const setup = { cli, zdotdir: '/res/zsh', claudePlugin: '/res/claude-plugin' }
 
-  it('앱 소켓과 세션 id, CLI 와 claude plugin 의 경로를 넣고 CLI 의 디렉토리를 PATH 앞에 붙인다', () => {
-    const env = shellEnv({ PATH: '/usr/bin:/bin', HOME: '/h' }, 's-1', setup)
+  it('앱 소켓과 pty id, CLI 와 claude plugin 의 경로를 넣고 CLI 의 디렉토리를 PATH 앞에 붙인다', () => {
+    const env = shellEnv({ PATH: '/usr/bin:/bin', HOME: '/h' }, 'p-1', setup)
     expect(env).toEqual({
       PATH: '/build/bin:/usr/bin:/bin',
       HOME: '/h',
-      MARU_SOCKET: '/data/s/app.sock',
-      MARU_SESSION_ID: 's-1',
+      MARU_SOCKET: '/run/app.sock',
+      MARU_PTY_ID: 'p-1',
       MARU_CLI: '/build/bin/maru',
       MARU_CLAUDE_PLUGIN: '/res/claude-plugin',
       ZDOTDIR: '/res/zsh',
@@ -112,18 +129,18 @@ describe('shellEnv', () => {
       {
         PATH: '/bin',
         MARU_SOCKET: '/outer.sock',
-        MARU_SESSION_ID: 's-outer',
+        MARU_PTY_ID: 'p-outer',
         MARU_CLI: '/outer/maru',
         MARU_CLAUDE_PLUGIN: '/outer/plugin',
         COLORTERM: 'outer',
         CLAUDE_CODE_FORCE_STRIKETHROUGH: 'outer'
       },
-      's-1',
+      'p-1',
       setup
     )
     expect(env).toMatchObject({
-      MARU_SOCKET: '/data/s/app.sock',
-      MARU_SESSION_ID: 's-1',
+      MARU_SOCKET: '/run/app.sock',
+      MARU_PTY_ID: 'p-1',
       MARU_CLI: '/build/bin/maru',
       MARU_CLAUDE_PLUGIN: '/res/claude-plugin',
       COLORTERM: 'truecolor',
@@ -132,15 +149,15 @@ describe('shellEnv', () => {
   })
 
   it('물려받은 ZDOTDIR 대신 앱의 zsh 디렉토리를 넣는다', () => {
-    expect(shellEnv({ ZDOTDIR: '/outer' }, 's-1', setup).ZDOTDIR).toBe('/res/zsh')
+    expect(shellEnv({ ZDOTDIR: '/outer' }, 'p-1', setup).ZDOTDIR).toBe('/res/zsh')
   })
 
   it('PATH 가 없으면 CLI 의 디렉토리만 둔다', () => {
-    expect(shellEnv({}, 's-1', setup).PATH).toBe('/build/bin')
+    expect(shellEnv({}, 'p-1', setup).PATH).toBe('/build/bin')
   })
 
-  it('띄운 쪽 세션의 값은 여기서도 뺀다', () => {
-    expect(shellEnv({ PATH: '/bin', ANTHROPIC_BASE_URL: 'u' }, 's-1', setup)).not.toHaveProperty(
+  it('띄운 쪽 pty 의 값은 여기서도 뺀다', () => {
+    expect(shellEnv({ PATH: '/bin', ANTHROPIC_BASE_URL: 'u' }, 'p-1', setup)).not.toHaveProperty(
       'ANTHROPIC_BASE_URL'
     )
   })
@@ -187,30 +204,30 @@ describe('startDir', () => {
   })
 })
 
-describe('killSessions', () => {
-  it('답하지 않는 세션을 기다리다 멈추지 않는다', async () => {
+describe('killPtys', () => {
+  it('답하지 않는 pty 를 기다리다 멈추지 않는다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-kill-'))
     const server = createServer(() => {})
-    await new Promise<void>((r) => server.listen(socketPath(dir, 's-mute'), r))
+    await new Promise<void>((r) => server.listen(socketPath(dir, 'p-mute'), r))
     writeFileSync(
-      join(dir, 's-mute.json'),
+      join(dir, 'p-mute.json'),
       JSON.stringify({
         protocol_version: PROTOCOL_VERSION,
-        id: 's-mute',
+        id: 'p-mute',
         pid: process.pid,
         created_at_ms: 0
       })
     )
     try {
       const started = Date.now()
-      await killSessions(dir, 200)
+      await killPtys(dir, 200)
       expect(Date.now() - started).toBeLessThan(2000)
     } finally {
       server.close()
     }
   })
 
-  async function fakeSession(dir: string, id: string, protocol = PROTOCOL_VERSION) {
+  async function fakePty(dir: string, id: string, protocol = PROTOCOL_VERSION) {
     const killed = { value: false }
     const server = createServer((sock) =>
       sock.on('data', () => {
@@ -226,12 +243,12 @@ describe('killSessions', () => {
     return { killed, close: () => server.close() }
   }
 
-  it('남길 세션은 끄지 않고 나머지는 끈다', async () => {
+  it('남길 pty 는 끄지 않고 나머지는 끈다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-keep-'))
-    const kept = await fakeSession(dir, 's-0000000a')
-    const other = await fakeSession(dir, 's-0000000b')
+    const kept = await fakePty(dir, 'p-0000000a')
+    const other = await fakePty(dir, 'p-0000000b')
     try {
-      await killSessions(dir, 200, new Set(['s-0000000a']))
+      await killPtys(dir, 200, new Set(['p-0000000a']))
       expect(kept.killed.value).toBe(false)
       expect(other.killed.value).toBe(true)
     } finally {
@@ -240,22 +257,22 @@ describe('killSessions', () => {
     }
   })
 
-  it('남길 세션이어도 프로세스까지 없는 레코드는 지운다', async () => {
+  it('남길 pty 여도 프로세스까지 없는 레코드는 지운다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-keep-'))
     const dead = spawnSync('true').pid!
     writeFileSync(
-      join(dir, 's-0000000a.json'),
-      JSON.stringify({ protocol_version: PROTOCOL_VERSION, id: 's-0000000a', pid: dead })
+      join(dir, 'p-0000000a.json'),
+      JSON.stringify({ protocol_version: PROTOCOL_VERSION, id: 'p-0000000a', pid: dead })
     )
-    await killSessions(dir, 200, new Set(['s-0000000a']))
-    expect(existsSync(join(dir, 's-0000000a.json'))).toBe(false)
+    await killPtys(dir, 200, new Set(['p-0000000a']))
+    expect(existsSync(join(dir, 'p-0000000a.json'))).toBe(false)
   })
 
-  it('프로토콜 버전이 다른 세션은 남길 세션이어도 끈다', async () => {
+  it('프로토콜 버전이 다른 pty 는 남길 pty 여도 끈다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-keep-'))
-    const old = await fakeSession(dir, 's-0000000a', PROTOCOL_VERSION + 1)
+    const old = await fakePty(dir, 'p-0000000a', PROTOCOL_VERSION + 1)
     try {
-      await killSessions(dir, 200, new Set(['s-0000000a']))
+      await killPtys(dir, 200, new Set(['p-0000000a']))
       expect(old.killed.value).toBe(true)
     } finally {
       old.close()
@@ -263,7 +280,7 @@ describe('killSessions', () => {
   })
 })
 
-async function frameSession(answer: (req: Record<string, unknown>, sock: Socket) => void): Promise<{
+async function framePty(answer: (req: Record<string, unknown>, sock: Socket) => void): Promise<{
   dir: string
   id: string
   requests: Record<string, unknown>[]
@@ -271,7 +288,7 @@ async function frameSession(answer: (req: Record<string, unknown>, sock: Socket)
   close: () => void
 }> {
   const dir = mkdtempSync(join(tmpdir(), 'maru-ask-'))
-  const id = 's-0000000a'
+  const id = 'p-0000000a'
   const requests: Record<string, unknown>[] = []
   let markClosed = (): void => {}
   const closed = new Promise<void>((r) => (markClosed = r))
@@ -295,13 +312,13 @@ async function frameSession(answer: (req: Record<string, unknown>, sock: Socket)
 const send = (sock: Socket, v: object): void =>
   void sock.write(encodeFrame(TAG_TEXT, Buffer.from(JSON.stringify(v))))
 
-describe('waitSessionExit', () => {
+describe('waitPtyExit', () => {
   it('답의 종료 상태로 끝나고, 기다리는 status 를 보낸다', async () => {
-    const s = await frameSession((_req, sock) =>
+    const s = await framePty((_req, sock) =>
       send(sock, { type: 'status', exit: { code: 1, signal: null } })
     )
     try {
-      expect(await waitSessionExit(s.dir, s.id).exit).toEqual({ code: 1, signal: null })
+      expect(await waitPtyExit(s.dir, s.id).exit).toEqual({ code: 1, signal: null })
       expect(s.requests).toEqual([
         { type: 'status', wait: true, protocol_version: PROTOCOL_VERSION }
       ])
@@ -311,18 +328,18 @@ describe('waitSessionExit', () => {
   })
 
   it('답 없이 닫히면 null 이다', async () => {
-    const s = await frameSession((_req, sock) => sock.end())
+    const s = await framePty((_req, sock) => sock.end())
     try {
-      expect(await waitSessionExit(s.dir, s.id).exit).toBeNull()
+      expect(await waitPtyExit(s.dir, s.id).exit).toBeNull()
     } finally {
       s.close()
     }
   })
 
   it('cancel 하면 null 로 끝나고 연결을 닫는다', async () => {
-    const s = await frameSession(() => {})
+    const s = await framePty(() => {})
     try {
-      const wait = waitSessionExit(s.dir, s.id)
+      const wait = waitPtyExit(s.dir, s.id)
       await vi.waitFor(() => expect(s.requests).toHaveLength(1))
       wait.cancel()
       expect(await wait.exit).toBeNull()
@@ -332,17 +349,15 @@ describe('waitSessionExit', () => {
     }
   })
 
-  it('세션이 없으면 null 이다', async () => {
+  it('pty 가 없으면 null 이다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-ask-'))
-    expect(await waitSessionExit(dir, 's-0000000a').exit).toBeNull()
+    expect(await waitPtyExit(dir, 'p-0000000a').exit).toBeNull()
   })
 })
 
 describe('foregroundCwd', () => {
   it('foreground 프로세스의 cwd 를 청해 돌려준다', async () => {
-    const s = await frameSession((_req, sock) =>
-      send(sock, { type: 'foreground', pid: 7, cwd: '/w' })
-    )
+    const s = await framePty((_req, sock) => send(sock, { type: 'foreground', pid: 7, cwd: '/w' }))
     try {
       expect(await foregroundCwd(s.dir, s.id, 1000)).toBe('/w')
       expect(s.requests[0]).toMatchObject({ type: 'foreground' })
@@ -351,10 +366,8 @@ describe('foregroundCwd', () => {
     }
   })
 
-  it.each([{ cwd: null }, {}])('세션이 cwd 를 모르면(%j) null 이다', async (rest) => {
-    const s = await frameSession((_req, sock) =>
-      send(sock, { type: 'foreground', pid: 7, ...rest })
-    )
+  it.each([{ cwd: null }, {}])('pty 가 cwd 를 모르면(%j) null 이다', async (rest) => {
+    const s = await framePty((_req, sock) => send(sock, { type: 'foreground', pid: 7, ...rest }))
     try {
       expect(await foregroundCwd(s.dir, s.id, 1000)).toBeNull()
     } finally {
@@ -363,14 +376,12 @@ describe('foregroundCwd', () => {
   })
 
   it('오류 답이나 시간 초과는 실패다', async () => {
-    const failing = await frameSession((_req, sock) =>
+    const failing = await framePty((_req, sock) =>
       send(sock, { type: 'error', code: 'unknown_request', message: 'unknown type' })
     )
-    const mute = await frameSession(() => {})
+    const mute = await framePty(() => {})
     try {
-      await expect(foregroundCwd(failing.dir, failing.id, 1000)).rejects.toThrow(
-        'older maru-session'
-      )
+      await expect(foregroundCwd(failing.dir, failing.id, 1000)).rejects.toThrow('older maru-pty')
       await expect(foregroundCwd(mute.dir, mute.id, 50)).rejects.toThrow('did not answer')
     } finally {
       failing.close()
@@ -395,11 +406,11 @@ describe('sameDirAs', () => {
   })
 })
 
-describe('captureSession', () => {
+describe('capturePty', () => {
   it('접힌 줄을 이어 붙인 글자를 청해 돌려준다', async () => {
-    const s = await frameSession((_req, sock) => send(sock, { type: 'capture', text: 'out' }))
+    const s = await framePty((_req, sock) => send(sock, { type: 'capture', text: 'out' }))
     try {
-      expect(await captureSession(s.dir, s.id, 1000)).toBe('out')
+      expect(await capturePty(s.dir, s.id, 1000)).toBe('out')
       expect(s.requests[0]).toMatchObject({ type: 'capture', unwrap: true })
     } finally {
       s.close()
@@ -407,85 +418,85 @@ describe('captureSession', () => {
   })
 
   it('오류 답이나 시간 초과는 실패다', async () => {
-    const failing = await frameSession((_req, sock) =>
+    const failing = await framePty((_req, sock) =>
       send(sock, { type: 'error', code: 'capture_failed', message: 'boom' })
     )
-    const mute = await frameSession(() => {})
+    const mute = await framePty(() => {})
     try {
-      await expect(captureSession(failing.dir, failing.id, 1000)).rejects.toThrow('boom')
-      await expect(captureSession(mute.dir, mute.id, 50)).rejects.toThrow('did not answer')
+      await expect(capturePty(failing.dir, failing.id, 1000)).rejects.toThrow('boom')
+      await expect(capturePty(mute.dir, mute.id, 50)).rejects.toThrow('did not answer')
     } finally {
       failing.close()
       mute.close()
     }
   })
 
-  it('세션이 없으면 시간을 기다리지 않고 없다고 실패한다', async () => {
+  it('pty 가 없으면 시간을 기다리지 않고 없다고 실패한다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-ask-'))
     const started = Date.now()
-    await expect(captureSession(dir, 's-0000000a', 5000)).rejects.toThrow(
-      'session s-0000000a is not running'
+    await expect(capturePty(dir, 'p-0000000a', 5000)).rejects.toThrow(
+      'pty p-0000000a is not running'
     )
     expect(Date.now() - started).toBeLessThan(1000)
   })
 })
 
-describe('writeSessionInput', () => {
+describe('writePtyInput', () => {
   it('받은 글자를 그대로 보내고, 쓴 답과 끝난 답을 가린다', async () => {
     let exited = false
-    const s = await frameSession((_req, sock) =>
+    const s = await framePty((_req, sock) =>
       send(sock, exited ? { type: 'error', code: 'exited' } : { type: 'input' })
     )
     try {
-      expect(await writeSessionInput(s.dir, s.id, 'r\r', 1000)).toBe('written')
+      expect(await writePtyInput(s.dir, s.id, 'r\r', 1000)).toBe('written')
       expect(s.requests[0]).toMatchObject({ type: 'input', text: 'r\r' })
       exited = true
-      expect(await writeSessionInput(s.dir, s.id, 'x', 1000)).toBe('exited')
+      expect(await writePtyInput(s.dir, s.id, 'x', 1000)).toBe('exited')
     } finally {
       s.close()
     }
   })
 
   it('답하지 않으면 시간 안에, 다시 보내지 말라는 말과 함께 실패한다', async () => {
-    const s = await frameSession(() => {})
+    const s = await framePty(() => {})
     try {
-      await expect(writeSessionInput(s.dir, s.id, 'x', 50)).rejects.toThrow('do not send it again')
+      await expect(writePtyInput(s.dir, s.id, 'x', 50)).rejects.toThrow('do not send it again')
     } finally {
       s.close()
     }
   })
 })
 
-describe('spawnSession', () => {
+describe('spawnPty', () => {
   it('keep 이면 명령 앞에 --keep 을 넘긴다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-spawn-'))
-    const bin = join(dir, 'fake-session')
+    const bin = join(dir, 'fake-pty')
     writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(dir, 'args')}"\n`)
     chmodSync(bin, 0o755)
     const setup = { cli: { socket: '/s', bin: '/b/maru' }, zdotdir: '/z', claudePlugin: '/p' }
-    const id = 's-0000000a'
-    expect(await spawnSession(bin, dir, setup, id, '/', ['sh'], { keep: true })).toBe('ended')
+    const id = 'p-0000000a'
+    expect(await spawnPty(bin, dir, setup, id, '/', ['sh'], { keep: true })).toBe('ended')
     const args = readFileSync(join(dir, 'args'), 'utf8').trim().split('\n')
     expect(args.slice(-3)).toEqual(['--keep', '--', 'sh'])
   })
 })
 
 describe('readRecord', () => {
-  it('세션 레코드를 읽고, 없거나 깨졌으면 null 이다', async () => {
+  it('pty 레코드를 읽고, 없거나 깨졌으면 null 이다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-rec-'))
     const rec = {
       protocol_version: 1,
-      id: 's-0000000a',
+      id: 'p-0000000a',
       pid: 1,
       shell_pid: 42,
       created_at_ms: 0
     }
-    writeFileSync(join(dir, 's-0000000a.json'), JSON.stringify(rec))
-    writeFileSync(join(dir, 's-0000000b.json'), '{')
+    writeFileSync(join(dir, 'p-0000000a.json'), JSON.stringify(rec))
+    writeFileSync(join(dir, 'p-0000000b.json'), '{')
     try {
-      expect((await readRecord(dir, 's-0000000a'))?.shell_pid).toBe(42)
-      expect(await readRecord(dir, 's-0000000b')).toBeNull()
-      expect(await readRecord(dir, 's-0000000c')).toBeNull()
+      expect((await readRecord(dir, 'p-0000000a'))?.shell_pid).toBe(42)
+      expect(await readRecord(dir, 'p-0000000b')).toBeNull()
+      expect(await readRecord(dir, 'p-0000000c')).toBeNull()
     } finally {
       rmSync(dir, { recursive: true })
     }

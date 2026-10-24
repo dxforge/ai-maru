@@ -197,7 +197,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "maru-session"
+name = "maru-pty"
 version = "0.1.0"
 dependencies = [
  "anyhow",

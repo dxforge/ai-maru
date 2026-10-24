@@ -1,13 +1,13 @@
 use clap::{CommandFactory, Parser};
-use maru_session::server::{self, Options};
+use maru_pty::server::{self, Options};
 use std::io::Write;
 use std::process::ExitCode;
 
-/// Session process that holds one terminal.
+/// Pty process that holds one terminal.
 #[derive(Parser)]
 #[command(version)]
 struct Args {
-    /// Print the session protocol version and exit.
+    /// Print the protocol version and exit.
     #[arg(long, exclusive = true)]
     protocol_version: bool,
     #[command(flatten)]
@@ -17,7 +17,7 @@ struct Args {
 fn main() -> ExitCode {
     let args = Args::parse();
     if args.protocol_version {
-        let _ = writeln!(std::io::stdout(), "{}", maru_session::PROTOCOL_VERSION);
+        let _ = writeln!(std::io::stdout(), "{}", maru_pty::PROTOCOL_VERSION);
         return ExitCode::SUCCESS;
     }
     let Some(opts) = args.opts else {
@@ -38,7 +38,7 @@ fn main() -> ExitCode {
     match runtime.block_on(server::run(opts)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            let _ = writeln!(std::io::stderr(), "maru-session: {e:#}");
+            let _ = writeln!(std::io::stderr(), "maru-pty: {e:#}");
             ExitCode::FAILURE
         }
     }

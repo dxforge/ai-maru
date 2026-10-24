@@ -13,7 +13,7 @@ fn validate_id(id: &str) -> Result<()> {
             && id
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
-        "session id must be 1-64 alphanumerics, '-' or '_': {id:?}"
+        "pty id must be 1-64 alphanumerics, '-' or '_': {id:?}"
     );
     Ok(())
 }
@@ -69,7 +69,7 @@ mod tests {
         for bad in ["", "a/b", "../x", ".hidden", "a b", "a\0b", &"x".repeat(65)] {
             assert!(validate_id(bad).is_err(), "{bad:?}");
         }
-        assert!(validate_id("sess-78e45dbf").is_ok());
+        assert!(validate_id("p-78e45dbf").is_ok());
     }
 
     #[test]

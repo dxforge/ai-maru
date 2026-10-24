@@ -53,7 +53,7 @@ add-zsh-hook precmd _maru_path
   if [[ -z ${FORCE_HYPERLINK+set} ]]; then
     forced=(FORCE_HYPERLINK=1 MARU_CLAUDE_FORCED_HYPERLINK=1 ZDOTDIR=$_maru_zdotdir)
   fi
-  # claude 가 OSC 7501 의 clear 를 보내지 못하고 죽어도 세션의 레코드가 남지 않게, 끝나면 이 셸이 tty 에
+  # claude 가 OSC 7501 의 clear 를 보내지 못하고 죽어도 pty 의 레코드가 남지 않게, 끝나면 이 셸이 tty 에
   # clear 를 쓴다. stdout 은 파이프일 수 있어 tty 에 쓴다. Ctrl-C 로 셸도 SIGINT 를 받으면 함수의
   # 남은 명령을 건너뛰므로 always 로 둔다.
   {
