@@ -75,11 +75,11 @@
 //!   실린다. 한 연결에 다섯 번을 넘으면 `resync_limit_exceeded` 로 끊는다.
 //! - `{"type":"program_status","records":[{"id","state","kind","progress","app","title",
 //!   "message"}, …]}` — 프로그램이 OSC 7501(Program Status Protocol)로 보고한 레코드 전체.
-//!   바뀔 때마다와 attach·resync 의 재생 뒤에 온다. 클라이언트는 목록을 통째로 바꾼다. `id` 는 루트
+//!   바뀔 때마다 오고, attach·resync 때는 재생 뒤에 온다. 클라이언트는 목록을 통째로 바꾼다. `id` 는 루트
 //!   레코드가 `""` 이고 `/` 로 하위를 나타낸다. `state` 는 `idle`·`working`·`done`·`blocked`·
 //!   `error`, `kind` 는 `permission`·`question`·`auth` 또는 null, `progress` 는 0~100 또는 null,
-//!   문자열은 없으면 `""` 다. 레코드는 보고마다 통째로 바뀌고, `clear` 보고는 그 id 와 하위를(id 가
-//!   없으면 전부) 지우며, 256 개를 넘으면 갱신이 가장 오래된 것부터 지운다. RIS 는 전부 지운다.
+//!   문자열은 없으면 `""` 다. 레코드는 보고마다 통째로 바뀐다. `clear` 보고는 그 id 와 하위를 지우고,
+//!   id 가 없으면 전부 지운다. 256 개를 넘으면 가장 오래전에 갱신된 레코드부터 지운다. RIS 는 전부 지운다.
 //!   새 프롬프트나 프로그램 종료에 지우는 규칙은 없다 — 프로그램(또는 그것을 띄운 셸 함수)이 끝날
 //!   때 `clear` 를 보내야 한다. 지원 질의 `OSC 7501 ; ?` 에는 이 프로세스가 답한다.
 //! - `{"type":"foreground","pid","cwd"}` — 레코드가 하나라도 있는 동안 1초마다 잰 foreground 의

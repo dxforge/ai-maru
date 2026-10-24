@@ -195,8 +195,8 @@ const EXPECT = '/usr/bin/expect'
 
 /**
  * `expect` 의 `spawn` 이 만든 pty 를 controlling tty 로 쥔 zsh 에서 돌린다. `spawnZsh` 의 셸에는 tty 가
- * 없어 `/dev/tty` 에 쓰는 것을 볼 수 없고, `script` 는 자기 stdin 이 tty 여야 돈다. 돌려주는 글은 pty 에
- * 찍힌 것 전부다. 명령은 Tcl 의 따옴표 규칙을 피해 env 로 넘긴다.
+ * 없어 `/dev/tty` 에 쓰는 것을 볼 수 없고, `script` 는 자기 stdin 이 tty 여야 돈다. 돌려주는 값은 pty 에
+ * 찍힌 출력 전부다. 명령은 Tcl 의 따옴표 규칙을 피해 env 로 넘긴다.
  */
 function ttyShellWith(homeDir: string, env: Record<string, string>, command: string): string {
   const script = `spawn -noecho ${ZSH} -l -i -c $env(MARU_TEST_COMMAND); expect eof`

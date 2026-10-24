@@ -10,7 +10,7 @@ export type AttachHandlers = {
   onOpenFailed(message: string): void
   /** 세션의 OSC 7501 레코드 전체. 붙을 때와 바뀔 때마다 온다. */
   onProgramStatus(records: ProgramStatusRecord[]): void
-  /** 레코드가 있는 동안 foreground 의 cwd 가 바뀌었다. */
+  /** 레코드가 있는 동안 foreground 의 cwd 가 바뀌었다. resync 뒤에도 온다 — 밀린 동안 버려진 알림이 있을 수 있기 때문이다. */
   onForeground(): void
 }
 
