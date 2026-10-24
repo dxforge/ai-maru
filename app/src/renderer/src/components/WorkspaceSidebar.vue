@@ -3,6 +3,7 @@ import { computed, type DeepReadonly } from 'vue'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import { ICONS, STATE_LABELS } from '../icons'
 import { CLAUDE_APP, programName } from '../program-status/store'
+import StatusIcon from './StatusIcon.vue'
 import { cellLabel, tildePath, windowTitle, workspaceName } from '../workspace/cwd'
 import { focusedPane, type Cell, type Pane, type Workspace } from '../workspace/store'
 
@@ -155,9 +156,14 @@ function press(cell: number, row: Row): void {
             @mousedown.prevent
             @click="press(c.key, r)"
           >
-            <span class="state status-icon nerd-icon" :title="r.state && STATE_LABELS[r.state]">{{
-              r.state ? ICONS[r.state] : ICONS.terminal
-            }}</span>
+            <span
+              class="state status-icon"
+              :class="{ 'nerd-icon': !r.state }"
+              :title="r.state && STATE_LABELS[r.state]"
+              ><StatusIcon v-if="r.state" :state="r.state" /><template v-else>{{
+                ICONS.terminal
+              }}</template></span
+            >
             <span class="title fade">{{ r.text }}</span>
             <span v-if="r.claude" class="app fade nerd-icon">{{ ICONS.claude }}</span>
           </button>
@@ -299,6 +305,10 @@ button {
   width: 14px;
   text-align: center;
   color: var(--claude, var(--faint));
+}
+
+.state svg {
+  margin: 0 auto;
 }
 
 .title {

@@ -26,13 +26,13 @@ import { createProgramStatuses } from './program-status/store'
 import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PaneHeader from './components/PaneHeader.vue'
+import StatusIcon from './components/StatusIcon.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import TerminalView from './components/TerminalView.vue'
 import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
-import { ICONS } from './icons'
 import { activeTheme, windowTheme } from './themes'
 import { createToasts } from './toast/store'
 import { columnsWidth, paneCells, stepPaneCols, terminalPadding } from './workspace/columns'
@@ -671,9 +671,9 @@ void window.maru.restoreScreen().then((s) => {
           :class="[urgent.get(c.key), { focused: selected }]"
           @mousedown.prevent="selectCell(c.key)"
         >
-          <span class="row-bar-icon status-icon nerd-icon">{{
-            urgent.has(c.key) ? ICONS[urgent.get(c.key)!] : ''
-          }}</span>
+          <span class="row-bar-icon status-icon"
+            ><StatusIcon v-if="urgent.has(c.key)" :state="urgent.get(c.key)!"
+          /></span>
           <span class="row-bar-text name">{{ labels.get(c.key)!.name }}</span>
           <span v-if="labels.get(c.key)!.branch" class="row-bar-text branch">{{
             labels.get(c.key)!.branch
