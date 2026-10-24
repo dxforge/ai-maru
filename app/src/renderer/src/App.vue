@@ -48,6 +48,7 @@ import {
   type SplitDirection,
   type Widths
 } from './workspace/layout'
+import { mateRows } from './workspace/mates'
 import { createWorkspaces, focusedPane, startDirOf, type Cell } from './workspace/store'
 
 const canvas = createCanvas()
@@ -221,6 +222,10 @@ window.maru.onPaneClose((id, pty) => {
   window.maru.paneReply(id, null)
   removePane(pane.key)
 })
+
+window.maru.onMateList((id) =>
+  window.maru.paneReply(id, { mates: mateRows(workspaces.list.value, statuses.root) })
+)
 
 // 기억한 값을 처음 값으로 쓴다. 나중에 적용하면 사이드바를 기본값(열림·282px)으로 그린 뒤 기억한 값으로 transition 이 돈다.
 const prefs = window.maru.viewPrefs

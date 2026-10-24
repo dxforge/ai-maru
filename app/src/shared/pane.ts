@@ -1,3 +1,5 @@
+import type { ProgramStatusKind, ProgramStatusState } from './program-status'
+
 /**
  * `pane.new` 가 renderer 에 넘기는 요청. `pty` 는 나눌 pane 의 pty 다. `full` 이면 그 pane 이 아니라
  * pane 이 든 cell 전체를 나눈다.
@@ -16,6 +18,20 @@ export type PaneNewRequest = {
  */
 export type CellNewRequest = Pick<PaneNewRequest, 'cwd' | 'command'> & { cell?: string }
 
+/** `mate.list` 의 한 줄이다. 각 값은 `maru` 의 모듈 doc(`core/crates/maru/src/main.rs`)이 정한다. */
+export type MateRow = {
+  pty: string
+  state: ProgramStatusState
+  kind: ProgramStatusKind | null
+  workspace: string
+  cell: string
+  dir: string
+  message: string
+}
+
 /** `no_space` 는 나눌 자리가 없어 거절한 것이다(docs/architecture.md 의 "pane 경계와 글자 칸 격자"). */
 export type PaneReply =
-  { pty: string } | { error: 'no_pane' | 'no_space' | 'open_failed'; message: string } | null
+  | { pty: string }
+  | { mates: MateRow[] }
+  | { error: 'no_pane' | 'no_space' | 'open_failed'; message: string }
+  | null

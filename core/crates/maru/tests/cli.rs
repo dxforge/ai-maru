@@ -1391,6 +1391,94 @@ fn job_list_fails_on_a_job_it_cannot_print() {
     assert_eq!(stdout(&out), "");
 }
 
+fn mate_list_with_home(home: &str, mates: Value) -> Output {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, move |req| result(req, json!({ "mates": mates })));
+    let out = maru_cmd(Some(&sock), &["mate", "list"])
+        .env("HOME", home)
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
+    let out = wait_within(out);
+    let req = server.join().unwrap();
+    assert_eq!(req["method"], "mate.list");
+    out
+}
+
+#[test]
+fn mate_list_prints_tab_separated_columns_with_a_header() {
+    let out = mate_list_with_home(
+        "/h/me/",
+        json!([
+            { "pty": "p-99ae10da", "state": "idle", "kind": null, "workspace": "ai-maru",
+              "cell": "ai-maru main", "dir": "/h/me/src/ai-maru", "message": "" },
+            { "pty": "p-4c3d8f86", "state": "blocked", "kind": "permission",
+              "workspace": "ai-maru", "cell": "ai-maru feat/65", "dir": "/h/me",
+              "message": "Bash:\tgit push\nline two\r" },
+            { "pty": "p-00000001", "state": "working", "kind": null, "workspace": "w\tx",
+              "cell": "c\nd", "dir": "/h/meme/x", "message": "m" },
+            { "pty": "p-00000002", "state": "blocked", "kind": null, "workspace": "",
+              "cell": "", "dir": "", "message": "" },
+            { "pty": "p-00000003", "state": "done", "kind": "question", "workspace": "w",
+              "cell": "c", "dir": "/d", "message": "a\r\nb\u{1b}[31mred" },
+        ]),
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(
+        stdout(&out),
+        "PTY\tSTATE\tWORKSPACE\tCELL\tDIR\tMESSAGE\n\
+         p-99ae10da\tidle\tai-maru\tai-maru main\t~/src/ai-maru\t\n\
+         p-4c3d8f86\tblocked(permission)\tai-maru\tai-maru feat/65\t~\tBash: git push line two \n\
+         p-00000001\tworking\tw x\tc d\t/h/meme/x\tm\n\
+         p-00000002\tblocked\t\t\t\t\n\
+         p-00000003\tdone\tw\tc\t/d\ta b [31mred\n"
+    );
+    assert_eq!(stderr(&out), "");
+}
+
+#[test]
+fn mate_list_without_mates_writes_nothing_to_stdout() {
+    let out = mate_list_with_home("/h/me", json!([]));
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert_eq!(stderr(&out), "no mates\n");
+}
+
+#[test]
+fn mate_list_succeeds_when_the_reader_closes_early() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    // pipe buffer 를 넘겨야 쓰는 도중에 상대가 닫힌다.
+    let mate = json!({ "pty": "p-1", "state": "idle", "kind": null, "workspace": "w",
+                       "cell": "c", "dir": "/d", "message": "x".repeat(200) });
+    let mates = vec![mate; 5000];
+    let server = serve_once(&sock, move |req| result(req, json!({ "mates": mates })));
+    let mut child = maru_with(Some(&sock), &["mate", "list"], Stdio::null());
+    let mut first = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut first)
+        .unwrap();
+    assert_eq!(first, "PTY\tSTATE\tWORKSPACE\tCELL\tDIR\tMESSAGE\n");
+    let out = wait_within(child);
+    server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stderr(&out), "");
+}
+
+#[test]
+fn mate_list_fails_on_a_mate_it_cannot_print() {
+    for mate in [
+        json!({ "pty": "p-1", "state": "idle", "kind": null }),
+        json!({ "pty": "p-1", "state": "idle", "kind": 1, "workspace": "", "cell": "",
+                "dir": "", "message": "" }),
+    ] {
+        let out = mate_list_with_home("/h/me", json!([mate]));
+        assert_fails_with(&out, "cannot print");
+        assert_eq!(stdout(&out), "");
+    }
+}
+
 fn sent_text(args: &[&str], input: &[u8]) -> Value {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);

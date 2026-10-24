@@ -29,8 +29,8 @@ export function workspaceName(p: Pick<Pane, 'cwd' | 'git'>): string {
   return cellLabel(p).name
 }
 
-export function windowTitle(label: Label): string {
-  return label.branch ? `${label.name} — ${label.branch}` : label.name
+export function windowTitle(label: Label, separator = ' — '): string {
+  return label.branch ? `${label.name}${separator}${label.branch}` : label.name
 }
 
 export function tildePath(path: string, home: string | undefined): string {
