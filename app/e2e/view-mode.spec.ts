@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
   activePane,
   clickMenu,
@@ -33,6 +33,26 @@ async function inView(page: Page, el: Locator): Promise<boolean> {
 // 이 앱을 띄우는 인자로 macOS 의 "스크롤 막대 보기" 설정을 바꾼다. Cocoa 가 `-키 값` 인자를 설정으로 읽기 때문이다.
 const CLASSIC_SCROLLBARS = ['-AppleShowScrollBars', 'Always']
 const OVERLAY_SCROLLBARS = ['-AppleShowScrollBars', 'WhenScrolling']
+
+// 창을 투명하게 띄우고 마우스 이벤트를 무시하게 해도, 진짜 커서가 창의 화면 영역 안에 있으면 앱이 뜰 때와
+// screenshot 을 찍을 때마다 그 자리의 마우스 이벤트가 페이지에 들어와 hover 를 옮긴다.
+// 화면이 좁으면 창 일부가 화면 밖으로 나가지만, screenshot 은 화면 밖 부분도 그린다.
+async function moveWindowOffCursor(app: ElectronApplication): Promise<void> {
+  const outside = await app.evaluate(({ BrowserWindow, screen }) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    const cursor = screen.getCursorScreenPoint()
+    const area = screen.getDisplayNearestPoint(cursor).workArea
+    const { width } = win.getBounds()
+    const x =
+      cursor.x - area.x > area.width / 2
+        ? Math.min(cursor.x - width, area.x + area.width - width)
+        : Math.max(cursor.x + 1, area.x)
+    win.setPosition(x, area.y)
+    const moved = win.getBounds()
+    return cursor.x < moved.x || cursor.x >= moved.x + moved.width
+  })
+  expect(outside, '창을 커서 옆으로 옮기지 못했다').toBe(true)
+}
 
 async function scrollbarHeight(page: Page): Promise<number> {
   return page
@@ -360,7 +380,8 @@ test('overlay 스크롤바 설정에서 columns 의 트랙은 스크롤할 때 �
   launch
 }) => {
   const launched = await launch({}, undefined, OVERLAY_SCROLLBARS)
-  const { page } = launched
+  const { app, page } = launched
+  await moveWindowOffCursor(app)
   await newWorkspace(launched, 2)
   await toggleView(launched, 'columns')
   const area = await scrollArea(page)
