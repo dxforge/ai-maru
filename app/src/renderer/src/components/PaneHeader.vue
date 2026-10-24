@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import type { ProgramStatusState } from '../../../shared/program-status'
+import { computed } from 'vue'
+import type { ProgramStatusRecord } from '../../../shared/program-status'
 import { ICONS, STATE_LABELS } from '../icons'
+import { CLAUDE_APP, programName } from '../program-status/store'
 import { dirName } from '../workspace/cwd'
 import type { Pane } from '../workspace/store'
 
 // 제목은 여기서 읽어, 제목이 바뀌면 이 헤더만 다시 그린다.
 const {
-  state = undefined,
+  status = undefined,
   pane,
   focused
 } = defineProps<{
-  state?: ProgramStatusState
+  status?: Pick<ProgramStatusRecord, 'state' | 'app'>
   pane: Pick<Pane, 'title' | 'cwd'>
   focused: boolean
 }>()
+
+const state = computed(() => status?.state)
 </script>
 
 <template>
@@ -21,8 +25,10 @@ const {
     <span class="row-bar-icon status-icon nerd-icon" :title="state && STATE_LABELS[state]">{{
       state ? ICONS[state] : ICONS.terminal
     }}</span>
-    <span class="row-bar-text title">{{ pane.title || 'Shell' }}</span>
-    <span v-if="state" class="claude-icon nerd-icon">{{ ICONS.claude }}</span>
+    <span class="row-bar-text title">{{
+      pane.title || (status ? programName(status.app) : 'Shell')
+    }}</span>
+    <span v-if="status?.app === CLAUDE_APP" class="claude-icon nerd-icon">{{ ICONS.claude }}</span>
     <span v-if="pane.cwd" class="cwd">{{ dirName(pane.cwd) }}</span>
   </div>
 </template>

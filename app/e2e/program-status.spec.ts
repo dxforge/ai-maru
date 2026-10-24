@@ -29,7 +29,6 @@ test('claude 가 clear 를 보내지 못하고 죽어도 셸 함수가 clear 를
   const bin = join(dataDir, 'fakebin')
   mkdirSync(bin)
   const pidFile = join(dataDir, 'claude.pid')
-  // 앱 `.zshenv` 의 claude 함수가 PATH 에서 찾아 띄우는 가짜 claude — idle 을 보고한 채 죽을 때까지 기다린다.
   writeFileSync(
     join(bin, 'claude'),
     `#!/bin/sh\necho $$ > '${pidFile}'\nprintf '\\033]7501;state=idle\\033\\\\'\nsleep 60\n`,
@@ -78,6 +77,36 @@ test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상�
   await expect(paneRows(page)).toHaveCount(0)
   await expect(activeHeader(page)).not.toHaveClass(/idle/)
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
+})
+
+test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아이콘 대신 app 값을, app 이 비었으면 Program 을 보인다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await page.keyboard.type(status('working', undefined, 'make'))
+  await expect(paneRows(page)).toHaveClass(/working/)
+  await expect(paneRows(page).locator('.title')).toHaveText('make')
+  await expect(paneRows(page)).toHaveAttribute('aria-label', 'Working: make')
+  await expect(paneRows(page).locator('.app')).toHaveCount(0)
+  await expect(activeHeader(page).locator('.title')).toHaveText('make')
+  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Working')
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
+  await groups(page).locator('.fold').click()
+  await expect(groups(page).locator('.summary .title')).toHaveText('make 1')
+  await groups(page).locator('.fold').click()
+
+  await page.keyboard.type(status('idle', undefined, ''))
+  await expect(paneRows(page)).toHaveClass(/idle/)
+  await expect(paneRows(page).locator('.title')).toHaveText('Program')
+  await expect(paneRows(page).locator('.app')).toHaveCount(0)
+  await expect(activeHeader(page).locator('.title')).toHaveText('Program')
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
+
+  await page.keyboard.type(status('idle'))
+  await expect(paneRows(page).locator('.title')).toHaveText('Claude')
+  await expect(paneRows(page).locator('.app')).toHaveCount(1)
+  await expect(activeHeader(page).locator('.title')).toHaveText('Claude')
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
 })
 
 test('루트가 아닌 레코드만 있으면 상태를 보이지 않고, 루트 레코드가 오면 그 상태를 보인다', async ({

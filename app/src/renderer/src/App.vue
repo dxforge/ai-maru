@@ -651,7 +651,7 @@ void window.maru.restoreScreen().then((s) => {
         :collapsed="!sidebarOpen"
         :workspaces="workspaces.list.value"
         :selected-key="workspaces.selectedKey.value"
-        :state="statuses.state"
+        :root="statuses.root"
         :urgent="urgent"
         :folded="folded"
         :home="home"
@@ -692,7 +692,7 @@ void window.maru.restoreScreen().then((s) => {
             @focusin="focusPane(c.key, p.key)"
           >
             <PaneHeader
-              :state="statuses.state(p.sessionId)"
+              :status="statuses.root(p.sessionId)"
               :pane="p"
               :focused="active"
               @mousedown.prevent="terminals.get(p.key)?.focus()"

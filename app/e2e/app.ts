@@ -308,10 +308,9 @@ export function activePane(page: Page) {
 
 /**
  * claude 가 보내는 것과 같은 OSC 7501 바이트를 pane 의 셸에서 PTY 출력으로 내보내 세션 프로세스가 받게 한다.
- * sh·zsh 의 printf 가 `\033` 을 ESC 로 푼다.
  */
-export function programStatus(state: string, extra?: string): string {
-  const fields = extra ? `state=${state}:${extra}` : `state=${state}`
+export function programStatus(state: string, extra?: string, app = 'claude-code'): string {
+  const fields = [`state=${state}`, app && `app=${app}`, extra].filter(Boolean).join(':')
   return `printf '\\033]7501;${fields}\\033\\\\'\n`
 }
 

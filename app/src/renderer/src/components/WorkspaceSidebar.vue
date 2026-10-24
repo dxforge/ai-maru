@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, type DeepReadonly } from 'vue'
-import type { ProgramStatusState } from '../../../shared/program-status'
+import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import { ICONS, STATE_LABELS } from '../icons'
+import { CLAUDE_APP, programName } from '../program-status/store'
 import { cellLabel, tildePath, windowTitle, workspaceName } from '../workspace/cwd'
 import { focusedPane, type Cell, type Pane, type Workspace } from '../workspace/store'
 
 const {
   workspaces,
   selectedKey,
-  state,
+  root,
   urgent,
   folded,
   collapsed,
@@ -16,7 +17,7 @@ const {
 } = defineProps<{
   workspaces: readonly DeepReadonly<Workspace>[]
   selectedKey: number | null
-  state: (session?: string) => ProgramStatusState | undefined
+  root: (session?: string) => ProgramStatusRecord | undefined
   urgent: ReadonlyMap<number, ProgramStatusState>
   folded: ReadonlySet<number>
   collapsed: boolean
@@ -33,17 +34,21 @@ type Row = {
   key: number | 'summary'
   pane?: number
   state?: ProgramStatusState
+  claude: boolean
   focused: boolean
   text: string
   aria: string
 }
 
-function paneRow(p: DeepReadonly<Pane>, s: ProgramStatusState | undefined, focused: boolean): Row {
-  const text = p.title || (s ? 'Claude' : 'Shell')
+function paneRow(p: DeepReadonly<Pane>, focused: boolean): Row {
+  const r = root(p.sessionId)
+  const s = r?.state
+  const text = p.title || (r ? programName(r.app) : 'Shell')
   return {
     key: p.key,
     pane: p.key,
     state: s,
+    claude: r?.app === CLAUDE_APP,
     focused,
     text,
     aria: s ? `${STATE_LABELS[s]}: ${text}` : text
@@ -51,16 +56,23 @@ function paneRow(p: DeepReadonly<Pane>, s: ProgramStatusState | undefined, focus
 }
 
 function summaryRow(c: DeepReadonly<Cell>): Row {
-  const claude = c.panes.filter((p) => state(p.sessionId)).length
-  const counts: [number, string][] = [
-    [claude, 'Claude'],
-    [c.panes.length - claude, 'Shell']
-  ]
-  const text = counts
-    .filter(([n]) => n)
-    .map(([n, what]) => `${what} ${n}`)
-    .join(' · ')
-  return { key: 'summary', state: urgent.get(c.key), focused: false, text, aria: `Expand: ${text}` }
+  const counts = new Map<string, number>()
+  let shells = 0
+  for (const p of c.panes) {
+    const r = root(p.sessionId)
+    if (!r) shells++
+    else counts.set(programName(r.app), (counts.get(programName(r.app)) ?? 0) + 1)
+  }
+  if (shells) counts.set('Shell', shells)
+  const text = [...counts].map(([what, n]) => `${what} ${n}`).join(' · ')
+  return {
+    key: 'summary',
+    state: urgent.get(c.key),
+    claude: false,
+    focused: false,
+    text,
+    aria: `Expand: ${text}`
+  }
 }
 
 function cellGroup(c: DeepReadonly<Cell>) {
@@ -75,9 +87,7 @@ function cellGroup(c: DeepReadonly<Cell>) {
     label,
     tip: current.cwd ? `${title}\n${tildePath(current.cwd, home)}` : title,
     folded: f,
-    rows: f
-      ? [summaryRow(c)]
-      : c.panes.map((p) => paneRow(p, state(p.sessionId), selected && p === current))
+    rows: f ? [summaryRow(c)] : c.panes.map((p) => paneRow(p, selected && p === current))
   }
 }
 
@@ -149,9 +159,7 @@ function press(cell: number, row: Row): void {
               r.state ? ICONS[r.state] : ICONS.terminal
             }}</span>
             <span class="title fade">{{ r.text }}</span>
-            <span v-if="r.state && r.pane !== undefined" class="app fade nerd-icon">{{
-              ICONS.claude
-            }}</span>
+            <span v-if="r.claude" class="app fade nerd-icon">{{ ICONS.claude }}</span>
           </button>
         </div>
       </div>

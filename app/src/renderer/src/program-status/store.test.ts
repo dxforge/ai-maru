@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseProgramStatus, type ProgramStatusRecord } from '../../../shared/program-status'
-import { createProgramStatuses } from './store'
+import { createProgramStatuses, programName } from './store'
 
 function rec(partial: Partial<ProgramStatusRecord> & Pick<ProgramStatusRecord, 'state'>) {
   return {
@@ -40,6 +40,22 @@ describe('program statuses', () => {
 
   it('세션 id 가 아직 없으면 상태도 없다', () => {
     expect(createProgramStatuses().state(undefined)).toBeUndefined()
+  })
+
+  it('root 는 루트 레코드를 돌려준다', () => {
+    const s = createProgramStatuses()
+    s.set('s-1', [rec({ id: 'build', state: 'working', app: 'make' })])
+    expect(s.root('s-1')).toBeUndefined()
+    s.set('s-1', [rec({ state: 'idle', app: 'make' }), rec({ id: 'build', state: 'working' })])
+    expect(s.root('s-1')?.app).toBe('make')
+  })
+})
+
+describe('programName', () => {
+  it('claude-code 만 Claude 로, 다른 app 은 그 값으로, 빈 app 은 Program 으로 부른다', () => {
+    expect(programName('claude-code')).toBe('Claude')
+    expect(programName('make')).toBe('make')
+    expect(programName('')).toBe('Program')
   })
 })
 
