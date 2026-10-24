@@ -46,11 +46,19 @@ describe('createConfig', () => {
 
   it('헤더·팔레트 위치를 읽고, 문법 오류면 앞의 값을 두며, 파일이 지워지면 아래로 돌아간다', () => {
     const { config } = setup('[layout]\nheader = "top"\npalette = "top"\n')
-    expect(config.layout.value).toEqual({ header: 'top', palette: 'top' })
+    expect(config.layout.value).toEqual({ ...DEFAULT_LAYOUT, header: 'top', palette: 'top' })
     config.apply({ path: PATH, text: '[layout]\nheader =\n' })
-    expect(config.layout.value).toEqual({ header: 'top', palette: 'top' })
+    expect(config.layout.value).toEqual({ ...DEFAULT_LAYOUT, header: 'top', palette: 'top' })
     config.apply({ path: PATH, text: null })
     expect(config.layout.value).toEqual(DEFAULT_LAYOUT)
+  })
+
+  it('column-cols 만 바뀌어도 layout 을 바꾼다', () => {
+    const { config } = setup('[layout]\nheader = "top"\n')
+    const before = config.layout.value
+    config.apply({ path: PATH, text: '[layout]\nheader = "top"\ncolumn-cols = 100\n' })
+    expect(config.layout.value).not.toBe(before)
+    expect(config.layout.value).toEqual({ ...before, columnCols: 100 })
   })
 
   it('같은 값이면 layout 을 바꾸지 않는다', () => {

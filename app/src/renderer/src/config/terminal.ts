@@ -2,7 +2,7 @@ import { parse, TomlError } from 'smol-toml'
 import { FONT_FAMILY, FONT_SIZE, LINE_HEIGHT } from '../font'
 import type { TerminalTheme } from '../../../shared/theme'
 import { DEFAULT_THEME, themeNamed, type ThemeChoice } from '../themes'
-import { DEFAULT_LAYOUT, parseLayout, type LayoutConfig } from './layout'
+import { LAYOUT_KEYS, parseLayout, parseNumber, type LayoutConfig } from './layout'
 
 export type TerminalFont = { fontFamily: string; fontSize: number; lineHeight: number }
 
@@ -36,7 +36,7 @@ const RANGES = {
 
 const TABLES = {
   terminal: new Set<string>(['font-family', 'theme', ...Object.keys(RANGES)]),
-  layout: new Set<string>(Object.keys(DEFAULT_LAYOUT))
+  layout: new Set<string>(LAYOUT_KEYS)
 }
 
 export function stepFontSize(size: number, by: 1 | -1): number {
@@ -145,16 +145,10 @@ function parseTerminal(
   } else if (family !== undefined) {
     warnings.push('terminal.font-family must be a string, using the default.')
   }
-  for (const [name, { key, min, max }] of Object.entries(RANGES)) {
+  for (const [name, { key, ...range }] of Object.entries(RANGES)) {
     const value = terminal[name]
     if (value === undefined) continue
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      warnings.push(`terminal.${name} must be a number, using ${font[key]}.`)
-      continue
-    }
-    font[key] = Math.min(max, Math.max(min, value))
-    if (font[key] !== value)
-      warnings.push(`terminal.${name} = ${value} is outside ${min}–${max}, using ${font[key]}.`)
+    font[key] = parseNumber(value, `terminal.${name}`, font[key], range, warnings)
   }
   return { font, names }
 }

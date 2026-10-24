@@ -12,6 +12,7 @@ theme = "Catppuccin Mocha"
 [layout]
 header = "top"
 palette = "top"
+column-cols = 110
 ```
 
 `MARU_CONFIG_DIR` 환경 변수를 주면 `~/.ai-maru` 대신 그 폴더의 `config.toml` 을 읽는다.
@@ -26,6 +27,7 @@ palette = "top"
 | `terminal.theme` | 없음(Ghostty 의 기본 색) | 테마 이름, 또는 라이트·다크 모드마다 다른 테마를 적는 `{ light = "…", dark = "…" }`. |
 | `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 cell 헤더를 pane·cell 의 아래에 둘지 위에 둘지. |
 | `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트를 창의 아래에 띄울지 위에 띄울지. |
+| `layout.column-cols` | `80` | 20–500 의 정수(열 수). columns 보기에서 pane 하나가 받는 터미널 열 수. |
 
 pane 헤더와 cell 헤더도 터미널의 글꼴과 크기를 따른다.
 
@@ -34,6 +36,12 @@ pane 헤더와 cell 헤더도 터미널의 글꼴과 크기를 따른다.
 Claude Code 의 입력창은 터미널 아래에 있어 시선이 아래에 머무르므로, 헤더와 명령 팔레트도 기본값으로 아래에 둔다.
 
 팔레트가 아래면 입력줄이 팔레트 맨 아래에 있고, 후보는 그 위에 놓인다. 가장 잘 맞는 후보가 입력줄 바로 위이고, ↑ 가 다음 후보를 고른다. 위면 입력줄이 맨 위에 있고 ↓ 가 다음 후보를 고른다.
+
+### `column-cols`
+
+columns 보기에서 cell 은 pane 하나가 이 열 수를 받는 폭으로 그려진다. 좌우로 나눈 cell 은 pane 수만큼 넓어진다. 터미널 열 수라서 글꼴 크기를 바꾸면 픽셀 폭도 바뀐다.
+
+Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-cols`·110·144 사이에서 옮긴다. 110 과 144 는 Claude Code 가 `/diff` 패널과 docked pane 을 그리기 시작하는 열 수다. 두 명령으로 폭을 바꾼 cell 은 `column-cols` 가 바뀌어도 그 폭을 지킨다. 바꾸지 않은 cell 은 저장하면 바로 새 폭이 된다. 두 명령으로 `column-cols` 와 같은 폭에 돌아온 cell 은 다시 `column-cols` 를 따른다. 바꾼 폭은 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다.
 
 ### `font-family`
 
@@ -65,8 +73,8 @@ theme = { light = "Catppuccin Latte", dark = "Catppuccin Mocha" }
 
 ### 범위를 벗어나거나 잘못 적은 값
 
-- 범위를 벗어난 숫자는 가까운 끝값으로 맞춘다(`font-size = 40` 이면 32).
-- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적거나 `theme` 에 모르는 이름을 적어도 기본값을 쓴다.
+- 범위를 벗어난 숫자는 가까운 끝값으로 맞춘다(`font-size = 40` 이면 32, `column-cols = 10` 이면 20).
+- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `column-cols` 에 정수가 아닌 값(`100.5`)을 적어도 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적거나 `theme` 에 모르는 이름을 적어도 기본값을 쓴다.
 - 모르는 키는 무시한다.
 
 ## 고치면 바로 적용된다

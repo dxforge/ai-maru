@@ -28,7 +28,7 @@ export type ScreenCell = {
    */
   openedBy?: number
   fontSize?: number
-  /** columns 보기에서 늘어선 pane 하나가 받는 터미널 열 수. 없으면 `PANE_COLS`(`columns.ts`)다. */
+  /** columns 보기에서 늘어선 pane 하나가 받는 터미널 열 수. 없으면 설정 파일의 `layout.column-cols` 다. */
   paneCols?: number
 }
 

@@ -11,9 +11,11 @@ import {
   shellSize,
   split,
   test,
+  toast,
   toggleView,
   typesInto,
-  cellWidth
+  cellWidth,
+  writeConfig
 } from './app'
 
 test('columns 에서 Widen Cell 는 pane 을 80→110→144 열로, Narrow Cell 는 144→110→80 열로 옮기고 끝에서는 그대로다', async ({
@@ -158,4 +160,89 @@ test('재시작 화면의 pane 폭이 정류장 밖이면 그 폭으로 되살�
   await expectCols(page, 80)
   await clickMenu(app, 'narrow-cell')
   await expectCols(page, 80)
+})
+
+test('layout.column-cols 로 새 cell 의 pane 폭을 정하고, 넓히기·좁히기는 설정 폭·110·144 사이를 오간다', async ({
+  launch,
+  dataDir
+}) => {
+  writeConfig(dataDir, '[layout]\ncolumn-cols = 100\n')
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  await expectCols(page, 100)
+  await expect(toast(page)).toHaveCount(0)
+
+  await clickMenu(app, 'widen-cell')
+  await expectCols(page, 110)
+  await clickMenu(app, 'narrow-cell')
+  await expectCols(page, 100)
+  await clickMenu(app, 'narrow-cell')
+  await expectCols(page, 100)
+
+  await newWorkspace(launched, 2)
+  await expectCols(page, 100)
+})
+
+test('column-cols 를 고치면 폭을 바꾸지 않은 cell 은 따라가고 넓힌 cell 은 그 폭을 지키며, 재시작 뒤에도 같다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  await expectCols(page, 80)
+  const narrow = await cellWidth(page, 0)
+  await newWorkspace(launched, 2)
+  await clickMenu(app, 'widen-cell')
+  await clickMenu(app, 'widen-cell')
+  await expectCols(page, 144)
+
+  writeConfig(dataDir, '[layout]\ncolumn-cols = 100\n')
+  await expect.poll(() => cellWidth(page, 0)).toBeGreaterThan(narrow)
+  await expectCols(page, 144)
+  await clickMenu(app, 'previous-cell')
+  await activeTerminal(page)
+  await expectCols(page, 100)
+
+  await restartWith(app)
+  const saved = JSON.parse(readFileSync(join(dataDir, 'restart.json'), 'utf8'))
+  expect(saved.screen.workspaces.map((w: { cells: object[] }) => 'paneCols' in w.cells[0])).toEqual(
+    [false, true]
+  )
+
+  writeConfig(dataDir, '[layout]\ncolumn-cols = 120\n')
+  const { app: againApp, page: again } = await launch()
+  await activeTerminal(again)
+  await expectCols(again, 120)
+  await clickMenu(againApp, 'next-cell')
+  await activeTerminal(again)
+  await expectCols(again, 144)
+})
+
+test('설정 폭으로 돌아온 cell 은 폭을 저장하지 않아 다시 설정을 따른다', async ({
+  launch,
+  dataDir
+}) => {
+  writeConfig(dataDir, '[layout]\ncolumn-cols = 144\n')
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  await expectCols(page, 144)
+  await clickMenu(app, 'narrow-cell')
+  await expectCols(page, 110)
+  await clickMenu(app, 'widen-cell')
+  await expectCols(page, 144)
+
+  writeConfig(dataDir, '[layout]\ncolumn-cols = 80\n')
+  await expectCols(page, 80)
+})
+
+test('column-cols 가 범위 밖이면 끝값으로 맞춰 알린다', async ({ launch, dataDir }) => {
+  writeConfig(dataDir, '[layout]\ncolumn-cols = 10\n')
+  const launched = await launch()
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  await expectCols(page, 20)
+  await expect(toast(page)).toContainText('layout.column-cols = 10 is outside 20–500, using 20.')
 })

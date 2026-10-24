@@ -24,7 +24,7 @@ describe('parseConfig', () => {
     })
     expect(DEFAULT_THEME).toEqual({ kind: 'one', theme: GHOSTTY })
     expect(DEFAULT_FONT).toEqual({ fontFamily: FAMILY, fontSize: 14, lineHeight: 1.2 })
-    expect(DEFAULT_LAYOUT).toEqual({ header: 'bottom', palette: 'bottom' })
+    expect(DEFAULT_LAYOUT).toEqual({ header: 'bottom', palette: 'bottom', columnCols: 80 })
   })
 
   it('세 키를 읽는다', () => {
@@ -186,6 +186,37 @@ describe('parseConfig', () => {
         'layout.header must be "top" or "bottom", using bottom.',
         'layout.palette must be "top" or "bottom", using bottom.'
       ])
+    }
+  )
+
+  it.each([20, 100, 144, 500])(
+    'layout.column-cols = %i 는 그대로 읽고 알리지 않는다 — 80·110·144 밖의 값과 범위 끝도',
+    (value) => {
+      const r = ok(`[layout]\ncolumn-cols = ${value}\n`)
+      expect(r.layout.columnCols).toBe(value)
+      expect(r.warnings).toEqual([])
+    }
+  )
+
+  it.each([
+    [10, 20],
+    [19, 20],
+    [501, 500],
+    [10000, 500]
+  ])('layout.column-cols = %i 는 20–500 으로 맞추고 알린다', (value, clamped) => {
+    const r = ok(`[layout]\ncolumn-cols = ${value}\n`)
+    expect(r.layout.columnCols).toBe(clamped)
+    expect(r.warnings).toEqual([
+      `layout.column-cols = ${value} is outside 20–500, using ${clamped}.`
+    ])
+  })
+
+  it.each(['100.5', '"100"', 'true', '[100]', 'inf', 'nan'])(
+    'layout.column-cols 가 정수가 아니면 80 을 쓴다: %s',
+    (value) => {
+      const r = ok(`[layout]\ncolumn-cols = ${value}\n`)
+      expect(r.layout.columnCols).toBe(80)
+      expect(r.warnings).toEqual(['layout.column-cols must be an integer, using 80.'])
     }
   )
 

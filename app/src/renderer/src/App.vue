@@ -34,13 +34,7 @@ import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/term
 import { ICONS } from './icons'
 import { activeTheme, windowTheme } from './themes'
 import { createToasts } from './toast/store'
-import {
-  columnsWidth,
-  PANE_COLS,
-  paneCells,
-  stepPaneCols,
-  terminalPadding
-} from './workspace/columns'
+import { columnsWidth, paneCells, stepPaneCols, terminalPadding } from './workspace/columns'
 import { cellLabel, tildePath, windowTitle } from './workspace/cwd'
 import { canSplit, snapRects, type Box, type Size } from './workspace/grid'
 import {
@@ -112,8 +106,9 @@ function resetFont(): void {
 function stepWidth(by: 1 | -1): void {
   const c = workspaces.selected()
   if (!c || viewMode.value !== 'columns') return
-  const cols = stepPaneCols(c.paneCols ?? PANE_COLS, by)
-  workspaces.setPaneCols(c.key, cols === PANE_COLS ? undefined : cols)
+  const configured = config.layout.value.columnCols
+  const cols = stepPaneCols(paneColsOf(c), by, configured)
+  workspaces.setPaneCols(c.key, cols === configured ? undefined : cols)
 }
 
 function startDir(): string | undefined {
@@ -299,6 +294,10 @@ function fontOf(c: Pick<Cell, 'fontSize'>): TerminalFont {
   return c.fontSize === undefined ? font : { ...font, fontSize: c.fontSize }
 }
 
+function paneColsOf(c: Pick<Cell, 'paneCols'>): number {
+  return c.paneCols ?? config.layout.value.columnCols
+}
+
 function gridVars(cell: Size, font: TerminalFont) {
   return {
     '--row': `${rowOf(cell)}px`,
@@ -425,12 +424,12 @@ function paneMin(cell: Size): Size {
   }
 }
 
-function columnsWidthOf(layout: Layout, paneCols: number | undefined, cell: Size) {
+function columnsWidthOf(layout: Layout, paneCols: number, cell: Size) {
   if (viewMode.value !== 'columns') return undefined
   return columnsWidth(columnCount(layout), cell.width, cellFloored.value, paneCols)
 }
 
-function areaOf(layout: Layout, paneCols: number | undefined, cell: Size, measured: Size): Size {
+function areaOf(layout: Layout, paneCols: number, cell: Size, measured: Size): Size {
   return {
     width: columnsWidthOf(layout, paneCols, cell) ?? measured.width,
     height: measured.height
@@ -443,7 +442,7 @@ function roomFor(from: number, direction: SplitDirection, full: boolean): boolea
   if (!c || !measured) return true
   const cell = cellOf(fontOf(c))
   const next = full ? splitRoot(c.layout, -1, direction) : splitPane(c.layout, from, -1, direction)
-  const area = (layout: Layout): Size => areaOf(layout, c.paneCols, cell, measured)
+  const area = (layout: Layout): Size => areaOf(layout, paneColsOf(c), cell, measured)
   return canSplit(c.layout, area(c.layout), next, area(next), paneMin(cell))
 }
 
@@ -467,10 +466,11 @@ const views = computed(() =>
     const measured = gridSizes.get(c.key)
     const font = fontOf(c)
     const cell = cellOf(font)
-    const width = columnsWidthOf(c.layout, c.paneCols, cell)
+    const paneCols = paneColsOf(c)
+    const width = columnsWidthOf(c.layout, paneCols, cell)
     const places = placements(
       c.layout,
-      measured && areaOf(c.layout, c.paneCols, cell, measured),
+      measured && areaOf(c.layout, paneCols, cell, measured),
       widths.value,
       cell
     )
