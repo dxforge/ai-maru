@@ -5,11 +5,12 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ViewPrefs } from '../shared/screen'
 import {
-  readViewPrefs,
+  readWindowExtras,
   readWindowState,
   restoreWindowState,
   saveWindowStateOnClose,
   windowBounds,
+  type WindowExtras,
   type WindowState
 } from './window-state'
 
@@ -48,7 +49,7 @@ function fakeWindow(
 function tracked(
   file: string,
   init?: Parameters<typeof fakeWindow>[0],
-  prefs: () => ViewPrefs = () => ({})
+  prefs: () => WindowExtras = () => ({})
 ) {
   const win = fakeWindow(init)
   saveWindowStateOnClose(
@@ -96,19 +97,38 @@ describe('readWindowState', () => {
   })
 })
 
-describe('readViewPrefs', () => {
+describe('readWindowExtras', () => {
   it('창 위치·크기가 없거나 틀려도 보기 설정은 읽는다', () => {
     const file = join(dir, 'w.json')
     writeFileSync(file, JSON.stringify({ viewMode: 'single' }))
-    expect(readViewPrefs(file)).toEqual({ viewMode: 'single' })
+    expect(readWindowExtras(file)).toEqual({ viewMode: 'single' })
     expect(readWindowState(file)).toBeNull()
   })
 
   it('파일이 없거나 JSON 이 아니면 빈 설정', () => {
-    expect(readViewPrefs(join(dir, 'none.json'))).toEqual({})
+    expect(readWindowExtras(join(dir, 'none.json'))).toEqual({})
     const file = join(dir, 'w.json')
     writeFileSync(file, '{not json')
-    expect(readViewPrefs(file)).toEqual({})
+    expect(readWindowExtras(file)).toEqual({})
+  })
+
+  it('닫을 때 저장한 테마를 읽고, 없거나 틀리면 빼 둔다', () => {
+    const file = join(dir, 'w.json')
+    const theme = { background: '#1e1e2e', mode: 'system' }
+    writeFileSync(file, JSON.stringify({ viewMode: 'single', theme }))
+    expect(readWindowExtras(file)).toEqual({ viewMode: 'single', theme })
+    for (const bad of [{ theme: { background: '#1e1e2e', mode: 'auto' } }, { theme: '#1e1e2e' }]) {
+      writeFileSync(file, JSON.stringify(bad))
+      expect(readWindowExtras(file), JSON.stringify(bad)).toEqual({})
+    }
+  })
+
+  it('닫을 때 `extras` 가 준 테마를 함께 저장한다', () => {
+    const file = join(dir, 'w.json')
+    const theme = { background: '#ffffff', mode: 'light' as const }
+    const win = tracked(file, {}, () => ({ viewMode: 'single', theme }))
+    win.emit('close')
+    expect(readWindowExtras(file)).toEqual({ viewMode: 'single', theme })
   })
 })
 
@@ -267,7 +287,7 @@ describe('saveWindowStateOnClose', () => {
     const win = tracked(file, { bounds: placed }, () => prefs)
     prefs = { viewMode: 'columns', sidebar: { open: false, width: 300 } }
     win.emit('close')
-    expect(readViewPrefs(file)).toEqual(prefs)
+    expect(readWindowExtras(file)).toEqual(prefs)
     expect(readWindowState(file)).toMatchObject({ ...NORMAL, ...placed })
   })
 

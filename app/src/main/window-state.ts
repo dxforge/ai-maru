@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { BrowserWindow, Rectangle } from 'electron'
 import { parseViewPrefs, type ViewPrefs } from '../shared/screen'
+import { parseWindowTheme, type WindowTheme } from '../shared/theme'
 
 export type WindowState = Rectangle & { isMaximized: boolean; isFullScreen: boolean }
 
@@ -44,8 +45,16 @@ export function readWindowState(file: string): WindowState | null {
   return valid ? (s as WindowState) : null
 }
 
-export function readViewPrefs(file: string): ViewPrefs {
-  return parseViewPrefs(readJson(file))
+/**
+ * 창 위치·크기 옆에 함께 저장하는 것. `theme` 은 닫을 때 적용돼 있던 테마다 — 다음 실행의 첫 창이 renderer 가
+ * 그리기 전부터 그 배경색이게 한다.
+ */
+export type WindowExtras = ViewPrefs & { theme?: WindowTheme }
+
+export function readWindowExtras(file: string): WindowExtras {
+  const s = readJson(file)
+  const theme = parseWindowTheme((s as { theme?: unknown } | null)?.theme)
+  return { ...parseViewPrefs(s), ...(theme && { theme }) }
 }
 
 function contains(outer: Rectangle, inner: Rectangle): boolean {
@@ -85,7 +94,7 @@ function currentState(win: StatefulWindow): WindowState {
 export function saveWindowStateOnClose(
   win: TrackedWindow,
   file: string,
-  prefs: () => ViewPrefs
+  extras: () => WindowExtras
 ): void {
   let last = currentState(win)
   const update = (): void => {
@@ -99,7 +108,7 @@ export function saveWindowStateOnClose(
   }
   win.on('close', () => {
     try {
-      writeFileSync(file, JSON.stringify({ ...closing(), ...prefs() }))
+      writeFileSync(file, JSON.stringify({ ...closing(), ...extras() }))
     } catch (err) {
       console.error(`maru: cannot save the window state to ${file}:`, err)
     }

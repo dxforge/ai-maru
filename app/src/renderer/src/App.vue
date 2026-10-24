@@ -19,6 +19,7 @@ import {
   type ScreenState
 } from '../../shared/screen'
 import { secondaryCommand } from '../../shared/shortcuts'
+import { uiColors, xtermTheme } from '../../shared/theme'
 import { createCanvas } from './canvas/store'
 import { createClaudeStatuses } from './claude/status'
 import CanvasPanel from './components/CanvasPanel.vue'
@@ -31,6 +32,7 @@ import { missingFonts } from './config/fonts'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { ICONS } from './icons'
+import { activeTheme, windowTheme } from './themes'
 import { createToasts } from './toast/store'
 import {
   columnsWidth,
@@ -78,6 +80,21 @@ const config = createConfig(window.maru.config, (r) => {
 })
 window.maru.onConfig(config.apply)
 const headerBottom = computed(() => config.layout.value.header === 'bottom')
+
+// `prefers-color-scheme` 은 `nativeTheme.themeSource` 가 `system` 일 때만 OS 모드를 따른다(`shared/theme.ts` 의 `WindowTheme`).
+const darkScheme = matchMedia('(prefers-color-scheme: dark)')
+const prefersDark = ref(darkScheme.matches)
+darkScheme.addEventListener('change', (e) => (prefersDark.value = e.matches))
+const theme = computed(() => activeTheme(config.theme.value, prefersDark.value))
+const terminalTheme = computed(() => xtermTheme(theme.value))
+watchEffect(() => {
+  for (const [name, color] of Object.entries(uiColors(theme.value)))
+    document.documentElement.style.setProperty(
+      `--${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`,
+      color
+    )
+  window.maru.applyTheme(windowTheme(config.theme.value, prefersDark.value))
+})
 
 function stepFont(by: 1 | -1): void {
   const c = workspaces.selected()
@@ -689,6 +706,7 @@ void window.maru.restoreScreen().then((s) => {
                 :active="active"
                 :shown="selected || viewMode === 'columns'"
                 :font="font"
+                :theme="terminalTheme"
                 @exit="removePane(p.key)"
                 @failed="(message) => paneFailed(p.key, message)"
                 @spawned="answerPaneRequest(p.key, { session: p.sessionId })"

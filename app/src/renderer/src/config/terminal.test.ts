@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { GHOSTTY } from '../../../shared/theme'
+import { DEFAULT_THEME, themeNamed } from '../themes'
 import { DEFAULT_LAYOUT } from './layout'
 import { DEFAULT_FONT, fontNames, fontSizeOverride, parseConfig, stepFontSize } from './terminal'
 
@@ -15,10 +17,12 @@ describe('parseConfig', () => {
     expect(parseConfig('')).toEqual({
       ok: true,
       font: DEFAULT_FONT,
+      theme: DEFAULT_THEME,
       layout: DEFAULT_LAYOUT,
       names: [],
       warnings: []
     })
+    expect(DEFAULT_THEME).toEqual({ kind: 'one', theme: GHOSTTY })
     expect(DEFAULT_FONT).toEqual({ fontFamily: FAMILY, fontSize: 14, lineHeight: 1.2 })
     expect(DEFAULT_LAYOUT).toEqual({ header: 'bottom', palette: 'bottom' })
   })
@@ -101,6 +105,70 @@ describe('parseConfig', () => {
     expect(ok('[layout]\nheader-position = "top"\n').warnings).toEqual([
       'Unknown key layout.header-position.'
     ])
+  })
+
+  it('terminal.theme 에 적은 이름의 테마를 쓴다', () => {
+    const r = ok('[terminal]\ntheme = "Catppuccin Mocha"\n')
+    expect(r.theme).toEqual({ kind: 'one', theme: themeNamed('Catppuccin Mocha') })
+    expect(r.theme.kind === 'one' && r.theme.theme.background).toBe('#1e1e2e')
+    expect(r.warnings).toEqual([])
+  })
+
+  it('terminal.theme 의 이름은 대소문자·공백까지 맞아야 한다', () => {
+    const r = ok('[terminal]\ntheme = "catppuccin mocha"\n')
+    expect(r.theme).toBe(DEFAULT_THEME)
+    expect(r.warnings).toEqual([
+      'terminal.theme: no theme named "catppuccin mocha", using the default.'
+    ])
+  })
+
+  it('terminal.theme 에 light·dark 를 적으면 짝이 된다', () => {
+    const r = ok('[terminal]\ntheme = { light = "Catppuccin Latte", dark = "Catppuccin Mocha" }\n')
+    expect(r.theme).toEqual({
+      kind: 'pair',
+      light: themeNamed('Catppuccin Latte'),
+      dark: themeNamed('Catppuccin Mocha')
+    })
+    expect(r.warnings).toEqual([])
+  })
+
+  const FORM =
+    'terminal.theme must be a theme name or { light = "…", dark = "…" }, using the default.'
+
+  it.each([
+    ['{ light = "Catppuccin Latte" }', FORM],
+    ['{ dark = "Catppuccin Mocha" }', FORM],
+    ['{ light = "Catppuccin Latte", dark = 3 }', FORM],
+    ['13', FORM],
+    ['["Catppuccin Mocha"]', FORM],
+    [
+      '{ light = "Nope", dark = "Catppuccin Mocha" }',
+      'terminal.theme.light: no theme named "Nope", using the default.'
+    ],
+    [
+      '{ light = "Catppuccin Latte", dark = "Nope" }',
+      'terminal.theme.dark: no theme named "Nope", using the default.'
+    ]
+  ])('terminal.theme 이 이름도 light·dark 짝도 아니면 기본 테마를 쓴다: %s', (value, warning) => {
+    const r = ok(`[terminal]\ntheme = ${value}\n`)
+    expect(r.theme).toBe(DEFAULT_THEME)
+    expect(r.warnings).toEqual([warning])
+  })
+
+  it('terminal.theme 의 짝에서 둘 다 모르는 이름이면 둘 다 알린다', () => {
+    const r = ok('[terminal]\ntheme = { light = "A", dark = "B" }\n')
+    expect(r.warnings).toEqual([
+      'terminal.theme.light: no theme named "A", using the default.',
+      'terminal.theme.dark: no theme named "B", using the default.'
+    ])
+  })
+
+  it('terminal.theme 의 짝에 모르는 키가 있으면 알리고 짝은 쓴다', () => {
+    const r = ok(
+      '[terminal]\ntheme = { light = "Catppuccin Latte", dark = "Catppuccin Mocha", dim = "x" }\n'
+    )
+    expect(r.theme.kind).toBe('pair')
+    expect(r.warnings).toEqual(['Unknown key terminal.theme.dim.'])
   })
 
   it.each(['header', 'palette'] as const)('layout.%s 를 따로 읽는다', (key) => {

@@ -15,7 +15,7 @@ metaKey.onChange((pressed) => (metaPressed.value = pressed))
 import { FitAddon } from '@xterm/addon-fit'
 import { UnicodeGraphemesAddon } from '@xterm/addon-unicode-graphemes'
 import { WebglAddon } from '@xterm/addon-webgl'
-import { Terminal, type IRenderDimensions } from '@xterm/xterm'
+import { Terminal, type IRenderDimensions, type ITheme } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../session/attach'
@@ -28,7 +28,6 @@ import { pastePaths } from '../terminal/paths'
 import { SCROLLBAR_WIDTH } from '../workspace/columns'
 import { osc7Path } from '../workspace/cwd'
 import type { Size } from '../workspace/grid'
-import { GHOSTTY, xtermTheme } from '../../../shared/theme'
 
 const {
   sessionId,
@@ -38,7 +37,8 @@ const {
   attach = undefined,
   active,
   shown,
-  font
+  font,
+  theme
 } = defineProps<{
   sessionId: string
   cellId: string
@@ -49,6 +49,7 @@ const {
   /** 터미널이 속한 cell 이 화면에 나와 있다. 겹쳐 숨은 cell 도 화면 안에 있어 IntersectionObserver 로는 가려낼 수 없다. */
   shown: boolean
   font: TerminalFont
+  theme: ITheme
 }>()
 const emit = defineEmits<{
   exit: []
@@ -63,7 +64,7 @@ const emit = defineEmits<{
 
 const host = useTemplateRef<HTMLDivElement>('host')
 const term = new Terminal({
-  theme: xtermTheme(GHOSTTY),
+  theme,
   ...font,
   scrollbar: { width: SCROLLBAR_WIDTH },
   // Claude Code 의 ⌥P(모델 전환)·⌥B/⌥F(단어 이동) 같은 키는 ⌥ 가 Meta 로 가야 동작한다.
@@ -256,6 +257,11 @@ watch(
     Object.assign(term.options, f)
     checkCell(true)
   }
+)
+
+watch(
+  () => theme,
+  (t) => (term.options.theme = t)
 )
 
 function pasteFiles(files: FileList | undefined): boolean {

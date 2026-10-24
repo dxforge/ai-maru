@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { contrast, GHOSTTY, isLight, mix, uiColors, xtermTheme } from './theme'
+import {
+  contrast,
+  GHOSTTY,
+  isLight,
+  mix,
+  hexColor,
+  parseWindowTheme,
+  uiColors,
+  xtermTheme
+} from './theme'
 
 describe('isLight', () => {
   it('배경의 밝기로 가른다', () => {
@@ -58,5 +67,58 @@ describe('xtermTheme', () => {
     expect(t.white).toBe('#c5c8c6')
     expect(t.brightBlack).toBe('#666666')
     expect(t.brightWhite).toBe('#eaeaea')
+  })
+})
+
+describe('xtermTheme 의 커서·선택 색', () => {
+  it('테마에 없으면 커서는 글자색이고 선택 색은 xterm 기본(undefined)이다', () => {
+    const t = xtermTheme(GHOSTTY)
+    expect(t.cursor).toBe(GHOSTTY.foreground)
+    expect(t.cursorAccent).toBeUndefined()
+    expect(t.selectionBackground).toBeUndefined()
+    expect(t.selectionForeground).toBeUndefined()
+  })
+
+  it('테마에 있으면 그대로 넘긴다', () => {
+    const t = xtermTheme({
+      ...GHOSTTY,
+      cursor: '#f5e0dc',
+      cursorText: '#1e1e2e',
+      selectionBackground: '#585b70',
+      selectionForeground: '#cdd6f4'
+    })
+    expect([t.cursor, t.cursorAccent, t.selectionBackground, t.selectionForeground]).toEqual([
+      '#f5e0dc',
+      '#1e1e2e',
+      '#585b70',
+      '#cdd6f4'
+    ])
+  })
+})
+
+describe('hexColor', () => {
+  it('# 이 없거나 대문자여도 #rrggbb 소문자로 맞추고, 그 꼴이 아니면 null', () => {
+    expect(hexColor('#1e1e2e')).toBe('#1e1e2e')
+    expect(hexColor(' 1E1E2E ')).toBe('#1e1e2e')
+    for (const bad of ['#fff', 'red', '#1e1e2e1e', '#1e1e2g', ''])
+      expect(hexColor(bad), bad).toBeNull()
+  })
+})
+
+describe('parseWindowTheme', () => {
+  it('#rrggbb 배경과 세 모드만 받는다', () => {
+    expect(parseWindowTheme({ background: '#1E1E2E', mode: 'system' })).toEqual({
+      background: '#1e1e2e',
+      mode: 'system'
+    })
+    for (const bad of [
+      null,
+      'dark',
+      { background: '#fff', mode: 'dark' },
+      { background: 'red', mode: 'dark' },
+      { background: '#1e1e2e', mode: 'auto' },
+      { background: '#1e1e2e' }
+    ])
+      expect(parseWindowTheme(bad), JSON.stringify(bad)).toBeNull()
   })
 })

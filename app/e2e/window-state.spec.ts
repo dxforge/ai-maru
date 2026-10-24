@@ -4,6 +4,7 @@ import type { ElectronApplication } from '@playwright/test'
 import {
   canvasWidth,
   clickMenu,
+  closeWindow,
   dragHandle,
   expect,
   dragCanvas,
@@ -46,12 +47,6 @@ async function placeWindow(app: ElectronApplication): Promise<Rect> {
     })
   })
   return win(app, 'getBounds')
-}
-
-async function closeWindow(app: ElectronApplication): Promise<void> {
-  const closed = app.waitForEvent('close')
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
-  await closed
 }
 
 async function quitApp(app: ElectronApplication): Promise<void> {

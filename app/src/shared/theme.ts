@@ -1,6 +1,37 @@
 import type { ITheme } from '@xterm/xterm'
 
-export type TerminalTheme = { background: string; foreground: string; ansi: readonly string[] }
+export type TerminalTheme = {
+  background: string
+  foreground: string
+  ansi: readonly string[]
+  cursor?: string
+  cursorText?: string
+  selectionBackground?: string
+  selectionForeground?: string
+}
+
+/**
+ * renderer 가 적용한 테마 가운데 main 이 창에 반영하는 것이다. `background` 는 창 배경색, `mode` 는
+ * `nativeTheme.themeSource` 다. 라이트·다크 테마를 모두 적었으면 `system` 이어야 renderer 의
+ * `prefers-color-scheme` 이 OS 를 따른다.
+ */
+export type WindowTheme = { background: string; mode: 'light' | 'dark' | 'system' }
+
+const HEX_COLOR = /^#?([0-9a-f]{6})$/i
+const MODES = new Set(['light', 'dark', 'system'])
+
+export function hexColor(value: string): string | null {
+  const m = HEX_COLOR.exec(value.trim())
+  return m ? `#${m[1].toLowerCase()}` : null
+}
+
+export function parseWindowTheme(v: unknown): WindowTheme | null {
+  if (typeof v !== 'object' || v === null) return null
+  const { background, mode } = v as Record<string, unknown>
+  const color = typeof background === 'string' ? hexColor(background) : null
+  if (!color || typeof mode !== 'string' || !MODES.has(mode)) return null
+  return { background: color, mode: mode as WindowTheme['mode'] }
+}
 
 /** Ghostty 의 기본값 — 배경·글자는 `src/config/Config.zig`, 팔레트(Tomorrow Night)는 `src/terminal/color.zig`. */
 export const GHOSTTY: TerminalTheme = {
@@ -96,7 +127,8 @@ export function uiColors(theme: TerminalTheme) {
   }
 }
 
-export function xtermTheme({ background, foreground, ansi }: TerminalTheme): ITheme {
+export function xtermTheme(theme: TerminalTheme): ITheme {
+  const { background, foreground, ansi } = theme
   const names = [
     'black',
     'red',
@@ -119,7 +151,10 @@ export function xtermTheme({ background, foreground, ansi }: TerminalTheme): ITh
   return {
     background,
     foreground,
-    cursor: foreground,
+    cursor: theme.cursor ?? foreground,
+    cursorAccent: theme.cursorText,
+    selectionBackground: theme.selectionBackground,
+    selectionForeground: theme.selectionForeground,
     scrollbarSliderBackground: foreground + THUMB_ALPHA,
     scrollbarSliderHoverBackground: foreground + '66',
     scrollbarSliderActiveBackground: foreground + '80',

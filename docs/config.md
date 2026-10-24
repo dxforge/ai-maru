@@ -7,6 +7,7 @@ AI Maru 는 `~/.ai-maru/config.toml` 을 읽는다. 앱은 이 폴더와 파일�
 font-family = "JetBrains Mono"
 font-size = 13
 line-height = 1.3
+theme = "Catppuccin Mocha"
 
 [layout]
 header = "top"
@@ -22,6 +23,7 @@ palette = "top"
 | `terminal.font-family` | `D2Coding, Menlo, 'Symbols Nerd Font Mono', monospace` | 글꼴 이름. 쉼표로 이어 여러 개를 적을 수 있다. |
 | `terminal.font-size` | `14` | 8–32 의 숫자(px). 소수도 받는다. |
 | `terminal.line-height` | `1.2` | 1–2 의 숫자. 글자 높이에 곱한 값이 행 높이다. 글자 높이는 글꼴이 정하고 글꼴 크기보다 조금 크다(기본 글꼴 14px 이면 15px). |
+| `terminal.theme` | 없음(Ghostty 의 기본 색) | 테마 이름, 또는 라이트·다크 모드마다 다른 테마를 적는 `{ light = "…", dark = "…" }`. |
 | `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 cell 헤더를 pane·cell 의 아래에 둘지 위에 둘지. |
 | `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트를 창의 아래에 띄울지 위에 띄울지. |
 
@@ -41,10 +43,30 @@ Claude Code 의 입력창은 터미널 아래에 있어 시선이 아래에 머�
 
 앱은 적은 이름마다 그린 글자 폭을 재서 쓸 수 없는 글꼴과 키워드를 토스트로 알린다. 위의 `ui-` 키워드 넷과 `math`·`emoji`·`fangsong` 도 토스트에 나온다. 이 셋을 앱의 Chromium 이 지원하는지는 확인하지 않았다.
 
+### `theme`
+
+앱에 든 테마는 [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) 의 Ghostty export 전부다. 이름은 저장소의 `app/src/renderer/src/themes/ghostty/` 의 파일 이름이고, Ghostty 의 `ghostty +list-themes` 가 보이는 이름과 같다. 대소문자와 공백까지 그대로 적는다(`"Catppuccin Mocha"`, `"GitHub Light Default"`, `"Rose Pine"`).
+
+```toml
+[terminal]
+theme = "Catppuccin Mocha"
+```
+
+테마는 터미널의 배경·글자·16색·커서·선택 색을 정한다. 앱은 사이드바·헤더 같은 앱 화면의 색과 창 틀(타이틀바)의 밝기도 터미널 테마에서 계산하므로, 테마를 바꾸면 함께 바뀐다. 적지 않으면 Ghostty 의 기본 색이다.
+
+macOS 의 라이트·다크 모드마다 다른 테마를 쓰려면 둘을 함께 적는다. OS 모드가 바뀌면 테마도 바로 바뀐다. 테마 이름 하나만 적으면 모드와 상관없이 그 테마다.
+
+```toml
+[terminal]
+theme = { light = "Catppuccin Latte", dark = "Catppuccin Mocha" }
+```
+
+모르는 이름을 적거나, `light`·`dark` 가운데 하나만 적거나, 이름도 `{ light, dark }` 표도 아닌 값을 적으면 기본 색을 쓰고 토스트로 알린다.
+
 ### 범위를 벗어나거나 잘못 적은 값
 
 - 범위를 벗어난 숫자는 가까운 끝값으로 맞춘다(`font-size = 40` 이면 32).
-- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적어도 기본값을 쓴다.
+- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적거나 `theme` 에 모르는 이름을 적어도 기본값을 쓴다.
 - 모르는 키는 무시한다.
 
 ## 고치면 바로 적용된다

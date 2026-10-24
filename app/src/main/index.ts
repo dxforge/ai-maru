@@ -52,7 +52,7 @@ import {
 import type { KillRequest, OpenRequest, QuitRequest } from './session-host'
 import { createSessionCells } from './session-cells'
 import {
-  readViewPrefs,
+  readWindowExtras,
   readWindowState,
   restoreWindowState,
   saveWindowStateOnClose,
@@ -62,7 +62,7 @@ import type { PaneReply } from '../shared/pane'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { parseScreen, parseViewPrefs, type ScreenState, type ViewPrefs } from '../shared/screen'
 import { newSessionId, type SessionOpen } from '../shared/session'
-import { GHOSTTY, isLight } from '../shared/theme'
+import { GHOSTTY, isLight, parseWindowTheme, type WindowTheme } from '../shared/theme'
 
 function sessionDir(): string {
   return join(app.getPath('userData'), 's')
@@ -145,7 +145,22 @@ function windowStateFile(): string {
 }
 
 function viewPrefs(): ViewPrefs {
-  return { ...readViewPrefs(windowStateFile()), ...parseViewPrefs(lastScreen) }
+  return { ...readWindowExtras(windowStateFile()), ...parseViewPrefs(lastScreen) }
+}
+
+const DEFAULT_WINDOW_THEME: WindowTheme = {
+  background: GHOSTTY.background,
+  mode: isLight(GHOSTTY) ? 'light' : 'dark'
+}
+let theme: WindowTheme | null = null
+
+function applyTheme(next: WindowTheme): void {
+  if (theme && next.background === theme.background && next.mode === theme.mode) return
+  theme = next
+  // 창 틀이 시스템 설정 대신 터미널 배경을 따라야, 어두운 터미널 위에 밝은 타이틀바가 뜨지 않는다.
+  nativeTheme.themeSource = next.mode
+  const win = mainWindow()
+  if (win && !win.isDestroyed()) win.setBackgroundColor(next.background)
 }
 
 function restartCheck(): Promise<RestartCheck> {
@@ -260,7 +275,7 @@ function createWindow(): void {
     ...windowBounds(state, displays),
     show: !unobtrusive,
     focusable: !unobtrusive,
-    backgroundColor: GHOSTTY.background,
+    backgroundColor: (theme ?? DEFAULT_WINDOW_THEME).background,
     titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -285,7 +300,7 @@ function createWindow(): void {
     win.showInactive()
   }
   restoreWindowState(win, state)
-  saveWindowStateOnClose(win, stateFile, viewPrefs)
+  saveWindowStateOnClose(win, stateFile, () => ({ ...viewPrefs(), ...(theme && { theme }) }))
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -343,8 +358,11 @@ if (!app.requestSingleInstanceLock()) {
 
 function start(): void {
   if (unobtrusive) app.dock?.hide()
-  // 창 틀이 시스템 설정 대신 터미널 배경을 따라야, 어두운 터미널 위에 밝은 타이틀바가 뜨지 않는다.
-  nativeTheme.themeSource = isLight(GHOSTTY) ? 'light' : 'dark'
+  applyTheme(readWindowExtras(windowStateFile()).theme ?? DEFAULT_WINDOW_THEME)
+  ipcMain.on('theme:apply', (_event, t: unknown) => {
+    const parsed = parseWindowTheme(t)
+    if (parsed) applyTheme(parsed)
+  })
   const userData = app.getPath('userData')
   const restored = takeRestart(restartFile(userData))
   // 재시작으로 뜨지 않았으면 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.

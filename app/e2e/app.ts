@@ -120,6 +120,12 @@ async function launchApp(
   return { app, page }
 }
 
+export async function closeWindow(app: ElectronApplication): Promise<void> {
+  const closed = app.waitForEvent('close')
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await closed
+}
+
 export function configFile(dataDir: string): string {
   return join(dataDir, 'config', 'config.toml')
 }
