@@ -306,44 +306,12 @@ export function activePane(page: Page) {
   return page.locator('.pane:has(.terminal-view.active)')
 }
 
-/** 앱은 `CLAUDE_CONFIG_DIR` 를 셸에 넘기지 않으므로, `config` 를 주면 hook 명령에 직접 붙인다. */
-export function claudeHook(
-  event: string,
-  { session = 'c-1', config }: { session?: string; config?: string } = {}
-): string {
-  const env = config ? `CLAUDE_CONFIG_DIR='${config}' ` : ''
-  return `printf '%s' '{"hook_event_name":"${event}","session_id":"${session}"}' | ${env}"$MARU_CLI" claude hook\n`
-}
-
-export function claudeConfig(dataDir: string): string {
-  const config = join(dataDir, 'claude')
-  mkdirSync(join(config, 'sessions'), { recursive: true })
-  return config
-}
-
-function claudeFileJson(sessionId: string, status: string, at: number, cwd?: string): string {
-  return JSON.stringify({ sessionId, status, statusUpdatedAt: at, ...(cwd && { cwd }) })
-}
-
-export function claudeFile(
-  config: string,
-  pid: number,
-  sessionId: string,
-  status: string,
-  at: number
-): void {
-  writeFileSync(join(config, 'sessions', `${pid}.json`), claudeFileJson(sessionId, status, at))
-}
-
-export function claudeFileCommand(
-  config: string,
-  pid: number,
-  sessionId: string,
-  status: string,
-  at: number
-): string {
-  const json = claudeFileJson(sessionId, status, at, '%s')
-  return `printf '${json}' "$PWD" > '${join(config, 'sessions', `${pid}.json`)}'`
+/**
+ * claude 가 보내는 것과 같은 OSC 7501 바이트를 pane 의 셸에서 PTY 출력으로 내보내 세션 프로세스가 받게 한다.
+ */
+export function programStatus(state: string, extra?: string, app = 'claude-code'): string {
+  const fields = [`state=${state}`, app && `app=${app}`, extra].filter(Boolean).join(':')
+  return `printf '\\033]7501;${fields}\\033\\\\'\n`
 }
 
 export function activeHeader(page: Page) {

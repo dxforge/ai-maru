@@ -18,11 +18,13 @@ body,
   overflow: hidden;
 }
 
-.working {
+.working,
+.done {
   --claude: var(--working);
 }
 
-.waiting {
+.blocked,
+.error {
   --claude: var(--waiting);
 }
 

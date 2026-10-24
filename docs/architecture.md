@@ -44,7 +44,7 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 ## 재시작은 세션을 남긴다
 
-종료는 세션을 모두 끄고, 재시작은 끄지 않는다. renderer 는 화면(workspace·cell·pane 배치와 사이드바·보기 모드, `app/src/shared/screen.ts`)이 바뀔 때마다 main 에 보낸다. 재시작하면 main 이 마지막으로 받은 화면과 main 이 가진 job 표·Claude 상태를 userData 의 `restart.json` 에 쓴 뒤 다시 뜬다(`app/src/main/restart.ts`). renderer 에게 그때 묻지 않으므로 renderer 가 멈춰 있어도 재시작한다.
+종료는 세션을 모두 끄고, 재시작은 끄지 않는다. renderer 는 화면(workspace·cell·pane 배치와 사이드바·보기 모드, `app/src/shared/screen.ts`)이 바뀔 때마다 main 에 보낸다. 재시작하면 main 이 마지막으로 받은 화면과 main 이 가진 job 표를 userData 의 `restart.json` 에 쓴 뒤 다시 뜬다(`app/src/main/restart.ts`). renderer 에게 그때 묻지 않으므로 renderer 가 멈춰 있어도 재시작한다.
 
 다시 뜬 앱의 남은 세션 정리는 이 파일에 있는 세션만 남기고, 그 가운데 프로토콜 버전이 다른 세션은 끈다. 되살린 pane 은 `session:open` 의 `attach` 로 세션을 띄우지 않고 붙는다.
 

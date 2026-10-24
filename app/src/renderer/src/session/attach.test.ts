@@ -43,7 +43,13 @@ function fakeConnection() {
   return { conn, deliver: (msg: SessionMessage) => deliver(msg), close: () => close() }
 }
 
-const handlers = { onExit: () => {}, onSpawned: () => {}, onOpenFailed: () => {} }
+const handlers = {
+  onExit: () => {},
+  onSpawned: () => {},
+  onOpenFailed: () => {},
+  onProgramStatus: () => {},
+  onForeground: () => {}
+}
 
 describe('attach', () => {
   it('붙기 전의 입력은 attach 요청 뒤에 보내고, 붙기 전의 resize 는 보내지 않는다', () => {
@@ -105,6 +111,7 @@ describe('attach', () => {
     const { conn, deliver, close } = fakeConnection()
     const calls: string[] = []
     attach(term as unknown as Terminal, conn, {
+      ...handlers,
       onExit: () => calls.push('exit'),
       onSpawned: () => calls.push('spawned'),
       onOpenFailed: () => calls.push('failed')
@@ -190,5 +197,43 @@ describe('attach', () => {
     deliver(JSON.stringify({ type: 'error', code: 'open_failed', message: 'no shell' }))
     close()
     expect(failed).toEqual(['no shell'])
+  })
+
+  it('program_status 는 레코드를 넘기고, 모양이 틀리면 무시한다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, deliver } = fakeConnection()
+    const got: unknown[] = []
+    attach(term as unknown as Terminal, conn, {
+      ...handlers,
+      onProgramStatus: (records) => got.push(records)
+    })
+    const record = {
+      id: '',
+      state: 'working',
+      kind: null,
+      progress: null,
+      app: 'claude-code',
+      title: '',
+      message: 'hi'
+    }
+    deliver(JSON.stringify({ type: 'program_status', records: [record] }))
+    deliver(JSON.stringify({ type: 'program_status', records: [] }))
+    deliver(JSON.stringify({ type: 'program_status' }))
+    expect(got).toEqual([[record], []])
+    expect(term.written).toEqual([])
+  })
+
+  it('foreground 와 resync 는 디렉토리를 다시 읽게만 한다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, deliver } = fakeConnection()
+    let moved = 0
+    attach(term as unknown as Terminal, conn, { ...handlers, onForeground: () => moved++ })
+    deliver(JSON.stringify({ type: 'foreground', pid: 7, cwd: '/x' }))
+    expect(moved).toBe(1)
+    deliver(JSON.stringify({ type: 'resync', cols: 80, rows: 24, cursor_x: 0, cursor_y: 0 }))
+    expect(moved).toBe(2)
+    deliver(JSON.stringify({ type: 'attached', cols: 80, rows: 24, cursor_x: 0, cursor_y: 0 }))
+    expect(moved).toBe(2)
+    expect(term.written).toEqual([])
   })
 })

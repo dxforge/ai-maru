@@ -310,6 +310,7 @@ export function createWorkspaces(
     openCellFrom,
     split,
     splitFrom,
+    pane,
     paneBySession,
     closePane,
     focusPane,

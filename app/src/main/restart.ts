@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { parseScreen, type ScreenState } from '../shared/screen'
-import { parseClaudeFile, type ClaudeFile } from './claude-status'
 import { parseJobsFile, type JobsFile } from './job'
 import { liveSessions } from './session'
 
@@ -19,7 +18,6 @@ export function restartFile(userData: string): string {
 export type RestartState = {
   screen: ScreenState
   jobs: JobsFile | null
-  claude: ClaudeFile | null
 }
 
 /** 제자리 truncate 로 쓰면 그 사이 앱이 죽을 때 깨진 파일이 남는다. */
@@ -31,10 +29,10 @@ export async function writeRestart(path: string, state: RestartState): Promise<v
 
 function parseRestart(v: unknown): RestartState | null {
   if (typeof v !== 'object' || v === null) return null
-  const { screen, jobs, claude } = v as Record<string, unknown>
+  const { screen, jobs } = v as Record<string, unknown>
   const parsed = parseScreen(screen)
   if (!parsed) return null
-  return { screen: parsed, jobs: parseJobsFile(jobs), claude: parseClaudeFile(claude) }
+  return { screen: parsed, jobs: parseJobsFile(jobs) }
 }
 
 /** 읽자마자 지운다 — 남으면 다음 시작이 재시작이 아닌데도 그 세션을 남긴다. */

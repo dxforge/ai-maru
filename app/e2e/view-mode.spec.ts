@@ -1,7 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import {
   activePane,
-  claudeHook,
   clickMenu,
   expect,
   expectCols,
@@ -9,6 +8,7 @@ import {
   openPalette,
   paneRows,
   panes,
+  programStatus,
   resizeBy,
   rows,
   run,
@@ -208,7 +208,7 @@ test('columns 에서 포커스가 같은 pane 으로 돌아와도 스크롤한 �
 }) => {
   const launched = await launch()
   const { page } = launched
-  await page.keyboard.type(claudeHook('UserPromptSubmit'))
+  await page.keyboard.type(programStatus('working'))
   await expect(paneRows(page)).toHaveClass(/working/)
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)

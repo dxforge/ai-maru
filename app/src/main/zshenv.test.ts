@@ -33,10 +33,14 @@ function home(files: Record<string, string>): string {
  * 타입에는 `detached` 가 없지만, Node 의 `spawnSync` 도 이 옵션을 받아 새 세션에서 띄운다. `spawnSync` 가 timeout 에
  * 보내는 기본 SIGTERM 은 대화형 zsh 가 무시하므로 SIGKILL 로 종료한다.
  */
+function zshEnv(homeDir: string, env: object): Record<string, string> {
+  return { HOME: homeDir, ZDOTDIR: zdotdir, PATH: '/usr/bin:/bin', HOST: 'mac', ...env }
+}
+
 function spawnZsh(args: string[], homeDir: string, cwd: string, env: object, input?: string) {
   const options: SpawnSyncOptionsWithStringEncoding & { detached: true } = {
     cwd,
-    env: { HOME: homeDir, ZDOTDIR: zdotdir, PATH: '/usr/bin:/bin', HOST: 'mac', ...env },
+    env: zshEnv(homeDir, env),
     input,
     encoding: 'utf8',
     timeout: 10_000,
@@ -185,29 +189,69 @@ function shellWith(homeDir: string, env: Record<string, string>, command: string
   return spawnLogin(homeDir, command, homeDir, env).stdout
 }
 
+const CLEAR = '\x1b]7501;state=clear\x1b\\'
+
+const EXPECT = '/usr/bin/expect'
+
+/**
+ * `expect` 의 `spawn` 이 만든 pty 를 controlling tty 로 쥔 zsh 에서 돌린다. `spawnZsh` 의 셸에는 tty 가
+ * 없어 `/dev/tty` 에 쓰는 것을 볼 수 없고, `script` 는 자기 stdin 이 tty 여야 돈다. 돌려주는 값은 pty 에
+ * 찍힌 출력 전부다. 명령은 Tcl 의 따옴표 규칙을 피해 env 로 넘긴다.
+ */
+function ttyShellWith(homeDir: string, env: Record<string, string>, command: string): string {
+  const script = `spawn -noecho ${ZSH} -l -i -c $env(MARU_TEST_COMMAND); expect eof`
+  const r = spawnSync(EXPECT, ['-c', script], {
+    cwd: homeDir,
+    env: { ...zshEnv(homeDir, env), MARU_TEST_COMMAND: command },
+    encoding: 'utf8',
+    timeout: 10_000,
+    killSignal: 'SIGKILL'
+  })
+  return r.stdout
+}
+
 function loginShellWith(homeDir: string, env: Record<string, string>, command: string): string {
   return stdoutOf(spawnLogin(homeDir, command, homeDir, env))
 }
 
 describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 claude 함수', () => {
-  it('앱 plugin 을 실어 claude 를 띄우고, 끝나면 앱에 알린다', () => {
+  const tty = it.skipIf(!existsSync(EXPECT))
+
+  tty('앱 plugin 을 실어 claude 를 띄우고, 끝나면 tty 에 OSC 7501 clear 를 쓴다', () => {
     const h = home({ '.zshrc': '' })
     const { bin, log } = fakes(h, 'exit 0')
-    expect(shellWith(h, appEnv(bin), 'claude -p "a b"; print code=$?')).toBe('code=0\n')
-    expect(readFileSync(log, 'utf8')).toBe('claude --plugin-dir /plug -p a b\nmaru claude exit\n')
+    const out = ttyShellWith(h, appEnv(bin), 'claude -p "a b"; print code=$?')
+    expect(out).toContain(CLEAR)
+    expect(out).toContain('code=0')
+    expect(readFileSync(log, 'utf8')).toBe('claude --plugin-dir /plug -p a b\n')
   })
 
-  it('claude 의 종료 코드를 돌려준다', () => {
+  tty('clear 는 stdout 이 아니라 tty 에 쓴다', () => {
+    const h = home({ '.zshrc': '' })
+    const { bin } = fakes(h, 'exit 0')
+    const captured = join(h, 'stdout.txt')
+    expect(ttyShellWith(h, appEnv(bin), `claude > '${captured}'`)).toContain(CLEAR)
+    expect(readFileSync(captured, 'utf8')).toBe('')
+  })
+
+  it('tty 가 없으면 clear 를 건너뛰고 claude 의 종료 코드를 돌려준다', () => {
     const h = home({ '.zshrc': '' })
     const { bin } = fakes(h, 'exit 3')
-    expect(shellWith(h, appEnv(bin), 'claude; print code=$?')).toBe('code=3\n')
+    const r = spawnLogin(h, 'claude; print code=$?', h, appEnv(bin))
+    expect(r.stdout).toBe('code=3\n')
+    expect(r.stderr).toBe('')
   })
 
-  it('Ctrl-C 로 claude 와 함께 셸이 SIGINT 를 받아도 앱에 알린다', () => {
+  tty('Ctrl-C 로 claude 와 함께 셸이 SIGINT 를 받아도 clear 를 쓴다', () => {
     const h = home({ '.zshrc': '' })
-    const { bin, log } = fakes(h, 'kill -INT $PPID; kill -INT $$')
-    shellWith(h, appEnv(bin), 'claude')
-    expect(readFileSync(log, 'utf8')).toContain('maru claude exit\n')
+    const { bin } = fakes(h, 'kill -INT $PPID; kill -INT $$')
+    expect(ttyShellWith(h, appEnv(bin), 'claude')).toContain(CLEAR)
+  })
+
+  tty('claude 가 SIGKILL 로 죽어도 clear 를 쓴다', () => {
+    const h = home({ '.zshrc': '' })
+    const { bin } = fakes(h, 'kill -9 $$')
+    expect(ttyShellWith(h, appEnv(bin), 'claude')).toContain(CLEAR)
   })
 
   it('앱의 값이 없으면 claude 를 그대로 부른다', () => {
@@ -221,7 +265,7 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 claude 함수', () => {
     const h = home({ '.zshrc': "alias claude='claude --mine'" })
     const { bin, log } = fakes(h, 'exit 0')
     shellWith(h, appEnv(bin), 'claude')
-    expect(readFileSync(log, 'utf8')).toBe('claude --plugin-dir /plug --mine\nmaru claude exit\n')
+    expect(readFileSync(log, 'utf8')).toBe('claude --plugin-dir /plug --mine\n')
   })
 
   it('사용자 .zshrc 가 정의한 claude 함수가 이긴다', () => {
@@ -258,14 +302,18 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 claude 함수', () => {
     }
   )
 
-  it('claude 안(CLAUDECODE)에서 띄운 claude 는 plugin·env 없이 그대로 부르고 앱에 알리지 않는다', () => {
-    const h = home({ '.zshrc': '' })
-    const { bin, log } = fakes(h, recordHyperlink)
-    shellWith(h, { ...appEnv(bin), CLAUDECODE: '1' }, 'claude --version')
-    expect(readFileSync(log, 'utf8')).toBe(
-      'claude --version\nhyperlink=unset marker=unset zdotdir=unset\n'
-    )
-  })
+  tty(
+    'claude 안(CLAUDECODE)에서 띄운 claude 는 plugin·env 없이 그대로 부르고 clear 를 쓰지 않는다',
+    () => {
+      const h = home({ '.zshrc': '' })
+      const { bin, log } = fakes(h, recordHyperlink)
+      const out = ttyShellWith(h, { ...appEnv(bin), CLAUDECODE: '1' }, 'claude --version')
+      expect(out).not.toContain(CLEAR)
+      expect(readFileSync(log, 'utf8')).toBe(
+        'claude --version\nhyperlink=unset marker=unset zdotdir=unset\n'
+      )
+    }
+  )
 
   it('claude 의 Bash 도구가 띄우는 로그인 셸은 표식을 보고 FORCE_HYPERLINK 를 지운다', () => {
     const h = home({ '.zshrc': '' })
@@ -282,6 +330,6 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 claude 함수', () => {
     const { bin, log } = fakes(h, 'exit 0')
     const r = spawnLogin(h, 'claude', h, appEnv(bin))
     expect(r.stderr).toBe('')
-    expect(readFileSync(log, 'utf8')).toBe('claude --plugin-dir /plug --mine\nmaru claude exit\n')
+    expect(readFileSync(log, 'utf8')).toBe('claude --plugin-dir /plug --mine\n')
   })
 })

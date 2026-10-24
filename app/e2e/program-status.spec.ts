@@ -1,30 +1,59 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Locator, Page } from '@playwright/test'
 import {
   activeHeader,
-  claudeConfig,
-  claudeFile,
-  claudeHook as hook,
   clickMenu,
   expect,
   newWorkspace,
   paneHeader,
   paneRows,
+  panes,
   pressNew,
+  programStatus as status,
   screenshotPixels,
   shellRows,
   split,
   test,
   typesInto,
   cellGroups as groups,
-  cellItems
+  cellItems,
+  zshHome
 } from './app'
 
-test('hook 이 오면 사이드바의 pane 줄과 pane 헤더의 상태가 바뀌고, claude exit 로 사라진다', async ({
+test('claude 가 clear 를 보내지 못하고 죽어도 셸 함수가 clear 를 써서 상태가 사라진다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir)
+  const bin = join(dataDir, 'fakebin')
+  mkdirSync(bin)
+  const pidFile = join(dataDir, 'claude.pid')
+  writeFileSync(
+    join(bin, 'claude'),
+    `#!/bin/sh\necho $$ > '${pidFile}'\nprintf '\\033]7501;state=idle\\033\\\\'\nsleep 60\n`,
+    { mode: 0o755 }
+  )
+  const { page } = await launch({
+    SHELL: '/bin/zsh',
+    HOME: home,
+    PATH: `${bin}:${process.env.PATH}`
+  })
+  await page.keyboard.type('claude\n')
+  await expect(paneRows(page)).toHaveClass(/idle/)
+
+  process.kill(Number(readFileSync(pidFile, 'utf8')), 'SIGKILL')
+
+  await expect(paneRows(page)).toHaveCount(0)
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
+})
+
+test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상태가 바뀌고, clear 로 사라진다', async ({
   launch
 }) => {
   const { page } = await launch()
   await expect(paneRows(page)).toHaveCount(0)
-  await page.keyboard.type(hook('UserPromptSubmit'))
+  await page.keyboard.type(status('working'))
   await expect(paneRows(page)).toHaveClass(/working/)
   await expect(paneRows(page).locator('.title')).toHaveText('Claude')
   await expect(paneRows(page).locator('.state')).toHaveAttribute('title', 'Working')
@@ -34,29 +63,63 @@ test('hook 이 오면 사이드바의 pane 줄과 pane 헤더의 상태가 바�
   await expect(paneRows(page).locator('.title')).toHaveText('task-42')
   await expect(paneRows(page)).toHaveAttribute('aria-label', 'Working: task-42')
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
-  await page.keyboard.type(hook('PermissionRequest'))
-  await expect(paneRows(page)).toHaveClass(/waiting/)
-  await expect(paneRows(page)).toHaveAttribute('aria-label', /^Needs input: /)
-  await expect(activeHeader(page)).toHaveClass(/waiting/)
-  await page.keyboard.type(hook('Stop'))
+  await page.keyboard.type(status('blocked', 'kind=permission:msg=aGk='))
+  await expect(paneRows(page)).toHaveClass(/blocked/)
+  await expect(paneRows(page)).toHaveAttribute('aria-label', /^Blocked: /)
+  await expect(activeHeader(page)).toHaveClass(/blocked/)
+  await page.keyboard.type(status('done'))
+  await expect(paneRows(page)).toHaveClass(/done/)
+  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Done')
+  await page.keyboard.type(status('idle'))
   await expect(paneRows(page)).toHaveClass(/idle/)
   await expect(activeHeader(page)).toHaveClass(/idle/)
-  await page.keyboard.type('"$MARU_CLI" claude exit\n')
+  await page.keyboard.type(status('clear'))
   await expect(paneRows(page)).toHaveCount(0)
   await expect(activeHeader(page)).not.toHaveClass(/idle/)
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
 })
 
-test('hook 없이 claude 의 상태 파일이 idle 이 되면 쉬는 중으로 돌아온다', async ({
-  launch,
-  dataDir
+test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아이콘 대신 app 값을, app 이 비었으면 Program 을 보인다', async ({
+  launch
 }) => {
-  const config = claudeConfig(dataDir)
   const { page } = await launch()
-  await page.keyboard.type(hook('UserPromptSubmit', { config }))
+  await page.keyboard.type(status('working', undefined, 'make'))
   await expect(paneRows(page)).toHaveClass(/working/)
-  claudeFile(config, 1, 'c-1', 'idle', Date.now() + 60_000)
+  await expect(paneRows(page).locator('.title')).toHaveText('make')
+  await expect(paneRows(page)).toHaveAttribute('aria-label', 'Working: make')
+  await expect(paneRows(page).locator('.app')).toHaveCount(0)
+  await expect(activeHeader(page).locator('.title')).toHaveText('make')
+  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Working')
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
+  await groups(page).locator('.fold').click()
+  await expect(groups(page).locator('.summary .title')).toHaveText('make 1')
+  await groups(page).locator('.fold').click()
+
+  await page.keyboard.type(status('idle', undefined, ''))
   await expect(paneRows(page)).toHaveClass(/idle/)
+  await expect(paneRows(page).locator('.title')).toHaveText('Program')
+  await expect(paneRows(page).locator('.app')).toHaveCount(0)
+  await expect(activeHeader(page).locator('.title')).toHaveText('Program')
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
+
+  await page.keyboard.type(status('idle'))
+  await expect(paneRows(page).locator('.title')).toHaveText('Claude')
+  await expect(paneRows(page).locator('.app')).toHaveCount(1)
+  await expect(activeHeader(page).locator('.title')).toHaveText('Claude')
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
+})
+
+test('루트가 아닌 레코드만 있으면 상태를 보이지 않고, 루트 레코드가 오면 그 상태를 보인다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await page.keyboard.type(status('working', 'id=build'))
+  await page.keyboard.type('echo sub-$((1+1))\n')
+  await expect(panes(page).first()).toContainText('sub-2')
+  await expect(paneRows(page)).toHaveCount(0)
+  await page.keyboard.type(status('error'))
+  await expect(paneRows(page)).toHaveClass(/error/)
+  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Error')
 })
 
 test('pane 줄은 그 터미널의 cell 아래에만, pane 헤더는 보이는 pane 의 상태를 따른다', async ({
@@ -66,7 +129,7 @@ test('pane 줄은 그 터미널의 cell 아래에만, pane 헤더는 보이는 p
   await pressNew(app)
   await expect(cellItems(page)).toHaveCount(2)
   await page.waitForSelector('.terminal-view.active .xterm-screen')
-  await page.keyboard.type(hook('UserPromptSubmit'))
+  await page.keyboard.type(status('working'))
   await expect(groups(page).nth(1).locator('.pane-row')).toHaveClass(/working/)
   await expect(groups(page).nth(0).locator('.pane-row')).toHaveClass(/shell/)
   await expect(activeHeader(page)).toHaveClass(/working/)
@@ -85,7 +148,7 @@ test('셸 pane 과 Claude pane 모두 pane 마다 줄이 있고, 포커스된 pa
   await expect(shellRows(page)).toHaveCount(2)
   await expect(shellRows(page)).toHaveClass([/^(?!.*focused)/, /focused/])
   await expect(shellRows(page).first()).toHaveAttribute('aria-label', 'Shell')
-  await page.keyboard.type(hook('UserPromptSubmit'))
+  await page.keyboard.type(status('working'))
   await expect(right).toHaveClass(/working/)
   await expect(left).not.toHaveClass(/working/)
   await expect(paneRows(page)).toHaveClass(/working/)
@@ -99,6 +162,41 @@ test('셸 pane 과 Claude pane 모두 pane 마다 줄이 있고, 포커스된 pa
   await clickMenu(app, 'focus-pane-right')
   await expect(paneRows(page)).toHaveClass(/focused/)
   await expect(shellRows(page)).not.toHaveClass(/focused/)
+})
+
+test('상태가 있는 pane 의 셸이 끝나면 pane 과 함께 사라지고, 다른 pane 의 상태는 그대로다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await page.keyboard.type(status('working'))
+  await clickMenu(app, 'focus-pane-left')
+  await page.keyboard.type(status('done'))
+  await expect(paneRows(page)).toHaveClass([/done/, /working/])
+
+  await page.keyboard.type('exit\n')
+  await expect(panes(page)).toHaveCount(1)
+  await expect(paneRows(page)).toHaveCount(1)
+  await expect(paneRows(page)).toHaveClass(/working/)
+})
+
+test('cell 헤더는 pane 상태 가운데 blocked, error, done, working 순으로 급한 것을 본다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  const header = page.locator('.cell-header')
+  await page.keyboard.type(status('working'))
+  await expect(header).toHaveClass(/working/)
+  await clickMenu(app, 'focus-pane-left')
+  await page.keyboard.type(status('done'))
+  await expect(header).toHaveClass(/done/)
+  await clickMenu(app, 'focus-pane-right')
+  await page.keyboard.type(status('error'))
+  await expect(header).toHaveClass(/error/)
+  await clickMenu(app, 'focus-pane-left')
+  await page.keyboard.type(status('blocked'))
+  await expect(header).toHaveClass(/blocked/)
 })
 
 test('셸 pane 의 줄을 눌러도 그 pane 에 키 입력이 간다', async ({ launch }) => {
@@ -115,7 +213,7 @@ test('pane 줄을 누르면 그 cell 을 고르고 그 pane 에 키 입력이 �
   const launched = await launch()
   const { app, page } = launched
   await split(app, page, 'split-right', 2)
-  await page.keyboard.type(hook('UserPromptSubmit'))
+  await page.keyboard.type(status('working'))
   await expect(paneRows(page)).toHaveClass(/working/)
   await clickMenu(app, 'focus-pane-left')
   await newWorkspace(launched, 2)
@@ -137,17 +235,17 @@ test('사이드바의 상태 아이콘과 Claude 아이콘은 잉크의 가운�
 }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
-  await page.keyboard.type(hook('Stop'))
+  await page.keyboard.type(status('idle'))
   await split(app, page, 'split-down', 3)
-  await page.keyboard.type(hook('PermissionRequest', { session: 'c-2' }))
-  await expect(paneRows(page)).toHaveClass([/idle/, /waiting/])
+  await page.keyboard.type(status('blocked', 'kind=permission'))
+  await expect(paneRows(page)).toHaveClass([/idle/, /blocked/])
   const shell = shellRows(page)
-  const [idle, waiting] = [paneRows(page).nth(0), paneRows(page).nth(1)]
+  const [idle, blocked] = [paneRows(page).nth(0), paneRows(page).nth(1)]
 
   for (const [row, icons] of [
     [shell, ['.state']],
     [idle, ['.state', '.app']],
-    [waiting, ['.state', '.app']]
+    [blocked, ['.state', '.app']]
   ] as const) {
     for (const offset of await inkOffsets(page, row, icons))
       expect(Math.abs(offset)).toBeLessThanOrEqual(0.5)

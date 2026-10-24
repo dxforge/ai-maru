@@ -4,9 +4,6 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { ICONS } from '../src/renderer/src/icons'
 import {
-  claudeConfig,
-  claudeFileCommand,
-  claudeHook,
   clickMenu,
   dragHandle,
   grabHandle,
@@ -14,6 +11,7 @@ import {
   newWorkspace,
   paneRows,
   panes,
+  programStatus,
   resizeBy,
   rows,
   run,
@@ -146,8 +144,8 @@ test('프롬프트가 뜨지 않아도 Claude 의 상태가 바뀌면 branch 를
   await expect(branch(page)).toHaveText(/main$/)
 
   // claude 가 일하는 동안처럼 프롬프트가 돌아오지 않게 sleep 으로 붙든다.
-  const hook = claudeHook('UserPromptSubmit').trimEnd()
-  await page.keyboard.type(`git switch -q -c by-claude && ${hook} && sleep 30\n`)
+  const report = programStatus('working').trimEnd()
+  await page.keyboard.type(`git switch -q -c by-claude && ${report} && sleep 30\n`)
   await expect(paneRows(page)).toHaveClass(/working/, shellGit)
   await expect(branch(page)).toHaveText(/by-claude$/)
 })
@@ -162,11 +160,11 @@ test('돌고 있는 프로그램이 다른 worktree 로 옮겨 간 채 Claude �
   await page.keyboard.type('cd proj\n')
   await expect(branch(page)).toHaveText(/main$/)
 
-  // claude 가 EnterWorktree 로 cwd 를 옮긴 채 일하는 상황을 흉내 낸다. 서브셸이 worktree 로 cd 한 뒤 hook 을 보내고, sleep 으로
+  // claude 가 EnterWorktree 로 cwd 를 옮긴 채 일하는 상황을 흉내 낸다. 서브셸이 worktree 로 cd 한 뒤 상태를 보고하고, sleep 으로
   // 프롬프트가 돌아오지 않게 한다. 서브셸이 foreground 프로세스 그룹의 리더이므로 세션은 서브셸의 cwd 를 답한다. 프롬프트가
   // 마지막으로 보낸 OSC 7 은 아직 `~/proj` 다.
-  const hook = claudeHook('UserPromptSubmit').trimEnd()
-  await page.keyboard.type(`(cd ../proj-wt && ${hook} && sleep 30)\n`)
+  const report = programStatus('working').trimEnd()
+  await page.keyboard.type(`(cd ../proj-wt && ${report} && sleep 30)\n`)
   await expect(paneRows(page)).toHaveClass(/working/)
   await expect(tip(page)).toHaveAttribute('title', 'proj — wt\n~/proj-wt')
 
@@ -186,27 +184,25 @@ test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어
 
   // `foreground` 는 실제 경로(`~/proj`)를 답하고, OSC 7 은 `$PWD`(`~/link`)를 준다. branch 를 바꿔 두고, branch 를 다시 읽은
   // 것을 확인한 뒤에 경로를 확인한다.
-  const hook = claudeHook('UserPromptSubmit').trimEnd()
-  await page.keyboard.type(`git switch -q -c by-claude && ${hook} && sleep 30\n`)
+  const report = programStatus('working').trimEnd()
+  await page.keyboard.type(`git switch -q -c by-claude && ${report} && sleep 30\n`)
   await expect(paneRows(page)).toHaveClass(/working/, shellGit)
   await expect(tip(page)).toHaveAttribute('title', 'proj — by-claude\n~/link')
   expect((await win(app)).path).toBe(join(home, 'link'))
 })
 
-test('maru cell new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른 worktree 로 옮겨 가면, 상태 파일의 cwd 가 바뀔 때 그 cell 의 branch 를 프로그램의 cwd 로 읽는다', async ({
+test('maru cell new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른 worktree 로 옮겨 가면, 세션이 알린 foreground 의 cwd 로 그 cell 의 branch 를 읽는다', async ({
   launch,
   dataDir
 }) => {
   const home = repoHome(dataDir)
-  const config = claudeConfig(dataDir)
   git(join(home, 'proj'), 'worktree', 'add', '-q', '-b', 'wt', '../proj-wt')
   // claude 가 셸 없이 pane 의 명령으로 떠서, 한 턴 안에서 EnterWorktree 로 cwd 를 옮기는 상황을 흉내 낸다. 프롬프트가 없으므로
-  // OSC 7 은 오지 않고, 옮긴 뒤 hook 도 오지 않는다. 파일의 idle 은 hook 보다 오래돼 상태는 working 그대로다.
-  // 앱은 hook 뒤 1초 안에 파일을 처음 읽어 그 cwd 를 기준으로 두므로, 옮기기는 그 뒤여야 한다. 3초는 거기에 2초 여유를 둔 것이다.
-  const writeStatus = claudeFileCommand(config, 1, 'c-1', 'idle', 1)
+  // OSC 7 은 오지 않고, 옮긴 뒤 보고도 오지 않는다. 세션은 레코드가 생기고 1초 뒤에 처음 잰 cwd 를 기준으로 두므로, 옮기기는
+  // 그 뒤여야 한다. 3초는 거기에 2초 여유를 둔 것이다.
   writeFileSync(
     join(home, 'claude.sh'),
-    `${writeStatus}\n${claudeHook('UserPromptSubmit', { config })}sleep 3\ncd ../proj-wt && ${writeStatus}\nsleep 30\n`
+    `${programStatus('working')}sleep 3\ncd ../proj-wt\nsleep 30\n`
   )
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await page.keyboard.type('maru cell new --cwd ~/proj bash ~/claude.sh >/dev/null\n')
@@ -249,7 +245,7 @@ test('아이콘은 모두 앞 글꼴의 fallback 이 아니라 함께 실은 Ner
   const { page } = launched
   await page.keyboard.type('cd proj\n')
   await expect(branch(page)).toHaveText(/main$/)
-  await page.keyboard.type(claudeHook('UserPromptSubmit'))
+  await page.keyboard.type(programStatus('working'))
   await expect(page.locator('.cell-header')).toHaveClass(/working/)
 
   // 이 화면에서 `ICONS` 를 그리는 자리는 일곱이다: 사이드바의 branch·접기·상태·Claude 아이콘,
@@ -330,12 +326,12 @@ async function collapse(app: ElectronApplication, page: Page): Promise<void> {
 }
 
 async function twoClaudes(app: ElectronApplication, page: Page): Promise<void> {
-  await page.keyboard.type(`${claudeHook('UserPromptSubmit').trimEnd()} && sleep 600\n`)
+  await page.keyboard.type(`${programStatus('working').trimEnd()} && sleep 600\n`)
   await split(app, page, 'split-right', 2)
   await page.keyboard.type(
-    `${claudeHook('PermissionRequest', { session: 'c-2' }).trimEnd()} && sleep 600\n`
+    `${programStatus('blocked', 'kind=permission').trimEnd()} && sleep 600\n`
   )
-  await expect(paneRows(page)).toHaveClass([/working/, /waiting/])
+  await expect(paneRows(page)).toHaveClass([/working/, /blocked/])
 }
 
 test('접기 화살표는 cell 의 pane 줄을 한 줄로 접고, 화살표나 그 줄을 누르면 편다', async ({
@@ -380,7 +376,7 @@ test('접은 사이드바는 같은 목록에서 글자만 빼고, 헤더는 cel
   await expect(collapsedGroups(page).nth(1)).toHaveClass(/selected/)
   await expect(collapsedGroups(page).nth(0).locator('.pane-row')).toHaveClass([
     /working/,
-    /waiting/
+    /blocked/
   ])
   await expect(collapsedGroups(page).nth(1).locator('.pane-row')).toHaveClass(/shell/)
   await expect(collapsedGroups(page).locator('.pane-row .title').first()).toHaveCSS('opacity', '0')
@@ -421,7 +417,7 @@ test('접은 cell 은 접은 사이드바에서도 가장 급한 상태 하나�
   await collapse(app, page)
 
   await expect(collapsedGroups(page).locator('.pane-row')).toHaveCount(0)
-  await expect(collapsedGroups(page).locator('.summary')).toHaveClass(/waiting/)
+  await expect(collapsedGroups(page).locator('.summary')).toHaveClass(/blocked/)
 })
 
 test('사이드바를 접고 펴는 동안에는 터미널 크기를 맞추지 않고, 폭이 다 바뀐 뒤 한 번 맞춘다', async ({
@@ -598,21 +594,21 @@ test('펼친 사이드바에서 접은 cell 은 가장 급한 상태와 pane 수
   await cellGroups(page).locator('.fold').click()
 
   const summary = cellGroups(page).locator('.summary')
-  await expect(summary).toHaveClass(/waiting/)
+  await expect(summary).toHaveClass(/blocked/)
   await expect(summary).toHaveText(/Claude 2/)
 })
 
 test('접은 cell 은 Claude 가 끝나도 접힌 채로, 요약 줄이 셸 수로 바뀐다', async ({ launch }) => {
   const { page } = await launch()
-  await page.keyboard.type(claudeHook('UserPromptSubmit'))
+  await page.keyboard.type(programStatus('working'))
   await cellGroups(page).locator('.fold').click()
   const summary = cellGroups(page).locator('.summary')
   await expect(summary).toHaveText(/Claude 1/)
 
-  await page.keyboard.type('"$MARU_CLI" claude exit\n')
+  await page.keyboard.type(programStatus('clear'))
 
   await expect(summary).toHaveText(/Shell 1/)
-  await expect(summary).not.toHaveClass(/working|waiting|idle/)
+  await expect(summary).not.toHaveClass(/working|blocked|done|error|idle/)
   await expect(paneRows(page)).toHaveCount(0)
 })
 

@@ -153,6 +153,31 @@ pub struct GhosttyTerminalModeConfig {
     pub value: bool,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyString {
+    pub ptr: *const u8,
+    pub len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyTerminalProgramStatus {
+    pub size: usize,
+    pub state: i32,
+    pub kind: i32,
+    pub progress: i8,
+    pub id: GhosttyString,
+    pub app: GhosttyString,
+    pub title: GhosttyString,
+    pub message: GhosttyString,
+}
+
+pub type GhosttyTerminalWritePtyFn =
+    unsafe extern "C" fn(GhosttyTerminal, *mut c_void, *const u8, usize);
+pub type GhosttyTerminalProgramStatusFn =
+    unsafe extern "C" fn(GhosttyTerminal, *mut c_void, *const GhosttyTerminalProgramStatus);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,6 +244,19 @@ mod tests {
             extra,
             selection,
         });
+        check!(GhosttyTerminalProgramStatus {
+            size,
+            state,
+            kind,
+            progress,
+            id,
+            app,
+            title,
+            message,
+        });
+        if !layouts["GhosttyString"].is_null() {
+            check!(GhosttyString { ptr, len });
+        }
     }
 
     fn assert_layout(

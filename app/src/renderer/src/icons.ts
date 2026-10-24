@@ -1,4 +1,4 @@
-import type { ClaudeState } from '../../shared/claude'
+import type { ProgramStatusState } from '../../shared/program-status'
 
 /** 화면에 쓰는 Codicons glyph 의 Symbols Nerd Font 코드 포인트. */
 export const ICONS = {
@@ -9,7 +9,8 @@ export const ICONS = {
   collapsed: '\uEAB6',
   idle: '\uEA71',
   working: '\uEB19',
-  waiting: '\uEAA2',
+  done: '\uEAB2',
+  blocked: '\uEAA2',
   error: '\uEA87',
   warning: '\uEA6C',
   close: '\uEA76'
@@ -19,16 +20,17 @@ export const ICONS = {
   | 'branch'
   | 'expanded'
   | 'collapsed'
-  | ClaudeState
-  | 'error'
+  | ProgramStatusState
   | 'warning'
   | 'close',
   string
 >
 
-/** 상태 아이콘의 툴팁·aria-label. 화면에는 글자를 쓰지 않는다. */
-export const STATE_LABELS: Record<ClaudeState, string> = {
+/** 상태 아이콘의 툴팁·aria-label. 화면에는 글자를 쓰지 않는다. 이름은 OSC 7501 의 상태 그대로다. */
+export const STATE_LABELS: Record<ProgramStatusState, string> = {
   idle: 'Idle',
   working: 'Working',
-  waiting: 'Needs input'
+  done: 'Done',
+  blocked: 'Blocked',
+  error: 'Error'
 }

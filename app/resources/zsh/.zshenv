@@ -40,8 +40,8 @@ add-zsh-hook precmd _maru_path
 
 # `name()` 꼴은 사용자 ~/.zshenv 의 claude alias 가 펼쳐져 parse error 가 난다.
 (( $+functions[claude] )) || function claude {
-  # claude 안(CLAUDECODE)에서 부른 claude 는 이 pane 의 claude 가 아니다. 앱 plugin 의 hook 과 끝의 `claude exit` 가
-  # 바깥 claude 의 pane 상태를 덮거나 지우므로 그대로 넘긴다.
+  # claude 안(CLAUDECODE)에서 부른 claude 는 이 pane 의 claude 가 아니다. 앱 plugin 의 hook 과 끝의 clear 가
+  # 바깥 claude 의 컨텍스트와 pane 상태를 건드리므로 그대로 넘긴다.
   if [[ -z $MARU_CLI || -z $MARU_CLAUDE_PLUGIN || -n $CLAUDECODE ]]; then
     command claude "$@"
     return
@@ -53,11 +53,12 @@ add-zsh-hook precmd _maru_path
   if [[ -z ${FORCE_HYPERLINK+set} ]]; then
     forced=(FORCE_HYPERLINK=1 MARU_CLAUDE_FORCED_HYPERLINK=1 ZDOTDIR=$_maru_zdotdir)
   fi
-  # claude 가 SessionEnd hook 없이 죽어도 앱이 표시를 지우게. Ctrl-C 로 셸도 SIGINT 를 받으면 함수의
+  # claude 가 OSC 7501 의 clear 를 보내지 못하고 죽어도 세션의 레코드가 남지 않게, 끝나면 이 셸이 tty 에
+  # clear 를 쓴다. stdout 은 파이프일 수 있어 tty 에 쓴다. Ctrl-C 로 셸도 SIGINT 를 받으면 함수의
   # 남은 명령을 건너뛰므로 always 로 둔다.
   {
     env "${forced[@]}" claude --plugin-dir "$MARU_CLAUDE_PLUGIN" "$@"
   } always {
-    "$MARU_CLI" claude exit
+    { print -n '\e]7501;state=clear\e\\' > /dev/tty } 2> /dev/null
   }
 }

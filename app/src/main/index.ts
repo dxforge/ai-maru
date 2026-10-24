@@ -13,7 +13,6 @@ import {
   type UtilityProcess
 } from 'electron'
 import { canvasPut, putCanvas } from './canvas'
-import { createClaudeStatus } from './claude-status'
 import { AfterReply, CliError, listenCli, optionalBoolean, type Handlers } from './cli-server'
 import { configDir, configFile, readConfigFile, watchConfig } from './config-file'
 import { gitHead } from './git'
@@ -100,15 +99,9 @@ function sendToWindows(channel: string, ...args: unknown[]): void {
   }
 }
 
-const claudeStatus = createClaudeStatus({
-  notify: (session, state) => sendToWindows('claude:status', session, state),
-  moved: (session) => sendToWindows('claude:moved', session)
-})
-
 // 재시작한 앱의 monitor 는 표를 되살리기 전에도 붙으므로, 보류한 알림은 되살린 뒤에 보낸다.
 let jobs: ReturnType<typeof createJobs> | null = null
 let jobsRestored: Promise<void> = Promise.resolve()
-let claudeRestored: Promise<void> = Promise.resolve()
 
 const monitor = createMonitor({
   shellPidOf: async (id) => (await readRecord(sessionDir(), id))?.shell_pid ?? null,
@@ -175,8 +168,7 @@ async function saveScreen(): Promise<void> {
   try {
     await writeRestart(restartFile(app.getPath('userData')), {
       screen,
-      jobs: jobs?.save() ?? null,
-      claude: claudeStatus.save()
+      jobs: jobs?.save() ?? null
     })
   } catch (err) {
     jobs?.resume()
@@ -252,7 +244,6 @@ const restartHandlers: Handlers = {
 const cliHandlers: Handlers = {
   ping: (_params, session) => ({ session }),
   'canvas.put': canvasPut(mainWindow),
-  ...claudeStatus.handlers,
   ...monitor.handlers,
   ...inbox,
   ...panes.handlers,
@@ -371,14 +362,6 @@ function start(): void {
     for (const j of r?.jobs?.jobs ?? []) keep.add(j.session)
     return killSessions(sessionDir(), undefined, keep)
   })
-  // `leftovers` 가 끈 세션의 Claude 상태는 되살리지 않는다. 프로토콜이 달라 꺼진 세션의 claude 는 아직 상태 파일을 지우지 않았을 수 있어, 되살린 뒤 첫 폴링으로는 끝난 것을 알지 못하기 때문이다.
-  claudeRestored = Promise.all([restored, leftovers]).then(async ([r]) => {
-    if (!r?.claude) return
-    const saved = Object.entries(r.claude.sessions)
-    const live = await Promise.all(saved.map(([id]) => sessionLive(sessionDir(), id)))
-    const sessions = Object.fromEntries(saved.filter((_, i) => live[i]))
-    await claudeStatus.restore({ ...r.claude, sessions })
-  })
   let toRestore: Promise<ScreenState | null> | null = restored.then((r) => r?.screen ?? null)
   ipcMain.handle('screen:restore', () => {
     const screen = toRestore
@@ -442,7 +425,6 @@ function start(): void {
   const ready = Promise.all([leftovers, cliServer])
   ipcMain.on('pane:reply', (_event, id: number, reply: PaneReply) => panes.reply(id, reply))
   ipcMain.on('pane:ready', () => panes.ready())
-  ipcMain.handle('claude:statuses', () => claudeRestored.then(claudeStatus.snapshot))
   ipcMain.handle('git:head', (_event, cwd: unknown) =>
     typeof cwd === 'string' ? gitHead(cwd) : null
   )
@@ -550,7 +532,6 @@ function start(): void {
   app.on('will-quit', (event) => {
     if (sessionsKilled) return
     event.preventDefault()
-    claudeStatus.close()
     stopConfig()
     quitting = true
     void Promise.all([
