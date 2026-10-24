@@ -6,16 +6,16 @@ import type { GitHead } from '../shared/git'
 import type { LinkOpenResult } from '../shared/link'
 import type { CellNewRequest, PaneNewRequest, PaneReply } from '../shared/pane'
 import type { ScreenState, ViewPrefs } from '../shared/screen'
-import type { SessionOpen } from '../shared/session'
+import type { PtyOpen } from '../shared/pty'
 import type { WindowTheme } from '../shared/theme'
 
 // MessagePort 는 contextBridge 를 건너지 못해서 window.postMessage 로 넘긴다.
-ipcRenderer.on('session:port', (event, key: string) => {
-  window.postMessage({ type: 'session:port', key }, '*', event.ports)
+ipcRenderer.on('pty:port', (event, key: string) => {
+  window.postMessage({ type: 'pty:port', key }, '*', event.ports)
 })
 
-ipcRenderer.on('session:lost', () => {
-  window.postMessage('session:lost', '*')
+ipcRenderer.on('pty:lost', () => {
+  window.postMessage('pty:lost', '*')
 })
 
 const firstConfig = ipcRenderer.sendSync('config:read') as ConfigRead
@@ -27,9 +27,8 @@ ipcRenderer.on('config:changed', (_event, read: ConfigRead) => {
 })
 
 const api = {
-  openSession: (key: string, open: SessionOpen): void =>
-    ipcRenderer.send('session:open', key, open),
-  killSession: (key: string): void => ipcRenderer.send('session:kill', key),
+  openPty: (key: string, open: PtyOpen): void => ipcRenderer.send('pty:open', key, open),
+  killPty: (key: string): void => ipcRenderer.send('pty:kill', key),
   onCommand: (cb: (id: CommandId) => void): void => {
     ipcRenderer.on('command:run', (_event, id: CommandId) => cb(id))
   },
@@ -39,8 +38,8 @@ const api = {
   onPaneNew: (cb: (id: number, req: PaneNewRequest) => void): void => {
     ipcRenderer.on('pane:new', (_event, id: number, req: PaneNewRequest) => cb(id, req))
   },
-  onPaneClose: (cb: (id: number, session: string) => void): void => {
-    ipcRenderer.on('pane:close', (_event, id: number, session: string) => cb(id, session))
+  onPaneClose: (cb: (id: number, pty: string) => void): void => {
+    ipcRenderer.on('pane:close', (_event, id: number, pty: string) => cb(id, pty))
   },
   onCellNew: (cb: (id: number, req: CellNewRequest) => void): void => {
     ipcRenderer.on('cell:new', (_event, id: number, req: CellNewRequest) => cb(id, req))
@@ -56,14 +55,14 @@ const api = {
   paneReady: (): void => ipcRenderer.send('pane:ready'),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),
   /**
-   * `sessionId` 세션의 foreground 프로세스의 cwd 다. `cwd` 와 같은 디렉토리면 `cwd` 를 그대로 돌려준다.
-   * 세션이 모르면 null 이고, 세션에 닿지 못하면 reject 한다.
+   * `ptyId` pty 의 foreground 프로세스의 cwd 다. `cwd` 와 같은 디렉토리면 `cwd` 를 그대로 돌려준다.
+   * pty 가 모르면 null 이고, pty 에 닿지 못하면 reject 한다.
    */
-  foregroundCwd: (sessionId: string, cwd?: string): Promise<string | null> =>
-    ipcRenderer.invoke('session:foreground', sessionId, cwd),
-  /** 터미널 링크를 연다. 상대경로는 `sessionId` 의 foreground 프로세스의 cwd 기준이다. */
-  openLink: (text: string, sessionId: string): Promise<LinkOpenResult> =>
-    ipcRenderer.invoke('link:open', text, sessionId),
+  foregroundCwd: (ptyId: string, cwd?: string): Promise<string | null> =>
+    ipcRenderer.invoke('pty:foreground', ptyId, cwd),
+  /** 터미널 링크를 연다. 상대경로는 `ptyId` 의 foreground 프로세스의 cwd 기준이다. */
+  openLink: (text: string, ptyId: string): Promise<LinkOpenResult> =>
+    ipcRenderer.invoke('link:open', text, ptyId),
   setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),
   saveScreen: (screen: ScreenState): void => ipcRenderer.send('screen:state', screen),
   /**

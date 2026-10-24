@@ -245,7 +245,7 @@ impl VtTerminal {
         })
     }
 
-    /// 붙는 클라이언트에 보낼 재생. 그리드 높이·스크롤 리전·커서까지 이 세션과 같게 맞춰 끝난다.
+    /// 붙는 클라이언트에 보낼 재생. 그리드 높이·스크롤 리전·커서까지 이 화면과 같게 맞춰 끝난다.
     ///
     /// 대체 화면이 떠 있으면 일반 화면과 스크롤백을 먼저 싣는다 — 대체 화면만 보내면 그
     /// 프로그램이 끝난 뒤 클라이언트에 빈 화면이 남는다. 포맷은 활성 화면만 내보내므로 복제본을
@@ -750,7 +750,7 @@ mod tests {
     }
 
     #[test]
-    fn short_sessions_report_no_trailing_blanks() {
+    fn short_outputs_report_no_trailing_blanks() {
         let mut t = term();
         assert_eq!(t.trailing_blank_rows(&[]).unwrap(), 0);
         t.write(b"a\r\nb\r\n");

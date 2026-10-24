@@ -1,14 +1,14 @@
 import type { MessagePortMain } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { KillRequest, OpenRequest } from './session-host'
+import type { KillRequest, OpenRequest } from './pty-host'
 
-const session = vi.hoisted(() => ({
+const pty = vi.hoisted(() => ({
   connect: vi.fn(),
-  killSession: vi.fn(),
-  spawnSession: vi.fn()
+  killPty: vi.fn(),
+  spawnPty: vi.fn()
 }))
-vi.mock('./session', () => ({
-  ...session,
+vi.mock('./pty', () => ({
+  ...pty,
   socketPath: (dir: string, id: string) => `${dir}/${id}.sock`,
   startDir: async (cwd?: string) => cwd ?? '/'
 }))
@@ -42,7 +42,7 @@ function open(id: string, attach = false): ReturnType<typeof fakePort> {
     id,
     attach,
     dir,
-    bin: 'maru-session',
+    bin: 'maru-pty',
     setup: {} as never
   }
   send({ data: req, ports: [port] })
@@ -65,71 +65,71 @@ function spyExit() {
 beforeEach(async () => {
   vi.resetModules()
   vi.clearAllMocks()
-  session.killSession.mockResolvedValue(undefined)
+  pty.killPty.mockResolvedValue(undefined)
   Object.assign(process, {
     parentPort: { on: (_event: string, fn: Listener) => (send = fn) }
   })
-  await import('./session-host')
+  await import('./pty-host')
 })
 
-describe('session host', () => {
-  it('띄웠는데 붙지 못한 세션은 pane 에 끝났다고 알리고 끈다', async () => {
-    session.spawnSession.mockResolvedValue('live')
-    session.connect.mockRejectedValue(new Error('refused'))
-    const port = open('s-00000001')
+describe('pty host', () => {
+  it('띄웠는데 붙지 못한 pty 는 pane 에 끝났다고 알리고 끈다', async () => {
+    pty.spawnPty.mockResolvedValue('live')
+    pty.connect.mockRejectedValue(new Error('refused'))
+    const port = open('p-00000001')
     await vi.waitFor(() => expect(port.messages).toContain(null))
     expect(port.messages).toContainEqual({ type: 'exit', code: null, signal: null })
-    expect(session.killSession).toHaveBeenCalledWith(dir, 's-00000001')
+    expect(pty.killPty).toHaveBeenCalledWith(dir, 'p-00000001')
   })
 
-  it('띄우자마자 끝난 세션은 끄지 않는다', async () => {
-    session.spawnSession.mockResolvedValue('ended')
-    const port = open('s-00000001')
+  it('띄우자마자 끝난 pty 는 끄지 않는다', async () => {
+    pty.spawnPty.mockResolvedValue('ended')
+    const port = open('p-00000001')
     await vi.waitFor(() => expect(port.messages).toContain(null))
-    expect(session.killSession).not.toHaveBeenCalled()
+    expect(pty.killPty).not.toHaveBeenCalled()
   })
 
-  it('host 가 띄우지 않은 세션도 kill 로 끈다', async () => {
-    kill('s-00000002')
-    await vi.waitFor(() => expect(session.killSession).toHaveBeenCalledWith(dir, 's-00000002'))
+  it('host 가 띄우지 않은 pty 도 kill 로 끈다', async () => {
+    kill('p-00000002')
+    await vi.waitFor(() => expect(pty.killPty).toHaveBeenCalledWith(dir, 'p-00000002'))
   })
 
-  it('뜨는 중인 세션의 kill 은 세션이 뜬 뒤에 끈다', async () => {
+  it('뜨는 중인 pty 의 kill 은 pty 가 뜬 뒤에 끈다', async () => {
     const spawned = deferred<string>()
-    session.spawnSession.mockReturnValue(spawned.promise)
-    session.connect.mockReturnValue(new Promise(() => {}))
-    open('s-00000001')
-    kill('s-00000001')
+    pty.spawnPty.mockReturnValue(spawned.promise)
+    pty.connect.mockReturnValue(new Promise(() => {}))
+    open('p-00000001')
+    kill('p-00000001')
     await new Promise((r) => setTimeout(r, 20))
-    expect(session.killSession).not.toHaveBeenCalled()
+    expect(pty.killPty).not.toHaveBeenCalled()
     spawned.resolve('live')
-    await vi.waitFor(() => expect(session.killSession).toHaveBeenCalledWith(dir, 's-00000001'))
+    await vi.waitFor(() => expect(pty.killPty).toHaveBeenCalledWith(dir, 'p-00000001'))
   })
 
-  it('quit 은 뜨는 중인 세션이 다 뜬 뒤에 끝나고, 그 뒤의 open 은 세션을 띄우거나 붙지 않는다', async () => {
+  it('quit 은 뜨는 중인 pty 가 다 뜬 뒤에 끝나고, 그 뒤의 open 은 pty 를 띄우거나 붙지 않는다', async () => {
     const exit = spyExit()
     try {
       const spawned = deferred<string>()
-      session.spawnSession.mockReturnValue(spawned.promise)
-      session.connect.mockReturnValue(new Promise(() => {}))
-      open('s-00000001')
+      pty.spawnPty.mockReturnValue(spawned.promise)
+      pty.connect.mockReturnValue(new Promise(() => {}))
+      open('p-00000001')
       quit()
-      const late = open('s-00000002')
-      const lateAttach = open('s-00000003', true)
+      const late = open('p-00000002')
+      const lateAttach = open('p-00000003', true)
       await new Promise((r) => setTimeout(r, 20))
       expect(exit).not.toHaveBeenCalled()
       expect(late.messages).toEqual([null])
       expect(lateAttach.messages).toEqual([null])
       spawned.resolve('live')
       await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))
-      expect(session.spawnSession).toHaveBeenCalledTimes(1)
-      expect(session.connect).not.toHaveBeenCalledWith(`${dir}/s-00000003.sock`)
+      expect(pty.spawnPty).toHaveBeenCalledTimes(1)
+      expect(pty.connect).not.toHaveBeenCalledWith(`${dir}/p-00000003.sock`)
     } finally {
       exit.mockRestore()
     }
   })
 
-  it('뜨는 중인 세션이 없으면 quit 은 바로 끝난다', async () => {
+  it('뜨는 중인 pty 가 없으면 quit 은 바로 끝난다', async () => {
     const exit = spyExit()
     try {
       quit()
@@ -139,14 +139,12 @@ describe('session host', () => {
     }
   })
 
-  it('띄우기에 실패한 세션이 있어도 quit 은 끝난다', async () => {
+  it('띄우기에 실패한 pty 가 있어도 quit 은 끝난다', async () => {
     const exit = spyExit()
     try {
       const spawned = deferred<string>()
-      session.spawnSession.mockReturnValue(
-        spawned.promise.then(() => Promise.reject(new Error('boom')))
-      )
-      const port = open('s-00000001')
+      pty.spawnPty.mockReturnValue(spawned.promise.then(() => Promise.reject(new Error('boom'))))
+      const port = open('p-00000001')
       quit()
       spawned.resolve('')
       await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))

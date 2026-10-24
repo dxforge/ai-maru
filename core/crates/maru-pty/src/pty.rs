@@ -1,6 +1,6 @@
+use crate::master::{self, Master};
 use crate::procinfo;
 use crate::program_status::Records;
-use crate::pty::{self, Pty};
 use crate::vt::{VtFormat, VtTerminal};
 use anyhow::Result;
 use nix::sys::signal::{Signal, killpg};
@@ -152,10 +152,10 @@ pub async fn wait_exit(rx: &mut watch::Receiver<Option<Exit>>) -> Option<Exit> {
     rx.wait_for(|e| e.is_some()).await.ok().and_then(|e| *e)
 }
 
-pub struct Session {
+pub struct Pty {
     pub tty: String,
     pub shell_pid: u32,
-    pty: Pty,
+    master: Master,
     writer: Arc<Mutex<std::fs::File>>,
     screen: Arc<Mutex<Screen>>,
     exit_rx: watch::Receiver<Option<Exit>>,
@@ -166,7 +166,7 @@ pub struct Session {
     wake: Arc<Wake>,
 }
 
-impl Drop for Session {
+impl Drop for Pty {
     fn drop(&mut self) {
         self.wake.wake();
     }
@@ -216,7 +216,7 @@ impl Wake {
     }
 }
 
-impl Session {
+impl Pty {
     pub fn spawn(
         shell: &Path,
         shell_var: Option<&Path>,
@@ -233,7 +233,7 @@ impl Session {
             status: Records::default(),
             outputs: Vec::new(),
         }));
-        let spawned = pty::spawn(shell, shell_var, cwd, command, cols, rows)?;
+        let spawned = master::spawn(shell, shell_var, cwd, command, cols, rows)?;
         let shell_pid = spawned.child.id();
         let (exit_tx, exit_rx) = watch::channel(None);
         let (drained_tx, drained_rx) = std::sync::mpsc::channel::<()>();
@@ -309,10 +309,10 @@ impl Session {
             let _ = exit_tx.send(Some(exit));
         });
 
-        let session = Arc::new(Session {
+        let pty = Arc::new(Pty {
             tty: spawned.tty,
             shell_pid,
-            pty: spawned.pty,
+            master: spawned.master,
             writer,
             screen,
             exit_rx,
@@ -321,9 +321,9 @@ impl Session {
             terminating: AtomicBool::new(false),
             wake: wake.clone(),
         });
-        let weak = Arc::downgrade(&session);
+        let weak = Arc::downgrade(&pty);
         std::thread::spawn(move || watch_foreground(weak, wake));
-        Ok(session)
+        Ok(pty)
     }
 
     /// 블로킹 쓰기여야 한다 — 커널의 역압이 입력 큐를 넘는 여러 줄 입력이 잘리지 않게 지킨다.
@@ -356,7 +356,7 @@ impl Session {
         let changed = (screen.cols, screen.rows) != (cols, rows);
         // VT 가 먼저 거절해야 PTY 가 그대로 남는다.
         screen.vt.resize(cols, rows)?;
-        self.pty.resize(cols, rows)?;
+        self.master.resize(cols, rows)?;
         screen.cols = cols;
         screen.rows = rows;
         if !changed {
@@ -380,7 +380,10 @@ impl Session {
     }
 
     pub fn foreground(&self) -> Foreground {
-        let pid = self.pty.foreground_pgid().unwrap_or(self.shell_pid as i32);
+        let pid = self
+            .master
+            .foreground_pgid()
+            .unwrap_or(self.shell_pid as i32);
         Foreground {
             pid,
             cwd: procinfo::cwd(pid),
@@ -453,7 +456,7 @@ impl Session {
         }
         self.terminating.store(true, Ordering::SeqCst);
         let shell = self.shell_pid as i32;
-        let fg = self.pty.foreground_pgid().filter(|&g| g != shell);
+        let fg = self.master.foreground_pgid().filter(|&g| g != shell);
         let groups: Vec<Pid> = [Some(shell), fg]
             .into_iter()
             .flatten()
@@ -477,31 +480,27 @@ impl Session {
 
 /// 레코드가 있는 동안 foreground cwd 가 바뀌면 모든 구독자에게 `foreground` 를 보낸다. claude 가 한
 /// 상태에 머문 채 디렉토리를 옮긴 것을 앱이 알게 하려는 것이다.
-fn watch_foreground(session: Weak<Session>, wake: Arc<Wake>) {
+fn watch_foreground(pty: Weak<Pty>, wake: Arc<Wake>) {
     loop {
         wake.wait();
         let mut last: Option<PathBuf> = None;
         loop {
             std::thread::sleep(FOREGROUND_POLL);
-            let Some(session) = session.upgrade() else {
+            let Some(pty) = pty.upgrade() else {
                 return;
             };
-            if session.exited().is_some() || session.screen.lock().unwrap().status.is_empty() {
+            if pty.exited().is_some() || pty.screen.lock().unwrap().status.is_empty() {
                 break;
             }
             // 락을 놓고 잰다 — proc 읽기가 느려도 출력 반영을 막지 않게.
-            let fg = session.foreground();
+            let fg = pty.foreground();
             // 리더가 먼저 끝난 파이프라인(`a | b`)에서는 cwd 를 못 읽는다. 옮긴 것이 아니므로 건너뛴다.
             let Some(cwd) = fg.cwd else { continue };
             if last.as_ref().is_some_and(|l| *l != cwd) {
                 let text = serde_json::json!({
                     "type": "foreground", "pid": fg.pid, "cwd": cwd.to_string_lossy(),
                 });
-                session
-                    .screen
-                    .lock()
-                    .unwrap()
-                    .broadcast_text(text.to_string());
+                pty.screen.lock().unwrap().broadcast_text(text.to_string());
             }
             last = Some(cwd);
         }
@@ -513,7 +512,7 @@ mod tests {
     use super::*;
     use std::sync::Barrier;
 
-    fn size(s: &Session) -> (u16, u16) {
+    fn size(s: &Pty) -> (u16, u16) {
         let screen = s.screen.lock().unwrap();
         (screen.cols, screen.rows)
     }
@@ -533,19 +532,19 @@ mod tests {
         tb.join().unwrap();
     }
 
-    fn with_session(f: impl FnOnce(&Arc<Session>)) {
-        with_session_in(None, f);
+    fn with_pty(f: impl FnOnce(&Arc<Pty>)) {
+        with_pty_in(None, f);
     }
 
-    fn with_session_in(cwd: Option<&Path>, f: impl FnOnce(&Arc<Session>)) {
-        let s = Session::spawn(Path::new("/bin/sh"), None, cwd, &[], 80, 24).unwrap();
+    fn with_pty_in(cwd: Option<&Path>, f: impl FnOnce(&Arc<Pty>)) {
+        let s = Pty::spawn(Path::new("/bin/sh"), None, cwd, &[], 80, 24).unwrap();
         f(&s);
         tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(s.terminate(Duration::from_secs(2)));
     }
 
-    fn wait_foreground(s: &Session, pred: impl Fn(&Foreground) -> bool) -> Foreground {
+    fn wait_foreground(s: &Pty, pred: impl Fn(&Foreground) -> bool) -> Foreground {
         for _ in 0..300 {
             let fg = s.foreground();
             if pred(&fg) {
@@ -559,7 +558,7 @@ mod tests {
     #[test]
     fn the_foreground_is_the_shell_at_the_prompt_and_the_command_while_it_runs() {
         let dir = std::fs::canonicalize(std::env::temp_dir()).unwrap();
-        with_session_in(Some(&dir), |s| {
+        with_pty_in(Some(&dir), |s| {
             let shell = s.shell_pid as i32;
 
             let fg = wait_foreground(s, |fg| fg.pid == shell && fg.cwd.is_some());
@@ -578,7 +577,7 @@ mod tests {
 
     #[test]
     fn the_foreground_has_no_cwd_once_the_shell_has_exited() {
-        let s = Session::spawn(Path::new("/bin/sh"), None, None, &[], 80, 24).unwrap();
+        let s = Pty::spawn(Path::new("/bin/sh"), None, None, &[], 80, 24).unwrap();
         s.write(b"exit\n").unwrap();
         tokio::runtime::Runtime::new()
             .unwrap()
@@ -588,7 +587,7 @@ mod tests {
 
     #[test]
     fn the_size_follows_whichever_primary_claimed_last() {
-        with_session(|s| {
+        with_pty(|s| {
             for i in 0..5000 {
                 let (a, b) = (s.next_conn_id(), s.next_conn_id());
                 let (sa, sb) = (s.clone(), s.clone());
@@ -608,7 +607,7 @@ mod tests {
 
     #[test]
     fn a_primary_that_lost_its_seat_does_not_resize() {
-        with_session(|s| {
+        with_pty(|s| {
             for i in 0..5000 {
                 let (a, b) = (s.next_conn_id(), s.next_conn_id());
                 s.claim_primary(a, Some((80, 24))).unwrap();

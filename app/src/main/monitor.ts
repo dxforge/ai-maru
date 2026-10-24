@@ -1,12 +1,12 @@
 import { InvalidParams, Subscription, type Handlers } from './cli-server'
-import { isSessionId } from '../shared/session'
+import { isPtyId } from '../shared/pty'
 
 type Notify = (event: object) => boolean
 
 export type Monitor = {
   handlers: Handlers
-  /** 그 세션을 구독하는 monitor 모두에게 보낸다. 하나에라도 보냈으면 true 다. */
-  emit(session: string, event: object): boolean
+  /** 그 pty 를 구독하는 monitor 모두에게 보낸다. 하나에라도 보냈으면 true 다. */
+  emit(pty: string, event: object): boolean
 }
 
 /**
@@ -17,31 +17,31 @@ export function createMonitor({
   shellPidOf,
   onSubscribe = () => {}
 }: {
-  shellPidOf: (session: string) => Promise<number | null>
-  onSubscribe?: (session: string) => void
+  shellPidOf: (pty: string) => Promise<number | null>
+  onSubscribe?: (pty: string) => void
 }): Monitor {
   const listeners = new Map<string, Set<Notify>>()
 
   const handlers: Handlers = {
-    'monitor.subscribe': async (params, session) => {
+    'monitor.subscribe': async (params, pty) => {
       const { ancestors } = params
       if (!Array.isArray(ancestors) || !ancestors.every((p) => Number.isInteger(p) && p > 0)) {
         throw new InvalidParams('params.ancestors must be an array of process ids')
       }
       // `/exit` 로 앱 터미널 밖에 옮겨진 claude 는 그 터미널의 알림을 받지 않는다.
-      const shell = isSessionId(session) ? await shellPidOf(session) : null
+      const shell = isPtyId(pty) ? await shellPidOf(pty) : null
       if (shell === null || !ancestors.includes(shell)) {
-        throw new InvalidParams(`not running under session ${session}'s shell`)
+        throw new InvalidParams(`not running under pty ${pty}'s shell`)
       }
       return new Subscription('monitor.event', (notify) => {
-        const subs = listeners.get(session) ?? new Set<Notify>()
+        const subs = listeners.get(pty) ?? new Set<Notify>()
         subs.add(notify)
-        listeners.set(session, subs)
-        onSubscribe(session)
+        listeners.set(pty, subs)
+        onSubscribe(pty)
         return () => {
           subs.delete(notify)
           // 두 번 불려도 그 사이 새로 만든 집합을 지우지 않게.
-          if (!subs.size && listeners.get(session) === subs) listeners.delete(session)
+          if (!subs.size && listeners.get(pty) === subs) listeners.delete(pty)
         }
       })
     }
@@ -49,9 +49,9 @@ export function createMonitor({
 
   return {
     handlers,
-    emit: (session, event) => {
+    emit: (pty, event) => {
       let sent = false
-      for (const notify of listeners.get(session) ?? []) sent = notify(event) || sent
+      for (const notify of listeners.get(pty) ?? []) sent = notify(event) || sent
       return sent
     }
   }

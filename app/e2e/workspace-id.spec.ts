@@ -3,19 +3,19 @@ import {
   newCell,
   newWorkspace,
   panes,
-  recordSessions,
+  recordPtys,
   run,
   split,
   test,
-  wrapSessionBin
+  wrapPtyBin
 } from './app'
 
-test('세션은 그 pane 의 cell id 를 싣고 열리고, maru pane new 의 pane 은 부른 pane 의 cell 을 따른다', async ({
+test('pty 는 그 pane 의 cell id 를 싣고 열리고, maru pane new 의 pane 은 부른 pane 의 cell 을 따른다', async ({
   launch
 }) => {
   const launched = await launch()
   const { app, page } = launched
-  const events = await recordSessions(app)
+  const events = await recordPtys(app)
   await split(app, page, 'split-right', 2)
   await newWorkspace(launched, 2)
   await split(app, page, 'split-down', 2)
@@ -35,9 +35,9 @@ test('세션은 그 pane 의 cell id 를 싣고 열리고, maru pane new 의 pan
   expect(fifth).not.toBe(second)
 })
 
-test('셸이 스스로 끝나 pane 이 닫혀도 그 세션의 끄기를 main 에 보낸다', async ({ launch }) => {
+test('셸이 스스로 끝나 pane 이 닫혀도 그 pty 의 끄기를 main 에 보낸다', async ({ launch }) => {
   const { app, page } = await launch()
-  const events = await recordSessions(app)
+  const events = await recordPtys(app)
   await split(app, page, 'split-right', 2)
   await expect.poll(async () => (await events()).opens.length).toBe(1)
   const { key } = (await events()).opens[0]
@@ -46,14 +46,14 @@ test('셸이 스스로 끝나 pane 이 닫혀도 그 세션의 끄기를 main �
   await expect.poll(async () => (await events()).kills).toEqual([key])
 })
 
-test('maru pane new 의 세션이 뜨지 못해 pane 이 닫혀도 그 세션의 끄기를 main 에 보낸다', async ({
+test('maru pane new 의 pty 가 뜨지 못해 pane 이 닫혀도 그 pty 의 끄기를 main 에 보낸다', async ({
   launch,
   dataDir
 }) => {
-  // `--` 뒤에 명령을 받은 세션만 실패하므로 처음 pane 의 셸은 뜬다.
-  const bin = wrapSessionBin(dataDir, 'failing-session', `case " $* " in *" -- "*) exit 1;; esac`)
-  const { app, page } = await launch({ MARU_SESSION_BIN: bin })
-  const events = await recordSessions(app)
+  // `--` 뒤에 명령을 받은 pty 만 실패하므로 처음 pane 의 셸은 뜬다.
+  const bin = wrapPtyBin(dataDir, 'failing-pty', `case " $* " in *" -- "*) exit 1;; esac`)
+  const { app, page } = await launch({ MARU_PTY_BIN: bin })
+  const events = await recordPtys(app)
   await run(page, 'maru pane new true; echo code-$?', 'code-1')
   await expect(panes(page)).toHaveCount(1)
   const { key } = (await events()).opens[0]

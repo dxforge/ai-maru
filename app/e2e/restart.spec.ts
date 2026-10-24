@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { ElectronApplication } from '@playwright/test'
-import { killSession } from '../src/main/session'
+import { killPty } from '../src/main/pty'
 import {
   activeTerminal,
   canvasWidth,
@@ -20,7 +20,7 @@ import {
   rows,
   run,
   serveRenderer,
-  sessionDir,
+  ptyDir,
   sockets,
   split,
   test,
@@ -30,7 +30,7 @@ import {
   cellItems,
   cellViews,
   workspaceNames,
-  wrapSessionBin,
+  wrapPtyBin,
   type Launched
 } from './app'
 
@@ -97,7 +97,7 @@ test('재시작하면 window-state.json 의 보기 설정보다 재시작 전 �
   await expect(page.locator('.terminals')).toHaveClass(/columns/)
 })
 
-test('재시작 뒤에도 세션이 들고 있던 상태가 다시 붙을 때 돌아오고, 되살린 셸의 보고를 따른다', async ({
+test('재시작 뒤에도 pty 가 들고 있던 상태가 다시 붙을 때 돌아오고, 되살린 셸의 보고를 따른다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -117,7 +117,7 @@ test('재시작 뒤에도 세션이 들고 있던 상태가 다시 붙을 때 �
   await expect(paneHeader(again, 0)).toHaveClass(/idle/)
 })
 
-test('다시 뜬 앱이 프로토콜이 달라 끈 세션의 pane 에는 상태가 없다', async ({
+test('다시 뜬 앱이 프로토콜이 달라 끈 pty 의 pane 에는 상태가 없다', async ({
   launch,
   dataDir
 }) => {
@@ -127,7 +127,7 @@ test('다시 뜬 앱이 프로토콜이 달라 끈 세션의 pane 에는 상태�
   await expect(paneRows(page)).toHaveClass(/working/)
   await restartWith(app)
   const [sock] = sockets(dataDir)
-  const record = join(sessionDir(dataDir), `${basename(sock, '.sock')}.json`)
+  const record = join(ptyDir(dataDir), `${basename(sock, '.sock')}.json`)
   writeFileSync(
     record,
     JSON.stringify({ ...JSON.parse(readFileSync(record, 'utf8')), protocol_version: 999 })
@@ -140,14 +140,14 @@ test('다시 뜬 앱이 프로토콜이 달라 끈 세션의 pane 에는 상태�
   await expect(paneRows(again)).toHaveCount(0)
 })
 
-test('재시작 동안 끝난 세션의 pane 은 이유를 보이고 남는다', async ({ launch, dataDir }) => {
+test('재시작 동안 끝난 pty 의 pane 은 이유를 보이고 남는다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await shellUp(page, 0)
   await shellUp(page, 1)
   await restartWith(app)
   const [gone] = sockets(dataDir)
-  await killSession(sessionDir(dataDir), basename(gone, '.sock'))
+  await killPty(ptyDir(dataDir), basename(gone, '.sock'))
 
   const { app: again, page: shown } = await launch()
   await expect(panes(shown)).toHaveCount(2)
@@ -181,7 +181,7 @@ function readResult(out: string): () => string | null {
   return () => (existsSync(out) ? readFileSync(out, 'utf8').trim() : null)
 }
 
-test('재시작 직후 선택하지 않은 cell 의 남은 세션이 곧바로 부른 maru cell new 는 그 cell 의 workspace 안, 그 cell 뒤에 띄운다', async ({
+test('재시작 직후 선택하지 않은 cell 의 남은 pty 가 곧바로 부른 maru cell new 는 그 cell 의 workspace 안, 그 cell 뒤에 띄운다', async ({
   launch,
   dataDir
 }) => {
@@ -203,7 +203,7 @@ test('재시작 직후 선택하지 않은 cell 의 남은 세션이 곧바로 �
   await expect(cellViews(again).nth(2).locator('.xterm-rows')).toContainText('mark-new')
 })
 
-test('재시작 직후 남은 세션이 곧바로 부른 maru pane new 는 그 pane 을 나눈다', async ({
+test('재시작 직후 남은 pty 가 곧바로 부른 maru pane new 는 그 pane 을 나눈다', async ({
   launch,
   dataDir
 }) => {
@@ -218,7 +218,7 @@ test('재시작 직후 남은 세션이 곧바로 부른 maru pane new 는 그 p
   await expect(panes(again).nth(1).locator('.xterm-rows')).toContainText('split-2')
 })
 
-test('재시작한 뒤의 종료는 세션을 끄고 restart 파일을 남기지 않는다', async ({
+test('재시작한 뒤의 종료는 pty 를 끄고 restart 파일을 남기지 않는다', async ({
   launch,
   dataDir
 }) => {
@@ -251,8 +251,8 @@ function dialogCalls(app: ElectronApplication): Promise<{ detail: string }[]> {
 }
 
 function otherProtocolBin(dataDir: string): Record<string, string> {
-  const bin = wrapSessionBin(dataDir, 'v2', '[ "$1" = --protocol-version ] && { echo 2; exit 0; }')
-  return { MARU_SESSION_BIN: bin }
+  const bin = wrapPtyBin(dataDir, 'v2', '[ "$1" = --protocol-version ] && { echo 2; exit 0; }')
+  return { MARU_PTY_BIN: bin }
 }
 
 test('버전이 다르면 확인 창을 띄우고, 취소하면 재시작하지 않는다', async ({ launch, dataDir }) => {
@@ -288,13 +288,10 @@ test('maru app restart 로 재시작한다', async ({ launch, dataDir }) => {
   await run(again, `cat '${done}'`, 'cli=0')
 })
 
-test('버전이 달라도 maru app restart --kill-sessions 는 재시작한다', async ({
-  launch,
-  dataDir
-}) => {
+test('버전이 달라도 maru app restart --kill-ptys 는 재시작한다', async ({ launch, dataDir }) => {
   const { app, page } = await launch(otherProtocolBin(dataDir))
   await shellUp(page, 0)
-  await restartWith(app, () => page.keyboard.type('"$MARU_CLI" app restart --kill-sessions\n'))
+  await restartWith(app, () => page.keyboard.type('"$MARU_CLI" app restart --kill-ptys\n'))
   expect(existsSync(join(dataDir, 'restart.json'))).toBe(true)
 })
 
@@ -314,7 +311,7 @@ test('버전이 다르면 maru app restart 는 이유를 보이고 재시작하�
   dataDir
 }) => {
   const { page } = await launch(otherProtocolBin(dataDir))
-  await run(page, '"$MARU_CLI" app restart', 'Pass --kill-sessions to restart anyway.')
+  await run(page, '"$MARU_CLI" app restart', 'Pass --kill-ptys to restart anyway.')
   await run(page, 'echo still-$((1+1))', 'still-2')
 })
 

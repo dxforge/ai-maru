@@ -2,16 +2,16 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   activeTerminal,
-  delaySessionPort,
+  delayPtyPort,
   expect,
   gridRows,
   newWorkspace,
   resizeBy,
   rows,
   run,
-  sessionFiles,
+  ptyFiles,
   shellSize,
-  slowSessionBin,
+  slowPtyBin,
   sockets,
   test,
   zshHome
@@ -25,13 +25,13 @@ test('키 입력이 셸에 가고 셸의 출력이 터미널에 뜬다', async (
   await expect(rows(page)).toContainText('out-3')
 })
 
-test('앱을 끄면 세션도 끝나고, 다시 켜면 새 셸이 뜬다', async ({ launch, dataDir }) => {
+test('앱을 끄면 pty 도 끝나고, 다시 켜면 새 셸이 뜬다', async ({ launch, dataDir }) => {
   const first = await launch()
   await first.page.keyboard.type('X=gone-$((40+2)); echo before-$((1+1))\n')
   await expect(rows(first.page)).toContainText('before-2')
   const [before] = sockets(dataDir)
   await first.app.close()
-  expect(sessionFiles(dataDir)).toEqual([])
+  expect(ptyFiles(dataDir)).toEqual([])
 
   const { page } = await launch()
   await page.keyboard.type('echo "x=$X" after-$((2+2))\n')
@@ -40,17 +40,17 @@ test('앱을 끄면 세션도 끝나고, 다시 켜면 새 셸이 뜬다', async
   expect(sockets(dataDir)).not.toContain(before)
 })
 
-test('창을 닫으면 세션도 끝난다', async ({ launch, dataDir }) => {
+test('창을 닫으면 pty 도 끝난다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await page.keyboard.type('echo open-$((1+1))\n')
   await expect(rows(page)).toContainText('open-2')
   const closed = new Promise<void>((resolve) => app.once('close', () => resolve()))
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
   await closed
-  expect(sessionFiles(dataDir)).toEqual([])
+  expect(ptyFiles(dataDir)).toEqual([])
 })
 
-test('창이 새로 고쳐지면 이전 화면이 연 세션은 끝나고, 새 화면의 셸만 남는다', async ({
+test('창이 새로 고쳐지면 이전 화면이 연 pty 는 끝나고, 새 화면의 셸만 남는다', async ({
   launch,
   dataDir
 }) => {
@@ -67,21 +67,21 @@ test('창이 새로 고쳐지면 이전 화면이 연 세션은 끝나고, 새 �
   expect(before).not.toContain(sockets(dataDir)[0])
 })
 
-test('새 터미널이 세션에 붙기 전에 친 키도 셸에 간다', async ({ launch }) => {
+test('새 터미널이 pty 에 붙기 전에 친 키도 셸에 간다', async ({ launch }) => {
   const launched = await launch()
-  await delaySessionPort(launched.app, 1500)
+  await delayPtyPort(launched.app, 1500)
   await newWorkspace(launched, 2)
   await launched.page.keyboard.type('echo ')
   await launched.page.keyboard.insertText('한글')
   await run(launched.page, '-$((1+1))', '한글-2')
 })
 
-test('새 터미널이 세션에 붙기 전에 창 크기가 바뀌어도 셸은 바뀐 크기를 본다', async ({
+test('새 터미널이 pty 에 붙기 전에 창 크기가 바뀌어도 셸은 바뀐 크기를 본다', async ({
   launch
 }) => {
   const launched = await launch()
   const { app, page } = launched
-  await delaySessionPort(app, 1500)
+  await delayPtyPort(app, 1500)
   await newWorkspace(launched, 2)
   const before = await gridRows(page).count()
   await resizeBy(app, -200, -180)
@@ -94,7 +94,7 @@ test('zsh 가 뜨는 동안 친 키도 셸에 간다', async ({ launch, dataDir 
   const { page } = await launch({
     SHELL: '/bin/zsh',
     HOME: zshHome(dataDir),
-    MARU_SESSION_BIN: slowSessionBin(dataDir)
+    MARU_PTY_BIN: slowPtyBin(dataDir)
   })
   await run(page, 'echo "$MARK" typeahead-$((1+1))', 'rc-2 typeahead-2')
 })
@@ -111,8 +111,8 @@ test('창 크기를 바꾸면 셸이 보는 크기도 바뀐다', async ({ launc
   expect(after.cols).toBeLessThan(before.cols)
 })
 
-test('maru-session 을 띄울 수 없으면 터미널에 이유를 보인다', async ({ launch }) => {
-  const { page } = await launch({ MARU_SESSION_BIN: '/nonexistent/maru-session' })
+test('maru-pty 를 띄울 수 없으면 터미널에 이유를 보인다', async ({ launch }) => {
+  const { page } = await launch({ MARU_PTY_BIN: '/nonexistent/maru-pty' })
   await expect(rows(page)).toContainText('open_failed')
 })
 

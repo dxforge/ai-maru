@@ -1,4 +1,4 @@
-/** maru-session 의 `program_status` 메시지에 담기는 레코드(OSC 7501). 모양은 maru-session 의 모듈 doc(`core/crates/maru-session/src/lib.rs`)이 정한다. */
+/** maru-pty 의 `program_status` 메시지에 담기는 레코드(OSC 7501). 모양은 maru-pty 의 모듈 doc(`core/crates/maru-pty/src/lib.rs`)이 정한다. */
 
 const PROGRAM_STATUS_STATES = ['idle', 'working', 'done', 'blocked', 'error'] as const
 export type ProgramStatusState = (typeof PROGRAM_STATUS_STATES)[number]

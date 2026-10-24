@@ -1,14 +1,7 @@
 import type { Socket } from 'node:net'
 import type { MessagePortMain } from 'electron'
 import { bridge } from './bridge'
-import {
-  connect,
-  killSession,
-  socketPath,
-  spawnSession,
-  startDir,
-  type ShellSetup
-} from './session'
+import { connect, killPty, socketPath, spawnPty, startDir, type ShellSetup } from './pty'
 
 export type OpenRequest = {
   type: 'open'
@@ -21,7 +14,7 @@ export type OpenRequest = {
   setup: ShellSetup
 }
 export type KillRequest = { type: 'kill'; id: string; dir: string }
-/** `quit` 을 받은 host 는 띄우는 중인 세션이 다 뜬 뒤에 끝난다. main 은 host 가 끝난 뒤에 레코드를 읽어야 그 세션까지 끈다(docs/architecture.md 의 "앱을 끄면 띄우던 세션도 뜬 뒤에 끈다"). */
+/** `quit` 을 받은 host 는 띄우는 중인 pty 가 다 뜬 뒤에 끝난다. main 은 host 가 끝난 뒤에 레코드를 읽어야 그 pty 까지 끈다(docs/architecture.md 의 "앱을 끄면 띄우던 pty 도 뜬 뒤에 끈다"). */
 export type QuitRequest = { type: 'quit' }
 type HostRequest = OpenRequest | KillRequest | QuitRequest
 
@@ -50,19 +43,19 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
   if (quitting) return end(port)
   if (req.attach) return reattach(req, port)
   const spawned = startDir(req.cwd).then(async (cwd) => {
-    const state = await spawnSession(req.bin, req.dir, req.setup, req.id, cwd, req.command)
+    const state = await spawnPty(req.bin, req.dir, req.setup, req.id, cwd, req.command)
     return { cwd, state }
   })
-  // 세션이 뜨는 동안 pane 을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 `spawning` 에 넣는다.
+  // pty 가 뜨는 동안 pane 을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 `spawning` 에 넣는다.
   const done = (): void => void spawning.delete(req.id)
   spawning.set(req.id, spawned.then(done, done))
   try {
     const { cwd, state } = await spawned
-    // 소켓을 본 뒤 붙기 전에 끝난 세션도, 띄운 명령이 그만큼 빨리 끝난 것으로 본다.
+    // 소켓을 본 뒤 붙기 전에 끝난 pty 도, 띄운 명령이 그만큼 빨리 끝난 것으로 본다.
     const sock =
       state === 'live' ? await connect(socketPath(req.dir, req.id)).catch(() => null) : null
     if (sock) return serve(req.id, port, sock, { cwd })
-    if (state === 'live') void killSession(req.dir, req.id)
+    if (state === 'live') void killPty(req.dir, req.id)
     end(port, { type: 'spawned', id: req.id, cwd }, { type: 'exit', code: null, signal: null })
   } catch (err) {
     end(port, {
@@ -75,7 +68,7 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
 
 async function kill(req: KillRequest): Promise<void> {
   await spawning.get(req.id)
-  await killSession(req.dir, req.id)
+  await killPty(req.dir, req.id)
 }
 
 async function quit(): Promise<void> {

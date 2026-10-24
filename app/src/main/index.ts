@@ -26,30 +26,31 @@ import { openLink } from './links'
 import {
   checkRestart,
   restartFile,
-  screenSessions,
+  screenPtys,
   takeRestart,
   writeRestart,
   type RestartCheck
 } from './restart'
 import {
   appSocketPath,
-  captureSession,
+  capturePty,
   foregroundCwd,
-  killSession,
-  killSessions,
+  killPty,
+  killPtys,
   QUIT_TIMEOUT_MS,
   readRecord,
+  runDir,
   sameDirAs,
-  sessionLive,
-  spawnSession,
+  ptyLive,
+  spawnPty,
   startDir,
   utf8Locale,
-  waitSessionExit,
-  writeSessionInput,
+  waitPtyExit,
+  writePtyInput,
   type CliAccess
-} from './session'
-import type { KillRequest, OpenRequest, QuitRequest } from './session-host'
-import { createSessionCells } from './session-cells'
+} from './pty'
+import type { KillRequest, OpenRequest, QuitRequest } from './pty-host'
+import { createPtyCells } from './pty-cells'
 import {
   readWindowExtras,
   readWindowState,
@@ -60,11 +61,11 @@ import {
 import type { PaneReply } from '../shared/pane'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { parseScreen, parseViewPrefs, type ScreenState, type ViewPrefs } from '../shared/screen'
-import { newSessionId, type SessionOpen } from '../shared/session'
+import { newPtyId, type PtyOpen } from '../shared/pty'
 import { GHOSTTY, isLight, parseWindowTheme, type WindowTheme } from '../shared/theme'
 
-function sessionDir(): string {
-  return join(app.getPath('userData'), 's')
+function ptyDir(): string {
+  return runDir(app.getPath('userData'))
 }
 
 function coreBin(override: string | undefined, name: string): string {
@@ -76,8 +77,8 @@ function coreBin(override: string | undefined, name: string): string {
   )
 }
 
-function sessionBin(): string {
-  return coreBin(process.env.MARU_SESSION_BIN, 'maru-session')
+function ptyBin(): string {
+  return coreBin(process.env.MARU_PTY_BIN, 'maru-pty')
 }
 
 function resourceDir(name: string): string {
@@ -88,7 +89,7 @@ function resourceDir(name: string): string {
 
 function cliAccess(): CliAccess {
   return {
-    socket: appSocketPath(sessionDir()),
+    socket: appSocketPath(ptyDir()),
     bin: coreBin(process.env.MARU_CLI_BIN, 'maru')
   }
 }
@@ -104,18 +105,18 @@ let jobs: ReturnType<typeof createJobs> | null = null
 let jobsRestored: Promise<void> = Promise.resolve()
 
 const monitor = createMonitor({
-  shellPidOf: async (id) => (await readRecord(sessionDir(), id))?.shell_pid ?? null,
-  onSubscribe: (session) => void jobsRestored.then(() => jobs?.subscribed(session))
+  shellPidOf: async (id) => (await readRecord(ptyDir(), id))?.shell_pid ?? null,
+  onSubscribe: (pty) => void jobsRestored.then(() => jobs?.subscribed(pty))
 })
 
-const inbox = createInbox({ isLive: (id) => sessionLive(sessionDir(), id), emit: monitor.emit })
+const inbox = createInbox({ isLive: (id) => ptyLive(ptyDir(), id), emit: monitor.emit })
 
 // 창은 하나다.
 function mainWindow(): BrowserWindow | undefined {
   return BrowserWindow.getAllWindows()[0]
 }
 
-const sessionCells = createSessionCells()
+const ptyCells = createPtyCells()
 
 const panes = createPanes(
   (channel, id, arg) => {
@@ -124,13 +125,13 @@ const panes = createPanes(
     win.webContents.send(channel, id, arg)
     return true
   },
-  (session) => jobs?.cellOf(session)
+  (pty) => jobs?.cellOf(pty)
 )
 
 const devServer = Boolean(process.env.ELECTRON_RENDERER_URL)
 // `screen:state` 는 자주 오고 재시작·창 닫기·문서 로드 때만 읽으므로, 받은 값을 그대로 두었다가 읽을 때 `parseScreen`·`parseViewPrefs` 로 검사한다.
 let lastScreen: unknown = null
-let keepSessions = false
+let keepPtys = false
 let restarting = false
 
 function windowStateFile(): string {
@@ -158,10 +159,10 @@ function applyTheme(next: WindowTheme): void {
 
 function restartCheck(): Promise<RestartCheck> {
   const screen = parseScreen(lastScreen)
-  return checkRestart({ devServer, screen, bin: sessionBin(), dir: sessionDir() })
+  return checkRestart({ devServer, screen, bin: ptyBin(), dir: ptyDir() })
 }
 
-/** 저장하지 못하면 던진다 — 다시 뜬 앱은 화면 없이 세션을 모두 끄기 때문이다. */
+/** 저장하지 못하면 던진다 — 다시 뜬 앱은 화면 없이 pty 를 모두 끄기 때문이다. */
 async function saveScreen(): Promise<void> {
   const screen = parseScreen(lastScreen)
   if (!screen) throw new Error('the window has not reported its layout yet')
@@ -179,7 +180,7 @@ async function saveScreen(): Promise<void> {
 function relaunch(): void {
   if (restarting) return
   restarting = true
-  keepSessions = true
+  keepPtys = true
   app.relaunch()
   app.quit()
 }
@@ -207,17 +208,15 @@ async function restartFromMenu(): Promise<void> {
   relaunch()
 }
 
-function incompatibleDetail(check: { sessions: number; protocol: number | null }): string {
+function incompatibleDetail(check: { ptys: number; protocol: number | null }): string {
   const installed =
-    check.protocol === null
-      ? 'cannot tell its session protocol'
-      : `uses session protocol ${check.protocol}`
-  return `${check.sessions} terminal(s) will end: the installed app ${installed} and this app uses ${PROTOCOL_VERSION}.`
+    check.protocol === null ? 'cannot tell its pty protocol' : `uses pty protocol ${check.protocol}`
+  return `${check.ptys} terminal(s) will end: the installed app ${installed} and this app uses ${PROTOCOL_VERSION}.`
 }
 
 const restartHandlers: Handlers = {
   'app.restart': async (params) => {
-    const kill = optionalBoolean(params.kill_sessions, 'kill_sessions')
+    const kill = optionalBoolean(params.kill_ptys, 'kill_ptys')
     const check = await restartCheck()
     if (!check.ok && check.reason !== 'incompatible') {
       throw new CliError(
@@ -231,9 +230,9 @@ const restartHandlers: Handlers = {
     if (!check.ok && !kill) {
       throw new CliError(
         -32001,
-        'sessions_would_end',
-        `${incompatibleDetail(check)} Pass --kill-sessions to restart anyway.`,
-        { sessions: check.sessions }
+        'ptys_would_end',
+        `${incompatibleDetail(check)} Pass --kill-ptys to restart anyway.`,
+        { ptys: check.ptys }
       )
     }
     await saveScreen()
@@ -242,7 +241,7 @@ const restartHandlers: Handlers = {
 }
 
 const cliHandlers: Handlers = {
-  ping: (_params, session) => ({ session }),
+  ping: (_params, pty) => ({ pty }),
   'canvas.put': canvasPut(mainWindow),
   ...monitor.handlers,
   ...inbox,
@@ -312,26 +311,26 @@ function hostEnv(): NodeJS.ProcessEnv {
 }
 
 /**
- * 세션 바이트는 이 프로세스와 renderer 사이를 오가고 main 을 지나지 않는다 — 출력이 쏟아질 때
+ * pty 바이트는 이 프로세스와 renderer 사이를 오가고 main 을 지나지 않는다 — 출력이 쏟아질 때
  * main 이 막혀 창 조작까지 멈추지 않게.
  */
-function sessionHost(): UtilityProcess {
+function ptyHost(): UtilityProcess {
   if (!host) {
-    const proc = utilityProcess.fork(join(__dirname, 'session-host.js'), [], {
-      serviceName: 'maru-session-host',
+    const proc = utilityProcess.fork(join(__dirname, 'pty-host.js'), [], {
+      serviceName: 'maru-pty-host',
       env: hostEnv()
     })
     proc.once('exit', () => {
       host = null
       // 포트의 반대쪽이 사라져도 renderer 의 MessagePort 는 알려 주지 않는다.
-      sendToWindows('session:lost')
+      sendToWindows('pty:lost')
     })
     host = proc
   }
   return host
 }
 
-// 두 번째 실행이 같은 세션 디렉토리에서 세션을 하나 더 띄우지 않게 끝낸다.
+// 두 번째 실행이 같은 pty 디렉토리에서 pty 를 하나 더 띄우지 않게 끝낸다.
 if (!app.requestSingleInstanceLock()) {
   console.error(
     `maru: another instance is using ${app.getPath('userData')}; quitting. Start with --user-data-dir=<dir> (pnpm dev -- --user-data-dir=<dir>) to run alongside it.`
@@ -356,11 +355,11 @@ function start(): void {
   })
   const userData = app.getPath('userData')
   const restored = takeRestart(restartFile(userData))
-  // 재시작으로 뜨지 않았으면 앱이 비정상으로 끝나 남은 세션이다. 새 세션은 그 정리가 끝난 뒤에 띄운다.
+  // 재시작으로 뜨지 않았으면 앱이 비정상으로 끝나 남은 pty 다. 새 pty 는 그 정리가 끝난 뒤에 띄운다.
   const leftovers = restored.then((r) => {
-    const keep = screenSessions(r?.screen ?? null)
-    for (const j of r?.jobs?.jobs ?? []) keep.add(j.session)
-    return killSessions(sessionDir(), undefined, keep)
+    const keep = screenPtys(r?.screen ?? null)
+    for (const j of r?.jobs?.jobs ?? []) keep.add(j.pty)
+    return killPtys(ptyDir(), undefined, keep)
   })
   let toRestore: Promise<ScreenState | null> | null = restored.then((r) => r?.screen ?? null)
   ipcMain.handle('screen:restore', () => {
@@ -388,13 +387,13 @@ function start(): void {
   const jobSpawns = new Set<Promise<void>>()
   let quitting = false
   const jobTable = createJobs({
-    newId: newSessionId,
-    cellOf: sessionCells.cellOf,
+    newId: newPtyId,
+    cellOf: ptyCells.cellOf,
     spawn: async (id, cwd, command) => {
       await ready
       if (quitting) throw new Error('AI Maru is quitting')
       const spawned = startDir(cwd).then((dir) =>
-        spawnSession(sessionBin(), sessionDir(), setup, id, dir, command, {
+        spawnPty(ptyBin(), ptyDir(), setup, id, dir, command, {
           keep: true,
           env: jobEnv
         })
@@ -407,14 +406,14 @@ function start(): void {
       void settled.then(() => jobSpawns.delete(settled))
       await spawned
     },
-    waitExit: (id) => waitSessionExit(sessionDir(), id),
-    capture: (id) => captureSession(sessionDir(), id, JOB_REPLY_MS),
-    input: (id, text) => writeSessionInput(sessionDir(), id, text, JOB_REPLY_MS),
-    kill: (id) => killSession(sessionDir(), id),
+    waitExit: (id) => waitPtyExit(ptyDir(), id),
+    capture: (id) => capturePty(ptyDir(), id, JOB_REPLY_MS),
+    input: (id, text) => writePtyInput(ptyDir(), id, text, JOB_REPLY_MS),
+    kill: (id) => killPty(ptyDir(), id),
     emit: monitor.emit
   })
   jobs = jobTable
-  // `leftovers` 의 `killSessions` 는 job 세션을 끄지 않으므로 그것을 기다리지 않고 되살린다.
+  // `leftovers` 의 `killPtys` 는 job pty 를 끄지 않으므로 그것을 기다리지 않고 되살린다.
   jobsRestored = restored.then((r) => void (r?.jobs && jobTable.restore(r.jobs)))
   // 터미널은 CLI 없이도 쓸 수 있어야 한다. env 는 그대로 넣어 CLI 가 앱에 닿지 않는다고 말하게 한다.
   const cliServer = listenCli(cli.socket, { ...cliHandlers, ...jobTable.handlers }).catch((err) => {
@@ -428,17 +427,17 @@ function start(): void {
   ipcMain.handle('git:head', (_event, cwd: unknown) =>
     typeof cwd === 'string' ? gitHead(cwd) : null
   )
-  const readForeground = (id: string): Promise<string | null> => foregroundCwd(sessionDir(), id)
-  ipcMain.handle('session:foreground', async (_event, session: unknown, cwd: unknown) => {
-    if (typeof session !== 'string') return null
-    const dir = await readForeground(session)
+  const readForeground = (id: string): Promise<string | null> => foregroundCwd(ptyDir(), id)
+  ipcMain.handle('pty:foreground', async (_event, pty: unknown, cwd: unknown) => {
+    if (typeof pty !== 'string') return null
+    const dir = await readForeground(pty)
     return dir !== null && typeof cwd === 'string' ? sameDirAs(dir, cwd) : dir
   })
-  ipcMain.handle('link:open', (_event, text: unknown, session: unknown) => {
-    if (typeof text !== 'string' || typeof session !== 'string') {
+  ipcMain.handle('link:open', (_event, text: unknown, pty: unknown) => {
+    if (typeof text !== 'string' || typeof pty !== 'string') {
       return { ok: false, reason: 'not a link' }
     }
-    return openLink(text, session, {
+    return openLink(text, pty, {
       openExternal: (url) => shell.openExternal(url),
       openPath: (path) => shell.openPath(path),
       putCanvas: (doc) => putCanvas(mainWindow, doc),
@@ -451,18 +450,18 @@ function start(): void {
   })
   // open 과 같은 `ready.then` 으로 보내야 host 가 그 open 을 먼저 받는다.
   const sendKill = (key: string): void => {
-    const closed = sessionCells.close(key)
+    const closed = ptyCells.close(key)
     if (!closed) return
     // cell 의 마지막 pane 을 지우면 renderer 가 cell 도 지운다(docs/architecture.md).
     if (closed.closed) void jobTable.closeCell(closed.closed)
-    const req: KillRequest = { type: 'kill', id: closed.session, dir: sessionDir() }
-    void ready.then(() => sessionHost().postMessage(req))
+    const req: KillRequest = { type: 'kill', id: closed.pty, dir: ptyDir() }
+    void ready.then(() => ptyHost().postMessage(req))
   }
-  // docs/architecture.md 의 "문서가 바뀌면 이전 문서의 세션을 끈다".
+  // docs/architecture.md 의 "문서가 바뀌면 이전 문서의 pty 를 끈다".
   const opened = new Map<number, Set<string>>()
   app.on('web-contents-created', (_event, contents) => {
     let leaving = new Set<string>()
-    // 이동이 시작된 뒤 새 문서가 연 세션을 끄지 않게, 시작할 때 있던 세션만 끈다.
+    // 이동이 시작된 뒤 새 문서가 연 pty 를 끄지 않게, 시작할 때 있던 pty 만 끈다.
     contents.on('did-start-navigation', ({ isMainFrame, isSameDocument }) => {
       if (isMainFrame && !isSameDocument) leaving = new Set(opened.get(contents.id))
     })
@@ -475,11 +474,11 @@ function start(): void {
     })
     contents.once('destroyed', () => opened.delete(contents.id))
   })
-  ipcMain.on('session:open', (event, key: string, open: SessionOpen) => {
+  ipcMain.on('pty:open', (event, key: string, open: PtyOpen) => {
     const { id, cell, cwd, command, attach } = open
     const keys = opened.get(event.sender.id) ?? new Set<string>()
     opened.set(event.sender.id, keys.add(key))
-    sessionCells.open(key, id, cell)
+    ptyCells.open(key, id, cell)
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
@@ -487,17 +486,17 @@ function start(): void {
       cwd,
       command,
       attach,
-      dir: sessionDir(),
-      bin: sessionBin(),
+      dir: ptyDir(),
+      bin: ptyBin(),
       setup
     }
-    void ready.then(() => sessionHost().postMessage(req, [port1]))
+    void ready.then(() => ptyHost().postMessage(req, [port1]))
     // host 에 넘기는 것(위 ready.then)보다 먼저 renderer 에 가야 한다 — renderer 는 포트보다 먼저 온
-    // session:lost 를 이 open 이전 host 의 것으로 보고 버린다(renderer/src/session/connection.ts).
-    event.sender.postMessage('session:port', key, [port2])
+    // pty:lost 를 이 open 이전 host 의 것으로 보고 버린다(renderer/src/pty/connection.ts).
+    event.sender.postMessage('pty:port', key, [port2])
   })
 
-  ipcMain.on('session:kill', (event, key: string) => {
+  ipcMain.on('pty:kill', (event, key: string) => {
     opened.get(event.sender.id)?.delete(key)
     sendKill(key)
   })
@@ -509,7 +508,7 @@ function start(): void {
       const proc = host
       if (!proc) return
       return new Promise<void>((resolve) => {
-        // 멈춘 host 를 기다리느라 앱이 꺼지지 않게 상한을 둔다. 그때 띄우던 세션 가운데 소켓을 연 세션은 다음 실행의 정리가 끈다.
+        // 멈춘 host 를 기다리느라 앱이 꺼지지 않게 상한을 둔다. 그때 띄우던 pty 가운데 소켓을 연 pty 는 다음 실행의 정리가 끈다.
         const timer = setTimeout(() => {
           // 멈춘 프로세스는 SIGTERM 을 처리하지 못한다. host 가 방금 끝나 `exit` 이 아직 오지 않았으면 kill 이 실패한다.
           try {
@@ -527,23 +526,23 @@ function start(): void {
         proc.postMessage(req)
       })
     })
-  // 세션은 앱과 따로 떠 있는 프로세스라 앱이 끝나도 남는다.
-  let sessionsKilled = false
+  // pty 는 앱과 따로 떠 있는 프로세스라 앱이 끝나도 남는다.
+  let ptysKilled = false
   app.on('will-quit', (event) => {
-    if (sessionsKilled) return
+    if (ptysKilled) return
     event.preventDefault()
     stopConfig()
     quitting = true
     void Promise.all([
-      keepSessions ||
+      keepPtys ||
         Promise.all([
           stopHost(),
           // job 의 시작 폴더 확인(`startDir`)에는 시간 제한이 없다. 응답하지 않는 마운트에 있는 job 때문에 앱이 꺼지지 않을 수 있으므로, host 와 같은 상한까지만 기다린다.
           Promise.race([Promise.all(jobSpawns), sleep(QUIT_TIMEOUT_MS)])
-        ]).then(() => killSessions(sessionDir())),
+        ]).then(() => killPtys(ptyDir())),
       cliServer.then((server) => server?.close())
     ]).finally(() => {
-      sessionsKilled = true
+      ptysKilled = true
       app.quit()
     })
   })

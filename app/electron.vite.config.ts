@@ -8,7 +8,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/main/index.ts'),
-          'session-host': resolve('src/main/session-host.ts')
+          'pty-host': resolve('src/main/pty-host.ts')
         }
       }
     }

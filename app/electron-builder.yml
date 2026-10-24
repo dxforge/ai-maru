@@ -12,8 +12,8 @@ directories:
 files:
   - out/**
 extraResources:
-  - from: ../core/target/release/maru-session
-    to: bin/maru-session
+  - from: ../core/target/release/maru-pty
+    to: bin/maru-pty
   - from: ../core/target/release/maru
     to: bin/maru
   - from: resources/zsh/.zshenv

@@ -22,10 +22,10 @@ import {
   type Page
 } from '@playwright/test'
 import { encodeFrame, TAG_TEXT } from '../src/main/frame'
-import { appSocketPath, killSessions } from '../src/main/session'
+import { appSocketPath, killPtys, runDir } from '../src/main/pty'
 import type { CanvasMarkdown } from '../src/shared/canvas'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
-import type { SessionOpen } from '../src/shared/session'
+import type { PtyOpen } from '../src/shared/pty'
 
 export { expect }
 
@@ -68,8 +68,8 @@ export const test = base.extend<Fixtures>({
     // 대부분의 테스트가 single 에서 시작한다고 가정하므로, 새 dataDir 에 보기 모드를 single 로 써 둔다. 기본값(columns)을 재는 테스트는 이 파일을 지운다.
     writeFileSync(join(dir, 'window-state.json'), JSON.stringify({ viewMode: 'single' }))
     await use(dir)
-    // 앱을 강제로 끝낸 테스트는 세션을 남긴다.
-    await killSessions(sessionDir(dir))
+    // 앱을 강제로 끝낸 테스트는 pty 를 남긴다.
+    await killPtys(ptyDir(dir))
     rmSync(dir, { recursive: true, force: true, maxRetries: 3 })
   },
   launch: async ({ dataDir }, use) => {
@@ -98,7 +98,7 @@ async function launchApp(
   const inherited = { ...process.env }
   // 패키징한 앱이 번들 안의 바이너리를 쓰는지 봐야 하므로 바깥의 덮어쓰기를 물려주지 않는다.
   if (executablePath) {
-    delete inherited.MARU_SESSION_BIN
+    delete inherited.MARU_PTY_BIN
     delete inherited.MARU_CLI_BIN
   }
   const app = await electron.launch({
@@ -114,6 +114,8 @@ async function launchApp(
       BASH_SILENCE_DEPRECATION_WARNING: '1',
       // 개발자의 `~/.ai-maru/config.toml` 을 읽지 않도록 테스트마다 다른 폴더를 준다. 폴더가 없는 채로 띄우는 테스트가 있으므로 폴더는 만들지 않는다.
       MARU_CONFIG_DIR: join(dataDir, 'config'),
+      // 개발자의 `~/.ai-maru/run` 에 테스트마다 디렉토리를 남기지 않게 한다.
+      MARU_RUN_DIR: runBase(dataDir),
       ...env
     } as Record<string, string>
   })
@@ -146,39 +148,36 @@ export function zshHome(dataDir: string, ...dirs: string[]): string {
   return realpathSync(home)
 }
 
-export function wrapSessionBin(dataDir: string, name: string, prelude: string): string {
-  const real =
-    process.env.MARU_SESSION_BIN ?? join(__dirname, '../../core/target/debug/maru-session')
+export function wrapPtyBin(dataDir: string, name: string, prelude: string): string {
+  const real = process.env.MARU_PTY_BIN ?? join(__dirname, '../../core/target/debug/maru-pty')
   const bin = join(dataDir, name)
   writeFileSync(bin, `#!/bin/sh\n${prelude}\nexec '${real}' "$@"\n`)
   chmodSync(bin, 0o755)
   return bin
 }
 
-export function slowSessionBin(dataDir: string, then = ''): string {
-  return wrapSessionBin(dataDir, 'slow-session', `sleep 1.5\n${then}`)
+export function slowPtyBin(dataDir: string, then = ''): string {
+  return wrapPtyBin(dataDir, 'slow-pty', `sleep 1.5\n${then}`)
 }
 
 export function hostPid(app: ElectronApplication): Promise<number> {
-  return app.evaluate(
-    ({ app }) => app.getAppMetrics().find((m) => m.name === 'maru-session-host')!.pid
-  )
+  return app.evaluate(({ app }) => app.getAppMetrics().find((m) => m.name === 'maru-pty-host')!.pid)
 }
 
-/** `--` 뒤에 명령을 받은 세션만 stderr 에 `boom-2` 를 쓰고 실패한다. 처음 pane 의 셸은 뜬다. */
-export function failingCommandSessionBin(dataDir: string): string {
-  return wrapSessionBin(
+/** `--` 뒤에 명령을 받은 pty 만 stderr 에 `boom-2` 를 쓰고 실패한다. 처음 pane 의 셸은 뜬다. */
+export function failingCommandPtyBin(dataDir: string): string {
+  return wrapPtyBin(
     dataDir,
-    'failing-session',
+    'failing-pty',
     `case " $* " in *" -- "*) echo "boom-$((1+1))" >&2; exit 1;; esac`
   )
 }
 
-export async function delaySessionPort(app: ElectronApplication, ms: number): Promise<void> {
+export async function delayPtyPort(app: ElectronApplication, ms: number): Promise<void> {
   await app.evaluate(({ ipcMain }, ms) => {
-    const [open] = ipcMain.listeners('session:open')
-    ipcMain.removeAllListeners('session:open')
-    ipcMain.on('session:open', (event, ...args) => {
+    const [open] = ipcMain.listeners('pty:open')
+    ipcMain.removeAllListeners('pty:open')
+    ipcMain.on('pty:open', (event, ...args) => {
       const sender = event.sender
       const late = Object.create(event, {
         sender: {
@@ -193,40 +192,40 @@ export async function delaySessionPort(app: ElectronApplication, ms: number): Pr
   }, ms)
 }
 
-export type SessionEvents = { opens: (SessionOpen & { key: string })[]; kills: string[] }
+export type PtyEvents = { opens: (PtyOpen & { key: string })[]; kills: string[] }
 
-export async function recordSessions(
-  app: ElectronApplication
-): Promise<() => Promise<SessionEvents>> {
+export async function recordPtys(app: ElectronApplication): Promise<() => Promise<PtyEvents>> {
   await app.evaluate(({ ipcMain }) => {
-    const events: SessionEvents = { opens: [], kills: [] }
-    Object.assign(globalThis, { sessionEvents: events })
-    ipcMain.prependListener('session:open', (_event, key, open) =>
-      events.opens.push({ key, ...open })
-    )
-    ipcMain.prependListener('session:kill', (_event, key) => events.kills.push(key))
+    const events: PtyEvents = { opens: [], kills: [] }
+    Object.assign(globalThis, { ptyEvents: events })
+    ipcMain.prependListener('pty:open', (_event, key, open) => events.opens.push({ key, ...open }))
+    ipcMain.prependListener('pty:kill', (_event, key) => events.kills.push(key))
   })
-  return () =>
-    app.evaluate(() => (globalThis as unknown as { sessionEvents: SessionEvents }).sessionEvents)
+  return () => app.evaluate(() => (globalThis as unknown as { ptyEvents: PtyEvents }).ptyEvents)
 }
 
-export function sessionDir(dataDir: string): string {
-  return join(dataDir, 's')
+function runBase(dataDir: string): string {
+  return join(dataDir, 'run')
 }
 
-export function sessionFiles(dataDir: string): string[] {
+export function ptyDir(dataDir: string): string {
+  // Electron 은 `--user-data-dir` 의 심볼릭 링크를 풀어(`/var` → `/private/var`) userData 로 쓰므로 그 경로로 해시한다.
+  return runDir(realpathSync(dataDir), { MARU_RUN_DIR: runBase(dataDir) })
+}
+
+export function ptyFiles(dataDir: string): string[] {
   try {
-    return readdirSync(sessionDir(dataDir)).sort()
+    return readdirSync(ptyDir(dataDir)).sort()
   } catch {
     return []
   }
 }
 
 export function sockets(dataDir: string): string[] {
-  return sessionFiles(dataDir)
+  return ptyFiles(dataDir)
     .filter((n) => n.endsWith('.sock'))
-    .map((n) => join(sessionDir(dataDir), n))
-    .filter((p) => p !== appSocketPath(sessionDir(dataDir)))
+    .map((n) => join(ptyDir(dataDir), n))
+    .filter((p) => p !== appSocketPath(ptyDir(dataDir)))
 }
 
 function request(v: object): Buffer {
@@ -307,7 +306,7 @@ export function activePane(page: Page) {
 }
 
 /**
- * claude 가 보내는 것과 같은 OSC 7501 바이트를 pane 의 셸에서 PTY 출력으로 내보내 세션 프로세스가 받게 한다.
+ * claude 가 보내는 것과 같은 OSC 7501 바이트를 pane 의 셸에서 PTY 출력으로 내보내 pty 프로세스가 받게 한다.
  */
 export function programStatus(state: string, extra?: string, app = 'claude-code'): string {
   const fields = [`state=${state}`, app && `app=${app}`, extra].filter(Boolean).join(':')
@@ -419,7 +418,7 @@ export async function clickMenu(app: ElectronApplication, id: string): Promise<v
   await app.evaluate(({ Menu }, id) => Menu.getApplicationMenu()!.getMenuItemById(id)!.click(), id)
 }
 
-// 세션이 다 뜨기 전에 재시작하면 다시 뜬 앱이 그 세션에 붙을지가 시점에 달리므로, 부르는 쪽이 셸이 답한
+// pty 가 다 뜨기 전에 재시작하면 다시 뜬 앱이 그 pty 에 붙을지가 시점에 달리므로, 부르는 쪽이 셸이 답한
 // 것을 본 뒤에 부른다.
 export async function restartWith(
   app: ElectronApplication,

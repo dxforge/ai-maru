@@ -5,8 +5,12 @@ import type { ConfigRead } from '../shared/config'
 
 const FILE = 'config.toml'
 
+export function appHome(): string {
+  return join(homedir(), '.ai-maru')
+}
+
 export function configDir(): string {
-  return process.env.MARU_CONFIG_DIR ?? join(homedir(), '.ai-maru')
+  return process.env.MARU_CONFIG_DIR ?? appHome()
 }
 
 export function configFile(): string {

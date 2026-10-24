@@ -18,7 +18,7 @@ let release: () => void = () => {}
 let recorded: unknown[] = []
 
 const handlers: Handlers = {
-  ping: (_params, session) => ({ session }),
+  ping: (_params, pty) => ({ pty }),
   boom: () => {
     throw new Error('boom')
   },
@@ -57,7 +57,7 @@ const handlers: Handlers = {
   },
   subLater: async () => {
     await new Promise<void>((r) => (release = r))
-    return handlers.sub({}, 's-test')
+    return handlers.sub({}, 'p-test')
   }
 }
 
@@ -81,7 +81,7 @@ afterEach(async () => {
 })
 
 function sockPath(): string {
-  return join(dir, 's', 'app.sock')
+  return join(dir, 'run', 'app.sock')
 }
 
 async function start(opts: { maxLine?: number; idleMs?: number } = {}): Promise<string> {
@@ -119,7 +119,7 @@ function req(method: string, params: object, id: number | null = 1): string {
   return JSON.stringify(body) + '\n'
 }
 
-const common = { protocol_version: CLI_PROTOCOL_VERSION, session: 's-test' }
+const common = { protocol_version: CLI_PROTOCOL_VERSION, pty: 'p-test' }
 
 type Reply = {
   jsonrpc: string
@@ -153,12 +153,12 @@ function open(path: string, raw: string, got: string[]): Socket {
 }
 
 describe('listenCli', () => {
-  it('ping 에 받은 세션 id 로 답한다', async () => {
+  it('ping 에 받은 pty id 로 답한다', async () => {
     const path = await start()
     expect(await call(path, req('ping', common, 7))).toEqual({
       jsonrpc: '2.0',
       id: 7,
-      result: { session: 's-test' }
+      result: { pty: 'p-test' }
     })
   })
 
@@ -195,7 +195,7 @@ describe('listenCli', () => {
   it('줄바꿈 없이 끝난 요청도 받는다', async () => {
     const path = await start()
     const res = await call(path, req('ping', common).trimEnd(), true)
-    expect(res.result).toEqual({ session: 's-test' })
+    expect(res.result).toEqual({ pty: 'p-test' })
   })
 
   it('JSON 이 아니면 parse_error', async () => {
@@ -212,7 +212,7 @@ describe('listenCli', () => {
     ['객체가 아님', 'ping'],
     ['batch', [{ jsonrpc: '2.0', id: 1, method: 'ping', params: common }]],
     ['params 가 null', { jsonrpc: '2.0', id: 1, method: 'ping', params: null }],
-    ['params 가 배열', { jsonrpc: '2.0', id: 1, method: 'ping', params: [1, 's-test'] }],
+    ['params 가 배열', { jsonrpc: '2.0', id: 1, method: 'ping', params: [1, 'p-test'] }],
     ['params 가 문자열', { jsonrpc: '2.0', id: 1, method: 'ping', params: 'x' }],
     ['id 가 객체', { jsonrpc: '2.0', id: {}, method: 'ping', params: common }],
     ['id 가 boolean', { jsonrpc: '2.0', id: true, method: 'ping', params: common }]
@@ -236,7 +236,7 @@ describe('listenCli', () => {
 
   it('버전이 없어도 protocol_mismatch', async () => {
     const path = await start()
-    const res = await call(path, req('ping', { session: 's-test' }))
+    const res = await call(path, req('ping', { pty: 'p-test' }))
     expect(res.error.data.code).toBe('protocol_mismatch')
   })
 
@@ -253,7 +253,7 @@ describe('listenCli', () => {
     expect(res.error.data.code).toBe('unknown_method')
   })
 
-  it('세션 id 가 없으면 invalid_params', async () => {
+  it('pty id 가 없으면 invalid_params', async () => {
     const path = await start()
     const res = await call(path, req('ping', { protocol_version: CLI_PROTOCOL_VERSION }))
     expect(res.error.code).toBe(-32602)
@@ -324,7 +324,7 @@ describe('listenCli', () => {
   it('줄바꿈 뒤에 온 것은 무시한다', async () => {
     const path = await start()
     const res = await call(path, req('ping', common) + req('no-such', common))
-    expect(res.result).toEqual({ session: 's-test' })
+    expect(res.result).toEqual({ pty: 'p-test' })
   })
 
   it('줄바꿈 전에 상한을 넘으면 too_large 로 답하고 닫는다', async () => {
@@ -343,7 +343,7 @@ describe('listenCli', () => {
   it('상한 안의 요청은 받는다', async () => {
     const path = await start({ maxLine: 256 })
     const res = await call(path, req('ping', common))
-    expect(res.result).toEqual({ session: 's-test' })
+    expect(res.result).toEqual({ pty: 'p-test' })
   })
 
   it('요청을 다 보내지 않고 멈춘 연결은 끊는다', async () => {
@@ -352,30 +352,30 @@ describe('listenCli', () => {
   })
 
   it('남은 소켓 파일이 있어도 연다', async () => {
-    mkdirSync(join(dir, 's'))
+    mkdirSync(join(dir, 'run'))
     writeFileSync(sockPath(), '')
     const path = await start()
-    expect((await call(path, req('ping', common))).result).toEqual({ session: 's-test' })
+    expect((await call(path, req('ping', common))).result).toEqual({ pty: 'p-test' })
   })
 
   it('남은 것이 유닉스 소켓이어도 연다', async () => {
-    mkdirSync(join(dir, 's'))
+    mkdirSync(join(dir, 'run'))
     const leftover = createServer()
     await new Promise<void>((r) => leftover.listen(sockPath(), r))
     try {
       const path = await start()
-      expect((await call(path, req('ping', common))).result).toEqual({ session: 's-test' })
+      expect((await call(path, req('ping', common))).result).toEqual({ pty: 'p-test' })
     } finally {
       leftover.close()
     }
   })
 
   it('듣기 시작한 소켓을 제 경로로 옮기고 임시 이름을 남기지 않는다', async () => {
-    mkdirSync(join(dir, 's'))
-    writeFileSync(join(dir, 's', '.sock'), '')
+    mkdirSync(join(dir, 'run'))
+    writeFileSync(join(dir, 'run', '.sock'), '')
     const path = await start()
-    expect(existsSync(join(dir, 's', '.sock'))).toBe(false)
-    expect((await call(path, req('ping', common))).result).toEqual({ session: 's-test' })
+    expect(existsSync(join(dir, 'run', '.sock'))).toBe(false)
+    expect((await call(path, req('ping', common))).result).toEqual({ pty: 'p-test' })
   })
 
   it('닫으면 소켓 파일을 지운다', async () => {
@@ -396,7 +396,7 @@ describe('listenCli', () => {
   })
 
   it('열지 못하면 거절한다', async () => {
-    writeFileSync(join(dir, 's'), '')
+    writeFileSync(join(dir, 'run'), '')
     await expect(start()).rejects.toThrow()
   })
 })

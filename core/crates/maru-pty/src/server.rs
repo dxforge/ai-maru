@@ -1,8 +1,8 @@
 use crate::PROTOCOL_VERSION;
 use crate::frame::{TAG_TEXT, read_frame, write_json};
 use crate::paths::{self, Paths};
+use crate::pty::{Pty, wait_exit};
 use crate::record::{self, Record};
-use crate::session::{Session, wait_exit};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::ffi::OsString;
@@ -25,7 +25,7 @@ pub struct Options {
     /// Directory for the socket and the record. It is created when missing and set to mode 0700.
     #[arg(long)]
     pub dir: PathBuf,
-    /// Session id: 1 to 64 ASCII letters, digits, '-' or '_'.
+    /// Pty id: 1 to 64 ASCII letters, digits, '-' or '_'.
     #[arg(long)]
     pub id: String,
     /// Shell to run as a login shell. Defaults to `$SHELL`, or `/bin/sh` when that is unset, empty
@@ -63,14 +63,14 @@ pub async fn run(opts: Options) -> Result<()> {
     // 셸을 띄운 뒤에 알면 그 셸이 고아가 되고 산 프로세스의 레코드를 덮는다.
     if UnixStream::connect(&paths.socket).await.is_ok() {
         bail!(
-            "a live session process is already listening on {}",
+            "a live pty process is already listening on {}",
             paths.socket.display()
         );
     }
     std::fs::remove_file(&paths.socket).ok();
 
     let (shell, shell_var) = choose_shell(opts.shell, std::env::var_os("SHELL"));
-    let session = Session::spawn(
+    let pty = Pty::spawn(
         &shell,
         shell_var.as_deref(),
         opts.cwd.as_deref(),
@@ -78,34 +78,34 @@ pub async fn run(opts: Options) -> Result<()> {
         opts.cols,
         opts.rows,
     )?;
-    let listener = match publish(&opts.id, &paths, &session) {
+    let listener = match publish(&opts.id, &paths, &pty) {
         Ok(l) => l,
         Err(e) => {
-            session.terminate(TERMINATE_GRACE).await;
+            pty.terminate(TERMINATE_GRACE).await;
             std::fs::remove_file(&paths.record).ok();
             return Err(e);
         }
     };
     log!(
-        "maru-session {}: listening on {}",
+        "maru-pty {}: listening on {}",
         opts.id,
         paths.socket.display()
     );
 
     let keep = opts.keep;
     let (kill_tx, mut kill_rx) = mpsc::channel::<KillAck>(1);
-    let mut exit_rx = session.exit_rx();
+    let mut exit_rx = pty.exit_rx();
     let mut conns = JoinSet::new();
     let mut ack = None;
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {
                 Ok((stream, _)) => {
-                    conns.spawn(handle(stream, session.clone(), kill_tx.clone()));
+                    conns.spawn(handle(stream, pty.clone(), kill_tx.clone()));
                 }
                 Err(e) => {
                     // fd 가 바닥나면 Linux 는 연결을 큐에 남겨 accept 가 같은 에러로 곧바로 다시 깨어난다.
-                    log!("maru-session: accept failed: {e}");
+                    log!("maru-pty: accept failed: {e}");
                     tokio::time::sleep(ACCEPT_BACKOFF).await;
                 }
             },
@@ -122,7 +122,7 @@ pub async fn run(opts: Options) -> Result<()> {
     }
 
     drop(listener);
-    session.terminate(TERMINATE_GRACE).await;
+    pty.terminate(TERMINATE_GRACE).await;
     std::fs::remove_file(&paths.socket).ok();
     std::fs::remove_file(&paths.record).ok();
     if let Some(a) = ack {
@@ -164,15 +164,15 @@ fn is_executable(path: &Path) -> bool {
         .is_some_and(|dirs| std::env::split_paths(&dirs).any(|d| file(&d.join(path))))
 }
 
-fn publish(id: &str, paths: &Paths, session: &Session) -> Result<UnixListener> {
+fn publish(id: &str, paths: &Paths, pty: &Pty) -> Result<UnixListener> {
     record::write(
         &paths.record,
         &Record {
             protocol_version: PROTOCOL_VERSION,
             id: id.to_string(),
             pid: std::process::id(),
-            shell_pid: session.shell_pid,
-            tty: session.tty.clone(),
+            shell_pid: pty.shell_pid,
+            tty: pty.tty.clone(),
             created_at_ms: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -183,7 +183,7 @@ fn publish(id: &str, paths: &Paths, session: &Session) -> Result<UnixListener> {
         .with_context(|| format!("cannot bind {}", paths.socket.display()))
 }
 
-async fn handle(mut stream: UnixStream, session: Arc<Session>, kill_tx: mpsc::Sender<KillAck>) {
+async fn handle(mut stream: UnixStream, pty: Arc<Pty>, kill_tx: mpsc::Sender<KillAck>) {
     let same_user = stream
         .peer_cred()
         .is_ok_and(|c| c.uid() == nix::unistd::geteuid().as_raw());
@@ -226,23 +226,23 @@ async fn handle(mut stream: UnixStream, session: Arc<Session>, kill_tx: mpsc::Se
             )
             .await
         }
-        Some("attach") => crate::attach::run(stream, session, &req).await,
+        Some("attach") => crate::attach::run(stream, pty, &req).await,
         Some("status") => {
             let wait = req["wait"] == true;
             let exit = if wait {
-                let mut rx = session.exit_rx();
+                let mut rx = pty.exit_rx();
                 let mut probe = [0u8; 1];
                 tokio::select! {
                     // 끝낸 것이 이 프로세스면 셸이 스스로 끝난 것이 아니므로 답하지 않는다.
                     exit = wait_exit(&mut rx) => match exit {
-                        Some(exit) if !session.terminating() => Some(exit),
+                        Some(exit) if !pty.terminating() => Some(exit),
                         _ => return,
                     },
                     // 기다리던 쪽이 끊었으면 셸이 끝날 때까지 연결을 열어 두지 않는다.
                     _ = stream.read(&mut probe) => return,
                 }
             } else {
-                session.exited()
+                pty.exited()
             };
             reply(&mut stream, json!({ "type": "status", "exit": exit })).await
         }
@@ -250,11 +250,11 @@ async fn handle(mut stream: UnixStream, session: Arc<Session>, kill_tx: mpsc::Se
             let Some(text) = req["text"].as_str() else {
                 return error(&mut stream, "bad_request", "text must be a string").await;
             };
-            if session.exited().is_some() {
+            if pty.exited().is_some() {
                 return error(&mut stream, "exited", "the shell has exited").await;
             }
             let bytes = text.as_bytes().to_vec();
-            let s = session.clone();
+            let s = pty.clone();
             let written = tokio::task::spawn_blocking(move || s.write(&bytes))
                 .await
                 .map_err(std::io::Error::other)
@@ -265,7 +265,7 @@ async fn handle(mut stream: UnixStream, session: Arc<Session>, kill_tx: mpsc::Se
             }
         }
         Some("foreground") => {
-            let fg = session.foreground();
+            let fg = pty.foreground();
             let cwd = fg.cwd.map(|p| p.to_string_lossy().into_owned());
             reply(
                 &mut stream,
@@ -273,7 +273,7 @@ async fn handle(mut stream: UnixStream, session: Arc<Session>, kill_tx: mpsc::Se
             )
             .await
         }
-        Some("capture") => match session.capture(req["unwrap"] == true) {
+        Some("capture") => match pty.capture(req["unwrap"] == true) {
             Ok(text) => {
                 reply(
                     &mut stream,

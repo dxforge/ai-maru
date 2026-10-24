@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { InvalidParams } from './cli-server'
 import { createInbox, PREVIEW_CHARS, type InboxLimits } from './inbox'
 
-const A = 's-0000000a'
-const B = 's-0000000b'
-const C = 's-0000000c'
+const A = 'p-0000000a'
+const B = 'p-0000000b'
+const C = 'p-0000000c'
 const DAY = 24 * 60 * 60 * 1000
 
 type Read = { messages: { from: string; text: string }[] }
@@ -13,16 +13,16 @@ function setup(o: { dead?: string[]; listening?: string[]; limits?: Partial<Inbo
   let t = 1_000_000
   const dead = o.dead ?? []
   const listening = o.listening ?? []
-  const sent: { session: string; event: object }[] = []
+  const sent: { pty: string; event: object }[] = []
   const handlers = createInbox({
     isLive: async (s) => !dead.includes(s),
-    emit: (session, event) => {
-      if (!listening.includes(session)) return false
-      sent.push({ session, event })
+    emit: (pty, event) => {
+      if (!listening.includes(pty)) return false
+      sent.push({ pty, event })
       return true
     },
     now: () => t,
-    limits: { perSession: 500, total: 5000, ttlMs: DAY, ...o.limits }
+    limits: { perPty: 500, total: 5000, ttlMs: DAY, ...o.limits }
   })
   const push = (from: string, to: unknown, text: unknown) =>
     handlers['inbox.push']({ to, text }, from)
@@ -31,8 +31,8 @@ function setup(o: { dead?: string[]; listening?: string[]; limits?: Partial<Inbo
 }
 
 describe('inbox.push', () => {
-  it.each([['s-1'], ['../x'], ['s-0000000A'], [7]])(
-    'to 가 세션 id 가 아니면 거절한다 (%j)',
+  it.each([['p-1'], ['../x'], ['p-0000000A'], [7]])(
+    'to 가 pty id 가 아니면 거절한다 (%j)',
     async (to) => {
       const { push } = setup()
       await expect(push(A, to, 'hi')).rejects.toThrow(InvalidParams)
@@ -47,9 +47,9 @@ describe('inbox.push', () => {
     }
   )
 
-  it('끝난 세션이면 거절한다', async () => {
+  it('끝난 pty 면 거절한다', async () => {
     const { push } = setup({ dead: [B] })
-    await expect(push(A, B, 'hi')).rejects.toThrow(`session ${B} has ended`)
+    await expect(push(A, B, 'hi')).rejects.toThrow(`pty ${B} has ended`)
   })
 
   it('구독자가 없으면 저장하고, read 가 오래된 것부터 돌려준 뒤 지운다', async () => {
@@ -63,7 +63,7 @@ describe('inbox.push', () => {
     expect(await read(B)).toEqual([])
   })
 
-  it('read 는 자기 세션 것만 돌려준다', async () => {
+  it('read 는 자기 pty 것만 돌려준다', async () => {
     const { push, read } = setup()
     await push(A, B, 'x')
     expect(await read(C)).toEqual([])
@@ -73,7 +73,7 @@ describe('inbox.push', () => {
   it('구독자가 있고 본문이 다 실리면 — 여러 줄이어도 — 알림만 보내고 저장하지 않는다', async () => {
     const { push, read, sent } = setup({ listening: [B] })
     await push(A, B, 'a\nb')
-    expect(sent).toEqual([{ session: B, event: { event: 'inbox', from: A, body: 'a\nb' } }])
+    expect(sent).toEqual([{ pty: B, event: { event: 'inbox', from: A, body: 'a\nb' } }])
     expect(await read(B)).toEqual([])
   })
 
@@ -100,15 +100,15 @@ describe('inbox.push', () => {
     expect(await read(B)).toEqual([{ from: A, text }])
   })
 
-  it('세션별 한도를 넘으면 그 세션의 가장 오래된 것부터 지운다', async () => {
-    const { push, read } = setup({ limits: { perSession: 2 } })
+  it('pty 별 한도를 넘으면 그 pty 의 가장 오래된 것부터 지운다', async () => {
+    const { push, read } = setup({ limits: { perPty: 2 } })
     await push(A, C, 'c1')
     for (const t of ['1', '2', '3']) await push(A, B, t)
     expect((await read(B)).map((m) => m.text)).toEqual(['2', '3'])
     expect(await read(C)).toHaveLength(1)
   })
 
-  it('전체 한도를 넘으면 세션을 가리지 않고 가장 오래된 것부터 지운다', async () => {
+  it('전체 한도를 넘으면 pty 를 가리지 않고 가장 오래된 것부터 지운다', async () => {
     const { push, read } = setup({ limits: { total: 2 } })
     await push(A, B, 'b1')
     await push(A, C, 'c1')
@@ -132,7 +132,7 @@ describe('inbox.push', () => {
     expect(await read(B)).toEqual([])
   })
 
-  it('push 할 때 끝난 세션의 메시지를 버린다', async () => {
+  it('push 할 때 끝난 pty 의 메시지를 버린다', async () => {
     const dead: string[] = []
     const { push, read } = setup({ dead })
     await push(A, C, 'for c')

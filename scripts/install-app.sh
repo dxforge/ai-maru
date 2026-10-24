@@ -12,7 +12,7 @@ running() {
   ps -axo comm= | grep -xF "$exe" >/dev/null
 }
 
-# 앱이 끝날 때 세션을 모두 끝내므로, 이 스크립트가 앱을 끄면 앱의 터미널에서 돌던 이 스크립트도 끝난다.
+# 앱이 끝날 때 pty 를 모두 끝내므로, 이 스크립트가 앱을 끄면 앱의 터미널에서 돌던 이 스크립트도 끝난다.
 refuse_if_running() {
   if running; then
     echo "$name is running. Quit it and run this again." >&2

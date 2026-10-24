@@ -8,12 +8,12 @@ use std::process::{Child, Command, Stdio};
 
 const POSIX_SHELLS: [&str; 5] = ["sh", "bash", "zsh", "ksh", "dash"];
 
-pub struct Pty {
-    master: OwnedFd,
+pub struct Master {
+    fd: OwnedFd,
 }
 
 pub struct Spawned {
-    pub pty: Pty,
+    pub master: Master,
     pub tty: String,
     pub child: Child,
     pub reader: File,
@@ -102,9 +102,7 @@ pub fn spawn(
     let reader = File::from(pair.master.try_clone()?);
     let writer = File::from(pair.master.try_clone()?);
     Ok(Spawned {
-        pty: Pty {
-            master: pair.master,
-        },
+        master: Master { fd: pair.master },
         tty,
         child,
         reader,
@@ -112,11 +110,11 @@ pub fn spawn(
     })
 }
 
-impl Pty {
+impl Master {
     pub fn resize(&self, cols: u16, rows: u16) -> Result<()> {
         let ws = winsize(cols, rows);
         // SAFETY: master 는 살아 있고 TIOCSWINSZ 는 winsize 를 읽기만 한다.
-        if unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ, &ws) } == -1 {
+        if unsafe { libc::ioctl(self.fd.as_raw_fd(), libc::TIOCSWINSZ, &ws) } == -1 {
             bail!("TIOCSWINSZ failed: {}", std::io::Error::last_os_error());
         }
         Ok(())
@@ -124,8 +122,6 @@ impl Pty {
 
     /// foreground 그룹은 master/slave 가 공유하는 터미널 상태라 master 로 읽힌다.
     pub fn foreground_pgid(&self) -> Option<i32> {
-        nix::unistd::tcgetpgrp(&self.master)
-            .ok()
-            .map(|p| p.as_raw())
+        nix::unistd::tcgetpgrp(&self.fd).ok().map(|p| p.as_raw())
     }
 }

@@ -1,6 +1,6 @@
 # 설정 파일
 
-AI Maru 는 `~/.ai-maru/config.toml` 을 읽는다. 앱은 이 폴더와 파일을 만들지 않는다. 파일이 없으면 기본값을 쓴다. 필요한 키만 적으면 된다.
+AI Maru 는 `~/.ai-maru/config.toml` 을 읽는다. 앱은 이 파일을 만들지 않는다. 파일이 없으면 기본값을 쓴다. 필요한 키만 적으면 된다.
 
 ```toml
 [terminal]
@@ -16,6 +16,8 @@ column-cols = 110
 ```
 
 `MARU_CONFIG_DIR` 환경 변수를 주면 `~/.ai-maru` 대신 그 폴더의 `config.toml` 을 읽는다.
+
+앱은 터미널의 소켓과 레코드를 `~/.ai-maru/run/` 아래에 둔다. 이 폴더는 앱이 만든다(권한 0700). 유닉스 소켓 경로는 macOS 에서 103바이트까지만 되므로, 홈 경로가 길어 터미널이 뜨지 않으면 `MARU_RUN_DIR` 환경 변수로 `~/.ai-maru/run` 대신 쓸 짧은 폴더를 준다.
 
 ## 키
 

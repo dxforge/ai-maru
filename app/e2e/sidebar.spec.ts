@@ -161,7 +161,7 @@ test('돌고 있는 프로그램이 다른 worktree 로 옮겨 간 채 Claude �
   await expect(branch(page)).toHaveText(/main$/)
 
   // claude 가 EnterWorktree 로 cwd 를 옮긴 채 일하는 상황을 흉내 낸다. 서브셸이 worktree 로 cd 한 뒤 상태를 보고하고, sleep 으로
-  // 프롬프트가 돌아오지 않게 한다. 서브셸이 foreground 프로세스 그룹의 리더이므로 세션은 서브셸의 cwd 를 답한다. 프롬프트가
+  // 프롬프트가 돌아오지 않게 한다. 서브셸이 foreground 프로세스 그룹의 리더이므로 pty 는 서브셸의 cwd 를 답한다. 프롬프트가
   // 마지막으로 보낸 OSC 7 은 아직 `~/proj` 다.
   const report = programStatus('working').trimEnd()
   await page.keyboard.type(`(cd ../proj-wt && ${report} && sleep 30)\n`)
@@ -191,14 +191,14 @@ test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어
   expect((await win(app)).path).toBe(join(home, 'link'))
 })
 
-test('maru cell new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른 worktree 로 옮겨 가면, 세션이 알린 foreground 의 cwd 로 그 cell 의 branch 를 읽는다', async ({
+test('maru cell new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른 worktree 로 옮겨 가면, pty 가 알린 foreground 의 cwd 로 그 cell 의 branch 를 읽는다', async ({
   launch,
   dataDir
 }) => {
   const home = repoHome(dataDir)
   git(join(home, 'proj'), 'worktree', 'add', '-q', '-b', 'wt', '../proj-wt')
   // claude 가 셸 없이 pane 의 명령으로 떠서, 한 턴 안에서 EnterWorktree 로 cwd 를 옮기는 상황을 흉내 낸다. 프롬프트가 없으므로
-  // OSC 7 은 오지 않고, 옮긴 뒤 보고도 오지 않는다. 세션은 레코드가 생기고 1초 뒤에 처음 잰 cwd 를 기준으로 두므로, 옮기기는
+  // OSC 7 은 오지 않고, 옮긴 뒤 보고도 오지 않는다. pty 는 레코드가 생기고 1초 뒤에 처음 잰 cwd 를 기준으로 두므로, 옮기기는
   // 그 뒤여야 한다. 3초는 거기에 2초 여유를 둔 것이다.
   writeFileSync(
     join(home, 'claude.sh'),

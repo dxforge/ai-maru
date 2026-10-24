@@ -30,7 +30,7 @@ test('체크아웃 밖에 둔 설치본이 AI Maru 로 떠 터미널을 열고, 
   const { app, page } = await launch({}, executable())
   expect(await app.evaluate(({ app }) => app.getName())).toBe('AI Maru')
   await page.keyboard.type('maru ping\n')
-  await expect(rows(page)).toContainText(/pong \(session s-/)
+  await expect(rows(page)).toContainText(/pong \(pty p-/)
 })
 
 // asar 헤더: [4B][헤더 pickle 크기 4B][pickle 본문 크기 4B][JSON 길이 4B][JSON]

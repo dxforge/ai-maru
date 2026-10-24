@@ -14,18 +14,18 @@ export function programName(app: string): string {
 export function createProgramStatuses() {
   // 목록은 메시지마다 통째로 바뀌고 안에서 고치지 않으므로 키 단위 반응이면 된다.
   const all = shallowReactive(new Map<string, ProgramStatusRecord[]>())
-  const root = (session?: string): ProgramStatusRecord | undefined =>
-    session === undefined ? undefined : all.get(session)?.find((r) => r.id === '')
+  const root = (pty?: string): ProgramStatusRecord | undefined =>
+    pty === undefined ? undefined : all.get(pty)?.find((r) => r.id === '')
   return {
     root,
-    state: (session?: string): ProgramStatusState | undefined => root(session)?.state,
-    records: (session: string): readonly ProgramStatusRecord[] => all.get(session) ?? NONE,
-    set(session: string, records: ProgramStatusRecord[]): void {
-      if (records.length) all.set(session, records)
-      else all.delete(session)
+    state: (pty?: string): ProgramStatusState | undefined => root(pty)?.state,
+    records: (pty: string): readonly ProgramStatusRecord[] => all.get(pty) ?? NONE,
+    set(pty: string, records: ProgramStatusRecord[]): void {
+      if (records.length) all.set(pty, records)
+      else all.delete(pty)
     },
-    remove(session: string): void {
-      all.delete(session)
+    remove(pty: string): void {
+      all.delete(pty)
     }
   }
 }

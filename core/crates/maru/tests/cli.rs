@@ -10,7 +10,7 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-const SESSION: &str = "s-test";
+const PTY: &str = "p-test";
 
 fn tmpdir() -> tempfile::TempDir {
     // macOS 의 기본 temp 디렉토리는 길어서 소켓 경로 한도에 가까워진다.
@@ -75,11 +75,11 @@ fn maru_cmd(sock: Option<&Path>, args: &[&str]) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_maru"));
     cmd.args(args)
         .env_remove("MARU_SOCKET")
-        .env_remove("MARU_SESSION_ID")
+        .env_remove("MARU_PTY_ID")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(sock) = sock {
-        cmd.env("MARU_SOCKET", sock).env("MARU_SESSION_ID", SESSION);
+        cmd.env("MARU_SOCKET", sock).env("MARU_PTY_ID", PTY);
     }
     cmd
 }
@@ -151,23 +151,23 @@ fn sock_in(tmp: &tempfile::TempDir) -> PathBuf {
 }
 
 #[test]
-fn ping_sends_a_versioned_request_and_prints_the_session() {
+fn ping_sends_a_versioned_request_and_prints_the_pty() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     let server = serve_once(&sock, |req| {
-        result(req, json!({ "session": req["params"]["session"] }))
+        result(req, json!({ "pty": req["params"]["pty"] }))
     });
 
     let out = maru(Some(&sock), &["ping"]);
     let req = server.join().unwrap();
 
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), format!("pong (session {SESSION})\n"));
+    assert_eq!(stdout(&out), format!("pong (pty {PTY})\n"));
     assert_eq!(req["jsonrpc"], "2.0");
     assert_eq!(req["method"], "ping");
     assert!(req["id"].is_number() || req["id"].is_string(), "{req}");
     assert_eq!(req["params"]["protocol_version"], 1);
-    assert_eq!(req["params"]["session"], SESSION);
+    assert_eq!(req["params"]["pty"], PTY);
 }
 
 #[test]
@@ -270,7 +270,7 @@ fn malformed_answers_are_errors() {
         ("neither result nor error", |req| {
             Some(json!({ "jsonrpc": "2.0", "id": req["id"] }).to_string())
         }),
-        ("result without session", |req| result(req, json!({}))),
+        ("result without pty", |req| result(req, json!({}))),
     ];
     for (name, reply) in cases {
         let out = ping_against(reply);
@@ -304,20 +304,17 @@ fn one_missing_or_empty_variable_is_outside_an_app_terminal() {
     let sock = sock_in(&tmp);
     let cases: [(&str, &[(&str, &str)]); 3] = [
         ("socket only", &[("MARU_SOCKET", "/tmp/x.sock")]),
-        ("session only", &[("MARU_SESSION_ID", SESSION)]),
+        ("pty only", &[("MARU_PTY_ID", PTY)]),
         (
-            "empty session",
-            &[
-                ("MARU_SOCKET", sock.to_str().unwrap()),
-                ("MARU_SESSION_ID", ""),
-            ],
+            "empty pty",
+            &[("MARU_SOCKET", sock.to_str().unwrap()), ("MARU_PTY_ID", "")],
         ),
     ];
     for (name, vars) in cases {
         let out = Command::new(env!("CARGO_BIN_EXE_maru"))
             .arg("ping")
             .env_remove("MARU_SOCKET")
-            .env_remove("MARU_SESSION_ID")
+            .env_remove("MARU_PTY_ID")
             .envs(vars.iter().copied())
             .output()
             .unwrap();
@@ -357,7 +354,7 @@ fn canvas_put_sends_stdin_unchanged_and_prints_the_id() {
     assert_eq!(stdout(&out), "doc-1\n");
     assert_eq!(req["method"], "canvas.put");
     assert_eq!(req["params"]["protocol_version"], 1);
-    assert_eq!(req["params"]["session"], SESSION);
+    assert_eq!(req["params"]["pty"], PTY);
     assert_eq!(req["params"]["text"], text);
     assert!(req["params"].get("id").is_none(), "{req}");
     assert!(req["params"].get("title").is_none(), "{req}");
@@ -570,7 +567,7 @@ fn maru_claude(sock: &Path, args: &[&str], input: &[u8], vars: &[(&str, &str)]) 
 }
 
 #[test]
-fn claude_hook_on_session_start_tells_claude_its_session_and_the_inbox() {
+fn claude_hook_on_session_start_tells_claude_its_pty_and_the_inbox() {
     for source in ["startup", "resume", "clear", "compact"] {
         let tmp = tmpdir();
         // 듣는 앱이 없는 소켓 경로다 — hook 은 앱에 아무것도 보내지 않는다.
@@ -583,8 +580,8 @@ fn claude_hook_on_session_start_tells_claude_its_session_and_the_inbox() {
         assert_eq!(
             stdout(&out),
             format!(
-                "You are in AI Maru terminal session {SESSION}. Messages from other sessions arrive as\n\
-                 monitor notifications. Send: `maru inbox push <session> <message>`. Unread: `maru inbox read`.\n\
+                "You are in AI Maru pty {PTY}. Messages from other ptys arrive as\n\
+                 monitor notifications. Send: `maru inbox push <pty> <message>`. Unread: `maru inbox read`.\n\
                  Background processes (dev servers, builds, watchers): `maru job new --name <name> <command>`.\n\
                  When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n"
             )
@@ -782,7 +779,7 @@ fn claude_monitor_subscribes_with_its_ancestors() {
     let req = reqs.recv_timeout(Duration::from_secs(15)).unwrap();
     assert_eq!(req["method"], "monitor.subscribe");
     assert_eq!(req["params"]["protocol_version"], 1);
-    assert_eq!(req["params"]["session"], SESSION);
+    assert_eq!(req["params"]["pty"], PTY);
     let ancestors = req["params"]["ancestors"].as_array().unwrap();
     assert_eq!(ancestors[0], std::process::id());
     assert!(ancestors.len() > 1, "{req}");
@@ -793,8 +790,8 @@ fn claude_monitor_subscribes_with_its_ancestors() {
 fn claude_monitor_writes_each_event_as_one_line() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let a = json!({"event": "inbox", "from": "s-0000000a", "body": "줄\n둘"});
-    let b = json!({"event": "inbox", "from": "s-0000000a", "body": "x", "truncated": true});
+    let a = json!({"event": "inbox", "from": "p-0000000a", "body": "줄\n둘"});
+    let b = json!({"event": "inbox", "from": "p-0000000a", "body": "x", "truncated": true});
     let (first, later) = (event(&a), event(&b));
     // 응답과 첫 알림을 한 번에 보내, 응답 뒤에 붙어 온 알림도 쓰는지 본다.
     let _reqs = serve_subscription(
@@ -826,7 +823,7 @@ fn claude_monitor_ends_silently_when_the_app_refuses() {
     let _reqs = serve_subscription(
         &sock,
         |req| {
-            let reason = "not running under session s-test's shell";
+            let reason = "not running under pty p-test's shell";
             error(req, -32602, reason, json!({"code": "invalid_params"})).unwrap() + "\n"
         },
         drop,
@@ -855,7 +852,7 @@ fn claude_monitor_subscribes_again_when_the_app_comes_back() {
     first.recv_timeout(Duration::from_secs(15)).unwrap();
     std::thread::sleep(Duration::from_millis(100));
     std::fs::remove_file(&sock).unwrap();
-    let a = json!({"event": "inbox", "from": "s-0000000a", "body": "back"});
+    let a = json!({"event": "inbox", "from": "p-0000000a", "body": "back"});
     let line = event(&a);
     let again = serve_subscription(&sock, move |req| subscribed(req) + &line, hold);
     let req = again.recv_timeout(Duration::from_secs(15)).unwrap();
@@ -871,7 +868,7 @@ fn claude_monitor_subscribes_when_the_app_starts_after_it() {
     let sock = sock_in(&tmp);
     let mut child = monitor_at(Some(&sock), Stdio::piped());
     assert_running(&mut child);
-    let a = json!({"event": "inbox", "from": "s-0000000a", "body": "late"});
+    let a = json!({"event": "inbox", "from": "p-0000000a", "body": "late"});
     let line = event(&a);
     let reqs = serve_subscription(&sock, move |req| subscribed(req) + &line, hold);
     reqs.recv_timeout(Duration::from_secs(15)).unwrap();
@@ -896,14 +893,14 @@ fn inbox_push_sends_the_message_argument() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     let server = serve_once(&sock, |req| result(req, Value::Null));
-    let out = maru(Some(&sock), &["inbox", "push", "s-0000000b", "hello there"]);
+    let out = maru(Some(&sock), &["inbox", "push", "p-0000000b", "hello there"]);
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out), "");
     assert_eq!(req["method"], "inbox.push");
     assert_eq!(req["params"]["protocol_version"], 1);
-    assert_eq!(req["params"]["session"], SESSION);
-    assert_eq!(req["params"]["to"], "s-0000000b");
+    assert_eq!(req["params"]["pty"], PTY);
+    assert_eq!(req["params"]["to"], "p-0000000b");
     assert_eq!(req["params"]["text"], "hello there");
 }
 
@@ -913,7 +910,7 @@ fn inbox_push_sends_a_message_that_starts_with_a_hyphen() {
         let tmp = tmpdir();
         let sock = sock_in(&tmp);
         let server = serve_once(&sock, |req| result(req, Value::Null));
-        let out = maru(Some(&sock), &["inbox", "push", "s-0000000b", text]);
+        let out = maru(Some(&sock), &["inbox", "push", "p-0000000b", text]);
         assert!(out.status.success(), "{text}: {}", stderr(&out));
         assert_eq!(server.join().unwrap()["params"]["text"], text);
     }
@@ -922,8 +919,8 @@ fn inbox_push_sends_a_message_that_starts_with_a_hyphen() {
 #[test]
 fn inbox_push_reads_stdin_without_a_message_or_with_a_dash() {
     for args in [
-        &["inbox", "push", "s-0000000b"][..],
-        &["inbox", "push", "s-0000000b", "-"],
+        &["inbox", "push", "p-0000000b"][..],
+        &["inbox", "push", "p-0000000b", "-"],
     ] {
         let tmp = tmpdir();
         let sock = sock_in(&tmp);
@@ -941,7 +938,7 @@ fn inbox_push_without_a_message_on_a_terminal_says_how() {
     let pty = nix::pty::openpty(None, None).unwrap();
     let child = maru_with(
         Some(&sock),
-        &["inbox", "push", "s-0000000b"],
+        &["inbox", "push", "p-0000000b"],
         Stdio::from(pty.slave),
     );
     let out = wait_within(child);
@@ -955,10 +952,10 @@ fn inbox_push_rejects_an_empty_message_without_reaching_the_app() {
     // 소켓이 없어서, 연결을 시도했다면 "cannot reach the app" 이 나온다.
     let sock = sock_in(&tmp);
     for input in [&b""[..], b"  \n"] {
-        let out = maru_input(Some(&sock), &["inbox", "push", "s-0000000b"], input);
+        let out = maru_input(Some(&sock), &["inbox", "push", "p-0000000b"], input);
         assert_fails_with(&out, "the message is empty");
     }
-    let out = maru(Some(&sock), &["inbox", "push", "s-0000000b", ""]);
+    let out = maru(Some(&sock), &["inbox", "push", "p-0000000b", ""]);
     assert_fails_with(&out, "the message is empty");
 }
 
@@ -966,7 +963,7 @@ fn inbox_push_rejects_an_empty_message_without_reaching_the_app() {
 fn inbox_push_rejects_stdin_that_is_not_utf8() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let out = maru_input(Some(&sock), &["inbox", "push", "s-0000000b"], &[0xff, 0xfe]);
+    let out = maru_input(Some(&sock), &["inbox", "push", "p-0000000b"], &[0xff, 0xfe]);
     assert_fails_with(&out, "stdin is not UTF-8");
 }
 
@@ -978,19 +975,19 @@ fn inbox_push_shows_the_apps_reason() {
         error(
             req,
             -32602,
-            "session s-0000000b has ended",
+            "pty p-0000000b has ended",
             json!({"code": "invalid_params"}),
         )
     });
-    let out = maru(Some(&sock), &["inbox", "push", "s-0000000b", "hi"]);
+    let out = maru(Some(&sock), &["inbox", "push", "p-0000000b", "hi"]);
     server.join().unwrap();
-    assert_fails_with(&out, "session s-0000000b has ended");
+    assert_fails_with(&out, "pty p-0000000b has ended");
 }
 
 #[test]
 fn inbox_commands_outside_an_app_terminal_say_so_before_reading_stdin() {
     // stdin 을 열어 둔 채라, 읽으려 했다면 wait_within 이 시간 초과로 실패한다.
-    for args in [&["inbox", "push", "s-0000000b"][..], &["inbox", "read"]] {
+    for args in [&["inbox", "push", "p-0000000b"][..], &["inbox", "read"]] {
         let child = maru_with(None, args, Stdio::piped());
         assert_fails_with(&wait_within(child), "not inside an AI Maru terminal");
     }
@@ -1004,8 +1001,8 @@ fn inbox_read_prints_each_message_under_its_sender() {
         result(
             req,
             json!({"messages": [
-                {"from": "s-0000000a", "text": "a\nb"},
-                {"from": "s-0000000c", "text": "c\n"}
+                {"from": "p-0000000a", "text": "a\nb"},
+                {"from": "p-0000000c", "text": "c\n"}
             ]}),
         )
     });
@@ -1013,10 +1010,10 @@ fn inbox_read_prints_each_message_under_its_sender() {
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(req["method"], "inbox.read");
-    assert_eq!(req["params"]["session"], SESSION);
+    assert_eq!(req["params"]["pty"], PTY);
     assert_eq!(
         stdout(&out),
-        "--- from s-0000000a ---\na\nb\n--- from s-0000000c ---\nc\n"
+        "--- from p-0000000a ---\na\nb\n--- from p-0000000c ---\nc\n"
     );
 }
 
@@ -1040,7 +1037,7 @@ fn inbox_read_with_nothing_unread_says_so_on_stderr() {
 fn inbox_read_prints_nothing_from_an_answer_it_cannot_print() {
     let answers = [
         json!({}),
-        json!({"messages": [{"from": "s-0000000a", "text": "ok"}, {"from": "s-0000000a"}]}),
+        json!({"messages": [{"from": "p-0000000a", "text": "ok"}, {"from": "p-0000000a"}]}),
     ];
     for answer in answers {
         let tmp = tmpdir();
@@ -1063,10 +1060,10 @@ fn maru_in(dir: &Path, sock: &Path, args: &[&str]) -> Output {
 }
 
 #[test]
-fn pane_new_sends_where_it_was_called_and_the_command_then_prints_the_session() {
+fn pane_new_sends_where_it_was_called_and_the_command_then_prints_the_pty() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
     let out = maru_in(
         tmp.path(),
         &sock,
@@ -1074,9 +1071,9 @@ fn pane_new_sends_where_it_was_called_and_the_command_then_prints_the_session() 
     );
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "s-0000000c\n");
+    assert_eq!(stdout(&out), "p-0000000c\n");
     assert_eq!(req["method"], "pane.new");
-    assert_eq!(req["params"]["session"], SESSION);
+    assert_eq!(req["params"]["pty"], PTY);
     let cwd = std::fs::canonicalize(tmp.path()).unwrap();
     assert_eq!(req["params"]["cwd"], cwd.to_str().unwrap());
     assert_eq!(req["params"]["direction"], "right");
@@ -1091,7 +1088,7 @@ fn pane_new_resolves_a_relative_cwd_and_splits_down() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     std::fs::create_dir(tmp.path().join("sub")).unwrap();
-    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
     let out = maru_in(
         tmp.path(),
         &sock,
@@ -1118,7 +1115,7 @@ fn pane_and_cell_new_reject_an_unknown_option_before_the_command() {
 fn pane_new_without_a_command_sends_none() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
     let out = maru_in(tmp.path(), &sock, &["pane", "new"]);
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
@@ -1130,7 +1127,7 @@ fn pane_new_without_a_command_sends_none() {
 fn pane_new_full_asks_to_split_the_cell_and_leaves_a_later_full_to_the_command() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
     let out = maru_in(
         tmp.path(),
         &sock,
@@ -1163,22 +1160,22 @@ fn pane_and_cell_new_refuse_a_cwd_that_is_not_a_directory_before_asking_the_app(
 }
 
 #[test]
-fn pane_and_cell_new_fail_on_an_answer_without_a_session() {
+fn pane_and_cell_new_fail_on_an_answer_without_a_pty() {
     for new in [["pane", "new"], ["cell", "new"]] {
         let tmp = tmpdir();
         let sock = sock_in(&tmp);
         let server = serve_once(&sock, |req| result(req, Value::Null));
         let out = maru_in(tmp.path(), &sock, &new);
         server.join().unwrap();
-        assert_fails_with(&out, "without a session");
+        assert_fails_with(&out, "without a pty");
     }
 }
 
 #[test]
-fn app_restart_sends_kill_sessions_only_when_asked() {
+fn app_restart_sends_kill_ptys_only_when_asked() {
     for (args, kill) in [
         (&["app", "restart"][..], false),
-        (&["app", "restart", "--kill-sessions"][..], true),
+        (&["app", "restart", "--kill-ptys"][..], true),
     ] {
         let tmp = tmpdir();
         let sock = sock_in(&tmp);
@@ -1188,7 +1185,7 @@ fn app_restart_sends_kill_sessions_only_when_asked() {
         assert!(out.status.success(), "{}", stderr(&out));
         assert_eq!(stdout(&out), "");
         assert_eq!(req["method"], "app.restart");
-        assert_eq!(req["params"]["kill_sessions"], kill);
+        assert_eq!(req["params"]["kill_ptys"], kill);
     }
 }
 
@@ -1200,20 +1197,20 @@ fn app_restart_shows_the_apps_reason() {
         error(
             req,
             -32001,
-            "1 terminal(s) will end. Pass --kill-sessions to restart anyway.",
-            json!({ "code": "sessions_would_end", "sessions": 1 }),
+            "1 terminal(s) will end. Pass --kill-ptys to restart anyway.",
+            json!({ "code": "ptys_would_end", "ptys": 1 }),
         )
     });
     let out = maru(Some(&sock), &["app", "restart"]);
     server.join().unwrap();
-    assert_fails_with(&out, "Pass --kill-sessions to restart anyway.");
+    assert_fails_with(&out, "Pass --kill-ptys to restart anyway.");
 }
 
 #[test]
-fn cell_new_sends_where_it_was_called_and_the_command_then_prints_the_session() {
+fn cell_new_sends_where_it_was_called_and_the_command_then_prints_the_pty() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
     let out = maru_in(
         tmp.path(),
         &sock,
@@ -1221,9 +1218,9 @@ fn cell_new_sends_where_it_was_called_and_the_command_then_prints_the_session() 
     );
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "s-0000000c\n");
+    assert_eq!(stdout(&out), "p-0000000c\n");
     assert_eq!(req["method"], "cell.new");
-    assert_eq!(req["params"]["session"], SESSION);
+    assert_eq!(req["params"]["pty"], PTY);
     let cwd = std::fs::canonicalize(tmp.path()).unwrap();
     assert_eq!(req["params"]["cwd"], cwd.to_str().unwrap());
     assert_eq!(
@@ -1237,7 +1234,7 @@ fn cell_new_resolves_a_relative_cwd() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     std::fs::create_dir(tmp.path().join("sub")).unwrap();
-    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
     let out = maru_in(
         tmp.path(),
         &sock,
@@ -1254,7 +1251,7 @@ fn cell_new_resolves_a_relative_cwd() {
 fn cell_new_without_a_command_sends_none() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
     let out = maru_in(tmp.path(), &sock, &["cell", "new"]);
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
@@ -1277,20 +1274,20 @@ fn pane_close_sends_the_target_and_prints_nothing() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     let server = serve_once(&sock, |req| result(req, Value::Null));
-    let out = maru(Some(&sock), &["pane", "close", "s-0000000c"]);
+    let out = maru(Some(&sock), &["pane", "close", "p-0000000c"]);
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out), "");
     assert_eq!(req["method"], "pane.close");
-    assert_eq!(req["params"]["target"], "s-0000000c");
+    assert_eq!(req["params"]["target"], "p-0000000c");
 }
 
 #[test]
-fn job_new_sends_the_command_and_cwd_and_prints_the_session() {
+fn job_new_sends_the_command_and_cwd_and_prints_the_pty() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     std::fs::create_dir(tmp.path().join("sub")).unwrap();
-    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-9f8e7d6c" })));
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-9f8e7d6c" })));
     let out = maru_in(
         tmp.path(),
         &sock,
@@ -1300,7 +1297,7 @@ fn job_new_sends_the_command_and_cwd_and_prints_the_session() {
     );
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "s-9f8e7d6c\n");
+    assert_eq!(stdout(&out), "p-9f8e7d6c\n");
     assert_eq!(req["method"], "job.new");
     assert_eq!(req["params"]["name"], "dev");
     let sub = std::fs::canonicalize(tmp.path()).unwrap().join("sub");
@@ -1315,7 +1312,7 @@ fn job_new_sends_the_command_and_cwd_and_prints_the_session() {
 fn job_new_without_a_name_sends_none_and_defaults_to_the_current_directory() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "session": "s-9f8e7d6c" })));
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-9f8e7d6c" })));
     let out = maru_in(tmp.path(), &sock, &["job", "new", "pnpm", "build"]);
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
@@ -1349,11 +1346,11 @@ fn job_list_prints_aligned_columns_with_a_header() {
         result(
             req,
             json!({ "jobs": [
-                { "session": "s-9f8e7d6c", "name": "dev", "command": ["pnpm", "dev"],
+                { "pty": "p-9f8e7d6c", "name": "dev", "command": ["pnpm", "dev"],
                   "state": "running", "code": null, "signal": null },
-                { "session": "s-1a2b3c4d", "command": ["sh", "-c", "exit 1"],
+                { "pty": "p-1a2b3c4d", "command": ["sh", "-c", "exit 1"],
                   "state": "exited", "code": 1, "signal": null },
-                { "session": "s-77aa0011", "name": "w", "command": ["node", "w.js", "it's", ""],
+                { "pty": "p-77aa0011", "name": "w", "command": ["node", "w.js", "it's", ""],
                   "state": "exited", "code": null, "signal": 9 },
             ]}),
         )
@@ -1364,10 +1361,10 @@ fn job_list_prints_aligned_columns_with_a_header() {
     assert_eq!(req["method"], "job.list");
     assert_eq!(
         stdout(&out),
-        "SESSION     NAME  STATE     COMMAND\n\
-         s-9f8e7d6c  dev   running   pnpm dev\n\
-         s-1a2b3c4d  -     exited 1  sh -c 'exit 1'\n\
-         s-77aa0011  w     signal 9  node w.js 'it'\\''s' ''\n"
+        "PTY         NAME  STATE     COMMAND\n\
+         p-9f8e7d6c  dev   running   pnpm dev\n\
+         p-1a2b3c4d  -     exited 1  sh -c 'exit 1'\n\
+         p-77aa0011  w     signal 9  node w.js 'it'\\''s' ''\n"
     );
 }
 
@@ -1387,9 +1384,7 @@ fn job_list_without_jobs_writes_nothing_to_stdout() {
 fn job_list_fails_on_a_job_it_cannot_print() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| {
-        result(req, json!({ "jobs": [{ "session": 1 }] }))
-    });
+    let server = serve_once(&sock, |req| result(req, json!({ "jobs": [{ "pty": 1 }] })));
     let out = maru(Some(&sock), &["job", "list"]);
     server.join().unwrap();
     assert_fails_with(&out, "cannot print");
@@ -1456,12 +1451,12 @@ fn job_kill_sends_the_target_and_prints_nothing() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     let server = serve_once(&sock, |req| result(req, Value::Null));
-    let out = maru(Some(&sock), &["job", "kill", "s-9f8e7d6c"]);
+    let out = maru(Some(&sock), &["job", "kill", "p-9f8e7d6c"]);
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out), "");
     assert_eq!(req["method"], "job.kill");
-    assert_eq!(req["params"]["target"], "s-9f8e7d6c");
+    assert_eq!(req["params"]["target"], "p-9f8e7d6c");
 }
 
 #[test]

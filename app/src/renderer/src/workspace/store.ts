@@ -1,7 +1,7 @@
 import { readonly, ref } from 'vue'
 import type { GitHead } from '../../../shared/git'
 import type { ScreenCell, ScreenState, ScreenWorkspace } from '../../../shared/screen'
-import { newSessionId, randomId } from '../../../shared/session'
+import { newPtyId, randomId } from '../../../shared/pty'
 import {
   neighbor,
   removePane,
@@ -13,13 +13,13 @@ import {
 } from './layout'
 
 /**
- * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령, `cwd` 는 세션이 알려
+ * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령, `cwd` 는 pty 가 알려
  * 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목이다. `attach` 는 재시작으로 되살린 pane 이 떠 있는
- * 세션에 붙어야 할 때 true 다.
+ * pty 에 붙어야 할 때 true 다.
  */
 export type Pane = {
   key: number
-  sessionId: string
+  ptyId: string
   startDir?: string
   command?: readonly string[]
   cwd?: string
@@ -52,8 +52,8 @@ export function startDirOf(p: Pick<Pane, 'cwd' | 'startDir'>): string | undefine
 
 export function createWorkspaces(
   readGit: (cwd: string) => Promise<GitHead | null> = async () => null,
-  foregroundCwd: (sessionId: string, cwd?: string) => Promise<string | null> = async () => null,
-  sessionId: () => string = newSessionId,
+  foregroundCwd: (ptyId: string, cwd?: string) => Promise<string | null> = async () => null,
+  ptyId: () => string = newPtyId,
   cellId: () => string = () => randomId('c'),
   workspaceId: () => string = () => randomId('w')
 ) {
@@ -84,7 +84,7 @@ export function createWorkspaces(
     return {
       key,
       id: cellId(),
-      panes: [{ key: pane, sessionId: sessionId(), ...init }],
+      panes: [{ key: pane, ptyId: ptyId(), ...init }],
       layout: { pane },
       focused: pane
     }
@@ -175,15 +175,15 @@ export function createWorkspaces(
   ): number {
     const c = owner(from)!
     const pane = nextKey++
-    c.panes.push({ key: pane, sessionId: sessionId(), ...init })
+    c.panes.push({ key: pane, ptyId: ptyId(), ...init })
     c.layout = full
       ? splitRoot(c.layout, pane, direction)
       : splitPane(c.layout, from, pane, direction)
     return pane
   }
 
-  function paneBySession(id: string): Pane | undefined {
-    for (const c of cells()) for (const p of c.panes) if (p.sessionId === id) return p
+  function paneByPty(id: string): Pane | undefined {
+    for (const c of cells()) for (const p of c.panes) if (p.ptyId === id) return p
     return undefined
   }
 
@@ -249,11 +249,11 @@ export function createWorkspaces(
    * foreground 프로세스의 cwd 를 물어 그 pane 의 cwd 로 삼는다. 프롬프트에서는 셸이 foreground 이므로, 답은 OSC 7 과 같은 디렉토리다.
    * 지금 cwd 를 함께 넘겨, 같은 디렉토리면 그 경로를 그대로 받는다. 셸이 심볼릭 링크 경로에 있을 때 경로가 실제 경로로 바뀌지 않게 하기 위해서다.
    */
-  function refreshSession(sessionId: string): void {
-    const p = paneBySession(sessionId)
+  function refreshPty(ptyId: string): void {
+    const p = paneByPty(ptyId)
     if (!p) return
     const latest = claim(p.key)
-    void foregroundCwd(sessionId, p.cwd)
+    void foregroundCwd(ptyId, p.cwd)
       .catch(() => null)
       .then((cwd) => {
         const dir = cwd ?? p.cwd
@@ -311,7 +311,7 @@ export function createWorkspaces(
     split,
     splitFrom,
     pane,
-    paneBySession,
+    paneByPty,
     closePane,
     focusPane,
     moveFocus,
@@ -323,7 +323,7 @@ export function createWorkspaces(
     setPaneCols,
     snapshot,
     restore,
-    refreshSession,
+    refreshPty,
     selected,
     step,
     select: (key: number): void => void (selectedKey.value = key)
