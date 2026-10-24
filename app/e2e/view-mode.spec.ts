@@ -34,27 +34,24 @@ async function inView(page: Page, el: Locator): Promise<boolean> {
 const CLASSIC_SCROLLBARS = ['-AppleShowScrollBars', 'Always']
 const OVERLAY_SCROLLBARS = ['-AppleShowScrollBars', 'WhenScrolling']
 
-// 창을 숨기고 마우스 이벤트를 무시하게 띄워도, 진짜 커서가 창의 화면 영역 안에 있으면 앱이 뜰 때와
-// screenshot 을 찍을 때마다 그 자리의 mouse 이벤트가 페이지에 들어와 hover 를 옮긴다.
+// 창을 투명하게 띄우고 마우스 이벤트를 무시하게 해도, 진짜 커서가 창의 화면 영역 안에 있으면 앱이 뜰 때와
+// screenshot 을 찍을 때마다 그 자리의 마우스 이벤트가 페이지에 들어와 hover 를 옮긴다.
+// 화면이 좁으면 창 일부가 화면 밖으로 나가지만, screenshot 은 화면 밖 부분도 그린다.
 async function moveWindowOffCursor(app: ElectronApplication): Promise<void> {
-  const moved = await app.evaluate(({ BrowserWindow, screen }) => {
+  const outside = await app.evaluate(({ BrowserWindow, screen }) => {
     const win = BrowserWindow.getAllWindows()[0]
     const cursor = screen.getCursorScreenPoint()
     const area = screen.getDisplayNearestPoint(cursor).workArea
-    const { width, height } = win.getBounds()
-    const corners = [
-      { x: area.x, y: area.y },
-      { x: area.x + area.width - width, y: area.y },
-      { x: area.x, y: area.y + area.height - height },
-      { x: area.x + area.width - width, y: area.y + area.height - height }
-    ]
-    const free = corners.find(
-      ({ x, y }) => cursor.x < x || cursor.x >= x + width || cursor.y < y || cursor.y >= y + height
-    )
-    if (free) win.setPosition(free.x, free.y)
-    return Boolean(free)
+    const { width } = win.getBounds()
+    const x =
+      cursor.x - area.x > area.width / 2
+        ? Math.min(cursor.x - width, area.x + area.width - width)
+        : Math.max(cursor.x + 1, area.x)
+    win.setPosition(x, area.y)
+    const moved = win.getBounds()
+    return cursor.x < moved.x || cursor.x >= moved.x + moved.width
   })
-  expect(moved, '화면이 작아 커서가 없는 자리에 창을 둘 수 없다').toBe(true)
+  expect(outside, '창을 커서 옆으로 옮기지 못했다').toBe(true)
 }
 
 async function scrollbarHeight(page: Page): Promise<number> {
