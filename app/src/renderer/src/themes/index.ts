@@ -18,7 +18,6 @@ export function themeNamed(name: string): TerminalTheme | undefined {
   return THEMES.get(name)
 }
 
-/** `terminal.theme` 의 값이다. `pair` 는 OS 의 라이트·다크 모드마다 다른 테마다. */
 export type ThemeChoice =
   | { kind: 'one'; theme: TerminalTheme }
   | { kind: 'pair'; light: TerminalTheme; dark: TerminalTheme }

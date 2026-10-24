@@ -40,6 +40,8 @@ export function parseGhosttyTheme(text: string): TerminalTheme | null {
     colors[colorKey] = c
   }
   const { background, foreground } = colors
-  if (!background || !foreground || ansi.length !== 16 || ansi.some((c) => !c)) return null
-  return { ...colors, background, foreground, ansi: ansi as string[] }
+  // 희소 배열의 `some` 은 빈 자리를 건너뛰므로 16 칸으로 펴서 본다.
+  const palette = Array.from({ length: 16 }, (_, i) => ansi[i])
+  if (!background || !foreground || palette.some((c) => !c)) return null
+  return { ...colors, background, foreground, ansi: palette as string[] }
 }

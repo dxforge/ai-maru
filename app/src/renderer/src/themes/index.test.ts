@@ -8,7 +8,10 @@ const MIN_CONTRAST = 3
 
 describe('themeNamed', () => {
   it('ghostty/ 의 파일을 하나도 빠뜨리지 않고 읽는다', () => {
-    const files = readdirSync(fileURLToPath(new URL('./ghostty', import.meta.url))).sort()
+    // Vite 의 `import.meta.glob` 은 `.DS_Store` 같은 점 파일을 빼므로 여기서도 뺀다.
+    const files = readdirSync(fileURLToPath(new URL('./ghostty', import.meta.url)))
+      .filter((f) => !f.startsWith('.'))
+      .sort()
     expect(files.length).toBeGreaterThan(800)
     expect(themeNames().sort()).toEqual(files)
   })

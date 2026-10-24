@@ -4,7 +4,6 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { GHOSTTY } from '../src/shared/theme'
 import { closeWindow, configFile, expect, test, toast, writeConfig } from './app'
 
-// `themes/ghostty/` 의 Catppuccin Mocha·Latte 배경이다.
 const MOCHA = '#1e1e2e'
 const LATTE = '#eff1f5'
 const DEFAULT = GHOSTTY.background
@@ -35,6 +34,10 @@ function themeSource(app: ElectronApplication): Promise<string> {
   return app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)
 }
 
+function prefersDark(page: Page): Promise<boolean> {
+  return page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)
+}
+
 test('띄울 때 terminal.theme 의 테마로 앱 화면·터미널·창 배경을 그린다', async ({
   launch,
   dataDir
@@ -45,6 +48,7 @@ test('띄울 때 terminal.theme 의 테마로 앱 화면·터미널·창 배경�
   expect(await terminalBackground(page)).toBe(rgb(MOCHA))
   expect(await windowBackground(app)).toBe(MOCHA)
   expect(await themeSource(app)).toBe('dark')
+  expect(await prefersDark(page)).toBe(true)
   await expect(toast(page)).toHaveCount(0)
 })
 
@@ -69,6 +73,7 @@ test('밝은 테마면 창 틀도 밝다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   expect(await ground(page)).toBe(LATTE)
   expect(await themeSource(app)).toBe('light')
+  expect(await prefersDark(page)).toBe(false)
 })
 
 test('라이트·다크 짝을 적으면 창 틀은 OS 를 따르고, 터미널은 OS 모드의 테마다', async ({
@@ -82,6 +87,7 @@ test('라이트·다크 짝을 적으면 창 틀은 OS 를 따르고, 터미널�
   )
   await expect.poll(() => themeSource(app)).toBe('system')
   const dark = await app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors)
+  await expect.poll(() => prefersDark(page)).toBe(dark)
   await expect.poll(() => ground(page)).toBe(dark ? MOCHA : LATTE)
   await expect.poll(() => windowBackground(app)).toBe(dark ? MOCHA : LATTE)
   await expect(toast(page)).toHaveCount(0)

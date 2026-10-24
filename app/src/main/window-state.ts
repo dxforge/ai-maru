@@ -45,10 +45,7 @@ export function readWindowState(file: string): WindowState | null {
   return valid ? (s as WindowState) : null
 }
 
-/**
- * 창 위치·크기 옆에 함께 저장하는 것. `theme` 은 닫을 때 적용돼 있던 테마다 — 다음 실행의 첫 창이 renderer 가
- * 그리기 전부터 그 배경색이게 한다.
- */
+/** `theme` 은 닫을 때 적용돼 있던 테마다. 다음 실행의 첫 창이 renderer 가 그리기 전부터 그 배경색으로 뜨게 한다. */
 export type WindowExtras = ViewPrefs & { theme?: WindowTheme }
 
 export function readWindowExtras(file: string): WindowExtras {

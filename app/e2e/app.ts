@@ -103,6 +103,8 @@ async function launchApp(
   }
   const app = await electron.launch({
     executablePath,
+    // Playwright 의 기본 colorScheme 은 `prefers-color-scheme` 을 light 로 고정해, renderer 가 `nativeTheme.themeSource` 를 따르지 못한다.
+    colorScheme: null,
     args: [...(executablePath ? [] : ['.']), `--user-data-dir=${dataDir}`, ...args],
     env: {
       ...inherited,

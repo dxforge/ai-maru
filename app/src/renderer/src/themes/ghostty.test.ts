@@ -60,6 +60,10 @@ describe('parseGhosttyTheme', () => {
       `${PALETTE.slice(0, 15).join('\n')}\nbackground = #000000\nforeground = #ffffff\n`
     ],
     [
+      '팔레트가 0 과 15 만 있다',
+      `${PALETTE[0]}\n${PALETTE[15]}\nbackground = #000000\nforeground = #ffffff\n`
+    ],
+    [
       '팔레트 번호가 16이다',
       `${PALETTE_TEXT}\npalette = 16=#000000\nbackground = #000000\nforeground = #ffffff\n`
     ],
