@@ -8,6 +8,7 @@ import type { LinkOpenResult } from '../shared/link'
 import type { CellNewRequest, PaneNewRequest, PaneReply } from '../shared/pane'
 import type { ScreenState, ViewPrefs } from '../shared/screen'
 import type { SessionOpen } from '../shared/session'
+import type { WindowTheme } from '../shared/theme'
 
 // MessagePort 는 contextBridge 를 건너지 못해서 window.postMessage 로 넘긴다.
 ipcRenderer.on('session:port', (event, key: string) => {
@@ -92,6 +93,7 @@ const api = {
     if (lastConfig) cb(lastConfig)
   },
   restart: (): void => ipcRenderer.send('app:restart'),
+  applyTheme: (theme: WindowTheme): void => ipcRenderer.send('theme:apply', theme),
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   // dev 서버로 띄우면 Electron 이 끝날 때 dev 서버도 끝나, 다시 뜬 앱이 renderer 를 불러올 곳이 없다.
   canRestart: !process.env.ELECTRON_RENDERER_URL,

@@ -1,5 +1,7 @@
 import { parse, TomlError } from 'smol-toml'
 import { FONT_FAMILY, FONT_SIZE, LINE_HEIGHT } from '../font'
+import type { TerminalTheme } from '../../../shared/theme'
+import { DEFAULT_THEME, themeNamed, type ThemeChoice } from '../themes'
 import { DEFAULT_LAYOUT, parseLayout, type LayoutConfig } from './layout'
 
 export type TerminalFont = { fontFamily: string; fontSize: number; lineHeight: number }
@@ -17,7 +19,14 @@ export const DEFAULT_FONT: TerminalFont = {
 /** `names` 는 사용자가 적은 글꼴 이름이다. `missingFonts`(`fonts.ts`)가 쓸 수 있는지 잴 때 쓴다. */
 export type ConfigResult =
   | { ok: false; problem: string }
-  | { ok: true; font: TerminalFont; layout: LayoutConfig; names: string[]; warnings: string[] }
+  | {
+      ok: true
+      font: TerminalFont
+      theme: ThemeChoice
+      layout: LayoutConfig
+      names: string[]
+      warnings: string[]
+    }
 
 // xterm 은 1 보다 작은 `lineHeight` 를 받으면 오류를 던지므로 줄 높이 하한을 1 로 둔다.
 const RANGES = {
@@ -26,7 +35,7 @@ const RANGES = {
 } as const
 
 const TABLES = {
-  terminal: new Set<string>(['font-family', ...Object.keys(RANGES)]),
+  terminal: new Set<string>(['font-family', 'theme', ...Object.keys(RANGES)]),
   layout: new Set<string>(Object.keys(DEFAULT_LAYOUT))
 }
 
@@ -97,9 +106,11 @@ export function parseConfig(text: string): ConfigResult {
   const warnings: string[] = []
   for (const key of Object.keys(doc))
     if (!Object.hasOwn(TABLES, key)) warnings.push(`Unknown key ${key}.`)
-  const { font, names } = parseTerminal(table(doc, 'terminal', warnings), warnings)
+  const terminal = table(doc, 'terminal', warnings)
+  const { font, names } = parseTerminal(terminal, warnings)
+  const theme = parseTheme(terminal.theme, warnings)
   const layout = parseLayout(table(doc, 'layout', warnings), warnings)
-  return { ok: true, font, layout, names, warnings }
+  return { ok: true, font, theme, layout, names, warnings }
 }
 
 function table(doc: Table, name: keyof typeof TABLES, warnings: string[]): Table {
@@ -146,4 +157,35 @@ function parseTerminal(
       warnings.push(`terminal.${name} = ${value} is outside ${min}–${max}, using ${font[key]}.`)
   }
   return { font, names }
+}
+
+const THEME_FORM =
+  'terminal.theme must be a theme name or { light = "…", dark = "…" }, using the default.'
+
+function lookupTheme(key: string, name: string, warnings: string[]): TerminalTheme | undefined {
+  const theme = themeNamed(name)
+  if (!theme) warnings.push(`${key}: no theme named "${name}", using the default.`)
+  return theme
+}
+
+function parseTheme(value: unknown, warnings: string[]): ThemeChoice {
+  if (value === undefined) return DEFAULT_THEME
+  if (typeof value === 'string') {
+    const theme = lookupTheme('terminal.theme', value, warnings)
+    return theme ? { kind: 'one', theme } : DEFAULT_THEME
+  }
+  if (!isTable(value)) {
+    warnings.push(THEME_FORM)
+    return DEFAULT_THEME
+  }
+  for (const key of Object.keys(value))
+    if (key !== 'light' && key !== 'dark') warnings.push(`Unknown key terminal.theme.${key}.`)
+  const { light, dark } = value
+  if (typeof light !== 'string' || typeof dark !== 'string') {
+    warnings.push(THEME_FORM)
+    return DEFAULT_THEME
+  }
+  const l = lookupTheme('terminal.theme.light', light, warnings)
+  const d = lookupTheme('terminal.theme.dark', dark, warnings)
+  return l && d ? { kind: 'pair', light: l, dark: d } : DEFAULT_THEME
 }

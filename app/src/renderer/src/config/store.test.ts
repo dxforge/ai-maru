@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { configToast, createConfig, type ConfigReport } from './store'
+import { DEFAULT_THEME, themeNamed } from '../themes'
 import { DEFAULT_LAYOUT } from './layout'
 import { DEFAULT_FONT } from './terminal'
 
@@ -57,6 +58,32 @@ describe('createConfig', () => {
     const before = config.layout.value
     config.apply({ path: PATH, text: '[layout]\nheader = "top"\n' })
     expect(config.layout.value).toBe(before)
+  })
+
+  it('테마를 읽고, 문법 오류면 앞의 값을 두며, 파일이 지워지면 기본 테마로 돌아간다', () => {
+    const { config } = setup('[terminal]\ntheme = "Catppuccin Mocha"\n')
+    const mocha = { kind: 'one', theme: themeNamed('Catppuccin Mocha') }
+    expect(config.theme.value).toEqual(mocha)
+    config.apply({ path: PATH, text: '[terminal]\ntheme =\n' })
+    expect(config.theme.value).toEqual(mocha)
+    config.apply({ path: PATH, text: null })
+    expect(config.theme.value).toEqual(DEFAULT_THEME)
+  })
+
+  it('같은 테마면 theme 을 바꾸지 않고, 짝의 한쪽만 바뀌어도 바꾼다', () => {
+    const pair = '[terminal]\ntheme = { light = "Catppuccin Latte", dark = "Catppuccin Mocha" }\n'
+    const { config } = setup(pair)
+    const before = config.theme.value
+    config.apply({ path: PATH, text: pair })
+    expect(config.theme.value).toBe(before)
+    config.apply({
+      path: PATH,
+      text: '[terminal]\ntheme = { light = "Catppuccin Latte", dark = "Catppuccin Frappe" }\n'
+    })
+    expect(config.theme.value).not.toBe(before)
+    expect(config.theme.value.kind === 'pair' && config.theme.value.dark).toEqual(
+      themeNamed('Catppuccin Frappe')
+    )
   })
 
   it('같은 값이면 font 를 바꾸지 않는다', () => {

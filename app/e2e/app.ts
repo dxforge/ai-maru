@@ -103,6 +103,8 @@ async function launchApp(
   }
   const app = await electron.launch({
     executablePath,
+    // Playwright 의 기본 colorScheme 은 `prefers-color-scheme` 을 light 로 고정해, renderer 가 `nativeTheme.themeSource` 를 따르지 못한다.
+    colorScheme: null,
     args: [...(executablePath ? [] : ['.']), `--user-data-dir=${dataDir}`, ...args],
     env: {
       ...inherited,
@@ -118,6 +120,12 @@ async function launchApp(
   const page = await app.firstWindow()
   await page.waitForSelector('.xterm-screen')
   return { app, page }
+}
+
+export async function closeWindow(app: ElectronApplication): Promise<void> {
+  const closed = app.waitForEvent('close')
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await closed
 }
 
 export function configFile(dataDir: string): string {
