@@ -124,7 +124,7 @@ test('columns 의 cell 헤더는 pane 상태 가운데 blocked, working 순으�
   await toggleView({ app, page }, 'columns')
   const headers = page.locator('.cell-header')
   await expect(headers).toHaveCount(2)
-  await expect(headers.nth(1).locator('.row-bar-icon')).toHaveText('')
+  await expect(headers.nth(1).locator('.row-bar-icon svg')).toHaveCount(0)
 
   await page.keyboard.type(programStatus('working'))
   await expect(headers.nth(1)).toHaveClass(/working/)
@@ -132,7 +132,7 @@ test('columns 의 cell 헤더는 pane 상태 가운데 blocked, working 순으�
   await page.keyboard.type(programStatus('blocked', 'kind=permission'))
   await expect(headers.nth(1)).toHaveClass(/blocked/)
   await expect(headers.nth(0)).not.toHaveClass(/working|blocked|done|error|idle/)
-  await expect(headers.nth(0).locator('.row-bar-icon')).toHaveText('')
+  await expect(headers.nth(0).locator('.row-bar-icon svg')).toHaveCount(0)
 
   await headers.nth(0).click()
 
@@ -152,7 +152,7 @@ test('single 보기에서도 선택된 cell 의 헤더만 이름·상태를 보�
   await expect(headers.nth(0)).toBeHidden()
   await expect(headers.nth(1)).toHaveClass(/focused/)
   await expect(headers.nth(1).locator('.name')).toHaveText(await cellItems(page).nth(1).innerText())
-  await expect(headers.nth(1).locator('.row-bar-icon')).toHaveText('')
+  await expect(headers.nth(1).locator('.row-bar-icon svg')).toHaveCount(0)
 
   await page.keyboard.type(programStatus('working'))
   await expect(headers.nth(1)).toHaveClass(/working/)
@@ -177,10 +177,13 @@ test('columns 의 cell 헤더는 idle 만 있으면 pane 헤더와 같은 idle �
   await expect(page.locator('.cell-header')).toHaveClass(/idle/)
   await expect(activeHeader(page)).toHaveClass(/idle/)
 
-  await expect(cellIcon).toHaveText(await paneIcon.innerText())
-  expect(await cellIcon.evaluate((e) => getComputedStyle(e).fontSize)).toBe(
-    await paneIcon.evaluate((e) => getComputedStyle(e).fontSize)
-  )
+  await expect(cellIcon.locator('svg')).toHaveAttribute('data-state', 'idle')
+  await expect(paneIcon.locator('svg')).toHaveAttribute('data-state', 'idle')
+  const size = (l: typeof cellIcon) =>
+    l
+      .locator('svg')
+      .evaluate((e) => [e.getBoundingClientRect().width, e.getBoundingClientRect().height])
+  expect(await size(cellIcon)).toEqual(await size(paneIcon))
 })
 
 test('pane 헤더와 columns 의 cell 헤더는 글자 위에서도 기본 커서를 보이고, Canvas 글자에서 헤더로 끌어도 헤더 글자는 선택되지 않는다', async ({

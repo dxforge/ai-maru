@@ -69,10 +69,6 @@ body,
   font-family: 'Symbols Nerd Font Mono';
 }
 
-.idle .status-icon {
-  font-size: 9px;
-}
-
 .row-bar-text {
   overflow: hidden;
   text-overflow: ellipsis;

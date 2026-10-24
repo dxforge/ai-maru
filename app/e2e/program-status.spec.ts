@@ -20,6 +20,7 @@ import {
   cellItems,
   zshHome
 } from './app'
+import { ICONS, STATE_LABELS } from '../src/renderer/src/icons'
 
 test('claude 가 clear 를 보내지 못하고 죽어도 셸 함수가 clear 를 써서 상태가 사라진다', async ({
   launch,
@@ -77,6 +78,75 @@ test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상�
   await expect(paneRows(page)).toHaveCount(0)
   await expect(activeHeader(page)).not.toHaveClass(/idle/)
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
+})
+
+test('상태 아이콘은 상태마다 SVG 로 줄 가운데에 그리고, 선과 면은 아이콘 자리의 글자색을 따르며, working 만 원 중심을 축으로 돌고, 상태가 사라지면 terminal glyph 로 돌아온다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  const icons = [
+    [paneRows(page).locator('.state'), paneRows(page)],
+    [activeHeader(page).locator('.status-icon'), activeHeader(page)],
+    [page.locator('.cell-header .status-icon'), page.locator('.cell-header')]
+  ] as const
+  for (const state of Object.keys(STATE_LABELS)) {
+    await page.keyboard.type(status(state))
+    await expect(paneRows(page)).toHaveClass(new RegExp(state))
+    for (const [icon, row] of icons) {
+      const svg = icon.locator('svg')
+      await expect(svg).toHaveAttribute('data-state', state)
+      const middle = (b: { y: number; height: number }) => b.y + b.height / 2
+      expect(
+        Math.abs(middle((await svg.boundingBox())!) - middle((await row.boundingBox())!))
+      ).toBeLessThanOrEqual(0.5)
+      const paint = await icon.evaluate((el) => ({
+        color: getComputedStyle(el).color,
+        painted: [...el.querySelectorAll('svg *')].flatMap((s) => {
+          const c = getComputedStyle(s)
+          return [c.fill, c.stroke].filter((v) => v !== 'none')
+        })
+      }))
+      expect(paint.painted.length).toBeGreaterThan(0)
+      for (const v of paint.painted) expect(v).toBe(paint.color)
+
+      const spin = await svg.evaluate((el) => {
+        const anims = el.getAnimations()
+        if (anims.length === 0) return null
+        const center = (s: Element) => {
+          const r = s.getBoundingClientRect()
+          return [r.x + r.width / 2, r.y + r.height / 2]
+        }
+        const [a] = anims
+        a.pause()
+        const duration = Number(a.effect!.getComputedTiming().duration)
+        a.currentTime = 0
+        const ring0 = center(el.querySelector('circle')!)
+        const arc0 = center(el.querySelector('path')!)
+        a.currentTime = duration / 4
+        const ring1 = center(el.querySelector('circle')!)
+        const arc1 = center(el.querySelector('path')!)
+        a.play()
+        return { count: anims.length, ring0, ring1, arc0, arc1 }
+      })
+      if (state !== 'working') {
+        expect(spin).toBeNull()
+        continue
+      }
+      expect(spin!.count).toBe(1)
+      for (const i of [0, 1]) expect(Math.abs(spin!.ring1[i] - spin!.ring0[i])).toBeLessThan(0.5)
+      expect(
+        Math.hypot(spin!.arc1[0] - spin!.arc0[0], spin!.arc1[1] - spin!.arc0[1])
+      ).toBeGreaterThan(1)
+    }
+  }
+
+  await page.keyboard.type(status('clear'))
+  await expect(paneRows(page)).toHaveCount(0)
+  const header = activeHeader(page).locator('.status-icon')
+  await expect(header.locator('svg')).toHaveCount(0)
+  await expect(header).toHaveText(ICONS.terminal)
+  await expect(header).toHaveCSS('font-family', '"Symbols Nerd Font Mono"')
+  await expect(page.locator('.cell-header .status-icon svg')).toHaveCount(0)
 })
 
 test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아이콘 대신 app 값을, app 이 비었으면 Program 을 보인다', async ({
