@@ -32,6 +32,10 @@ CLI 서버는 앱이 뜨자마자 요청을 받으므로, 재시작에서 남은
 
 renderer 는 화면을 되살린 다음 tick 에 `pane:ready` 를 보낸다(`App.vue`). 다음 tick 에는 되살린 터미널이 mount 돼 `pty:open` 을 보낸 뒤다. 되살리기 전에 넘기면 renderer 는 부른 pane 을 찾지 못한다. 같은 renderer 의 IPC 는 보낸 순서대로 닿으므로, main 은 쌓아 둔 요청을 넘길 때 되살린 pty 의 cell 을 안다(위의 "main 이 아는 pty 의 cell"). 그래서 `cell.new` 는 부른 pty 의 cell 을 요청을 받을 때가 아니라 창에 넘길 때 찾는다. 터미널이 mount 될 때 pty 를 열지 않도록 바뀌면, main 은 되살린 pty 의 cell 을 모른 채 넘겨 새 cell 이 새 workspace 로 목록 끝에 놓인다.
 
+## program_status 는 renderer 만 가진다
+
+pty 가 보내는 `program_status` 는 renderer 가 터미널의 attach 스트림으로 받고, main 은 받지 않는다. 그래서 `mate.list` 는 main 이 pane 요청과 같은 경로(`mate:list` → `pane:reply`)로 renderer 에 묻고, renderer 가 workspace·cell 이름과 함께 만든 줄을 그대로 돌려준다(`app/src/main/pane.ts`).
+
 ## 시간 초과한 pane 요청은 창이 취소한다
 
 시간 초과를 받은 호출자가 같은 명령을 다시 부른 뒤 창이 늦게 첫 요청의 pane 도 열면 pane 이 둘 생긴다. 그래서 main 은 창에 보낸 요청이 시간 초과하면 `pane:cancel` 을 보내고, renderer 는 그 요청으로 열어 아직 pty 를 기다리는 pane 을 닫는다. renderer 가 답을 보낸 직후, 그 답이 main 에 닿기 전에 main 이 시간 초과하면 pane 은 남는다.

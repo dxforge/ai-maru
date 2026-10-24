@@ -55,7 +55,15 @@
 //! | `job.read` | `target`(job 이름이나 pty id) | `{"text":<글자>}` |
 //! | `job.send` | `target`, `text`(문자열) | `null` |
 //! | `job.kill` | `target` | `null` |
+//! | `mate.list` | 없음 | `{"mates":[{"pty","state","kind","workspace","cell","dir","message"}…]}` |
 //! | `app.restart` | `kill_ptys`(bool, 선택) | `null` |
+//!
+//! `mate.list` 는 창의 모든 workspace·cell 에서, pty 가 보낸 루트 program_status 레코드의 `app` 이
+//! `claude-code` 인 pane 을 화면 순서(workspace → cell → pane)로 돌려준다. job 은 들지 않는다.
+//! `state` 는 레코드의 상태(`idle`·`working`·`done`·`blocked`·`error`)다. `kind` 는 `permission`·`question`·
+//! `auth` 나 null 이다. `workspace`·`cell` 은 사이드바가 보이는 이름이다. `cell` 은 브랜치가 있으면 이름 뒤에
+//! 공백 하나를 두고 브랜치를 붙인다. `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면
+//! 빈 문자열이다. `message` 는 레코드의 `message` 이고, 비었으면 `title` 이다.
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
 //! `id` 가 없으면 앱이 새 id 를 만든다. id 는 형식 없는 문자열이다.
@@ -199,6 +207,11 @@ enum Command {
         #[command(subcommand)]
         command: JobCommand,
     },
+    /// See the Claude Code sessions running in this window's panes.
+    Mate {
+        #[command(subcommand)]
+        command: MateCommand,
+    },
     /// Control the app.
     App {
         #[command(subcommand)]
@@ -339,6 +352,18 @@ enum JobCommand {
 }
 
 #[derive(Subcommand)]
+enum MateCommand {
+    /// List the panes running claude, in every workspace and cell, in screen order.
+    ///
+    /// Prints tab-separated columns with a header: PTY, STATE, WORKSPACE, CELL, DIR, MESSAGE.
+    /// STATE is idle, working, done, blocked or error; a blocked state with a reason reads
+    /// e.g. blocked(permission). WORKSPACE and CELL are the names shown in the sidebar. DIR
+    /// is the pane's directory. MESSAGE is what claude last reported. Control characters in a
+    /// value, such as tabs and newlines, become spaces, and an unknown value is an empty column.
+    List,
+}
+
+#[derive(Subcommand)]
 enum AppCommand {
     /// Restart the app and keep its terminals running. The restarted app restores the
     /// workspaces, cells and panes and reattaches them to their terminals.
@@ -455,6 +480,9 @@ fn run(command: Command) -> Result<()> {
                 call(&target()?, "job.kill", target_params(job))?;
             }
         },
+        Command::Mate {
+            command: MateCommand::List,
+        } => mate_list()?,
         Command::App {
             command: AppCommand::Restart { kill_ptys },
         } => {
@@ -858,18 +886,29 @@ fn job_send(job: String, text: Option<String>, enter: bool) -> Result<()> {
     Ok(())
 }
 
-fn job_list() -> Result<()> {
-    let result = call(&target()?, "job.list", Map::new())?;
-    let rows = result["jobs"]
+fn list_rows<const N: usize>(
+    method: &str,
+    key: &str,
+    row: impl FnMut(&Value) -> Result<[String; N]>,
+) -> Result<Option<Vec<[String; N]>>> {
+    let result = call(&target()?, method, Map::new())?;
+    let rows = result[key]
         .as_array()
-        .ok_or_else(|| anyhow!("the app answered without jobs: {result}"))?
+        .ok_or_else(|| anyhow!("the app answered without {key}: {result}"))?
         .iter()
-        .map(job_row)
+        .map(row)
         .collect::<Result<Vec<_>>>()?;
     if rows.is_empty() {
-        writeln!(std::io::stderr(), "no jobs")?;
-        return Ok(());
+        writeln!(std::io::stderr(), "no {key}")?;
+        return Ok(None);
     }
+    Ok(Some(rows))
+}
+
+fn job_list() -> Result<()> {
+    let Some(rows) = list_rows("job.list", "jobs", job_row)? else {
+        return Ok(());
+    };
     let header = ["PTY", "NAME", "STATE", "COMMAND"].map(String::from);
     let mut widths = [0; 3];
     for row in std::iter::once(&header).chain(&rows) {
@@ -915,6 +954,65 @@ fn job_row(job: &Value) -> Result<[String; 4]> {
         _ => return Err(fail()),
     };
     Ok([pty.to_owned(), name.to_owned(), state, command])
+}
+
+fn mate_list() -> Result<()> {
+    let home = env_var("HOME");
+    let Some(rows) = list_rows("mate.list", "mates", |m| mate_row(m, home.as_deref()))? else {
+        return Ok(());
+    };
+    let mut text = String::from("PTY\tSTATE\tWORKSPACE\tCELL\tDIR\tMESSAGE\n");
+    for row in rows {
+        text.push_str(&row.join("\t"));
+        text.push('\n');
+    }
+    // `| head -1` 처럼 읽는 쪽이 먼저 닫는 것은 실패가 아니다.
+    match std::io::stdout().lock().write_all(text.as_bytes()) {
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => Ok(()),
+        r => Ok(r?),
+    }
+}
+
+fn mate_row(mate: &Value, home: Option<&str>) -> Result<[String; 6]> {
+    let fail = || anyhow!("the app answered with a mate it cannot print: {mate}");
+    let text = |key: &str| mate[key].as_str().ok_or_else(fail);
+    let state = match (text("state")?, &mate["kind"]) {
+        ("blocked", Value::String(kind)) => format!("blocked({kind})"),
+        (state, Value::Null | Value::String(_)) => state.to_owned(),
+        _ => return Err(fail()),
+    };
+    let row = [
+        text("pty")?.to_owned(),
+        state,
+        text("workspace")?.to_owned(),
+        text("cell")?.to_owned(),
+        tilde(text("dir")?, home),
+        text("message")?.to_owned(),
+    ];
+    Ok(row.map(|v| tsv_field(&v)))
+}
+
+/// 제어 문자를 공백으로 바꾼다. 값 안의 탭·줄바꿈이 열과 줄을 가르거나, ESC 가 출력을 읽는 터미널의 상태를 바꿀 수 있기 때문이다.
+fn tsv_field(value: &str) -> String {
+    value
+        .replace("\r\n", "\n")
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
+}
+
+fn tilde(path: &str, home: Option<&str>) -> String {
+    let Some(home) = home
+        .map(|h| h.trim_end_matches('/'))
+        .filter(|h| !h.is_empty())
+    else {
+        return path.to_owned();
+    };
+    match path.strip_prefix(home) {
+        Some("") => "~".to_owned(),
+        Some(rest) if rest.starts_with('/') => format!("~{rest}"),
+        _ => path.to_owned(),
+    }
 }
 
 /// 셸에 다시 넣으면 같은 인자가 되게 쓴다.

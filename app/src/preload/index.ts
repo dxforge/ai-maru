@@ -44,13 +44,16 @@ const api = {
   onCellNew: (cb: (id: number, req: CellNewRequest) => void): void => {
     ipcRenderer.on('cell:new', (_event, id: number, req: CellNewRequest) => cb(id, req))
   },
+  onMateList: (cb: (id: number) => void): void => {
+    ipcRenderer.on('mate:list', (_event, id: number) => cb(id))
+  },
   onPaneCancel: (cb: (id: number) => void): void => {
     ipcRenderer.on('pane:cancel', (_event, id: number) => cb(id))
   },
   paneReply: (id: number, reply: PaneReply): void => ipcRenderer.send('pane:reply', id, reply),
   /**
-   * `onPaneNew`·`onPaneClose`·`onCellNew` 를 단 뒤에 부른다. main 은 이것을 받은 뒤에야 쌓아 둔
-   * `pane:new`·`pane:close`·`cell:new` 를 보낸다.
+   * `onPaneNew`·`onPaneClose`·`onCellNew`·`onMateList` 를 단 뒤에 부른다. main 은 이것을 받은 뒤에야 쌓아 둔
+   * `pane:new`·`pane:close`·`cell:new`·`mate:list` 를 보낸다.
    */
   paneReady: (): void => ipcRenderer.send('pane:ready'),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),

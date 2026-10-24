@@ -253,6 +253,57 @@ describe('cell.new', () => {
   })
 })
 
+describe('mate.list', () => {
+  const row = {
+    pty: A,
+    state: 'blocked' as const,
+    kind: 'permission' as const,
+    workspace: 'ai-maru',
+    cell: 'ai-maru main',
+    dir: '/r',
+    message: 'Bash'
+  }
+
+  it('창에 묻고 창이 돌려준 줄을 그대로 돌려준다', async () => {
+    const { handlers, sent, answer } = setup()
+    const done = handlers['mate.list']({}, A)
+    expect(sent).toEqual([{ channel: 'mate:list', id: 0, arg: null }])
+    answer({ mates: [row] })
+    await expect(done).resolves.toEqual({ mates: [row] })
+  })
+
+  it('창이 줄 없이 답하면 실패한다', async () => {
+    const { handlers, answer } = setup()
+    const done = handlers['mate.list']({}, A)
+    answer(null)
+    await expect(done).rejects.toThrow('without mates')
+  })
+
+  it('창이 실패로 답하면 그 이유로 실패한다', async () => {
+    const { handlers, answer } = setup()
+    const done = handlers['mate.list']({}, A)
+    answer({ error: 'open_failed', message: 'boom' })
+    await expect(done).rejects.toThrow('boom')
+  })
+
+  it('창이 답하지 않으면 시간 초과로 실패한다', async () => {
+    vi.useFakeTimers()
+    const { handlers } = setup()
+    const caught = (handlers['mate.list']({}, A) as Promise<unknown>).catch((e: Error) => e.message)
+    vi.advanceTimersByTime(1000)
+    expect(await caught).toMatch('did not answer')
+  })
+
+  it('창이 준비되기 전에 온 요청은 준비된 뒤에 넘긴다', async () => {
+    const { handlers, sent, ready, answer } = setup({ ready: false })
+    const done = handlers['mate.list']({}, A)
+    expect(sent).toEqual([])
+    ready()
+    answer({ mates: [] })
+    await expect(done).resolves.toEqual({ mates: [] })
+  })
+})
+
 describe('pane.close', () => {
   it('target 을 창에 넘기고, 없는 pane 이면 invalid_params', async () => {
     const { handlers, sent, answer } = setup()
