@@ -5,7 +5,7 @@ import { isSessionId } from './session'
  * 재시작 전 앱이 쓰고 다시 뜬 앱이 읽으므로 두 앱의 빌드가 다를 수 있다. 다시 뜬 앱이 옛 모양을 읽지 못하게
  * 바꾸면 버전을 올린다 — 다시 뜬 앱은 모르는 버전을 되살리지 않는다. 없어도 되는 필드를 더할 때는 올리지 않는다.
  */
-export const SCREEN_VERSION = 1
+export const SCREEN_VERSION = 2
 
 export type ScreenPane = {
   key: number
@@ -16,15 +16,15 @@ export type ScreenPane = {
   title?: string
 }
 
-export type ScreenWorkspace = {
+export type ScreenCell = {
   key: number
   id: string
   panes: ScreenPane[]
   layout: Layout
   focused: number
   /**
-   * `openFrom` 으로 띄웠을 때 부른 workspace 의 key 다. 부른 workspace 가 닫히면 그것을 부른 workspace 의 key 로
-   * 바뀌고, 부른 쪽이 모두 닫혔으면 없다. 이 필드를 더하기 전 빌드가 쓴 화면에도 없다.
+   * `openCellFrom`·`openCell` 로 띄웠을 때 부른 cell 의 key 다. 부른 cell 이 닫히면 그것을 부른 cell 의 key 로
+   * 바뀌고, 부른 쪽이 모두 닫혔으면 없다.
    */
   openedBy?: number
   fontSize?: number
@@ -32,9 +32,16 @@ export type ScreenWorkspace = {
   paneCols?: number
 }
 
+export type ScreenWorkspace = {
+  key: number
+  id: string
+  cells: ScreenCell[]
+}
+
 export type ScreenState = {
   version: typeof SCREEN_VERSION
   workspaces: ScreenWorkspace[]
+  /** 선택한 cell 의 key 다. */
   selected: number | null
   sidebar: { open: boolean; width: number; folded: number[] }
   viewMode: 'single' | 'columns'
@@ -46,8 +53,8 @@ const SIDEBAR_WIDTH = { min: 200, max: 480 }
 const CANVAS_MIN_WIDTH = 240
 
 /**
- * 재시작이 아닌 실행에서도 되살리는 화면 설정이다. 사이드바의 접힌 workspace 목록(`folded`)은 넣지 않는다.
- * 일반 실행은 workspace 를 되살리지 않아 `folded` 의 key 가 가리킬 workspace 가 없기 때문이다.
+ * 재시작이 아닌 실행에서도 되살리는 화면 설정이다. 사이드바의 접힌 cell 목록(`folded`)은 넣지 않는다.
+ * 일반 실행은 cell 을 되살리지 않아 `folded` 의 key 가 가리킬 cell 이 없기 때문이다.
  */
 export type ViewPrefs = {
   viewMode?: ScreenState['viewMode']
@@ -81,7 +88,7 @@ function isPane(v: unknown): v is ScreenPane {
   )
 }
 
-function isWorkspace(v: unknown): v is ScreenWorkspace {
+function isCell(v: unknown): v is ScreenCell {
   return (
     isObj(v) &&
     isKey(v.key) &&
@@ -94,6 +101,17 @@ function isWorkspace(v: unknown): v is ScreenWorkspace {
     optKey(v.openedBy) &&
     (v.fontSize === undefined || Number.isFinite(v.fontSize)) &&
     (v.paneCols === undefined || (isKey(v.paneCols) && v.paneCols > 0))
+  )
+}
+
+function isWorkspace(v: unknown): v is ScreenWorkspace {
+  return (
+    isObj(v) &&
+    isKey(v.key) &&
+    typeof v.id === 'string' &&
+    Array.isArray(v.cells) &&
+    v.cells.length > 0 &&
+    v.cells.every(isCell)
   )
 }
 

@@ -14,9 +14,9 @@ export function required(layout: Layout, min: Size): Size {
 }
 
 /**
- * pane 경계를 셀의 배수로 반올림한 px 상자. workspace 끝에 닿는 경계는 그대로 둔다 — docs/architecture.md 의
- * "pane 경계와 셀 격자". `min` 은 pane 하나의 px 하한이고 셀의 배수다. workspace 가 `required` 보다 작으면 그
- * 크기에 놓아, 뒤쪽 pane 이 workspace 밖으로 나간다.
+ * pane 경계를 글자 칸의 배수로 반올림한 px 상자. cell 끝에 닿는 경계는 그대로 둔다 — docs/architecture.md 의
+ * "pane 경계와 글자 칸 격자". `min` 은 pane 하나의 px 하한이고 글자 칸의 배수다. cell 이 `required` 보다 작으면 그
+ * 크기에 놓아, 뒤쪽 pane 이 cell 밖으로 나간다.
  */
 export function snapRects(
   layout: Layout,
@@ -37,7 +37,7 @@ export function snapRects(
   return boxes
 }
 
-// `box` 는 `required(layout)` 이상이므로 나눈 두 쪽도 각자 필요한 셀 수를 받는다.
+// `box` 는 `required(layout)` 이상이므로 나눈 두 쪽도 각자 필요한 글자 칸 수를 받는다.
 function place(
   layout: Layout,
   box: Box,
@@ -62,7 +62,7 @@ function place(
   place(layout.second, second, cell, widths, min, boxes)
 }
 
-/** `layout` 을 `size` 에 놓을 때 workspace 끝 밖으로 나가는 길이(px). `snapRects` 는 `required` 만큼만 넘친다. */
+/** `layout` 을 `size` 에 놓을 때 cell 끝 밖으로 나가는 길이(px). `snapRects` 는 `required` 만큼만 넘친다. */
 export function overflow(layout: Layout, size: Size, min: Size): Size {
   const need = required(layout, min)
   return {
@@ -72,8 +72,8 @@ export function overflow(layout: Layout, size: Size, min: Size): Size {
 }
 
 /**
- * `layout` 을 `next` 로 나눠도 workspace 밖으로 나가는 길이가 늘지 않는지. 나눌 자리가 없는 split 은 늘린다.
- * columns 보기의 좌우 나누기는 `nextSize` 가 그만큼 넓어 폭이 넘치지 않는다. `min` 이 0 이면(셀 크기를 모르면)
+ * `layout` 을 `next` 로 나눠도 cell 밖으로 나가는 길이가 늘지 않는지. 나눌 자리가 없는 split 은 늘린다.
+ * columns 보기의 좌우 나누기는 `nextSize` 가 그만큼 넓어 폭이 넘치지 않는다. `min` 이 0 이면(글자 칸 크기를 모르면)
  * 늘 나눌 수 있다.
  */
 export function canSplit(

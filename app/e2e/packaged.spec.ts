@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { expect, rows, test, workspaceItems, zshHome } from './app'
+import { expect, rows, test, cellItems, zshHome } from './app'
 
 let installed: string
 let installDir: string
@@ -67,12 +67,12 @@ test('설치본의 터미널에서 MARU_CLI·MARU_CLAUDE_PLUGIN 은 번들 안�
   await expect(rows(page)).toContainText('plugin-2')
 })
 
-test('설치본의 zsh 에서 workspace 이름이 cd 를 따른다', async ({ launch, dataDir }) => {
+test('설치본의 zsh 에서 cell 이름이 cd 를 따른다', async ({ launch, dataDir }) => {
   const home = zshHome(dataDir, 'proj')
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home }, executable())
-  await expect(workspaceItems(page)).toHaveText(['home'])
+  await expect(cellItems(page)).toHaveText(['home'])
   await page.keyboard.type('cd proj\n')
-  await expect(workspaceItems(page)).toHaveText(['proj'])
+  await expect(cellItems(page)).toHaveText(['proj'])
 })
 
 test('설치본에는 DevTools 메뉴가 없고, 열려고 해도 열리지 않는다', async ({ launch }) => {

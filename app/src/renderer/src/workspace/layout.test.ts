@@ -29,7 +29,7 @@ describe('splitPane', () => {
 })
 
 describe('splitRoot', () => {
-  it('workspace 전체를 나눠 새 pane 을 오른쪽·아래 끝에 둔다', () => {
+  it('cell 전체를 나눠 새 pane 을 오른쪽·아래 끝에 둔다', () => {
     expect(splitRoot({ pane: 1 }, 2, 'right')).toEqual(splitPane({ pane: 1 }, 1, 2, 'right'))
     expect(splitRoot(threePanes(), 4, 'down')).toEqual({
       split: 'down',

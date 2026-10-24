@@ -22,10 +22,10 @@ palette = "top"
 | `terminal.font-family` | `D2Coding, Menlo, 'Symbols Nerd Font Mono', monospace` | 글꼴 이름. 쉼표로 이어 여러 개를 적을 수 있다. |
 | `terminal.font-size` | `14` | 8–32 의 숫자(px). 소수도 받는다. |
 | `terminal.line-height` | `1.2` | 1–2 의 숫자. 글자 높이에 곱한 값이 행 높이다. 글자 높이는 글꼴이 정하고 글꼴 크기보다 조금 크다(기본 글꼴 14px 이면 15px). |
-| `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 workspace 헤더를 pane·workspace 의 아래에 둘지 위에 둘지. |
+| `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 cell 헤더를 pane·cell 의 아래에 둘지 위에 둘지. |
 | `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트를 창의 아래에 띄울지 위에 띄울지. |
 
-pane 헤더와 workspace 헤더도 터미널의 글꼴과 크기를 따른다.
+pane 헤더와 cell 헤더도 터미널의 글꼴과 크기를 따른다.
 
 ### `header` 와 `palette`
 
@@ -49,13 +49,13 @@ Claude Code 의 입력창은 터미널 아래에 있어 시선이 아래에 머�
 
 ## 고치면 바로 적용된다
 
-앱은 `~/.ai-maru/` 폴더를 지켜보다가 `config.toml` 을 저장하면 다시 읽어 떠 있는 모든 터미널에 적용한다. 단, ⌘+ / ⌘- 로 글꼴 크기를 바꾼 workspace 는 `font-size` 가 바뀌어도 그 크기를 지킨다. 폴더가 없는 채로 앱을 띄웠어도 폴더와 파일을 만들면 적용한다. 파일을 지우면 기본값으로 돌아간다. 셀 크기가 바뀌므로 터미널 안의 프로그램은 창 크기가 바뀐 것처럼 다시 그린다.
+앱은 `~/.ai-maru/` 폴더를 지켜보다가 `config.toml` 을 저장하면 다시 읽어 떠 있는 모든 터미널에 적용한다. 단, ⌘+ / ⌘- 로 글꼴 크기를 바꾼 cell 은 `font-size` 가 바뀌어도 그 크기를 지킨다. 폴더가 없는 채로 앱을 띄웠어도 폴더와 파일을 만들면 적용한다. 파일을 지우면 기본값으로 돌아간다.
 
 `config.toml` 을 심볼릭 링크로 두면 링크 자체를 바꿀 때만 다시 읽는다. 링크가 가리키는 파일을 고친 것은 알아채지 못한다.
 
 ## 단축키로 글꼴 크기 바꾸기
 
-⌘+ / ⌘- 는 선택한 workspace 의 모든 터미널 글꼴 크기를 1px 씩 바꾸고, ⌘0 은 `font-size` 로 되돌린다. ⌘= 도 글꼴을 키운다. ⌘+ 의 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 은 ⌘- / ⌘0 과 같이 동작한다. 범위는 `font-size` 와 같은 8–32 다. 바꾼 크기는 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다. 새로 연 workspace 는 `font-size` 로 시작한다.
+⌘+ / ⌘- 는 선택한 cell 의 모든 터미널 글꼴 크기를 1px 씩 바꾸고, ⌘0 은 `font-size` 로 되돌린다. ⌘= 도 글꼴을 키운다. ⌘+ 의 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 은 ⌘- / ⌘0 과 같이 동작한다. 범위는 `font-size` 와 같은 8–32 다. 바꾼 크기는 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다. 새로 연 cell 은 `font-size` 로 시작한다.
 
 ## 문제가 있으면
 

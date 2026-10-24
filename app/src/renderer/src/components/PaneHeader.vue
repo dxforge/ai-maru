@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ClaudeState } from '../../../shared/claude'
 import { ICONS, STATE_LABELS } from '../icons'
-import { workspaceName } from '../workspace/cwd'
+import { dirName } from '../workspace/cwd'
 import type { Pane } from '../workspace/store'
 
 // 제목은 여기서 읽어, 제목이 바뀌면 이 헤더만 다시 그린다.
@@ -19,7 +19,7 @@ const {
     }}</span>
     <span class="row-bar-text title">{{ pane.title || 'Shell' }}</span>
     <span v-if="state" class="claude-icon nerd-icon">{{ ICONS.claude }}</span>
-    <span v-if="pane.cwd" class="cwd">{{ workspaceName(pane.cwd) }}</span>
+    <span v-if="pane.cwd" class="cwd">{{ dirName(pane.cwd) }}</span>
   </div>
 </template>
 

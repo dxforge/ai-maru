@@ -5,7 +5,7 @@ import type { ConfigRead } from '../shared/config'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
 import type { LinkOpenResult } from '../shared/link'
-import type { PaneNewRequest, PaneReply, WorkspaceNewRequest } from '../shared/pane'
+import type { CellNewRequest, PaneNewRequest, PaneReply } from '../shared/pane'
 import type { ScreenState, ViewPrefs } from '../shared/screen'
 import type { SessionOpen } from '../shared/session'
 
@@ -53,16 +53,16 @@ const api = {
   onPaneClose: (cb: (id: number, session: string) => void): void => {
     ipcRenderer.on('pane:close', (_event, id: number, session: string) => cb(id, session))
   },
-  onWorkspaceNew: (cb: (id: number, req: WorkspaceNewRequest) => void): void => {
-    ipcRenderer.on('workspace:new', (_event, id: number, req: WorkspaceNewRequest) => cb(id, req))
+  onCellNew: (cb: (id: number, req: CellNewRequest) => void): void => {
+    ipcRenderer.on('cell:new', (_event, id: number, req: CellNewRequest) => cb(id, req))
   },
   onPaneCancel: (cb: (id: number) => void): void => {
     ipcRenderer.on('pane:cancel', (_event, id: number) => cb(id))
   },
   paneReply: (id: number, reply: PaneReply): void => ipcRenderer.send('pane:reply', id, reply),
   /**
-   * `onPaneNew`·`onPaneClose`·`onWorkspaceNew` 를 단 뒤에 부른다. main 은 이것을 받은 뒤에야 쌓아 둔
-   * `pane:new`·`pane:close`·`workspace:new` 를 보낸다.
+   * `onPaneNew`·`onPaneClose`·`onCellNew` 를 단 뒤에 부른다. main 은 이것을 받은 뒤에야 쌓아 둔
+   * `pane:new`·`pane:close`·`cell:new` 를 보낸다.
    */
   paneReady: (): void => ipcRenderer.send('pane:ready'),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),

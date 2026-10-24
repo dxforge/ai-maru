@@ -14,7 +14,7 @@ import {
   run,
   test,
   toggleView,
-  workspaceViews,
+  cellViews,
   zshHome
 } from './app'
 
@@ -107,15 +107,15 @@ test('--down 은 아래로 나누고, 시작 디렉토리는 --cwd 가 없으면
   await expect(paneRows(page, 2)).toContainText(`at=[${real}/sub]`)
 })
 
-test('선택하지 않은 workspace 의 pane 에서 부르면 그 workspace 를 나누고, 선택은 그대로다', async ({
+test('선택하지 않은 cell 의 pane 에서 부르면 그 cell 을 나누고, 선택은 그대로다', async ({
   launch
 }) => {
   const launched = await launch()
   const { page } = launched
   await page.keyboard.type(`sleep 2; maru pane new bash -c 'read x'\n`)
   await newWorkspace(launched, 2)
-  await expect(workspaceViews(page).nth(0).locator('.pane')).toHaveCount(2)
-  await expect(workspaceViews(page).nth(1)).toHaveClass(/selected/)
+  await expect(cellViews(page).nth(0).locator('.pane')).toHaveCount(2)
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
   await expect(panes(page)).toHaveCount(1)
 })
 
@@ -166,19 +166,19 @@ test('maru pane close 는 다른 pane 도 자기 pane 도 닫고, 없는 세션�
   await expect(rows(page)).toContainText('code-1')
 })
 
-test('columns 에서 maru pane new 로 오른쪽에 나누면 workspace 가 넓어진다', async ({ launch }) => {
+test('columns 에서 maru pane new 로 오른쪽에 나누면 cell 이 넓어진다', async ({ launch }) => {
   const launched = await launch()
   const { page } = launched
   await toggleView(launched, 'columns')
-  const one = (await workspaceViews(page).first().boundingBox())!.width
+  const one = (await cellViews(page).first().boundingBox())!.width
   await page.keyboard.type(`maru pane new bash -c 'read x'\n`)
   await expect(panes(page)).toHaveCount(2)
   await expect
-    .poll(async () => (await workspaceViews(page).first().boundingBox())!.width)
+    .poll(async () => (await cellViews(page).first().boundingBox())!.width)
     .toBeGreaterThan(one * 1.9)
 })
 
-test('columns 에서 maru pane new --full 은 아래로 나눈 pane 에서 불러도 workspace 오른쪽 끝에 높이 전체로 붙는다', async ({
+test('columns 에서 maru pane new --full 은 아래로 나눈 pane 에서 불러도 cell 오른쪽 끝에 높이 전체로 붙는다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -201,7 +201,7 @@ test('columns 에서 maru pane new --full 은 아래로 나눈 pane 에서 불�
   await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
 })
 
-test('columns 에서 maru pane new --full --down 은 workspace 폭을 그대로 두고 아래쪽 끝에 폭 전체로 붙는다', async ({
+test('columns 에서 maru pane new --full --down 은 cell 폭을 그대로 두고 아래쪽 끝에 폭 전체로 붙는다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -209,7 +209,7 @@ test('columns 에서 maru pane new --full --down 은 workspace 폭을 그대로 
   await toggleView(launched, 'columns')
   await clickMenu(app, 'split-right')
   await expect(panes(page)).toHaveCount(2)
-  const width = (await workspaceViews(page).first().boundingBox())!.width
+  const width = (await cellViews(page).first().boundingBox())!.width
   await page.keyboard.type(`maru pane new --full --down bash -c 'read x'\n`)
   await expect(panes(page)).toHaveCount(3)
 
@@ -220,10 +220,10 @@ test('columns 에서 maru pane new --full --down 은 workspace 폭을 그대로 
       return [added.x, added.width, added.y + added.height]
     })
     .toEqual([grid.x, grid.width, grid.y + grid.height])
-  expect((await workspaceViews(page).first().boundingBox())!.width).toBe(width)
+  expect((await cellViews(page).first().boundingBox())!.width).toBe(width)
 })
 
-test('single 에서 maru pane new --full --down 은 workspace 아래쪽 끝에 폭 전체로 붙는다', async ({
+test('single 에서 maru pane new --full --down 은 cell 아래쪽 끝에 폭 전체로 붙는다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -262,7 +262,7 @@ test('maru pane new 은 나눌 자리가 없으면 no space 오류로 끝나고 
   launch
 }) => {
   const { app, page } = await launch()
-  // 하한 두 개(46셀)는 들어가고 세 개(69셀)는 들어가지 않는 폭이다.
+  // 하한 두 개(글자 칸 46개)는 들어가고 세 개(글자 칸 69개)는 들어가지 않는 폭이다.
   await resizeGridTo(app, page, 58)
   await clickMenu(app, 'split-right')
   await expect(panes(page)).toHaveCount(2)

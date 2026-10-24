@@ -22,14 +22,27 @@ const screen: ScreenState = {
   version: SCREEN_VERSION,
   workspaces: [
     {
-      key: 1,
+      key: 3,
       id: 'w-00000001',
-      panes: [
-        { key: 0, sessionId: 's-0000000a', cwd: '/tmp' },
-        { key: 2, sessionId: 's-0000000b', command: ['sh', '-c', 'true'], title: 't' }
-      ],
-      layout: { split: 'right', first: { pane: 0 }, second: { pane: 2 } },
-      focused: 2
+      cells: [
+        {
+          key: 1,
+          id: 'c-00000001',
+          panes: [
+            { key: 0, sessionId: 's-0000000a', cwd: '/tmp' },
+            { key: 2, sessionId: 's-0000000b', command: ['sh', '-c', 'true'], title: 't' }
+          ],
+          layout: { split: 'right', first: { pane: 0 }, second: { pane: 2 } },
+          focused: 2
+        },
+        {
+          key: 4,
+          id: 'c-00000002',
+          panes: [{ key: 5, sessionId: 's-0000000c' }],
+          layout: { pane: 5 },
+          focused: 5
+        }
+      ]
     }
   ],
   selected: 1,
@@ -52,11 +65,11 @@ function fakeBin(output: string): string {
 
 describe('restart 파일', () => {
   const jobs: JobsFile = {
-    version: 1,
+    version: 2,
     jobs: [
       {
         session: 's-0000000a',
-        workspace: 'w-1',
+        cell: 'c-1',
         owner: 's-0000000b',
         command: ['x'],
         pending: false
@@ -91,7 +104,7 @@ describe('restart 파일', () => {
     expect(await takeRestart(path)).toEqual({ screen, jobs: null, claude: null })
     writeFileSync(
       path,
-      JSON.stringify({ screen, jobs: { ...jobs, version: 2 }, claude: { ...claude, version: 2 } })
+      JSON.stringify({ screen, jobs: { ...jobs, version: 1 }, claude: { ...claude, version: 2 } })
     )
     expect(await takeRestart(path)).toEqual({ screen, jobs: null, claude: null })
   })
@@ -119,8 +132,8 @@ describe('restart 파일', () => {
     await expect(writeRestart(path, state)).rejects.toThrow()
   })
 
-  it('화면의 세션 id 를 모은다', () => {
-    expect(screenSessions(screen)).toEqual(new Set(['s-0000000a', 's-0000000b']))
+  it('화면의 모든 cell 에서 세션 id 를 모은다', () => {
+    expect(screenSessions(screen)).toEqual(new Set(['s-0000000a', 's-0000000b', 's-0000000c']))
     expect(screenSessions(null)).toEqual(new Set())
   })
 })

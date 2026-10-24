@@ -5,7 +5,7 @@ import { splitPane, splitRoot, type Layout } from './layout'
 const cell = { width: 8, height: 18 }
 
 describe('snapRects', () => {
-  it('pane 하나는 workspace 를 그대로 채운다', () => {
+  it('pane 하나는 cell 을 그대로 채운다', () => {
     expect(snapRects({ pane: 1 }, { width: 805, height: 700 }, cell).get(1)).toEqual({
       left: 0,
       top: 0,
@@ -14,7 +14,7 @@ describe('snapRects', () => {
     })
   })
 
-  it('나눈 경계는 셀의 배수에 두고, 남는 픽셀은 맨 오른쪽·맨 아래 pane 이 갖는다', () => {
+  it('나눈 경계는 글자 칸의 배수에 두고, 남는 픽셀은 맨 오른쪽·맨 아래 pane 이 갖는다', () => {
     const layout: Layout = {
       split: 'right',
       first: { pane: 1 },
@@ -26,7 +26,7 @@ describe('snapRects', () => {
     expect(boxes.get(3)).toEqual({ left: 504, top: 342, width: 499, height: 358 })
   })
 
-  it('셀 크기가 소수여도 경계는 그 배수다', () => {
+  it('글자 칸 크기가 소수여도 경계는 그 배수다', () => {
     const boxes = snapRects(
       { split: 'down', first: { pane: 1 }, second: { pane: 2 } },
       { width: 800, height: 600 },
@@ -36,7 +36,7 @@ describe('snapRects', () => {
     expect(boxes.get(1)!.height).toBe(17 * 17.5)
   })
 
-  it('pane 이 반 셀보다 작아져도 상자는 음수가 되지 않고 빈틈 없이 workspace 를 채운다', () => {
+  it('pane 이 반 글자 칸보다 작아져도 상자는 음수가 되지 않고 빈틈 없이 cell 을 채운다', () => {
     const chain = (i: number): Layout =>
       i === 8 ? { pane: i } : { split: 'down', first: { pane: i }, second: chain(i + 1) }
     const boxes = [...snapRects(chain(0), { width: 800, height: 300 }, cell).values()].sort(
@@ -47,7 +47,7 @@ describe('snapRects', () => {
     expect(boxes.at(-1)!.top + boxes.at(-1)!.height).toBe(300)
   })
 
-  it('셀 크기를 모르면 px 로만 반올림한다', () => {
+  it('글자 칸 크기를 모르면 px 로만 반올림한다', () => {
     const boxes = snapRects(
       { split: 'right', first: { pane: 1 }, second: { pane: 2 } },
       { width: 801, height: 600 },
@@ -56,7 +56,7 @@ describe('snapRects', () => {
     expect(boxes.get(2)).toEqual({ left: 401, top: 0, width: 400, height: 600 })
   })
 
-  it('columns 는 늘어선 pane 마다 같은 셀 수를 준다', () => {
+  it('columns 는 늘어선 pane 마다 같은 글자 칸 수를 준다', () => {
     const layout: Layout = {
       split: 'right',
       first: { pane: 1 },
@@ -87,7 +87,7 @@ describe('snapRects', () => {
       second: { split: 'down', first: { pane: 2 }, second: { pane: 3 } }
     }
 
-    it('pane 하나는 workspace 가 하한보다 작아도 하한 크기다', () => {
+    it('pane 하나는 cell 이 하한보다 작아도 하한 크기다', () => {
       expect(snapRects({ pane: 1 }, { width: 100, height: 50 }, cell, 'half', min).get(1)).toEqual({
         left: 0,
         top: 0,
@@ -111,7 +111,7 @@ describe('snapRects', () => {
       ])
     })
 
-    it('양쪽에 하한을 줄 자리가 없으면 각자 하한을 받고 뒤쪽이 workspace 밖으로 나간다', () => {
+    it('양쪽에 하한을 줄 자리가 없으면 각자 하한을 받고 뒤쪽이 cell 밖으로 나간다', () => {
       const boxes = snapRects(threeRight, { width: 40 * 8, height: 700 }, cell, 'half', min)
       expect([...boxes.values()].map((b) => [b.left / 8, b.width / 8])).toEqual([
         [0, 23],
@@ -139,7 +139,7 @@ describe('snapRects', () => {
     })
 
     describe('overflow', () => {
-      it('필요한 크기에서 workspace 크기를 뺀 만큼이고, 들어가면 0 이다', () => {
+      it('필요한 크기에서 cell 크기를 뺀 만큼이고, 들어가면 0 이다', () => {
         expect(overflow(threeRight, { width: 40 * 8, height: 700 }, min)).toEqual({
           width: 29 * 8,
           height: 0
@@ -159,7 +159,7 @@ describe('snapRects', () => {
           min
         )
 
-      it('나눈 뒤 pane 들이 필요한 크기가 workspace 에 들어가면 나눌 수 있고, 한 셀이라도 모자라면 없다', () => {
+      it('나눈 뒤 pane 들이 필요한 크기가 cell 에 들어가면 나눌 수 있고, 한 글자 칸이라도 모자라면 없다', () => {
         expect(split({ pane: 1 }, 1, 'right', size(46))).toBe(true)
         expect(split({ pane: 1 }, 1, 'right', size(45))).toBe(false)
         expect(split({ pane: 1 }, 1, 'down', size(100, 12 * 18))).toBe(true)
@@ -173,26 +173,26 @@ describe('snapRects', () => {
         expect(split(twoDown, 2, 'down', size(100, 18 * 18 - 1))).toBe(false)
       })
 
-      it('workspace 전체를 나누면 있던 pane 들이 필요한 크기와 새 pane 의 하한이 들어가야 한다', () => {
+      it('cell 전체를 나누면 있던 pane 들이 필요한 크기와 새 pane 의 하한이 들어가야 한다', () => {
         expect(split(threeRight, null, 'right', size(92))).toBe(true)
         expect(split(threeRight, null, 'right', size(91))).toBe(false)
         expect(split(threeRight, null, 'down', size(69, 12 * 18))).toBe(true)
         expect(split(threeRight, null, 'down', size(69, 12 * 18 - 1))).toBe(false)
       })
 
-      it('나눈 뒤 넓어지는 workspace(columns)를 주면 폭은 넘치지 않는다', () => {
+      it('나눈 뒤 넓어지는 cell(columns)을 주면 폭은 넘치지 않는다', () => {
         const next = splitPane({ pane: 1 }, 1, 9, 'right')
         expect(canSplit({ pane: 1 }, size(23), next, size(46), min)).toBe(true)
         expect(canSplit({ pane: 1 }, size(23, 6 * 18), next, size(46, 6 * 18 - 1), min)).toBe(false)
       })
 
-      it('이미 넘친 workspace 에서도 넘침이 늘지 않는 split 은 된다', () => {
+      it('이미 넘친 cell 에서도 넘침이 늘지 않는 split 은 된다', () => {
         expect(split(threeRight, 3, 'right', size(40))).toBe(false)
         expect(split(threeRight, 3, 'down', size(40, 12 * 18))).toBe(true)
         expect(split(threeRight, null, 'down', size(40, 12 * 18))).toBe(true)
       })
 
-      it('하한이 0 이면(셀 크기를 모르면) 늘 나눌 수 있다', () => {
+      it('하한이 0 이면(글자 칸 크기를 모르면) 늘 나눌 수 있다', () => {
         const next = splitPane({ pane: 1 }, 1, 9, 'right')
         expect(canSplit({ pane: 1 }, size(1, 1), next, size(1, 1), NO_MIN)).toBe(true)
       })

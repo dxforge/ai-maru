@@ -16,7 +16,7 @@ import {
 const COLS = 10
 const TEXT = 'X'.repeat(COLS)
 
-/** 픽셀 줄마다 글자가 그려진 픽셀의 비율. 취소선은 셀 사이의 빈 곳도 지나므로 그 줄만 1 에 닿는다. */
+/** 픽셀 줄마다 글자가 그려진 픽셀의 비율. 취소선은 글자 칸 사이의 빈 곳도 지나므로 그 줄만 1 에 닿는다. */
 async function inkFractions(page: Page, clip: Box): Promise<number[]> {
   const { data, width, height } = await screenshotPixels(page, clip)
   return Array.from({ length: height }, (_, y) => {
@@ -27,7 +27,7 @@ async function inkFractions(page: Page, clip: Box): Promise<number[]> {
 }
 
 for (const renderer of ['webgl', 'dom'] as const) {
-  test(`${renderer}: SGR 9 는 셀 폭 전체를 가로지르는 줄로 그려진다`, async ({ launch }) => {
+  test(`${renderer}: SGR 9 는 글자 칸 폭 전체를 가로지르는 줄로 그려진다`, async ({ launch }) => {
     const { page } = await launch({ MARU_DOM_RENDERER: renderer === 'dom' ? '1' : '' })
     await activeTerminal(page)
     if (renderer === 'webgl') await expect(page.locator(WEBGL_CANVAS)).toHaveCount(1)
@@ -46,7 +46,7 @@ for (const renderer of ['webgl', 'dom'] as const) {
       )
       .toBe(true)
     const half = Math.floor(rows.length / 2)
-    // 취소선은 셀의 가운데 띠에만 있다. 밑줄은 아래 띠에, 반전은 셀 전체에 걸린다.
+    // 취소선은 글자 칸의 가운데 띠에만 있다. 밑줄은 아래 띠에, 반전은 글자 칸 전체에 걸린다.
     const full = rows.slice(0, half).flatMap((f, y) => (f > 0.95 ? [y / half] : []))
     expect(full.length).toBeGreaterThan(0)
     for (const y of full) {

@@ -18,7 +18,7 @@ function octal(text: string): string {
   return [...Buffer.from(text)].map((b) => `\\${b.toString(8).padStart(3, '0')}`).join('')
 }
 
-/** 커서가 있는 열. xterm 은 커서가 움직이면 textarea 를 `커서 열 × 셀 폭` 에 둔다. */
+/** 커서가 있는 열. xterm 은 커서가 움직이면 textarea 를 `커서 열 × 글자 칸 폭` 에 둔다. */
 async function cursorColumn(page: Page): Promise<number> {
   return page.locator('.terminal-view.active').evaluate((el) => {
     const cell = parseFloat(getComputedStyle(el).getPropertyValue('--cell'))

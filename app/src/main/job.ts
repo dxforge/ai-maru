@@ -18,7 +18,7 @@ export const JOB_REPLY_MS = 8_000
 export type JobRecord = {
   session: string
   name?: string
-  workspace: string
+  cell: string
   owner: string
   command: string[]
   exit?: SessionExit
@@ -26,11 +26,11 @@ export type JobRecord = {
 }
 
 /** 재시작 전 앱이 쓰고 다시 뜬 앱이 읽는다. 모양을 바꾸면 버전을 올린다. */
-export type JobsFile = { version: 1; jobs: JobRecord[] }
+export type JobsFile = { version: 2; jobs: JobRecord[] }
 
 export type JobDeps = {
   newId: () => string
-  workspaceOf: (session: string) => string | undefined
+  cellOf: (session: string) => string | undefined
   /** `maru-session --keep` 으로 띄운다. 소켓이 열린 뒤에 끝난다. */
   spawn: (id: string, cwd: string, command: string[]) => Promise<void>
   waitExit: (id: string) => { exit: Promise<SessionExit | null>; cancel: () => void }
@@ -46,23 +46,23 @@ export function createJobs(deps: JobDeps) {
   const waits = new Map<string, () => void>()
   let saved = false
 
-  function workspaceOf(session: string): string | undefined {
-    return deps.workspaceOf(session) ?? jobs.find((j) => j.session === session)?.workspace
+  function cellOf(session: string): string | undefined {
+    return deps.cellOf(session) ?? jobs.find((j) => j.session === session)?.cell
   }
 
-  function callerWorkspace(session: string): string {
-    const w = workspaceOf(session)
-    if (w === undefined) throw new InvalidParams(`session ${session} is not in a workspace`)
-    return w
+  function callerCell(session: string): string {
+    const c = cellOf(session)
+    if (c === undefined) throw new InvalidParams(`session ${session} is not in a cell`)
+    return c
   }
 
-  function find(workspace: string, target: unknown): JobRecord {
+  function find(cell: string, target: unknown): JobRecord {
     if (typeof target !== 'string' || target === '') {
       throw new InvalidParams('params.target must be a job name or session id')
     }
     const key = isSessionId(target) ? 'session' : 'name'
-    const job = jobs.find((j) => j.workspace === workspace && j[key] === target)
-    if (!job) throw new InvalidParams(`no job ${target} in this workspace`)
+    const job = jobs.find((j) => j.cell === cell && j[key] === target)
+    if (!job) throw new InvalidParams(`no job ${target} in this cell`)
     return job
   }
 
@@ -122,18 +122,16 @@ export function createJobs(deps: JobDeps) {
           'params.name must be 1-64 letters, digits, ".", "_" or "-", start with a letter or digit, and not look like a session id'
         )
       }
-      const workspace = callerWorkspace(session)
+      const cell = callerCell(session)
       const same =
-        name === undefined
-          ? undefined
-          : jobs.find((j) => j.workspace === workspace && j.name === name)
+        name === undefined ? undefined : jobs.find((j) => j.cell === cell && j.name === name)
       if (same && !same.exit) {
-        throw new CliError(-32001, 'job_name_taken', `job ${name} is running in this workspace`)
+        throw new CliError(-32001, 'job_name_taken', `job ${name} is running in this cell`)
       }
       const job: JobRecord = {
         session: deps.newId(),
         ...(name !== undefined && { name }),
-        workspace,
+        cell,
         owner: session,
         command,
         pending: false
@@ -148,7 +146,7 @@ export function createJobs(deps: JobDeps) {
         remove(job)
         throw err
       }
-      // 띄우는 동안 kill·workspace 닫기가 지웠으면, 그때는 소켓이 없어 끄지 못했다.
+      // 띄우는 동안 kill·cell 닫기가 지웠으면, 그때는 소켓이 없어 끄지 못했다.
       if (!jobs.includes(job)) {
         await deps.kill(job.session)
         throw new Error(`job ${name ?? job.session} was killed while it started`)
@@ -158,15 +156,15 @@ export function createJobs(deps: JobDeps) {
       return { session: job.session }
     },
     'job.list': (_params, session) => {
-      const workspace = callerWorkspace(session)
-      return { jobs: jobs.filter((j) => j.workspace === workspace).map(view) }
+      const cell = callerCell(session)
+      return { jobs: jobs.filter((j) => j.cell === cell).map(view) }
     },
     'job.read': async ({ target }, session) => {
-      const job = find(callerWorkspace(session), target)
+      const job = find(callerCell(session), target)
       return { text: await deps.capture(job.session) }
     },
     'job.send': async ({ target, text }, session) => {
-      const job = find(callerWorkspace(session), target)
+      const job = find(callerCell(session), target)
       if (typeof text !== 'string') throw new InvalidParams('params.text must be a string')
       const exited = (): CliError =>
         new CliError(-32001, 'job_exited', `job ${String(target)} has exited`)
@@ -175,7 +173,7 @@ export function createJobs(deps: JobDeps) {
       return null
     },
     'job.kill': async ({ target }, session) => {
-      const job = find(callerWorkspace(session), target)
+      const job = find(callerCell(session), target)
       // 끝날 때까지 목록에 두어, 그 사이 같은 이름의 new 가 아직 도는 프로세스 옆에 뜨지 않게 한다.
       stopWaiting(job.session)
       await deps.kill(job.session)
@@ -186,12 +184,12 @@ export function createJobs(deps: JobDeps) {
 
   return {
     handlers,
-    workspaceOf,
+    cellOf,
     subscribed: (session: string): void => {
       for (const j of jobs) if (j.owner === session && j.pending) notify(j)
     },
-    closeWorkspace: async (workspace: string): Promise<void> => {
-      const closing = jobs.filter((j) => j.workspace === workspace)
+    closeCell: async (cell: string): Promise<void> => {
+      const closing = jobs.filter((j) => j.cell === cell)
       for (const j of closing) remove(j)
       await Promise.all(closing.map((j) => deps.kill(j.session)))
     },
@@ -199,7 +197,7 @@ export function createJobs(deps: JobDeps) {
     save: (): JobsFile => {
       saved = true
       for (const session of [...waits.keys()]) stopWaiting(session)
-      return structuredClone({ version: 1, jobs })
+      return structuredClone({ version: 2, jobs })
     },
     resume: (): void => {
       saved = false
@@ -221,7 +219,7 @@ function isJob(v: unknown): v is JobRecord {
     isObj(v) &&
     isSessionId(v.session) &&
     (v.name === undefined || typeof v.name === 'string') &&
-    typeof v.workspace === 'string' &&
+    typeof v.cell === 'string' &&
     isSessionId(v.owner) &&
     isCommand(v.command) &&
     (v.exit === undefined || (isObj(v.exit) && isCode(v.exit.code) && isCode(v.exit.signal))) &&
@@ -230,6 +228,6 @@ function isJob(v: unknown): v is JobRecord {
 }
 
 export function parseJobsFile(v: unknown): JobsFile | null {
-  if (!isObj(v) || v.version !== 1 || !Array.isArray(v.jobs) || !v.jobs.every(isJob)) return null
+  if (!isObj(v) || v.version !== 2 || !Array.isArray(v.jobs) || !v.jobs.every(isJob)) return null
   return v as JobsFile
 }

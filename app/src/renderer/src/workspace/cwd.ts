@@ -14,15 +14,19 @@ export function osc7Path(data: string): string | null {
   }
 }
 
-export function workspaceName(cwd: string | undefined): string {
+export function dirName(cwd: string | undefined): string {
   if (cwd === undefined) return 'Shell'
   return cwd.split('/').filter(Boolean).pop() ?? '/'
 }
 
 export type Label = { name: string; branch?: string }
 
-export function workspaceLabel(p: Pick<Pane, 'cwd' | 'git'>): Label {
-  return p.git ? { name: p.git.repo, branch: p.git.branch } : { name: workspaceName(p.cwd) }
+export function cellLabel(p: Pick<Pane, 'cwd' | 'git'>): Label {
+  return p.git ? { name: p.git.repo, branch: p.git.branch } : { name: dirName(p.cwd) }
+}
+
+export function workspaceName(p: Pick<Pane, 'cwd' | 'git'>): string {
+  return cellLabel(p).name
 }
 
 export function windowTitle(label: Label): string {

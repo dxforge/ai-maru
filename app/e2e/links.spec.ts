@@ -32,7 +32,7 @@ const opened = (app: ElectronApplication) => app.evaluate(() => (globalThis as O
 const paths = (app: ElectronApplication) => app.evaluate(() => (globalThis as Opened).paths)
 
 /**
- * 화면에서 `text` 가 마지막으로 보이는 줄(친 명령이 아니라 출력)의 그 글자 둘째 셀 가운데. 출력보다 먼저 기다림이
+ * 화면에서 `text` 가 마지막으로 보이는 줄(친 명령이 아니라 출력)의 그 글자 둘째 글자 칸 가운데. 출력보다 먼저 기다림이
  * 끝나면 명령 줄에서 찾으므로, `run` 이 기다리는 글자는 친 명령에 없는 글자(`done-$((1+1))` → `done-2`)로 둔다.
  */
 async function pointAt(page: Page, text: string): Promise<{ x: number; y: number }> {

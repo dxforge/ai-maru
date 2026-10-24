@@ -11,8 +11,8 @@ import {
   run,
   shellSize,
   test,
-  workspaceGroups,
-  workspaceItems,
+  cellGroups,
+  cellItems,
   writeConfig
 } from './app'
 
@@ -56,14 +56,15 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
   })
   expect(menus.file).toEqual([
     ['new-workspace', 'New Workspace', 'Command+N'],
+    ['new-cell', 'New Cell', 'Command+T'],
     ['split-right', 'Split Right', 'Command+D'],
     ['split-down', 'Split Down', 'Shift+Command+D'],
     ['close-pane', 'Close Pane', 'Command+W']
   ])
   expect(menus.view.slice(0, 16)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
-    ['next-workspace', 'Next Workspace', 'Shift+Command+]'],
-    ['previous-workspace', 'Previous Workspace', 'Shift+Command+['],
+    ['next-cell', 'Next Cell', 'Shift+Command+]'],
+    ['previous-cell', 'Previous Cell', 'Shift+Command+['],
     ['toggle-sidebar', 'Toggle Sidebar', 'Command+B'],
     ['toggle-canvas', 'Toggle Canvas', 'Alt+Command+B'],
     ['toggle-view-mode', 'Toggle View Mode', 'Command+\\'],
@@ -74,8 +75,8 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['increase-font-size', 'Increase Font Size', 'Command+Plus'],
     ['decrease-font-size', 'Decrease Font Size', 'Command+-'],
     ['reset-font-size', 'Reset Font Size', 'Command+0'],
-    ['widen-workspace', 'Widen Workspace', 'Shift+Command+.'],
-    ['narrow-workspace', 'Narrow Workspace', 'Shift+Command+,'],
+    ['widen-cell', 'Widen Cell', 'Shift+Command+.'],
+    ['narrow-cell', 'Narrow Cell', 'Shift+Command+,'],
     ['-', '', null]
   ])
   expect(menus.lastTypes).not.toContain('separator')
@@ -340,11 +341,12 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
   await openPalette(launched)
   await expect(items(page)).toHaveText([
     'New Workspace⌘N',
+    'New Cell⌘T',
     'Split Right⌘D',
     'Split Down⇧⌘D',
     'Close Pane⌘W',
-    'Next Workspace⇧⌘]',
-    'Previous Workspace⇧⌘[',
+    'Next Cell⇧⌘]',
+    'Previous Cell⇧⌘[',
     'Toggle Sidebar⌘B',
     'Toggle Canvas⌥⌘B',
     'Toggle View Mode⌘\\',
@@ -355,8 +357,8 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
     'Increase Font Size⌘+',
     'Decrease Font Size⌘-',
     'Reset Font Size⌘0',
-    'Widen Workspace⇧⌘.',
-    'Narrow Workspace⇧⌘,',
+    'Widen Cell⇧⌘.',
+    'Narrow Cell⇧⌘,',
     'Restart'
   ])
   await expect(items(page).first()).toHaveClass(/selected/)
@@ -397,8 +399,8 @@ test('팔레트에서 Enter 로 New Workspace 를 실행하면 팔레트가 닫�
   await page.keyboard.type('new')
   await page.keyboard.press('Enter')
   await expect(palette(page)).toHaveCount(0)
-  await expect(workspaceItems(page)).toHaveCount(2)
-  await expect(workspaceGroups(page).nth(1)).toHaveClass(/selected/)
+  await expect(cellItems(page)).toHaveCount(2)
+  await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
   await activeTerminal(page)
   await typesIntoTerminal(page, 'new')
 })
@@ -545,25 +547,25 @@ test('View 메뉴의 Toggle Canvas 는 팔레트 없이 Canvas 를 열고 닫는
   await typesIntoTerminal(page, 'menu-toggle')
 })
 
-test('Next·Previous Workspace 는 사이드바의 다음·이전 workspace 를 선택하고 끝에서는 반대쪽 끝으로 돌며, 키는 그 터미널로 간다', async ({
+test('Next·Previous Cell 는 사이드바의 다음·이전 cell 을 선택하고 끝에서는 반대쪽 끝으로 돌며, 키는 그 터미널로 간다', async ({
   launch
 }) => {
   const launched = await launch()
   const { app, page } = launched
   await clickMenu(app, 'new-workspace')
-  await expect(workspaceItems(page)).toHaveCount(2)
+  await expect(cellItems(page)).toHaveCount(2)
   await clickMenu(app, 'new-workspace')
-  await expect(workspaceItems(page)).toHaveCount(3)
+  await expect(cellItems(page)).toHaveCount(3)
   await activeTerminal(page)
 
   for (const [id, i] of [
-    ['next-workspace', 0],
-    ['next-workspace', 1],
-    ['previous-workspace', 0],
-    ['previous-workspace', 2]
+    ['next-cell', 0],
+    ['next-cell', 1],
+    ['previous-cell', 0],
+    ['previous-cell', 2]
   ] as const) {
     await clickMenu(app, id)
-    await expect(workspaceGroups(page).nth(i)).toHaveClass(/selected/)
+    await expect(cellGroups(page).nth(i)).toHaveClass(/selected/)
     await typesIntoTerminal(page, `at-${i}-${id}`)
   }
 })
@@ -610,18 +612,18 @@ test('Tab 으로 입력창을 떠나면 팔레트가 닫히고 키는 터미널�
   await typesIntoTerminal(page, 'tabbed')
 })
 
-test('팔레트가 열린 동안 선택된 workspace 의 셸이 끝나면 팔레트가 닫히고 키는 남은 터미널로 간다', async ({
+test('팔레트가 열린 동안 선택된 cell 의 셸이 끝나면 팔레트가 닫히고 키는 남은 터미널로 간다', async ({
   launch
 }) => {
   const launched = await launch()
   const { app, page } = launched
   await clickMenu(app, 'new-workspace')
-  await expect(workspaceItems(page)).toHaveCount(2)
+  await expect(cellItems(page)).toHaveCount(2)
   await activeTerminal(page)
   await run(page, 'echo ready-$((1+1))', 'ready-2')
   await page.keyboard.type('sleep 1; exit\n')
   await openPalette(launched)
-  await expect(workspaceItems(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(1)
   await expect(palette(page)).toHaveCount(0)
   await typesIntoTerminal(page, 'survivor')
 })
@@ -664,13 +666,13 @@ test('창이 포커스를 잃은 동안 셸이 끝나 터미널이 포커스를 
   const launched = await launch()
   const { app, page } = launched
   await clickMenu(app, 'new-workspace')
-  await expect(workspaceItems(page)).toHaveCount(2)
+  await expect(cellItems(page)).toHaveCount(2)
   await activeTerminal(page)
   await run(page, 'echo ready-$((1+1))', 'ready-2')
   await page.keyboard.type('sleep 2; exit\n')
   await openPalette(launched)
   await windowLosesFocus(page)
-  await expect(workspaceItems(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(1)
   await expect(page.locator('.xterm-helper-textarea:focus')).toHaveCount(1)
   await windowRegainsFocus(page)
   await expect(palette(page)).toHaveCount(0)
@@ -689,7 +691,7 @@ test('Esc 나 바깥을 누르면 실행하지 않고 닫히며 키는 터미널
   await openPalette(launched)
   await page.mouse.click(5, 300)
   await expect(palette(page)).toHaveCount(0)
-  await expect(workspaceItems(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(1)
   await typesIntoTerminal(page, 'outside')
 })
 
@@ -720,7 +722,7 @@ test('팔레트가 열린 채 메뉴로 명령을 부르면 팔레트가 닫히�
 
   await clickMenu(app, 'new-workspace')
   await expect(palette(page)).toHaveCount(0)
-  await expect(workspaceItems(page)).toHaveCount(2)
+  await expect(cellItems(page)).toHaveCount(2)
   await activeTerminal(page)
   await typesIntoTerminal(page, 'menu')
 })

@@ -56,22 +56,22 @@ export type BufferLike<C extends CellLike = CellLike> = {
   getLine(y: number): LineLike<C> | undefined
 }
 
-/** 글자 하나가 놓인 셀. `x` 는 0 기반 열, `y` 는 1 기반 행. */
+/** 글자 하나가 놓인 글자 칸. `x` 는 0 기반 열, `y` 는 1 기반 행. */
 export type CellPos = { x: number; y: number; width: number }
 
 export type LineText = {
   text: string
   /**
-   * `cells[i]` 는 `text[i]`(UTF-16 단위라 surrogate pair 의 두 반쪽은 같은 셀)가 놓인 셀이다. 정규식은 문자열
-   * 인덱스를 주는데 xterm 의 링크 범위는 셀 열이라, 폭이 2 인 글자(한글·이모지) 뒤의 링크는 인덱스를 그대로
+   * `cells[i]` 는 `text[i]`(UTF-16 단위라 surrogate pair 의 두 반쪽은 같은 글자 칸)가 놓인 글자 칸이다. 정규식은 문자열
+   * 인덱스를 주는데 xterm 의 링크 범위는 글자 칸 열이라, 폭이 2 인 글자(한글·이모지) 뒤의 링크는 인덱스를 그대로
    * 쓰면 왼쪽으로 밀린다.
    */
   cells: CellPos[]
 }
 
 /**
- * 1 기반 행 `y` 가 든 논리 줄 — 화면 폭에서 접혀 이어진 행들 — 을 글자와 셀 매핑으로 읽는다. 좁은 pane 에 찍힌
- * 긴 URL 은 여러 행에 걸치므로 한 행만 보면 접힌 자리에서 잘린 주소가 열린다. 넓은 글자의 둘째 셀(폭 0)은
+ * 1 기반 행 `y` 가 든 논리 줄 — 화면 폭에서 접혀 이어진 행들 — 을 글자와 글자 칸 매핑으로 읽는다. 좁은 pane 에 찍힌
+ * 긴 URL 은 여러 행에 걸치므로 한 행만 보면 접힌 자리에서 잘린 주소가 열린다. 넓은 글자의 둘째 글자 칸(폭 0)은
  * xterm 의 `translateToString` 처럼 글자를 내지 않는다. 끝의 공백은 뗀다.
  */
 export function readWrappedLine<C extends CellLike>(buffer: BufferLike<C>, y: number): LineText {
@@ -101,7 +101,7 @@ export function readWrappedLine<C extends CellLike>(buffer: BufferLike<C>, y: nu
   return { text: trimmed, cells }
 }
 
-/** `text[startIndex, endIndex)` 를 덮는 xterm 링크 범위(열은 1 기반, 양 끝 포함). 넓은 글자로 끝나면 그 둘째 셀까지. */
+/** `text[startIndex, endIndex)` 를 덮는 xterm 링크 범위(열은 1 기반, 양 끝 포함). 넓은 글자로 끝나면 그 둘째 글자 칸까지. */
 export function linkRange(cells: CellPos[], startIndex: number, endIndex: number): IBufferRange {
   const start = cells[startIndex]
   const end = cells[endIndex - 1]

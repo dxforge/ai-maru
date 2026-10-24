@@ -7,12 +7,18 @@ const screen: ScreenState = {
     {
       key: 1,
       id: 'w-00000001',
-      panes: [
-        { key: 0, sessionId: 's-0000000a', startDir: '/a', cwd: '/b', title: 't' },
-        { key: 2, sessionId: 's-0000000b', command: ['sh', '-c', 'true'] }
-      ],
-      layout: { split: 'down', first: { pane: 0 }, second: { pane: 2 } },
-      focused: 0
+      cells: [
+        {
+          key: 3,
+          id: 'c-00000001',
+          panes: [
+            { key: 0, sessionId: 's-0000000a', startDir: '/a', cwd: '/b', title: 't' },
+            { key: 2, sessionId: 's-0000000b', command: ['sh', '-c', 'true'] }
+          ],
+          layout: { split: 'down', first: { pane: 0 }, second: { pane: 2 } },
+          focused: 0
+        }
+      ]
     }
   ],
   selected: null,
@@ -30,38 +36,42 @@ describe('parseScreen', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 모양을 일부러 깨뜨린다.
   it.each<[string, (s: Record<string, any>) => void]>([
     ['버전이 다름', (s) => (s.version = SCREEN_VERSION + 1)],
-    ['세션 id 모양이 아님', (s) => (s.workspaces[0].panes[0].sessionId = '../x')],
-    ['pane 이 없는 workspace', (s) => (s.workspaces[0].panes = [])],
-    ['배치의 나눔 방향이 틀림', (s) => (s.workspaces[0].layout.split = 'left')],
-    ['명령이 문자열 배열이 아님', (s) => (s.workspaces[0].panes[1].command = [1])],
+    ['이전 빌드의 버전 1', (s) => (s.version = 1)],
+    ['세션 id 모양이 아님', (s) => (s.workspaces[0].cells[0].panes[0].sessionId = '../x')],
+    ['pane 이 없는 cell', (s) => (s.workspaces[0].cells[0].panes = [])],
+    ['cell 이 없는 workspace', (s) => (s.workspaces[0].cells = [])],
+    ['workspace id 가 문자열이 아님', (s) => (s.workspaces[0].id = 1)],
+    ['cell id 가 문자열이 아님', (s) => (s.workspaces[0].cells[0].id = 1)],
+    ['배치의 나눔 방향이 틀림', (s) => (s.workspaces[0].cells[0].layout.split = 'left')],
+    ['명령이 문자열 배열이 아님', (s) => (s.workspaces[0].cells[0].panes[1].command = [1])],
     ['선택이 정수가 아님', (s) => (s.selected = '1')],
     ['접은 목록이 없음', (s) => delete s.sidebar.folded],
     ['보기 모드가 틀림', (s) => (s.viewMode = 'grid')],
     ['Canvas 폭이 숫자가 아님', (s) => (s.canvas = { width: '300' })],
-    ['부른 workspace 가 문자열', (s) => (s.workspaces[0].openedBy = '1')],
-    ['부른 workspace 가 정수가 아님', (s) => (s.workspaces[0].openedBy = 1.5)],
-    ['글꼴 크기가 숫자가 아님', (s) => (s.workspaces[0].fontSize = '16')],
-    ['글꼴 크기가 유한하지 않음', (s) => (s.workspaces[0].fontSize = null)],
-    ['pane 폭이 숫자가 아님', (s) => (s.workspaces[0].paneCols = '110')],
-    ['pane 폭이 정수가 아님', (s) => (s.workspaces[0].paneCols = 110.5)],
-    ['pane 폭이 0', (s) => (s.workspaces[0].paneCols = 0)],
-    ['pane 폭이 음수', (s) => (s.workspaces[0].paneCols = -5)]
+    ['부른 cell 이 문자열', (s) => (s.workspaces[0].cells[0].openedBy = '1')],
+    ['부른 cell 이 정수가 아님', (s) => (s.workspaces[0].cells[0].openedBy = 1.5)],
+    ['글꼴 크기가 숫자가 아님', (s) => (s.workspaces[0].cells[0].fontSize = '16')],
+    ['글꼴 크기가 유한하지 않음', (s) => (s.workspaces[0].cells[0].fontSize = null)],
+    ['pane 폭이 숫자가 아님', (s) => (s.workspaces[0].cells[0].paneCols = '110')],
+    ['pane 폭이 정수가 아님', (s) => (s.workspaces[0].cells[0].paneCols = 110.5)],
+    ['pane 폭이 0', (s) => (s.workspaces[0].cells[0].paneCols = 0)],
+    ['pane 폭이 음수', (s) => (s.workspaces[0].cells[0].paneCols = -5)]
   ])('%s 이면 null', (_, spoil) => {
     const s = clone()
     spoil(s)
     expect(parseScreen(s)).toBeNull()
   })
 
-  it('workspace 의 글꼴 크기는 없어도 되고, 있으면 그대로 돌려준다', () => {
+  it('cell 의 글꼴 크기는 없어도 되고, 있으면 그대로 돌려준다', () => {
     const s = clone() as ScreenState
-    s.workspaces[0].fontSize = 16.5
-    expect(parseScreen(s)!.workspaces[0].fontSize).toBe(16.5)
+    s.workspaces[0].cells[0].fontSize = 16.5
+    expect(parseScreen(s)!.workspaces[0].cells[0].fontSize).toBe(16.5)
   })
 
-  it('workspace 의 pane 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {
+  it('cell 의 pane 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {
     const s = clone() as ScreenState
-    s.workspaces[0].paneCols = 110
-    expect(parseScreen(s)!.workspaces[0].paneCols).toBe(110)
+    s.workspaces[0].cells[0].paneCols = 110
+    expect(parseScreen(s)!.workspaces[0].cells[0].paneCols).toBe(110)
   })
 
   it('Canvas 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {
@@ -71,8 +81,9 @@ describe('parseScreen', () => {
     })
   })
 
-  it('부른 workspace 는 없어도 되고, 있으면 그대로 돌려준다', () => {
-    const s = { ...screen, workspaces: [{ ...screen.workspaces[0], openedBy: 3 }] }
+  it('부른 cell 은 없어도 되고, 있으면 그대로 돌려준다', () => {
+    const w = screen.workspaces[0]
+    const s = { ...screen, workspaces: [{ ...w, cells: [{ ...w.cells[0], openedBy: 3 }] }] }
     expect(parseScreen(s)).toEqual(s)
   })
 

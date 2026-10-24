@@ -29,9 +29,10 @@ import {
   test,
   toggleView,
   typesInto,
-  workspaceGroups,
-  workspaceItems,
-  workspaceViews,
+  cellGroups,
+  cellItems,
+  cellViews,
+  workspaceNames,
   wrapSessionBin,
   type Launched
 } from './app'
@@ -52,8 +53,8 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 �
   await page.keyboard.type('export MARK=kept-$((1+1))\n')
   await newWorkspace(first, 2)
   await shellUp(page, 0)
-  await workspaceGroups(page).nth(1).locator('.fold').click()
-  await workspaceItems(page).nth(0).click()
+  await cellGroups(page).nth(1).locator('.fold').click()
+  await cellItems(page).nth(0).click()
   await toggleView(first, 'columns')
   await clickMenu(app, 'toggle-sidebar')
   await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
@@ -62,11 +63,8 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 �
   const { page: again } = await launch()
   await expect(again.locator('.sidebar')).toHaveClass(/collapsed/)
   await expect(again.locator('.terminals')).toHaveClass(/columns/)
-  await expect(workspaceItems(again)).toHaveCount(2)
-  await expect(workspaceGroups(again).nth(1).locator('.fold')).toHaveAttribute(
-    'aria-expanded',
-    'false'
-  )
+  await expect(cellItems(again)).toHaveCount(2)
+  await expect(cellGroups(again).nth(1).locator('.fold')).toHaveAttribute('aria-expanded', 'false')
   await expect(panes(again)).toHaveCount(2)
   await expect(panes(again).nth(1).locator('.terminal-view')).toHaveClass(/active/)
   await run(again, 'echo $MARK', 'kept-2')
@@ -214,7 +212,7 @@ function readResult(out: string): () => string | null {
   return () => (existsSync(out) ? readFileSync(out, 'utf8').trim() : null)
 }
 
-test('재시작 직후 선택하지 않은 workspace 의 남은 세션이 곧바로 부른 maru workspace new 는 그 workspace 뒤에 띄운다', async ({
+test('재시작 직후 선택하지 않은 cell 의 남은 세션이 곧바로 부른 maru cell new 는 그 cell 의 workspace 안, 그 cell 뒤에 띄운다', async ({
   launch,
   dataDir
 }) => {
@@ -222,17 +220,18 @@ test('재시작 직후 선택하지 않은 workspace 의 남은 세션이 곧바
   const { app, page } = first
   await newWorkspace(first, 2)
   await newWorkspace(first, 3)
-  await workspaceItems(page).nth(1).click()
+  await cellItems(page).nth(1).click()
   await run(page, 'echo up-$((1+1))', 'up-2')
-  const out = join(dataDir, 'workspace-new')
-  await page.keyboard.type(callOnReturn(`workspace new bash -c 'echo mark-new; read x'`, out))
-  await workspaceItems(page).nth(0).click()
-  await expect(workspaceViews(page).nth(0)).toHaveClass(/selected/)
+  const out = join(dataDir, 'cell-new')
+  await page.keyboard.type(callOnReturn(`cell new bash -c 'echo mark-new; read x'`, out))
+  await cellItems(page).nth(0).click()
+  await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
   await restartWith(app)
   const { page: again } = await launch()
   await expect.poll(readResult(out), { timeout: 15_000 }).toBe('code=0')
-  await expect(workspaceItems(again)).toHaveCount(4)
-  await expect(workspaceViews(again).nth(2).locator('.xterm-rows')).toContainText('mark-new')
+  await expect(cellItems(again)).toHaveCount(4)
+  await expect(workspaceNames(again)).toHaveCount(3)
+  await expect(cellViews(again).nth(2).locator('.xterm-rows')).toContainText('mark-new')
 })
 
 test('재시작 직후 남은 세션이 곧바로 부른 maru pane new 는 그 pane 을 나눈다', async ({

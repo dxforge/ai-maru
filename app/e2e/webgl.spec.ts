@@ -10,8 +10,8 @@ import {
   test,
   toggleView,
   WEBGL_CANVAS,
-  workspaceItems,
-  workspaceViews,
+  cellItems,
+  cellViews,
   type Launched
 } from './app'
 
@@ -47,24 +47,24 @@ async function loseContext(terminal: Locator): Promise<void> {
   }, WEBGL_CANVAS)
 }
 
-test('선택된 workspace 의 터미널은 WebGL 로, 선택되지 않은 workspace 의 터미널은 DOM 으로 그리고, 선택을 바꾸면 따라 바뀐다', async ({
+test('선택된 cell 의 터미널은 WebGL 로, 선택되지 않은 cell 의 터미널은 DOM 으로 그리고, 선택을 바꾸면 따라 바뀐다', async ({
   launch
 }) => {
   const launched = await launchWebgl(launch)
   const { app, page } = launched
   await split(app, page, 'split-right', 2)
-  await expect.poll(() => renderers(workspaceViews(page).nth(0))).toEqual(['webgl', 'webgl'])
+  await expect.poll(() => renderers(cellViews(page).nth(0))).toEqual(['webgl', 'webgl'])
 
   await newWorkspace(launched, 2)
-  await expect.poll(() => renderers(workspaceViews(page).nth(1))).toEqual(['webgl'])
-  await expect.poll(() => renderers(workspaceViews(page).nth(0))).toEqual(['dom', 'dom'])
+  await expect.poll(() => renderers(cellViews(page).nth(1))).toEqual(['webgl'])
+  await expect.poll(() => renderers(cellViews(page).nth(0))).toEqual(['dom', 'dom'])
 
-  await workspaceItems(page).first().click()
-  await expect.poll(() => renderers(workspaceViews(page).nth(0))).toEqual(['webgl', 'webgl'])
-  await expect.poll(() => renderers(workspaceViews(page).nth(1))).toEqual(['dom'])
+  await cellItems(page).first().click()
+  await expect.poll(() => renderers(cellViews(page).nth(0))).toEqual(['webgl', 'webgl'])
+  await expect.poll(() => renderers(cellViews(page).nth(1))).toEqual(['dom'])
 })
 
-test('columns 에서는 화면에 보이는 workspace 의 터미널만 WebGL 로 그리고, 스크롤해서 보이면 WebGL 로 바뀐다', async ({
+test('columns 에서는 화면에 보이는 cell 의 터미널만 WebGL 로 그리고, 스크롤해서 보이면 WebGL 로 바뀐다', async ({
   launch
 }) => {
   const launched = await launchWebgl(launch)
@@ -74,12 +74,12 @@ test('columns 에서는 화면에 보이는 workspace 의 터미널만 WebGL 로
   await toggleView(launched, 'columns')
   const area = page.locator('.terminals')
   await area.evaluate((el) => (el.scrollLeft = el.scrollWidth))
-  await expect.poll(() => renderers(workspaceViews(page).nth(0))).toEqual(['dom'])
-  await expect.poll(() => renderers(workspaceViews(page).nth(2))).toEqual(['webgl'])
+  await expect.poll(() => renderers(cellViews(page).nth(0))).toEqual(['dom'])
+  await expect.poll(() => renderers(cellViews(page).nth(2))).toEqual(['webgl'])
 
   await area.evaluate((el) => (el.scrollLeft = 0))
-  await expect.poll(() => renderers(workspaceViews(page).nth(0))).toEqual(['webgl'])
-  await expect.poll(() => renderers(workspaceViews(page).nth(2))).toEqual(['dom'])
+  await expect.poll(() => renderers(cellViews(page).nth(0))).toEqual(['webgl'])
+  await expect.poll(() => renderers(cellViews(page).nth(2))).toEqual(['dom'])
 
   await toggleView(launched, 'single')
   await expect.poll(() => renderers(page)).toEqual(['dom', 'dom', 'webgl'])
@@ -90,7 +90,7 @@ test('WebGL context 를 잃은 터미널은 보이는 동안 DOM 으로 그리�
 }) => {
   const launched = await launchWebgl(launch)
   const { page } = launched
-  const first = terminals(workspaceViews(page).nth(0))
+  const first = terminals(cellViews(page).nth(0))
   await expect.poll(() => renderer(first)).toBe('webgl')
 
   await loseContext(first)
@@ -100,7 +100,7 @@ test('WebGL context 를 잃은 터미널은 보이는 동안 DOM 으로 그리�
   await expect(panes(page).first().locator('.xterm-screen')).toBeVisible()
 
   await newWorkspace(launched, 2)
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
   await expect.poll(() => renderer(first)).toBe('webgl')
 })
 
@@ -119,13 +119,13 @@ async function screenWidth(
   })
 }
 
-test('WebGL 터미널은 pane 폭을 셀 단위로 채우고, renderer 가 바뀌어도 셸이 보는 열 수는 그대로다', async ({
+test('WebGL 터미널은 pane 폭을 글자 칸 단위로 채우고, renderer 가 바뀌어도 셸이 보는 열 수는 그대로다', async ({
   launch,
   dataDir
 }) => {
   const launched = await launchWebgl(launch)
   const { page } = launched
-  const first = terminals(workspaceViews(page).nth(0))
+  const first = terminals(cellViews(page).nth(0))
   await expect.poll(() => renderer(first)).toBe('webgl')
   const w = await screenWidth(first)
   const spare = w.room - SCROLLBAR_WIDTH - w.screen
@@ -135,7 +135,7 @@ test('WebGL 터미널은 pane 폭을 셀 단위로 채우고, renderer 가 바�
 
   await newWorkspace(launched, 2)
   await expect.poll(() => renderer(first)).toBe('dom')
-  await workspaceItems(page).first().click()
+  await cellItems(page).first().click()
   await expect.poll(() => renderer(first)).toBe('webgl')
   expect(await sttySize(page, dataDir)).toEqual(before)
 
@@ -144,7 +144,7 @@ test('WebGL 터미널은 pane 폭을 셀 단위로 채우고, renderer 가 바�
   expect(await sttySize(page, dataDir)).toEqual(before)
 })
 
-test('WebGL2 를 쓸 수 없으면 DOM 으로 그리고, pane 폭을 DOM 의 셀 단위로 채우며 columns 의 pane 은 80열이다', async ({
+test('WebGL2 를 쓸 수 없으면 DOM 으로 그리고, pane 폭을 DOM 의 글자 칸 단위로 채우며 columns 의 pane 은 80열이다', async ({
   launch,
   dataDir
 }) => {
@@ -185,7 +185,7 @@ test('WebGL 로 그려도 columns 의 pane 은 80열이다', async ({ launch, da
   await expect.poll(async () => (await sttySize(launched.page, dataDir)).cols).toBe(80)
 })
 
-test('pane 이 많은 workspace 사이를 한도보다 많이 오가도 WebGL context 가 한도를 넘지 않는다', async ({
+test('pane 이 많은 cell 사이를 한도보다 많이 오가도 WebGL context 가 한도를 넘지 않는다', async ({
   launch
 }) => {
   const launched = await launchWebgl(launch)
@@ -199,11 +199,11 @@ test('pane 이 많은 workspace 사이를 한도보다 많이 오가도 WebGL co
     for (let i = 0; i < 3; i++) await split(app, page, i % 2 ? 'split-down' : 'split-right', i + 2)
   }
   for (let i = 0; i < 40; i++)
-    await workspaceItems(page)
+    await cellItems(page)
       .nth(i % 4)
       .click()
   await expect
-    .poll(() => renderers(workspaceViews(page).nth(3)))
+    .poll(() => renderers(cellViews(page).nth(3)))
     .toEqual(['webgl', 'webgl', 'webgl', 'webgl'])
   expect(warnings).toEqual([])
 })

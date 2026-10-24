@@ -10,7 +10,7 @@ import {
   run,
   sockets,
   test,
-  workspaceItems
+  cellItems
 } from './app'
 
 /** 그 pane 의 claude 와 같은 알림을 받는다. */
@@ -89,7 +89,7 @@ test('같은 이름은 돌고 있으면 거절하고, 끝났으면 갈아 끼운
     'maru job new --name d sleep 100 >/dev/null; maru job new --name d sleep 100; echo code-$?',
     'code-1'
   )
-  await expect(rows(page)).toContainText('job d is running in this workspace')
+  await expect(rows(page)).toContainText('job d is running in this cell')
   await run(
     page,
     `maru job new --name e sh -c 'exit 0' >/dev/null; ${untilExited('e')}; maru job new --name e sh -c 'exit 5' >/dev/null; ${untilExited('e')}; echo rows=$(maru job list | awk '$2=="e"' | wc -l | tr -d ' ')`,
@@ -98,7 +98,7 @@ test('같은 이름은 돌고 있으면 거절하고, 끝났으면 갈아 끼운
   await run(page, 'maru job list', /e\s+exited 5/)
 })
 
-test('다른 workspace 의 job 은 보이지 않고, 마지막 pane 을 닫은 workspace 의 job 만 끝난다', async ({
+test('다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell 의 job 만 끝난다', async ({
   launch,
   dataDir
 }) => {
@@ -107,13 +107,13 @@ test('다른 workspace 의 job 은 보이지 않고, 마지막 pane 을 닫은 w
   await run(page, 'maru job new --name a sleep 100; echo first-$((1+1))', 'first-2')
   await newWorkspace(launched, 2)
   await run(page, 'maru job list', 'no jobs')
-  await run(page, 'maru job read a', 'no job a in this workspace')
+  await run(page, 'maru job read a', 'no job a in this cell')
   await run(page, 'maru job new --name b sleep 100; echo second-$((1+1))', 'second-2')
   expect(sockets(dataDir)).toHaveLength(4)
 
-  await workspaceItems(page).nth(0).click()
+  await cellItems(page).nth(0).click()
   await clickMenu(app, 'close-pane')
-  await expect(workspaceItems(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(1)
   await expect.poll(() => sockets(dataDir).length).toBe(2)
   await page.locator('.terminal-view.active .xterm-screen').click()
   await run(page, 'maru job list', /b\s+running/)

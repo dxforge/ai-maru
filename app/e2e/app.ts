@@ -350,7 +350,7 @@ export async function toggleView(
   await expect(page.locator('.terminals')).toHaveClass(new RegExp(mode))
 }
 
-export function workspaceViews(page: Page) {
+export function cellViews(page: Page) {
   return page.locator('.panes')
 }
 
@@ -418,12 +418,16 @@ export function gridRows(page: Page) {
   return rows(page).locator('> div')
 }
 
-export function workspaceItems(page: Page) {
-  return page.locator('.sidebar .workspace .name')
+export function cellItems(page: Page) {
+  return page.locator('.sidebar .cell .name')
 }
 
-export function workspaceGroups(page: Page) {
+export function cellGroups(page: Page) {
   return page.locator('.sidebar .group')
+}
+
+export function workspaceNames(page: Page) {
+  return page.locator('.sidebar .workspace-name')
 }
 
 export function paneRows(page: Page) {
@@ -457,11 +461,25 @@ export async function pressNew(app: ElectronApplication): Promise<void> {
   await clickMenu(app, 'new-workspace')
 }
 
-export async function newWorkspace({ app, page }: Launched, count: number): Promise<void> {
-  await pressNew(app)
-  await expect(workspaceItems(page)).toHaveCount(count)
+async function openFromMenu(
+  { app, page }: Launched,
+  id: 'new-workspace' | 'new-cell',
+  cellCount: number
+): Promise<void> {
+  await clickMenu(app, id)
+  await expect(cellItems(page)).toHaveCount(cellCount)
   await activeTerminal(page)
 }
+
+export async function newWorkspace(launched: Launched, cellCount: number): Promise<void> {
+  await openFromMenu(launched, 'new-workspace', cellCount)
+}
+
+export async function newCell(launched: Launched, cellCount: number): Promise<void> {
+  await openFromMenu(launched, 'new-cell', cellCount)
+}
+
+export const marked = (name: string): string => `bash -c 'echo mark-${name}; read x'`
 
 export async function split(
   app: ElectronApplication,
@@ -500,8 +518,8 @@ export async function resizeGridTo(
   await resizeBy(app, Math.round(cells * cell.width - grid.width), 0)
 }
 
-export async function workspaceWidth(page: Page, i = 0): Promise<number> {
-  return (await workspaceViews(page).nth(i).boundingBox())!.width
+export async function cellWidth(page: Page, i = 0): Promise<number> {
+  return (await cellViews(page).nth(i).boundingBox())!.width
 }
 
 export async function sidebarWidth(page: Page): Promise<number> {

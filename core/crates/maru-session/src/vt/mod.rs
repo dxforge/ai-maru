@@ -176,7 +176,7 @@ impl VtTerminal {
 
     pub fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {
         check_size(cols, rows)?;
-        // SAFETY: 인자는 모두 스칼라다. 헤드리스라 셀 픽셀 크기는 0 이다.
+        // SAFETY: 인자는 모두 스칼라다. 헤드리스라 글자 칸 픽셀 크기는 0 이다.
         let rc = unsafe { ffi::ghostty_terminal_resize(self.raw, cols, rows, 0, 0) };
         if rc != ffi::GHOSTTY_SUCCESS {
             bail!("ghostty_terminal_resize rc={rc}");
@@ -593,7 +593,7 @@ mod tests {
         }
     }
 
-    // 닫힌 링크는 커서 상태가 아니라 셀에만 남으므로, 셀마다의 hyperlink 를 싣는지 본다.
+    // 닫힌 링크는 커서 상태가 아니라 글자 칸에만 남으므로, 글자 칸마다의 hyperlink 를 싣는지 본다.
     #[test]
     fn replay_carries_the_hyperlinks_of_cells() {
         let mut t = term();

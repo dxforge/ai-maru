@@ -10,12 +10,12 @@ import {
   split,
   test,
   toggleView,
-  workspaceViews,
+  cellViews,
   writeConfig
 } from './app'
 
 function fontSizes(page: Page): Promise<string[][]> {
-  return workspaceViews(page).evaluateAll((ws) =>
+  return cellViews(page).evaluateAll((ws) =>
     ws.map((w) =>
       Array.from(w.querySelectorAll('.xterm-rows'), (r) => getComputedStyle(r).fontSize)
     )
@@ -23,13 +23,13 @@ function fontSizes(page: Page): Promise<string[][]> {
 }
 
 const cardWidths = (page: Page): Promise<number[]> =>
-  workspaceViews(page).evaluateAll((ws) => ws.map((w) => w.getBoundingClientRect().width))
+  cellViews(page).evaluateAll((ws) => ws.map((w) => w.getBoundingClientRect().width))
 
 const increase = (app: ElectronApplication) => clickMenu(app, 'increase-font-size')
 const decrease = (app: ElectronApplication) => clickMenu(app, 'decrease-font-size')
 const reset = (app: ElectronApplication) => clickMenu(app, 'reset-font-size')
 
-test('Increase·Decrease·Reset Font Size 는 선택한 workspace 의 모든 pane 만 1px 씩 바꾸고, 셸이 본 크기도 바뀐다', async ({
+test('Increase·Decrease·Reset Font Size 는 선택한 cell 의 모든 pane 만 1px 씩 바꾸고, 셸이 본 크기도 바뀐다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -75,7 +75,7 @@ test('설정 파일의 font-size 와 같은 8–32 를 넘지 않고, Reset 은 
   await expect.poll(() => fontSizes(page)).toEqual([['32px']])
 })
 
-test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않았거나 설정 크기로 돌아온 workspace 만 따르고, 줄 높이는 모두 따른다', async ({
+test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않았거나 설정 크기로 돌아온 cell 만 따르고, 줄 높이는 모두 따른다', async ({
   launch,
   dataDir
 }) => {
@@ -84,7 +84,7 @@ test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않았거나 
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
   await increase(app)
-  await clickMenu(app, 'previous-workspace')
+  await clickMenu(app, 'previous-cell')
   await increase(app)
   await decrease(app)
   await expect.poll(() => fontSizes(page)).toEqual([['14px'], ['14px'], ['15px']])
@@ -93,7 +93,7 @@ test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않았거나 
   await expect.poll(() => fontSizes(page)).toEqual([['18px'], ['18px'], ['15px']])
 
   const rowHeight = () =>
-    workspaceViews(page)
+    cellViews(page)
       .last()
       .evaluate((w) => w.querySelector('.xterm-rows > div')!.getBoundingClientRect().height)
   const row = await rowHeight()
@@ -102,7 +102,7 @@ test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않았거나 
   expect(await fontSizes(page)).toEqual([['18px'], ['18px'], ['15px']])
 })
 
-test('나눈 pane 은 workspace 의 크기를 쓰고, 새 workspace 는 띄운 쪽이 아니라 설정 파일의 크기로 시작한다', async ({
+test('나눈 pane 은 cell 의 크기를 쓰고, 새 workspace 는 띄운 쪽이 아니라 설정 파일의 크기로 시작한다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -114,7 +114,7 @@ test('나눈 pane 은 workspace 의 크기를 쓰고, 새 workspace 는 띄운 �
   await expect.poll(() => fontSizes(page)).toEqual([['16px', '16px'], ['14px']])
 })
 
-test('재시작하면 workspace 마다 바꾼 크기를 되살리고, columns 카드 폭과 셸이 본 크기도 그대로다', async ({
+test('재시작하면 cell 마다 바꾼 크기를 되살리고, columns 카드 폭과 셸이 본 크기도 그대로다', async ({
   launch
 }) => {
   const first = await launch()
@@ -146,11 +146,11 @@ test('columns 보기에서 크기를 키운 카드는 pane 이 80열인 채로 �
   await expect.poll(async () => (await shellSize(page)).cols).toBe(80)
 
   const measure = (i: number) =>
-    workspaceViews(page)
+    cellViews(page)
       .nth(i)
       .evaluate((w) => ({
         width: w.getBoundingClientRect().width,
-        header: w.querySelector('.workspace-header')!.getBoundingClientRect().height,
+        header: w.querySelector('.cell-header')!.getBoundingClientRect().height,
         pane: w.querySelector('.pane-header')!.getBoundingClientRect().height,
         title: getComputedStyle(w.querySelector('.pane-header .title')!).fontSize
       }))
@@ -206,7 +206,7 @@ test('팔레트 입력창에 포커스가 있으면 창의 keydown 은 ⌘= / �
   expect(await fontSizes(page)).toEqual([['14px']])
 })
 
-test('설정 파일의 글꼴을 바꿔도 셀 크기가 같으면 columns 카드 폭과 셸이 본 크기가 그대로다', async ({
+test('설정 파일의 글꼴을 바꿔도 글자 칸 크기가 같으면 columns 카드 폭과 셸이 본 크기가 그대로다', async ({
   launch,
   dataDir
 }) => {
@@ -219,7 +219,7 @@ test('설정 파일의 글꼴을 바꿔도 셀 크기가 같으면 columns 카�
   const widths = await cardWidths(page)
   const before = await shellSize(page)
 
-  // 없는 글꼴은 건너뛰고 기본 글꼴로 그리므로 셀 크기는 그대로이고 글꼴 값만 달라진다.
+  // 없는 글꼴은 건너뛰고 기본 글꼴로 그리므로 글자 칸 크기는 그대로이고 글꼴 값만 달라진다.
   writeConfig(dataDir, '[terminal]\nfont-family = "NoSuchFont"\n')
   await expect(page.locator('.toast')).toContainText('NoSuchFont')
   await expect(page.locator('.xterm-rows').first()).toHaveCSS('font-family', /NoSuchFont/)

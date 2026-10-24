@@ -7,11 +7,12 @@ describe('filterCommands', () => {
   it('빈 입력이면 팔레트에 보일 명령을 목록 순서대로 모두 준다', () => {
     const all = [
       'New Workspace',
+      'New Cell',
       'Split Right',
       'Split Down',
       'Close Pane',
-      'Next Workspace',
-      'Previous Workspace',
+      'Next Cell',
+      'Previous Cell',
       'Toggle Sidebar',
       'Toggle Canvas',
       'Toggle View Mode',
@@ -22,8 +23,8 @@ describe('filterCommands', () => {
       'Increase Font Size',
       'Decrease Font Size',
       'Reset Font Size',
-      'Widen Workspace',
-      'Narrow Workspace',
+      'Widen Cell',
+      'Narrow Cell',
       'Restart'
     ]
     expect(titles('')).toEqual(all)

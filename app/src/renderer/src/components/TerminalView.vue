@@ -3,7 +3,7 @@ import { shallowRef } from 'vue'
 import { trackMetaKey } from '../terminal/links'
 
 // 창 안의 어느 터미널도 WebGL addon 을 적용한 적이 없을 때 적용에 실패하면 켠다. 그동안은 renderer 가
-// 바뀔 일이 없으므로 모든 터미널이 DOM 의 셀 폭으로 열 수를 센다.
+// 바뀔 일이 없으므로 모든 터미널이 DOM 의 글자 칸 폭으로 열 수를 센다.
 const webglUnavailable = shallowRef(false)
 let webglLoaded = false
 const metaKey = trackMetaKey(window)
@@ -32,7 +32,7 @@ import { GHOSTTY, xtermTheme } from '../../../shared/theme'
 
 const {
   sessionId,
-  workspaceId,
+  cellId,
   startDir = undefined,
   command = undefined,
   attach = undefined,
@@ -41,12 +41,12 @@ const {
   font
 } = defineProps<{
   sessionId: string
-  workspaceId: string
+  cellId: string
   startDir?: string
   command?: readonly string[]
   attach?: boolean
   active: boolean
-  /** 터미널이 속한 workspace 가 화면에 나와 있다. 겹쳐 숨은 workspace 도 화면 안에 있어 IntersectionObserver 로는 가려낼 수 없다. */
+  /** 터미널이 속한 cell 이 화면에 나와 있다. 겹쳐 숨은 cell 도 화면 안에 있어 IntersectionObserver 로는 가려낼 수 없다. */
   shown: boolean
   font: TerminalFont
 }>()
@@ -57,7 +57,7 @@ const emit = defineEmits<{
   spawned: []
   title: [title: string]
   linkFailed: [reason: string]
-  /** `floored` 면 셀 폭이 WebGL 이 내림한 값이고, `fitTerminal` 이 열 수를 이 폭으로 직접 나눈다. */
+  /** `floored` 면 글자 칸 폭이 WebGL 이 내림한 값이고, `fitTerminal` 이 열 수를 이 폭으로 직접 나눈다. */
   cell: [cell: Size, floored: boolean]
 }>()
 
@@ -143,7 +143,7 @@ term.parser.registerOscHandler(7, (data) => {
 })
 term.onTitleChange((title) => emit('title', title))
 // css.cell 은 열·행 수마다 반올림이 달라, 그와 상관없는 device 값으로 계산한다.
-// WebGL renderer 는 셀 폭을 device px 로 내림한다. DOM 으로 그리는 동안에도 그 폭을 써서, renderer 가
+// WebGL renderer 는 글자 칸 폭을 device px 로 내림한다. DOM 으로 그리는 동안에도 그 폭을 써서, renderer 가
 // 바뀔 때 열 수가 바뀌어 프로그램에 resize 가 가지 않게 한다. 대신 DOM 으로 그리면 pane 보다 넓어져 오른쪽
 // 몇 열이 잘린다.
 const floorCell = (): boolean => window.maru.webgl && !webglUnavailable.value
@@ -153,7 +153,7 @@ const cell = (d: IRenderDimensions): Size => ({
 })
 let lastCell: Size | undefined
 /**
- * 창을 DPR 이 다른 화면으로 옮기거나 글꼴 설정이 바뀌면 셀 크기가 바뀐다. 이때 pane 크기는 그대로라
+ * 창을 DPR 이 다른 화면으로 옮기거나 글꼴 설정이 바뀌면 글자 칸 크기가 바뀐다. 이때 pane 크기는 그대로라
  * `ResizeObserver` 가 돌지 않으므로, 이 함수가 열·행 수를 다시 맞춘다.
  */
 function checkCell(force = false): void {
@@ -164,7 +164,7 @@ function checkCell(force = false): void {
   lastCell = c
   emit('cell', c, floorCell())
   if (!(changed || force) || !started) return
-  // App 이 새 셀 크기로 pane 배치를 고친 뒤에 맞춘다. 먼저 맞추면 옛 pane 높이로 한 번, 새 pane 높이로 또 한 번
+  // App 이 새 글자 칸 크기로 pane 배치를 고친 뒤에 맞춘다. 먼저 맞추면 옛 pane 높이로 한 번, 새 pane 높이로 또 한 번
   // 프로그램에 resize 가 간다.
   void nextTick(() => host.value && session!.primary && fitTerminal())
 }
@@ -237,7 +237,7 @@ function updateRenderer(): void {
     if (!webglLoaded) webglUnavailable.value = true
   }
 }
-// 셀 폭을 내림하는지가 바뀌므로, 폭이 같아도 `cell` 을 다시 알린다.
+// 글자 칸 폭을 내림하는지가 바뀌므로, 폭이 같아도 `cell` 을 다시 알린다.
 watch(webglUnavailable, () => checkCell(true))
 const intersection = window.maru.webgl
   ? new IntersectionObserver((entries) => {
@@ -247,8 +247,8 @@ const intersection = window.maru.webgl
   : undefined
 watch(() => shown, updateRenderer)
 // xterm 은 줄 높이만 바뀌면 `onDimensionsChange` 를 내지 않으므로 여기서 `checkCell` 을 부른다.
-// App 은 크기를 바꾼 workspace 의 글꼴을 다시 그릴 때마다 새 객체로 넘기므로 값으로 견준다.
-// App 은 글꼴마다 셀 크기를 두므로, 셀 크기가 그대로여도 `cell` 을 내서 App 이 새 글꼴의 셀 크기를 기록하게 한다.
+// App 은 크기를 바꾼 cell 의 글꼴을 다시 그릴 때마다 새 객체로 넘기므로 값으로 견준다.
+// App 은 글꼴마다 글자 칸 크기를 두므로, 글자 칸 크기가 그대로여도 `cell` 을 내서 App 이 새 글꼴의 글자 칸 크기를 기록하게 한다.
 watch(
   () => font,
   (f, old) => {
@@ -303,7 +303,7 @@ onMounted(() => {
   // reactive 배열의 proxy 는 IPC 로 보낼 수 없다.
   conn = openSession({
     id: sessionId,
-    workspace: workspaceId,
+    cell: cellId,
     cwd: startDir,
     command: command && [...command],
     attach

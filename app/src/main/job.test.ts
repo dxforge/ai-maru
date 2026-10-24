@@ -9,7 +9,7 @@ const C = 's-0000000c'
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
-function setup(workspaces: Record<string, string> = { [A]: 'w-1', [B]: 'w-1', [C]: 'w-2' }) {
+function setup(cells: Record<string, string> = { [A]: 'c-1', [B]: 'c-1', [C]: 'c-2' }) {
   let n = 0
   const waits = new Map<string, { end: (e: SessionExit | null) => void; cancelled: boolean }>()
   const emitted: [string, object][] = []
@@ -18,7 +18,7 @@ function setup(workspaces: Record<string, string> = { [A]: 'w-1', [B]: 'w-1', [C
   const spawns: { id: string; cwd: string; command: string[] }[] = []
   const deps = {
     newId: () => `s-${(++n).toString(16).padStart(8, '0')}`,
-    workspaceOf: (s: string) => workspaces[s],
+    cellOf: (s: string) => cells[s],
     spawn: vi.fn(async (id: string, cwd: string, command: string[]) => {
       spawns.push({ id, cwd, command })
     }),
@@ -123,12 +123,12 @@ describe('job.new', () => {
     }
   )
 
-  it('부른 세션이 workspace 에 없으면 거절한다', async () => {
+  it('부른 세션이 cell 에 없으면 거절한다', async () => {
     const t = setup()
     await rejects(t.start({}, 's-0000000f'), InvalidParams)
   })
 
-  it('같은 workspace 에서 같은 이름이 돌고 있으면 거절하고, 다른 workspace 는 받는다', async () => {
+  it('같은 cell 에서 같은 이름이 돌고 있으면 거절하고, 다른 cell 은 받는다', async () => {
     const t = setup()
     await t.start({ name: 'dev' })
     await rejects(t.start({ name: 'dev' }, B), CliError, 'job_name_taken')
@@ -178,7 +178,7 @@ describe('job.new', () => {
 })
 
 describe('job.list', () => {
-  it('부른 workspace 의 것만 띄운 순서로, 끝난 상태와 함께 보인다', async () => {
+  it('부른 cell 의 것만 띄운 순서로, 끝난 상태와 함께 보인다', async () => {
     const t = setup()
     const a = await t.start({ name: 'a' })
     await t.start({ name: 'other' }, C)
@@ -191,7 +191,7 @@ describe('job.list', () => {
     ])
   })
 
-  it('job 안에서 부르면 그 job 의 workspace 를 본다', async () => {
+  it('job 안에서 부르면 그 job 의 cell 을 본다', async () => {
     const t = setup()
     const id = await t.start({ name: 'parent' }, C)
     expect((await t.list(id)).map((j) => j.name)).toEqual(['parent'])
@@ -200,18 +200,18 @@ describe('job.list', () => {
   })
 })
 
-describe('workspaceOf', () => {
-  it('pane 세션은 그 pane 의, job 세션은 그 job 의 workspace 이고, 모르는 세션은 없다', async () => {
+describe('cellOf', () => {
+  it('pane 세션은 그 pane 의, job 세션은 그 job 의 cell 이고, 모르는 세션은 없다', async () => {
     const { jobs, start } = setup()
     const job = await start({}, C)
-    expect(jobs.workspaceOf(A)).toBe('w-1')
-    expect(jobs.workspaceOf(job)).toBe('w-2')
-    expect(jobs.workspaceOf('s-000000ff')).toBeUndefined()
+    expect(jobs.cellOf(A)).toBe('c-1')
+    expect(jobs.cellOf(job)).toBe('c-2')
+    expect(jobs.cellOf('s-000000ff')).toBeUndefined()
   })
 })
 
 describe('job.read·send·kill', () => {
-  it('이름과 session id 로 찾고, 다른 workspace 의 job 은 없는 job 이다', async () => {
+  it('이름과 session id 로 찾고, 다른 cell 의 job 은 없는 job 이다', async () => {
     const t = setup()
     const id = await t.start({ name: 'dev' })
     expect(await t.call('job.read', { target: 'dev' })).toEqual({ text: `out of ${id}` })
@@ -316,24 +316,24 @@ describe('알림', () => {
   })
 })
 
-describe('closeWorkspace', () => {
+describe('closeCell', () => {
   it('띄우는 중인 job 도 뜬 뒤에 끈다', async () => {
     const t = setup()
     let release = (): void => {}
     t.deps.spawn.mockImplementationOnce(() => new Promise<void>((r) => (release = r)))
     const started = t.start({ name: 'dev' })
     await flush()
-    await t.jobs.closeWorkspace('w-1')
+    await t.jobs.closeCell('c-1')
     release()
     await expect(started).rejects.toThrow()
     expect(t.killed).toEqual(['s-00000001', 's-00000001'])
   })
 
-  it('그 workspace 의 job 만 끄고 알리지 않는다', async () => {
+  it('그 cell 의 job 만 끄고 알리지 않는다', async () => {
     const t = setup()
     const a = await t.start({ name: 'a' })
     const c = await t.start({ name: 'c' }, C)
-    await t.jobs.closeWorkspace('w-1')
+    await t.jobs.closeCell('c-1')
     expect(t.killed).toEqual([a])
     expect(await t.list(C)).toHaveLength(1)
     await flush()
@@ -352,12 +352,12 @@ describe('재시작', () => {
     const file = t.jobs.save()
     expect(t.waits.get(run)!.cancelled).toBe(true)
     expect(file).toEqual({
-      version: 1,
+      version: 2,
       jobs: [
         {
           session: run,
           name: 'run',
-          workspace: 'w-1',
+          cell: 'c-1',
           owner: A,
           command: ['sleep', '9'],
           pending: false
@@ -365,7 +365,7 @@ describe('재시작', () => {
         {
           session: done,
           name: 'done',
-          workspace: 'w-1',
+          cell: 'c-1',
           owner: A,
           command: ['sleep', '9'],
           exit: { code: 0, signal: null },
@@ -404,12 +404,12 @@ describe('재시작', () => {
   it('restore 는 끝나지 않은 job 에만 wait 를 걸고, 붙여 둔 알림만 보낸다', async () => {
     const t = setup()
     const file: JobsFile = {
-      version: 1,
+      version: 2,
       jobs: [
-        { session: 's-000000a1', workspace: 'w-1', owner: A, command: ['a'], pending: false },
+        { session: 's-000000a1', cell: 'c-1', owner: A, command: ['a'], pending: false },
         {
           session: 's-000000a2',
-          workspace: 'w-1',
+          cell: 'c-1',
           owner: A,
           command: ['b'],
           exit: { code: 1, signal: null },
@@ -417,7 +417,7 @@ describe('재시작', () => {
         },
         {
           session: 's-000000a3',
-          workspace: 'w-1',
+          cell: 'c-1',
           owner: A,
           command: ['c'],
           exit: { code: 0, signal: null },
@@ -441,12 +441,13 @@ describe('재시작', () => {
 
 describe('parseJobsFile', () => {
   it('모양이 맞는 파일만 받는다', () => {
-    const job = { session: A, workspace: 'w-1', owner: B, command: ['x'], pending: false }
-    expect(parseJobsFile({ version: 1, jobs: [job] })).toEqual({ version: 1, jobs: [job] })
-    expect(parseJobsFile({ version: 2, jobs: [job] })).toBeNull()
-    expect(parseJobsFile({ version: 1, jobs: [{ ...job, session: 'x' }] })).toBeNull()
-    expect(parseJobsFile({ version: 1, jobs: [{ ...job, command: [] }] })).toBeNull()
-    expect(parseJobsFile({ version: 1, jobs: [{ ...job, exit: { code: 'x' } }] })).toBeNull()
+    const job = { session: A, cell: 'c-1', owner: B, command: ['x'], pending: false }
+    expect(parseJobsFile({ version: 2, jobs: [job] })).toEqual({ version: 2, jobs: [job] })
+    expect(parseJobsFile({ version: 1, jobs: [job] })).toBeNull()
+    expect(parseJobsFile({ version: 3, jobs: [job] })).toBeNull()
+    expect(parseJobsFile({ version: 2, jobs: [{ ...job, session: 'x' }] })).toBeNull()
+    expect(parseJobsFile({ version: 2, jobs: [{ ...job, command: [] }] })).toBeNull()
+    expect(parseJobsFile({ version: 2, jobs: [{ ...job, exit: { code: 'x' } }] })).toBeNull()
     expect(parseJobsFile(null)).toBeNull()
   })
 })

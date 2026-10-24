@@ -1,4 +1,4 @@
-import type { PaneNewRequest, PaneReply, WorkspaceNewRequest } from '../shared/pane'
+import type { CellNewRequest, PaneNewRequest, PaneReply } from '../shared/pane'
 import { isSessionId } from '../shared/session'
 import {
   CliError,
@@ -13,21 +13,21 @@ import {
 // 안에 끝나거나 실패하므로 그보다는 길다.
 const REPLY_MS = 8_000
 
-export type PaneChannel = 'pane:new' | 'pane:close' | 'workspace:new' | 'pane:cancel'
+export type PaneChannel = 'pane:new' | 'pane:close' | 'cell:new' | 'pane:cancel'
 
 const optionalCommand = (v: unknown): string[] | undefined =>
   v === undefined ? undefined : requireCommand(v)
 
 /**
  * pane 은 renderer 가 들고 있다. `createPanes` 는 요청을 창에 넘기고 `reply` 로 받은 답을 돌려준다.
- * `workspaceOf` 는 세션(pane 이나 job)의 workspace id 를 돌려준다.
+ * `cellOf` 는 세션(pane 이나 job)의 cell id 를 돌려준다.
  *
  * 호출하는 쪽은 창이 준비됐다고 알리면 `ready` 를, 창이 새 문서로 바뀌면 `unready` 를 부른다. `ready` 를 부르기
  * 전이나 `unready` 를 부른 뒤에 온 요청은 쌓아 두었다가 다음 `ready` 때 넘긴다(`docs/architecture.md` 의 "pane 요청은 창이 준비된 뒤에 넘긴다").
  */
 export function createPanes(
   send: (channel: PaneChannel, id: number, arg: unknown) => boolean,
-  workspaceOf: (session: string) => string | undefined,
+  cellOf: (session: string) => string | undefined,
   replyMs = REPLY_MS
 ): {
   handlers: Handlers
@@ -40,7 +40,7 @@ export function createPanes(
   const pending = new Map<number, (reply: PaneReply) => void>()
   const waiting = new Map<number, () => void>()
 
-  // 되살린 pane 의 workspace 는 그 터미널이 `session:open` 을 보낸 뒤에야 main 이 안다. 그래서 `arg` 는 쌓을
+  // 되살린 pane 의 cell 은 그 터미널이 `session:open` 을 보낸 뒤에야 main 이 안다. 그래서 `arg` 는 쌓을
   // 때가 아니라 창에 넘길 때 만든다.
   async function request(channel: PaneChannel, arg: () => unknown): Promise<PaneReply> {
     const id = nextId++
@@ -112,12 +112,12 @@ export function createPanes(
       await ask('pane:close', () => target)
       return null
     },
-    'workspace.new': async (params, session) => {
+    'cell.new': async (params, session) => {
       const cwd = requireCwd(params.cwd)
       const command = optionalCommand(params.command)
-      return askSession('workspace:new', (): WorkspaceNewRequest => {
-        const workspace = workspaceOf(session)
-        return { cwd, ...(workspace && { workspace }), ...(command && { command }) }
+      return askSession('cell:new', (): CellNewRequest => {
+        const cell = cellOf(session)
+        return { cwd, ...(cell && { cell }), ...(command && { command }) }
       })
     }
   }

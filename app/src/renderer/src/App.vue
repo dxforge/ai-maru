@@ -39,7 +39,7 @@ import {
   stepPaneCols,
   terminalPadding
 } from './workspace/columns'
-import { tildePath, windowTitle, workspaceLabel } from './workspace/cwd'
+import { cellLabel, tildePath, windowTitle } from './workspace/cwd'
 import { canSplit, snapRects, type Box, type Size } from './workspace/grid'
 import {
   columnCount,
@@ -51,7 +51,7 @@ import {
   type SplitDirection,
   type Widths
 } from './workspace/layout'
-import { createWorkspaces, focusedPane, type Workspace } from './workspace/store'
+import { createWorkspaces, focusedPane, startDirOf, type Cell } from './workspace/store'
 
 const canvas = createCanvas()
 window.maru.onCanvasPut(canvas.put)
@@ -80,29 +80,36 @@ window.maru.onConfig(config.apply)
 const headerBottom = computed(() => config.layout.value.header === 'bottom')
 
 function stepFont(by: 1 | -1): void {
-  const w = workspaces.selected()
-  if (!w) return
+  const c = workspaces.selected()
+  if (!c) return
   const configured = config.font.value.fontSize
-  const size = stepFontSize(w.fontSize ?? configured, by)
-  workspaces.setFontSize(w.key, fontSizeOverride(size, configured))
+  const size = stepFontSize(c.fontSize ?? configured, by)
+  workspaces.setFontSize(c.key, fontSizeOverride(size, configured))
 }
 
 function resetFont(): void {
-  const w = workspaces.selected()
-  if (w) workspaces.setFontSize(w.key, undefined)
+  const c = workspaces.selected()
+  if (c) workspaces.setFontSize(c.key, undefined)
 }
 
 function stepWidth(by: 1 | -1): void {
-  const w = workspaces.selected()
-  if (!w || viewMode.value !== 'columns') return
-  const cols = stepPaneCols(w.paneCols ?? PANE_COLS, by)
-  workspaces.setPaneCols(w.key, cols === PANE_COLS ? undefined : cols)
+  const c = workspaces.selected()
+  if (!c || viewMode.value !== 'columns') return
+  const cols = stepPaneCols(c.paneCols ?? PANE_COLS, by)
+  workspaces.setPaneCols(c.key, cols === PANE_COLS ? undefined : cols)
+}
+
+function startDir(): string | undefined {
+  const c = workspaces.selected()
+  return c && startDirOf(focusedPane(c))
 }
 
 function newWorkspace(): void {
-  const w = workspaces.selected()
-  const p = w && focusedPane(w)
-  workspaces.open(p?.cwd ?? p?.startDir)
+  workspaces.open(startDir())
+}
+
+function newCell(): void {
+  workspaces.openCell(startDir())
 }
 
 type Terminal = InstanceType<typeof TerminalView>
@@ -115,30 +122,30 @@ function setTerminal(key: number, t: unknown): void {
 // 보이지 않는 터미널에는 포커스를 줄 수 없어, 선택이 화면에 반영된 뒤에 준다.
 async function focusSelected(): Promise<void> {
   await nextTick()
-  const w = workspaces.selected()
-  if (w) terminals.get(w.focused)?.focus()
+  const c = workspaces.selected()
+  if (c) terminals.get(c.focused)?.focus()
 }
 
 // 선택이 그대로인 클릭에서는 TerminalView 의 active watch 와 아래의 스크롤 watch 가 돌지 않아,
 // 여기서 포커스를 주고 스크롤로 밀려난 pane 을 다시 보인다.
-function selectWorkspace(key: number): void {
+function selectCell(key: number): void {
   workspaces.select(key)
   void focusSelected().then(revealFocused)
 }
 
-function stepWorkspace(by: 1 | -1): void {
+function stepCell(by: 1 | -1): void {
   const key = workspaces.step(by)
-  if (key !== undefined) selectWorkspace(key)
+  if (key !== undefined) selectCell(key)
 }
 
 function closePane(): void {
-  const w = workspaces.selected()
-  if (!w) return
-  removePane(w.focused)
+  const c = workspaces.selected()
+  if (!c) return
+  removePane(c.focused)
   void focusSelected()
 }
 
-// `maru pane new`·`maru workspace new` 로 열어 세션이 뜨기를 기다리는 pane → 답할 요청 id.
+// `maru pane new`·`maru cell new` 로 열어 세션이 뜨기를 기다리는 pane → 답할 요청 id.
 const paneRequests = new Map<number, number>()
 
 function answerPaneRequest(pane: number, reply: PaneReply): void {
@@ -153,13 +160,13 @@ function removePane(
   message = 'the pane was closed before its session started'
 ): void {
   // 세션이 스스로 끝나 닫는 pane 도 kill 을 보낸다 — docs/architecture.md 의
-  // "main 이 아는 세션의 workspace". 이미 끝난 세션의 kill 은 세션 소켓에 닿지 못해 아무것도 하지 않는다(`main/session.ts` 의 `requestKill`).
+  // "main 이 아는 세션의 cell". 이미 끝난 세션의 kill 은 세션 소켓에 닿지 못해 아무것도 하지 않는다(`main/session.ts` 의 `requestKill`).
   terminals.get(pane)?.kill()
   answerPaneRequest(pane, { error: 'open_failed', message })
   workspaces.closePane(pane)
 }
 
-// ⌘D 로 나눈 pane 은 오류를 보인 채 남지만, `maru pane new`·`maru workspace new` 의 pane 은 띄운 쪽이 이유를
+// ⌘D 로 나눈 pane 은 오류를 보인 채 남지만, `maru pane new`·`maru cell new` 의 pane 은 띄운 쪽이 이유를
 // 받으므로 닫는다.
 function paneFailed(pane: number, message: string): void {
   if (paneRequests.has(pane)) removePane(pane, message)
@@ -184,8 +191,8 @@ window.maru.onPaneNew((id, { session, cwd, direction, command, full }) => {
   paneRequests.set(workspaces.splitFrom(from.key, direction, { startDir: cwd, command }, full), id)
 })
 
-window.maru.onWorkspaceNew((id, { workspace, cwd, command }) => {
-  paneRequests.set(workspaces.openFrom(workspace, { startDir: cwd, command }), id)
+window.maru.onCellNew((id, { cell, cwd, command }) => {
+  paneRequests.set(workspaces.openCellFrom(cell, { startDir: cwd, command }), id)
 })
 
 // `pane:cancel` 은 main 이 시간 초과한 요청의 id 를 싣는다. 그 요청으로 열어 아직 세션을 기다리는 pane 을 닫는다
@@ -259,7 +266,7 @@ function resizeCanvas(e: PointerEvent): void {
 
 const viewMode = ref<'single' | 'columns'>(prefs.viewMode ?? 'columns')
 const widths = computed<Widths>(() => (viewMode.value === 'columns' ? 'columns' : 'half'))
-// 셀 크기는 글꼴이 정하므로 글꼴마다 마지막으로 잰 값 하나로 셈한다. 그래서 새로 연 workspace 도 같은 글꼴의 터미널이
+// 글자 칸 크기는 글꼴이 정하므로 글꼴마다 마지막으로 잰 값 하나로 셈한다. 그래서 새로 연 cell 도 같은 글꼴의 터미널이
 // 잰 값으로 바로 그린다.
 const cells = reactive(new Map<string, Size>())
 const cellFloored = ref(false)
@@ -270,9 +277,9 @@ const fontKey = (f: TerminalFont): string => `${f.fontFamily}\n${f.fontSize}\n${
 const cellOf = (font: TerminalFont): Size => cells.get(fontKey(font)) ?? NO_CELL
 const rowOf = (cell: Size): number => cell.height || FALLBACK_ROW
 
-function fontOf(w: Pick<Workspace, 'fontSize'>): TerminalFont {
+function fontOf(c: Pick<Cell, 'fontSize'>): TerminalFont {
   const font = config.font.value
-  return w.fontSize === undefined ? font : { ...font, fontSize: w.fontSize }
+  return c.fontSize === undefined ? font : { ...font, fontSize: c.fontSize }
 }
 
 function gridVars(cell: Size, font: TerminalFont) {
@@ -288,7 +295,7 @@ function gridVars(cell: Size, font: TerminalFont) {
 const sameSize = (a: Size | undefined, b: Size): boolean =>
   a?.width === b.width && a.height === b.height
 
-/** workspace 마다 pane 이 놓이는 영역의 크기. CSS 가 정하는 헤더·여백을 JS 에서 다시 계산하지 않게 잰다. */
+/** cell 마다 pane 이 놓이는 영역의 크기. CSS 가 정하는 헤더·여백을 JS 에서 다시 계산하지 않게 잰다. */
 const gridSizes = reactive(new Map<number, Size>())
 const gridEls = new Map<number, Element>()
 const gridKeys = new WeakMap<Element, number>()
@@ -370,7 +377,7 @@ function placement(b: Box, unit: string, bodyHeight?: number) {
   }
 }
 
-// FitAddon 은 pane 높이를 정수로 잘라 읽고 반올림한 셀 높이로 나눠 행 하나를 잃곤 하므로, 헤더를 뺀 행 수보다
+// FitAddon 은 pane 높이를 정수로 잘라 읽고 반올림한 글자 칸 높이로 나눠 행 하나를 잃곤 하므로, 헤더를 뺀 행 수보다
 // 반 행 큰 높이를 준다. 넘친 반 행은 헤더가 아래면 헤더가 덮고, 위면 pane 이 자른다.
 function bodyHeight(b: Box, row: number): number {
   const rows = Math.max(0, Math.floor(b.height / row - 1 + EPSILON))
@@ -414,19 +421,19 @@ function areaOf(layout: Layout, paneCols: number | undefined, cell: Size, measur
 }
 
 function roomFor(from: number, direction: SplitDirection, full: boolean): boolean {
-  const w = workspaces.owner(from)
-  const measured = w && gridSizes.get(w.key)
-  if (!w || !measured) return true
-  const cell = cellOf(fontOf(w))
-  const next = full ? splitRoot(w.layout, -1, direction) : splitPane(w.layout, from, -1, direction)
-  const area = (layout: Layout): Size => areaOf(layout, w.paneCols, cell, measured)
-  return canSplit(w.layout, area(w.layout), next, area(next), paneMin(cell))
+  const c = workspaces.owner(from)
+  const measured = c && gridSizes.get(c.key)
+  if (!c || !measured) return true
+  const cell = cellOf(fontOf(c))
+  const next = full ? splitRoot(c.layout, -1, direction) : splitPane(c.layout, from, -1, direction)
+  const area = (layout: Layout): Size => areaOf(layout, c.paneCols, cell, measured)
+  return canSplit(c.layout, area(c.layout), next, area(next), paneMin(cell))
 }
 
 function splitSelected(direction: SplitDirection): void {
-  const w = workspaces.selected()
-  if (!w) return
-  if (!roomFor(w.focused, direction, false)) {
+  const c = workspaces.selected()
+  if (!c) return
+  if (!roomFor(c.focused, direction, false)) {
     return toasts.put('split', {
       level: 'warning',
       title: 'No space for a new pane',
@@ -438,27 +445,27 @@ function splitSelected(direction: SplitDirection): void {
 }
 
 const views = computed(() =>
-  workspaces.list.value.map((w) => {
-    const selected = w.key === workspaces.selectedKey.value
-    const measured = gridSizes.get(w.key)
-    const font = fontOf(w)
+  workspaces.cells().map((c) => {
+    const selected = c.key === workspaces.selectedKey.value
+    const measured = gridSizes.get(c.key)
+    const font = fontOf(c)
     const cell = cellOf(font)
-    const width = columnsWidthOf(w.layout, w.paneCols, cell)
+    const width = columnsWidthOf(c.layout, c.paneCols, cell)
     const places = placements(
-      w.layout,
-      measured && areaOf(w.layout, w.paneCols, cell, measured),
+      c.layout,
+      measured && areaOf(c.layout, c.paneCols, cell, measured),
       widths.value,
       cell
     )
     return {
-      w,
+      c,
       selected,
       font,
       vars: gridVars(cell, font),
       width: width === undefined ? undefined : `${width}px`,
-      panes: w.panes.map((p) => ({
+      panes: c.panes.map((p) => ({
         p,
-        active: selected && p.key === w.focused,
+        active: selected && p.key === c.focused,
         ...places.get(p.key)!
       }))
     }
@@ -467,48 +474,48 @@ const views = computed(() =>
 
 // 스크롤 watch 가 views 를 지켜보므로, pane 의 cwd·branch 가 바뀔 때마다 스크롤이 돌지 않게 views 밖에 둔다.
 const labels = computed(
-  () => new Map(workspaces.list.value.map((w) => [w.key, workspaceLabel(focusedPane(w))]))
+  () => new Map(workspaces.cells().map((c) => [c.key, cellLabel(focusedPane(c))]))
 )
 
 const URGENCY = ['waiting', 'working', 'idle'] as const
 
 const urgent = computed(() => {
   const map = new Map<number, (typeof URGENCY)[number]>()
-  for (const w of workspaces.list.value) {
-    const states = new Set(w.panes.map((p) => claude.state(p.sessionId)))
+  for (const c of workspaces.cells()) {
+    const states = new Set(c.panes.map((p) => claude.state(p.sessionId)))
     const state = URGENCY.find((s) => states.has(s))
-    if (state) map.set(w.key, state)
+    if (state) map.set(c.key, state)
   }
   return map
 })
 
-// columns 에서는 다른 workspace 의 pane 도 보여 눌러 포커스를 줄 수 있으므로, 그 workspace 를 선택한다.
+// columns 에서는 다른 cell 의 pane 도 보여 눌러 포커스를 줄 수 있으므로, 그 cell 을 선택한다.
 // 포커스가 같은 pane 으로 돌아올 때도 불려, 여기서 pane 을 다시 보이면 스크롤해 둔 자리를 잃는다.
-function focusPane(workspace: number, pane: number): void {
+function focusPane(cell: number, pane: number): void {
   workspaces.focusPane(pane)
-  workspaces.select(workspace)
+  workspaces.select(cell)
 }
 
-function selectPane(workspace: number, pane: number): void {
+function selectPane(cell: number, pane: number): void {
   workspaces.focusPane(pane)
-  selectWorkspace(workspace)
+  selectCell(cell)
 }
 
 const appTitle = document.title
 watchEffect(() => {
-  const w = workspaces.selected()
-  const p = w && focusedPane(w)
-  document.title = p ? windowTitle(workspaceLabel(p)) : appTitle
+  const c = workspaces.selected()
+  const p = c && focusedPane(c)
+  document.title = p ? windowTitle(cellLabel(p)) : appTitle
   window.maru.setWindowPath(p?.cwd ?? '')
 })
 
-// workspace 가 화면보다 넓을 수 있어, workspace 가 아니라 포커스된 pane 이 보이게 한다.
+// cell 이 화면보다 넓을 수 있어, cell 이 아니라 포커스된 pane 이 보이게 한다.
 function revealFocused(): void {
-  const w = workspaces.selected()
-  if (viewMode.value === 'columns' && w)
-    terminals.get(w.focused)?.$el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  const c = workspaces.selected()
+  if (viewMode.value === 'columns' && c)
+    terminals.get(c.focused)?.$el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
-// 포커스가 그대로여도 앞의 workspace 가 닫히거나 폭이 바뀌면 pane 이 밀려나 views 도 지켜본다.
+// 포커스가 그대로여도 앞의 cell 이 닫히거나 폭이 바뀌면 pane 이 밀려나 views 도 지켜본다.
 watch([viewMode, () => workspaces.selected()?.focused, views], revealFocused, { flush: 'post' })
 
 // 마우스 트래킹이 켜진 터미널에서 xterm 은 모든 wheel 을 preventDefault 한다. 프로그램에는 deltaY 만
@@ -530,11 +537,12 @@ function closePalette(): void {
 
 const handlers: Record<CommandId, () => void> = {
   'new-workspace': newWorkspace,
+  'new-cell': newCell,
   'split-right': () => splitSelected('right'),
   'split-down': () => splitSelected('down'),
   'close-pane': closePane,
-  'next-workspace': () => stepWorkspace(1),
-  'previous-workspace': () => stepWorkspace(-1),
+  'next-cell': () => stepCell(1),
+  'previous-cell': () => stepCell(-1),
   'focus-pane-left': () => workspaces.moveFocus('left', widths.value),
   'focus-pane-right': () => workspaces.moveFocus('right', widths.value),
   'focus-pane-up': () => workspaces.moveFocus('up', widths.value),
@@ -553,8 +561,8 @@ const handlers: Record<CommandId, () => void> = {
   'increase-font-size': () => stepFont(1),
   'decrease-font-size': () => stepFont(-1),
   'reset-font-size': resetFont,
-  'widen-workspace': () => stepWidth(1),
-  'narrow-workspace': () => stepWidth(-1),
+  'widen-cell': () => stepWidth(1),
+  'narrow-cell': () => stepWidth(-1),
   restart: window.maru.restart
 }
 
@@ -628,7 +636,7 @@ void window.maru.restoreScreen().then((s) => {
         :urgent="urgent"
         :folded="folded"
         :home="home"
-        @select="selectWorkspace"
+        @select="selectCell"
         @focus="selectPane"
         @fold="toggleFold"
       />
@@ -636,33 +644,33 @@ void window.maru.restoreScreen().then((s) => {
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />
     <div class="terminals" :class="viewMode" @wheel.capture="keepHorizontalScroll">
       <div
-        v-for="{ w, selected, width, font, vars, panes } in views"
-        :key="w.key"
+        v-for="{ c, selected, width, font, vars, panes } in views"
+        :key="c.key"
         class="panes"
         :class="{ selected }"
         :style="{ width, ...vars }"
       >
         <div
-          class="row-bar workspace-header"
-          :class="[urgent.get(w.key), { focused: selected }]"
-          @mousedown.prevent="selectWorkspace(w.key)"
+          class="row-bar cell-header"
+          :class="[urgent.get(c.key), { focused: selected }]"
+          @mousedown.prevent="selectCell(c.key)"
         >
           <span class="row-bar-icon status-icon nerd-icon">{{
-            urgent.has(w.key) ? ICONS[urgent.get(w.key)!] : ''
+            urgent.has(c.key) ? ICONS[urgent.get(c.key)!] : ''
           }}</span>
-          <span class="row-bar-text name">{{ labels.get(w.key)!.name }}</span>
-          <span v-if="labels.get(w.key)!.branch" class="row-bar-text branch">{{
-            labels.get(w.key)!.branch
+          <span class="row-bar-text name">{{ labels.get(c.key)!.name }}</span>
+          <span v-if="labels.get(c.key)!.branch" class="row-bar-text branch">{{
+            labels.get(c.key)!.branch
           }}</span>
         </div>
-        <div :ref="(el) => observeGrid(w.key, el)" class="grid">
+        <div :ref="(el) => observeGrid(c.key, el)" class="grid">
           <div
             v-for="{ p, active, style, body, edge } in panes"
             :key="p.key"
             class="pane"
             :class="{ 'edge-left': edge, focused: active }"
             :style="style"
-            @focusin="focusPane(w.key, p.key)"
+            @focusin="focusPane(c.key, p.key)"
           >
             <PaneHeader
               :state="claude.state(p.sessionId)"
@@ -674,7 +682,7 @@ void window.maru.restoreScreen().then((s) => {
               <TerminalView
                 :ref="(t) => setTerminal(p.key, t)"
                 :session-id="p.sessionId"
-                :workspace-id="w.id"
+                :cell-id="c.id"
                 :start-dir="p.startDir"
                 :command="p.command"
                 :attach="p.attach"
@@ -687,7 +695,7 @@ void window.maru.restoreScreen().then((s) => {
                 @cwd="(dir) => workspaces.setCwd(p.key, dir)"
                 @link-failed="linkFailed"
                 @title="(title) => workspaces.setTitle(p.key, title)"
-                @cell="(c, floored) => setCell(fontOf(w), c, floored)"
+                @cell="(size, floored) => setCell(fontOf(c), size, floored)"
               />
             </div>
           </div>
@@ -793,7 +801,7 @@ void window.maru.restoreScreen().then((s) => {
 
 .columns {
   display: flex;
-  /* workspace 사이는 행을 이어 쓸 필요가 없어 틈을 두고 카드로 나눈다. */
+  /* cell 사이는 행을 이어 쓸 필요가 없어 틈을 두고 카드로 나눈다. */
   gap: 8px;
   /* 카드 테두리는 바깥 1px 의 box-shadow 라, 여백이 없으면 스크롤 영역이 그 1px 을 자른다. */
   padding: 8px;
@@ -821,20 +829,20 @@ void window.maru.restoreScreen().then((s) => {
   box-shadow: 0 0 0 1px var(--muted);
 }
 
-.workspace-header {
+.cell-header {
   box-shadow: inset 0 -1px 0 var(--line);
 }
 
-.header-bottom .workspace-header {
+.header-bottom .cell-header {
   order: 1;
   box-shadow: inset 0 1px 0 var(--line);
 }
 
-.workspace-header .name {
+.cell-header .name {
   font-weight: bold;
 }
 
-.workspace-header .branch {
+.cell-header .branch {
   color: var(--faint);
 }
 
@@ -846,7 +854,7 @@ void window.maru.restoreScreen().then((s) => {
   background: var(--ground);
 }
 
-/* 좌우 pane 의 경계선. 자리를 차지하지 않게 겹친다 — docs/architecture.md 의 "pane 경계와 셀 격자". */
+/* 좌우 pane 의 경계선. 자리를 차지하지 않게 겹친다 — docs/architecture.md 의 "pane 경계와 글자 칸 격자". */
 .edge-left::before {
   content: '';
   position: absolute;

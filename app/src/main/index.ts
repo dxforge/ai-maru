@@ -50,7 +50,7 @@ import {
   type CliAccess
 } from './session'
 import type { KillRequest, OpenRequest, QuitRequest } from './session-host'
-import { createSessionWorkspaces } from './session-workspaces'
+import { createSessionCells } from './session-cells'
 import {
   readViewPrefs,
   readWindowState,
@@ -122,7 +122,7 @@ function mainWindow(): BrowserWindow | undefined {
   return BrowserWindow.getAllWindows()[0]
 }
 
-const sessionWorkspaces = createSessionWorkspaces()
+const sessionCells = createSessionCells()
 
 const panes = createPanes(
   (channel, id, arg) => {
@@ -131,7 +131,7 @@ const panes = createPanes(
     win.webContents.send(channel, id, arg)
     return true
   },
-  (session) => jobs?.workspaceOf(session)
+  (session) => jobs?.cellOf(session)
 )
 
 const devServer = Boolean(process.env.ELECTRON_RENDERER_URL)
@@ -388,7 +388,7 @@ function start(): void {
   let quitting = false
   const jobTable = createJobs({
     newId: newSessionId,
-    workspaceOf: sessionWorkspaces.workspaceOf,
+    cellOf: sessionCells.cellOf,
     spawn: async (id, cwd, command) => {
       await ready
       if (quitting) throw new Error('AI Maru is quitting')
@@ -451,10 +451,10 @@ function start(): void {
   })
   // open 과 같은 `ready.then` 으로 보내야 host 가 그 open 을 먼저 받는다.
   const sendKill = (key: string): void => {
-    const closed = sessionWorkspaces.close(key)
+    const closed = sessionCells.close(key)
     if (!closed) return
-    // workspace 의 마지막 pane 을 지우면 renderer 가 workspace 도 지운다(docs/architecture.md).
-    if (closed.closed) void jobTable.closeWorkspace(closed.closed)
+    // cell 의 마지막 pane 을 지우면 renderer 가 cell 도 지운다(docs/architecture.md).
+    if (closed.closed) void jobTable.closeCell(closed.closed)
     const req: KillRequest = { type: 'kill', id: closed.session, dir: sessionDir() }
     void ready.then(() => sessionHost().postMessage(req))
   }
@@ -476,10 +476,10 @@ function start(): void {
     contents.once('destroyed', () => opened.delete(contents.id))
   })
   ipcMain.on('session:open', (event, key: string, open: SessionOpen) => {
-    const { id, workspace, cwd, command, attach } = open
+    const { id, cell, cwd, command, attach } = open
     const keys = opened.get(event.sender.id) ?? new Set<string>()
     opened.set(event.sender.id, keys.add(key))
-    sessionWorkspaces.open(key, id, workspace)
+    sessionCells.open(key, id, cell)
     const { port1, port2 } = new MessageChannelMain()
     const req: OpenRequest = {
       type: 'open',
