@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, type DeepReadonly } from 'vue'
-import type { ClaudeState } from '../../../shared/claude'
+import type { ProgramStatusState } from '../../../shared/program-status'
 import { ICONS, STATE_LABELS } from '../icons'
 import { cellLabel, tildePath, windowTitle, workspaceName } from '../workspace/cwd'
 import { focusedPane, type Cell, type Pane, type Workspace } from '../workspace/store'
@@ -16,8 +16,8 @@ const {
 } = defineProps<{
   workspaces: readonly DeepReadonly<Workspace>[]
   selectedKey: number | null
-  state: (session?: string) => ClaudeState | undefined
-  urgent: ReadonlyMap<number, ClaudeState>
+  state: (session?: string) => ProgramStatusState | undefined
+  urgent: ReadonlyMap<number, ProgramStatusState>
   folded: ReadonlySet<number>
   collapsed: boolean
   home?: string
@@ -32,13 +32,13 @@ const emit = defineEmits<{
 type Row = {
   key: number | 'summary'
   pane?: number
-  state?: ClaudeState
+  state?: ProgramStatusState
   focused: boolean
   text: string
   aria: string
 }
 
-function paneRow(p: DeepReadonly<Pane>, s: ClaudeState | undefined, focused: boolean): Row {
+function paneRow(p: DeepReadonly<Pane>, s: ProgramStatusState | undefined, focused: boolean): Row {
   const text = p.title || (s ? 'Claude' : 'Shell')
   return {
     key: p.key,
@@ -310,11 +310,13 @@ button {
   color: var(--faint);
 }
 
-.row.waiting {
+.row.blocked,
+.row.error {
   background: color-mix(in srgb, var(--waiting) 14%, transparent);
 }
 
-.pane-row.waiting .title {
+.pane-row.blocked .title,
+.pane-row.error .title {
   color: var(--fg);
   font-weight: 600;
 }

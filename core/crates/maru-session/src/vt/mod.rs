@@ -23,8 +23,112 @@ pub enum VtFormat {
     Vt,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProgramStatusState {
+    Idle,
+    Working,
+    Done,
+    Blocked,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProgramStatusKind {
+    Permission,
+    Question,
+    Auth,
+}
+
+/// OSC 7501 보고 하나. `clear` 이면 `state` 는 뜻이 없다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProgramStatusReport {
+    pub clear: bool,
+    pub state: ProgramStatusState,
+    pub kind: Option<ProgramStatusKind>,
+    pub progress: Option<u8>,
+    pub id: String,
+    pub app: String,
+    pub title: String,
+    pub message: String,
+}
+
+/// ghostty 콜백이 `write` 동안 쌓은 것. 콜백은 screen 락 안에서 동기로 불리므로 여기에 넣기만
+/// 하고, 처리는 `take_events` 로 꺼낸 쪽이 한다.
+#[derive(Debug, Default)]
+pub struct VtEvents {
+    pub reports: Vec<ProgramStatusReport>,
+    pub pty_replies: Vec<Vec<u8>>,
+}
+
 pub struct VtTerminal {
     raw: ffi::GhosttyTerminal,
+    /// ghostty 가 userdata 로 들고 있는 주소라 `VtTerminal` 이 옮겨져도 바뀌지 않아야 한다.
+    /// `Drop` 이 터미널을 먼저 해제하므로 콜백이 해제된 버퍼를 만지지 않는다.
+    events: Box<VtEvents>,
+}
+
+unsafe extern "C" fn on_write_pty(
+    _terminal: ffi::GhosttyTerminal,
+    userdata: *mut c_void,
+    data: *const u8,
+    len: usize,
+) {
+    // SAFETY: userdata 는 `new` 가 넣은 `Box<VtEvents>` 의 주소이고, 콜백은 `write` 의 `&mut self`
+    // 안에서만 불린다. (data, len) 은 호출 동안 유효하다.
+    let events = unsafe { &mut *(userdata as *mut VtEvents) };
+    let data = unsafe { std::slice::from_raw_parts(data, len) };
+    // DSR·DECRQM·XTGETTCAP 같은 다른 질의는 renderer 의 xterm.js 가 이미 답한다. 둘이 답하면 셸
+    // 입력이 깨진다.
+    if data.starts_with(b"\x1b]7501;") {
+        events.pty_replies.push(data.to_vec());
+    }
+}
+
+unsafe extern "C" fn on_program_status(
+    _terminal: ffi::GhosttyTerminal,
+    userdata: *mut c_void,
+    report: *const ffi::GhosttyTerminalProgramStatus,
+) {
+    // SAFETY: userdata 는 `on_write_pty` 와 같다. report 와 그 문자열은 호출 동안 유효하다.
+    let events = unsafe { &mut *(userdata as *mut VtEvents) };
+    let report = unsafe { &*report };
+    if report.size < size_of::<ffi::GhosttyTerminalProgramStatus>() {
+        return;
+    }
+    let text = |s: ffi::GhosttyString| -> String {
+        // SAFETY: 라이브러리가 만든 빈 문자열도 NULL 이 아닌 포인터를 가진다(`types.h`).
+        let bytes = unsafe { std::slice::from_raw_parts(s.ptr, s.len) };
+        String::from_utf8_lossy(bytes).into_owned()
+    };
+    let (clear, state) = match report.state {
+        s if s == ffi::GHOSTTY_PROGRAM_STATUS_STATE_IDLE => (false, ProgramStatusState::Idle),
+        s if s == ffi::GHOSTTY_PROGRAM_STATUS_STATE_WORKING => (false, ProgramStatusState::Working),
+        s if s == ffi::GHOSTTY_PROGRAM_STATUS_STATE_DONE => (false, ProgramStatusState::Done),
+        s if s == ffi::GHOSTTY_PROGRAM_STATUS_STATE_BLOCKED => (false, ProgramStatusState::Blocked),
+        s if s == ffi::GHOSTTY_PROGRAM_STATUS_STATE_ERROR => (false, ProgramStatusState::Error),
+        s if s == ffi::GHOSTTY_PROGRAM_STATUS_STATE_CLEAR => (true, ProgramStatusState::Idle),
+        _ => return,
+    };
+    let kind = match report.kind {
+        k if k == ffi::GHOSTTY_PROGRAM_STATUS_KIND_PERMISSION => {
+            Some(ProgramStatusKind::Permission)
+        }
+        k if k == ffi::GHOSTTY_PROGRAM_STATUS_KIND_QUESTION => Some(ProgramStatusKind::Question),
+        k if k == ffi::GHOSTTY_PROGRAM_STATUS_KIND_AUTH => Some(ProgramStatusKind::Auth),
+        _ => None,
+    };
+    events.reports.push(ProgramStatusReport {
+        clear,
+        state,
+        kind,
+        progress: u8::try_from(report.progress).ok().filter(|p| *p <= 100),
+        id: text(report.id),
+        app: text(report.app),
+        title: text(report.title),
+        message: text(report.message),
+    });
 }
 
 // SAFETY: 헤더가 요구하는 건 접근 직렬화뿐이고(스레드 affinity 없음) 기본 할당자는 다른 스레드의
@@ -40,21 +144,34 @@ impl VtTerminal {
         if rc != ffi::GHOSTTY_SUCCESS || raw.is_null() {
             bail!("ghostty_terminal_new rc={rc}");
         }
-        let t = VtTerminal { raw };
+        let mut t = VtTerminal {
+            raw,
+            events: Box::default(),
+        };
+        let events = &mut *t.events as *mut VtEvents as *const c_void;
         for (opt, value) in [
+            (ffi::GHOSTTY_TERMINAL_OPT_USERDATA, events),
+            (
+                ffi::GHOSTTY_TERMINAL_OPT_WRITE_PTY,
+                on_write_pty as ffi::GhosttyTerminalWritePtyFn as *const c_void,
+            ),
+            (
+                ffi::GHOSTTY_TERMINAL_OPT_PROGRAM_STATUS,
+                on_program_status as ffi::GhosttyTerminalProgramStatusFn as *const c_void,
+            ),
             (
                 ffi::GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES,
-                &SCROLLBACK_MAX_BYTES,
+                &SCROLLBACK_MAX_BYTES as *const usize as *const c_void,
             ),
             (
                 ffi::GHOSTTY_TERMINAL_OPT_CONTINUATION_MAX_BYTES,
-                &CONTINUATION_MAX_BYTES,
+                &CONTINUATION_MAX_BYTES as *const usize as *const c_void,
             ),
         ] {
-            // SAFETY: 두 옵션의 입력 타입은 `size_t*` 다. 포인터는 호출 동안만 읽힌다.
-            let rc = unsafe {
-                ffi::ghostty_terminal_set(t.raw, opt, value as *const usize as *const c_void)
-            };
+            // SAFETY: 앞 셋의 입력은 포인터 값 그대로(userdata 와 콜백 함수)이고 뒤 둘은 `size_t*`
+            // 로 호출 동안만 읽힌다. userdata 가 가리키는 Box 는 `t` 와 같이 살고 터미널이 먼저
+            // 해제된다.
+            let rc = unsafe { ffi::ghostty_terminal_set(t.raw, opt, value) };
             if rc != ffi::GHOSTTY_SUCCESS {
                 bail!("ghostty_terminal_set(opt={opt}) rc={rc}");
             }
@@ -122,7 +239,10 @@ impl VtTerminal {
         if rc != ffi::GHOSTTY_SUCCESS || raw.is_null() {
             bail!("ghostty snapshot decode rc={rc}");
         }
-        Ok(VtTerminal { raw })
+        Ok(VtTerminal {
+            raw,
+            events: Box::default(),
+        })
     }
 
     /// 붙는 클라이언트에 보낼 재생. 그리드 높이·스크롤 리전·커서까지 이 세션과 같게 맞춰 끝난다.
@@ -172,6 +292,10 @@ impl VtTerminal {
     pub fn write(&mut self, bytes: &[u8]) {
         // SAFETY: (ptr, len) 은 빌린 슬라이스 그대로이고 `&mut self` 가 접근을 직렬화한다.
         unsafe { ffi::ghostty_terminal_vt_write(self.raw, bytes.as_ptr(), bytes.len()) };
+    }
+
+    pub fn take_events(&mut self) -> VtEvents {
+        std::mem::take(&mut *self.events)
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {
@@ -470,6 +594,62 @@ mod tests {
 
     fn plain(t: &VtTerminal) -> String {
         String::from_utf8(t.format(VtFormat::Plain).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn program_status_reports_are_decoded_and_queued() {
+        let mut t = term();
+        t.write(b"\x1b]7501;state=blocked:kind=permission:app=claude-code:msg=aGk=\x1b\\");
+        let ev = t.take_events();
+        assert_eq!(ev.reports.len(), 1);
+        let r = &ev.reports[0];
+        assert!(!r.clear);
+        assert_eq!(r.state, ProgramStatusState::Blocked);
+        assert_eq!(r.kind, Some(ProgramStatusKind::Permission));
+        assert_eq!(
+            (r.id.as_str(), r.app.as_str(), r.message.as_str()),
+            ("", "claude-code", "hi")
+        );
+        assert_eq!(r.progress, None);
+        assert!(t.take_events().reports.is_empty());
+    }
+
+    #[test]
+    fn progress_and_title_are_decoded_when_sent() {
+        let mut t = term();
+        t.write(b"\x1b]7501;state=working:id=build:progress=42:title=QnVpbGQ=\x1b\\");
+        let r = t.take_events().reports.remove(0);
+        assert_eq!(r.state, ProgramStatusState::Working);
+        assert_eq!(r.kind, None);
+        assert_eq!(r.progress, Some(42));
+        assert_eq!((r.id.as_str(), r.title.as_str()), ("build", "Build"));
+    }
+
+    #[test]
+    fn a_clear_report_and_a_full_reset_are_queued_as_clear() {
+        let mut t = term();
+        t.write(b"\x1b]7501;state=clear:id=build\x1b\\\x1bc");
+        let ev = t.take_events();
+        assert_eq!(
+            ev.reports
+                .iter()
+                .map(|r| (r.clear, r.id.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(true, "build"), (true, "")]
+        );
+    }
+
+    #[test]
+    fn only_the_support_query_reply_is_written_back() {
+        let mut t = term();
+        t.write(b"\x1b[6n\x1b]7501;?\x1b\\\x1b]7501;?\x07");
+        let ev = t.take_events();
+        assert_eq!(ev.pty_replies.len(), 2, "{:?}", ev.pty_replies);
+        assert!(
+            ev.pty_replies[0].starts_with(b"\x1b]7501;?") && ev.pty_replies[0].ends_with(b"\x1b\\")
+        );
+        assert!(ev.pty_replies[1].ends_with(b"\x07"));
+        assert!(ev.reports.is_empty());
     }
 
     #[test]

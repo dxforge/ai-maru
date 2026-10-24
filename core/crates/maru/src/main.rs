@@ -44,8 +44,6 @@
 //! |---|---|---|
 //! | `ping` | 없음 | `{"session":<받은 세션 id>}` |
 //! | `canvas.put` | `text`(문자열), `id`(빈 문자열이 아닌 문자열, 선택), `title`(문자열, 선택) | `{"id":<문서 id>}` |
-//! | `claude.hook` | `event`(문자열), `claude_session`(빈 문자열이 아닌 문자열), `config_dir`(절대경로 문자열), `source`(문자열, 선택) | `null` |
-//! | `claude.exit` | 없음 | `null` |
 //! | `inbox.push` | `to`(세션 id), `text`(빈 문자열이 아닌 문자열) | `null` |
 //! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 세션 id>,"text":<본문>}…]}` |
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
@@ -61,12 +59,6 @@
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
 //! `id` 가 없으면 앱이 새 id 를 만든다. id 는 형식 없는 문자열이다.
-//!
-//! `claude.hook` 은 그 터미널에서 돌고 있는 claude 의 hook 을 알린다. `event` 는 hook 이름
-//! (`hook_event_name`)이고 앱은 모르는 이름을 받고 무시한다. `claude_session` 은 claude 의
-//! `session_id`, `config_dir` 은 claude 가 `sessions/` 를 두는 디렉토리다. `source` 는 hook 입력에
-//! `source`(`SessionStart` 의 `startup`·`compact` 등)가 있을 때만 그 값을 옮긴다. `claude.exit` 는 그
-//! 터미널의 claude 가 끝났다고 알린다.
 //!
 //! `inbox.push` 는 `to` 세션에 메시지를 보낸다. `to` 가 `s-` 와 hex 8자리가 아니거나 그 세션이 끝났으면
 //! `invalid_params` 다. `to` 를 구독하는 연결이 있으면 알림을 보내고, 본문이 알림에 다 실렸으면 읽은
@@ -212,8 +204,7 @@ enum Command {
         #[command(subcommand)]
         command: AppCommand,
     },
-    /// Report a claude running in this terminal. The app's zsh function and claude plugin
-    /// call these.
+    /// Commands the app's claude plugin runs from its hooks and monitors.
     #[command(hide = true)]
     Claude {
         #[command(subcommand)]
@@ -223,10 +214,9 @@ enum Command {
 
 #[derive(Subcommand)]
 enum ClaudeCommand {
-    /// Forward the claude hook payload on stdin.
+    /// Read the claude hook payload on stdin. On SessionStart, print what claude should know
+    /// about this terminal.
     Hook,
-    /// Say that claude has exited.
-    Exit,
     /// Write the app's notifications to stdout, one per line, until stdout closes. The app's
     /// claude plugin runs this as a monitor.
     Monitor,
@@ -474,9 +464,6 @@ fn run(command: Command) -> Result<()> {
         }
         Command::Claude { command } => match command {
             ClaudeCommand::Hook => claude_hook()?,
-            ClaudeCommand::Exit => {
-                call(&target()?, "claude.exit", Map::new())?;
-            }
             ClaudeCommand::Monitor => claude_monitor()?,
         },
     }
@@ -487,22 +474,11 @@ fn claude_hook() -> Result<()> {
     let target = target()?;
     let payload: Value = serde_json::from_reader(std::io::stdin().lock())
         .map_err(|e| anyhow!("stdin is not a hook payload: {e}"))?;
-    let field = |name: &str| -> Result<Value> {
-        match &payload[name] {
-            Value::String(s) if !s.is_empty() => Ok(s.as_str().into()),
-            _ => bail!("the hook payload has no {name}"),
-        }
+    let Some(event) = payload["hook_event_name"].as_str() else {
+        bail!("the hook payload has no hook_event_name");
     };
-    let mut params = Map::new();
-    params.insert("event".into(), field("hook_event_name")?);
-    params.insert("claude_session".into(), field("session_id")?);
-    params.insert("config_dir".into(), claude_config_dir()?.into());
-    if let Some(source @ Value::String(_)) = payload.get("source") {
-        params.insert("source".into(), source.clone());
-    }
-    call(&target, "claude.hook", params)?;
     // SessionStart hook 의 stdout 은 claude 의 컨텍스트에 들어간다.
-    if payload["hook_event_name"] == "SessionStart" {
+    if event == "SessionStart" {
         write!(
             std::io::stdout(),
             "You are in AI Maru terminal session {}. Messages from other sessions arrive as\n\
@@ -709,19 +685,6 @@ fn parent_of(pid: u32) -> Option<u32> {
     };
     // SAFETY: 위에서 size 바이트를 다 채웠다.
     (n == size).then(|| unsafe { info.assume_init() }.pbi_ppid)
-}
-
-fn claude_config_dir() -> Result<String> {
-    let dir = match env_var("CLAUDE_CONFIG_DIR") {
-        Some(dir) => PathBuf::from(dir),
-        None => PathBuf::from(env_var("HOME").ok_or_else(|| anyhow!("HOME is not set"))?)
-            .join(".claude"),
-    };
-    let dir =
-        std::path::absolute(&dir).with_context(|| format!("cannot resolve {}", dir.display()))?;
-    dir.into_os_string()
-        .into_string()
-        .map_err(|_| anyhow!("the claude config directory is not UTF-8"))
 }
 
 fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) -> Result<String> {

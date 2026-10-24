@@ -569,57 +569,16 @@ fn maru_claude(sock: &Path, args: &[&str], input: &[u8], vars: &[(&str, &str)]) 
     run_with_input(cmd, input)
 }
 
-const HOOK: &[u8] =
-    br#"{"session_id":"c-1","hook_event_name":"UserPromptSubmit","prompt":"hi","cwd":"/x"}"#;
-
-#[test]
-fn claude_hook_forwards_the_event_and_session_silently() {
-    let tmp = tmpdir();
-    let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, Value::Null));
-
-    let out = maru_claude(&sock, &["claude", "hook"], HOOK, &[]);
-    let req = server.join().unwrap();
-
-    assert!(out.status.success(), "{}", stderr(&out));
-    // SessionStart·UserPromptSubmit hook 의 stdout 은 claude 의 컨텍스트에 들어간다.
-    assert_eq!(stdout(&out), "");
-    assert_eq!(req["method"], "claude.hook");
-    assert_eq!(req["params"]["protocol_version"], 1);
-    assert_eq!(req["params"]["session"], SESSION);
-    assert_eq!(req["params"]["event"], "UserPromptSubmit");
-    assert_eq!(req["params"]["claude_session"], "c-1");
-    assert_eq!(req["params"]["config_dir"], "/h/.claude");
-    assert!(req["params"].get("prompt").is_none(), "{req}");
-    assert!(req["params"].get("source").is_none(), "{req}");
-}
-
-#[test]
-fn claude_hook_forwards_the_session_start_source() {
-    let tmp = tmpdir();
-    let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, Value::Null));
-
-    let input = br#"{"session_id":"c-1","hook_event_name":"SessionStart","source":"compact"}"#;
-    let out = maru_claude(&sock, &["claude", "hook"], input, &[]);
-
-    assert!(out.status.success(), "{}", stderr(&out));
-    let req = server.join().unwrap();
-    assert_eq!(req["params"]["event"], "SessionStart");
-    assert_eq!(req["params"]["source"], "compact");
-}
-
 #[test]
 fn claude_hook_on_session_start_tells_claude_its_session_and_the_inbox() {
     for source in ["startup", "resume", "clear", "compact"] {
         let tmp = tmpdir();
+        // 듣는 앱이 없는 소켓 경로다 — hook 은 앱에 아무것도 보내지 않는다.
         let sock = sock_in(&tmp);
-        let server = serve_once(&sock, |req| result(req, Value::Null));
         let input = format!(
             r#"{{"session_id":"c-1","hook_event_name":"SessionStart","source":"{source}"}}"#
         );
         let out = maru_claude(&sock, &["claude", "hook"], input.as_bytes(), &[]);
-        server.join().unwrap();
         assert!(out.status.success(), "{}", stderr(&out));
         assert_eq!(
             stdout(&out),
@@ -634,79 +593,23 @@ fn claude_hook_on_session_start_tells_claude_its_session_and_the_inbox() {
 }
 
 #[test]
-fn claude_hook_on_session_start_says_nothing_when_the_app_fails() {
+fn claude_hook_on_other_events_does_nothing() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| {
-        error(req, -32603, "boom", json!({"code": "internal_error"}))
-    });
-    let input = br#"{"session_id":"c-1","hook_event_name":"SessionStart","source":"startup"}"#;
+    let input =
+        br#"{"session_id":"c-1","hook_event_name":"UserPromptSubmit","prompt":"hi","cwd":"/x"}"#;
     let out = maru_claude(&sock, &["claude", "hook"], input, &[]);
-    server.join().unwrap();
-    assert_fails_with(&out, "boom");
+    assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out), "");
 }
 
 #[test]
-fn claude_hook_follows_claude_config_dir() {
+fn claude_hook_rejects_payloads_it_cannot_use() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, Value::Null));
-
-    let vars = [("CLAUDE_CONFIG_DIR", "/cfg")];
-    let out = maru_claude(&sock, &["claude", "hook"], HOOK, &vars);
-
-    assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(server.join().unwrap()["params"]["config_dir"], "/cfg");
-}
-
-#[test]
-fn claude_hook_treats_an_empty_config_dir_as_unset() {
-    let tmp = tmpdir();
-    let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, Value::Null));
-
-    let vars = [("CLAUDE_CONFIG_DIR", "")];
-    let out = maru_claude(&sock, &["claude", "hook"], HOOK, &vars);
-
-    assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(server.join().unwrap()["params"]["config_dir"], "/h/.claude");
-}
-
-#[test]
-fn claude_hook_resolves_a_relative_config_dir() {
-    let tmp = tmpdir();
-    let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, Value::Null));
-
-    let vars = [("CLAUDE_CONFIG_DIR", "rel")];
-    let out = maru_claude(&sock, &["claude", "hook"], HOOK, &vars);
-
-    assert!(out.status.success(), "{}", stderr(&out));
-    let expected = tmp.path().canonicalize().unwrap().join("rel");
-    assert_eq!(
-        server.join().unwrap()["params"]["config_dir"],
-        expected.to_str().unwrap()
-    );
-}
-
-#[test]
-fn claude_hook_rejects_payloads_it_cannot_use_without_reaching_the_app() {
-    let tmp = tmpdir();
-    // 소켓이 없어서, 연결을 시도했다면 "cannot reach the app" 이 나온다.
-    let sock = sock_in(&tmp);
-    let cases: [(&[u8], &str); 5] = [
+    let cases: [(&[u8], &str); 2] = [
         (b"not json", "stdin is not a hook payload"),
-        (
-            br#"{"hook_event_name":"Stop","session_id":""}"#,
-            "no session_id",
-        ),
         (br#"{"session_id":"c-1"}"#, "no hook_event_name"),
-        (br#"{"hook_event_name":"Stop"}"#, "no session_id"),
-        (
-            br#"{"hook_event_name":"Stop","session_id":7}"#,
-            "no session_id",
-        ),
     ];
     for (input, expected) in cases {
         let out = maru_claude(&sock, &["claude", "hook"], input, &[]);
@@ -718,21 +621,6 @@ fn claude_hook_rejects_payloads_it_cannot_use_without_reaching_the_app() {
 fn claude_hook_outside_an_app_terminal_says_so() {
     let out = maru(None, &["claude", "hook"]);
     assert_fails_with(&out, "not inside an AI Maru terminal");
-}
-
-#[test]
-fn claude_exit_sends_the_session() {
-    let tmp = tmpdir();
-    let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, Value::Null));
-
-    let out = maru_claude(&sock, &["claude", "exit"], b"", &[]);
-    let req = server.join().unwrap();
-
-    assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "");
-    assert_eq!(req["method"], "claude.exit");
-    assert_eq!(req["params"]["session"], SESSION);
 }
 
 #[test]

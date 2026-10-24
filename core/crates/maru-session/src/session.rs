@@ -1,4 +1,5 @@
 use crate::procinfo;
+use crate::program_status::Records;
 use crate::pty::{self, Pty};
 use crate::vt::{VtFormat, VtTerminal};
 use anyhow::Result;
@@ -18,6 +19,7 @@ const READ_CHUNK: usize = 8192;
 const OUTPUT_BACKLOG: usize = 4 * 1024 * 1024;
 /// 셸이 나간 뒤 남은 출력이 다 전달되길 기다리되, EOF 에 종료를 묶지 않으려는 상한.
 const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(500);
+const FOREGROUND_POLL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Exit {
@@ -46,6 +48,9 @@ pub enum Recv {
         cols: u16,
         rows: u16,
     },
+    /// 클라이언트에 그대로 보낼 JSON 한 건(`program_status`·`foreground`). 구독자마다 복사하지
+    /// 않으려고 `Arc` 다.
+    Text(Arc<str>),
     /// 밀린 출력을 버렸다. 화면이 어긋났으니 `subscribe_with_replay` 로 다시 받아야 한다.
     Lagged,
 }
@@ -100,14 +105,35 @@ impl Output {
         self.notify.notify_one();
     }
 
+    fn push_text(&self, text: &Arc<str>) {
+        let mut b = self.backlog.lock().unwrap();
+        // 밀렸으면 resync 재생이 레코드를 다시 싣는다.
+        if b.lagged {
+            return;
+        }
+        // Text 도 bytes 에 센다. 읽지 않는 클라이언트의 큐가 Text 만으로 한도 없이 자라지 않게 하기 위해서다.
+        if b.bytes + text.len() > OUTPUT_BACKLOG {
+            b.lagged = true;
+            b.queue.clear();
+            b.bytes = 0;
+        } else {
+            b.bytes += text.len();
+            b.queue.push_back(Recv::Text(text.clone()));
+        }
+        drop(b);
+        self.notify.notify_one();
+    }
+
     pub fn try_recv(&self) -> Option<Recv> {
         let mut b = self.backlog.lock().unwrap();
         if b.lagged {
             return Some(Recv::Lagged);
         }
         let r = b.queue.pop_front()?;
-        if let Recv::Data(data) = &r {
-            b.bytes -= data.len();
+        match &r {
+            Recv::Data(data) => b.bytes -= data.len(),
+            Recv::Text(text) => b.bytes -= text.len(),
+            _ => {}
         }
         Some(r)
     }
@@ -130,20 +156,64 @@ pub struct Session {
     pub tty: String,
     pub shell_pid: u32,
     pty: Pty,
-    writer: Mutex<std::fs::File>,
+    writer: Arc<Mutex<std::fs::File>>,
     screen: Arc<Mutex<Screen>>,
     exit_rx: watch::Receiver<Option<Exit>>,
     primary: watch::Sender<Option<u64>>,
     next_conn: AtomicU64,
     terminating: AtomicBool,
+    /// `Drop` 에서 깨워 기다리던 감시 스레드가 끝나게 한다.
+    wake: Arc<Wake>,
 }
 
-/// 크기를 VT 와 같은 락 아래 두어 재생 스냅샷과 어긋나지 않게 한다.
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.wake.wake();
+    }
+}
+
+/// 크기와 레코드를 VT 와 같은 락 아래 두어 재생 스냅샷과 어긋나지 않게 한다.
 struct Screen {
     vt: VtTerminal,
     cols: u16,
     rows: u16,
+    status: Records,
     outputs: Vec<Weak<Output>>,
+}
+
+impl Screen {
+    fn broadcast(&mut self, f: impl Fn(&Output)) {
+        self.outputs
+            .retain(|o| o.upgrade().inspect(|o| f(o)).is_some());
+    }
+
+    fn broadcast_text(&mut self, text: String) {
+        let text: Arc<str> = text.into();
+        self.broadcast(|o| o.push_text(&text));
+    }
+}
+
+/// foreground 감시 스레드를 레코드가 생겼을 때만 깨운다. 레코드가 없는 pane 마다 1초에 한 번씩
+/// 깨어나지 않게 하려는 것이다.
+#[derive(Default)]
+struct Wake {
+    flag: Mutex<bool>,
+    cv: std::sync::Condvar,
+}
+
+impl Wake {
+    fn wake(&self) {
+        *self.flag.lock().unwrap() = true;
+        self.cv.notify_one();
+    }
+
+    fn wait(&self) {
+        let mut flag = self.flag.lock().unwrap();
+        while !*flag {
+            flag = self.cv.wait(flag).unwrap();
+        }
+        *flag = false;
+    }
 }
 
 impl Session {
@@ -160,6 +230,7 @@ impl Session {
             vt: VtTerminal::new(cols, rows)?,
             cols,
             rows,
+            status: Records::default(),
             outputs: Vec::new(),
         }));
         let spawned = pty::spawn(shell, shell_var, cwd, command, cols, rows)?;
@@ -168,7 +239,20 @@ impl Session {
         let (drained_tx, drained_rx) = std::sync::mpsc::channel::<()>();
 
         let mut reader = spawned.reader;
+        // 셸 입력과 같은 락으로 써야 응답이 입력 시퀀스 중간에 끼지 않는다. 읽기 스레드가 PTY 쓰기나
+        // 그 락에 막히면 모든 구독자의 출력이 멈추므로, 쓰기는 따로 둔 스레드가 순서대로 한다.
+        let writer = Arc::new(Mutex::new(spawned.writer));
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let reply_writer = writer.clone();
+        std::thread::spawn(move || {
+            for reply in reply_rx {
+                let mut w = reply_writer.lock().unwrap();
+                let _ = w.write_all(&reply).and_then(|()| w.flush());
+            }
+        });
+        let wake = Arc::new(Wake::default());
         let screen_r = screen.clone();
+        let wake_r = wake.clone();
         std::thread::spawn(move || {
             let mut buf = vec![0u8; READ_CHUNK];
             loop {
@@ -183,9 +267,28 @@ impl Session {
                 // 정확히 한쪽에만 들어간다.
                 let mut screen = screen_r.lock().unwrap();
                 screen.vt.write(bytes);
-                screen
-                    .outputs
-                    .retain(|o| o.upgrade().inspect(|o| o.push(bytes)).is_some());
+                let events = screen.vt.take_events();
+                if !events.reports.is_empty() {
+                    let now = std::time::Instant::now();
+                    let mut changed = false;
+                    for report in &events.reports {
+                        changed |= screen.status.apply(report, now);
+                    }
+                    // 보고를 실은 바이트보다 먼저 보낸다. 같은 청크에 보고와 그 뒤 출력이 함께
+                    // 들어 있으면 클라이언트가 출력을 보고 다음 일을 시작한 뒤에 상태가 닿는다.
+                    if changed {
+                        let text = screen.status.message().to_string();
+                        screen.broadcast_text(text);
+                    }
+                    if !screen.status.is_empty() {
+                        wake_r.wake();
+                    }
+                }
+                screen.broadcast(|o| o.push(bytes));
+                drop(screen);
+                for reply in events.pty_replies {
+                    let _ = reply_tx.send(reply);
+                }
             }
             let _ = drained_tx.send(());
         });
@@ -206,17 +309,21 @@ impl Session {
             let _ = exit_tx.send(Some(exit));
         });
 
-        Ok(Arc::new(Session {
+        let session = Arc::new(Session {
             tty: spawned.tty,
             shell_pid,
             pty: spawned.pty,
-            writer: Mutex::new(spawned.writer),
+            writer,
             screen,
             exit_rx,
             primary: watch::channel(None).0,
             next_conn: AtomicU64::new(1),
             terminating: AtomicBool::new(false),
-        }))
+            wake: wake.clone(),
+        });
+        let weak = Arc::downgrade(&session);
+        std::thread::spawn(move || watch_foreground(weak, wake));
+        Ok(session)
     }
 
     /// 블로킹 쓰기여야 한다 — 커널의 역압이 입력 큐를 넘는 여러 줄 입력이 잘리지 않게 지킨다.
@@ -255,14 +362,10 @@ impl Session {
         if !changed {
             return Ok(());
         }
-        screen.outputs.retain(|o| {
-            o.upgrade()
-                .inspect(|o| {
-                    if o.conn != conn {
-                        o.push_size(cols, rows)
-                    }
-                })
-                .is_some()
+        screen.broadcast(|o| {
+            if o.conn != conn {
+                o.push_size(cols, rows)
+            }
         });
         Ok(())
     }
@@ -284,7 +387,12 @@ impl Session {
         }
     }
 
-    pub fn subscribe_with_replay(&self, conn: u64) -> Result<(Vec<u8>, ReplayState, Arc<Output>)> {
+    /// 재생과 같은 락 안에서 뜬 `program_status` 메시지를 함께 돌려준다. 따로 읽으면 그 사이에
+    /// 온 보고가 재생 뒤 메시지와 구독 양쪽에 들어가거나 어느 쪽에도 안 들어간다.
+    pub fn subscribe_with_replay(
+        &self,
+        conn: u64,
+    ) -> Result<(Vec<u8>, ReplayState, serde_json::Value, Arc<Output>)> {
         let mut screen = self.screen.lock().unwrap();
         let replay = screen.vt.replay()?;
         let (cursor_x, cursor_y) = screen.vt.cursor()?;
@@ -294,13 +402,14 @@ impl Session {
             cursor_x,
             cursor_y,
         };
+        let status = screen.status.message();
         let output = Arc::new(Output {
             conn,
             backlog: Mutex::default(),
             notify: Notify::new(),
         });
         screen.outputs.push(Arc::downgrade(&output));
-        Ok((replay, state, output))
+        Ok((replay, state, status, output))
     }
 
     pub fn exit_rx(&self) -> watch::Receiver<Option<Exit>> {
@@ -363,6 +472,39 @@ impl Session {
             let _ = killpg(g, Signal::SIGKILL);
         }
         wait_exit(&mut exit_rx).await;
+    }
+}
+
+/// 레코드가 있는 동안 foreground cwd 가 바뀌면 모든 구독자에게 `foreground` 를 보낸다. claude 가 한
+/// 상태에 머문 채 디렉토리를 옮긴 것을 앱이 알게 하려는 것이다.
+fn watch_foreground(session: Weak<Session>, wake: Arc<Wake>) {
+    loop {
+        wake.wait();
+        let mut last: Option<PathBuf> = None;
+        loop {
+            std::thread::sleep(FOREGROUND_POLL);
+            let Some(session) = session.upgrade() else {
+                return;
+            };
+            if session.exited().is_some() || session.screen.lock().unwrap().status.is_empty() {
+                break;
+            }
+            // 락을 놓고 잰다 — proc 읽기가 느려도 출력 반영을 막지 않게.
+            let fg = session.foreground();
+            // 리더가 먼저 끝난 파이프라인(`a | b`)에서는 cwd 를 못 읽는다. 옮긴 것이 아니므로 건너뛴다.
+            let Some(cwd) = fg.cwd else { continue };
+            if last.as_ref().is_some_and(|l| *l != cwd) {
+                let text = serde_json::json!({
+                    "type": "foreground", "pid": fg.pid, "cwd": cwd.to_string_lossy(),
+                });
+                session
+                    .screen
+                    .lock()
+                    .unwrap()
+                    .broadcast_text(text.to_string());
+            }
+            last = Some(cwd);
+        }
     }
 }
 

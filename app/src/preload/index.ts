@@ -1,6 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { CanvasItem } from '../shared/canvas'
-import type { ClaudeState } from '../shared/claude'
 import type { ConfigRead } from '../shared/config'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
@@ -36,17 +35,6 @@ const api = {
   },
   onCanvasPut: (cb: (item: CanvasItem) => void): void => {
     ipcRenderer.on('canvas:put', (_event, item: CanvasItem) => cb(item))
-  },
-  /** 터미널 세션 id → 그 터미널에서 돌고 있는 claude 의 상태. */
-  claudeStatuses: (): Promise<Record<string, ClaudeState>> => ipcRenderer.invoke('claude:statuses'),
-  onClaudeStatus: (cb: (session: string, state: ClaudeState | null) => void): void => {
-    ipcRenderer.on('claude:status', (_event, session: string, state: ClaudeState | null) =>
-      cb(session, state)
-    )
-  },
-  /** 그 터미널의 claude 가 상태는 그대로인 채 작업 디렉토리를 옮겼다. */
-  onClaudeMoved: (cb: (session: string) => void): void => {
-    ipcRenderer.on('claude:moved', (_event, session: string) => cb(session))
   },
   onPaneNew: (cb: (id: number, req: PaneNewRequest) => void): void => {
     ipcRenderer.on('pane:new', (_event, id: number, req: PaneNewRequest) => cb(id, req))

@@ -20,6 +20,7 @@ import '@xterm/xterm/css/xterm.css'
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../session/attach'
 import { openSession, type SessionConnection } from '../session/connection'
+import type { ProgramStatusRecord } from '../../../shared/program-status'
 import { matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
 import { sameFont, type TerminalFont } from '../config/terminal'
 import { alignComposition } from '../terminal/composition'
@@ -57,6 +58,8 @@ const emit = defineEmits<{
   cwd: [cwd: string]
   spawned: []
   title: [title: string]
+  programStatus: [records: ProgramStatusRecord[]]
+  foreground: []
   linkFailed: [reason: string]
   /** `floored` 면 글자 칸 폭이 WebGL 이 내림한 값이고, `fitTerminal` 이 열 수를 이 폭으로 직접 나눈다. */
   cell: [cell: Size, floored: boolean]
@@ -320,7 +323,9 @@ onMounted(() => {
     onSpawned: (_id, dir) => {
       emit('spawned')
       if (dir !== undefined) emit('cwd', dir)
-    }
+    },
+    onProgramStatus: (records) => emit('programStatus', records),
+    onForeground: () => emit('foreground')
   })
   // 조합한 글자는 다음 키가 오면 그 키보다 먼저 setTimeout 을 기다리지 않고 간다. 그 바로 뒤에 보낸다.
   // 세션에 보내는 attach 의 listener 보다 뒤에 걸어야 미룬 키가 조합한 글자 뒤로 간다.

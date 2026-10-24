@@ -131,6 +131,7 @@ async fn forward(
                 .await
                 .is_ok()
         }
+        Recv::Text(text) => write_frame(wr, TAG_TEXT, text.as_bytes()).await.is_ok(),
         Recv::Lagged => match resync(wr, session, conn, resyncs).await {
             Some(new) => {
                 *output = new;
@@ -147,7 +148,7 @@ async fn replay(
     conn: u64,
     resync: bool,
 ) -> Option<Arc<Output>> {
-    let (payload, st, output) = match session.subscribe_with_replay(conn) {
+    let (payload, st, status, output) = match session.subscribe_with_replay(conn) {
         Ok(v) => v,
         Err(e) => {
             let _ = write_json(wr, &error("capture_failed", &format!("{e:#}"))).await;
@@ -178,6 +179,7 @@ async fn replay(
         payload
     };
     write_frame(wr, TAG_BINARY, &body).await.ok()?;
+    write_json(wr, &status).await.ok()?;
     Some(output)
 }
 

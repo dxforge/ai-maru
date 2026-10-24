@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ClaudeState } from '../../../shared/claude'
+import type { ProgramStatusState } from '../../../shared/program-status'
 import { ICONS, STATE_LABELS } from '../icons'
 import { dirName } from '../workspace/cwd'
 import type { Pane } from '../workspace/store'
@@ -9,7 +9,11 @@ const {
   state = undefined,
   pane,
   focused
-} = defineProps<{ state?: ClaudeState; pane: Pick<Pane, 'title' | 'cwd'>; focused: boolean }>()
+} = defineProps<{
+  state?: ProgramStatusState
+  pane: Pick<Pane, 'title' | 'cwd'>
+  focused: boolean
+}>()
 </script>
 
 <template>

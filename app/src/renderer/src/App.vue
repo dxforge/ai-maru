@@ -12,6 +12,7 @@ import {
 import { available, commands, type CommandId } from '../../shared/commands'
 import { PANE_MIN } from '../../shared/layout'
 import type { PaneReply } from '../../shared/pane'
+import type { ProgramStatusRecord } from '../../shared/program-status'
 import {
   clampCanvasWidth,
   clampSidebarWidth,
@@ -21,7 +22,7 @@ import {
 import { secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
 import { createCanvas } from './canvas/store'
-import { createClaudeStatuses } from './claude/status'
+import { createProgramStatuses } from './program-status/store'
 import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PaneHeader from './components/PaneHeader.vue'
@@ -60,16 +61,15 @@ window.maru.onCanvasPut(canvas.put)
 
 const workspaces = createWorkspaces(window.maru.gitHead, window.maru.foregroundCwd)
 
-const claude = createClaudeStatuses()
+const statuses = createProgramStatuses()
 // zsh 는 프롬프트마다 cwd 를 알려 와 그때 branch 를 다시 읽지만, Claude 를 띄운 pane 에는 프롬프트가 뜨지 않아
-// 상태가 바뀔 때와 Claude 가 상태 파일에 쓴 디렉토리가 바뀔 때 읽는다. 그래서 Claude 가 한 상태에 머문 채 branch 를
-// 바꾸면 다음 상태로 넘어갈 때 반영된다.
-window.maru.onClaudeStatus((session, state) => {
-  claude.set(session, state)
-  workspaces.refreshSession(session)
-})
-window.maru.onClaudeMoved(workspaces.refreshSession)
-void window.maru.claudeStatuses().then(claude.replace)
+// 루트 레코드의 상태가 바뀔 때와 세션이 `foreground` 로 디렉토리 이동을 알릴 때 읽는다. 한 턴에 `msg` 만 다른
+// working 보고가 여러 번 오므로 레코드가 올 때마다 읽지는 않는다.
+function onProgramStatus(session: string, records: ProgramStatusRecord[]): void {
+  const was = statuses.state(session)
+  statuses.set(session, records)
+  if (statuses.state(session) !== was) workspaces.refreshSession(session)
+}
 const home = window.maru.home
 
 const toasts = createToasts()
@@ -180,6 +180,8 @@ function removePane(
   // "main 이 아는 세션의 cell". 이미 끝난 세션의 kill 은 세션 소켓에 닿지 못해 아무것도 하지 않는다(`main/session.ts` 의 `requestKill`).
   terminals.get(pane)?.kill()
   answerPaneRequest(pane, { error: 'open_failed', message })
+  const session = workspaces.pane(pane)?.sessionId
+  if (session) statuses.remove(session)
   workspaces.closePane(pane)
 }
 
@@ -494,12 +496,12 @@ const labels = computed(
   () => new Map(workspaces.cells().map((c) => [c.key, cellLabel(focusedPane(c))]))
 )
 
-const URGENCY = ['waiting', 'working', 'idle'] as const
+const URGENCY = ['blocked', 'error', 'done', 'working', 'idle'] as const
 
 const urgent = computed(() => {
   const map = new Map<number, (typeof URGENCY)[number]>()
   for (const c of workspaces.cells()) {
-    const states = new Set(c.panes.map((p) => claude.state(p.sessionId)))
+    const states = new Set(c.panes.map((p) => statuses.state(p.sessionId)))
     const state = URGENCY.find((s) => states.has(s))
     if (state) map.set(c.key, state)
   }
@@ -649,7 +651,7 @@ void window.maru.restoreScreen().then((s) => {
         :collapsed="!sidebarOpen"
         :workspaces="workspaces.list.value"
         :selected-key="workspaces.selectedKey.value"
-        :state="claude.state"
+        :state="statuses.state"
         :urgent="urgent"
         :folded="folded"
         :home="home"
@@ -690,7 +692,7 @@ void window.maru.restoreScreen().then((s) => {
             @focusin="focusPane(c.key, p.key)"
           >
             <PaneHeader
-              :state="claude.state(p.sessionId)"
+              :state="statuses.state(p.sessionId)"
               :pane="p"
               :focused="active"
               @mousedown.prevent="terminals.get(p.key)?.focus()"
@@ -711,6 +713,8 @@ void window.maru.restoreScreen().then((s) => {
                 @failed="(message) => paneFailed(p.key, message)"
                 @spawned="answerPaneRequest(p.key, { session: p.sessionId })"
                 @cwd="(dir) => workspaces.setCwd(p.key, dir)"
+                @program-status="(records) => onProgramStatus(p.sessionId, records)"
+                @foreground="workspaces.refreshSession(p.sessionId)"
                 @link-failed="linkFailed"
                 @title="(title) => workspaces.setTitle(p.key, title)"
                 @cell="(size, floored) => setCell(fontOf(c), size, floored)"

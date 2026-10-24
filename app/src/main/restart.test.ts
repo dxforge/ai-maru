@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { SCREEN_VERSION, type ScreenState } from '../shared/screen'
-import type { ClaudeFile } from './claude-status'
 import type { JobsFile } from './job'
 import {
   checkRestart,
@@ -76,21 +75,9 @@ describe('restart 파일', () => {
       }
     ]
   }
-  const claude: ClaudeFile = {
-    version: 1,
-    sessions: {
-      's-0000000a': {
-        state: 'working',
-        claudeSession: 'c-1',
-        configDir: '/cfg',
-        since: 5,
-        file: '1.json'
-      }
-    }
-  }
-  const state: RestartState = { screen, jobs, claude }
+  const state: RestartState = { screen, jobs }
 
-  it('쓴 화면·job 표·claude 상태를 한 번만 읽고 지운다', async () => {
+  it('쓴 화면·job 표를 한 번만 읽고 지운다', async () => {
     const path = restartFile(dir)
     await writeRestart(path, state)
     expect(await takeRestart(path)).toEqual(state)
@@ -98,21 +85,25 @@ describe('restart 파일', () => {
     expect(await takeRestart(path)).toBeNull()
   })
 
-  it('job 표나 claude 상태가 없거나 맞지 않으면 그 부분만 버린다', async () => {
+  it('job 표가 없거나 맞지 않으면 그 부분만 버리고, 옛 앱이 쓴 claude 부분은 무시한다', async () => {
     const path = restartFile(dir)
-    await writeRestart(path, { screen, jobs: null, claude: null })
-    expect(await takeRestart(path)).toEqual({ screen, jobs: null, claude: null })
+    await writeRestart(path, { screen, jobs: null })
+    expect(await takeRestart(path)).toEqual({ screen, jobs: null })
     writeFileSync(
       path,
-      JSON.stringify({ screen, jobs: { ...jobs, version: 1 }, claude: { ...claude, version: 2 } })
+      JSON.stringify({
+        screen,
+        jobs: { ...jobs, version: 1 },
+        claude: { version: 1, sessions: {} }
+      })
     )
-    expect(await takeRestart(path)).toEqual({ screen, jobs: null, claude: null })
+    expect(await takeRestart(path)).toEqual({ screen, jobs: null })
   })
 
   it('화면이 맞지 않거나 깨진 파일은 되살리지 않고 지운다', async () => {
     const path = restartFile(dir)
     const cases = [
-      JSON.stringify({ screen: { ...screen, version: SCREEN_VERSION + 1 }, jobs, claude }),
+      JSON.stringify({ screen: { ...screen, version: SCREEN_VERSION + 1 }, jobs }),
       // 화면만 담던 옛 모양이다.
       JSON.stringify(screen),
       'null',

@@ -1,4 +1,5 @@
 import type { Terminal } from '@xterm/xterm'
+import { parseProgramStatus, type ProgramStatusRecord } from '../../../shared/program-status'
 import { PROTOCOL_VERSION } from '../../../shared/protocol'
 import type { SessionConnection } from './connection'
 
@@ -7,6 +8,10 @@ export type AttachHandlers = {
   /** 되살린 pane 이 붙으면 `cwd` 가 없다. */
   onSpawned(id: string, cwd: string | undefined): void
   onOpenFailed(message: string): void
+  /** 세션의 OSC 7501 레코드 전체. 붙을 때와 바뀔 때마다 온다. */
+  onProgramStatus(records: ProgramStatusRecord[]): void
+  /** 레코드가 있는 동안 foreground 의 cwd 가 바뀌었다. */
+  onForeground(): void
 }
 
 export type Attachment = {
@@ -46,8 +51,12 @@ export function attach(
     const m = JSON.parse(msg)
     switch (m.type) {
       case 'attached':
+        if (!primary) term.resize(m.cols, m.rows)
+        break
       case 'resync':
         if (!primary) term.resize(m.cols, m.rows)
+        // 밀린 동안 버려진 `foreground` 는 다시 오지 않으므로 한 번 다시 읽게 한다.
+        handlers.onForeground()
         break
       case 'size':
         term.resize(m.cols, m.rows)
@@ -61,6 +70,14 @@ export function attach(
       case 'spawned':
         spawned = true
         handlers.onSpawned(m.id, m.cwd)
+        break
+      case 'program_status': {
+        const records = parseProgramStatus(m)
+        if (records) handlers.onProgramStatus(records)
+        break
+      }
+      case 'foreground':
+        handlers.onForeground()
         break
       case 'exit':
         ended = true

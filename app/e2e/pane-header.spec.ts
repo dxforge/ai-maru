@@ -2,12 +2,12 @@ import type { Page } from '@playwright/test'
 import {
   activeHeader,
   canvasPanel,
-  claudeHook,
   clickMenu,
   expect,
   newWorkspace,
   paneHeader,
   panes,
+  programStatus,
   putCanvas,
   resizeBy,
   run,
@@ -115,7 +115,7 @@ test('포커스를 옮기면 pane 헤더의 강조와 다른 pane 을 흐리게 
   ])
 })
 
-test('columns 의 cell 헤더는 pane 상태 가운데 waiting, working 순으로 하나를 보이고, 없으면 비우며, 누르면 그 cell 을 고른다', async ({
+test('columns 의 cell 헤더는 pane 상태 가운데 blocked, working 순으로 하나를 보이고, 없으면 비우며, 누르면 그 cell 을 고른다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -126,12 +126,12 @@ test('columns 의 cell 헤더는 pane 상태 가운데 waiting, working 순으�
   await expect(headers).toHaveCount(2)
   await expect(headers.nth(1).locator('.row-bar-icon')).toHaveText('')
 
-  await page.keyboard.type(claudeHook('UserPromptSubmit'))
+  await page.keyboard.type(programStatus('working'))
   await expect(headers.nth(1)).toHaveClass(/working/)
   await split(app, page, 'split-down', 2)
-  await page.keyboard.type(claudeHook('PermissionRequest', { session: 'c-2' }))
-  await expect(headers.nth(1)).toHaveClass(/waiting/)
-  await expect(headers.nth(0)).not.toHaveClass(/working|waiting|idle/)
+  await page.keyboard.type(programStatus('blocked', 'kind=permission'))
+  await expect(headers.nth(1)).toHaveClass(/blocked/)
+  await expect(headers.nth(0)).not.toHaveClass(/working|blocked|done|error|idle/)
   await expect(headers.nth(0).locator('.row-bar-icon')).toHaveText('')
 
   await headers.nth(0).click()
@@ -154,7 +154,7 @@ test('single 보기에서도 선택된 cell 의 헤더만 이름·상태를 보�
   await expect(headers.nth(1).locator('.name')).toHaveText(await cellItems(page).nth(1).innerText())
   await expect(headers.nth(1).locator('.row-bar-icon')).toHaveText('')
 
-  await page.keyboard.type(claudeHook('UserPromptSubmit'))
+  await page.keyboard.type(programStatus('working'))
   await expect(headers.nth(1)).toHaveClass(/working/)
   expect(await headerBelowPane(page)).toEqual({ gap: 0, above: 0 })
 
@@ -171,7 +171,7 @@ test('columns 의 cell 헤더는 idle 만 있으면 pane 헤더와 같은 idle �
 }) => {
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
-  await page.keyboard.type(claudeHook('Stop'))
+  await page.keyboard.type(programStatus('idle'))
   const cellIcon = page.locator('.cell-header .row-bar-icon')
   const paneIcon = activeHeader(page).locator('.row-bar-icon')
   await expect(page.locator('.cell-header')).toHaveClass(/idle/)

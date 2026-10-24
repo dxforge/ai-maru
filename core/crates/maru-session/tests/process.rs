@@ -120,6 +120,16 @@ impl Proc {
     }
 
     fn attach(&self, role: &str, cols: u16, rows: u16) -> (Conn, Value, Vec<u8>) {
+        let (c, header, replay, _) = self.attach_with_status(role, cols, rows);
+        (c, header, replay)
+    }
+
+    fn attach_with_status(
+        &self,
+        role: &str,
+        cols: u16,
+        rows: u16,
+    ) -> (Conn, Value, Vec<u8>, Value) {
         let mut c = self.connect();
         c.send_text(json!({
             "type": "attach", "protocol_version": PROTOCOL_VERSION,
@@ -129,7 +139,9 @@ impl Proc {
         assert_eq!(header["type"], "attached", "{header}");
         let (tag, replay) = c.frame().expect("재생 프레임이 없다");
         assert_eq!(tag, TAG_BINARY);
-        (c, header, replay)
+        let status = c.text();
+        assert_eq!(status["type"], "program_status", "{status}");
+        (c, header, replay, status)
     }
 
     fn wait(&mut self) -> ExitStatus {
@@ -194,6 +206,14 @@ impl Conn {
     }
 
     fn output_until(&mut self, want: &str) -> Vec<Value> {
+        self.until(want).0
+    }
+
+    fn bytes_until(&mut self, want: &str) -> Vec<u8> {
+        self.until(want).1
+    }
+
+    fn until(&mut self, want: &str) -> (Vec<Value>, Vec<u8>) {
         let want = want.as_bytes();
         let mut out = Vec::new();
         let mut texts = Vec::new();
@@ -215,7 +235,16 @@ impl Conn {
             let from = out.len().saturating_sub(want.len());
             out.extend_from_slice(&payload);
             if out[from..].windows(want.len()).any(|w| w == want) {
-                return texts;
+                return (texts, out);
+            }
+        }
+    }
+
+    fn text_of(&mut self, ty: &str) -> Value {
+        loop {
+            let v = self.next_text();
+            if v["type"] == ty {
+                return v;
             }
         }
     }
@@ -228,6 +257,27 @@ impl Conn {
                 None => panic!("Text 프레임 전에 끊겼다"),
             }
         }
+    }
+
+    fn texts_for(&mut self, dur: Duration) -> Vec<Value> {
+        let deadline = Instant::now() + dur;
+        let mut texts = Vec::new();
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            self.0.set_read_timeout(Some(left)).unwrap();
+            match self.try_frame() {
+                Ok(Some((TAG_TEXT, payload))) => {
+                    texts.push(serde_json::from_slice(&payload).unwrap())
+                }
+                Ok(Some(_)) => continue,
+                Ok(None) | Err(_) => break,
+            }
+        }
+        self.0.set_read_timeout(Some(WAIT)).unwrap();
+        texts
     }
 }
 
@@ -1003,6 +1053,7 @@ fn a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs() {
         }
         let v: Value = serde_json::from_slice(&payload).unwrap();
         match v["type"].as_str() {
+            Some("program_status") => continue,
             Some("resync") => {
                 resyncs += 1;
                 std::thread::sleep(pause);
@@ -1278,4 +1329,152 @@ fn help_is_in_english_and_describes_every_option_but_the_size() {
             "{flag} has no description:\n{help}"
         );
     }
+}
+
+const OSC_WORKING: &str = r"printf '\033]7501;state=working:app=x:msg=aGk=\033\\'";
+
+fn status_of(texts: &[Value]) -> &Value {
+    texts
+        .iter()
+        .rev()
+        .find(|t| t["type"] == "program_status")
+        .expect("program_status 가 오지 않았다")
+}
+
+#[test]
+fn program_status_reports_reach_every_client_in_order() {
+    let p = start();
+    let (mut a, _, _, status) = p.attach_with_status("primary", 80, 24);
+    assert_eq!(status["records"], json!([]));
+    let (mut b, _, _) = p.attach("observer", 80, 24);
+    a.input(&format!("{OSC_WORKING}; echo done-$((7501))\n"));
+    for c in [&mut a, &mut b] {
+        // `output_until` 은 echo 출력이 든 Binary 전에 온 Text 만 돌려준다 — program_status 가
+        // 보고 뒤의 출력보다 먼저 와야 한다.
+        let texts = c.output_until("done-7501");
+        let st = status_of(&texts);
+        assert_eq!(st["records"][0]["id"], "");
+        assert_eq!(st["records"][0]["state"], "working");
+        assert_eq!(st["records"][0]["app"], "x");
+        assert_eq!(st["records"][0]["message"], "hi");
+        assert_eq!(st["records"][0]["kind"], Value::Null);
+        assert_eq!(st["records"][0]["progress"], Value::Null);
+    }
+}
+
+#[test]
+fn attaching_sends_the_records_after_the_replay() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input(&format!("{OSC_WORKING}; echo done-$((7501))\n"));
+    a.output_until("done-7501");
+    let (_, _, _, status) = p.attach_with_status("observer", 80, 24);
+    assert_eq!(status["records"][0]["app"], "x");
+    assert_eq!(status["records"][0]["state"], "working");
+}
+
+#[test]
+fn clear_and_a_full_reset_empty_the_records() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input(&format!(
+        "{OSC_WORKING}; printf '\\033]7501;state=clear\\033\\\\'; echo done-$((1))\n"
+    ));
+    let texts = a.output_until("done-1");
+    assert_eq!(status_of(&texts)["records"], json!([]));
+
+    a.input(&format!(
+        "{OSC_WORKING}; printf '\\033c'; echo done-$((2))\n"
+    ));
+    let texts = a.output_until("done-2");
+    assert_eq!(status_of(&texts)["records"], json!([]));
+}
+
+#[test]
+fn the_support_query_is_answered_but_other_queries_are_not() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    // 응답은 셸 입력으로 들어가 echo 되므로 출력에서 보인다.
+    a.input("printf '\\033]7501;?\\033\\\\'; sleep 1; echo q-$((7501))\n");
+    let out = a.bytes_until("q-7501");
+    let out = String::from_utf8_lossy(&out);
+    assert!(
+        out.contains("7501;?:states=idle,working,done,blocked,error"),
+        "{out:?}"
+    );
+
+    a.input("printf '\\033[6n'; sleep 1; echo q-$((6))\n");
+    let out = a.bytes_until("q-6");
+    let out = String::from_utf8_lossy(&out);
+    let after = out
+        .find("[6n'")
+        .map(|i| &out[i + 4..])
+        .expect("echo 된 입력이 없다");
+    assert!(
+        !after.contains(";1R") && !after.contains(";2R"),
+        "DSR 응답이 셸 입력으로 들어갔다: {after:?}"
+    );
+}
+
+#[test]
+fn a_resync_carries_the_current_records() {
+    let p = start();
+    let (mut slow, _, _) = p.attach("observer", 80, 24);
+    let (mut fast, _, _) = p.attach("primary", 80, 24);
+    fast.input(&format!(
+        "{OSC_WORKING}; yes 0123456789 | head -n 1000000; echo flood-$((6*7))\n"
+    ));
+    fast.output_until("flood-42");
+
+    slow.text_of("resync");
+    let (tag, _) = slow.frame().unwrap();
+    assert_eq!(tag, TAG_BINARY);
+    let status = slow.next_text();
+    assert_eq!(status["type"], "program_status", "{status}");
+    assert_eq!(status["records"][0]["state"], "working");
+}
+
+#[test]
+fn foreground_cwd_changes_are_announced_only_while_records_exist() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let dir = tmpdir();
+    let path = std::fs::canonicalize(dir.path()).unwrap();
+    let path_str = path.to_str().unwrap();
+
+    a.input(&format!("(cd {path_str}; sleep 2)\n"));
+    let texts = a.texts_for(Duration::from_secs(3));
+    assert!(
+        !texts.iter().any(|t| t["type"] == "foreground"),
+        "레코드가 없는데 foreground 가 왔다: {texts:?}"
+    );
+    a.input("echo back-$((1))\n");
+    a.output_until("back-1");
+
+    // 처음 잰 값은 기준으로만 두므로 레코드가 생긴 뒤 한 번 재고 나서 옮긴다.
+    a.input(&format!(
+        "{OSC_WORKING}; sleep 1.5; (cd {path_str}; sleep 3); echo back-$((2))\n"
+    ));
+    let started = Instant::now();
+    let fg = a.text_of("foreground");
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "foreground 가 늦게 왔다: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(fg["cwd"], path_str, "{fg}");
+    assert!(fg["pid"].is_i64(), "{fg}");
+    a.output_until("back-2");
+    let back = a.text_of("foreground");
+    assert_ne!(back["cwd"], path_str, "{back}");
+
+    // 리더가 먼저 끝난 파이프라인은 cwd 를 못 읽는다 — 옮긴 것이 아니므로 알리지 않는다.
+    a.input("sleep 0.1 | sleep 2\n");
+    let texts = a.texts_for(Duration::from_secs(3));
+    assert!(
+        !texts.iter().any(|t| t["type"] == "foreground"),
+        "cwd 를 못 읽은 것을 이동으로 알렸다: {texts:?}"
+    );
+    a.input("echo back-$((3))\n");
+    a.output_until("back-3");
 }
