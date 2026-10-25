@@ -65,7 +65,14 @@
 //! "cursor_x","cursor_y"}` 와 재생(Binary, 비어 있어도 보낸다), 그리고 `program_status`(아래,
 //! 레코드가 없어도 보낸다)이고, 그 뒤로 PTY 출력이 Binary 로 이어진다. primary 가 보내는 Binary 는 셸 입력이고 observer 가 보내는 것은
 //! 버린다 — 터미널 질의(`ESC[6n` 등)에 primary 만 답하게. primary 는 `{"type":"resize","cols",
-//! "rows"}` 를 보낼 수 있다. 서버는 그 밖에 다음을 보낸다.
+//! "rows"}` 를 보낼 수 있다. observer 가 보낸 `resize`·`clear_scrollback` 은 버린다.
+//!
+//! primary 가 `{"type":"clear_scrollback"}` 을 보내면 서버는 스크롤백과 커서 행 위의 행을 지워 커서
+//! 행을 맨 위로 올리는 바이트를 화면에 쓰고, 같은 바이트를 PTY 출력처럼 모든 연결에 Binary 로 보낸다.
+//! 클라이언트는 그 바이트를 받아 지운다. 셸에는 알리지 않는다. 대체 화면이 떠 있으면 아무것도 하지
+//! 않는다. 이 요청을 모르는 옛 서버는 버린다.
+//!
+//! 서버는 그 밖에 다음을 보낸다.
 //!
 //! - `{"type":"role","role":"observer"}` — 다른 연결이 primary 를 가져갔다.
 //! - `{"type":"size","cols","rows"}` — primary 가 크기를 바꿨다. 이 뒤의 출력은 새 크기로 나온

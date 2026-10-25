@@ -25,6 +25,7 @@ describe('filterCommands', () => {
       'Reset Font Size',
       'Widen Cell',
       'Narrow Cell',
+      'Clear Scrollback',
       'Restart'
     ]
     expect(titles('')).toEqual(all)

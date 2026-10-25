@@ -18,6 +18,8 @@ export type Attachment = {
   readonly primary: boolean
   /** 터미널의 지금 크기로 pty 에 붙는다. 그 전의 입력은 모아 두었다가 붙은 뒤에 보낸다. */
   start(): void
+  /** xterm 은 직접 지우지 않는다. maru-pty 가 지우는 바이트를 출력과 같은 순서로 보내 준다. */
+  clearScrollback(): void
 }
 
 export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHandlers): Attachment {
@@ -121,6 +123,9 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
       )
       for (const bytes of queued) conn.send(bytes)
       queued = undefined
+    },
+    clearScrollback() {
+      if (!queued && primary) conn.send(JSON.stringify({ type: 'clear_scrollback' }))
     }
   }
 }

@@ -70,11 +70,21 @@ pub async fn run(stream: UnixStream, pty: Arc<Pty>, req: &Value) {
                     let _ = tokio::task::spawn_blocking(move || s.write(&bytes)).await;
                 }
                 Some((TAG_TEXT, text)) => {
-                    if let Ok(v) = serde_json::from_slice::<Value>(&text)
-                        && v["type"] == "resize"
-                        && let (Some(c @ 1..), Some(r @ 1..)) = (dim(&v["cols"]), dim(&v["rows"]))
-                    {
-                        let _ = pty.resize_if_primary(conn, c, r);
+                    let v = serde_json::from_slice::<Value>(&text).unwrap_or_default();
+                    match v["type"].as_str() {
+                        Some("resize") => {
+                            if let (Some(c @ 1..), Some(r @ 1..)) =
+                                (dim(&v["cols"]), dim(&v["rows"]))
+                            {
+                                let _ = pty.resize_if_primary(conn, c, r);
+                            }
+                        }
+                        Some("clear_scrollback") => {
+                            if let Err(e) = pty.clear_scrollback_if_primary(conn) {
+                                log!("maru-pty: clear_scrollback failed: {e:#}");
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 Some(_) => {}

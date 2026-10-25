@@ -132,11 +132,15 @@ function setTerminal(key: number, t: unknown): void {
   else terminals.delete(key)
 }
 
+function focusedTerminal(): Terminal | undefined {
+  const c = workspaces.selected()
+  return c && terminals.get(c.focused)
+}
+
 // 보이지 않는 터미널에는 포커스를 줄 수 없어, 선택이 화면에 반영된 뒤에 준다.
 async function focusSelected(): Promise<void> {
   await nextTick()
-  const c = workspaces.selected()
-  if (c) terminals.get(c.focused)?.focus()
+  focusedTerminal()?.focus()
 }
 
 // 선택이 그대로인 클릭에서는 TerminalView 의 active watch 와 아래의 스크롤 watch 가 돌지 않아,
@@ -532,9 +536,8 @@ watchEffect(() => {
 
 // cell 이 화면보다 넓을 수 있어, cell 이 아니라 포커스된 pane 이 보이게 한다.
 function revealFocused(): void {
-  const c = workspaces.selected()
-  if (viewMode.value === 'columns' && c)
-    terminals.get(c.focused)?.$el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  if (viewMode.value === 'columns')
+    focusedTerminal()?.$el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
 // 포커스가 그대로여도 앞의 cell 이 닫히거나 폭이 바뀌면 pane 이 밀려나 views 도 지켜본다.
 watch([viewMode, () => workspaces.selected()?.focused, views], revealFocused, { flush: 'post' })
@@ -584,6 +587,7 @@ const handlers: Record<CommandId, () => void> = {
   'reset-font-size': resetFont,
   'widen-cell': () => stepWidth(1),
   'narrow-cell': () => stepWidth(-1),
+  'clear-scrollback': () => focusedTerminal()?.clearScrollback(),
   restart: window.maru.restart
 }
 

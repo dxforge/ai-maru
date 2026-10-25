@@ -294,7 +294,11 @@ function onPaste(e: ClipboardEvent): void {
 
 let conn: PtyConnection | undefined
 
-defineExpose({ focus: () => term.focus(), kill: () => conn?.kill() })
+defineExpose({
+  focus: () => term.focus(),
+  kill: () => conn?.kill(),
+  clearScrollback: () => pty?.clearScrollback()
+})
 
 watch(
   () => active,

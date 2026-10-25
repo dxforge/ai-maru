@@ -433,6 +433,68 @@ fn only_one_primary_sets_the_size() {
     );
 }
 
+const CLEAR_SCROLLBACK: &str = "\x1b[3J";
+
+fn contains(haystack: &[u8], needle: &str) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|w| w == needle.as_bytes())
+}
+
+#[test]
+fn clear_scrollback_clears_the_replay_and_reaches_every_client() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let (mut b, _, _) = p.attach("observer", 80, 24);
+    a.input("seq 1 100; echo done-$((1+1))\n");
+    a.output_until("done-2");
+    b.output_until("done-2");
+
+    a.send_text(json!({ "type": "clear_scrollback" }));
+    b.bytes_until(CLEAR_SCROLLBACK);
+    a.bytes_until(CLEAR_SCROLLBACK);
+
+    let (_c, _, replay) = p.attach("observer", 80, 24);
+    let replay = String::from_utf8_lossy(&replay);
+    assert!(!replay.contains("done-2"), "{replay:?}");
+    assert!(!replay.contains("\n50\r"), "{replay:?}");
+}
+
+#[test]
+fn clear_scrollback_from_an_observer_is_ignored() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let (mut b, _, _) = p.attach("observer", 80, 24);
+    a.input("echo kept-$((2+3))\n");
+    a.output_until("kept-5");
+
+    b.send_text(json!({ "type": "clear_scrollback" }));
+    a.input("echo after-$((1+2))\n");
+    assert!(!contains(&a.bytes_until("after-3"), CLEAR_SCROLLBACK));
+
+    let (_c, _, replay) = p.attach("observer", 80, 24);
+    assert!(String::from_utf8_lossy(&replay).contains("kept-5"));
+}
+
+#[test]
+fn clear_scrollback_does_nothing_on_the_alternate_screen() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let (mut b, _, _) = p.attach("observer", 80, 24);
+    a.input("echo kept-$((2+3)); printf '\\033[?1049h'; echo alt-$((3+4))\n");
+    a.output_until("alt-7");
+
+    a.send_text(json!({ "type": "clear_scrollback" }));
+    a.input("echo after-$((1+2))\n");
+    assert!(!contains(&a.bytes_until("after-3"), CLEAR_SCROLLBACK));
+    assert!(!contains(&b.bytes_until("after-3"), CLEAR_SCROLLBACK));
+
+    a.input("printf '\\033[?1049l'; echo left-$((4+4))\n");
+    a.output_until("left-8");
+    let (_c, _, replay) = p.attach("observer", 80, 24);
+    assert!(String::from_utf8_lossy(&replay).contains("kept-5"));
+}
+
 #[test]
 fn kill_ends_the_shell_then_removes_the_files_then_answers() {
     let mut p = start();
