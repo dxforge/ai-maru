@@ -66,6 +66,7 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'reset-font-size', key: '0', shift: true, meta: true },
   { target: 'command', action: 'widen-cell', key: '.', shift: true, meta: true },
   { target: 'command', action: 'narrow-cell', key: ',', shift: true, meta: true },
+  { target: 'command', action: 'clear-scrollback', key: 'K', meta: true },
 
   // Electron 이 role 에 거는 기본 키와 같다.
   { target: 'menu', action: 'hide', key: 'H', meta: true },

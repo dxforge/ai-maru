@@ -61,7 +61,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['split-down', 'Split Down', 'Shift+Command+D'],
     ['close-pane', 'Close Pane', 'Command+W']
   ])
-  expect(menus.view.slice(0, 16)).toEqual([
+  expect(menus.view.slice(0, 17)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
     ['next-cell', 'Next Cell', 'Shift+Command+]'],
     ['previous-cell', 'Previous Cell', 'Shift+Command+['],
@@ -77,6 +77,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['reset-font-size', 'Reset Font Size', 'Command+0'],
     ['widen-cell', 'Widen Cell', 'Shift+Command+.'],
     ['narrow-cell', 'Narrow Cell', 'Shift+Command+,'],
+    ['clear-scrollback', 'Clear Scrollback', 'Command+K'],
     ['-', '', null]
   ])
   expect(menus.lastTypes).not.toContain('separator')
@@ -359,6 +360,7 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
     'Reset Font Size⌘0',
     'Widen Cell⇧⌘.',
     'Narrow Cell⇧⌘,',
+    'Clear Scrollback⌘K',
     'Restart'
   ])
   await expect(items(page).first()).toHaveClass(/selected/)

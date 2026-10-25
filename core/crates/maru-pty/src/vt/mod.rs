@@ -401,7 +401,8 @@ impl VtTerminal {
         out
     }
 
-    fn format_with_modes_as_set(&self, fmt: VtFormat) -> Result<Vec<u8>> {
+    /// 내용이 있는 첫 글자 칸부터 마지막 글자 칸까지. 내용이 없으면 None 이다.
+    fn select_all(&self) -> Result<Option<ffi::GhosttySelection>> {
         let zero_ref = ffi::GhosttyGridRef {
             size: size_of::<ffi::GhosttyGridRef>(),
             node: ptr::null_mut(),
@@ -414,17 +415,22 @@ impl VtTerminal {
             end: zero_ref,
             rectangle: false,
         };
+        // SAFETY: out 은 `size` 를 채운 지역 sized struct 다.
+        match unsafe { ffi::ghostty_terminal_select_all(self.raw, &mut sel) } {
+            ffi::GHOSTTY_SUCCESS => Ok(Some(sel)),
+            ffi::GHOSTTY_NO_VALUE => Ok(None),
+            rc => bail!("ghostty_terminal_select_all rc={rc}"),
+        }
+    }
+
+    fn format_with_modes_as_set(&self, fmt: VtFormat) -> Result<Vec<u8>> {
         // 내용이 있는지만 묻는다. 이 범위를 포맷에 넘기면 머리의 빈 행과 선행 공백이 빠져
         // 커서와 어긋난다.
-        // SAFETY: out 은 `size` 를 채운 지역 sized struct 다.
-        let rc = unsafe { ffi::ghostty_terminal_select_all(self.raw, &mut sel) };
+        let has_content = self.select_all()?.is_some();
         let vt = fmt == VtFormat::Vt;
         // 내용이 없어도 VT 는 모드(대체 화면·커서 숨김·bracketed paste)를 실어야 한다.
-        if rc == ffi::GHOSTTY_NO_VALUE && !vt {
+        if !has_content && !vt {
             return Ok(Vec::new());
-        }
-        if rc != ffi::GHOSTTY_SUCCESS && rc != ffi::GHOSTTY_NO_VALUE {
-            bail!("ghostty_terminal_select_all rc={rc}");
         }
 
         let opts = ffi::GhosttyFormatterTerminalOptions {
@@ -456,9 +462,67 @@ impl VtTerminal {
             },
             selection: ptr::null(),
         };
+        if vt {
+            self.run_formatter(opts, |raw| drop_modes(raw, UNREPLAYABLE_MODES))
+        } else {
+            self.run_formatter(opts, <[u8]>::to_vec)
+        }
+    }
 
+    /// 스크롤백과 커서 행 위의 행을 지워 커서 행을 맨 위로 올리는 시퀀스. ghostty 앱의 `clear_screen`
+    /// 이 셸에 알리지 않고 지우는 것과 같다. 이 화면과 클라이언트의 xterm 에 같은 바이트를 쓰므로 두
+    /// 터미널이 같은 결과를 내는 시퀀스만 쓴다. 대체 화면이 떠 있으면 None 이다. xterm 은 대체 화면이 떠
+    /// 있는 동안 일반 화면의 스크롤백을 지울 수 없기 때문이다.
+    pub fn clear_scrollback_sequence(&self) -> Result<Option<Vec<u8>>> {
+        if self.alternate_active()? {
+            return Ok(None);
+        }
+        let (_, y) = self.cursor()?;
+        // SU 는 스크롤 영역 안에서만 돌므로 영역이 화면 전체일 때만 행을 올린다. ghostty 는 그때 올린
+        // 행을 스크롤백에 넣고 xterm 은 버리는데, 뒤의 `3J` 가 스크롤백을 지워 결과가 같다.
+        if y == 0 || !self.scroll_region_is_full()? {
+            return Ok(Some(b"\x1b[3J".to_vec()));
+        }
+        Ok(Some(format!("\x1b[{y}S\x1b[3J\x1b[{y}A").into_bytes()))
+    }
+
+    /// C API 에 스크롤 영역을 읽는 값이 없어, 기본값이 아닐 때만 영역을 싣는 formatter 로 잰다.
+    fn scroll_region_is_full(&self) -> Result<bool> {
+        // 영역은 내용과 상관없이 실리므로, 스크롤백까지 포맷하지 않게 내용을 첫 글자 칸 하나로 줄인다.
+        let sel = self.select_all()?.map(|sel| ffi::GhosttySelection {
+            end: sel.start,
+            ..sel
+        });
+        let selection = sel.as_ref().map_or(ptr::null(), |s| s as *const _);
+        let opts = ffi::GhosttyFormatterTerminalOptions {
+            size: size_of::<ffi::GhosttyFormatterTerminalOptions>(),
+            emit: ffi::GHOSTTY_FORMATTER_FORMAT_VT,
+            unwrap: false,
+            trim: true,
+            extra: ffi::GhosttyFormatterTerminalExtra {
+                size: size_of::<ffi::GhosttyFormatterTerminalExtra>(),
+                scrolling_region: true,
+                screen: ffi::GhosttyFormatterScreenExtra {
+                    size: size_of::<ffi::GhosttyFormatterScreenExtra>(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            selection,
+        };
+        // 스타일·모드·커서를 싣지 않으므로 출력의 CSI 는 영역 시퀀스뿐이다.
+        self.run_formatter(opts, |out| state_start(out).is_none())
+    }
+
+    /// 출력은 ghostty 가 해제하기 전에 `read` 로 넘긴다. 복사본을 따로 만들지 않기 위해서다.
+    fn run_formatter<T>(
+        &self,
+        opts: ffi::GhosttyFormatterTerminalOptions,
+        read: impl FnOnce(&[u8]) -> T,
+    ) -> Result<T> {
         let mut raw_fmt: ffi::GhosttyFormatter = ptr::null_mut();
-        // SAFETY: `opts` 와 그 안의 sized struct 는 각자 `size` 를 채웠다. selection 은 NULL(화면 전체)이다.
+        // SAFETY: `opts` 와 그 안의 sized struct 는 각자 `size` 를 채웠다. selection 은 NULL(화면 전체)이거나
+        // 이 호출 동안 사는 지역 값이다.
         let rc = unsafe {
             ffi::ghostty_formatter_terminal_new(ptr::null(), &mut raw_fmt, self.raw, opts)
         };
@@ -482,17 +546,12 @@ impl VtTerminal {
             bail!("ghostty_formatter_format_alloc rc={rc}");
         }
         if out_ptr.is_null() {
-            return Ok(Vec::new());
+            return Ok(read(&[]));
         }
-        // SAFETY: 성공 시 (out_ptr, out_len) 은 유효하다. 복사한 뒤 같은 할당자·길이로 해제한다.
-        let raw = unsafe { std::slice::from_raw_parts(out_ptr, out_len) };
-        let bytes = if vt {
-            drop_modes(raw, UNREPLAYABLE_MODES)
-        } else {
-            raw.to_vec()
-        };
+        // SAFETY: 성공 시 (out_ptr, out_len) 은 유효하다. 읽은 뒤 같은 할당자·길이로 해제한다.
+        let out = read(unsafe { std::slice::from_raw_parts(out_ptr, out_len) });
         unsafe { ffi::ghostty_free(ptr::null(), out_ptr, out_len) };
-        Ok(bytes)
+        Ok(out)
     }
 }
 
@@ -1155,5 +1214,73 @@ mod tests {
         assert_eq!(drop_modes(b"\x1b[?2026h x", UNREPLAYABLE_MODES), b" x");
         assert_eq!(drop_modes(b"\x1b[?h x", UNREPLAYABLE_MODES), b"\x1b[?h x");
         assert_eq!(drop_modes(b"\x1b[6h x", UNREPLAYABLE_MODES), b"\x1b[6h x");
+    }
+
+    fn clear(t: &mut VtTerminal) -> Option<Vec<u8>> {
+        let seq = t.clear_scrollback_sequence().unwrap();
+        if let Some(seq) = &seq {
+            t.write(seq);
+        }
+        seq
+    }
+
+    fn filled_with_prompt() -> VtTerminal {
+        let mut t = term();
+        for i in 0..100 {
+            t.write(format!("line{i}\r\n").as_bytes());
+        }
+        t.write(b"$ ls");
+        t
+    }
+
+    #[test]
+    fn clearing_moves_the_cursor_row_to_the_top_and_drops_the_scrollback() {
+        let mut t = filled_with_prompt();
+        assert_eq!(t.cursor().unwrap(), (4, 23));
+        clear(&mut t).unwrap();
+        assert_eq!(t.scrollbar().unwrap().total, 24);
+        assert_eq!(t.cursor().unwrap(), (4, 0));
+        assert_eq!(plain(&t), "$ ls");
+    }
+
+    #[test]
+    fn clearing_keeps_the_rows_below_the_cursor() {
+        let mut t = filled_with_prompt();
+        t.write(b"\r\nbelow\x1b[A\x1b[3G");
+        clear(&mut t).unwrap();
+        assert_eq!(t.cursor().unwrap(), (2, 0));
+        assert_eq!(plain(&t), "$ ls\nbelow");
+    }
+
+    #[test]
+    fn clearing_on_the_top_row_only_drops_the_scrollback() {
+        let mut t = filled_with_prompt();
+        t.write(b"\x1b[H");
+        assert_eq!(clear(&mut t).unwrap(), b"\x1b[3J");
+        assert_eq!(t.scrollbar().unwrap().total, 24);
+        assert_eq!(t.cursor().unwrap(), (0, 0));
+    }
+
+    #[test]
+    fn clearing_under_a_scroll_region_only_drops_the_scrollback() {
+        for region in [&b"\x1b[2;20r"[..], b"\x1b[?69h\x1b[1;40s"] {
+            let mut t = filled_with_prompt();
+            t.write(region);
+            t.write(b"\x1b[10;3H");
+            let rows = plain(&t);
+            assert_eq!(clear(&mut t).unwrap(), b"\x1b[3J", "{region:?}");
+            assert_eq!(t.scrollbar().unwrap().total, 24, "{region:?}");
+            assert_eq!(t.cursor().unwrap(), (2, 9), "{region:?}");
+            assert!(rows.ends_with(&plain(&t)), "{region:?}");
+        }
+    }
+
+    #[test]
+    fn clearing_does_nothing_on_the_alternate_screen() {
+        let mut t = filled_with_prompt();
+        t.write(b"\x1b[?1049hfull screen");
+        assert_eq!(clear(&mut t), None);
+        t.write(b"\x1b[?1049l");
+        assert!(plain(&t).contains("line0"));
     }
 }

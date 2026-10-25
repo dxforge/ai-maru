@@ -352,6 +352,21 @@ impl Pty {
         self.resize_locked(&mut screen, conn, cols, rows)
     }
 
+    /// 지우는 바이트를 PTY 출력과 같은 락 안에서 VT 에 쓰고 모든 구독자에게 보낸다. 출력 사이에 같은
+    /// 순서로 끼어야 클라이언트의 xterm 이 이 화면과 같게 지워진다.
+    pub fn clear_scrollback_if_primary(&self, conn: u64) -> Result<()> {
+        let mut screen = self.screen.lock().unwrap();
+        if !self.is_primary(conn) {
+            return Ok(());
+        }
+        let Some(seq) = screen.vt.clear_scrollback_sequence()? else {
+            return Ok(());
+        };
+        screen.vt.write(&seq);
+        screen.broadcast(|o| o.push(&seq));
+        Ok(())
+    }
+
     fn resize_locked(&self, screen: &mut Screen, conn: u64, cols: u16, rows: u16) -> Result<()> {
         let changed = (screen.cols, screen.rows) != (cols, rows);
         // VT 가 먼저 거절해야 PTY 가 그대로 남는다.

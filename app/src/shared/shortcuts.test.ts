@@ -53,6 +53,11 @@ describe('commandKeys', () => {
     expect(formatKeys(commandKeys('widen-cell')!)).toBe('⇧⌘.')
     expect(formatKeys(commandKeys('narrow-cell')!)).toBe('⇧⌘,')
   })
+
+  it('스크롤백 지우기는 ⌘K 다', () => {
+    expect(toAccelerator(commandKeys('clear-scrollback')!)).toBe('Command+K')
+    expect(formatKeys(commandKeys('clear-scrollback')!)).toBe('⌘K')
+  })
 })
 
 describe('toAccelerator', () => {
