@@ -18,7 +18,7 @@ import {
   test
 } from './app'
 
-/** 떠 있는 pty 마다 `foreground` 가 답한 프로세스 이름. 확인 창은 `foreground` 의 답으로 실행 중인지 가리므로, 프로그램이 뜬 것을 이 값으로 기다린다. */
+/** 확인 창은 `foreground` 의 답으로 실행 중인지 가리므로, 프로그램이 뜬 것을 이 값으로 기다린다. */
 function foregroundNames(dataDir: string): Promise<(string | null)[]> {
   return Promise.all(
     sockets(dataDir).map((s) =>
@@ -40,6 +40,16 @@ test('⌘W 는 셸만 뜬 pane 을 묻지 않고 닫는다', async ({ launch }) 
   await split(app, page, 'split-right', 2)
   await stubDialog(app, 1)
   await clickMenu(app, 'close-pane')
+  await expect(panes(page)).toHaveCount(1)
+  expect(await dialogCalls(app)).toEqual([])
+})
+
+test('⌘W 를 빠르게 두 번 누르면 셸만 뜬 pane 을 둘 닫는다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-right', 3)
+  await stubDialog(app, 1)
+  await Promise.all([clickMenu(app, 'close-pane'), clickMenu(app, 'close-pane')])
   await expect(panes(page)).toHaveCount(1)
   expect(await dialogCalls(app)).toEqual([])
 })
@@ -73,6 +83,21 @@ test('⌘W 는 프로그램이 도는 pane 을 이름과 함께 묻고, 취소�
   await expect(panes(page)).toHaveCount(1)
   expect(await dialogCalls(app)).toHaveLength(1)
   await expect.poll(() => sockets(dataDir)).toHaveLength(1)
+})
+
+test('확인 창이 뜨면 그 사이에 누른 ⌘W 는 버린다', async ({ launch, dataDir }) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-right', 3)
+  await startCat(page, dataDir)
+  await stubDialog(app, 1)
+  await Promise.all([clickMenu(app, 'close-pane'), clickMenu(app, 'close-pane')])
+  await expect.poll(async () => (await dialogCalls(app)).length).toBe(1)
+  // 버리지 않았다면 취소한 뒤 같은 pane 을 다시 묻는다. 그 확인 창은 셸이 다시 답하기 전에 뜨므로, 셸의 답을 기다린 뒤 확인 창 수를 센다.
+  await page.keyboard.press('Control+D')
+  await run(page, 'echo alive-$((1+1))', 'alive-2')
+  expect(await dialogCalls(app)).toHaveLength(1)
+  await expect(panes(page)).toHaveCount(3)
 })
 
 test('명령을 주어 띄운 pane 은 명령의 이름으로 묻고, Close 면 닫는다', async ({
@@ -211,6 +236,19 @@ test('재시작은 프로그램이 돌아도 묻지 않는다', async ({ launch,
   await stubDialog(app, 1)
   await restartWith(app)
 })
+
+for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+  test(`${signal} 로 끝낼 때는 묻지 않고 pty 를 끄고 끝난다`, async ({ launch, dataDir }) => {
+    const { app, page } = await launch()
+    await startCat(page, dataDir)
+    // 물었다면 취소해 앱이 끝나지 않는다.
+    await stubDialog(app, 1)
+    const closed = app.waitForEvent('close')
+    process.kill(app.process().pid!, signal)
+    await closed
+    expect(sockets(dataDir)).toEqual([])
+  })
+}
 
 test('macOS 가 로그아웃·재시동으로 앱을 끝낼 때는 묻지 않는다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()

@@ -10,11 +10,9 @@ export type ProgramDeps = {
 }
 
 /**
- * pane 에서 셸 말고 도는 프로그램. 없으면 null 이고, 있는데 이름을 모르면 `name` 이 null 이다.
- *
- * 명령 pane 은 `foreground` 를 묻지 않고 늘 실행 중으로 본다. 셸이 명령을 exec 하므로 foreground 프로세스 그룹이
+ * 명령 pane 은 `foreground` 를 묻지 않고 늘 실행 중으로 본다. 셸이 명령을 exec 해서, foreground 프로세스 그룹이
  * bash 에서는 셸 pid 로, zsh 에서는 0 으로 나오기 때문이다. 명령이 끝나면 pane 도 닫히므로, 떠 있는 명령 pane 에서는
- * 명령이 도는 중이다. pty 에 닿지 못하거나 레코드가 없으면 실행 중이 아닌 것으로 본다.
+ * 명령이 도는 중이다.
  */
 export async function runningProgram(
   pane: PaneTarget,
@@ -35,6 +33,26 @@ export async function runningPanes(
 ): Promise<number> {
   const found = await Promise.all(panes.map((p) => runningProgram(p, deps)))
   return found.filter(Boolean).length
+}
+
+/** `shutdown` 뒤로는 `graceMs` 동안만 묻지 않는다. 다른 앱이 로그아웃을 멈춰 이 앱이 남으면, 그 뒤의 ⌘Q·창 닫기는 다시 물어야 하기 때문이다. */
+export function createQuitPermission(graceMs: number): {
+  allow: () => void
+  shutdown: () => void
+  allowed: () => boolean
+} {
+  let allowed = false
+  let shutdown: ReturnType<typeof setTimeout> | undefined
+  return {
+    allow: () => {
+      allowed = true
+    },
+    shutdown: () => {
+      clearTimeout(shutdown)
+      shutdown = setTimeout(() => (shutdown = undefined), graceMs)
+    },
+    allowed: () => allowed || shutdown !== undefined
+  }
 }
 
 export type Dialog = Pick<MessageBoxOptions, 'message' | 'detail' | 'buttons'>

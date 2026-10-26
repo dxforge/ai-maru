@@ -236,7 +236,7 @@ export async function foreground(
   const r = await askWithin(dir, id, { type: 'foreground' }, timeoutMs)
   // `foreground` 를 더하며 `PROTOCOL_VERSION` 을 올리지 않았으므로, 앱을 새로 깔아도 이 요청을 모르는 이전 maru-pty 의 pty 가 남아 있을 수 있다.
   if (r.code === 'unknown_request') {
-    throw new Error(`pty ${id} runs an older maru-pty; restart it to open relative paths`)
+    throw new Error(`pty ${id} runs an older maru-pty that does not answer foreground requests`)
   }
   if (r.type !== 'foreground' || typeof r.pid !== 'number') throw cannotRead(id, r)
   return {

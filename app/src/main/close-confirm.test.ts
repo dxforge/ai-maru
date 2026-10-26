@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   closePaneDialog,
+  createQuitPermission,
   runningDialog,
   runningPanes,
   runningProgram,
@@ -90,5 +91,49 @@ describe('확인 창', () => {
 
   it('도는 것이 없으면 묻지 않는다', () => {
     expect(runningDialog({ panes: 0, jobs: 0 }, 'Quit?', 'Quit')).toBeNull()
+  })
+})
+
+describe('createQuitPermission', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('처음에는 묻고, 허락하면 그 뒤로 묻지 않는다', () => {
+    const q = createQuitPermission(60_000)
+    expect(q.allowed()).toBe(false)
+    q.allow()
+    expect(q.allowed()).toBe(true)
+  })
+
+  it('shutdown 뒤에는 정한 시간 동안만 묻지 않는다', () => {
+    vi.useFakeTimers()
+    const q = createQuitPermission(60_000)
+    q.shutdown()
+    vi.advanceTimersByTime(59_999)
+    expect(q.allowed()).toBe(true)
+    vi.advanceTimersByTime(1)
+    expect(q.allowed()).toBe(false)
+  })
+
+  it('shutdown 이 다시 오면 시간을 처음부터 잰다', () => {
+    vi.useFakeTimers()
+    const q = createQuitPermission(60_000)
+    q.shutdown()
+    vi.advanceTimersByTime(30_000)
+    q.shutdown()
+    vi.advanceTimersByTime(59_999)
+    expect(q.allowed()).toBe(true)
+    vi.advanceTimersByTime(1)
+    expect(q.allowed()).toBe(false)
+  })
+
+  it('shutdown 시간 안에 받은 허락은 시간이 지나도 남는다', () => {
+    vi.useFakeTimers()
+    const q = createQuitPermission(60_000)
+    q.shutdown()
+    q.allow()
+    vi.advanceTimersByTime(60_000)
+    expect(q.allowed()).toBe(true)
   })
 })

@@ -155,13 +155,33 @@ function stepCell(by: 1 | -1): void {
   if (key !== undefined) selectCell(key)
 }
 
+let closingPane = false
+let pendingCloses = 0
+
+// ⌘W 를 꾹 누르면 누를 때마다 focus 된 pane 을 하나씩 닫는다. 다음에 닫을 pane 은 앞의 pane 이 닫혀야 정해지므로,
+// 확인하는 동안 온 ⌘W 는 세어 두었다가 이어서 닫는다. 확인 창이 떴으면 세어 둔 것은 버린다.
 // 확인 창이 떠 있는 동안 pane 이 스스로 닫혔으면 `removePane` 은 아무것도 하지 않는다.
 async function closePane(): Promise<void> {
-  const c = workspaces.selected()
-  if (!c) return
-  const p = focusedPane(c)
-  if (await window.maru.confirmClosePane(p.ptyId)) removePane(p.key)
-  void focusSelected()
+  if (closingPane) {
+    pendingCloses++
+    return
+  }
+  closingPane = true
+  try {
+    for (;;) {
+      const c = workspaces.selected()
+      if (!c) break
+      const p = focusedPane(c)
+      const { close, asked } = await window.maru.confirmClosePane(p.ptyId)
+      if (close) removePane(p.key)
+      if (asked || pendingCloses === 0) break
+      pendingCloses--
+    }
+  } finally {
+    closingPane = false
+    pendingCloses = 0
+    void focusSelected()
+  }
 }
 
 // 마지막 cell 이 닫히면 store 가 workspace 를 지운다. cell 의 job 은 cell 이 닫힐 때 main 이 끈다.
@@ -170,7 +190,7 @@ async function closeWorkspace(): Promise<void> {
   const w = c && workspaces.workspaceOf(c.key)
   if (!w) return
   const panes = w.cells.flatMap((x) => x.panes.map((p) => p.key))
-  if (await window.maru.confirmCloseWorkspace(w.id)) for (const p of panes) removePane(p)
+  if ((await window.maru.confirmCloseWorkspace(w.id)).close) for (const p of panes) removePane(p)
   void focusSelected()
 }
 
