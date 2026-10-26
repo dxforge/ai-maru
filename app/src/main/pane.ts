@@ -13,13 +13,13 @@ import {
 // 안에 끝나거나 실패하므로 그보다는 길다.
 const REPLY_MS = 8_000
 
-export type PaneChannel = 'pane:new' | 'pane:close' | 'cell:new' | 'mate:list' | 'pane:cancel'
+export type PaneChannel = 'pane:new' | 'pane:close' | 'cell:new' | 'pane:cancel'
 
 const optionalCommand = (v: unknown): string[] | undefined =>
   v === undefined ? undefined : requireCommand(v)
 
 /**
- * pane 은 renderer 가 들고 있다. `createPanes` 는 pane 요청과 `mate.list` 를 창에 넘기고 `reply` 로 받은 답을 돌려준다.
+ * pane 은 renderer 가 들고 있다. `createPanes` 는 pane 요청을 창에 넘기고 `reply` 로 받은 답을 돌려준다.
  * `cellOf` 는 pty(pane 이나 job)의 cell id 를 돌려준다.
  *
  * 호출하는 쪽은 창이 준비됐다고 알리면 `ready` 를, 창이 새 문서로 바뀌면 `unready` 를 부른다. `ready` 를 부르기
@@ -116,12 +116,6 @@ export function createPanes(
         const cell = cellOf(pty)
         return { cwd, ...(cell && { cell }), ...(command && { command }) }
       })
-    },
-    // program_status 와 cell 이름은 renderer 만 가지므로 창에 묻는다(docs/architecture.md 의 "program_status 는 renderer 만 가진다").
-    'mate.list': async () => {
-      const reply = await ask('mate:list', () => null)
-      if (!reply || !('mates' in reply)) throw new Error('the window answered without mates')
-      return { mates: reply.mates }
     }
   }
 

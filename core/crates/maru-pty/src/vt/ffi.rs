@@ -177,6 +177,8 @@ pub type GhosttyTerminalWritePtyFn =
     unsafe extern "C" fn(GhosttyTerminal, *mut c_void, *const u8, usize);
 pub type GhosttyTerminalProgramStatusFn =
     unsafe extern "C" fn(GhosttyTerminal, *mut c_void, *const GhosttyTerminalProgramStatus);
+/// `OPT_TITLE_CHANGED`·`OPT_PWD_CHANGED`·`OPT_RESET` 콜백은 모두 이 모양이다.
+pub type GhosttyTerminalNotifyFn = unsafe extern "C" fn(GhosttyTerminal, *mut c_void);
 
 #[cfg(test)]
 mod tests {

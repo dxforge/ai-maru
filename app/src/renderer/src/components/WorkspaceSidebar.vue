@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import { computed, type DeepReadonly } from 'vue'
-import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
+import { cellLabel, windowTitle, workspaceName } from '../../../shared/names'
+import {
+  CLAUDE_APP,
+  programName,
+  type ProgramStatusRecord,
+  type ProgramStatusState
+} from '../../../shared/program-status'
 import { ICONS, STATE_LABELS } from '../icons'
-import { CLAUDE_APP, programName } from '../program-status/store'
 import StatusIcon from './StatusIcon.vue'
-import { cellLabel, tildePath, windowTitle, workspaceName } from '../workspace/cwd'
+import { tildePath } from '../workspace/cwd'
+import { paneName } from '../workspace/display'
 import { focusedPane, type Cell, type Pane, type Workspace } from '../workspace/store'
 
 const {
@@ -44,7 +50,7 @@ type Row = {
 function paneRow(p: DeepReadonly<Pane>, focused: boolean): Row {
   const r = root(p.ptyId)
   const s = r?.state
-  const text = p.title || (r ? programName(r.app) : 'Shell')
+  const text = paneName(p.title, r)
   return {
     key: p.key,
     pane: p.key,

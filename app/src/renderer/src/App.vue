@@ -11,6 +11,7 @@ import {
 } from 'vue'
 import { available, commands, type CommandId } from '../../shared/commands'
 import { PANE_MIN } from '../../shared/layout'
+import { cellLabel, windowTitle } from '../../shared/names'
 import type { PaneReply } from '../../shared/pane'
 import type { ProgramStatusRecord } from '../../shared/program-status'
 import {
@@ -22,7 +23,7 @@ import {
 import { secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
 import { createCanvas } from './canvas/store'
-import { createProgramStatuses } from './program-status/store'
+import { createPtyStates, syncPtyStates } from './pty/states'
 import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PaneHeader from './components/PaneHeader.vue'
@@ -36,7 +37,7 @@ import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/term
 import { activeTheme, windowTheme } from './themes'
 import { createToasts } from './toast/store'
 import { columnsWidth, paneCells, stepPaneCols, terminalPadding } from './workspace/columns'
-import { cellLabel, tildePath, windowTitle } from './workspace/cwd'
+import { tildePath } from './workspace/cwd'
 import { canSplit, snapRects, type Box, type Size } from './workspace/grid'
 import {
   columnCount,
@@ -48,22 +49,22 @@ import {
   type SplitDirection,
   type Widths
 } from './workspace/layout'
-import { mateRows } from './workspace/mates'
 import { createWorkspaces, focusedPane, startDirOf, type Cell } from './workspace/store'
 
 const canvas = createCanvas()
 window.maru.onCanvasPut(canvas.put)
 
-const workspaces = createWorkspaces(window.maru.gitHead, window.maru.foregroundCwd)
+const ptyStates = createPtyStates()
+const workspaces = createWorkspaces(window.maru.gitHead, ptyStates)
+syncPtyStates((pty, entry) => {
+  ptyStates.apply(pty, entry)
+  workspaces.applyState(pty)
+}, window.maru)
 
-const statuses = createProgramStatuses()
-// zsh 는 프롬프트마다 cwd 를 알려 와 그때 branch 를 다시 읽지만, Claude 를 띄운 pane 에는 프롬프트가 뜨지 않아
-// 루트 레코드의 상태가 바뀔 때와 pty 가 `foreground` 로 디렉토리 이동을 알릴 때 읽는다. 한 턴에 `msg` 만 다른
-// working 보고가 여러 번 오므로 레코드가 올 때마다 읽지는 않는다.
-function onProgramStatus(pty: string, records: ProgramStatusRecord[]): void {
-  const was = statuses.state(pty)
-  statuses.set(pty, records)
-  if (statuses.state(pty) !== was) workspaces.refreshPty(pty)
+// 이전 maru-pty 의 pty 만 attach 스트림으로 레코드를 보낸다(`pty/states.ts`).
+function onLegacyProgramStatus(pty: string, records: ProgramStatusRecord[]): void {
+  ptyStates.setLegacyRecords(pty, records)
+  if (ptyStates.isOld(pty)) workspaces.applyState(pty)
 }
 const home = window.maru.home
 
@@ -210,8 +211,13 @@ function removePane(pane: number, message = 'the pane was closed before its pty 
   terminals.get(pane)?.kill()
   answerPaneRequest(pane, { error: 'open_failed', message })
   const pty = workspaces.pane(pane)?.ptyId
-  if (pty) statuses.remove(pty)
+  if (pty) ptyStates.remove(pty)
   workspaces.closePane(pane)
+}
+
+function onSpawned(pane: number, pty: string, dir: string | undefined): void {
+  answerPaneRequest(pane, { pty })
+  if (dir !== undefined) workspaces.setSpawnedCwd(pane, dir)
 }
 
 // ⌘D 로 나눈 pane 은 오류를 보인 채 남지만, `maru pane new`·`maru cell new` 의 pane 은 띄운 쪽이 이유를
@@ -258,10 +264,6 @@ window.maru.onPaneClose((id, pty) => {
   window.maru.paneReply(id, null)
   removePane(pane.key)
 })
-
-window.maru.onMateList((id) =>
-  window.maru.paneReply(id, { mates: mateRows(workspaces.list.value, statuses.root) })
-)
 
 // 기억한 값을 처음 값으로 쓴다. 나중에 적용하면 사이드바를 기본값(열림·282px)으로 그린 뒤 기억한 값으로 transition 이 돈다.
 const prefs = window.maru.viewPrefs
@@ -539,7 +541,7 @@ const URGENCY = ['blocked', 'error', 'done', 'working', 'idle'] as const
 const urgent = computed(() => {
   const map = new Map<number, (typeof URGENCY)[number]>()
   for (const c of workspaces.cells()) {
-    const states = new Set(c.panes.map((p) => statuses.state(p.ptyId)))
+    const states = new Set(c.panes.map((p) => ptyStates.state(p.ptyId)))
     const state = URGENCY.find((s) => states.has(s))
     if (state) map.set(c.key, state)
   }
@@ -690,7 +692,7 @@ void window.maru.restoreScreen().then((s) => {
         :collapsed="!sidebarOpen"
         :workspaces="workspaces.list.value"
         :selected-key="workspaces.selectedKey.value"
-        :root="statuses.root"
+        :root="ptyStates.root"
         :urgent="urgent"
         :folded="folded"
         :home="home"
@@ -731,7 +733,7 @@ void window.maru.restoreScreen().then((s) => {
             @focusin="focusPane(c.key, p.key)"
           >
             <PaneHeader
-              :status="statuses.root(p.ptyId)"
+              :status="ptyStates.root(p.ptyId)"
               :pane="p"
               :focused="active"
               @mousedown.prevent="terminals.get(p.key)?.focus()"
@@ -750,12 +752,9 @@ void window.maru.restoreScreen().then((s) => {
                 :theme="terminalTheme"
                 @exit="removePane(p.key)"
                 @failed="(message) => paneFailed(p.key, message)"
-                @spawned="answerPaneRequest(p.key, { pty: p.ptyId })"
-                @cwd="(dir) => workspaces.setCwd(p.key, dir)"
-                @program-status="(records) => onProgramStatus(p.ptyId, records)"
-                @foreground="workspaces.refreshPty(p.ptyId)"
+                @spawned="(dir) => onSpawned(p.key, p.ptyId, dir)"
+                @program-status="(records) => onLegacyProgramStatus(p.ptyId, records)"
                 @link-failed="linkFailed"
-                @title="(title) => workspaces.setTitle(p.key, title)"
                 @cell="(size, floored) => setCell(fontOf(c), size, floored)"
               />
             </div>

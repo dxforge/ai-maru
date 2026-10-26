@@ -70,7 +70,8 @@ impl Records {
         self.entries.is_empty()
     }
 
-    pub fn message(&self) -> serde_json::Value {
+    /// 레코드 전체를 id 순서로 돌려준다. 상태 메시지의 `records` 다.
+    pub fn to_json(&self) -> serde_json::Value {
         #[derive(serde::Serialize)]
         struct Wire<'a> {
             id: &'a str,
@@ -85,7 +86,7 @@ impl Records {
                 record: &e.record,
             })
             .collect();
-        serde_json::json!({ "type": "program_status", "records": records })
+        serde_json::json!(records)
     }
 }
 
@@ -135,12 +136,11 @@ mod tests {
             t,
         ));
         assert!(r.apply(&report("", ProgramStatusState::Working, ""), t));
-        let m = r.message();
-        assert_eq!(m["type"], "program_status");
-        assert_eq!(m["records"].as_array().unwrap().len(), 1);
-        assert_eq!(m["records"][0]["kind"], serde_json::Value::Null);
-        assert_eq!(m["records"][0]["message"], "");
-        assert_eq!(m["records"][0]["state"], "working");
+        let m = r.to_json();
+        assert_eq!(m.as_array().unwrap().len(), 1);
+        assert_eq!(m[0]["kind"], serde_json::Value::Null);
+        assert_eq!(m[0]["message"], "");
+        assert_eq!(m[0]["state"], "working");
     }
 
     #[test]
@@ -178,7 +178,7 @@ mod tests {
         r.apply(&report("build", ProgramStatusState::Working, ""), t);
         assert!(r.apply(&clear(""), t));
         assert!(r.is_empty());
-        assert_eq!(r.message()["records"], serde_json::json!([]));
+        assert_eq!(r.to_json(), serde_json::json!([]));
         assert!(!r.apply(&clear(""), t));
     }
 
@@ -232,7 +232,7 @@ mod tests {
             t,
         );
         assert_eq!(
-            r.message()["records"],
+            r.to_json(),
             serde_json::json!([
                 {"id": "a", "state": "blocked", "kind": "auth", "progress": null,
                  "app": "x", "title": "T", "message": ""},

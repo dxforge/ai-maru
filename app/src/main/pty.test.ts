@@ -6,7 +6,6 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync
 } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
@@ -22,12 +21,12 @@ import {
   killPtys,
   readRecord,
   runDir,
-  sameDirAs,
   ptyEnv,
   shellEnv,
   socketPath,
   spawnPty,
   startDir,
+  subscribeState,
   utf8Locale,
   waitPtyExit,
   writePtyInput
@@ -413,18 +412,89 @@ describe('foreground', () => {
   })
 })
 
-describe('sameDirAs', () => {
-  it('같은 디렉토리를 가리키면 넘긴 cwd 의 경로를, 다르거나 없는 디렉토리면 foreground 의 경로를 돌려준다', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'maru-samedir-'))
-    mkdirSync(join(root, 'real'))
-    mkdirSync(join(root, 'other'))
-    symlinkSync(join(root, 'real'), join(root, 'link'))
+describe('subscribeState', () => {
+  const wire = {
+    type: 'state',
+    cwd: '/w',
+    cwd_reports: 3,
+    title: null,
+    foreground_cwd: '/fg',
+    records: [
+      { id: '', state: 'working', kind: null, progress: null, app: 'x', title: '', message: '' }
+    ]
+  }
+
+  function handlers() {
+    const got = { states: [] as unknown[], old: 0, closed: 0 }
+    return {
+      got,
+      on: {
+        state: (s: unknown) => void got.states.push(s),
+        old: () => void got.old++,
+        closed: () => void got.closed++
+      }
+    }
+  }
+
+  it('subscribe 를 보내고, 오는 상태마다 바꿔 넘기며, 닫히면 알린다', async () => {
+    const s = await framePty((_req, sock) => {
+      send(sock, wire)
+      send(sock, { ...wire, title: 't' })
+      sock.end()
+    })
+    const { got, on } = handlers()
     try {
-      expect(await sameDirAs(join(root, 'real'), join(root, 'link'))).toBe(join(root, 'link'))
-      expect(await sameDirAs(join(root, 'other'), join(root, 'link'))).toBe(join(root, 'other'))
-      expect(await sameDirAs(join(root, 'gone'), join(root, 'gone'))).toBe(join(root, 'gone'))
+      subscribeState(s.dir, s.id, on)
+      await vi.waitFor(() => expect(got.closed).toBe(1))
+      expect(s.requests).toEqual([{ type: 'subscribe', protocol_version: PROTOCOL_VERSION }])
+      expect(got.states).toEqual([
+        {
+          cwd: '/w',
+          cwdReports: 3,
+          title: null,
+          foregroundCwd: '/fg',
+          records: wire.records
+        },
+        expect.objectContaining({ title: 't' })
+      ])
+      expect(got.old).toBe(0)
     } finally {
-      rmSync(root, { recursive: true, force: true })
+      s.close()
+    }
+  })
+
+  it('이전 maru-pty 가 unknown_request 로 답하면 old 만 알린다', async () => {
+    const s = await framePty((_req, sock) => {
+      send(sock, { type: 'error', code: 'unknown_request', message: 'unknown type' })
+      sock.end()
+    })
+    const { got, on } = handlers()
+    try {
+      subscribeState(s.dir, s.id, on)
+      await vi.waitFor(() => expect(got.old).toBe(1))
+      await s.closed
+      expect(got.closed).toBe(0)
+    } finally {
+      s.close()
+    }
+  })
+
+  it('pty 가 없으면 닫혔다고 알리고, 돌려준 함수로 닫으면 알리지 않는다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maru-ask-'))
+    const missing = handlers()
+    subscribeState(dir, 'p-0000000a', missing.on)
+    await vi.waitFor(() => expect(missing.got.closed).toBe(1))
+
+    const s = await framePty(() => {})
+    const mine = handlers()
+    try {
+      const close = subscribeState(s.dir, s.id, mine.on)
+      await vi.waitFor(() => expect(s.requests).toHaveLength(1))
+      close()
+      await s.closed
+      expect(mine.got.closed).toBe(0)
+    } finally {
+      s.close()
     }
   })
 })

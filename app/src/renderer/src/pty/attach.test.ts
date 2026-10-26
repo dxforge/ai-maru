@@ -47,8 +47,7 @@ const handlers = {
   onExit: () => {},
   onSpawned: () => {},
   onOpenFailed: () => {},
-  onProgramStatus: () => {},
-  onForeground: () => {}
+  onProgramStatus: () => {}
 }
 
 describe('attach', () => {
@@ -223,17 +222,19 @@ describe('attach', () => {
     expect(term.written).toEqual([])
   })
 
-  it('foreground 와 resync 는 디렉토리를 다시 읽게만 한다', () => {
+  it('이전 maru-pty 가 보내는 foreground 와 모르는 메시지는 무시한다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver } = fakeConnection()
-    let moved = 0
-    attach(term as unknown as Terminal, conn, { ...handlers, onForeground: () => moved++ })
+    const got: unknown[] = []
+    attach(term as unknown as Terminal, conn, {
+      onExit: () => got.push('exit'),
+      onSpawned: () => got.push('spawned'),
+      onOpenFailed: () => got.push('failed'),
+      onProgramStatus: () => got.push('status')
+    })
     deliver(JSON.stringify({ type: 'foreground', pid: 7, cwd: '/x' }))
-    expect(moved).toBe(1)
-    deliver(JSON.stringify({ type: 'resync', cols: 80, rows: 24, cursor_x: 0, cursor_y: 0 }))
-    expect(moved).toBe(2)
-    deliver(JSON.stringify({ type: 'attached', cols: 80, rows: 24, cursor_x: 0, cursor_y: 0 }))
-    expect(moved).toBe(2)
+    deliver(JSON.stringify({ type: 'state', cwd: '/x', records: [] }))
+    expect(got).toEqual([])
     expect(term.written).toEqual([])
   })
 })

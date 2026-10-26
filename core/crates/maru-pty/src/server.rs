@@ -126,6 +126,8 @@ pub async fn run(opts: Options) -> Result<()> {
     pty.terminate(TERMINATE_GRACE).await;
     std::fs::remove_file(&paths.socket).ok();
     std::fs::remove_file(&paths.record).ok();
+    // 소켓을 지운 뒤에 닫아야, 끊긴 구독을 다시 열려는 쪽이 이 프로세스가 끝났다는 것을 connect 로 안다.
+    pty.close_state_subscriptions();
     if let Some(a) = ack {
         let _ = a.send(());
     }
@@ -228,6 +230,7 @@ async fn handle(mut stream: UnixStream, pty: Arc<Pty>, kill_tx: mpsc::Sender<Kil
             .await
         }
         Some("attach") => crate::attach::run(stream, pty, &req).await,
+        Some("subscribe") => crate::state::run(stream, pty).await,
         Some("status") => {
             let wait = req["wait"] == true;
             let exit = if wait {

@@ -32,9 +32,17 @@ CLI 서버는 앱이 뜨자마자 요청을 받으므로, 재시작에서 남은
 
 renderer 는 화면을 되살린 다음 tick 에 `pane:ready` 를 보낸다(`App.vue`). 다음 tick 에는 되살린 터미널이 mount 돼 `pty:open` 을 보낸 뒤다. 되살리기 전에 넘기면 renderer 는 부른 pane 을 찾지 못한다. 같은 renderer 의 IPC 는 보낸 순서대로 닿으므로, main 은 쌓아 둔 요청을 넘길 때 되살린 pty 의 cell 을 안다(위의 "main 이 아는 pty 의 cell"). 그래서 `cell.new` 는 부른 pty 의 cell 을 요청을 받을 때가 아니라 창에 넘길 때 찾는다. 터미널이 mount 될 때 pty 를 열지 않도록 바뀌면, main 은 되살린 pty 의 cell 을 모른 채 넘겨 새 cell 이 새 workspace 로 목록 끝에 놓인다.
 
-## program_status 는 renderer 만 가진다
+## pty 상태는 main 이 구독해 든다
 
-pty 가 보내는 `program_status` 는 renderer 가 터미널의 attach 스트림으로 받고, main 은 받지 않는다. 그래서 `mate.list` 는 main 이 pane 요청과 같은 경로(`mate:list` → `pane:reply`)로 renderer 에 묻고, renderer 가 workspace·cell 이름과 함께 만든 줄을 그대로 돌려준다(`app/src/main/pane.ts`).
+셸 cwd(OSC 7)·제목(OSC 0/2)·foreground cwd·OSC 7501 레코드는 maru-pty 가 해석해 하나의 상태로 든다. main 은 pty 마다 maru-pty 에 `subscribe` 연결을 직접 열어 마지막 상태를 든다(`app/src/main/pty-state.ts`). 이 연결로는 화면 바이트가 오지 않는다. attach 스트림은 renderer 가 붙어 있을 때만 있으므로, 상태를 attach 스트림에서 읽으면 main 은 renderer 가 붙은 동안에만 상태를 갖는다.
+
+구독을 여는 때는 셋이다. pane 의 pty 는 pty host 가 띄운 pty 에 붙은 뒤 main 에 `live` 를 보낼 때, job 의 pty 는 main 이 띄운 뒤, 재시작으로 남긴 pty 는 남은 pty 정리가 끝난 뒤다.
+
+renderer 는 상태를 main 에서만 받는다. 문서를 로드하면 `pty:states` 로 전체를 묻고, 그 뒤로 main 이 `pty:state` 로 보낸다(`app/src/renderer/src/pty/states.ts`). 화면에 보일 cwd 와 pane 이름은 `app/src/renderer/src/workspace/display.ts` 한 곳에서 고른다. xterm.js 는 화면만 그리고 OSC 7·제목을 읽지 않는다.
+
+`maru mate list` 는 main 이 renderer 에 묻지 않고 답한다. 레코드는 main 의 상태에서, workspace·cell 이름과 pane 의 cwd 는 renderer 가 마지막으로 보낸 화면(`lastScreen`)에서 읽는다. 그래서 화면 snapshot 은 pane 의 `git` 을 싣는다.
+
+`subscribe` 를 더하며 maru-pty 의 프로토콜 버전을 올리지 않았다. 올리면 앱을 다시 깔 때 남은 pty 가 모두 끝나기 때문이다. 그래서 `subscribe` 를 모르는 이전 maru-pty 의 pty 가 남을 수 있다. main 은 그 pty 를 `old` 로 renderer 에 알리고, renderer 는 그 pty 에 한해 attach 스트림의 `program_status` 를 레코드로 쓴다. 그 pty 의 cwd 는 되살린 값으로 보이고 제목은 비운다. main 은 그 pty 의 레코드를 모르므로 그 pty 는 `maru mate list` 에 나오지 않는다. 이 경로는 이전 maru-pty 의 pty 가 모두 끝나면 지운다.
 
 ## 시간 초과한 pane 요청은 창이 취소한다
 

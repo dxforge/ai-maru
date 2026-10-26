@@ -198,8 +198,8 @@ test('maru cell new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른
   const home = repoHome(dataDir)
   git(join(home, 'proj'), 'worktree', 'add', '-q', '-b', 'wt', '../proj-wt')
   // claude 가 셸 없이 pane 의 명령으로 떠서, 한 턴 안에서 EnterWorktree 로 cwd 를 옮기는 상황을 흉내 낸다. 프롬프트가 없으므로
-  // OSC 7 은 오지 않고, 옮긴 뒤 보고도 오지 않는다. pty 는 레코드가 생기고 1초 뒤에 처음 잰 cwd 를 기준으로 두므로, 옮기기는
-  // 그 뒤여야 한다. 3초는 거기에 2초 여유를 둔 것이다.
+  // OSC 7 은 오지 않고, 옮긴 뒤 보고도 오지 않는다. pty 는 레코드가 생기면 foreground 의 cwd 를 바로 재고 그 뒤 1초마다 잰다.
+  // 옮기기 전 디렉토리가 먼저 보이는지도 보려고 3초 뒤에 옮긴다.
   writeFileSync(
     join(home, 'claude.sh'),
     `${programStatus('working')}sleep 3\ncd ../proj-wt\nsleep 30\n`

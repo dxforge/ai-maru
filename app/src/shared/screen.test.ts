@@ -18,7 +18,14 @@ const screen: ScreenState = {
           key: 3,
           id: 'c-00000001',
           panes: [
-            { key: 0, ptyId: 'p-0000000a', startDir: '/a', cwd: '/b', title: 't' },
+            {
+              key: 0,
+              ptyId: 'p-0000000a',
+              startDir: '/a',
+              cwd: '/b',
+              title: 't',
+              git: { repo: 'r', branch: 'main' }
+            },
             { key: 2, ptyId: 'p-0000000b', command: ['sh', '-c', 'true'] }
           ],
           layout: { split: 'down', first: { pane: 0 }, second: { pane: 2 } },
@@ -51,6 +58,8 @@ describe('parseScreen', () => {
     ['cell id 가 문자열이 아님', (s) => (s.workspaces[0].cells[0].id = 1)],
     ['배치의 나눔 방향이 틀림', (s) => (s.workspaces[0].cells[0].layout.split = 'left')],
     ['명령이 문자열 배열이 아님', (s) => (s.workspaces[0].cells[0].panes[1].command = [1])],
+    ['git 의 저장소 이름이 없음', (s) => (s.workspaces[0].cells[0].panes[0].git = { branch: 'x' })],
+    ['git 의 branch 가 문자열이 아님', (s) => (s.workspaces[0].cells[0].panes[0].git.branch = 1)],
     ['선택이 정수가 아님', (s) => (s.selected = '1')],
     ['접은 목록이 없음', (s) => delete s.sidebar.folded],
     ['보기 모드가 틀림', (s) => (s.viewMode = 'grid')],

@@ -120,16 +120,6 @@ impl Proc {
     }
 
     fn attach(&self, role: &str, cols: u16, rows: u16) -> (Conn, Value, Vec<u8>) {
-        let (c, header, replay, _) = self.attach_with_status(role, cols, rows);
-        (c, header, replay)
-    }
-
-    fn attach_with_status(
-        &self,
-        role: &str,
-        cols: u16,
-        rows: u16,
-    ) -> (Conn, Value, Vec<u8>, Value) {
         let mut c = self.connect();
         c.send_text(json!({
             "type": "attach", "protocol_version": PROTOCOL_VERSION,
@@ -139,9 +129,15 @@ impl Proc {
         assert_eq!(header["type"], "attached", "{header}");
         let (tag, replay) = c.frame().expect("재생 프레임이 없다");
         assert_eq!(tag, TAG_BINARY);
-        let status = c.text();
-        assert_eq!(status["type"], "program_status", "{status}");
-        (c, header, replay, status)
+        (c, header, replay)
+    }
+
+    /// 상태 구독을 열고 첫 상태를 함께 돌려준다.
+    fn subscribe(&self) -> (Conn, Value) {
+        let mut c = self.connect();
+        c.send_text(json!({ "type": "subscribe", "protocol_version": PROTOCOL_VERSION }));
+        let first = c.state();
+        (c, first)
     }
 
     fn wait(&mut self) -> ExitStatus {
@@ -240,10 +236,17 @@ impl Conn {
         }
     }
 
-    fn text_of(&mut self, ty: &str) -> Value {
+    fn state(&mut self) -> Value {
+        let v = self.text();
+        assert_eq!(v["type"], "state", "{v}");
+        v
+    }
+
+    /// `pred` 를 만족하는 상태가 올 때까지 읽는다. 연결의 읽기 시간 제한(`WAIT`)을 넘으면 실패한다.
+    fn state_until(&mut self, pred: impl Fn(&Value) -> bool) -> Value {
         loop {
-            let v = self.next_text();
-            if v["type"] == ty {
+            let v = self.state();
+            if pred(&v) {
                 return v;
             }
         }
@@ -1143,7 +1146,6 @@ fn a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs() {
         }
         let v: Value = serde_json::from_slice(&payload).unwrap();
         match v["type"].as_str() {
-            Some("program_status") => continue,
             Some("resync") => {
                 resyncs += 1;
                 std::thread::sleep(pause);
@@ -1422,62 +1424,171 @@ fn help_is_in_english_and_describes_every_option_but_the_size() {
 }
 
 const OSC_WORKING: &str = r"printf '\033]7501;state=working:app=x:msg=aGk=\033\\'";
+const OSC_CLEAR: &str = r"printf '\033]7501;state=clear\033\\'";
 
-fn status_of(texts: &[Value]) -> &Value {
-    texts
-        .iter()
-        .rev()
-        .find(|t| t["type"] == "program_status")
-        .expect("program_status 가 오지 않았다")
+/// `uri` 의 `%` 는 printf 의 형식 문자가 되지 않게 `%%` 로 바꿔 넣는다.
+fn osc7(uri: &str) -> String {
+    let uri = uri.replace('%', "%%");
+    format!(r"printf '\033]7;{uri}\007'")
+}
+
+const OSC7_PWD: &str = r#"printf '\033]7;file://%s\007' "$PWD""#;
+
+#[test]
+fn subscribing_sends_the_current_state_first_and_nothing_from_the_screen() {
+    let p = start();
+    let (mut s, first) = p.subscribe();
+    assert_eq!(
+        first,
+        json!({
+            "type": "state", "cwd": null, "cwd_reports": 0, "title": null,
+            "foreground_cwd": null, "records": [],
+        })
+    );
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input("echo plain-$((1))\n");
+    a.output_until("plain-1");
+    let texts = s.texts_for(Duration::from_millis(500));
+    assert!(texts.is_empty(), "상태가 바뀌지 않았는데 왔다: {texts:?}");
 }
 
 #[test]
-fn program_status_reports_reach_every_client_in_order() {
+fn osc_7_0_2_and_7501_reach_every_subscriber() {
     let p = start();
-    let (mut a, _, _, status) = p.attach_with_status("primary", 80, 24);
-    assert_eq!(status["records"], json!([]));
-    let (mut b, _, _) = p.attach("observer", 80, 24);
-    a.input(&format!("{OSC_WORKING}; echo done-$((7501))\n"));
-    for c in [&mut a, &mut b] {
-        // `output_until` 은 echo 출력이 든 Binary 전에 온 Text 만 돌려준다 — program_status 가
-        // 보고 뒤의 출력보다 먼저 와야 한다.
-        let texts = c.output_until("done-7501");
-        let st = status_of(&texts);
+    let (mut s1, _) = p.subscribe();
+    let (mut s2, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let tmp = tmpdir();
+    let dir = std::fs::canonicalize(tmp.path()).unwrap();
+    a.input(&format!(
+        "{}; printf '\\033]2;my title\\007'; {OSC_WORKING}; echo done-$((1))\n",
+        osc7(&format!("file://{}/a%20b", dir.display()))
+    ));
+    a.output_until("done-1");
+    let want_cwd = format!("{}/a b", dir.display());
+    for s in [&mut s1, &mut s2] {
+        let st = s.state_until(|v| v["records"] != json!([]));
+        assert_eq!(st["cwd"], want_cwd.as_str(), "{st}");
+        assert_eq!(st["cwd_reports"], 1, "{st}");
+        assert_eq!(st["title"], "my title", "{st}");
         assert_eq!(st["records"][0]["id"], "");
         assert_eq!(st["records"][0]["state"], "working");
         assert_eq!(st["records"][0]["app"], "x");
         assert_eq!(st["records"][0]["message"], "hi");
-        assert_eq!(st["records"][0]["kind"], Value::Null);
-        assert_eq!(st["records"][0]["progress"], Value::Null);
     }
+
+    a.input("printf '\\033]0;both\\007'; echo done-$((2))\n");
+    a.output_until("done-2");
+    s1.state_until(|v| v["title"] == "both");
 }
 
 #[test]
-fn attaching_sends_the_records_after_the_replay() {
+fn a_repeated_osc_7_is_counted_and_a_rejected_one_keeps_the_last_path() {
     let p = start();
+    let (mut s, _) = p.subscribe();
     let (mut a, _, _) = p.attach("primary", 80, 24);
-    a.input(&format!("{OSC_WORKING}; echo done-$((7501))\n"));
-    a.output_until("done-7501");
-    let (_, _, _, status) = p.attach_with_status("observer", 80, 24);
-    assert_eq!(status["records"][0]["app"], "x");
-    assert_eq!(status["records"][0]["state"], "working");
+    a.input(&format!("{}\n", osc7("file:///first")));
+    s.state_until(|v| v["cwd"] == "/first" && v["cwd_reports"] == 1);
+    a.input(&format!("{}\n", osc7("file:///first")));
+    s.state_until(|v| v["cwd"] == "/first" && v["cwd_reports"] == 2);
+
+    a.input(&format!(
+        "{}; {}; {}\n",
+        osc7("file://remote.example/elsewhere"),
+        osc7("file:///bad%zz"),
+        osc7("file:///next")
+    ));
+    let st = s.state_until(|v| v["cwd"] != "/first");
+    assert_eq!(st["cwd"], "/next", "{st}");
+    assert_eq!(st["cwd_reports"], 3, "{st}");
 }
 
 #[test]
-fn clear_and_a_full_reset_empty_the_records() {
+fn an_empty_osc_7_clears_the_cwd_and_a_full_reset_clears_everything() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input(&format!("{}\n", osc7("file:///a")));
+    s.state_until(|v| v["cwd"] == "/a");
+    a.input(&format!("{}\n", osc7("")));
+    let st = s.state_until(|v| v["cwd"].is_null());
+    assert_eq!(st["cwd_reports"], 2, "{st}");
+
+    a.input(&format!(
+        "{}; printf '\\033]2;t\\007'; {OSC_WORKING}\n",
+        osc7("file:///b")
+    ));
+    s.state_until(|v| v["cwd"] == "/b" && v["title"] == "t" && v["records"] != json!([]));
+    a.input("printf '\\033c'\n");
+    let st = s.state_until(|v| v["cwd"].is_null());
+    assert_eq!(st["title"], Value::Null, "{st}");
+    assert_eq!(st["records"], json!([]), "{st}");
+    assert_eq!(st["foreground_cwd"], Value::Null, "{st}");
+}
+
+#[test]
+fn osc_9_9_and_1337_paths_are_not_taken_but_an_empty_osc_9_9_clears_like_osc_7() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input(&format!("{}\n", osc7("file:///a")));
+    s.state_until(|v| v["cwd"] == "/a");
+    a.input(
+        "printf '\\033]9;9;/elsewhere\\007\\033]1337;CurrentDir=/other\\007'; echo done-$((9))\n",
+    );
+    a.output_until("done-9");
+    let texts = s.texts_for(Duration::from_millis(500));
+    assert!(
+        texts.is_empty(),
+        "경로가 아닌 보고로 상태가 바뀌었다: {texts:?}"
+    );
+    a.input("printf '\\033]9;9;\\007'\n");
+    let st = s.state_until(|v| v["cwd"].is_null());
+    assert_eq!(st["cwd_reports"], 2, "{st}");
+}
+
+#[test]
+fn a_later_subscriber_gets_the_state_reported_before_it_subscribed() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let (mut early, _) = p.subscribe();
+    a.input(&format!(
+        "{}; printf '\\033]2;kept\\007'; {OSC_WORKING}\n",
+        osc7("file:///kept")
+    ));
+    let want = early.state_until(|v| {
+        v["cwd"] == "/kept" && v["title"] == "kept" && !v["foreground_cwd"].is_null()
+    });
+    let (_, first) = p.subscribe();
+    assert_eq!(first, want);
+}
+
+#[test]
+fn clearing_the_records_empties_them_and_the_foreground_cwd() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input(&format!("{OSC_WORKING}\n"));
+    s.state_until(|v| !v["foreground_cwd"].is_null() && v["records"] != json!([]));
+    a.input(&format!("{OSC_CLEAR}\n"));
+    let st = s.state_until(|v| v["records"] == json!([]));
+    assert_eq!(st["foreground_cwd"], Value::Null, "{st}");
+}
+
+#[test]
+fn the_attach_stream_carries_no_state() {
     let p = start();
     let (mut a, _, _) = p.attach("primary", 80, 24);
     a.input(&format!(
-        "{OSC_WORKING}; printf '\\033]7501;state=clear\\033\\\\'; echo done-$((1))\n"
+        "{}; printf '\\033]2;t\\007'; {OSC_WORKING}; sleep 1.5; echo done-$((3))\n",
+        osc7("file:///x")
     ));
-    let texts = a.output_until("done-1");
-    assert_eq!(status_of(&texts)["records"], json!([]));
+    let texts = a.output_until("done-3");
+    assert!(texts.is_empty(), "attach 로 상태가 왔다: {texts:?}");
 
-    a.input(&format!(
-        "{OSC_WORKING}; printf '\\033c'; echo done-$((2))\n"
-    ));
-    let texts = a.output_until("done-2");
-    assert_eq!(status_of(&texts)["records"], json!([]));
+    let (mut b, _, _) = p.attach("observer", 80, 24);
+    let texts = b.texts_for(Duration::from_millis(500));
+    assert!(texts.is_empty(), "붙을 때 상태가 왔다: {texts:?}");
 }
 
 #[test]
@@ -1507,64 +1618,94 @@ fn the_support_query_is_answered_but_other_queries_are_not() {
 }
 
 #[test]
-fn a_resync_carries_the_current_records() {
+fn the_foreground_cwd_is_measured_only_while_records_exist() {
     let p = start();
-    let (mut slow, _, _) = p.attach("observer", 80, 24);
-    let (mut fast, _, _) = p.attach("primary", 80, 24);
-    fast.input(&format!(
-        "{OSC_WORKING}; yes 0123456789 | head -n 1000000; echo flood-$((6*7))\n"
-    ));
-    fast.output_until("flood-42");
-
-    slow.text_of("resync");
-    let (tag, _) = slow.frame().unwrap();
-    assert_eq!(tag, TAG_BINARY);
-    let status = slow.next_text();
-    assert_eq!(status["type"], "program_status", "{status}");
-    assert_eq!(status["records"][0]["state"], "working");
-}
-
-#[test]
-fn foreground_cwd_changes_are_announced_only_while_records_exist() {
-    let p = start();
+    let (mut s, _) = p.subscribe();
     let (mut a, _, _) = p.attach("primary", 80, 24);
-    let dir = tmpdir();
-    let path = std::fs::canonicalize(dir.path()).unwrap();
+    let tmp = tmpdir();
+    let path = std::fs::canonicalize(tmp.path()).unwrap();
     let path_str = path.to_str().unwrap();
+    let start_dir = std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap();
+    let start_dir = start_dir.to_str().unwrap();
 
     a.input(&format!("(cd {path_str}; sleep 2)\n"));
-    let texts = a.texts_for(Duration::from_secs(3));
+    let texts = s.texts_for(Duration::from_secs(3));
     assert!(
-        !texts.iter().any(|t| t["type"] == "foreground"),
-        "레코드가 없는데 foreground 가 왔다: {texts:?}"
+        texts.iter().all(|t| t["foreground_cwd"].is_null()),
+        "레코드가 없는데 foreground cwd 를 쟀다: {texts:?}"
     );
     a.input("echo back-$((1))\n");
     a.output_until("back-1");
 
-    // 처음 잰 값은 기준으로만 두므로 레코드가 생긴 뒤 한 번 재고 나서 옮긴다.
+    // 레코드가 생기면 1초를 기다리지 않고 잰다.
+    let started = Instant::now();
     a.input(&format!(
         "{OSC_WORKING}; sleep 1.5; (cd {path_str}; sleep 3); echo back-$((2))\n"
     ));
-    let started = Instant::now();
-    let fg = a.text_of("foreground");
+    let st = s.state_until(|v| !v["foreground_cwd"].is_null());
     assert!(
-        started.elapsed() < Duration::from_secs(4),
-        "foreground 가 늦게 왔다: {:?}",
+        started.elapsed() < Duration::from_millis(900),
+        "처음 재기가 늦었다: {:?}",
         started.elapsed()
     );
-    assert_eq!(fg["cwd"], path_str, "{fg}");
-    assert!(fg["pid"].is_i64(), "{fg}");
-    a.output_until("back-2");
-    let back = a.text_of("foreground");
-    assert_ne!(back["cwd"], path_str, "{back}");
-
-    // 리더가 먼저 끝난 파이프라인은 cwd 를 못 읽는다 — 옮긴 것이 아니므로 알리지 않는다.
-    a.input("sleep 0.1 | sleep 2\n");
-    let texts = a.texts_for(Duration::from_secs(3));
+    assert_eq!(st["foreground_cwd"], start_dir, "{st}");
+    let st = s.state_until(|v| v["foreground_cwd"] == path_str);
     assert!(
-        !texts.iter().any(|t| t["type"] == "foreground"),
-        "cwd 를 못 읽은 것을 이동으로 알렸다: {texts:?}"
+        started.elapsed() < Duration::from_secs(4),
+        "옮긴 cwd 가 늦게 왔다: {:?}",
+        started.elapsed()
     );
-    a.input("echo back-$((3))\n");
-    a.output_until("back-3");
+    assert_eq!(st["records"][0]["state"], "working");
+    a.output_until("back-2");
+    s.state_until(|v| v["foreground_cwd"] == start_dir);
+
+    // 리더가 먼저 끝난 파이프라인은 cwd 를 못 읽는다 — 옮긴 것이 아니므로 값을 둔다.
+    a.input("sleep 0.1 | sleep 2\n");
+    let texts = s.texts_for(Duration::from_secs(3));
+    assert!(
+        texts.is_empty(),
+        "cwd 를 못 읽은 것을 바뀐 것으로 보냈다: {texts:?}"
+    );
+}
+
+#[test]
+fn the_foreground_cwd_keeps_the_shells_symlinked_path_for_the_same_directory() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let tmp = tmpdir();
+    let real = std::fs::canonicalize(tmp.path()).unwrap();
+    std::fs::create_dir(real.join("d")).unwrap();
+    std::os::unix::fs::symlink(real.join("d"), real.join("link")).unwrap();
+    let link = real.join("link");
+    let link = link.to_str().unwrap();
+
+    a.input(&format!("cd {link}; {OSC7_PWD}; {OSC_WORKING}\n"));
+    let st = s.state_until(|v| !v["foreground_cwd"].is_null() && v["cwd"] == link);
+    assert_eq!(st["foreground_cwd"], link, "{st}");
+}
+
+#[test]
+fn the_subscription_outlives_the_shell_under_keep_and_closes_on_kill() {
+    let p = start_keep(&format!(
+        "{}; printf '\\033]2;job\\007'; sleep 1; exit 3",
+        osc7("file:///job")
+    ));
+    let (mut s, first) = p.subscribe();
+    if first["title"] != "job" {
+        s.state_until(|v| v["title"] == "job" && v["cwd"] == "/job");
+    }
+    let mut c = p.connect();
+    c.send_text(status(true));
+    assert_eq!(c.text()["exit"]["code"], 3);
+    let texts = s.texts_for(Duration::from_millis(500));
+    assert!(texts.is_empty(), "{texts:?}");
+    let (_, again) = p.subscribe();
+    assert_eq!(
+        again["title"], "job",
+        "셸이 끝난 뒤에도 상태가 남는다: {again}"
+    );
+
+    assert_eq!(p.request(json!({ "type": "kill" }))["type"], "killed");
+    assert!(s.frame().is_none(), "kill 뒤에도 구독이 남았다");
 }

@@ -1,7 +1,8 @@
 use crate::master::{self, Master};
 use crate::procinfo;
 use crate::program_status::Records;
-use crate::vt::{VtFormat, VtTerminal};
+use crate::state::{PaneState, same_dir_as};
+use crate::vt::{VtEvents, VtFormat, VtTerminal};
 use anyhow::Result;
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
@@ -48,9 +49,6 @@ pub enum Recv {
         cols: u16,
         rows: u16,
     },
-    /// 클라이언트에 그대로 보낼 JSON 한 건(`program_status`·`foreground`). 구독자마다 복사하지
-    /// 않으려고 `Arc` 다.
-    Text(Arc<str>),
     /// 밀린 출력을 버렸다. 화면이 어긋났으니 `subscribe_with_replay` 로 다시 받아야 한다.
     Lagged,
 }
@@ -105,35 +103,14 @@ impl Output {
         self.notify.notify_one();
     }
 
-    fn push_text(&self, text: &Arc<str>) {
-        let mut b = self.backlog.lock().unwrap();
-        // 밀렸으면 resync 재생이 레코드를 다시 싣는다.
-        if b.lagged {
-            return;
-        }
-        // Text 도 bytes 에 센다. 읽지 않는 클라이언트의 큐가 Text 만으로 한도 없이 자라지 않게 하기 위해서다.
-        if b.bytes + text.len() > OUTPUT_BACKLOG {
-            b.lagged = true;
-            b.queue.clear();
-            b.bytes = 0;
-        } else {
-            b.bytes += text.len();
-            b.queue.push_back(Recv::Text(text.clone()));
-        }
-        drop(b);
-        self.notify.notify_one();
-    }
-
     pub fn try_recv(&self) -> Option<Recv> {
         let mut b = self.backlog.lock().unwrap();
         if b.lagged {
             return Some(Recv::Lagged);
         }
         let r = b.queue.pop_front()?;
-        match &r {
-            Recv::Data(data) => b.bytes -= data.len(),
-            Recv::Text(text) => b.bytes -= text.len(),
-            _ => {}
+        if let Recv::Data(data) = &r {
+            b.bytes -= data.len();
         }
         Some(r)
     }
@@ -172,13 +149,16 @@ impl Drop for Pty {
     }
 }
 
-/// 크기와 레코드를 VT 와 같은 락 아래 두어 재생 스냅샷과 어긋나지 않게 한다.
+/// 크기를 VT 와 같은 락 아래 두어 재생 스냅샷과 어긋나지 않게 한다. 상태도 VT 의 제목을 읽으므로 같은 락 아래 둔다.
 struct Screen {
     vt: VtTerminal,
     cols: u16,
     rows: u16,
     status: Records,
+    pane: PaneState,
     outputs: Vec<Weak<Output>>,
+    /// 상태 구독자에게 보낼 마지막 상태. 이 프로세스가 끝날 때 비워 구독 연결을 닫게 한다.
+    state_tx: Option<watch::Sender<Arc<str>>>,
 }
 
 impl Screen {
@@ -187,9 +167,40 @@ impl Screen {
             .retain(|o| o.upgrade().inspect(|o| f(o)).is_some());
     }
 
-    fn broadcast_text(&mut self, text: String) {
-        let text: Arc<str> = text.into();
-        self.broadcast(|o| o.push_text(&text));
+    /// 한 `write` 의 콜백 결과를 상태에 반영하고, 상태가 바뀌었을 수 있으면 true 다. 제목은 VT 가 들고 있어
+    /// 콜백이 불렸는지만 본다.
+    fn apply_events(&mut self, events: &VtEvents) -> bool {
+        let now = std::time::Instant::now();
+        let mut changed = events.title_changed;
+        for report in &events.reports {
+            changed |= self.status.apply(report, now);
+        }
+        for event in &events.cwd {
+            changed |= self.pane.apply(event);
+        }
+        // foreground cwd 는 레코드가 있는 동안만 잰다.
+        if self.status.is_empty() {
+            changed |= self.pane.foreground_cwd.take().is_some();
+        }
+        changed
+    }
+
+    fn state_message(&self) -> Arc<str> {
+        self.pane.message(self.vt.title(), &self.status).into()
+    }
+
+    /// 상태가 지난번 보낸 것과 다르면 모든 구독자에게 보낸다. ghostty 는 같은 제목에도 콜백을 부르므로 견준다.
+    fn publish_state(&mut self) {
+        let message = self.state_message();
+        if let Some(tx) = &self.state_tx {
+            tx.send_if_modified(|last| {
+                let changed = *last != message;
+                if changed {
+                    *last = message;
+                }
+                changed
+            });
+        }
     }
 }
 
@@ -226,13 +237,17 @@ impl Pty {
         rows: u16,
     ) -> Result<Arc<Self>> {
         // 셸이 뜬 뒤 크기 검사에 걸리면 그 셸을 쥘 핸들이 없다.
-        let screen = Arc::new(Mutex::new(Screen {
+        let mut screen = Screen {
             vt: VtTerminal::new(cols, rows)?,
             cols,
             rows,
             status: Records::default(),
+            pane: PaneState::default(),
             outputs: Vec::new(),
-        }));
+            state_tx: None,
+        };
+        screen.state_tx = Some(watch::channel(screen.state_message()).0);
+        let screen = Arc::new(Mutex::new(screen));
         let spawned = master::spawn(shell, shell_var, cwd, command, cols, rows)?;
         let shell_pid = spawned.child.id();
         let (exit_tx, exit_rx) = watch::channel(None);
@@ -268,21 +283,13 @@ impl Pty {
                 let mut screen = screen_r.lock().unwrap();
                 screen.vt.write(bytes);
                 let events = screen.vt.take_events();
-                if !events.reports.is_empty() {
-                    let now = std::time::Instant::now();
-                    let mut changed = false;
-                    for report in &events.reports {
-                        changed |= screen.status.apply(report, now);
-                    }
-                    // 보고를 실은 바이트보다 먼저 보낸다. 같은 청크에 보고와 그 뒤 출력이 함께
-                    // 들어 있으면 클라이언트가 출력을 보고 다음 일을 시작한 뒤에 상태가 닿는다.
-                    if changed {
-                        let text = screen.status.message().to_string();
-                        screen.broadcast_text(text);
-                    }
-                    if !screen.status.is_empty() {
-                        wake_r.wake();
-                    }
+                // 보고를 실은 바이트보다 먼저 구독자에게 넣는다. 다른 연결이라 순서가 보장되지는 않지만,
+                // 같은 청크의 출력을 보고 다음 일을 시작한 클라이언트에 상태가 늦게 닿는 일을 줄인다.
+                if screen.apply_events(&events) {
+                    screen.publish_state();
+                }
+                if !events.reports.is_empty() && !screen.status.is_empty() {
+                    wake_r.wake();
                 }
                 screen.broadcast(|o| o.push(bytes));
                 drop(screen);
@@ -405,12 +412,7 @@ impl Pty {
         }
     }
 
-    /// 재생과 같은 락 안에서 뜬 `program_status` 메시지를 함께 돌려준다. 따로 읽으면 그 사이에
-    /// 온 보고가 재생 뒤 메시지와 구독 양쪽에 들어가거나 어느 쪽에도 안 들어간다.
-    pub fn subscribe_with_replay(
-        &self,
-        conn: u64,
-    ) -> Result<(Vec<u8>, ReplayState, serde_json::Value, Arc<Output>)> {
+    pub fn subscribe_with_replay(&self, conn: u64) -> Result<(Vec<u8>, ReplayState, Arc<Output>)> {
         let mut screen = self.screen.lock().unwrap();
         let replay = screen.vt.replay()?;
         let (cursor_x, cursor_y) = screen.vt.cursor()?;
@@ -420,14 +422,29 @@ impl Pty {
             cursor_x,
             cursor_y,
         };
-        let status = screen.status.message();
         let output = Arc::new(Output {
             conn,
             backlog: Mutex::default(),
             notify: Notify::new(),
         });
         screen.outputs.push(Arc::downgrade(&output));
-        Ok((replay, state, status, output))
+        Ok((replay, state, output))
+    }
+
+    /// 돌려준 구독의 첫 `changed()` 는 곧바로 돌아오므로 지금 상태부터 읽을 수 있다. 프로세스가 끝나는 중이면 이미 닫힌 구독을 돌려준다.
+    pub fn subscribe_state(&self) -> watch::Receiver<Arc<str>> {
+        let screen = self.screen.lock().unwrap();
+        let Some(tx) = &screen.state_tx else {
+            return watch::channel(Arc::from("")).1;
+        };
+        let mut rx = tx.subscribe();
+        rx.mark_changed();
+        rx
+    }
+
+    /// 구독 연결이 남은 상태를 보낸 뒤 닫히게 한다. 이 프로세스가 끝날 때 부른다.
+    pub fn close_state_subscriptions(&self) {
+        self.screen.lock().unwrap().state_tx = None;
     }
 
     pub fn exit_rx(&self) -> watch::Receiver<Option<Exit>> {
@@ -493,31 +510,36 @@ impl Pty {
     }
 }
 
-/// 레코드가 있는 동안 foreground cwd 가 바뀌면 모든 구독자에게 `foreground` 를 보낸다. claude 가 한
-/// 상태에 머문 채 디렉토리를 옮긴 것을 앱이 알게 하려는 것이다.
+/// 레코드가 있는 동안 foreground cwd 를 상태에 둔다. claude 가 한 상태에 머문 채 디렉토리를 옮긴 것을 앱이 알게
+/// 하려는 것이다. 레코드가 생겨 깨어나면 바로 한 번 재고, 그 뒤로 1초마다 잰다.
 fn watch_foreground(pty: Weak<Pty>, wake: Arc<Wake>) {
     loop {
         wake.wait();
-        let mut last: Option<PathBuf> = None;
         loop {
-            std::thread::sleep(FOREGROUND_POLL);
             let Some(pty) = pty.upgrade() else {
                 return;
             };
-            if pty.exited().is_some() || pty.screen.lock().unwrap().status.is_empty() {
-                break;
-            }
+            let shell_cwd = {
+                let screen = pty.screen.lock().unwrap();
+                if pty.exited().is_some() || screen.status.is_empty() {
+                    break;
+                }
+                screen.pane.cwd.clone()
+            };
             // 락을 놓고 잰다 — proc 읽기가 느려도 출력 반영을 막지 않게.
-            let fg = pty.foreground();
-            // 리더가 먼저 끝난 파이프라인(`a | b`)에서는 cwd 를 못 읽는다. 옮긴 것이 아니므로 건너뛴다.
-            let Some(cwd) = fg.cwd else { continue };
-            if last.as_ref().is_some_and(|l| *l != cwd) {
-                let text = serde_json::json!({
-                    "type": "foreground", "pid": fg.pid, "cwd": cwd.to_string_lossy(),
-                });
-                pty.screen.lock().unwrap().broadcast_text(text.to_string());
+            // 리더가 먼저 끝난 파이프라인(`a | b`)에서는 cwd 를 못 읽는다. 옮긴 것이 아니므로 그대로 둔다.
+            if let Some(cwd) = pty.foreground().cwd {
+                let cwd = same_dir_as(&cwd, shell_cwd.as_deref());
+                let mut screen = pty.screen.lock().unwrap();
+                // 재는 동안 레코드가 비었으면 읽기 스레드가 지운 값을 되살리지 않는다.
+                if !screen.status.is_empty() && screen.pane.foreground_cwd.as_ref() != Some(&cwd) {
+                    screen.pane.foreground_cwd = Some(cwd);
+                    screen.publish_state();
+                }
             }
-            last = Some(cwd);
+            // 자는 동안 `Pty` 를 쥐고 있으면 프로세스가 끝나도 이 스레드가 놓지 않는다.
+            drop(pty);
+            std::thread::sleep(FOREGROUND_POLL);
         }
     }
 }
@@ -598,6 +620,29 @@ mod tests {
             .unwrap()
             .block_on(wait_exit(&mut s.exit_rx()));
         assert_eq!(s.foreground().cwd, None);
+    }
+
+    #[test]
+    fn a_subscription_gets_the_current_state_and_nothing_once_closed() {
+        with_pty(|s| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let mut rx = s.subscribe_state();
+            assert!(rt.block_on(rx.changed()).is_ok());
+            assert!(rx.borrow_and_update().contains(r#""type":"state""#));
+
+            let mut open = s.subscribe_state();
+            s.close_state_subscriptions();
+            assert!(
+                rt.block_on(open.changed()).is_ok(),
+                "닫기 전에 보지 않은 상태는 보낸다"
+            );
+            open.borrow_and_update();
+            assert!(rt.block_on(open.changed()).is_err());
+            assert!(
+                rt.block_on(s.subscribe_state().changed()).is_err(),
+                "닫은 뒤 연 구독은 아무것도 보내지 않고 닫혀 있다"
+            );
+        });
     }
 
     #[test]

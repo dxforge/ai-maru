@@ -1,7 +1,40 @@
 import { describe, expect, it } from 'vitest'
 import type { GitHead } from '../../../shared/git'
+import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import { isPtyId } from '../../../shared/pty'
+import type { PtyState } from '../../../shared/pty-state'
 import { createWorkspaces, focusedPane } from './store'
+
+type Workspaces = ReturnType<typeof createWorkspaces>
+
+const EMPTY: PtyState = { cwd: null, cwdReports: 0, title: null, foregroundCwd: null, records: [] }
+
+function record(state: ProgramStatusState, message = ''): ProgramStatusRecord {
+  return { id: '', state, kind: null, progress: null, app: 'claude-code', title: '', message }
+}
+
+/** main 이 보낸 상태를 흉내 낸다. `set` 은 그 pty 의 상태를 바꾼 뒤 store 에 알린다. `old` 는 이전 maru-pty 표시다. */
+function source() {
+  const states = new Map<string, PtyState>()
+  const old = new Set<string>()
+  return {
+    get: (pty: string) => states.get(pty),
+    state: (pty: string) => states.get(pty)?.records.find((r) => r.id === '')?.state,
+    isOld: (pty: string) => old.has(pty),
+    set(ws: Workspaces, pty: string, over: Partial<PtyState>): void {
+      states.set(pty, { ...(states.get(pty) ?? EMPTY), ...over })
+      ws.applyState(pty)
+    },
+    markOld(ws: Workspaces, pty: string): void {
+      old.add(pty)
+      ws.applyState(pty)
+    },
+    drop(ws: Workspaces, pty: string): void {
+      states.delete(pty)
+      ws.applyState(pty)
+    }
+  }
+}
 
 function opened(n: number) {
   const ws = createWorkspaces()
@@ -9,14 +42,16 @@ function opened(n: number) {
   return ws
 }
 
-type Workspaces = ReturnType<typeof createWorkspaces>
-
 const keys = (ws: Workspaces) => ws.cells().map((c) => c.key)
 const firstPanes = (ws: Workspaces) => ws.cells().map((c) => c.panes[0])
 const wsKeys = (ws: Workspaces) => ws.list.value.map((w) => w.key)
 const selected = (ws: Workspaces) => ws.selected()!
 
+/** 재시작 전 pane 은 모두 pty 를 띄운 것으로 둔다 — 되살린 store 는 cwd 가 없는 pane 에 시작 디렉토리를 화면 cwd 로 단다. */
 function restarted(from: Workspaces): Workspaces {
+  for (const c of from.cells())
+    for (const p of c.panes)
+      if (p.cwd === undefined) from.setSpawnedCwd(p.key, p.startDir ?? '/home')
   const to = createWorkspaces()
   to.restore(from.snapshot())
   return to
@@ -24,11 +59,13 @@ function restarted(from: Workspaces): Workspaces {
 
 describe('snapshot·restore', () => {
   function arranged(): Workspaces {
-    const ws = opened(2)
+    const src = source()
+    const ws = createWorkspaces(undefined, src)
+    ws.open('/d-0')
+    ws.open('/d-1')
     ws.split('down')
     const p = selected(ws).panes[1]
-    ws.setCwd(p.key, '/moved')
-    ws.setTitle(p.key, 'vim')
+    src.set(ws, p.ptyId, { cwd: '/moved', cwdReports: 1, title: 'vim' })
     ws.setFontSize(selected(ws).key, 18)
     ws.setPaneCols(selected(ws).key, 110)
     ws.select(ws.cells()[0].key)
@@ -46,12 +83,45 @@ describe('snapshot·restore', () => {
     expect(to.cells().map((w) => w.paneCols)).toEqual([undefined, 110])
   })
 
-  it('되살린 pane 은 pty 에 붙고, 스냅샷에는 붙기·git 을 싣지 않는다', () => {
+  it('되살린 pane 은 pty 에 붙고, 스냅샷에는 붙기와 화면 cwd 의 재료를 싣지 않는다', () => {
     const to = restarted(arranged())
+    to.setSpawnedCwd(to.cells()[0].panes[0].key, '/spawned')
     expect(to.cells().flatMap((w) => w.panes.map((p) => p.attach))).toEqual([true, true, true])
     for (const w of to.snapshot().workspaces)
       for (const c of w.cells)
-        for (const p of c.panes) expect(Object.keys(p)).not.toContain('attach')
+        for (const p of c.panes)
+          for (const k of ['attach', 'restoredCwd', 'spawnedCwd'])
+            expect(Object.keys(p)).not.toContain(k)
+  })
+
+  it('스냅샷은 git 을 싣고, 되살린 store 는 저장한 cwd 의 git 을 다시 읽는다', async () => {
+    const from = createWorkspaces(async () => ({ repo: 'r', branch: 'old' }))
+    from.open('/r')
+    from.setSpawnedCwd(selected(from).panes[0].key, '/r')
+    await new Promise((resolve) => setTimeout(resolve))
+    const saved = from.snapshot()
+    expect(saved.workspaces[0].cells[0].panes[0].git).toEqual({ repo: 'r', branch: 'old' })
+    const read: string[] = []
+    const to = createWorkspaces(async (cwd) => {
+      read.push(cwd)
+      return { repo: 'r', branch: 'new' }
+    })
+    to.restore(saved)
+    expect(selected(to).panes[0].git).toEqual({ repo: 'r', branch: 'old' })
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(read).toEqual(['/r'])
+    expect(selected(to).panes[0].git).toEqual({ repo: 'r', branch: 'new' })
+  })
+
+  it('되살리기 전에 main 의 상태가 왔으면 되살린 pane 에 그 상태를 쓴다', () => {
+    const src = source()
+    const from = arranged()
+    const to = createWorkspaces(undefined, src)
+    const pty = from.cells()[1].panes[1].ptyId
+    src.set(to, pty, { cwd: '/now', cwdReports: 4, title: null })
+    to.restore(from.snapshot())
+    const pane = to.cells()[1].panes[1]
+    expect([pane.cwd, pane.title]).toEqual(['/now', undefined])
   })
 
   it('되살린 뒤 새로 연 workspace·cell·pane 의 key 가 겹치지 않고 새 pane 은 pty 를 띄운다', () => {
@@ -237,14 +307,42 @@ describe('workspaces', () => {
     expect(ws.selected()).toBeUndefined()
   })
 
-  it('open 에 준 시작 디렉토리는 cwd 가 아니고, cwd 는 setCwd 로 정한다', () => {
-    const ws = createWorkspaces()
+  it('화면 cwd 는 foreground cwd, 셸 cwd, 띄운 디렉토리, 시작 디렉토리 순서로 고르고, 상태가 바뀌기 전에는 비어 있다', () => {
+    const src = source()
+    const ws = createWorkspaces(undefined, src)
     ws.open('/a')
-    const [pane] = firstPanes(ws)
-    expect(pane.startDir).toBe('/a')
-    expect(pane.cwd).toBeUndefined()
-    ws.setCwd(pane.key, '/b')
-    expect(firstPanes(ws)[0].cwd).toBe('/b')
+    const pane = () => firstPanes(ws)[0]
+    expect(pane().startDir).toBe('/a')
+    expect(pane().cwd).toBeUndefined()
+    src.set(ws, pane().ptyId, {})
+    expect(pane().cwd).toBe('/a')
+    ws.setSpawnedCwd(pane().key, '/home')
+    expect(pane().cwd).toBe('/home')
+    src.set(ws, pane().ptyId, { cwd: '/shell', cwdReports: 1 })
+    expect(pane().cwd).toBe('/shell')
+    src.set(ws, pane().ptyId, { foregroundCwd: '/fg' })
+    expect(pane().cwd).toBe('/fg')
+    src.set(ws, pane().ptyId, { foregroundCwd: null, cwd: null })
+    expect(pane().cwd).toBe('/home')
+  })
+
+  it('되살린 pane 은 상태가 오기 전과 셸 cwd 가 없을 때 되살린 cwd 를 띄운 디렉토리보다 먼저 쓴다', () => {
+    const src = source()
+    const from = createWorkspaces(undefined, src)
+    from.open('/start')
+    src.set(from, selected(from).panes[0].ptyId, { cwd: '/saved', cwdReports: 1 })
+    const to = createWorkspaces(undefined, src)
+    const saved = from.snapshot()
+    src.drop(from, selected(from).panes[0].ptyId)
+    to.restore(saved)
+    const pane = () => selected(to).panes[0]
+    expect(pane().cwd).toBe('/saved')
+    to.setSpawnedCwd(pane().key, '/spawned')
+    expect(pane().cwd).toBe('/saved')
+    src.set(to, pane().ptyId, { cwd: '/live', cwdReports: 1 })
+    expect(pane().cwd).toBe('/live')
+    src.set(to, pane().ptyId, { cwd: null })
+    expect(pane().cwd).toBe('/saved')
   })
 
   it('setFontSize 는 그 cell 의 글꼴 크기만 바꾸고, undefined 면 지운다', () => {
@@ -285,11 +383,30 @@ describe('workspaces', () => {
     expect(ws.cells().map((w) => w.paneCols)).toEqual([144, undefined, undefined])
   })
 
-  it('setTitle 은 그 pane 의 제목만 바꾼다', () => {
-    const ws = opened(1)
+  it('제목은 그 pane 의 상태를 따르고, null 이면 지운다', () => {
+    const src = source()
+    const ws = createWorkspaces(undefined, src)
+    ws.open()
     ws.split('right')
-    ws.setTitle(selected(ws).panes[1].key, 'task')
-    expect(selected(ws).panes.map((p) => p.title)).toEqual([undefined, 'task'])
+    const p = selected(ws).panes[1]
+    src.set(ws, p.ptyId, { title: 'task' })
+    expect(selected(ws).panes.map((x) => x.title)).toEqual([undefined, 'task'])
+    src.set(ws, p.ptyId, { title: null })
+    expect(selected(ws).panes.map((x) => x.title)).toEqual([undefined, undefined])
+  })
+
+  it('되살린 제목은 상태가 오기 전까지 두고, 이전 maru-pty 의 pty 면 지운다', () => {
+    const src = source()
+    const from = createWorkspaces(undefined, src)
+    from.open()
+    src.set(from, selected(from).panes[0].ptyId, { title: 'kept' })
+    const to = createWorkspaces(undefined, src)
+    const saved = from.snapshot()
+    src.drop(from, selected(from).panes[0].ptyId)
+    to.restore(saved)
+    expect(selected(to).panes[0].title).toBe('kept')
+    src.markOld(to, selected(to).panes[0].ptyId)
+    expect(selected(to).panes[0].title).toBeUndefined()
   })
 })
 
@@ -305,29 +422,35 @@ describe('git', () => {
     return { read, pending, answer }
   }
 
+  function setup(read: (cwd: string) => Promise<GitHead | null>) {
+    const src = source()
+    const ws = createWorkspaces(read, src)
+    ws.open()
+    const p = selected(ws).panes[0]
+    const report = (over: Partial<PtyState> = {}) => src.set(ws, p.ptyId, over)
+    return { ws, src, p, report }
+  }
+
   it('cwd 를 받으면 그 디렉토리의 저장소를 읽고, 늦게 온 이전 디렉토리의 답은 버린다', async () => {
     const r = reader()
-    const ws = createWorkspaces(r.read)
-    ws.open()
-    const key = selected(ws).panes[0].key
-    ws.setCwd(key, '/a')
-    ws.setCwd(key, '/b')
+    const { ws, report } = setup(r.read)
+    report({ cwd: '/a', cwdReports: 1 })
+    report({ cwd: '/b', cwdReports: 2 })
     await r.answer('/b', { repo: 'b', branch: 'main' })
     await r.answer('/a', { repo: 'a', branch: 'old' })
     expect(selected(ws).panes[0].git).toEqual({ repo: 'b', branch: 'main' })
-    ws.setCwd(key, '/c')
+    report({ cwd: '/c', cwdReports: 3 })
     await r.answer('/c', null)
     expect(selected(ws).panes[0].git).toBeUndefined()
   })
 
-  it('같은 디렉토리를 두 번 읽어 답이 거꾸로 와도 나중에 청한 답이 남는다', async () => {
+  it('셸이 같은 디렉토리를 다시 보고하면 다시 읽고, 답이 거꾸로 와도 나중에 청한 답이 남는다', async () => {
     const r = reader()
-    const ws = createWorkspaces(r.read)
-    ws.open()
-    const key = selected(ws).panes[0].key
-    ws.setCwd(key, '/a')
-    ws.setCwd(key, '/a')
+    const { ws, report } = setup(r.read)
+    report({ cwd: '/a', cwdReports: 1 })
+    report({ cwd: '/a', cwdReports: 2 })
     const [older, newer] = r.pending
+    expect(r.pending.map((p) => p.cwd)).toEqual(['/a', '/a'])
     newer.resolve({ repo: 'a', branch: 'feat' })
     await Promise.resolve()
     older.resolve({ repo: 'a', branch: 'main' })
@@ -335,15 +458,27 @@ describe('git', () => {
     expect(selected(ws).panes[0].git).toEqual({ repo: 'a', branch: 'feat' })
   })
 
+  it('제목이나 레코드의 메시지만 바뀐 상태로는 읽지 않고, 루트 레코드의 상태가 바뀌면 읽는다', async () => {
+    const r = reader()
+    const { report } = setup(r.read)
+    report({ cwd: '/a', cwdReports: 1 })
+    r.pending.length = 0
+    report({ title: 'vim' })
+    report({ records: [record('working', 'a')] })
+    expect(r.pending.map((p) => p.cwd)).toEqual(['/a'])
+    report({ records: [record('working', 'b')] })
+    expect(r.pending).toHaveLength(1)
+    report({ records: [record('blocked', 'b')] })
+    expect(r.pending).toHaveLength(2)
+  })
+
   it('저장소와 branch 가 그대로면 값을 바꾸지 않는다', async () => {
     const r = reader()
-    const ws = createWorkspaces(r.read)
-    ws.open()
-    const key = selected(ws).panes[0].key
-    ws.setCwd(key, '/a')
+    const { ws, report } = setup(r.read)
+    report({ cwd: '/a', cwdReports: 1 })
     await r.answer('/a', { repo: 'a', branch: 'main' })
     const before = selected(ws).panes[0].git
-    ws.setCwd(key, '/a')
+    report({ cwd: '/a', cwdReports: 2 })
     await r.answer('/a', { repo: 'a', branch: 'main' })
     expect(selected(ws).panes[0].git).toBe(before)
   })
@@ -351,175 +486,48 @@ describe('git', () => {
   it('다른 디렉토리로 옮긴 뒤 읽지 못하면 이전 저장소를 남기지 않고, 읽는 사이 닫힌 pane 의 답은 버린다', async () => {
     const r = reader()
     let fail = false
-    const ws = createWorkspaces((cwd) => (fail ? Promise.reject(new Error('x')) : r.read(cwd)))
-    ws.open()
-    const key = selected(ws).panes[0].key
-    ws.setCwd(key, '/a')
+    const { ws, src, p, report } = setup((cwd) =>
+      fail ? Promise.reject(new Error('x')) : r.read(cwd)
+    )
+    report({ cwd: '/a', cwdReports: 1 })
     await r.answer('/a', { repo: 'a', branch: 'main' })
     fail = true
-    ws.setCwd(key, '/tmp')
+    report({ cwd: '/tmp', cwdReports: 2 })
     await new Promise((resolve) => setTimeout(resolve))
     expect(selected(ws).panes[0].git).toBeUndefined()
 
     fail = false
     ws.split('right')
-    const other = selected(ws).panes[1].key
-    ws.setCwd(other, '/b')
-    ws.closePane(other)
+    const other = selected(ws).panes[1]
+    src.set(ws, other.ptyId, { cwd: '/b', cwdReports: 1 })
+    ws.closePane(other.key)
     await r.answer('/b', { repo: 'b', branch: 'main' })
-    expect(selected(ws).panes.map((p) => p.key)).toEqual([key])
+    expect(selected(ws).panes.map((x) => x.key)).toEqual([p.key])
   })
 
-  function foreground() {
-    const asked: {
-      ptyId: string
-      cwd: string | undefined
-      resolve: (cwd: string | null) => void
-    }[] = []
-    const read = (ptyId: string, cwd?: string) =>
-      new Promise<string | null>((resolve) => asked.push({ ptyId, cwd, resolve }))
-    const answer = async (cwd: string | null) => {
-      for (const a of asked.splice(0)) a.resolve(cwd)
-      await Promise.resolve()
-    }
-    return { read, asked, answer }
-  }
-
-  it('refreshPty 는 그 pty 의 pane 만, 지금 cwd 를 함께 넘겨 물은 foreground 프로세스의 cwd 로 옮기고 그 cwd 의 저장소를 읽는다', async () => {
+  it('foreground 의 cwd 가 있으면 그 디렉토리로 옮기고 그 저장소를 읽으며, 없어지면 셸의 cwd 로 돌아온다', async () => {
     const r = reader()
-    const fg = foreground()
-    const ws = createWorkspaces(r.read, fg.read)
-    ws.open()
-    const first = selected(ws).panes[0].key
-    ws.split('right')
-    const second = selected(ws).panes[1]
-    ws.setCwd(first, '/a')
-    ws.setCwd(second.key, '/b')
+    const { ws, report } = setup(r.read)
+    report({ cwd: '/a', cwdReports: 1, records: [record('working')] })
     r.pending.length = 0
-    ws.refreshPty(second.ptyId)
-    expect(fg.asked.map((a) => [a.ptyId, a.cwd])).toEqual([[second.ptyId, '/b']])
-    await fg.answer('/wt')
-    expect(selected(ws).panes[1].cwd).toBe('/wt')
+    report({ foregroundCwd: '/wt' })
+    expect(selected(ws).panes[0].cwd).toBe('/wt')
     expect(r.pending.map((p) => p.cwd)).toEqual(['/wt'])
-    await r.answer('/wt', { repo: 'b', branch: 'wt' })
-    expect(selected(ws).panes[1].git).toEqual({ repo: 'b', branch: 'wt' })
-  })
-
-  it('foreground 의 cwd 를 모르거나 묻지 못하면 지금 cwd 로 다시 읽는다', async () => {
-    const r = reader()
-    const fg = foreground()
-    let fail = false
-    const ws = createWorkspaces(r.read, (id) =>
-      fail ? Promise.reject(new Error('not running')) : fg.read(id)
-    )
-    ws.open()
-    const p = selected(ws).panes[0]
-    ws.setCwd(p.key, '/a')
-    r.pending.length = 0
-
-    ws.refreshPty(p.ptyId)
-    expect(fg.asked).toHaveLength(1)
-    expect(r.pending).toEqual([])
-    await fg.answer(null)
-    expect(selected(ws).panes[0].cwd).toBe('/a')
-    expect(r.pending.map((x) => x.cwd)).toEqual(['/a'])
-
-    fail = true
-    r.pending.length = 0
-    ws.refreshPty(p.ptyId)
-    await new Promise((resolve) => setTimeout(resolve))
-    expect(r.pending.map((x) => x.cwd)).toEqual(['/a'])
-  })
-
-  it('foreground 를 묻는 사이에 셸이 cwd 를 알려 오면 늦게 온 foreground 의 답은 버린다', async () => {
-    const r = reader()
-    const fg = foreground()
-    const ws = createWorkspaces(r.read, fg.read)
-    ws.open()
-    const p = selected(ws).panes[0]
-    ws.setCwd(p.key, '/a')
-    ws.refreshPty(p.ptyId)
-    expect(fg.asked.map((a) => a.ptyId)).toEqual([p.ptyId])
-    ws.setCwd(p.key, '/prompt')
-    r.pending.length = 0
-    await fg.answer('/wt')
-    expect(selected(ws).panes[0].cwd).toBe('/prompt')
-    expect(r.pending).toEqual([])
-  })
-
-  it('refreshPty 가 겹치면 먼저 물은 답은 버리고 나중 답만 쓴다', async () => {
-    const r = reader()
-    const fg = foreground()
-    const ws = createWorkspaces(r.read, fg.read)
-    ws.open()
-    const p = selected(ws).panes[0]
-    ws.setCwd(p.key, '/a')
-    r.pending.length = 0
-    ws.refreshPty(p.ptyId)
-    ws.refreshPty(p.ptyId)
-    const [older, newer] = fg.asked
-    newer.resolve('/second')
-    await Promise.resolve()
-    older.resolve('/first')
-    await new Promise((resolve) => setTimeout(resolve))
-    expect(selected(ws).panes[0].cwd).toBe('/second')
-    expect(r.pending.map((x) => x.cwd)).toEqual(['/second'])
-  })
-
-  it('foreground 를 묻는 사이에 pane 이 닫히면 늦은 답은 아무것도 바꾸지 않는다', async () => {
-    const r = reader()
-    const fg = foreground()
-    const ws = createWorkspaces(r.read, fg.read)
-    ws.open()
-    ws.split('right')
-    const p = selected(ws).panes[1]
-    ws.setCwd(p.key, '/a')
-    r.pending.length = 0
-    ws.refreshPty(p.ptyId)
-    expect(fg.asked.map((a) => a.ptyId)).toEqual([p.ptyId])
-    ws.closePane(p.key)
-    const before = JSON.stringify(ws.cells())
-    await fg.answer('/wt')
-    expect(JSON.stringify(ws.cells())).toBe(before)
-    expect(r.pending).toEqual([])
-  })
-
-  it('셸의 cwd 로 청한 git 읽기가 끝나기 전에 refreshPty 가 돌면 그 뒤 도착한 이전 git 답은 버린다', async () => {
-    const r = reader()
-    const fg = foreground()
-    const ws = createWorkspaces(r.read, fg.read)
-    ws.open()
-    const p = selected(ws).panes[0]
-    ws.setCwd(p.key, '/a')
-    ws.refreshPty(p.ptyId)
-    await fg.answer('/wt')
     await r.answer('/wt', { repo: 'a', branch: 'wt' })
-    await r.answer('/a', { repo: 'a', branch: 'main' })
     expect(selected(ws).panes[0].git).toEqual({ repo: 'a', branch: 'wt' })
-  })
-
-  it('cwd 를 아직 모르는 pane 도 foreground 가 답하면 cwd 를 달고, 답이 없으면 읽지 않는다', async () => {
-    const r = reader()
-    const fg = foreground()
-    const ws = createWorkspaces(r.read, fg.read)
-    ws.open()
-    const p = selected(ws).panes[0]
-    ws.refreshPty(p.ptyId)
-    await fg.answer(null)
-    expect(selected(ws).panes[0].cwd).toBeUndefined()
-    expect(r.pending).toEqual([])
-    ws.refreshPty(p.ptyId)
-    await fg.answer('/fresh')
-    expect(selected(ws).panes[0].cwd).toBe('/fresh')
-    expect(r.pending.map((x) => x.cwd)).toEqual(['/fresh'])
+    report({ foregroundCwd: null, records: [] })
+    expect(selected(ws).panes[0].cwd).toBe('/a')
+    expect(r.pending.map((p) => p.cwd)).toEqual(['/wt', '/a'])
   })
 })
 
 describe('panes', () => {
   it('나누면 새 pane 이 포커스가 있던 pane 의 cwd 에서 시작하고 포커스를 받는다', () => {
-    const ws = opened(1)
+    const src = source()
+    const ws = createWorkspaces(undefined, src)
+    ws.open()
     const first = selected(ws).panes[0].key
-    ws.setCwd(first, '/work')
+    src.set(ws, selected(ws).panes[0].ptyId, { cwd: '/work', cwdReports: 1 })
     ws.split('right')
     const w = selected(ws)
     expect(w.panes).toHaveLength(2)
@@ -601,9 +609,8 @@ describe('panes', () => {
     const ws = opened(1)
     const before = JSON.stringify(ws.cells())
     ws.closePane(999)
-    ws.setCwd(999, '/x')
-    ws.setTitle(999, 'x')
-    ws.refreshPty('p-x')
+    ws.setSpawnedCwd(999, '/x')
+    ws.applyState('p-x')
     ws.focusPane(999)
     expect(JSON.stringify(ws.cells())).toBe(before)
   })

@@ -7,6 +7,7 @@ import type { LinkOpenResult } from '../shared/link'
 import type { CellNewRequest, CloseAnswer, PaneNewRequest, PaneReply } from '../shared/pane'
 import type { ScreenState, ViewPrefs } from '../shared/screen'
 import type { PtyOpen } from '../shared/pty'
+import type { PtyStateEntry } from '../shared/pty-state'
 import type { WindowTheme } from '../shared/theme'
 
 // MessagePort 는 contextBridge 를 건너지 못해서 window.postMessage 로 넘긴다.
@@ -44,25 +45,24 @@ const api = {
   onCellNew: (cb: (id: number, req: CellNewRequest) => void): void => {
     ipcRenderer.on('cell:new', (_event, id: number, req: CellNewRequest) => cb(id, req))
   },
-  onMateList: (cb: (id: number) => void): void => {
-    ipcRenderer.on('mate:list', (_event, id: number) => cb(id))
-  },
   onPaneCancel: (cb: (id: number) => void): void => {
     ipcRenderer.on('pane:cancel', (_event, id: number) => cb(id))
   },
   paneReply: (id: number, reply: PaneReply): void => ipcRenderer.send('pane:reply', id, reply),
   /**
-   * `onPaneNew`·`onPaneClose`·`onCellNew`·`onMateList` 를 단 뒤에 부른다. main 은 이것을 받은 뒤에야 쌓아 둔
-   * `pane:new`·`pane:close`·`cell:new`·`mate:list` 를 보낸다.
+   * `onPaneNew`·`onPaneClose`·`onCellNew` 를 단 뒤에 부른다. main 은 이것을 받은 뒤에야 쌓아 둔
+   * `pane:new`·`pane:close`·`cell:new` 를 보낸다.
    */
   paneReady: (): void => ipcRenderer.send('pane:ready'),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),
-  /**
-   * `ptyId` 의 foreground 프로세스의 cwd 다. `cwd` 와 같은 디렉토리면 `cwd` 를 그대로 돌려준다.
-   * pty 가 모르면 null 이고, pty 에 닿지 못하면 reject 한다.
-   */
-  foregroundCwd: (ptyId: string, cwd?: string): Promise<string | null> =>
-    ipcRenderer.invoke('pty:foreground', ptyId, cwd),
+  /** main 이 pty 의 상태를 바꾸거나 지울 때마다 `cb` 를 부른다. `entry` 가 null 이면 지웠다. */
+  onPtyState: (cb: (pty: string, entry: PtyStateEntry | null) => void): void => {
+    ipcRenderer.on('pty:state', (_event, pty: string, entry: PtyStateEntry | null) =>
+      cb(pty, entry)
+    )
+  },
+  /** main 이 지금 든 pty 상태 전체. `onPtyState` 를 단 뒤에 부른다. */
+  ptyStates: (): Promise<Record<string, PtyStateEntry>> => ipcRenderer.invoke('pty:states'),
   /** 터미널 링크를 연다. 상대경로는 `ptyId` 의 foreground 프로세스의 cwd 기준이다. */
   openLink: (text: string, ptyId: string): Promise<LinkOpenResult> =>
     ipcRenderer.invoke('link:open', text, ptyId),
