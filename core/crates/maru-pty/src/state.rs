@@ -54,14 +54,14 @@ impl PaneState {
 }
 
 /// foreground 는 실제 경로를 주고 셸의 OSC 7 은 `$PWD` 를 주므로, 셸이 심볼릭 링크 경로에 있으면 같은 디렉토리라도
-/// 두 경로가 다르다. 같은 디렉토리면 셸의 경로를 돌려준다.
-pub fn same_dir_as(foreground: &Path, shell: Option<&str>) -> String {
+/// 두 경로가 다르다. 같은 디렉토리면 `keep`(셸 cwd, 없으면 시작 디렉토리)의 경로를 돌려준다.
+pub fn same_dir_as(foreground: &Path, keep: Option<&str>) -> String {
     let real = |p: &Path| std::fs::canonicalize(p).ok();
-    if let Some(shell) = shell
-        && let Some(a) = real(Path::new(shell))
+    if let Some(keep) = keep
+        && let Some(a) = real(Path::new(keep))
         && real(foreground).as_ref() == Some(&a)
     {
-        return shell.to_string();
+        return keep.to_string();
     }
     foreground.to_string_lossy().into_owned()
 }

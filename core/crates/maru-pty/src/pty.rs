@@ -141,6 +141,8 @@ pub struct Pty {
     terminating: AtomicBool,
     /// `Drop` 에서 깨워 기다리던 감시 스레드가 끝나게 한다.
     wake: Arc<Wake>,
+    /// 띄울 때 받은 `--cwd`. 셸 cwd 가 없을 때 foreground cwd 를 이 경로와 견준다.
+    start_cwd: Option<String>,
 }
 
 impl Drop for Pty {
@@ -178,7 +180,6 @@ impl Screen {
         for event in &events.cwd {
             changed |= self.pane.apply(event);
         }
-        // foreground cwd 는 레코드가 있는 동안만 잰다.
         if self.status.is_empty() {
             changed |= self.pane.foreground_cwd.take().is_some();
         }
@@ -204,8 +205,8 @@ impl Screen {
     }
 }
 
-/// foreground 감시 스레드를 레코드가 생겼을 때만 깨운다. 레코드가 없는 pane 마다 1초에 한 번씩
-/// 깨어나지 않게 하려는 것이다.
+/// foreground 감시 스레드를 레코드가 생겼을 때와, 레코드가 있는 동안 셸이 OSC 7 을 보고했을 때 깨운다. 레코드가 없는
+/// pane 마다 1초에 한 번씩 깨어나지 않게 하려는 것이다.
 #[derive(Default)]
 struct Wake {
     flag: Mutex<bool>,
@@ -223,6 +224,12 @@ impl Wake {
         while !*flag {
             flag = self.cv.wait(flag).unwrap();
         }
+        *flag = false;
+    }
+
+    fn wait_timeout(&self, dur: Duration) {
+        let flag = self.flag.lock().unwrap();
+        let (mut flag, _) = self.cv.wait_timeout_while(flag, dur, |f| !*f).unwrap();
         *flag = false;
     }
 }
@@ -281,6 +288,7 @@ impl Pty {
                 // `subscribe_with_replay` 와 같은 락 안에서 반영·전달해야 출력이 스냅샷과 구독 중
                 // 정확히 한쪽에만 들어간다.
                 let mut screen = screen_r.lock().unwrap();
+                let had_records = !screen.status.is_empty();
                 screen.vt.write(bytes);
                 let events = screen.vt.take_events();
                 // 보고를 실은 바이트보다 먼저 구독자에게 넣는다. 다른 연결이라 순서가 보장되지는 않지만,
@@ -288,7 +296,9 @@ impl Pty {
                 if screen.apply_events(&events) {
                     screen.publish_state();
                 }
-                if !events.reports.is_empty() && !screen.status.is_empty() {
+                // 셸이 `cd` 한 뒤 보낸 OSC 7 이면 다음 1초를 기다리지 않고 잰다. 그동안 화면 cwd 가 옛 foreground
+                // cwd 로 남지 않게 하려는 것이다.
+                if !screen.status.is_empty() && (!had_records || !events.cwd.is_empty()) {
                     wake_r.wake();
                 }
                 screen.broadcast(|o| o.push(bytes));
@@ -327,6 +337,7 @@ impl Pty {
             next_conn: AtomicU64::new(1),
             terminating: AtomicBool::new(false),
             wake: wake.clone(),
+            start_cwd: cwd.and_then(Path::to_str).map(str::to_owned),
         });
         let weak = Arc::downgrade(&pty);
         std::thread::spawn(move || watch_foreground(weak, wake));
@@ -511,7 +522,7 @@ impl Pty {
 }
 
 /// 레코드가 있는 동안 foreground cwd 를 상태에 둔다. claude 가 한 상태에 머문 채 디렉토리를 옮긴 것을 앱이 알게
-/// 하려는 것이다. 레코드가 생겨 깨어나면 바로 한 번 재고, 그 뒤로 1초마다 잰다.
+/// 하려는 것이다. 레코드가 생겨 깨어나면 바로 한 번 재고, 그 뒤로 1초마다 잰다. 그사이 셸이 OSC 7 을 보고하면 바로 잰다.
 fn watch_foreground(pty: Weak<Pty>, wake: Arc<Wake>) {
     loop {
         wake.wait();
@@ -519,17 +530,18 @@ fn watch_foreground(pty: Weak<Pty>, wake: Arc<Wake>) {
             let Some(pty) = pty.upgrade() else {
                 return;
             };
-            let shell_cwd = {
+            let keep = {
                 let screen = pty.screen.lock().unwrap();
                 if pty.exited().is_some() || screen.status.is_empty() {
                     break;
                 }
-                screen.pane.cwd.clone()
+                // 셸 없이 띄운 명령은 OSC 7 이 없다. 그때는 시작 디렉토리의 경로(심볼릭 링크일 수 있다)를 지킨다.
+                screen.pane.cwd.clone().or_else(|| pty.start_cwd.clone())
             };
             // 락을 놓고 잰다 — proc 읽기가 느려도 출력 반영을 막지 않게.
             // 리더가 먼저 끝난 파이프라인(`a | b`)에서는 cwd 를 못 읽는다. 옮긴 것이 아니므로 그대로 둔다.
             if let Some(cwd) = pty.foreground().cwd {
-                let cwd = same_dir_as(&cwd, shell_cwd.as_deref());
+                let cwd = same_dir_as(&cwd, keep.as_deref());
                 let mut screen = pty.screen.lock().unwrap();
                 // 재는 동안 레코드가 비었으면 읽기 스레드가 지운 값을 되살리지 않는다.
                 if !screen.status.is_empty() && screen.pane.foreground_cwd.as_ref() != Some(&cwd) {
@@ -539,7 +551,7 @@ fn watch_foreground(pty: Weak<Pty>, wake: Arc<Wake>) {
             }
             // 자는 동안 `Pty` 를 쥐고 있으면 프로세스가 끝나도 이 스레드가 놓지 않는다.
             drop(pty);
-            std::thread::sleep(FOREGROUND_POLL);
+            wake.wait_timeout(FOREGROUND_POLL);
         }
     }
 }

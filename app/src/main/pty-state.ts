@@ -55,7 +55,6 @@ export function createPtyStates(deps: PtyStatesDeps) {
   }
 
   return {
-    /** 이미 구독하고 있으면 아무것도 하지 않는다. */
     watch(id: string): void {
       if (!watches.has(id)) open(id)
     },

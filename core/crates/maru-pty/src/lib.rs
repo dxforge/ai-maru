@@ -75,8 +75,9 @@
 //!   ghostty 는 빈 OSC 9;9(ConEmu CurrentDir)도 빈 OSC 7 과 같이 알리므로, 그것도 null 로 지운다.
 //! - `cwd_reports` — 받아들인 OSC 7 보고(빈 보고 포함) 수. 같은 경로를 다시 보고해도 는다.
 //! - `title` — OSC 0/2 로 받은 제목. 없거나 비었거나 RIS 로 지워졌으면 null 이다.
-//! - `foreground_cwd` — 레코드가 하나라도 있는 동안 1초마다 잰 foreground 의 작업 디렉토리. 레코드가 생기면 바로
-//!   한 번 잰다. `cwd` 와 같은 디렉토리면 `cwd` 의 경로를 싣는다(OSC 7 은 `$PWD` 라 심볼릭 링크 경로일 수 있다).
+//! - `foreground_cwd` — 레코드가 하나라도 있는 동안 1초마다 잰 foreground 의 작업 디렉토리. 레코드가 생기거나 셸이
+//!   OSC 7 을 보고하면 바로 한 번 잰다. `cwd` 와 같은 디렉토리면 `cwd` 의 경로를 싣는다(OSC 7 은 `$PWD` 라 심볼릭
+//!   링크 경로일 수 있다). `cwd` 가 null 이면 `--cwd` 와 견주어, 같은 디렉토리면 `--cwd` 의 경로를 싣는다.
 //!   레코드가 없으면 null 이고, 잴 수 없으면(`a | b` 에서 `a` 가 먼저 끝남) 이전 값을 둔다.
 //! - `records` — 프로그램이 OSC 7501(Program Status Protocol)로 보고한 레코드 전체:
 //!   `[{"id","state","kind","progress","app","title","message"}, …]`. `id` 는 루트 레코드가 `""` 이고 `/` 로

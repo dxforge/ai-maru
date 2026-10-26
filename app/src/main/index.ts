@@ -140,7 +140,7 @@ function mainWindow(): BrowserWindow | undefined {
 
 const ptyCells = createPtyCells()
 
-// docs/architecture.md 의 "pty 상태는 main 이 구독해 든다".
+// main 은 renderer 가 붙어 있든 아니든 pty 마다 상태 구독을 열어 마지막 상태를 든다(docs/architecture.md 의 "pty 상태는 main 이 구독해 든다").
 const ptyStates = createPtyStates({
   subscribe: (id, on) => subscribeState(ptyDir(), id, on),
   isLive: (id) => ptyLive(ptyDir(), id),

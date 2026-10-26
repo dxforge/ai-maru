@@ -213,6 +213,25 @@ test('maru cell new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른
   await expect(paneRows(page)).toHaveClass(/working/)
 })
 
+test('maru cell new --cwd 로 심볼릭 링크 경로에 바로 띄운 Claude 의 cell 은 Claude 의 상태가 바뀌어도 그 링크 경로로 보인다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = repoHome(dataDir)
+  symlinkSync(join(home, 'proj'), join(home, 'link'))
+  // 셸 없이 pane 의 명령으로 뜬 claude 라 OSC 7 이 오지 않는다. `foreground` 는 실제 경로(`~/proj`)를 답한다. 두 번째 보고가
+  // 보일 때는 첫 보고 때 잰 foreground cwd 가 이미 화면에 닿아 있다.
+  writeFileSync(
+    join(home, 'claude.sh'),
+    `${programStatus('working')}sleep 2\n${programStatus('blocked')}sleep 30\n`
+  )
+  const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  await page.keyboard.type('maru cell new --cwd ~/link bash ~/claude.sh >/dev/null\n')
+  const opened = cellGroups(page).nth(1).locator('.cell')
+  await expect(paneRows(page)).toHaveClass(/blocked/)
+  await expect(opened).toHaveAttribute('title', 'proj — main\n~/link')
+})
+
 test('경로는 cell 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, cell 헤더에도 branch 가 붙는다', async ({
   launch,
   dataDir

@@ -132,7 +132,6 @@ impl Proc {
         (c, header, replay)
     }
 
-    /// 상태 구독을 열고 첫 상태를 함께 돌려준다.
     fn subscribe(&self) -> (Conn, Value) {
         let mut c = self.connect();
         c.send_text(json!({ "type": "subscribe", "protocol_version": PROTOCOL_VERSION }));
@@ -1637,7 +1636,6 @@ fn the_foreground_cwd_is_measured_only_while_records_exist() {
     a.input("echo back-$((1))\n");
     a.output_until("back-1");
 
-    // 레코드가 생기면 1초를 기다리지 않고 잰다.
     let started = Instant::now();
     a.input(&format!(
         "{OSC_WORKING}; sleep 1.5; (cd {path_str}; sleep 3); echo back-$((2))\n"
@@ -1683,6 +1681,53 @@ fn the_foreground_cwd_keeps_the_shells_symlinked_path_for_the_same_directory() {
     a.input(&format!("cd {link}; {OSC7_PWD}; {OSC_WORKING}\n"));
     let st = s.state_until(|v| !v["foreground_cwd"].is_null() && v["cwd"] == link);
     assert_eq!(st["foreground_cwd"], link, "{st}");
+}
+
+#[test]
+fn without_a_shell_cwd_the_foreground_cwd_keeps_the_symlinked_start_dir() {
+    let work = tmpdir();
+    let real = std::fs::canonicalize(work.path()).unwrap();
+    std::fs::create_dir(real.join("d")).unwrap();
+    std::os::unix::fs::symlink(real.join("d"), real.join("link")).unwrap();
+    let link = real.join("link");
+    let link = link.to_str().unwrap();
+    // OSC 7 을 보내지 않는 명령이라 셸 cwd 가 없다.
+    let script = format!("{OSC_WORKING}; sleep 1.5; cd /; sleep 3");
+    let args = ["--cwd", link, "--", "/bin/sh", "-c", &script];
+    let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
+    let p = start_in(tmpdir(), &args);
+    let (mut s, _) = p.subscribe();
+
+    let st = s.state_until(|v| !v["foreground_cwd"].is_null());
+    assert_eq!(st["cwd"], Value::Null, "{st}");
+    assert_eq!(st["foreground_cwd"], link, "{st}");
+    let st = s.state_until(|v| v["foreground_cwd"] != link);
+    assert_eq!(
+        st["foreground_cwd"], "/",
+        "다른 디렉토리면 foreground 경로다: {st}"
+    );
+}
+
+#[test]
+fn an_osc_7_while_records_exist_measures_the_foreground_cwd_at_once() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let tmp = tmpdir();
+    let path = std::fs::canonicalize(tmp.path()).unwrap();
+    let path = path.to_str().unwrap();
+
+    a.input(&format!("{OSC_WORKING}\n"));
+    // 레코드가 생겨 막 잰 때라, 다음 정기 재기까지 1초에 가깝게 남는다.
+    s.state_until(|v| !v["foreground_cwd"].is_null());
+    let started = Instant::now();
+    a.input(&format!("cd {path}; {OSC7_PWD}\n"));
+    s.state_until(|v| v["foreground_cwd"] == path);
+    assert!(
+        started.elapsed() < Duration::from_millis(500),
+        "OSC 7 뒤 foreground cwd 가 늦게 왔다: {:?}",
+        started.elapsed()
+    );
 }
 
 #[test]

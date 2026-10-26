@@ -294,7 +294,6 @@ export type StateHandlers = {
   closed(): void
 }
 
-/** pty 의 상태 구독을 연다. 돌려준 함수로 닫는다. */
 export function subscribeState(dir: string, id: string, on: StateHandlers): () => void {
   const req = request(
     dir,
