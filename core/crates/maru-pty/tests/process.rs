@@ -1691,16 +1691,24 @@ fn without_a_shell_cwd_the_foreground_cwd_keeps_the_symlinked_start_dir() {
     std::os::unix::fs::symlink(real.join("d"), real.join("link")).unwrap();
     let link = real.join("link");
     let link = link.to_str().unwrap();
-    // OSC 7 을 보내지 않는 명령이라 셸 cwd 가 없다.
-    let script = format!("{OSC_WORKING}; sleep 1.5; cd /; sleep 3");
+    let go = real.join("go");
+    let script = format!(
+        "{OSC_WORKING}; while [ ! -e {} ]; do sleep 0.1; done; cd /; sleep 3",
+        go.display()
+    );
     let args = ["--cwd", link, "--", "/bin/sh", "-c", &script];
     let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
     let p = start_in(tmpdir(), &args);
-    let (mut s, _) = p.subscribe();
+    let (mut s, first) = p.subscribe();
 
-    let st = s.state_until(|v| !v["foreground_cwd"].is_null());
+    let st = if first["foreground_cwd"].is_null() {
+        s.state_until(|v| !v["foreground_cwd"].is_null())
+    } else {
+        first
+    };
     assert_eq!(st["cwd"], Value::Null, "{st}");
     assert_eq!(st["foreground_cwd"], link, "{st}");
+    std::fs::write(&go, "").unwrap();
     let st = s.state_until(|v| v["foreground_cwd"] != link);
     assert_eq!(
         st["foreground_cwd"], "/",
@@ -1720,13 +1728,18 @@ fn an_osc_7_while_records_exist_measures_the_foreground_cwd_at_once() {
     a.input(&format!("{OSC_WORKING}\n"));
     // 레코드가 생겨 막 잰 때라, 다음 정기 재기까지 1초에 가깝게 남는다.
     s.state_until(|v| !v["foreground_cwd"].is_null());
-    let started = Instant::now();
     a.input(&format!("cd {path}; {OSC7_PWD}\n"));
-    s.state_until(|v| v["foreground_cwd"] == path);
+    // 셸이 늦게 돌아도 테스트가 실패하지 않도록, 시간은 셸 cwd 가 실린 상태를 받은 때부터 잰다. 구독은 바뀐 상태 가운데
+    // 마지막 것만 보내므로(`lib.rs` 모듈 doc) `cwd` 와 `foreground_cwd` 가 한 상태에 같이 올 수 있다.
+    let st = s.state_until(|v| v["cwd"] == path);
+    let reported = Instant::now();
+    if st["foreground_cwd"] != path {
+        s.state_until(|v| v["foreground_cwd"] == path);
+    }
     assert!(
-        started.elapsed() < Duration::from_millis(500),
+        reported.elapsed() < Duration::from_millis(500),
         "OSC 7 뒤 foreground cwd 가 늦게 왔다: {:?}",
-        started.elapsed()
+        reported.elapsed()
     );
 }
 
