@@ -52,6 +52,10 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 다시 뜬 앱의 남은 pty 정리는 이 파일에 있는 pty 만 남기고, 그 가운데 프로토콜 버전이 다른 pty 는 끈다. 되살린 pane 은 `pty:open` 의 `attach` 로 pty 를 띄우지 않고 붙는다.
 
+## 닫기 전 확인 창은 main 이 띄운다
+
+⌘W(pane)·⇧⌘W(workspace)·창 닫기·⌘Q 는 셸 말고 도는 것이 있으면 확인 창을 띄운다(`app/src/main/close-confirm.ts`). pane 은 maru-pty 의 `foreground` 가 답한 pid 가 레코드의 `shell_pid` 와 다르면 실행 중이다. job 은 main 의 job 표에서 끝나지 않은 것을 센다. 그래서 ⌘W·⇧⌘W 도 renderer 가 아니라 main 이 묻고, renderer 는 답을 받은 뒤에 닫는다. 어느 경로든 main 은 renderer 가 마지막으로 보낸 화면(`lastScreen`)에서 pane 과 cell 을 찾는다. 셸이 스스로 끝나 닫는 pane 과 `maru pane close` 도 묻지 않는다 — CLI 의 답 상한 안에 사용자의 답을 기다릴 수 없기 때문이다.
+
 ## pane 경계와 글자 칸 격자
 
 나란히 놓인 pane 끼리 터미널 행이, 위아래로 놓인 pane 끼리 열이 이어지도록 pane 경계를 터미널 글자 칸 크기의 배수에 둔다. ⌘+ / ⌘- 로 cell 마다 글꼴 크기가 다를 수 있으므로 `App.vue` 는 글꼴마다 마지막으로 잰 글자 칸 크기를 둔다. cell 마다 그 글꼴의 글자 칸 크기를 `--row`·`--cell`·`--pad` 로 그 cell 의 `.panes` 요소에 둔다.

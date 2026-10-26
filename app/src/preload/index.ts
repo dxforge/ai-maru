@@ -83,6 +83,12 @@ const api = {
     if (lastConfig) cb(lastConfig)
   },
   restart: (): void => ipcRenderer.send('app:restart'),
+  /** pty 에서 셸 말고 도는 프로그램이 있으면 main 이 확인 창을 띄운다. 닫아도 되면 true 다. */
+  confirmClosePane: (ptyId: string): Promise<boolean> =>
+    ipcRenderer.invoke('pane:confirm-close', ptyId),
+  /** `workspaceId` 의 pane 이나 그 cell 의 job 가운데 도는 것이 있으면 main 이 확인 창을 띄운다. 닫아도 되면 true 다. */
+  confirmCloseWorkspace: (workspaceId: string): Promise<boolean> =>
+    ipcRenderer.invoke('workspace:confirm-close', workspaceId),
   applyTheme: (theme: WindowTheme): void => ipcRenderer.send('theme:apply', theme),
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   // dev 서버로 띄우면 Electron 이 끝날 때 dev 서버도 끝나, 다시 뜬 앱이 renderer 를 불러올 곳이 없다.

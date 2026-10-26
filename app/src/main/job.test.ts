@@ -316,6 +316,28 @@ describe('알림', () => {
   })
 })
 
+describe('running', () => {
+  it('끝나지 않은 job 만 세고, cell 을 주면 그 cell 의 것만 센다', async () => {
+    const t = setup()
+    const done = await t.start({ name: 'done' })
+    await t.start({ name: 'a' })
+    await t.start({ name: 'c' }, C)
+    await t.exit(done, { code: 0, signal: null })
+    expect(t.jobs.running()).toBe(2)
+    expect(t.jobs.running(new Set(['c-1']))).toBe(1)
+    expect(t.jobs.running(new Set(['c-2', 'c-9']))).toBe(1)
+    expect(t.jobs.running(new Set())).toBe(0)
+  })
+
+  it('띄우는 중인 job 도 센다', async () => {
+    const t = setup()
+    t.deps.spawn.mockImplementationOnce(() => new Promise<void>(() => {}))
+    void t.start({ name: 'dev' })
+    await flush()
+    expect(t.jobs.running()).toBe(1)
+  })
+})
+
 describe('closeCell', () => {
   it('띄우는 중인 job 도 뜬 뒤에 끈다', async () => {
     const t = setup()

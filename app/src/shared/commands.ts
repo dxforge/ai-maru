@@ -6,6 +6,7 @@ export type CommandId =
   | 'split-right'
   | 'split-down'
   | 'close-pane'
+  | 'close-workspace'
   | 'focus-pane-left'
   | 'focus-pane-right'
   | 'focus-pane-up'
@@ -35,6 +36,7 @@ export const commands: readonly Command[] = [
   { id: 'split-right', title: 'Split Right', menu: 'file' },
   { id: 'split-down', title: 'Split Down', menu: 'file' },
   { id: 'close-pane', title: 'Close Pane', menu: 'file' },
+  { id: 'close-workspace', title: 'Close Workspace', menu: 'file' },
   { id: 'command-palette', title: 'Command Palette…', menu: 'view', palette: false },
   { id: 'next-cell', title: 'Next Cell', menu: 'view' },
   { id: 'previous-cell', title: 'Previous Cell', menu: 'view' },

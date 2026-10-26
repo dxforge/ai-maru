@@ -9,6 +9,7 @@ import {
   rows,
   run,
   sockets,
+  stubDialog,
   test,
   cellItems
 } from './app'
@@ -149,6 +150,7 @@ test('재시작 뒤 job 이 남고, 재시작 동안 끝난 job 의 알림이 �
   await run(shown, 'maru job list', /keep\s+running/)
   await expect(rows(shown)).toContainText(/late\s+exited 7/)
   expect(jobEvents(events)).toHaveLength(1)
+  await stubDialog(again, 0)
   await again.close()
   expect(sockets(dataDir)).toEqual([])
 })
@@ -157,6 +159,7 @@ test('앱을 끝내면 job 도 끝난다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await run(page, 'maru job new --name a sleep 100; echo up-$((1+1))', 'up-2')
   expect(sockets(dataDir)).toHaveLength(2)
+  await stubDialog(app, 0)
   await app.close()
   expect(sockets(dataDir)).toEqual([])
 })

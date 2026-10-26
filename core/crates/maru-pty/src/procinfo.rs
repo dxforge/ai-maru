@@ -31,6 +31,25 @@ pub fn cwd(pid: i32) -> Option<PathBuf> {
     std::fs::read_link(format!("/proc/{pid}/cwd")).ok()
 }
 
+#[cfg(target_os = "macos")]
+pub fn name(pid: i32) -> Option<String> {
+    use std::ffi::c_void;
+
+    let mut buf = [0u8; 256];
+    // SAFETY: 커널은 buf 의 길이 안에만 쓰고 쓴 바이트 수를 돌려준다.
+    let n = unsafe { libc::proc_name(pid, buf.as_mut_ptr().cast::<c_void>(), buf.len() as u32) };
+    if n <= 0 {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&buf[..n as usize]).into_owned())
+}
+
+#[cfg(target_os = "linux")]
+pub fn name(pid: i32) -> Option<String> {
+    let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
+    Some(comm.trim_end_matches('\n').to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -39,6 +58,26 @@ mod tests {
     fn reads_this_process_cwd() {
         let want = std::env::current_dir().unwrap();
         assert_eq!(cwd(std::process::id() as i32), Some(want));
+    }
+
+    #[test]
+    fn reads_a_child_process_name() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("5")
+            .spawn()
+            .unwrap();
+        let name = name(child.id() as i32);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert_eq!(name.as_deref(), Some("sleep"));
+    }
+
+    #[test]
+    fn an_exited_process_has_no_name() {
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = child.id() as i32;
+        child.wait().unwrap();
+        assert_eq!(name(pid), None);
     }
 
     #[test]

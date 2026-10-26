@@ -155,10 +155,22 @@ function stepCell(by: 1 | -1): void {
   if (key !== undefined) selectCell(key)
 }
 
-function closePane(): void {
+// 확인 창이 떠 있는 동안 pane 이 스스로 닫혔으면 `removePane` 은 아무것도 하지 않는다.
+async function closePane(): Promise<void> {
   const c = workspaces.selected()
   if (!c) return
-  removePane(c.focused)
+  const p = focusedPane(c)
+  if (await window.maru.confirmClosePane(p.ptyId)) removePane(p.key)
+  void focusSelected()
+}
+
+// 마지막 cell 이 닫히면 store 가 workspace 를 지운다. cell 의 job 은 cell 이 닫힐 때 main 이 끈다.
+async function closeWorkspace(): Promise<void> {
+  const c = workspaces.selected()
+  const w = c && workspaces.workspaceOf(c.key)
+  if (!w) return
+  const panes = w.cells.flatMap((x) => x.panes.map((p) => p.key))
+  if (await window.maru.confirmCloseWorkspace(w.id)) for (const p of panes) removePane(p)
   void focusSelected()
 }
 
@@ -564,7 +576,8 @@ const handlers: Record<CommandId, () => void> = {
   'new-cell': newCell,
   'split-right': () => splitSelected('right'),
   'split-down': () => splitSelected('down'),
-  'close-pane': closePane,
+  'close-pane': () => void closePane(),
+  'close-workspace': () => void closeWorkspace(),
   'next-cell': () => stepCell(1),
   'previous-cell': () => stepCell(-1),
   'focus-pane-left': () => workspaces.moveFocus('left', widths.value),

@@ -127,6 +127,16 @@ export function parseScreen(v: unknown): ScreenState | null {
   return v as ScreenState
 }
 
+export function screenPanes(
+  screen: ScreenState | null,
+  workspace?: string
+): { panes: ScreenPane[]; cells: string[] } {
+  const cells = (screen?.workspaces ?? [])
+    .filter((w) => workspace === undefined || w.id === workspace)
+    .flatMap((w) => w.cells)
+  return { panes: cells.flatMap((c) => c.panes), cells: cells.map((c) => c.id) }
+}
+
 export function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, width))
 }
