@@ -420,8 +420,21 @@ export function gridRows(page: Page) {
   return rows(page).locator('> div')
 }
 
+/** cell 마다 하나인 사이드바의 첫 pane 줄. 누르면 그 pane 으로 가며 cell 을 고른다. */
 export function cellItems(page: Page) {
-  return page.locator('.sidebar .cell .name')
+  return page.locator('.sidebar .group > .pane-row:first-of-type')
+}
+
+export function cellPlaces(page: Page) {
+  return cellItems(page).locator('.place')
+}
+
+export function paneRowPlaces(page: Page) {
+  return page.locator('.sidebar .pane-row .place')
+}
+
+export function workspaceHeads(page: Page) {
+  return page.locator('.sidebar .workspace-head')
 }
 
 export function cellGroups(page: Page) {

@@ -1,4 +1,5 @@
 import { programName, type ProgramStatusRecord } from '../../../shared/program-status'
+import { dirName } from '../../../shared/names'
 import type { PtyState } from '../../../shared/pty-state'
 
 export type CwdSources = {
@@ -33,9 +34,29 @@ export function paneTitle(s: {
   return s.state ? (s.state.title ?? undefined) : s.restoredTitle
 }
 
+type Named = { title?: string; command?: readonly string[] }
+
+/**
+ * 제목도 OSC 7501 레코드도 없는 pane 의 이름. 명령 pane 은 그 명령, 아니면 셸이다. maru-pty 는 `SHELL` 이 비었거나
+ * 실행할 수 없으면 `/bin/sh` 를 띄운다. 실행할 수 있는지는 여기서 보지 않는다.
+ */
+export function fallbackName(p: Pick<Named, 'command'>, shell: string | undefined): string {
+  if (p.command?.length) return dirName(p.command[0])
+  return shell ? dirName(shell) : 'sh'
+}
+
 export function paneName(
-  title: string | undefined,
-  root: Pick<ProgramStatusRecord, 'app'> | undefined
+  p: Named,
+  root: Pick<ProgramStatusRecord, 'app'> | undefined,
+  shell: string | undefined
 ): string {
-  return title || (root ? programName(root.app) : 'Shell')
+  return p.title || (root ? programName(root.app) : fallbackName(p, shell))
+}
+
+export function elapsed(ms: number): string {
+  const m = Math.floor(ms / 60_000)
+  if (m < 1) return '<1m'
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`
 }

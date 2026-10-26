@@ -14,18 +14,26 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 /** pty 의 답을 기다리는 상한. `maru` 의 `TIMEOUT`(main.rs)이 10초이므로 시간 초과 오류가 그 안에 닿게 한다. */
 export const JOB_REPLY_MS = 8_000
 
-/** `owner` 는 `job.new` 를 부른 pty 다. `pending` 은 끝났지만 아직 `owner` 에 알리지 못했다는 표시다. */
+/**
+ * `owner` 는 `job.new` 를 부른 pty 다. `pending` 은 끝났지만 아직 `owner` 에 알리지 못했다는 표시다. `started` 는
+ * 띄운 시각(epoch ms)이다. `started` 를 더하기 전의 앱이 저장한 job 에는 없다.
+ */
 export type JobRecord = {
   pty: string
   name?: string
   cell: string
   owner: string
   command: string[]
+  started?: number
   exit?: PtyExit
   pending: boolean
 }
 
-/** 재시작 전 앱이 쓰고 다시 뜬 앱이 읽는다. 모양을 바꾸면 버전을 올린다. */
+/**
+ * 재시작 전 앱이 쓰고 다시 뜬 앱이 읽는다. 모양을 바꾸면 버전을 올린다. 없어도 되는 필드를 더할 때는 올리지 않는다.
+ * 이전 앱의 `isJob` 은 모르는 필드를 보지 않으므로 필드가 더해진 파일도 그대로 읽는다. 버전을 올리면 버전 3 만 읽는
+ * 앱으로 재시작할 때 job 을 잃는다.
+ */
 export type JobsFile = { version: 3; jobs: JobRecord[] }
 
 export type JobDeps = {
@@ -38,6 +46,8 @@ export type JobDeps = {
   input: (id: string, text: string) => Promise<'written' | 'exited'>
   kill: (id: string) => Promise<void>
   emit: (pty: string, event: object) => boolean
+  now: () => number
+  changed: () => void
 }
 
 /** 계약은 `main.rs`(`core/crates/maru/src/main.rs`)의 모듈 doc 에 있다. 표는 띄운 순서다. */
@@ -74,8 +84,19 @@ export function createJobs(deps: JobDeps) {
 
   function remove(job: JobRecord): void {
     const i = jobs.indexOf(job)
-    if (i !== -1) jobs.splice(i, 1)
     stopWaiting(job.pty)
+    if (i === -1) return
+    jobs.splice(i, 1)
+    deps.changed()
+  }
+
+  const byPty = (pty: string): JobRecord | undefined => jobs.find((j) => j.pty === pty)
+
+  async function kill(job: JobRecord): Promise<void> {
+    // 끝날 때까지 목록에 두어, 그 사이 같은 이름의 new 가 아직 도는 프로세스 옆에 뜨지 않게 한다.
+    stopWaiting(job.pty)
+    await deps.kill(job.pty)
+    remove(job)
   }
 
   function notify(job: JobRecord): void {
@@ -95,6 +116,7 @@ export function createJobs(deps: JobDeps) {
       if (!e) return remove(job)
       job.exit = { code: e.code, signal: e.signal }
       notify(job)
+      deps.changed()
     })
   }
 
@@ -131,11 +153,13 @@ export function createJobs(deps: JobDeps) {
         cell,
         owner: pty,
         command,
+        started: deps.now(),
         pending: false
       }
       // 기다리기 전에 표에 넣어 이름을 잡는다 — 동시에 온 같은 이름의 new 가 둘 다 지나가지 않게.
       if (same) remove(same)
       jobs.push(job)
+      deps.changed()
       try {
         if (same) await deps.kill(same.pty)
         await deps.spawn(job.pty, cwd, command)
@@ -170,11 +194,7 @@ export function createJobs(deps: JobDeps) {
       return null
     },
     'job.kill': async ({ target }, pty) => {
-      const job = find(callerCell(pty), target)
-      // 끝날 때까지 목록에 두어, 그 사이 같은 이름의 new 가 아직 도는 프로세스 옆에 뜨지 않게 한다.
-      stopWaiting(job.pty)
-      await deps.kill(job.pty)
-      remove(job)
+      await kill(find(callerCell(pty), target))
       return null
     }
   }
@@ -182,6 +202,13 @@ export function createJobs(deps: JobDeps) {
   return {
     handlers,
     cellOf,
+    list: (): JobRecord[] => structuredClone(jobs),
+    get: byPty,
+    /** `job.kill` 과 같은 일을 한다. 창이 부르므로 부른 cell 을 따지지 않고 pty 로 찾는다. */
+    kill: async (pty: string): Promise<void> => {
+      const job = byPty(pty)
+      if (job) await kill(job)
+    },
     subscribed: (pty: string): void => {
       for (const j of jobs) if (j.owner === pty && j.pending) notify(j)
     },
@@ -205,6 +232,7 @@ export function createJobs(deps: JobDeps) {
     restore: (file: JobsFile): void => {
       jobs.push(...file.jobs)
       for (const j of file.jobs) if (!j.exit) watch(j)
+      deps.changed()
     }
   }
 }
@@ -221,6 +249,7 @@ function isJob(v: unknown): v is JobRecord {
     typeof v.cell === 'string' &&
     isPtyId(v.owner) &&
     isCommand(v.command) &&
+    (v.started === undefined || Number.isFinite(v.started)) &&
     (v.exit === undefined || (isObj(v.exit) && isCode(v.exit.code) && isCode(v.exit.signal))) &&
     typeof v.pending === 'boolean'
   )

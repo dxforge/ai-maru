@@ -22,6 +22,8 @@ import {
   toggleView,
   typesInto,
   cellItems,
+  cellPlaces,
+  paneRowPlaces,
   zshHome
 } from './app'
 
@@ -220,27 +222,27 @@ test('포커스가 없는 pane 의 셸이 끝나면 그 pane 만 닫고, 포커�
   await run(page, 'echo "x=$X"', 'x=right-2')
 })
 
-test('zsh 에서 새 pane 은 포커스가 있던 pane 의 디렉토리에서 시작하고, 이름과 ⌘N 은 포커스가 있는 pane 을 따른다', async ({
+test('zsh 에서 새 pane 은 포커스가 있던 pane 의 디렉토리에서 시작하고, 사이드바는 pane 마다 위치를 보이며, ⌘N 은 포커스가 있는 pane 을 따른다', async ({
   launch,
   dataDir
 }) => {
   const home = zshHome(dataDir, 'proj', 'other')
   const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await page.keyboard.type('cd proj\n')
-  await expect(cellItems(page)).toHaveText(['proj'])
+  await expect(cellPlaces(page)).toHaveText(['proj'])
 
   await split(app, page, 'split-down', 2)
   await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
   await page.keyboard.type('cd ~/other\n')
-  await expect(cellItems(page)).toHaveText(['other'])
+  const places = paneRowPlaces(page)
+  await expect(places).toHaveText(['proj', 'other'])
 
   await clickMenu(app, 'focus-pane-up')
-  await expect(cellItems(page)).toHaveText(['proj'])
+  await expect(places).toHaveText(['proj', 'other'])
   await panes(page).nth(1).click()
-  await expect(cellItems(page)).toHaveText(['other'])
 
   await pressNew(app)
-  await expect(cellItems(page)).toHaveText(['other', 'other'])
+  await expect(places).toHaveText(['proj', 'other', 'other'])
   await activeTerminal(page)
   await run(page, '[ "$PWD" = "$HOME/other" ] && echo in-other-$((1+1))', 'in-other-2')
 })

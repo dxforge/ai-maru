@@ -613,6 +613,8 @@ test('Tab 으로 입력창을 떠나면 팔레트가 닫히고 키는 터미널�
   await openPalette(launched)
   await page.keyboard.press('Tab')
   await expect(palette(page)).toHaveCount(0)
+  // 글자를 치기 전에 본다. 사이드바의 버튼이 포커스를 받으면 친 공백이 그 버튼을 눌러 터미널로 포커스를 되돌리기 때문이다.
+  await expect(page.locator('.terminal-view.active .xterm-helper-textarea')).toBeFocused()
   await typesIntoTerminal(page, 'tabbed')
 })
 

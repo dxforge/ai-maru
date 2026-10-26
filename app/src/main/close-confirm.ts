@@ -65,6 +65,14 @@ export function closePaneDialog(name: string | null): Dialog {
   }
 }
 
+export function stopJobDialog(name: string): Dialog {
+  return {
+    message: 'Stop this job?',
+    detail: `\`${name}\` is still running.`,
+    buttons: ['Stop', 'Cancel']
+  }
+}
+
 export type Running = { panes: number; jobs: number }
 
 export function runningDialog(

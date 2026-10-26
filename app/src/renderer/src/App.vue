@@ -5,6 +5,7 @@ import {
   onBeforeUnmount,
   reactive,
   ref,
+  shallowRef,
   useTemplateRef,
   watch,
   watchEffect
@@ -12,6 +13,7 @@ import {
 import { available, commands, type CommandId } from '../../shared/commands'
 import { PANE_MIN } from '../../shared/layout'
 import { cellLabel, windowTitle } from '../../shared/names'
+import type { JobView } from '../../shared/job'
 import type { PaneReply } from '../../shared/pane'
 import type { ProgramStatusRecord } from '../../shared/program-status'
 import {
@@ -24,6 +26,7 @@ import { secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
 import { createCanvas } from './canvas/store'
 import { createPtyStates, syncPtyStates } from './pty/states'
+import { syncJobs } from './workspace/jobs'
 import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PaneHeader from './components/PaneHeader.vue'
@@ -67,6 +70,19 @@ function onLegacyProgramStatus(pty: string, records: ProgramStatusRecord[]): voi
   if (ptyStates.isOld(pty)) workspaces.applyState(pty)
 }
 const home = window.maru.home
+const shell = window.maru.shell
+
+const jobs = shallowRef<JobView[]>([])
+syncJobs((list) => (jobs.value = list), window.maru)
+// job 이 돈 시간은 분 단위로 보이므로 그보다 잦게만 다시 센다.
+const now = ref(Date.now())
+setInterval(() => {
+  if (jobs.value.some((j) => !j.exit)) now.value = Date.now()
+}, 30_000)
+
+function killJob(pty: string): void {
+  void window.maru.killJob(pty)
+}
 
 const toasts = createToasts()
 const config = createConfig(window.maru.config, (r) => {
@@ -538,12 +554,19 @@ const labels = computed(
 
 const URGENCY = ['blocked', 'error', 'done', 'working', 'idle'] as const
 
+// workspace 와 cell 의 key 는 겹치지 않으므로 한 표에 둔다. workspace 의 값은 그 cell 들 가운데 가장 급한 것이다.
 const urgent = computed(() => {
   const map = new Map<number, (typeof URGENCY)[number]>()
-  for (const c of workspaces.cells()) {
-    const states = new Set(c.panes.map((p) => ptyStates.state(p.ptyId)))
-    const state = URGENCY.find((s) => states.has(s))
-    if (state) map.set(c.key, state)
+  for (const w of workspaces.list.value) {
+    const all = new Set<string | undefined>()
+    for (const c of w.cells) {
+      const states = new Set(c.panes.map((p) => ptyStates.state(p.ptyId)))
+      const state = URGENCY.find((s) => states.has(s))
+      if (state) map.set(c.key, state)
+      all.add(state)
+    }
+    const state = URGENCY.find((s) => all.has(s))
+    if (state) map.set(w.key, state)
   }
   return map
 })
@@ -645,11 +668,17 @@ window.addEventListener('keydown', (e) => {
   if (available(command, window.maru)) runCommand(id)
 })
 
+// 지금 있는 workspace 의 key 만 남긴다. 재시작한 앱은 복원한 key 가운데 가장 큰 값 다음부터 key 를 매기므로, 닫은
+// workspace 의 key 가 접힌 목록에 남으면 새로 연 workspace 가 그 key 를 받아 접힌 채 뜬다.
+function openFolded(): number[] {
+  return workspaces.list.value.map((w) => w.key).filter((k) => folded.has(k))
+}
+
 function screen(): ScreenState {
   return {
     version: SCREEN_VERSION,
     ...workspaces.snapshot(),
-    sidebar: { open: sidebarOpen.value, width: sidebarWidth.value, folded: [...folded] },
+    sidebar: { open: sidebarOpen.value, width: sidebarWidth.value, folded: openFolded() },
     viewMode: viewMode.value,
     ...(canvasWidth.value === undefined ? {} : { canvas: { width: canvasWidth.value } })
   }
@@ -695,10 +724,13 @@ void window.maru.restoreScreen().then((s) => {
         :root="ptyStates.root"
         :urgent="urgent"
         :folded="folded"
+        :jobs="jobs"
+        :now="now"
         :home="home"
-        @select="selectCell"
+        :shell="shell"
         @focus="selectPane"
         @fold="toggleFold"
+        @kill-job="killJob"
       />
     </div>
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />
@@ -736,6 +768,7 @@ void window.maru.restoreScreen().then((s) => {
               :status="ptyStates.root(p.ptyId)"
               :pane="p"
               :focused="active"
+              :shell="shell"
               @mousedown.prevent="terminals.get(p.key)?.focus()"
             />
             <div class="body" :style="body">

@@ -62,7 +62,7 @@ test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상�
   await expect(activeHeader(page)).toHaveClass(/working/)
   await page.keyboard.type("printf '\\e]0;task-%s\\a' $((6*7))\n")
   await expect(paneRows(page).locator('.title')).toHaveText('task-42')
-  await expect(paneRows(page)).toHaveAttribute('aria-label', 'Working: task-42')
+  await expect(paneRows(page)).toHaveAttribute('aria-label', 'Working: task-42, ~')
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
   await page.keyboard.type(status('blocked', 'kind=permission:msg=aGk='))
   await expect(paneRows(page)).toHaveClass(/blocked/)
@@ -89,8 +89,9 @@ test('상태 아이콘은 상태마다 SVG 로 줄 가운데에 그리고, 선�
     [activeHeader(page).locator('.status-icon'), activeHeader(page)],
     [page.locator('.cell-header .status-icon'), page.locator('.cell-header')]
   ] as const
+  // 사이드바는 쉬는 agent 의 앞 칸에 상태 아이콘 대신 agent 아이콘을 두므로, agent 가 아닌 app 으로 모든 상태를 그린다.
   for (const state of Object.keys(STATE_LABELS)) {
-    await page.keyboard.type(status(state))
+    await page.keyboard.type(status(state, undefined, 'make'))
     await expect(paneRows(page)).toHaveClass(new RegExp(state))
     for (const [icon, row] of icons) {
       const svg = icon.locator('svg')
@@ -156,25 +157,21 @@ test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아�
   await page.keyboard.type(status('working', undefined, 'make'))
   await expect(paneRows(page)).toHaveClass(/working/)
   await expect(paneRows(page).locator('.title')).toHaveText('make')
-  await expect(paneRows(page)).toHaveAttribute('aria-label', 'Working: make')
-  await expect(paneRows(page).locator('.app')).toHaveCount(0)
+  await expect(paneRows(page)).toHaveAttribute('aria-label', /^Working: make, /)
   await expect(activeHeader(page).locator('.title')).toHaveText('make')
   await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Working')
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
-  await groups(page).locator('.fold').click()
-  await expect(groups(page).locator('.summary .title')).toHaveText('make 1')
-  await groups(page).locator('.fold').click()
 
   await page.keyboard.type(status('idle', undefined, ''))
   await expect(paneRows(page)).toHaveClass(/idle/)
   await expect(paneRows(page).locator('.title')).toHaveText('Program')
-  await expect(paneRows(page).locator('.app')).toHaveCount(0)
+  await expect(paneRows(page).locator('.state svg')).toHaveCount(1)
   await expect(activeHeader(page).locator('.title')).toHaveText('Program')
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
 
   await page.keyboard.type(status('idle'))
   await expect(paneRows(page).locator('.title')).toHaveText('Claude')
-  await expect(paneRows(page).locator('.app')).toHaveCount(1)
+  await expect(paneRows(page).locator('.state')).toHaveText(ICONS.claude)
   await expect(activeHeader(page).locator('.title')).toHaveText('Claude')
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
 })
@@ -217,7 +214,7 @@ test('셸 pane 과 Claude pane 모두 pane 마다 줄이 있고, 포커스된 pa
   const [left, right] = [0, 1].map((i) => paneHeader(page, i))
   await expect(shellRows(page)).toHaveCount(2)
   await expect(shellRows(page)).toHaveClass([/^(?!.*focused)/, /focused/])
-  await expect(shellRows(page).first()).toHaveAttribute('aria-label', 'Shell')
+  await expect(shellRows(page).first()).toHaveAttribute('aria-label', /^bash, /)
   await page.keyboard.type(status('working'))
   await expect(right).toHaveClass(/working/)
   await expect(left).not.toHaveClass(/working/)
@@ -314,8 +311,8 @@ test('사이드바의 상태 아이콘과 Claude 아이콘은 잉크의 가운�
 
   for (const [row, icons] of [
     [shell, ['.state']],
-    [idle, ['.state', '.app']],
-    [blocked, ['.state', '.app']]
+    [idle, ['.state']],
+    [blocked, ['.state']]
   ] as const) {
     for (const offset of await inkOffsets(page, row, icons))
       expect(Math.abs(offset)).toBeLessThanOrEqual(0.5)

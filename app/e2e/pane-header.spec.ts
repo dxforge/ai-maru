@@ -1,3 +1,4 @@
+import { basename } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
   activeHeader,
@@ -18,7 +19,7 @@ import {
   toggleView,
   typesInto,
   cellGroups,
-  cellItems,
+  cellPlaces,
   cellViews,
   writeConfig
 } from './app'
@@ -32,19 +33,19 @@ function headerBelowPane(page: Page): Promise<{ gap: number; above: number }> {
   })
 }
 
-test('pane 헤더는 OSC 0·2 로 받은 제목을, 받기 전에는 Shell 을 보이고, pane 의 디렉토리 이름을 보인다', async ({
+test('pane 헤더는 OSC 0·2 로 받은 제목을, 받기 전에는 셸 이름을 보이고, pane 의 디렉토리 이름을 보인다', async ({
   launch
 }) => {
   const { page } = await launch()
-  await expect(activeHeader(page).locator('.title')).toHaveText('Shell')
-  await expect(cellItems(page)).not.toHaveText('Shell')
-  await expect(activeHeader(page).locator('.cwd')).toHaveText(await cellItems(page).innerText())
+  await expect(activeHeader(page).locator('.title')).toHaveText('bash')
+  await expect(cellPlaces(page)).not.toHaveText('')
+  await expect(activeHeader(page).locator('.cwd')).toHaveText(basename(process.env.HOME!))
 
   await page.keyboard.type("printf '\\033]2;task-%s\\007' $((1+1))\n")
 
   await expect(activeHeader(page).locator('.title')).toHaveText('task-2')
   await page.keyboard.type("printf '\\033]2;\\007'\n")
-  await expect(activeHeader(page).locator('.title')).toHaveText('Shell')
+  await expect(activeHeader(page).locator('.title')).toHaveText('bash')
   await page.keyboard.type("printf '\\033]0;both-%s\\007' $((1+1))\n")
   await expect(activeHeader(page).locator('.title')).toHaveText('both-2')
 })
@@ -151,7 +152,7 @@ test('single 보기에서도 선택된 cell 의 헤더만 이름·상태를 보�
   await expect(headers.nth(1)).toBeVisible()
   await expect(headers.nth(0)).toBeHidden()
   await expect(headers.nth(1)).toHaveClass(/focused/)
-  await expect(headers.nth(1).locator('.name')).toHaveText(await cellItems(page).nth(1).innerText())
+  await expect(headers.nth(1).locator('.name')).toHaveText(basename(process.env.HOME!))
   await expect(headers.nth(1).locator('.row-bar-icon svg')).toHaveCount(0)
 
   await page.keyboard.type(programStatus('working'))

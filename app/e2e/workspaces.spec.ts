@@ -1,5 +1,5 @@
 import { rmSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import {
   activeTerminal,
   clickMenu,
@@ -19,6 +19,7 @@ import {
   test,
   cellGroups,
   cellItems,
+  cellPlaces,
   cellViews,
   marked,
   newCell,
@@ -26,11 +27,9 @@ import {
   zshHome
 } from './app'
 
-const homeName = basename(process.env.HOME!)
-
 test('앱을 켜면 홈 디렉토리에서 cell 하나를 연다', async ({ launch, dataDir }) => {
   const { page } = await launch()
-  await expect(cellItems(page)).toHaveText([homeName])
+  await expect(cellPlaces(page)).toHaveText(['~'])
   await expect(cellGroups(page).first()).toHaveClass(/selected/)
   await run(page, '[ "$PWD" = "$HOME" ] && echo home-$((1+1))', 'home-2')
   expect(sockets(dataDir)).toHaveLength(1)
@@ -43,10 +42,10 @@ test('bash 에서 ⌘N 은 cd 와 상관없이 홈 디렉토리에서 새 pty �
   const launched = await launch()
   const { page } = launched
   await run(page, 'cd /tmp; X=first-$((1+1)); echo moved-$((5+5))', 'moved-10')
-  await expect(cellItems(page)).toHaveText([homeName])
+  await expect(cellPlaces(page)).toHaveText(['~'])
 
   await newWorkspace(launched, 2)
-  await expect(cellItems(page)).toHaveText([homeName, homeName])
+  await expect(cellPlaces(page)).toHaveText(['~', '~'])
 
   await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
   await run(page, 'echo "x=$X pwd=$PWD" new-$((2+2))', `x= pwd=${process.env.HOME} new-4`)
@@ -192,20 +191,20 @@ test('zsh 에서 cell 이름은 셸을 띄운 디렉토리에서 시작해 cd �
   const long = 'a'.repeat(80)
   const home = zshHome(dataDir, 'proj', join('a b', '한글 폴더'), long)
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
-  await expect(cellItems(page)).toHaveText(['home'])
+  await expect(cellPlaces(page)).toHaveText(['~'])
   await run(page, 'echo "mark=$MARK"', 'mark=rc-2')
 
   await page.keyboard.type('cd proj\n')
-  await expect(cellItems(page)).toHaveText(['proj'])
+  await expect(cellPlaces(page)).toHaveText(['proj'])
   await page.keyboard.type("cd ~/'a b'\n")
-  await expect(cellItems(page)).toHaveText(['a b'])
+  await expect(cellPlaces(page)).toHaveText(['a b'])
   await page.keyboard.type(
     `cd "$(printf '\\355\\225\\234\\352\\270\\200 \\355\\217\\264\\353\\215\\224')"\n`
   )
-  await expect(cellItems(page)).toHaveText(['한글 폴더'])
+  await expect(cellPlaces(page)).toHaveText(['한글 폴더'])
 
   await page.keyboard.type(`cd ~/${long}\n`)
-  await expect(cellItems(page)).toHaveText([long])
+  await expect(cellPlaces(page)).toHaveText([long])
   const sidebar = page.locator('.sidebar')
   expect(await sidebar.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0)
 })
@@ -215,14 +214,14 @@ test('zsh 에서 ⌘N 은 선택된 cell 의 디렉토리에서 연다', async (
   const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
   const { page } = launched
   await page.keyboard.type('cd proj\n')
-  await expect(cellItems(page)).toHaveText(['proj'])
+  await expect(cellPlaces(page)).toHaveText(['proj'])
 
   await newWorkspace(launched, 2)
 
-  await expect(cellItems(page)).toHaveText(['proj', 'proj'])
+  await expect(cellPlaces(page)).toHaveText(['proj', 'proj'])
   await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
   await page.keyboard.type('cd ~\n')
-  await expect(cellItems(page)).toHaveText(['proj', 'home'])
+  await expect(cellPlaces(page)).toHaveText(['proj', '~'])
 })
 
 test('zsh 에서 ⌘N 을 연달아 눌러도 선택된 cell 의 디렉토리에서 연다', async ({
@@ -237,13 +236,13 @@ test('zsh 에서 ⌘N 을 연달아 눌러도 선택된 cell 의 디렉토리에
   })
   await expect(rows(page)).toContainText('%', { timeout: 10_000 })
   await page.keyboard.type('cd proj\n')
-  await expect(cellItems(page)).toHaveText(['proj'])
+  await expect(cellPlaces(page)).toHaveText(['proj'])
 
   await pressNew(app)
   await expect(cellItems(page)).toHaveCount(2)
   await pressNew(app)
 
-  await expect(cellItems(page)).toHaveText(['proj', 'proj', 'proj'], { timeout: 10_000 })
+  await expect(cellPlaces(page)).toHaveText(['proj', 'proj', 'proj'], { timeout: 10_000 })
   await activeTerminal(page)
   await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
 })
@@ -256,18 +255,18 @@ test('zsh 에서 호스트가 실린 OSC 7 은 이름과 ⌘N 의 디렉토리�
   const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
   const { page } = launched
   await page.keyboard.type('cd proj\n')
-  await expect(cellItems(page)).toHaveText(['proj'])
+  await expect(cellPlaces(page)).toHaveText(['proj'])
 
   // ssh 로 붙은 원격 셸처럼, 이 앱의 zsh 가 다시 OSC 7 을 보내지 않게 bash 로 바꾼다.
   await page.keyboard.type(
     `printf '\\e]7;file://remote.example%s\\a' "$HOME/remote"; exec bash --norc --noprofile\n`
   )
   await run(page, 'echo in-bash-$((1+1))', 'in-bash-2')
-  await expect(cellItems(page)).toHaveText(['proj'])
+  await expect(cellPlaces(page)).toHaveText(['proj'])
 
   await newWorkspace(launched, 2)
 
-  await expect(cellItems(page)).toHaveText(['proj', 'proj'])
+  await expect(cellPlaces(page)).toHaveText(['proj', 'proj'])
   await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
 })
 
@@ -279,12 +278,12 @@ test('zsh 에서 선택된 cell 의 디렉토리가 지워졌으면 ⌘N 은 홈
   const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
   const { page } = launched
   await page.keyboard.type('cd gone\n')
-  await expect(cellItems(page)).toHaveText(['gone'])
+  await expect(cellPlaces(page)).toHaveText(['gone'])
   rmSync(join(home, 'gone'), { recursive: true })
 
   await newWorkspace(launched, 2)
 
-  await expect(cellItems(page)).toHaveText(['gone', 'home'])
+  await expect(cellPlaces(page)).toHaveText(['gone', '~'])
   await run(page, '[ "$PWD" = "$HOME" ] && echo at-home-$((1+1))', 'at-home-2')
 })
 
@@ -300,7 +299,7 @@ test('zsh 에서 ⌘T 는 선택한 cell 뒤(그 cell 이 띄운 것들 뒤)에 
   await page.keyboard.type(`maru cell new ${marked('spawned')} >/dev/null\n`)
   await expect(cellItems(page)).toHaveCount(3)
   await page.keyboard.type('cd proj\n')
-  await expect(cellItems(page).nth(0)).toHaveText('proj')
+  await expect(cellPlaces(page).nth(0)).toHaveText('proj')
 
   await newCell(launched, 4)
 

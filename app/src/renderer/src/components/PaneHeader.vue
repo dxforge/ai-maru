@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { dirName } from '../../../shared/names'
-import { CLAUDE_APP, type ProgramStatusRecord } from '../../../shared/program-status'
-import { ICONS, STATE_LABELS } from '../icons'
+import type { ProgramStatusRecord } from '../../../shared/program-status'
+import { AGENT_ICONS, ICONS, STATE_LABELS } from '../icons'
 import StatusIcon from './StatusIcon.vue'
 import { paneName } from '../workspace/display'
 import type { Pane } from '../workspace/store'
@@ -11,14 +11,17 @@ import type { Pane } from '../workspace/store'
 const {
   status = undefined,
   pane,
-  focused
+  focused,
+  shell = undefined
 } = defineProps<{
   status?: Pick<ProgramStatusRecord, 'state' | 'app'>
-  pane: Pick<Pane, 'title' | 'cwd'>
+  pane: Pick<Pane, 'title' | 'cwd' | 'command'>
   focused: boolean
+  shell?: string
 }>()
 
 const state = computed(() => status?.state)
+const agent = computed(() => status && AGENT_ICONS.get(status.app))
 </script>
 
 <template>
@@ -31,8 +34,8 @@ const state = computed(() => status?.state)
         ICONS.terminal
       }}</template></span
     >
-    <span class="row-bar-text title">{{ paneName(pane.title, status) }}</span>
-    <span v-if="status?.app === CLAUDE_APP" class="claude-icon nerd-icon">{{ ICONS.claude }}</span>
+    <span class="row-bar-text title">{{ paneName(pane, status, shell) }}</span>
+    <span v-if="agent" class="claude-icon nerd-icon">{{ agent }}</span>
     <span v-if="pane.cwd" class="cwd">{{ dirName(pane.cwd) }}</span>
   </div>
 </template>
