@@ -59,7 +59,8 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['new-cell', 'New Cell', 'Command+T'],
     ['split-right', 'Split Right', 'Command+D'],
     ['split-down', 'Split Down', 'Shift+Command+D'],
-    ['close-pane', 'Close Pane', 'Command+W']
+    ['close-pane', 'Close Pane', 'Command+W'],
+    ['close-workspace', 'Close Workspace', 'Shift+Command+W']
   ])
   expect(menus.view.slice(0, 17)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
@@ -346,6 +347,7 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
     'Split Right⌘D',
     'Split Down⇧⌘D',
     'Close Pane⌘W',
+    'Close Workspace⇧⌘W',
     'Next Cell⇧⌘]',
     'Previous Cell⇧⌘[',
     'Toggle Sidebar⌘B',

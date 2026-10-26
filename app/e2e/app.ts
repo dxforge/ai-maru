@@ -81,7 +81,11 @@ export const test = base.extend<Fixtures>({
       apps.push(launched.app)
       return launched
     })
-    for (const app of apps) await app.close().catch(() => {})
+    for (const app of apps) {
+      // 프로그램이나 job 이 남은 채 끝난 테스트에서는 앱이 끝나기 전에 확인 창을 띄운다. 확인 창에 막히지 않게 Quit 로 답하게 한다.
+      await stubDialog(app, 0).catch(() => {})
+      await app.close().catch(() => {})
+    }
   },
   // eslint-disable-next-line no-empty-pattern
   defer: async ({}, use) => {
@@ -124,6 +128,23 @@ async function launchApp(
   const page = await app.firstWindow()
   await page.waitForSelector('.xterm-screen')
   return { app, page }
+}
+
+export async function stubDialog(app: ElectronApplication, response: number): Promise<void> {
+  await app.evaluate(({ dialog }, response) => {
+    const calls: unknown[] = []
+    Object.assign(globalThis, { dialogCalls: calls })
+    dialog.showMessageBox = (async (opts: unknown) => {
+      calls.push(opts)
+      return { response, checkboxChecked: false }
+    }) as typeof dialog.showMessageBox
+  }, response)
+}
+
+export type DialogCall = { message: string; detail: string; buttons: string[] }
+
+export function dialogCalls(app: ElectronApplication): Promise<DialogCall[]> {
+  return app.evaluate(() => (globalThis as unknown as { dialogCalls: DialogCall[] }).dialogCalls)
 }
 
 export async function closeWindow(app: ElectronApplication): Promise<void> {

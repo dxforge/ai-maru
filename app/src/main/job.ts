@@ -185,6 +185,8 @@ export function createJobs(deps: JobDeps) {
     subscribed: (pty: string): void => {
       for (const j of jobs) if (j.owner === pty && j.pending) notify(j)
     },
+    running: (cells?: ReadonlySet<string>): number =>
+      jobs.filter((j) => !j.exit && (!cells || cells.has(j.cell))).length,
     closeCell: async (cell: string): Promise<void> => {
       const closing = jobs.filter((j) => j.cell === cell)
       for (const j of closing) remove(j)

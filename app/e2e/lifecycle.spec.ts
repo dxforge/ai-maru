@@ -28,6 +28,7 @@ import {
   slowPtyBin,
   sockets,
   split,
+  stubDialog,
   test,
   typesInto,
   wrapPtyBin
@@ -187,6 +188,8 @@ test('job 이 뜨기 전에 앱을 끄면 그 job 의 pty 는 뜬 뒤에 끝난�
   await expect.poll(() => marks('begun-')).toHaveLength(2)
   expect(marks('started-')).toHaveLength(1)
 
+  // 띄우는 중인 job 도 끝나지 않은 job 이라 묻는다.
+  await stubDialog(app, 0)
   await app.close()
 
   await expect.poll(() => marks('started-'), { timeout: 10_000 }).toHaveLength(2)

@@ -3,7 +3,7 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { PROTOCOL_VERSION } from '../shared/protocol'
-import { parseScreen, type ScreenState } from '../shared/screen'
+import { parseScreen, screenPanes, type ScreenState } from '../shared/screen'
 import { parseJobsFile, type JobsFile } from './job'
 import { livePtys } from './pty'
 
@@ -52,9 +52,7 @@ export async function takeRestart(path: string): Promise<RestartState | null> {
 }
 
 export function screenPtys(screen: ScreenState | null): Set<string> {
-  return new Set(
-    screen?.workspaces.flatMap((w) => w.cells.flatMap((c) => c.panes.map((p) => p.ptyId)))
-  )
+  return new Set(screenPanes(screen).panes.map((p) => p.ptyId))
 }
 
 const run = promisify(execFile)

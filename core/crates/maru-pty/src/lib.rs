@@ -44,7 +44,7 @@
 //! | `capture` (`unwrap`: bool, 선택) | `{"type":"capture","text":…}` |
 //! | `status` (`wait`: bool, 선택) | `{"type":"status","exit":null}` 또는 `{"type":"status","exit":{"code","signal"}}` |
 //! | `input` (`text`: 문자열) | 셸 입력으로 다 쓴 뒤 `{"type":"input"}` |
-//! | `foreground` | `{"type":"foreground","pid":…,"cwd":…}` |
+//! | `foreground` | `{"type":"foreground","pid":…,"cwd":…,"name":…}` |
 //! | `attach` (`role`: `primary`·`observer`, primary 면 `cols`·`rows`) | 아래 |
 //!
 //! `capture` 는 화면과 스크롤백을 스타일 없는 글자로 돌려준다. 행마다 줄을 끊고, `unwrap` 이 true 면
@@ -57,9 +57,10 @@
 //! `input` 은 attach 의 primary 자리와 상관없이 쓴다. 셸이 끝났으면 쓰지 않고 `exited` 로 거절한다.
 //! 요청한 쪽이 답을 기다리지 않고 연결을 끊어도 받은 입력은 끝까지 쓴다.
 //!
-//! `foreground` 는 tty 의 foreground 프로세스 그룹 리더의 `pid` 와 작업 디렉토리 `cwd` 를 돌려준다.
-//! 프롬프트에서는 셸이고, 명령이 돌고 있으면 그 명령이다. 리더가 이미 끝났거나(`a | b` 에서 `a` 가
-//! 먼저 끝남) 작업 디렉토리를 읽을 수 없으면 `cwd` 는 null 이다.
+//! `foreground` 는 tty 의 foreground 프로세스 그룹 리더의 `pid`, 작업 디렉토리 `cwd`, argv[0] 의
+//! basename `name` 을 돌려준다. 프롬프트에서는 셸이고, 명령이 돌고 있으면 그 명령이다. 리더가 이미 끝났거나(`a | b`
+//! 에서 `a` 가 먼저 끝남) 읽을 수 없으면 `cwd`·`name` 은 null 이다. `name` 을 모르는 옛 서버의 응답에는
+//! 이 필드가 없다.
 //!
 //! `attach` 의 응답은 헤더 `{"type":"attached","protocol_version","tty","role","cols","rows",
 //! "cursor_x","cursor_y"}` 와 재생(Binary, 비어 있어도 보낸다), 그리고 `program_status`(아래,
@@ -90,7 +91,8 @@
 //!   새 프롬프트나 프로그램 종료에 지우는 규칙은 없다 — 프로그램(또는 그것을 띄운 셸 함수)이 끝날
 //!   때 `clear` 를 보내야 한다. 지원 질의 `OSC 7501 ; ?` 에는 이 프로세스가 답한다.
 //! - `{"type":"foreground","pid","cwd"}` — 레코드가 하나라도 있는 동안 1초마다 잰 foreground 의
-//!   `cwd` 가 지난번과 달라졌다. 모양은 `foreground` 요청의 응답과 같다. 레코드가 비면 재지 않는다.
+//!   `cwd` 가 지난번과 달라졌다. 모양은 `name` 이 없는 것 말고는 `foreground` 요청의 응답과 같다. 레코드가
+//!   비면 재지 않는다.
 //! - `{"type":"exit","code","signal"}` — 셸이 끝났다. 남은 출력을 다 보낸 뒤에 온다.
 
 // 띄운 쪽이 stderr 를 닫고 먼저 끝나면 쓰기가 EPIPE 로 실패하는데, `eprintln!` 은 거기서 패닉한다.

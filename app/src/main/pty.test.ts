@@ -17,6 +17,7 @@ import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
 import { encodeFrame, FrameDecoder } from './frame'
 import {
   capturePty,
+  foreground,
   foregroundCwd,
   killPtys,
   readRecord,
@@ -386,6 +387,28 @@ describe('foregroundCwd', () => {
     } finally {
       failing.close()
       mute.close()
+    }
+  })
+})
+
+describe('foreground', () => {
+  it('pid 와 프로세스 이름을 돌려주고, 이름이 없는 옛 응답이면 이름은 null 이다', async () => {
+    const named = await framePty((_req, sock) =>
+      send(sock, { type: 'foreground', pid: 7, cwd: '/w', name: 'vim' })
+    )
+    const old = await framePty((_req, sock) =>
+      send(sock, { type: 'foreground', pid: 8, cwd: '/w' })
+    )
+    try {
+      expect(await foreground(named.dir, named.id, 1000)).toEqual({
+        pid: 7,
+        cwd: '/w',
+        name: 'vim'
+      })
+      expect(await foreground(old.dir, old.id, 1000)).toEqual({ pid: 8, cwd: '/w', name: null })
+    } finally {
+      named.close()
+      old.close()
     }
   })
 })

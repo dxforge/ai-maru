@@ -690,6 +690,34 @@ fn input_reaches_the_shell_and_is_refused_after_exit() {
 }
 
 #[test]
+fn foreground_names_the_shell_at_the_prompt_and_the_command_while_it_runs() {
+    let p = start();
+    let shell = p.record().shell_pid as i64;
+    let foreground =
+        || p.request(json!({ "type": "foreground", "protocol_version": PROTOCOL_VERSION }));
+    let until = |pred: &dyn Fn(&Value) -> bool| {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            let fg = foreground();
+            if pred(&fg) {
+                return fg;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "foreground 가 바뀌지 않았다: {fg}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    until(&|fg| fg["pid"] == shell && fg["name"].is_string());
+
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("sleep 30\n");
+    // fork 한 뒤 exec 하기 전에는 그룹 리더의 이름이 아직 셸의 것이다.
+    until(&|fg| fg["pid"] != shell && fg["name"] == "sleep");
+}
+
+#[test]
 fn capture_unwrap_joins_a_wrapped_line() {
     let p = start_keep("printf '%0100d\\n' 0");
     p.request(status(true));

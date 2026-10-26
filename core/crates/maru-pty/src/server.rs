@@ -1,6 +1,7 @@
 use crate::PROTOCOL_VERSION;
 use crate::frame::{TAG_TEXT, read_frame, write_json};
 use crate::paths::{self, Paths};
+use crate::procinfo;
 use crate::pty::{Pty, wait_exit};
 use crate::record::{self, Record};
 use anyhow::{Context, Result, bail};
@@ -269,7 +270,7 @@ async fn handle(mut stream: UnixStream, pty: Arc<Pty>, kill_tx: mpsc::Sender<Kil
             let cwd = fg.cwd.map(|p| p.to_string_lossy().into_owned());
             reply(
                 &mut stream,
-                json!({ "type": "foreground", "pid": fg.pid, "cwd": cwd }),
+                json!({ "type": "foreground", "pid": fg.pid, "cwd": cwd, "name": procinfo::name(fg.pid) }),
             )
             .await
         }

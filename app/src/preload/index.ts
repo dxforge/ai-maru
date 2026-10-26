@@ -4,7 +4,7 @@ import type { ConfigRead } from '../shared/config'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
 import type { LinkOpenResult } from '../shared/link'
-import type { CellNewRequest, PaneNewRequest, PaneReply } from '../shared/pane'
+import type { CellNewRequest, CloseAnswer, PaneNewRequest, PaneReply } from '../shared/pane'
 import type { ScreenState, ViewPrefs } from '../shared/screen'
 import type { PtyOpen } from '../shared/pty'
 import type { WindowTheme } from '../shared/theme'
@@ -83,6 +83,12 @@ const api = {
     if (lastConfig) cb(lastConfig)
   },
   restart: (): void => ipcRenderer.send('app:restart'),
+  /** pty 에서 셸 말고 도는 프로그램이 있으면 main 이 확인 창을 띄운다. */
+  confirmClosePane: (ptyId: string): Promise<CloseAnswer> =>
+    ipcRenderer.invoke('pane:confirm-close', ptyId),
+  /** `workspaceId` 의 pane 가운데 프로그램이 도는 것이 있거나, 그 workspace 의 cell 에 끝나지 않은 job 이 있으면 main 이 확인 창을 띄운다. */
+  confirmCloseWorkspace: (workspaceId: string): Promise<CloseAnswer> =>
+    ipcRenderer.invoke('workspace:confirm-close', workspaceId),
   applyTheme: (theme: WindowTheme): void => ipcRenderer.send('theme:apply', theme),
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   // dev 서버로 띄우면 Electron 이 끝날 때 dev 서버도 끝나, 다시 뜬 앱이 renderer 를 불러올 곳이 없다.

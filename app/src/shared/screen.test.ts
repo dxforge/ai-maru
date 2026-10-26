@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { parseScreen, parseViewPrefs, SCREEN_VERSION, type ScreenState } from './screen'
+import {
+  parseScreen,
+  parseViewPrefs,
+  screenPanes,
+  SCREEN_VERSION,
+  type ScreenState
+} from './screen'
 
 const screen: ScreenState = {
   version: SCREEN_VERSION,
@@ -91,6 +97,18 @@ describe('parseScreen', () => {
   it('객체가 아니면 null', () => {
     expect(parseScreen(null)).toBeNull()
     expect(parseScreen([])).toBeNull()
+  })
+})
+
+describe('screenPanes', () => {
+  it('모든 pane 과 cell id 를 주고, workspace 를 주면 그 workspace 의 것만 준다', () => {
+    const two = clone() as unknown as ScreenState
+    two.workspaces.push({ ...two.workspaces[0], key: 9, id: 'w-00000002', cells: [] })
+    expect(screenPanes(two).panes.map((p) => p.ptyId)).toEqual(['p-0000000a', 'p-0000000b'])
+    expect(screenPanes(two).cells).toEqual(['c-00000001'])
+    expect(screenPanes(two, 'w-00000002')).toEqual({ panes: [], cells: [] })
+    expect(screenPanes(two, 'w-00000001').panes[1].command).toEqual(['sh', '-c', 'true'])
+    expect(screenPanes(null)).toEqual({ panes: [], cells: [] })
   })
 })
 

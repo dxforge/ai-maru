@@ -11,6 +11,7 @@ describe('filterCommands', () => {
       'Split Right',
       'Split Down',
       'Close Pane',
+      'Close Workspace',
       'Next Cell',
       'Previous Cell',
       'Toggle Sidebar',

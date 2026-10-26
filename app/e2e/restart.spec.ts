@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import type { ElectronApplication } from '@playwright/test'
 import { killPty } from '../src/main/pty'
 import {
   activeTerminal,
   canvasWidth,
   clickMenu,
+  dialogCalls,
   expect,
   newWorkspace,
   dragCanvas,
@@ -23,6 +23,7 @@ import {
   ptyDir,
   sockets,
   split,
+  stubDialog,
   test,
   toggleView,
   typesInto,
@@ -232,23 +233,6 @@ test('재시작한 뒤의 종료는 pty 를 끄고 restart 파일을 남기지 �
   await again.close()
   expect(sockets(dataDir)).toEqual([])
 })
-
-async function stubDialog(app: ElectronApplication, response: number): Promise<void> {
-  await app.evaluate(({ dialog }, response) => {
-    const calls: unknown[] = []
-    Object.assign(globalThis, { dialogCalls: calls })
-    dialog.showMessageBox = (async (opts: unknown) => {
-      calls.push(opts)
-      return { response, checkboxChecked: false }
-    }) as typeof dialog.showMessageBox
-  }, response)
-}
-
-function dialogCalls(app: ElectronApplication): Promise<{ detail: string }[]> {
-  return app.evaluate(
-    () => (globalThis as unknown as { dialogCalls: { detail: string }[] }).dialogCalls
-  )
-}
 
 function otherProtocolBin(dataDir: string): Record<string, string> {
   const bin = wrapPtyBin(dataDir, 'v2', '[ "$1" = --protocol-version ] && { echo 2; exit 0; }')

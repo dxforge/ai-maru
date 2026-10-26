@@ -7,12 +7,22 @@ import {
   ipcMain,
   MessageChannelMain,
   nativeTheme,
+  powerMonitor,
   screen,
   shell,
   utilityProcess,
   type UtilityProcess
 } from 'electron'
 import { canvasPut, putCanvas } from './canvas'
+import {
+  closePaneDialog,
+  createQuitPermission,
+  runningDialog,
+  runningPanes,
+  runningProgram,
+  type Dialog,
+  type ProgramDeps
+} from './close-confirm'
 import { AfterReply, CliError, listenCli, optionalBoolean, type Handlers } from './cli-server'
 import { configDir, configFile, readConfigFile, watchConfig } from './config-file'
 import { gitHead } from './git'
@@ -34,6 +44,7 @@ import {
 import {
   appSocketPath,
   capturePty,
+  foreground,
   foregroundCwd,
   killPty,
   killPtys,
@@ -58,10 +69,16 @@ import {
   saveWindowStateOnClose,
   windowBounds
 } from './window-state'
-import type { PaneReply } from '../shared/pane'
+import type { CloseAnswer, PaneReply } from '../shared/pane'
 import { PROTOCOL_VERSION } from '../shared/protocol'
-import { parseScreen, parseViewPrefs, type ScreenState, type ViewPrefs } from '../shared/screen'
-import { newPtyId, type PtyOpen } from '../shared/pty'
+import {
+  parseScreen,
+  parseViewPrefs,
+  screenPanes,
+  type ScreenState,
+  type ViewPrefs
+} from '../shared/screen'
+import { isPtyId, newPtyId, type PtyOpen } from '../shared/pty'
 import { GHOSTTY, isLight, parseWindowTheme, type WindowTheme } from '../shared/theme'
 
 function ptyDir(): string {
@@ -104,8 +121,11 @@ function sendToWindows(channel: string, ...args: unknown[]): void {
 let jobs: ReturnType<typeof createJobs> | null = null
 let jobsRestored: Promise<void> = Promise.resolve()
 
+const shellPidOf = async (id: string): Promise<number | null> =>
+  (await readRecord(ptyDir(), id))?.shell_pid ?? null
+
 const monitor = createMonitor({
-  shellPidOf: async (id) => (await readRecord(ptyDir(), id))?.shell_pid ?? null,
+  shellPidOf,
   onSubscribe: (pty) => void jobsRestored.then(() => jobs?.subscribed(pty))
 })
 
@@ -188,17 +208,15 @@ function relaunch(): void {
 async function restartFromMenu(): Promise<void> {
   const check = await restartCheck()
   if (!check.ok && check.reason !== 'incompatible') return
-  if (!check.ok) {
-    const { response } = await dialog.showMessageBox({
-      type: 'warning',
+  if (
+    !check.ok &&
+    !(await confirm({
       message: 'Restart and end all terminals?',
       detail: incompatibleDetail(check),
-      buttons: ['Restart', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1
-    })
-    if (response !== 0) return
-  }
+      buttons: ['Restart', 'Cancel']
+    }))
+  )
+    return
   try {
     await saveScreen()
   } catch (err) {
@@ -238,6 +256,77 @@ const restartHandlers: Handlers = {
     await saveScreen()
     return new AfterReply(null, relaunch)
   }
+}
+
+const programDeps: ProgramDeps = {
+  foreground: (id) => foreground(ptyDir(), id),
+  shellPid: shellPidOf
+}
+
+async function confirm(options: Dialog): Promise<boolean> {
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    ...options,
+    defaultId: 1,
+    cancelId: 1
+  })
+  return response === 0
+}
+
+let asking = false
+
+async function checkClose(find: () => Promise<Dialog | null>): Promise<CloseAnswer> {
+  if (asking) return { close: false, asked: true }
+  const options = await find()
+  if (options === null) return { close: true, asked: false }
+  if (asking) return { close: false, asked: true }
+  asking = true
+  try {
+    return { close: await confirm(options), asked: true }
+  } finally {
+    asking = false
+  }
+}
+
+// 화면에 아직 없는 pane 은 명령 pane 인지 모르므로 foreground 로 가른다.
+async function closePaneCheck(pty: string): Promise<Dialog | null> {
+  const { panes } = screenPanes(parseScreen(lastScreen))
+  const pane = panes.find((p) => p.ptyId === pty) ?? { ptyId: pty }
+  const program = await runningProgram(pane, programDeps)
+  return program && closePaneDialog(program.name)
+}
+
+async function closeWorkspaceCheck(workspace: string): Promise<Dialog | null> {
+  const { panes, cells } = screenPanes(parseScreen(lastScreen), workspace)
+  const running = {
+    panes: await runningPanes(panes, programDeps),
+    jobs: jobs?.running(new Set(cells)) ?? 0
+  }
+  return runningDialog(running, 'Close this workspace?', 'Close')
+}
+
+const SHUTDOWN_GRACE_MS = 60_000
+const quitPermission = createQuitPermission(SHUTDOWN_GRACE_MS)
+let quitCheck: Promise<void> | null = null
+
+// 한 번 통과한 종료는 끝까지 묻지 않는다. `will-quit` 이 pty 를 끈 뒤 부르는 `app.quit()` 도 `before-quit` 를 거친다.
+function mayQuit(): boolean {
+  if (!quitPermission.allowed() && !keepPtys) return false
+  quitPermission.allow()
+  return true
+}
+
+/** 창이 하나라 창을 닫는 것은 앱을 끝내는 것이다. 그래서 창 닫기도 ⌘Q 와 같이 확인을 받은 뒤 앱을 끝낸다. */
+function confirmQuit(): void {
+  if (quitCheck) return
+  quitCheck = (async () => {
+    const { panes } = screenPanes(parseScreen(lastScreen))
+    const running = { panes: await runningPanes(panes, programDeps), jobs: jobs?.running() ?? 0 }
+    const options = runningDialog(running, 'Quit and end all terminals?', 'Quit')
+    if (options && !quitPermission.allowed() && !(await confirm(options))) return
+    quitPermission.allow()
+    app.quit()
+  })().finally(() => (quitCheck = null))
 }
 
 const cliHandlers: Handlers = {
@@ -289,6 +378,11 @@ function createWindow(): void {
     win.setIgnoreMouseEvents(true)
     win.showInactive()
   }
+  win.on('close', (event) => {
+    if (mayQuit()) return
+    event.preventDefault()
+    confirmQuit()
+  })
   restoreWindowState(win, state)
   saveWindowStateOnClose(win, stateFile, () => ({ ...viewPrefs(), ...(theme && { theme }) }))
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -378,6 +472,21 @@ function start(): void {
     if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
   })
   ipcMain.on('screen:state', (_event, screen: unknown) => (lastScreen = screen))
+  const refused: CloseAnswer = { close: false, asked: false }
+  ipcMain.handle('pane:confirm-close', (_event, pty: unknown) =>
+    isPtyId(pty) ? checkClose(() => closePaneCheck(pty)) : refused
+  )
+  ipcMain.handle('workspace:confirm-close', (_event, workspace: unknown) =>
+    typeof workspace === 'string' ? checkClose(() => closeWorkspaceCheck(workspace)) : refused
+  )
+  powerMonitor.on('shutdown', () => quitPermission.shutdown())
+  // 시그널을 보낸 쪽(`kill`, 터미널의 Ctrl-C)이 이미 끄기로 했으므로 묻지 않는다. Electron 은 이 시그널을 `before-quit` 로 넘긴다.
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+    process.on(signal, () => {
+      quitPermission.allow()
+      app.quit()
+    })
+  }
   ipcMain.on('app:restart', () => void restartFromMenu())
   const cli = cliAccess()
   const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
@@ -502,6 +611,11 @@ function start(): void {
   })
 
   app.on('window-all-closed', () => app.quit())
+  app.on('before-quit', (event) => {
+    if (mayQuit()) return
+    event.preventDefault()
+    confirmQuit()
+  })
   // open 과 같은 `ready.then` 으로 보내야 host 가 그 앞의 open 을 먼저 받는다.
   const stopHost = (): Promise<void> =>
     ready.then(() => {
