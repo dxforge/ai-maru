@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { GitHead } from '../shared/git'
 
@@ -84,13 +84,16 @@ async function readReftableHead(gitDir: string, timeoutMs: number): Promise<stri
  */
 export async function gitHead(cwd: string, timeoutMs = GIT_TIMEOUT_MS): Promise<GitHead | null> {
   if (!isAbsolute(cwd)) return null
-  const found = await findGitDir(await realpath(cwd).catch(() => cwd))
+  const real = await realpath(cwd).catch(() => cwd)
+  const found = await findGitDir(real)
   if (!found) return null
-  const common = await read(join(found.gitDir, 'commondir'))
-  const repo = common ? commonName(resolve(found.gitDir, common)) : basename(found.top)
+  const commonDir = await read(join(found.gitDir, 'commondir'))
+  const common = commonDir ? resolve(found.gitDir, commonDir) : found.gitDir
+  const repo = commonDir ? commonName(common) : basename(found.top)
+  const where = { common, sub: relative(found.top, real) }
   const head =
     found.head === REFTABLE_HEAD ? await readReftableHead(found.gitDir, timeoutMs) : found.head
-  if (!head) return { repo }
+  if (!head) return { repo, ...where }
   const ref = /^ref: (.+)$/.exec(head)?.[1]
-  return { repo, branch: ref ? ref.replace(/^refs\/heads\//, '') : head.slice(0, 7) }
+  return { repo, branch: ref ? ref.replace(/^refs\/heads\//, '') : head.slice(0, 7), ...where }
 }

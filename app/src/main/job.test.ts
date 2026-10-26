@@ -16,6 +16,7 @@ function setup(cells: Record<string, string> = { [A]: 'c-1', [B]: 'c-1', [C]: 'c
   const listening = new Set<string>([A, B, C])
   const killed: string[] = []
   const spawns: { id: string; cwd: string; command: string[] }[] = []
+  let changes = 0
   const deps = {
     newId: () => `p-${(++n).toString(16).padStart(8, '0')}`,
     cellOf: (s: string) => cells[s],
@@ -44,7 +45,9 @@ function setup(cells: Record<string, string> = { [A]: 'c-1', [B]: 'c-1', [C]: 'c
       if (!listening.has(s)) return false
       emitted.push([s, e])
       return true
-    }
+    },
+    now: () => 1000,
+    changed: () => void changes++
   } satisfies JobDeps
   const jobs = createJobs(deps)
   const call = (method: string, params: Record<string, unknown>, pty = A) =>
@@ -61,7 +64,20 @@ function setup(cells: Record<string, string> = { [A]: 'c-1', [B]: 'c-1', [C]: 'c
     waits.get(id)!.end(e)
     await flush()
   }
-  return { jobs, deps, call, start, list, exit, waits, emitted, listening, killed, spawns }
+  return {
+    jobs,
+    deps,
+    call,
+    start,
+    list,
+    exit,
+    waits,
+    emitted,
+    listening,
+    killed,
+    spawns,
+    changes: () => changes
+  }
 }
 
 async function rejects(
@@ -382,6 +398,7 @@ describe('재시작', () => {
           cell: 'c-1',
           owner: A,
           command: ['sleep', '9'],
+          started: 1000,
           pending: false
         },
         {
@@ -390,6 +407,7 @@ describe('재시작', () => {
           cell: 'c-1',
           owner: A,
           command: ['sleep', '9'],
+          started: 1000,
           exit: { code: 0, signal: null },
           pending: true
         }
@@ -457,6 +475,44 @@ describe('재시작', () => {
   })
 })
 
+describe('창에 보이는 표', () => {
+  it('list 는 cell 과 상관없이 띄운 순서로 띄운 시각과 함께 돌려준다', async () => {
+    const t = setup()
+    const a = await t.start({ name: 'a' })
+    const c = await t.start({}, C)
+    expect(t.jobs.list().map((j) => [j.pty, j.cell, j.started])).toEqual([
+      [a, 'c-1', 1000],
+      [c, 'c-2', 1000]
+    ])
+  })
+
+  it('new·끝남·kill·cell 닫기·restore 마다 changed 를 부른다', async () => {
+    const t = setup()
+    const a = await t.start({ name: 'a' })
+    expect(t.changes()).toBe(1)
+    await t.exit(a, { code: 0, signal: null })
+    expect(t.changes()).toBe(2)
+    await t.call('job.kill', { target: 'a' })
+    expect(t.changes()).toBe(3)
+    await t.start({ name: 'b' })
+    await t.jobs.closeCell('c-1')
+    expect(t.changes()).toBe(5)
+    t.jobs.restore({ version: 3, jobs: [] })
+    expect(t.changes()).toBe(6)
+  })
+
+  it('kill 은 부른 cell 없이 pty 로 끄고 지우며, 없는 pty 는 그냥 지나간다', async () => {
+    const t = setup()
+    const c = await t.start({ name: 'c' }, C)
+    await t.jobs.kill(c)
+    expect(t.killed).toEqual([c])
+    expect(t.jobs.list()).toEqual([])
+    expect(t.waits.get(c)!.cancelled).toBe(true)
+    await t.jobs.kill('p-000000ff')
+    expect(t.killed).toEqual([c])
+  })
+})
+
 describe('parseJobsFile', () => {
   it('모양이 맞는 파일만 받는다', () => {
     const job = { pty: A, cell: 'c-1', owner: B, command: ['x'], pending: false }
@@ -466,6 +522,9 @@ describe('parseJobsFile', () => {
     expect(parseJobsFile({ version: 3, jobs: [{ ...job, pty: 'x' }] })).toBeNull()
     expect(parseJobsFile({ version: 3, jobs: [{ ...job, command: [] }] })).toBeNull()
     expect(parseJobsFile({ version: 3, jobs: [{ ...job, exit: { code: 'x' } }] })).toBeNull()
+    const timed = { ...job, started: 1000 }
+    expect(parseJobsFile({ version: 3, jobs: [timed] })).toEqual({ version: 3, jobs: [timed] })
+    expect(parseJobsFile({ version: 3, jobs: [{ ...job, started: '1' }] })).toBeNull()
     expect(parseJobsFile(null)).toBeNull()
   })
 })

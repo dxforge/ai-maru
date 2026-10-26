@@ -1,5 +1,5 @@
 import { readonly, ref } from 'vue'
-import type { GitHead } from '../../../shared/git'
+import { sameGitHead, type GitHead } from '../../../shared/git'
 import { focusedPane, startDirOf } from '../../../shared/names'
 import type { ProgramStatusState } from '../../../shared/program-status'
 import type { PtyState } from '../../../shared/pty-state'
@@ -281,7 +281,7 @@ export function createWorkspaces(
   function setGit(key: number, git: GitHead | undefined): void {
     const p = pane(key)
     if (!p) return
-    if (p.git?.repo !== git?.repo || p.git?.branch !== git?.branch) p.git = git
+    if (!sameGitHead(p.git, git)) p.git = git
   }
 
   function setFontSize(key: number, size: number | undefined): void {

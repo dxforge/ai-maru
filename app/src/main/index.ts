@@ -20,6 +20,7 @@ import {
   runningDialog,
   runningPanes,
   runningProgram,
+  stopJobDialog,
   type Dialog,
   type ProgramDeps
 } from './close-confirm'
@@ -33,6 +34,7 @@ import { isDevReload } from './navigation'
 import { createPanes } from './pane'
 import { createJobs, JOB_REPLY_MS } from './job'
 import { openLink } from './links'
+import { createPortWatch, readPorts } from './ports'
 import {
   checkRestart,
   restartFile,
@@ -70,6 +72,7 @@ import {
   saveWindowStateOnClose,
   windowBounds
 } from './window-state'
+import type { JobView } from '../shared/job'
 import { mateRows } from '../shared/mates'
 import type { CloseAnswer, PaneReply } from '../shared/pane'
 import { PROTOCOL_VERSION } from '../shared/protocol'
@@ -314,6 +317,12 @@ async function closeWorkspaceCheck(workspace: string): Promise<Dialog | null> {
   return runningDialog(running, 'Close this workspace?', 'Close')
 }
 
+/**
+ * `lsof` 를 한 번 돌리는 데 54ms 걸렸으므로 5초 주기의 부하는 작다. 사용자는 dev 서버가 포트를 연 뒤 5초 안에 사이드바에서
+ * 그 포트를 본다.
+ */
+const PORT_INTERVAL_MS = 5_000
+
 const SHUTDOWN_GRACE_MS = 60_000
 const quitPermission = createQuitPermission(SHUTDOWN_GRACE_MS)
 let quitCheck: Promise<void> | null = null
@@ -538,9 +547,47 @@ function start(): void {
     capture: (id) => capturePty(ptyDir(), id, JOB_REPLY_MS),
     input: (id, text) => writePtyInput(ptyDir(), id, text, JOB_REPLY_MS),
     kill: (id) => killPty(ptyDir(), id),
-    emit: monitor.emit
+    emit: monitor.emit,
+    now: Date.now,
+    changed: () => {
+      sendJobs()
+      portWatch.update()
+    }
   })
   jobs = jobTable
+  const portWatch = createPortWatch({
+    active: () => jobTable.running() > 0,
+    measure: async () => {
+      const running = jobTable.list().filter((j) => !j.exit)
+      const pids = await Promise.all(running.map((j) => shellPidOf(j.pty)))
+      const roots = new Map<string, number>()
+      running.forEach((j, i) => pids[i] !== null && roots.set(j.pty, pids[i]))
+      return readPorts(roots)
+    },
+    changed: () => sendJobs(),
+    intervalMs: PORT_INTERVAL_MS
+  })
+  const jobViews = (): JobView[] =>
+    jobTable.list().map(({ pty, name, cell, command, started, exit }) => ({
+      pty,
+      name,
+      cell,
+      command,
+      started,
+      exit,
+      ports: portWatch.ports(pty)
+    }))
+  const sendJobs = (): void => sendToWindows('jobs:changed', jobViews())
+  ipcMain.handle('jobs:list', () => jobViews())
+  // 끝난 job 은 목록에서 지우기만 하므로 묻지 않는다.
+  ipcMain.handle('job:kill', async (_event, pty: unknown) => {
+    if (!isPtyId(pty)) return
+    const { close } = await checkClose(async () => {
+      const j = jobTable.get(pty)
+      return j && !j.exit ? stopJobDialog(j.name ?? j.command[0]) : null
+    })
+    if (close) await jobTable.kill(pty)
+  })
   // `leftovers` 의 `killPtys` 는 job pty 를 끄지 않으므로 그것을 기다리지 않고 되살린다.
   jobsRestored = restored.then((r) => void (r?.jobs && jobTable.restore(r.jobs)))
   // 터미널은 CLI 없이도 쓸 수 있어야 한다. env 는 그대로 넣어 CLI 가 앱에 닿지 않는다고 말하게 한다.
@@ -661,6 +708,7 @@ function start(): void {
     if (ptysKilled) return
     event.preventDefault()
     stopConfig()
+    portWatch.stop()
     quitting = true
     void Promise.all([
       keepPtys ||

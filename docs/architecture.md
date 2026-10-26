@@ -50,7 +50,7 @@ renderer 는 상태를 main 에서만 받는다. 문서를 로드하면 `pty:sta
 
 ## job 은 main 이 가진다
 
-`maru job` 의 job 은 pane 과 같은 pty 디렉토리에 `maru-pty --keep` 으로 뜨는 pty 다. renderer 와 pty host 는 job 을 모르고, main 의 jobs 표(`app/src/main/job.ts`)가 이름·cell·`job.new` 를 부른 pty 를 가진다. job 의 출력 바이트는 main 을 지나지 않는다. main 은 돌고 있는 job 마다 셸이 끝나기를 기다리는 `status` 연결 하나를 두고, 출력은 `job.read` 를 받을 때 `capture` 로 한 번 받는다.
+`maru job` 의 job 은 pane 과 같은 pty 디렉토리에 `maru-pty --keep` 으로 뜨는 pty 다. main 의 jobs 표(`app/src/main/job.ts`)가 이름·cell·`job.new` 를 부른 pty·띄운 시각을 가진다. pty host 는 job 을 모른다. renderer 는 사이드바에 보이려고 표의 사본만 받는다. main 은 표가 바뀔 때마다 전체 목록(`JobView`, `app/src/shared/job.ts`)을 `jobs:changed` 로 보내고, renderer 는 처음에 `jobs:list` 로 한 번 받는다. 목록에는 job 과 그 자손이 LISTEN 중인 TCP 포트가 실린다. 포트가 바뀌어도 알려 주는 곳이 없어, main 은 도는 job 이 있는 동안 주기마다 `ps`·`lsof` 로 다시 잰다(`app/src/main/ports.ts`). renderer 가 job 을 끌 때는 `job:kill` 을 보낸다. main 은 `job:kill` 을 받으면 `job.kill` 과 달리 부른 cell 을 따지지 않는다. 도는 job 이면 main 이 확인 창을 띄운다. job 의 출력 바이트는 main 을 지나지 않는다. main 은 돌고 있는 job 마다 셸이 끝나기를 기다리는 `status` 연결 하나를 두고, 출력은 `job.read` 를 받을 때 `capture` 로 한 번 받는다.
 
 cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을 지울 때 cell 도 지우므로, kill 로 그 cell 의 마지막 pty 가 빠지면 main 은 cell 이 닫힌 것으로 보고 그 cell 의 job 을 끈다(`sendKill`, `app/src/main/index.ts`). 문서가 바뀔 때 이전 문서의 pty 를 끄는 경로도 같은 `sendKill` 을 부른다. 그래서 창을 새로 고치면 그 창 cell 의 job 도 꺼진다. pane 이 없는 cell 을 남기는 경로가 생기면 이 판단이 틀어진다.
 

@@ -5,6 +5,7 @@ import {
   runningDialog,
   runningPanes,
   runningProgram,
+  stopJobDialog,
   type ProgramDeps
 } from './close-confirm'
 
@@ -73,6 +74,14 @@ describe('확인 창', () => {
       buttons: ['Close', 'Cancel']
     })
     expect(closePaneDialog(null).detail).toBe('A program is still running in it.')
+  })
+
+  it('job 을 끌 때는 그 이름으로 묻는다', () => {
+    expect(stopJobDialog('dev')).toEqual({
+      message: 'Stop this job?',
+      detail: '`dev` is still running.',
+      buttons: ['Stop', 'Cancel']
+    })
   })
 
   it.each([

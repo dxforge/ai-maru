@@ -59,8 +59,8 @@ const SIDEBAR_WIDTH = { min: 200, max: 480 }
 const CANVAS_MIN_WIDTH = 240
 
 /**
- * 재시작이 아닌 실행에서도 되살리는 화면 설정이다. 사이드바의 접힌 cell 목록(`folded`)은 넣지 않는다.
- * 일반 실행은 cell 을 되살리지 않아 `folded` 의 key 가 가리킬 cell 이 없기 때문이다.
+ * 재시작이 아닌 실행에서도 되살리는 화면 설정이다. 사이드바의 접힌 workspace 목록(`folded`)은 넣지
+ * 않는다. 일반 실행은 workspace 를 되살리지 않아 `folded` 의 key 가 가리킬 것이 없기 때문이다.
  */
 export type ViewPrefs = {
   viewMode?: ScreenState['viewMode']

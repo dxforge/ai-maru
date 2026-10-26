@@ -45,7 +45,8 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'ArrowDown' && n) index.value = (index.value + down + n) % n
   else if (e.key === 'ArrowUp' && n) index.value = (index.value - down + n) % n
   else if (e.key === 'Enter' && n) emit('run', matches.value[index.value].id)
-  else if (e.key === 'Escape') emit('close')
+  // Tab 을 브라우저에 맡기면 포커스가 사이드바의 버튼으로 옮겨 가, 닫으며 돌려준 터미널의 포커스를 빼앗는다.
+  else if (e.key === 'Escape' || e.key === 'Tab') emit('close')
   else return
   e.preventDefault()
 }

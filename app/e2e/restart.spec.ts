@@ -28,7 +28,9 @@ import {
   toggleView,
   typesInto,
   cellGroups,
+  workspaceHeads,
   cellItems,
+  cellPlaces,
   cellViews,
   workspaceNames,
   wrapPtyBin,
@@ -39,6 +41,23 @@ async function shellUp(page: Launched['page'], i: number): Promise<void> {
   await panes(page).nth(i).locator('.xterm-screen').click()
   await typesInto(page, i, `up${i}`)
 }
+
+test('접은 채 닫은 workspace 의 key 를 재시작 뒤 새 workspace 가 다시 받아도 접힌 채 뜨지 않는다', async ({
+  launch
+}) => {
+  const first = await launch()
+  const { app, page } = first
+  await newWorkspace(first, 2)
+  await workspaceHeads(page).nth(1).click()
+  await expect(cellItems(page)).toHaveCount(1)
+  await clickMenu(app, 'close-workspace')
+  await expect(workspaceHeads(page)).toHaveCount(1)
+
+  await restartWith(app)
+  const again = await launch()
+  await newWorkspace(again, 2)
+  await expect(workspaceHeads(again.page).nth(1)).toHaveAttribute('aria-expanded', 'true')
+})
 
 test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 같고 셸의 상태가 남는다', async ({
   launch
@@ -51,8 +70,8 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 �
   await page.keyboard.type('export MARK=kept-$((1+1))\n')
   await newWorkspace(first, 2)
   await shellUp(page, 0)
-  await cellGroups(page).nth(1).locator('.fold').click()
-  await cellItems(page).nth(0).click()
+  await workspaceHeads(page).nth(1).click()
+  await cellGroups(page).nth(0).locator('.pane-row').nth(1).click()
   await toggleView(first, 'columns')
   await clickMenu(app, 'toggle-sidebar')
   await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
@@ -61,8 +80,8 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 �
   const { page: again } = await launch()
   await expect(again.locator('.sidebar')).toHaveClass(/collapsed/)
   await expect(again.locator('.terminals')).toHaveClass(/columns/)
-  await expect(cellItems(again)).toHaveCount(2)
-  await expect(cellGroups(again).nth(1).locator('.fold')).toHaveAttribute('aria-expanded', 'false')
+  await expect(cellItems(again)).toHaveCount(1)
+  await expect(workspaceHeads(again).nth(1)).toHaveAttribute('aria-expanded', 'false')
   await expect(panes(again)).toHaveCount(2)
   await expect(panes(again).nth(1).locator('.terminal-view')).toHaveClass(/active/)
   await run(again, 'echo $MARK', 'kept-2')
@@ -139,7 +158,7 @@ test('앱이 꺼진 동안 셸이 보고한 cwd·제목을 다시 뜬 앱이 프
   const { page: again } = await launch()
   await expect(paneHeader(again, 0).locator('.title')).toHaveText('while-down')
   await expect(paneHeader(again, 0).locator('.cwd')).toHaveText('moved')
-  await expect(cellItems(again)).toHaveText(['moved'])
+  await expect(cellPlaces(again)).toHaveText(['moved'])
 })
 
 test('다시 뜬 앱이 프로토콜이 달라 끈 pty 의 pane 에는 상태가 없다', async ({

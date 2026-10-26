@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PtyState } from '../../../shared/pty-state'
-import { paneCwd, paneName, paneTitle } from './display'
+import { elapsed, fallbackName, paneCwd, paneName, paneTitle } from './display'
 
 const state = (over: Partial<PtyState>): PtyState => ({
   cwd: null,
@@ -38,10 +38,31 @@ describe('paneTitle', () => {
 })
 
 describe('paneName', () => {
-  it('제목, 루트 레코드의 프로그램 이름, Shell 순서다', () => {
-    expect(paneName('vim', { app: 'claude-code' })).toBe('vim')
-    expect(paneName('', { app: 'claude-code' })).toBe('Claude')
-    expect(paneName(undefined, { app: '' })).toBe('Program')
-    expect(paneName(undefined, undefined)).toBe('Shell')
+  it('제목, 루트 레코드의 프로그램 이름, 셸·명령 이름 순서다', () => {
+    expect(paneName({ title: 'vim' }, { app: 'claude-code' }, '/bin/zsh')).toBe('vim')
+    expect(paneName({ title: '' }, { app: 'claude-code' }, '/bin/zsh')).toBe('Claude')
+    expect(paneName({}, { app: '' }, '/bin/zsh')).toBe('Program')
+    expect(paneName({}, undefined, '/bin/zsh')).toBe('zsh')
+    expect(paneName({ command: ['vim', 'x'] }, undefined, '/bin/zsh')).toBe('vim')
+  })
+})
+
+describe('fallbackName', () => {
+  it('명령 pane 은 명령의 이름, 아니면 셸의 이름이고, 셸을 모르면 sh 다', () => {
+    expect(fallbackName({ command: ['/usr/bin/bash', '-c', 'x'] }, '/bin/zsh')).toBe('bash')
+    expect(fallbackName({}, '/bin/zsh')).toBe('zsh')
+    expect(fallbackName({ command: [] }, '/opt/homebrew/bin/fish')).toBe('fish')
+    expect(fallbackName({}, undefined)).toBe('sh')
+    expect(fallbackName({}, '')).toBe('sh')
+  })
+})
+
+describe('elapsed', () => {
+  it('분·시간·일 가운데 하나로 짧게 쓴다', () => {
+    expect(elapsed(59_999)).toBe('<1m')
+    expect(elapsed(4 * 60_000)).toBe('4m')
+    expect(elapsed(59 * 60_000)).toBe('59m')
+    expect(elapsed(2 * 3600_000 + 59 * 60_000)).toBe('2h')
+    expect(elapsed(3 * 86400_000)).toBe('3d')
   })
 })

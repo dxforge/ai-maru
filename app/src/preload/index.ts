@@ -3,6 +3,7 @@ import type { CanvasItem } from '../shared/canvas'
 import type { ConfigRead } from '../shared/config'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
+import type { JobView } from '../shared/job'
 import type { LinkOpenResult } from '../shared/link'
 import type { CellNewRequest, CloseAnswer, PaneNewRequest, PaneReply } from '../shared/pane'
 import type { ScreenState, ViewPrefs } from '../shared/screen'
@@ -63,6 +64,14 @@ const api = {
   },
   /** main 이 지금 든 pty 상태 전체. `onPtyState` 를 단 뒤에 부른다. */
   ptyStates: (): Promise<Record<string, PtyStateEntry>> => ipcRenderer.invoke('pty:states'),
+  /** main 이 job 표를 바꿀 때마다(듣는 포트가 바뀔 때 포함) 전체 목록으로 `cb` 를 부른다. */
+  onJobs: (cb: (jobs: JobView[]) => void): void => {
+    ipcRenderer.on('jobs:changed', (_event, jobs: JobView[]) => cb(jobs))
+  },
+  /** main 이 지금 든 job 전체. `onJobs` 를 단 뒤에 부른다. */
+  jobs: (): Promise<JobView[]> => ipcRenderer.invoke('jobs:list'),
+  /** 도는 job 이면 main 이 확인 창을 띄운 뒤 끈다. 끝난 job 은 목록에서 지운다. */
+  killJob: (pty: string): Promise<void> => ipcRenderer.invoke('job:kill', pty),
   /** 터미널 링크를 연다. 상대경로는 `ptyId` 의 foreground 프로세스의 cwd 기준이다. */
   openLink: (text: string, ptyId: string): Promise<LinkOpenResult> =>
     ipcRenderer.invoke('link:open', text, ptyId),
@@ -95,7 +104,8 @@ const api = {
   canRestart: !process.env.ELECTRON_RENDERER_URL,
   // e2e 는 터미널 글자를 DOM renderer 가 그린 `.xterm-rows` 에서 읽는다.
   webgl: !process.env.MARU_DOM_RENDERER,
-  home: process.env.HOME
+  home: process.env.HOME,
+  shell: process.env.SHELL
 }
 
 export type MaruApi = typeof api
