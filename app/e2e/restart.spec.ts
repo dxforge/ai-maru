@@ -118,6 +118,30 @@ test('재시작 뒤에도 pty 가 들고 있던 상태가 다시 붙을 때 돌�
   await expect(paneHeader(again, 0)).toHaveClass(/idle/)
 })
 
+test('앱이 꺼진 동안 셸이 보고한 cwd·제목을 다시 뜬 앱이 프롬프트 없이 보인다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await shellUp(page, 0)
+  const moved = join(dataDir, 'moved')
+  mkdirSync(moved)
+  const go = join(dataDir, 'go')
+  const reported = join(dataDir, 'reported')
+  // 앱이 꺼진 뒤에 보고하게, 테스트가 `go` 를 만들 때까지 기다린다. 다시 뜬 앱에는 프롬프트가 새로 뜨지 않는다.
+  await page.keyboard.type(
+    `(while [ ! -e '${go}' ]; do sleep 0.1; done; printf '\\033]7;file://%s\\007\\033]2;while-down\\007' '${moved}'; touch '${reported}') &\n`
+  )
+  await restartWith(app)
+  writeFileSync(go, '')
+  await expect.poll(() => existsSync(reported)).toBe(true)
+
+  const { page: again } = await launch()
+  await expect(paneHeader(again, 0).locator('.title')).toHaveText('while-down')
+  await expect(paneHeader(again, 0).locator('.cwd')).toHaveText('moved')
+  await expect(cellItems(again)).toHaveText(['moved'])
+})
+
 test('다시 뜬 앱이 프로토콜이 달라 끈 pty 의 pane 에는 상태가 없다', async ({
   launch,
   dataDir

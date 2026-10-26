@@ -15,6 +15,21 @@ export type ProgramStatusRecord = {
   message: string
 }
 
+/** Claude Code 2.1.310 이 OSC 7501 보고에 싣는 `app` 값이다. */
+export const CLAUDE_APP = 'claude-code'
+
+export function programName(app: string): string {
+  if (app === CLAUDE_APP) return 'Claude'
+  return app || 'Program'
+}
+
+/** 루트 레코드(`id` 가 `""`). 프로그램 자신의 상태다. */
+export function rootRecord(
+  records: readonly ProgramStatusRecord[]
+): ProgramStatusRecord | undefined {
+  return records.find((r) => r.id === '')
+}
+
 const KINDS: ReadonlySet<unknown> = new Set(['permission', 'question', 'auth'])
 const STATES: ReadonlySet<unknown> = new Set(PROGRAM_STATUS_STATES)
 

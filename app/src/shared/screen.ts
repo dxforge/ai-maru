@@ -1,3 +1,4 @@
+import type { GitHead } from './git'
 import type { Layout } from './layout'
 import { isPtyId } from './pty'
 
@@ -7,6 +8,10 @@ import { isPtyId } from './pty'
  */
 export const SCREEN_VERSION = 3
 
+/**
+ * `cwd`·`title`·`git` 은 저장할 때 화면에 보이던 값이다. main 은 `maru mate list` 의 이름을 이 값으로 짓고, 다시 뜬
+ * 앱은 pty 의 상태가 오기 전까지 이 값을 보인다.
+ */
 export type ScreenPane = {
   key: number
   ptyId: string
@@ -14,6 +19,7 @@ export type ScreenPane = {
   command?: string[]
   cwd?: string
   title?: string
+  git?: GitHead
 }
 
 export type ScreenCell = {
@@ -68,6 +74,8 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !
 const isKey = (v: unknown): v is number => Number.isInteger(v)
 const optString = (v: unknown): boolean => v === undefined || typeof v === 'string'
 const optKey = (v: unknown): boolean => v === undefined || isKey(v)
+const optGit = (v: unknown): boolean =>
+  v === undefined || (isObj(v) && typeof v.repo === 'string' && optString(v.branch))
 
 function isLayout(v: unknown): v is Layout {
   if (!isObj(v)) return false
@@ -83,6 +91,7 @@ function isPane(v: unknown): v is ScreenPane {
     optString(v.startDir) &&
     optString(v.cwd) &&
     optString(v.title) &&
+    optGit(v.git) &&
     (v.command === undefined ||
       (Array.isArray(v.command) && v.command.every((a) => typeof a === 'string')))
   )

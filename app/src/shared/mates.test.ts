@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { ProgramStatusRecord } from '../../../shared/program-status'
-import { createProgramStatuses } from '../program-status/store'
 import { mateRows } from './mates'
-import type { Pane, Workspace } from './store'
+import type { ProgramStatusRecord } from './program-status'
+import type { ScreenPane, ScreenWorkspace } from './screen'
 
 function record(app: string, fields: Partial<ProgramStatusRecord> = {}): ProgramStatusRecord {
   return {
@@ -17,7 +16,11 @@ function record(app: string, fields: Partial<ProgramStatusRecord> = {}): Program
   }
 }
 
-function cell(key: number, panes: Pane[], focused = panes[0].key): Workspace['cells'][number] {
+function cell(
+  key: number,
+  panes: ScreenPane[],
+  focused = panes[0].key
+): ScreenWorkspace['cells'][number] {
   return { key, id: `c-${key}`, panes, focused, layout: { pane: panes[0].key } }
 }
 
@@ -45,7 +48,7 @@ describe('mateRows', () => {
         ]
       },
       { key: 8, id: 'w-8', cells: [cell(9, [{ key: 10, ptyId: 'p-c', startDir: '/tmp/notes' }])] }
-    ] as Workspace[]
+    ]
     const records = new Map([
       ['p-a', record('claude-code', { message: 'reading', title: 'T' })],
       ['p-other', record('codex')],
@@ -85,7 +88,7 @@ describe('mateRows', () => {
 
   it('cwd 도 시작 디렉토리도 모르는 pane 의 dir 은 빈 문자열이다', () => {
     const workspaces = [{ key: 1, id: 'w-1', cells: [cell(2, [{ key: 3, ptyId: 'p-a' }])] }]
-    const rows = mateRows(workspaces as Workspace[], () => record('claude-code'))
+    const rows = mateRows(workspaces, () => record('claude-code'))
     expect(rows.map((r) => [r.workspace, r.cell, r.dir])).toEqual([['Shell', 'Shell', '']])
   })
 
@@ -105,7 +108,7 @@ describe('mateRows', () => {
           )
         ]
       }
-    ] as Workspace[]
+    ]
     const rows = mateRows(workspaces, (pty) => (pty === 'p-a' ? record('claude-code') : undefined))
     expect(rows.map((r) => [r.pty, r.workspace, r.cell, r.dir])).toEqual([
       ['p-a', 'ai-maru', 'ai-maru feat/b', '/r/wt-a']
@@ -113,9 +116,11 @@ describe('mateRows', () => {
   })
 
   it('하위 레코드만 claude 인 pane 은 들지 않는다', () => {
-    const statuses = createProgramStatuses()
-    statuses.set('p-a', [record('codex'), record('claude-code', { id: '/sub' })])
-    statuses.set('p-b', [record('claude-code', { id: '/sub' })])
+    const records = new Map([
+      ['p-a', [record('codex'), record('claude-code', { id: '/sub' })]],
+      ['p-b', [record('claude-code', { id: '/sub' })]]
+    ])
+    const root = (pty: string) => records.get(pty)?.find((r) => r.id === '')
     const workspaces = [
       {
         key: 1,
@@ -128,11 +133,11 @@ describe('mateRows', () => {
         ]
       }
     ]
-    expect(mateRows(workspaces as Workspace[], statuses.root)).toEqual([])
+    expect(mateRows(workspaces, root)).toEqual([])
   })
 
   it('pane 이 하나도 claude 가 아니면 빈 목록이다', () => {
     const workspaces = [{ key: 1, id: 'w-1', cells: [cell(2, [{ key: 3, ptyId: 'p-a' }])] }]
-    expect(mateRows(workspaces as Workspace[], () => undefined)).toEqual([])
+    expect(mateRows(workspaces, () => undefined)).toEqual([])
   })
 })

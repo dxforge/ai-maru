@@ -27,7 +27,6 @@ import { alignComposition } from '../terminal/composition'
 import { createLinkHandler, registerLinkProvider } from '../terminal/links'
 import { pastePaths } from '../terminal/paths'
 import { SCROLLBAR_WIDTH } from '../workspace/columns'
-import { osc7Path } from '../workspace/cwd'
 import type { Size } from '../workspace/grid'
 
 const {
@@ -55,11 +54,10 @@ const {
 const emit = defineEmits<{
   exit: []
   failed: [message: string]
-  cwd: [cwd: string]
-  spawned: []
-  title: [title: string]
+  /** `cwd` 는 pty 를 띄운 실제 시작 디렉토리다. 되살린 pane 이 남은 pty 에 붙으면 없다. */
+  spawned: [cwd: string | undefined]
+  /** 이전 maru-pty 의 pty 만 attach 스트림으로 보내는 OSC 7501 레코드(`pty/states.ts`). */
   programStatus: [records: ProgramStatusRecord[]]
-  foreground: []
   linkFailed: [reason: string]
   /** `floored` 면 글자 칸 폭이 WebGL 이 내림한 값이고, `fitTerminal` 이 열 수를 이 폭으로 직접 나눈다. */
   cell: [cell: Size, floored: boolean]
@@ -140,12 +138,6 @@ term.attachCustomKeyEventHandler((e) => {
   if (e.type === 'keydown' && isSelectAll(e)) term.selectAll()
   return false
 })
-term.parser.registerOscHandler(7, (data) => {
-  const path = osc7Path(data)
-  if (path) emit('cwd', path)
-  return true
-})
-term.onTitleChange((title) => emit('title', title))
 // css.cell 은 열·행 수마다 반올림이 달라, 그와 상관없는 device 값으로 계산한다.
 // WebGL renderer 는 글자 칸 폭을 device px 로 내림한다. DOM 으로 그리는 동안에도 그 폭을 써서, renderer 가
 // 바뀔 때 열 수가 바뀌어 프로그램에 resize 가 가지 않게 한다. 대신 DOM 으로 그리면 pane 보다 넓어져 오른쪽
@@ -324,12 +316,8 @@ onMounted(() => {
   pty = attachTerminal(term, conn, {
     onExit: () => emit('exit'),
     onOpenFailed: (message) => emit('failed', message),
-    onSpawned: (_id, dir) => {
-      emit('spawned')
-      if (dir !== undefined) emit('cwd', dir)
-    },
-    onProgramStatus: (records) => emit('programStatus', records),
-    onForeground: () => emit('foreground')
+    onSpawned: (_id, dir) => emit('spawned', dir),
+    onProgramStatus: (records) => emit('programStatus', records)
   })
   // 조합한 글자는 다음 키가 오면 그 키보다 먼저 setTimeout 을 기다리지 않고 간다. 그 바로 뒤에 보낸다.
   // pty 에 보내는 attach 의 listener 보다 뒤에 걸어야 미룬 키가 조합한 글자 뒤로 간다.

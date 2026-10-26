@@ -1,7 +1,11 @@
 import { readonly, ref } from 'vue'
 import type { GitHead } from '../../../shared/git'
+import { focusedPane, startDirOf } from '../../../shared/names'
+import type { ProgramStatusState } from '../../../shared/program-status'
+import type { PtyState } from '../../../shared/pty-state'
 import type { ScreenCell, ScreenState, ScreenWorkspace } from '../../../shared/screen'
 import { newPtyId, randomId } from '../../../shared/pty'
+import { paneCwd, paneTitle } from './display'
 import {
   neighbor,
   removePane,
@@ -13,9 +17,9 @@ import {
 } from './layout'
 
 /**
- * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령, `cwd` 는 pty 가 알려
- * 온 디렉토리, `title` 은 OSC 0/2 로 받은 창 제목이다. `attach` 는 재시작으로 되살린 pane 이 떠 있는
- * pty 에 붙어야 할 때 true 다.
+ * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령이다. `cwd`·`title` 은 화면에 보일
+ * 값으로 `paneCwd`·`paneTitle` 이 고르고, `restoredCwd`·`restoredTitle`·`spawnedCwd` 는 그 재료다. `attach` 는
+ * 재시작으로 되살린 pane 이 떠 있는 pty 에 붙어야 할 때 true 다.
  */
 export type Pane = {
   key: number
@@ -26,7 +30,13 @@ export type Pane = {
   title?: string
   git?: GitHead
   attach?: boolean
+  restoredCwd?: string
+  restoredTitle?: string
+  spawnedCwd?: string
 }
+
+/** snapshot 에 싣지 않는 pane 필드. `attach` 는 `restore` 가 정하고, 나머지는 화면에 보이는 `cwd`·`title` 의 재료다. */
+const UNSAVED = new Set(['attach', 'restoredCwd', 'restoredTitle', 'spawnedCwd'])
 
 export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
 
@@ -39,20 +49,19 @@ export type Cell = Omit<ScreenCell, 'panes'> & { panes: Pane[] }
 /** `cells` 는 비지 않는다 — 마지막 cell 이 닫히면 workspace 도 닫힌다. */
 export type Workspace = Omit<ScreenWorkspace, 'cells'> & { cells: Cell[] }
 
-export function focusedPane(c: {
-  readonly panes: readonly Pane[]
-  readonly focused: number
-}): Pane {
-  return c.panes.find((p) => p.key === c.focused)!
-}
+export { focusedPane, startDirOf }
 
-export function startDirOf(p: Pick<Pane, 'cwd' | 'startDir'>): string | undefined {
-  return p.cwd ?? p.startDir
+/** pty 상태 저장소(`pty/states.ts`)에서 store 가 읽는 것. */
+export type PaneSource = {
+  get(ptyId: string): PtyState | undefined
+  /** 루트 OSC 7501 레코드의 상태 */
+  state(ptyId: string): ProgramStatusState | undefined
+  isOld(ptyId: string): boolean
 }
 
 export function createWorkspaces(
   readGit: (cwd: string) => Promise<GitHead | null> = async () => null,
-  foregroundCwd: (ptyId: string, cwd?: string) => Promise<string | null> = async () => null,
+  source: PaneSource = { get: () => undefined, state: () => undefined, isOld: () => false },
   ptyId: () => string = newPtyId,
   cellId: () => string = () => randomId('c'),
   workspaceId: () => string = () => randomId('w')
@@ -62,6 +71,7 @@ export function createWorkspaces(
   let nextKey = 0
   let reads = 0
   const lastRead = new Map<number, number>()
+  const seen = new Map<number, { reports?: number; program?: ProgramStatusState }>()
 
   const cells = (): Cell[] => list.value.flatMap((w) => w.cells)
 
@@ -189,6 +199,7 @@ export function createWorkspaces(
 
   function closePane(pane: number): void {
     lastRead.delete(pane)
+    seen.delete(pane)
     const c = owner(pane)
     if (!c) return
     if (c.panes.length === 1) return close(c.key)
@@ -214,11 +225,40 @@ export function createWorkspaces(
     return owner(key)?.panes.find((p) => p.key === key)
   }
 
-  function setCwd(key: number, cwd: string): void {
+  /**
+   * 화면에 보일 cwd 를 다시 고르고, 바뀌었거나 셸이 cwd 를 다시 보고했거나 루트 레코드의 상태가 바뀌었으면 git 을 다시
+   * 읽는다. 셸은 프롬프트마다 cwd 를 보고하므로 같은 디렉토리에서 바꾼 branch 가 다음 프롬프트에 반영된다. Claude 를 띄운
+   * pane 에는 프롬프트가 뜨지 않아 루트 레코드의 상태가 바뀔 때 읽는다. 한 턴에 `msg` 만 다른 working 보고가 여러 번
+   * 오므로 레코드가 올 때마다 읽지는 않는다. 제목도 다시 고른다. git 을 읽었으면 true 다.
+   */
+  function refresh(p: Pane): boolean {
+    const state = source.get(p.ptyId)
+    const title = paneTitle({ state, restoredTitle: p.restoredTitle, old: source.isOld(p.ptyId) })
+    if (p.title !== title) p.title = title
+    const cwd = paneCwd({ ...p, state })
+    const before = seen.get(p.key)
+    const now = { reports: state?.cwdReports, program: source.state(p.ptyId) }
+    seen.set(p.key, now)
+    const reported =
+      before?.reports !== undefined && now.reports !== undefined && now.reports !== before.reports
+    const changed = cwd !== p.cwd
+    if (changed) p.cwd = cwd
+    if (cwd === undefined || !(changed || reported || now.program !== before?.program)) return false
+    readGitFor(p.key, cwd)
+    return true
+  }
+
+  /** main 이 그 pty 의 상태를 바꾸거나 지웠다. */
+  function applyState(ptyId: string): void {
+    const p = paneByPty(ptyId)
+    if (p) refresh(p)
+  }
+
+  function setSpawnedCwd(key: number, cwd: string): void {
     const p = pane(key)
     if (!p) return
-    p.cwd = cwd
-    readGitFor(key, cwd)
+    p.spawnedCwd = cwd
+    refresh(p)
   }
 
   // pane 마다 마지막으로 청한 답만 쓴다. 답은 청한 순서대로 오지 않아, 늦게 온 답이 새 답을 덮을 수 있다.
@@ -244,23 +284,6 @@ export function createWorkspaces(
     if (p.git?.repo !== git?.repo || p.git?.branch !== git?.branch) p.git = git
   }
 
-  /**
-   * pane 에서 돌고 있는 프로그램이 옮겨 간 디렉토리(claude 가 들어간 worktree 등)는 셸의 OSC 7 로 오지 않으므로,
-   * foreground 프로세스의 cwd 를 물어 그 pane 의 cwd 로 삼는다. 프롬프트에서는 셸이 foreground 이므로, 답은 OSC 7 과 같은 디렉토리다.
-   * 지금 cwd 를 함께 넘겨, 같은 디렉토리면 그 경로를 그대로 받는다. 셸이 심볼릭 링크 경로에 있을 때 경로가 실제 경로로 바뀌지 않게 하기 위해서다.
-   */
-  function refreshPty(ptyId: string): void {
-    const p = paneByPty(ptyId)
-    if (!p) return
-    const latest = claim(p.key)
-    void foregroundCwd(ptyId, p.cwd)
-      .catch(() => null)
-      .then((cwd) => {
-        const dir = cwd ?? p.cwd
-        if (latest() && dir !== undefined) setCwd(p.key, dir)
-      })
-  }
-
   function setFontSize(key: number, size: number | undefined): void {
     const c = cell(key)
     if (c) c.fontSize = size
@@ -273,24 +296,24 @@ export function createWorkspaces(
     else c.paneCols = cols
   }
 
-  function setTitle(key: number, title: string): void {
-    const p = pane(key)
-    if (p) p.title = title
-  }
-
-  // IPC 로 보내므로 JSON 으로 reactive proxy 를 벗긴다. `git` 은 `restore` 가 cwd 로 다시 읽고, `attach` 는
-  // `restore` 가 정한다.
+  // IPC 로 보내므로 JSON 으로 reactive proxy 를 벗긴다. `git` 은 main 이 `maru mate list` 의 이름을 짓는 데 쓴다.
   function snapshot(): WorkspacesScreen {
     const screen = { workspaces: list.value, selected: selectedKey.value }
-    return JSON.parse(
-      JSON.stringify(screen, (k, v) => (k === 'git' || k === 'attach' ? undefined : v))
-    )
+    return JSON.parse(JSON.stringify(screen, (k, v) => (UNSAVED.has(k) ? undefined : v)))
   }
 
   function restore(screen: WorkspacesScreen): void {
     list.value = screen.workspaces.map((w) => ({
       ...w,
-      cells: w.cells.map((c) => ({ ...c, panes: c.panes.map((p) => ({ ...p, attach: true })) }))
+      cells: w.cells.map((c) => ({
+        ...c,
+        panes: c.panes.map((p) => ({
+          ...p,
+          attach: true,
+          restoredCwd: p.cwd,
+          restoredTitle: p.title
+        }))
+      }))
     }))
     selectedKey.value = screen.selected
     const keys = screen.workspaces.flatMap((w) => [
@@ -298,7 +321,9 @@ export function createWorkspaces(
       ...w.cells.flatMap((c) => [c.key, ...c.panes.map((p) => p.key)])
     ])
     nextKey = Math.max(nextKey, ...keys.map((k) => k + 1))
-    for (const c of cells()) for (const p of c.panes) if (p.cwd) readGitFor(p.key, p.cwd)
+    // main 의 상태가 화면보다 먼저 왔을 수 있다. 저장한 git 은 재시작하는 동안 바뀌었을 수 있어 다시 읽는다.
+    for (const c of cells())
+      for (const p of c.panes) if (!refresh(p) && p.cwd) readGitFor(p.key, p.cwd)
   }
 
   return {
@@ -317,13 +342,12 @@ export function createWorkspaces(
     moveFocus,
     owner,
     workspaceOf,
-    setCwd,
-    setTitle,
+    applyState,
+    setSpawnedCwd,
     setFontSize,
     setPaneCols,
     snapshot,
     restore,
-    refreshPty,
     selected,
     step,
     select: (key: number): void => void (selectedKey.value = key)

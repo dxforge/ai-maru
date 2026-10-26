@@ -45,6 +45,7 @@
 //! | `status` (`wait`: bool, 선택) | `{"type":"status","exit":null}` 또는 `{"type":"status","exit":{"code","signal"}}` |
 //! | `input` (`text`: 문자열) | 셸 입력으로 다 쓴 뒤 `{"type":"input"}` |
 //! | `foreground` | `{"type":"foreground","pid":…,"cwd":…,"name":…}` |
+//! | `subscribe` | `state` 메시지들(아래) |
 //! | `attach` (`role`: `primary`·`observer`, primary 면 `cols`·`rows`) | 아래 |
 //!
 //! `capture` 는 화면과 스크롤백을 스타일 없는 글자로 돌려준다. 행마다 줄을 끊고, `unwrap` 이 true 면
@@ -62,9 +63,36 @@
 //! 에서 `a` 가 먼저 끝남) 읽을 수 없으면 `cwd`·`name` 은 null 이다. `name` 을 모르는 옛 서버의 응답에는
 //! 이 필드가 없다.
 //!
+//! `subscribe` 는 연결을 열어 두고 pane 상태를 보낸다. 처음에 지금 상태를 보내고, 그 뒤로 바뀔 때마다 상태 전체를
+//! 보낸다. 화면 바이트는 보내지 않는다. 클라이언트가 이 연결로 보내는 것은 버린다. 셸이 끝나도 연결을 닫지 않는다.
+//! 연결은 이 프로세스가 끝날 때(`--keep` 이 아니면 셸이 끝날 때) 소켓·레코드를 지운 뒤 닫힌다. 클라이언트가 읽지
+//! 않는 동안 바뀐 상태는 마지막 것만 보낸다. 이 요청을 모르는 옛 서버는 `unknown_request` 로 답한다.
+//!
+//! `{"type":"state","cwd","cwd_reports","title","foreground_cwd","records"}`:
+//!
+//! - `cwd` — 셸이 OSC 7 로 보고한 경로. `file:///path` 만 받아 percent 디코딩하고, 호스트가 실린 것이나 디코딩할
+//!   수 없는 것은 버리고 이전 값을 둔다. 빈 OSC 7 과 RIS 는 null 로 지운다. 받은 적이 없으면 null 이다.
+//!   ghostty 는 빈 OSC 9;9(ConEmu CurrentDir)도 빈 OSC 7 과 같이 알리므로, 그것도 null 로 지운다.
+//! - `cwd_reports` — 받아들인 OSC 7 보고(빈 보고 포함) 수. 같은 경로를 다시 보고해도 는다.
+//! - `title` — OSC 0/2 로 받은 제목. 없거나 비었거나 RIS 로 지워졌으면 null 이다.
+//! - `foreground_cwd` — 레코드가 하나라도 있는 동안 1초마다 잰 foreground 의 작업 디렉토리. 레코드가 생기거나 셸이
+//!   OSC 7 을 보고하면 바로 한 번 잰다. `cwd` 와 같은 디렉토리면 `cwd` 의 경로를 싣는다(OSC 7 은 `$PWD` 라 심볼릭
+//!   링크 경로일 수 있다). `cwd` 가 null 이면 `--cwd` 와 견주어, 같은 디렉토리면 `--cwd` 의 경로를 싣는다.
+//!   레코드가 없으면 null 이고, 잴 수 없으면(`a | b` 에서 `a` 가 먼저 끝남) 이전 값을 둔다.
+//! - `records` — 프로그램이 OSC 7501(Program Status Protocol)로 보고한 레코드 전체:
+//!   `[{"id","state","kind","progress","app","title","message"}, …]`. `id` 는 루트 레코드가 `""` 이고 `/` 로
+//!   하위를 나타낸다. `state` 는 `idle`·`working`·`done`·`blocked`·`error`, `kind` 는
+//!   `permission`·`question`·`auth` 또는 null, `progress` 는 0~100 또는 null, 문자열은 없으면 `""` 다.
+//!   레코드는 보고마다 통째로 바뀐다. `clear` 보고는 그 id 와 하위를 지우고, id 가 없으면 전부 지운다. 256 개를
+//!   넘으면 가장 오래전에 갱신된 레코드부터 지운다. RIS 는 전부 지운다. 새 프롬프트나 프로그램 종료에 지우는
+//!   규칙은 없다 — 프로그램(또는 그것을 띄운 셸 함수)이 끝날 때 `clear` 를 보내야 한다. 지원 질의
+//!   `OSC 7501 ; ?` 에는 이 프로세스가 답한다.
+//!
+//! 상태는 그 변경을 실은 PTY 출력보다 먼저 보내려 하지만 attach 와 다른 연결이라 순서는 보장하지 않는다.
+//!
 //! `attach` 의 응답은 헤더 `{"type":"attached","protocol_version","tty","role","cols","rows",
-//! "cursor_x","cursor_y"}` 와 재생(Binary, 비어 있어도 보낸다), 그리고 `program_status`(아래,
-//! 레코드가 없어도 보낸다)이고, 그 뒤로 PTY 출력이 Binary 로 이어진다. primary 가 보내는 Binary 는 셸 입력이고 observer 가 보내는 것은
+//! "cursor_x","cursor_y"}` 와 재생(Binary, 비어 있어도 보낸다)이고, 그 뒤로 PTY 출력이 Binary 로 이어진다.
+//! 상태는 attach 로 오지 않는다. primary 가 보내는 Binary 는 셸 입력이고 observer 가 보내는 것은
 //! 버린다 — 터미널 질의(`ESC[6n` 등)에 primary 만 답하게. primary 는 `{"type":"resize","cols",
 //! "rows"}` 를 보낼 수 있다. observer 가 보낸 `resize`·`clear_scrollback` 은 버린다.
 //!
@@ -78,21 +106,9 @@
 //! - `{"type":"role","role":"observer"}` — 다른 연결이 primary 를 가져갔다.
 //! - `{"type":"size","cols","rows"}` — primary 가 크기를 바꿨다. 이 뒤의 출력은 새 크기로 나온
 //!   것이다. 바꾼 연결에는 보내지 않는다.
-//! - `{"type":"resync",…}` + RIS(`ESC c`)로 시작하는 재생 + `program_status` — 출력을 못 따라잡아
+//! - `{"type":"resync",…}` + RIS(`ESC c`)로 시작하는 재생 — 출력을 못 따라잡아
 //!   건너뛴 것이 있다. 밀린 동안의 크기 변경은 `size` 로 오지 않고 이 헤더의 `cols`·`rows` 에
 //!   실린다. 한 연결에 다섯 번을 넘으면 `resync_limit_exceeded` 로 끊는다.
-//! - `{"type":"program_status","records":[{"id","state","kind","progress","app","title",
-//!   "message"}, …]}` — 프로그램이 OSC 7501(Program Status Protocol)로 보고한 레코드 전체.
-//!   바뀔 때마다 오고, attach·resync 때는 재생 뒤에 온다. 클라이언트는 목록을 통째로 바꾼다. `id` 는 루트
-//!   레코드가 `""` 이고 `/` 로 하위를 나타낸다. `state` 는 `idle`·`working`·`done`·`blocked`·
-//!   `error`, `kind` 는 `permission`·`question`·`auth` 또는 null, `progress` 는 0~100 또는 null,
-//!   문자열은 없으면 `""` 다. 레코드는 보고마다 통째로 바뀐다. `clear` 보고는 그 id 와 하위를 지우고,
-//!   id 가 없으면 전부 지운다. 256 개를 넘으면 가장 오래전에 갱신된 레코드부터 지운다. RIS 는 전부 지운다.
-//!   새 프롬프트나 프로그램 종료에 지우는 규칙은 없다 — 프로그램(또는 그것을 띄운 셸 함수)이 끝날
-//!   때 `clear` 를 보내야 한다. 지원 질의 `OSC 7501 ; ?` 에는 이 프로세스가 답한다.
-//! - `{"type":"foreground","pid","cwd"}` — 레코드가 하나라도 있는 동안 1초마다 잰 foreground 의
-//!   `cwd` 가 지난번과 달라졌다. 모양은 `name` 이 없는 것 말고는 `foreground` 요청의 응답과 같다. 레코드가
-//!   비면 재지 않는다.
 //! - `{"type":"exit","code","signal"}` — 셸이 끝났다. 남은 출력을 다 보낸 뒤에 온다.
 
 // 띄운 쪽이 stderr 를 닫고 먼저 끝나면 쓰기가 EPIPE 로 실패하는데, `eprintln!` 은 거기서 패닉한다.
@@ -112,6 +128,7 @@ mod program_status;
 mod pty;
 pub mod record;
 pub mod server;
+mod state;
 mod vt;
 
 pub const PROTOCOL_VERSION: u32 = 1;

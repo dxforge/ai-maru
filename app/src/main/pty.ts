@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { closeSync, constants, existsSync, mkdirSync, openSync } from 'node:fs'
-import { access, readdir, readFile, realpath, rm, stat } from 'node:fs/promises'
+import { access, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { createConnection, type Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
@@ -9,6 +9,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
 import { isPtyId } from '../shared/pty'
+import { parsePtyState, type PtyState } from '../shared/pty-state'
 import { appHome } from './config-file'
 import { encodeFrame, FrameDecoder } from './frame'
 
@@ -135,47 +136,78 @@ export function killPty(dir: string, id: string, timeoutMs = KILL_TIMEOUT_MS): P
 
 type Reply = Record<string, unknown>
 
+/**
+ * pty 에 요청 하나를 보내고, 오는 JSON 메시지마다 `onMessage` 를 부른다. JSON 이 아닌 메시지는 null 로 넘긴다. 연결이
+ * 닫히거나 프레임이 깨지면 `onEnd` 를 한 번 부르고, 돌려준 `close` 로 닫았으면 부르지 않는다.
+ */
+function request(
+  dir: string,
+  id: string,
+  body: object,
+  onMessage: (msg: Reply | null) => void,
+  onEnd: () => void
+): { close: () => void; reached: () => boolean } {
+  let done = false
+  let connected = false
+  const finish = (cb?: () => void): void => {
+    if (done) return
+    done = true
+    sock.destroy()
+    cb?.()
+  }
+  const decoder = new FrameDecoder()
+  const sock = createConnection(socketPath(dir, id), () => {
+    connected = true
+    const req = JSON.stringify({ ...body, protocol_version: PROTOCOL_VERSION })
+    sock.write(encodeFrame(TAG_TEXT, Buffer.from(req)))
+  })
+  sock.on('data', (chunk) => {
+    let frames
+    try {
+      frames = decoder.push(chunk)
+    } catch {
+      return finish(onEnd)
+    }
+    for (const f of frames) {
+      if (done) return
+      if (f.tag !== TAG_TEXT) continue
+      let msg: Reply | null
+      try {
+        msg = JSON.parse(f.payload.toString()) as Reply
+      } catch {
+        msg = null
+      }
+      onMessage(msg)
+    }
+  })
+  sock.on('close', () => finish(onEnd))
+  sock.on('error', () => {})
+  return { close: () => finish(), reached: () => connected }
+}
+
+/** 첫 메시지를 답으로 받고 연결을 닫는다. 답 없이 닫히면 null 이다. */
 function ask(
   dir: string,
   id: string,
   body: object
 ): { reply: Promise<Reply | null>; cancel: () => void; reached: () => boolean } {
-  let sock: Socket | null = null
-  let connected = false
   let settle: (r: Reply | null) => void = () => {}
-  const reply = new Promise<Reply | null>((resolve) => {
-    let done = false
-    settle = (r) => {
-      if (done) return
-      done = true
-      sock?.destroy()
-      resolve(r)
-    }
-    const decoder = new FrameDecoder()
-    sock = createConnection(socketPath(dir, id), () => {
-      connected = true
-      const req = JSON.stringify({ ...body, protocol_version: PROTOCOL_VERSION })
-      sock!.write(encodeFrame(TAG_TEXT, Buffer.from(req)))
-    })
-    sock.on('data', (chunk) => {
-      let frames
-      try {
-        frames = decoder.push(chunk)
-      } catch {
-        return settle(null)
-      }
-      const text = frames.find((f) => f.tag === TAG_TEXT)
-      if (!text) return
-      try {
-        settle(JSON.parse(text.payload.toString()) as Reply)
-      } catch {
-        settle(null)
-      }
-    })
-    sock.on('close', () => settle(null))
-    sock.on('error', () => {})
-  })
-  return { reply, cancel: () => settle(null), reached: () => connected }
+  const reply = new Promise<Reply | null>((resolve) => (settle = resolve))
+  const req = request(
+    dir,
+    id,
+    body,
+    (msg) => {
+      req.close()
+      settle(msg)
+    },
+    () => settle(null)
+  )
+  const cancel = (): void => {
+    req.close()
+    settle(null)
+  }
+  return { reply, cancel, reached: req.reached }
 }
 
 async function askWithin(
@@ -254,14 +286,31 @@ export async function foregroundCwd(
   return (await foreground(dir, id, timeoutMs)).cwd
 }
 
-/**
- * `dir` 이 `cwd` 와 같은 디렉토리면 `cwd` 를, 아니면 `dir` 을 돌려준다. `foreground` 는 실제 경로를 답하고 셸의 OSC 7 은
- * `$PWD` 를 주므로, 셸이 심볼릭 링크 경로에 있으면 같은 디렉토리라도 두 경로가 다르다.
- */
-export async function sameDirAs(dir: string, cwd: string): Promise<string> {
-  const real = (path: string): Promise<string | null> => realpath(path).catch(() => null)
-  const [a, b] = await Promise.all([real(dir), real(cwd)])
-  return a !== null && a === b ? cwd : dir
+export type StateHandlers = {
+  state(state: PtyState): void
+  /** pty 가 `subscribe` 를 모르는 이전 maru-pty 다. 그 뒤 연결이 닫혀도 `closed` 는 부르지 않는다. */
+  old(): void
+  /** 연결이 닫혔다. 닿지 못했을 때도 부른다. 돌려준 함수로 닫았으면 부르지 않는다. */
+  closed(): void
+}
+
+export function subscribeState(dir: string, id: string, on: StateHandlers): () => void {
+  const req = request(
+    dir,
+    id,
+    { type: 'subscribe' },
+    (msg) => {
+      // `subscribe` 를 더하며 `PROTOCOL_VERSION` 을 올리지 않았으므로, 앱을 새로 깔아도 이 요청을 모르는 이전 maru-pty 의 pty 가 남아 있을 수 있다.
+      if (msg?.code === 'unknown_request') {
+        req.close()
+        return on.old()
+      }
+      const state = parsePtyState(msg)
+      if (state) on.state(state)
+    },
+    on.closed
+  )
+  return req.close
 }
 
 export async function writePtyInput(

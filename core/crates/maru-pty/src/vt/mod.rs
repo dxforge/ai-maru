@@ -54,12 +54,50 @@ pub struct ProgramStatusReport {
     pub message: String,
 }
 
+/// 셸 cwd 를 바꾸는 것. 한 `write` 에 OSC 7 과 RIS 가 섞여 와도 온 순서대로 반영하려고 한 목록에 둔다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CwdEvent {
+    /// OSC 7 의 내용. ghostty 가 저장한 해석하지 않은 바이트 그대로이고, 빈 OSC 7 이면 비어 있다.
+    Report(Vec<u8>),
+    /// RIS. ghostty 는 pwd 를 지우고 pwd 콜백은 부르지 않는다.
+    Reset,
+}
+
 /// ghostty 콜백이 `write` 동안 쌓은 것. 콜백은 screen 락 안에서 동기로 불리므로 여기에 넣기만
 /// 하고, 처리는 `take_events` 로 꺼낸 쪽이 한다.
 #[derive(Debug, Default)]
 pub struct VtEvents {
     pub reports: Vec<ProgramStatusReport>,
     pub pty_replies: Vec<Vec<u8>>,
+    pub cwd: Vec<CwdEvent>,
+    /// OSC 0/2 나 RIS 로 제목이 바뀌었을 수 있다. 값은 `VtTerminal::title` 로 읽는다.
+    pub title_changed: bool,
+}
+
+/// OSC 7 의 `file:///path` 에서 경로를 꺼내 percent 디코딩한다. 호스트가 실린 것은 ssh 로 붙은 다른 머신의
+/// 셸이 보냈을 수 있어 버린다. 이 머신의 호스트 이름과 견주지 않는 것은, 셸이 뜬 뒤 호스트 이름이 바뀌면 이
+/// 머신의 것까지 버리게 되어서다. `%` 뒤가 16진수 두 자리가 아니거나 디코딩한 결과가 UTF-8 이 아니면 버린다.
+pub fn osc7_path(raw: &[u8]) -> Option<String> {
+    let path = raw.strip_prefix(b"file://")?;
+    if path.first() != Some(&b'/') {
+        return None;
+    }
+    let mut out = Vec::with_capacity(path.len());
+    let mut i = 0;
+    while i < path.len() {
+        if path[i] != b'%' {
+            out.push(path[i]);
+            i += 1;
+            continue;
+        }
+        let hex = path.get(i + 1..i + 3)?;
+        if !hex.iter().all(u8::is_ascii_hexdigit) {
+            return None;
+        }
+        out.push(u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?);
+        i += 3;
+    }
+    String::from_utf8(out).ok()
 }
 
 pub struct VtTerminal {
@@ -131,6 +169,42 @@ unsafe extern "C" fn on_program_status(
     });
 }
 
+unsafe extern "C" fn on_title_changed(_terminal: ffi::GhosttyTerminal, userdata: *mut c_void) {
+    // SAFETY: userdata 는 `on_write_pty` 와 같다.
+    let events = unsafe { &mut *(userdata as *mut VtEvents) };
+    events.title_changed = true;
+}
+
+unsafe extern "C" fn on_pwd_changed(terminal: ffi::GhosttyTerminal, userdata: *mut c_void) {
+    // SAFETY: userdata 는 `on_write_pty` 와 같다. 헤더는 이 콜백 안에서 `DATA_PWD` 를 읽으라고 한다.
+    let events = unsafe { &mut *(userdata as *mut VtEvents) };
+    let pwd = unsafe { get_string(terminal, ffi::GHOSTTY_TERMINAL_DATA_PWD) };
+    events.cwd.push(CwdEvent::Report(pwd));
+}
+
+unsafe extern "C" fn on_reset(_terminal: ffi::GhosttyTerminal, userdata: *mut c_void) {
+    // SAFETY: userdata 는 `on_write_pty` 와 같다.
+    let events = unsafe { &mut *(userdata as *mut VtEvents) };
+    events.cwd.push(CwdEvent::Reset);
+    events.title_changed = true;
+}
+
+/// `DATA_TITLE`·`DATA_PWD` 처럼 `GhosttyString` 을 빌려주는 값을 복사한다. 값이 없으면 비어 있다.
+///
+/// SAFETY: `raw` 는 살아 있는 터미널이고, 그 터미널을 바꾸는 호출과 겹치지 않아야 한다.
+unsafe fn get_string(raw: ffi::GhosttyTerminal, data: i32) -> Vec<u8> {
+    let mut s = ffi::GhosttyString {
+        ptr: ptr::null(),
+        len: 0,
+    };
+    // SAFETY: 이 데이터의 출력 타입은 `GhosttyString*` 이고, 빌린 문자열은 다음 변경 호출까지 유효하다.
+    let rc = unsafe { ffi::ghostty_terminal_get(raw, data, &mut s as *mut _ as *mut c_void) };
+    if rc != ffi::GHOSTTY_SUCCESS || s.ptr.is_null() {
+        return Vec::new();
+    }
+    unsafe { std::slice::from_raw_parts(s.ptr, s.len) }.to_vec()
+}
+
 // SAFETY: 헤더가 요구하는 건 접근 직렬화뿐이고(스레드 affinity 없음) 기본 할당자는 다른 스레드의
 // free 를 허용한다. 직렬화는 `Sync` 를 구현하지 않는 것으로 맡긴다.
 unsafe impl Send for VtTerminal {}
@@ -160,6 +234,18 @@ impl VtTerminal {
                 on_program_status as ffi::GhosttyTerminalProgramStatusFn as *const c_void,
             ),
             (
+                ffi::GHOSTTY_TERMINAL_OPT_TITLE_CHANGED,
+                on_title_changed as ffi::GhosttyTerminalNotifyFn as *const c_void,
+            ),
+            (
+                ffi::GHOSTTY_TERMINAL_OPT_PWD_CHANGED,
+                on_pwd_changed as ffi::GhosttyTerminalNotifyFn as *const c_void,
+            ),
+            (
+                ffi::GHOSTTY_TERMINAL_OPT_RESET,
+                on_reset as ffi::GhosttyTerminalNotifyFn as *const c_void,
+            ),
+            (
                 ffi::GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES,
                 &SCROLLBACK_MAX_BYTES as *const usize as *const c_void,
             ),
@@ -168,7 +254,7 @@ impl VtTerminal {
                 &CONTINUATION_MAX_BYTES as *const usize as *const c_void,
             ),
         ] {
-            // SAFETY: 앞 셋의 입력은 포인터 값 그대로(userdata 와 콜백 함수)이고 뒤 둘은 `size_t*`
+            // SAFETY: 앞 여섯의 입력은 포인터 값 그대로(userdata 와 콜백 함수)이고 뒤 둘은 `size_t*`
             // 로 호출 동안만 읽힌다. userdata 가 가리키는 Box 는 `t` 와 같이 살고 터미널이 먼저
             // 해제된다.
             let rc = unsafe { ffi::ghostty_terminal_set(t.raw, opt, value) };
@@ -296,6 +382,13 @@ impl VtTerminal {
 
     pub fn take_events(&mut self) -> VtEvents {
         std::mem::take(&mut *self.events)
+    }
+
+    /// OSC 0/2 로 받은 제목. 받은 적이 없거나 비었거나 RIS 로 지워졌으면 None 이다.
+    pub fn title(&self) -> Option<String> {
+        // SAFETY: `&self` 동안 다른 쓰기가 없다.
+        let title = unsafe { get_string(self.raw, ffi::GHOSTTY_TERMINAL_DATA_TITLE) };
+        (!title.is_empty()).then(|| String::from_utf8_lossy(&title).into_owned())
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {
@@ -696,6 +789,71 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(true, "build"), (true, "")]
         );
+    }
+
+    #[test]
+    fn osc7_reports_and_a_full_reset_are_queued_in_order() {
+        let mut t = term();
+        t.write(b"\x1b]7;file:///a\x07\x1b]7;\x07\x1bc\x1b]7;file://h/b\x1b\\");
+        let ev = t.take_events();
+        assert_eq!(
+            ev.cwd,
+            vec![
+                CwdEvent::Report(b"file:///a".to_vec()),
+                CwdEvent::Report(Vec::new()),
+                CwdEvent::Reset,
+                CwdEvent::Report(b"file://h/b".to_vec()),
+            ]
+        );
+        assert!(ev.title_changed, "RIS 는 제목을 지운다");
+    }
+
+    #[test]
+    fn the_title_follows_osc_0_and_2_and_a_full_reset_clears_it() {
+        let mut t = term();
+        assert_eq!(t.title(), None);
+        t.write(b"\x1b]2;one\x07");
+        assert!(t.take_events().title_changed);
+        assert_eq!(t.title().as_deref(), Some("one"));
+        t.write("\x1b]0;둘\x1b\\".as_bytes());
+        assert_eq!(t.title().as_deref(), Some("둘"));
+        t.write(b"\x1b]2;\x07");
+        assert_eq!(t.title(), None);
+        t.write(b"\x1b]2;again\x07");
+        t.take_events();
+        t.write(b"\x1bc");
+        assert!(t.take_events().title_changed);
+        assert_eq!(t.title(), None);
+    }
+
+    #[test]
+    fn osc7_paths_are_taken_only_without_a_host() {
+        assert_eq!(osc7_path(b"file:///home/a").as_deref(), Some("/home/a"));
+        assert_eq!(
+            osc7_path(b"file:///tmp/a%20b/%ED%95%9C").as_deref(),
+            Some("/tmp/a b/한")
+        );
+        assert_eq!(
+            osc7_path("file:///raw/한".as_bytes()).as_deref(),
+            Some("/raw/한")
+        );
+        for rejected in [
+            &b"file://host/home/a"[..],
+            b"file://",
+            b"/home/a",
+            b"http:///a",
+            b"file:///a%2",
+            b"file:///a%zz",
+            b"file:///a%+1",
+            b"file:///a%ff",
+        ] {
+            assert_eq!(
+                osc7_path(rejected),
+                None,
+                "{:?}",
+                String::from_utf8_lossy(rejected)
+            );
+        }
     }
 
     #[test]

@@ -1,12 +1,12 @@
-import type { DeepReadonly } from 'vue'
-import type { MateRow } from '../../../shared/pane'
-import type { ProgramStatusRecord } from '../../../shared/program-status'
-import { CLAUDE_APP } from '../program-status/store'
-import { cellLabel, windowTitle, workspaceName } from './cwd'
-import { focusedPane, startDirOf, type Workspace } from './store'
+import { cellLabel, focusedPane, startDirOf, windowTitle, workspaceName, type Named } from './names'
+import type { MateRow } from './pane'
+import { CLAUDE_APP, type ProgramStatusRecord } from './program-status'
+
+type MatePane = Named & { key: number; ptyId: string; startDir?: string }
+type MateCell = { panes: readonly MatePane[]; focused: number }
 
 export function mateRows(
-  workspaces: DeepReadonly<Workspace[]>,
+  workspaces: readonly { cells: readonly MateCell[] }[],
   root: (pty: string) => ProgramStatusRecord | undefined
 ): MateRow[] {
   const rows: MateRow[] = []

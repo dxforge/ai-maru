@@ -34,7 +34,4 @@ export type MateRow = {
 
 /** `no_space` 는 나눌 자리가 없어 거절한 것이다(docs/architecture.md 의 "pane 경계와 글자 칸 격자"). */
 export type PaneReply =
-  | { pty: string }
-  | { mates: MateRow[] }
-  | { error: 'no_pane' | 'no_space' | 'open_failed'; message: string }
-  | null
+  { pty: string } | { error: 'no_pane' | 'no_space' | 'open_failed'; message: string } | null

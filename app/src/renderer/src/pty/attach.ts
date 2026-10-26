@@ -8,10 +8,11 @@ export type AttachHandlers = {
   /** 되살린 pane 이 붙으면 `cwd` 가 없다. */
   onSpawned(id: string, cwd: string | undefined): void
   onOpenFailed(message: string): void
-  /** pty 의 OSC 7501 레코드 전체. 붙을 때와 바뀔 때마다 온다. */
+  /**
+   * pty 의 OSC 7501 레코드 전체. 상태 구독을 모르는 이전 maru-pty 만 attach 스트림으로 보낸다 — 붙을 때와 바뀔 때마다
+   * 온다. 지금의 maru-pty 는 상태를 main 의 구독으로만 보낸다.
+   */
   onProgramStatus(records: ProgramStatusRecord[]): void
-  /** 레코드가 있는 동안 foreground 의 cwd 가 바뀌었다. resync 뒤에도 온다 — 밀린 동안 버려진 알림이 있을 수 있기 때문이다. */
-  onForeground(): void
 }
 
 export type Attachment = {
@@ -53,8 +54,6 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
         break
       case 'resync':
         if (!primary) term.resize(m.cols, m.rows)
-        // 밀린 동안 버려진 `foreground` 는 다시 오지 않으므로 한 번 다시 읽게 한다.
-        handlers.onForeground()
         break
       case 'size':
         term.resize(m.cols, m.rows)
@@ -74,9 +73,6 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
         if (records) handlers.onProgramStatus(records)
         break
       }
-      case 'foreground':
-        handlers.onForeground()
-        break
       case 'exit':
         ended = true
         handlers.onExit()

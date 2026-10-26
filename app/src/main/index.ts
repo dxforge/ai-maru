@@ -51,17 +51,18 @@ import {
   QUIT_TIMEOUT_MS,
   readRecord,
   runDir,
-  sameDirAs,
   ptyLive,
   spawnPty,
   startDir,
+  subscribeState,
   utf8Locale,
   waitPtyExit,
   writePtyInput,
   type CliAccess
 } from './pty'
-import type { KillRequest, OpenRequest, QuitRequest } from './pty-host'
+import type { HostEvent, KillRequest, OpenRequest, QuitRequest } from './pty-host'
 import { createPtyCells } from './pty-cells'
+import { createPtyStates } from './pty-state'
 import {
   readWindowExtras,
   readWindowState,
@@ -69,6 +70,7 @@ import {
   saveWindowStateOnClose,
   windowBounds
 } from './window-state'
+import { mateRows } from '../shared/mates'
 import type { CloseAnswer, PaneReply } from '../shared/pane'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import {
@@ -137,6 +139,13 @@ function mainWindow(): BrowserWindow | undefined {
 }
 
 const ptyCells = createPtyCells()
+
+// main 은 renderer 가 붙어 있든 아니든 pty 마다 상태 구독을 열어 마지막 상태를 든다(docs/architecture.md 의 "pty 상태는 main 이 구독해 든다").
+const ptyStates = createPtyStates({
+  subscribe: (id, on) => subscribeState(ptyDir(), id, on),
+  isLive: (id) => ptyLive(ptyDir(), id),
+  emit: (pty, entry) => sendToWindows('pty:state', pty, entry)
+})
 
 const panes = createPanes(
   (channel, id, arg) => {
@@ -331,6 +340,11 @@ function confirmQuit(): void {
 
 const cliHandlers: Handlers = {
   ping: (_params, pty) => ({ pty }),
+  'mate.list': () => {
+    const screen = parseScreen(lastScreen)
+    if (!screen) throw new Error('the window has not reported its layout yet')
+    return { mates: mateRows(screen.workspaces, ptyStates.root) }
+  },
   'canvas.put': canvasPut(mainWindow),
   ...monitor.handlers,
   ...inbox,
@@ -414,6 +428,9 @@ function ptyHost(): UtilityProcess {
       serviceName: 'maru-pty-host',
       env: hostEnv()
     })
+    proc.on('message', (msg: HostEvent) => {
+      if (msg?.type === 'live' && isPtyId(msg.id)) ptyStates.watch(msg.id)
+    })
     proc.once('exit', () => {
       host = null
       // 포트의 반대쪽이 사라져도 renderer 의 MessagePort 는 알려 주지 않는다.
@@ -450,10 +467,11 @@ function start(): void {
   const userData = app.getPath('userData')
   const restored = takeRestart(restartFile(userData))
   // 재시작으로 뜨지 않았으면 앱이 비정상으로 끝나 남은 pty 다. 새 pty 는 그 정리가 끝난 뒤에 띄운다.
-  const leftovers = restored.then((r) => {
+  const leftovers = restored.then(async (r) => {
     const keep = screenPtys(r?.screen ?? null)
     for (const j of r?.jobs?.jobs ?? []) keep.add(j.pty)
-    return killPtys(ptyDir(), undefined, keep)
+    await killPtys(ptyDir(), undefined, keep)
+    for (const id of keep) ptyStates.watch(id)
   })
   let toRestore: Promise<ScreenState | null> | null = restored.then((r) => r?.screen ?? null)
   ipcMain.handle('screen:restore', () => {
@@ -501,12 +519,13 @@ function start(): void {
     spawn: async (id, cwd, command) => {
       await ready
       if (quitting) throw new Error('AI Maru is quitting')
-      const spawned = startDir(cwd).then((dir) =>
-        spawnPty(ptyBin(), ptyDir(), setup, id, dir, command, {
+      const spawned = startDir(cwd).then(async (dir) => {
+        const state = await spawnPty(ptyBin(), ptyDir(), setup, id, dir, command, {
           keep: true,
           env: jobEnv
         })
-      )
+        if (state === 'live') ptyStates.watch(id)
+      })
       const settled = spawned.then(
         () => {},
         () => {}
@@ -536,12 +555,7 @@ function start(): void {
   ipcMain.handle('git:head', (_event, cwd: unknown) =>
     typeof cwd === 'string' ? gitHead(cwd) : null
   )
-  const readForeground = (id: string): Promise<string | null> => foregroundCwd(ptyDir(), id)
-  ipcMain.handle('pty:foreground', async (_event, pty: unknown, cwd: unknown) => {
-    if (typeof pty !== 'string') return null
-    const dir = await readForeground(pty)
-    return dir !== null && typeof cwd === 'string' ? sameDirAs(dir, cwd) : dir
-  })
+  ipcMain.handle('pty:states', () => ptyStates.entries())
   ipcMain.handle('link:open', (_event, text: unknown, pty: unknown) => {
     if (typeof text !== 'string' || typeof pty !== 'string') {
       return { ok: false, reason: 'not a link' }
@@ -550,7 +564,7 @@ function start(): void {
       openExternal: (url) => shell.openExternal(url),
       openPath: (path) => shell.openPath(path),
       putCanvas: (doc) => putCanvas(mainWindow, doc),
-      foregroundCwd: readForeground
+      foregroundCwd: (id) => foregroundCwd(ptyDir(), id)
     })
   })
   ipcMain.on('window:path', (event, path: unknown) => {
@@ -563,6 +577,7 @@ function start(): void {
     if (!closed) return
     // cell 의 마지막 pane 을 지우면 renderer 가 cell 도 지운다(docs/architecture.md).
     if (closed.closed) void jobTable.closeCell(closed.closed)
+    ptyStates.forget(closed.pty)
     const req: KillRequest = { type: 'kill', id: closed.pty, dir: ptyDir() }
     void ready.then(() => ptyHost().postMessage(req))
   }

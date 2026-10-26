@@ -16,6 +16,7 @@ vi.mock('./bridge', () => ({ bridge: () => {} }))
 
 type Listener = (e: { data: unknown; ports: MessagePortMain[] }) => void
 let send: Listener
+let toMain: unknown[]
 
 function fakePort(): MessagePortMain & { messages: unknown[] } {
   const messages: unknown[] = []
@@ -66,13 +67,33 @@ beforeEach(async () => {
   vi.resetModules()
   vi.clearAllMocks()
   pty.killPty.mockResolvedValue(undefined)
+  toMain = []
   Object.assign(process, {
-    parentPort: { on: (_event: string, fn: Listener) => (send = fn) }
+    parentPort: {
+      on: (_event: string, fn: Listener) => (send = fn),
+      postMessage: (msg: unknown) => toMain.push(msg)
+    }
   })
   await import('./pty-host')
 })
 
 describe('pty host', () => {
+  it('띄운 pty 에 붙으면 main 에 live 를 알리고, 붙지 못했거나 다시 붙은 pty 는 알리지 않는다', async () => {
+    pty.spawnPty.mockResolvedValue('live')
+    pty.connect.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('refused'))
+    const port = open('p-00000001')
+    await vi.waitFor(() =>
+      expect(port.messages).toContainEqual(expect.objectContaining({ type: 'spawned' }))
+    )
+    expect(toMain).toEqual([{ type: 'live', id: 'p-00000001' }])
+    const failed = open('p-00000002')
+    await vi.waitFor(() => expect(failed.messages).toContain(null))
+    pty.connect.mockResolvedValueOnce({})
+    const again = open('p-00000003', true)
+    await vi.waitFor(() => expect(again.messages).toHaveLength(1))
+    expect(toMain).toEqual([{ type: 'live', id: 'p-00000001' }])
+  })
+
   it('띄웠는데 붙지 못한 pty 는 pane 에 끝났다고 알리고 끈다', async () => {
     pty.spawnPty.mockResolvedValue('live')
     pty.connect.mockRejectedValue(new Error('refused'))
