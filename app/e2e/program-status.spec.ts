@@ -334,7 +334,7 @@ test('사이드바·pane 헤더·cell 헤더의 상태 원은 셸의 터미널 �
 
   const sameHeight = async (icon: Locator, a: number, b: number) => {
     const em = await icon.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
-    // 0.15em 은 viewBox 가 `0 0 16 16` 인 원(차이 0.19em 이상)은 걸러 내고 지금 원(차이 0.11em 이하)은 통과시킨다. 두 값은 DPR 1·2, 글꼴 9~14px 에서 쟀다.
+    // 0.15em 은 viewBox 가 `0 0 16 16` 인 원(차이 0.18em 이상)은 걸러 내고 지금 원(차이 0.11em 이하)은 통과시킨다. 두 값은 DPR 1·2, 글꼴 9~14px 에서 쟀다.
     expect(Math.abs(a - b)).toBeLessThanOrEqual(em * 0.15)
   }
 
