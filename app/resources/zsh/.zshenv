@@ -53,23 +53,34 @@ _maru_osc133_init() {
 # libghostty-vt 는 2048 바이트를 넘는 OSC 133 을 통째로 버린다. 한 글자는 %XX 로 인코딩하면 12 바이트까지 되므로 앞 169 글자만 싣는다.
 _maru_osc133_preexec() {
   emulate -L zsh
-  local -a words=(${(z)1})
   # exec 로 바뀐 프로그램은 이 훅이 없어 D·A 를 보내지 않으므로, C 를 보내면 pane 이 끝까지 도는 중으로 남는다.
-  _maru_osc133_execs "${words[@]}" && return
+  # `$1` 은 친 그대로라 alias 가 exec 로 확장되는 것을 놓치므로, alias 를 확장한 `$3` 으로 본다.
+  _maru_osc133_execs ${(z)3} && return
   local REPLY cmd=$1
-  _maru_osc133_job $words && cmd=$REPLY
+  _maru_osc133_job ${(z)1} && cmd=$REPLY
   _maru_pct ${cmd[1,169]}
   { print -nu $_maru_tty "\e]133;C;cmdline_url=$REPLY\a" } 2> /dev/null
   _maru_ran=1
 }
 
 # `${(z)}` 로 나눈 명령줄에서 명령 자리의 exec 가 리다이렉션 말고 명령을 받으면 참이다.
-# 리다이렉션만 받은 exec(`exec 2>file`)는 셸을 바꾸지 않는다. `(…)` 안의 exec 는 subshell 만 바꾸므로 보지 않는다.
+# 리다이렉션만 받은 exec(`exec 2>file`)는 셸을 바꾸지 않는다. 서브셸 `( … )` 안의 exec 는 서브셸만 바꾸고
+# 함수 정의 `name () { … }` 의 몸통은 지금 돌지 않으므로, 둘 다 닫힐 때까지 건너뛴다.
+# `$3` 은 `(`·`{` 뒤에 줄바꿈을 넣어 `;` 가 따로 한 토큰으로 나오므로, 건너뛰지 않으면 그 안의 exec 가 명령 자리로 잡힌다.
 _maru_osc133_execs() {
   emulate -L zsh -o extended_glob
-  local w
-  local -i at=1 inexec=0 target=0
+  local w open close
+  local -i at=1 inexec=0 target=0 depth=0 body=0
   for w in "$@"; do
+    if (( depth )); then
+      [[ $w == "$open" ]] && (( depth++ ))
+      [[ $w == "$close" ]] && (( --depth == 0 )) && at=1
+      continue
+    fi
+    if (( body )) && [[ $w == \{ ]]; then
+      body=0 open=\{ close=\} depth=1
+      continue
+    fi
     if (( target )); then
       target=0
       continue
@@ -77,16 +88,21 @@ _maru_osc133_execs() {
     if [[ $w == (\;|\&\&|\|\||\||\|\&|\&|\&\||\&\!) ]]; then
       at=1 inexec=0
     elif (( inexec )); then
-      # `2>`·`>&`·`&>`·`<<<` 같은 연산자 다음 낱말은 그 대상이다. `{fd}>file` 의 `{fd}` 는 따로 나뉜다.
+      # `2>`·`>&`·`&>`·`<<<` 같은 리다이렉션 연산자 다음 토큰은 그 대상이다. `${(z)}` 는 `{fd}>file` 의 `{fd}` 를 따로 나눈다.
       if [[ $w == (<->|)(\<|\>|\&\>)* ]]; then
         target=1
       elif [[ $w != \{[[:IDENT:]]##\} ]]; then
         return 0
       fi
+    elif [[ $w == '()' ]]; then
+      # 이름 없는 `() { … }` 는 몸통을 바로 돌린다.
+      (( at )) || body=1
     elif (( at )); then
       case $w in
         (exec) inexec=1 ;;
-        (\{|\!|if|then|else|elif|do|while|until|time|[[:IDENT:]]##=*) ;;
+        (\() open=\( close=\) depth=1 ;;
+        # `builtin`·`noglob`·`-` 뒤의 exec 도 셸을 바꾼다. `command exec` 는 exec 라는 외부 명령을 찾는다.
+        (\{|\!|if|then|else|elif|do|while|until|time|builtin|noglob|-|[[:IDENT:]]##=*) ;;
         (*) at=0 ;;
       esac
     fi
@@ -94,7 +110,7 @@ _maru_osc133_execs() {
   return 1
 }
 
-# `fg`·`fg %spec`·`%spec` 로 다시 이은 job 이면 그 job 의 명령을 REPLY 에 넣는다.
+# `fg`·`fg %spec`·`%spec` 로 재개한 job 이면 그 job 의 명령을 REPLY 에 넣는다.
 _maru_osc133_job() {
   emulate -L zsh
   local spec n m

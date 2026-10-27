@@ -314,9 +314,24 @@ describe.skipIf(!existsSync(ZSH) || !existsSync(EXPECT))('앱의 .zshenv 의 OSC
     'false || exec zsh',
     'FOO=1 exec zsh',
     '{ exec zsh }',
-    'if true; then exec zsh; fi'
+    'if true; then exec zsh; fi',
+    'case x in (x) exec zsh ;; esac',
+    'builtin exec zsh',
+    'noglob exec zsh',
+    '- exec zsh',
+    '() { exec zsh }'
   ])('명령 자리의 exec 가 명령을 받는 %s 에는 C 를 보내지 않는다', (command) => {
     expect(marks(ttyPrompt({}, [command]))).toEqual(['A'])
+  })
+
+  it('alias 가 펴져 exec 가 되면 C 를 보내지 않고, 명령 텍스트는 친 그대로 싣는다', () => {
+    const zshrc = "alias reload='exec zsh' again=reload greet='print hi'"
+    expect(marks(ttyPrompt({ '.zshrc': zshrc }, ['greet', 'again']))).toEqual([
+      'A',
+      'C;cmdline_url=greet',
+      'D;0',
+      'A'
+    ])
   })
 
   it('앞 명령 뒤의 exec 가 명령을 받으면 그 줄에는 C 를 보내지 않는다', () => {
@@ -329,8 +344,15 @@ describe.skipIf(!existsSync(ZSH) || !existsSync(EXPECT))('앱의 .zshenv 의 OSC
     ])
   })
 
-  it('리다이렉션만 받은 exec 와 명령 자리가 아닌 exec 에는 C 와 D 를 보낸다', () => {
-    const commands = ['exec 2>err', 'exec {fd}>out 3<&-', 'print exec zsh']
+  it('리다이렉션만 받은 exec, 명령 자리가 아닌 exec, 서브셸과 함수 정의 안의 exec 에는 C 와 D 를 보낸다', () => {
+    const commands = [
+      'exec 2>err',
+      'exec {fd}>out 3<&-',
+      'print exec zsh',
+      '( true; exec true )',
+      'f() { true; exec zsh }',
+      'function g { { exec zsh } }; print done'
+    ]
     expect(marks(ttyPrompt({}, commands))).toEqual([
       'A',
       ...commands.flatMap((c) => [startOf(c), 'D;0', 'A']),
