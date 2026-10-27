@@ -33,7 +33,6 @@ _maru_osc7() {
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _maru_osc7
 
-# 명령의 시작(C)·끝(D)과 프롬프트(A)를 OSC 133 으로 알린다. 방식은 ghostty 의 zsh 셸 통합을 따랐다.
 # claude 의 Bash 도구가 띄운 셸(CLAUDECODE)은 바깥 pane 의 tty 를 물려받으므로 알리지 않는다.
 # stdout 은 리다이렉트될 수 있어 tty 에 쓴다. 자식에게 새지 않게 cloexec 로 연다.
 if [[ -o interactive && -z $CLAUDECODE ]]; then
