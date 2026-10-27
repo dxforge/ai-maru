@@ -3,6 +3,7 @@ import {
   activeTerminal,
   clickMenu,
   expect,
+  expectRowsChangeOnce,
   newWorkspace,
   openPalette,
   restartWith,
@@ -54,6 +55,19 @@ test('Increase·Decrease·Reset Font Size 는 선택한 cell 의 모든 pane 만
   await reset(app)
   await expect.poll(() => fontSizes(page)).toEqual([['14px'], ['14px', '14px']])
   await expect.poll(() => shellSize(page)).toEqual(before)
+})
+
+test('Reset Font Size 로 cell 의 글꼴을 되돌려도 터미널 행 수가 중간 값 없이 한 번에 바뀐다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  const bigger = async () => {
+    for (let i = 0; i < 4; i++) await increase(app)
+    await expect.poll(() => fontSizes(page)).toEqual([['18px']])
+  }
+  await bigger()
+  await expectRowsChangeOnce(launched, () => reset(app), bigger)
 })
 
 test('설정 파일의 font-size 와 같은 8–32 를 넘지 않고, Reset 은 설정 파일의 크기로 돌아간다', async ({

@@ -538,6 +538,49 @@ export async function resizeBy(app: ElectronApplication, dw: number, dh: number)
   )
 }
 
+/**
+ * `change` 로 글자 칸 높이가 바뀔 때 보이는 터미널의 행 수가 중간 값 없이 한 번에 바뀌는지 잰다. cell 헤더 높이도
+ * 글자 칸 높이라, 헤더가 바뀌기 전의 영역에 맞춘 행 수와 바뀐 뒤의 행 수가 갈리는 높이로 창을 먼저 맞춘다.
+ */
+export async function expectRowsChangeOnce(
+  { app, page }: Launched,
+  change: () => Promise<void>,
+  revert: () => Promise<void>
+): Promise<void> {
+  const rowHeight = () =>
+    rows(page).evaluate((r) => r.firstElementChild!.getBoundingClientRect().height)
+  const panesHeight = () =>
+    rows(page).evaluate((r) => r.closest('.panes')!.getBoundingClientRect().height)
+  const before = await rowHeight()
+  await change()
+  await expect.poll(rowHeight).not.toBe(before)
+  const after = await rowHeight()
+  await revert()
+  await expect.poll(rowHeight).toBe(before)
+
+  // `App.vue` 의 `bodyHeight` 대로면 영역 높이 h 에 floor(h / 행 높이 - 1) 행이 들어간다.
+  const height = await panesHeight()
+  const base = Math.floor(height / after) * after
+  const target = Math.ceil(after > before ? base + before : base)
+  await resizeBy(app, 0, target - height)
+  await expect.poll(panesHeight).toBe(target)
+  await shellSize(page)
+
+  await rows(page).evaluate((r) => {
+    const counts = [r.childElementCount]
+    Object.assign(window, { rowCounts: counts })
+    new MutationObserver(() => {
+      if (counts.at(-1) !== r.childElementCount) counts.push(r.childElementCount)
+    }).observe(r, { childList: true })
+  })
+  await change()
+  await expect.poll(rowHeight).toBe(after)
+  const shell = await shellSize(page)
+  expect(Math.floor((target - before) / after - 1)).not.toBe(shell.rows)
+  const counts = await page.evaluate(() => (window as unknown as { rowCounts: number[] }).rowCounts)
+  expect(counts.slice(1)).toEqual([shell.rows])
+}
+
 export async function resizeGridTo(
   app: ElectronApplication,
   page: Page,

@@ -388,16 +388,22 @@ function gridVars(cell: Size, font: TerminalFont) {
 const sameSize = (a: Size | undefined, b: Size): boolean =>
   a?.width === b.width && a.height === b.height
 
-/** cell 마다 pane 이 놓이는 영역의 크기. CSS 가 정하는 헤더·여백을 JS 에서 다시 계산하지 않게 잰다. */
-const gridSizes = reactive(new Map<number, Size>())
-const gridEls = new Map<number, Element>()
-const gridKeys = new WeakMap<Element, number>()
+/** cell 마다 `.panes` 의 크기. CSS 가 정하는 여백을 JS 에서 다시 계산하지 않게 잰다. */
+const panesSizes = reactive(new Map<number, Size>())
+// pane 이 놓이는 영역은 `.panes` 에서 cell 헤더(높이 `--row`)를 뺀 것이다. 영역을 직접 재면 줄 높이가 바뀐 첫 렌더는
+// 헤더만 새 높이이고 잰 영역은 옛 높이라, pane 이 한 프레임 동안 옛 영역에 맞춰 놓여 프로그램에 resize 가 두 번 간다.
+function gridOf(key: number, cell: Size): Size | undefined {
+  const s = panesSizes.get(key)
+  return s && { width: s.width, height: Math.max(0, s.height - rowOf(cell)) }
+}
+const panesEls = new Map<number, Element>()
+const panesKeys = new WeakMap<Element, number>()
 // 사이드바·Canvas 폭이 transition 으로 바뀌는 동안 pane 크기를 다시 재면 터미널이 프레임마다 맞춰져 PTY 크기가
 // 여러 번 바뀐다. 그동안은 재지 않고, 끝난 뒤 다시 잰다.
 const panels = (): Element[] => [side.value, canvasPanel.value?.panel].filter((el) => !!el)
 // `transitionrun` 은 transition 이 생긴 다음 프레임에 온다. 그래서 그것으로 움직임을 알면, 그 전 프레임의 크기로 터미널을
 // 한 번 더 맞춘다. Canvas 를 닫을 때 다시 여는 띠가 바로 자리를 잡는 프레임이 그렇다. transition 은 스타일을 계산할 때
-// 생기므로, `gridObserver` 콜백이 돌 때는 `getAnimations()` 에 이미 있다.
+// 생기므로, `panesObserver` 콜백이 돌 때는 `getAnimations()` 에 이미 있다.
 // 폭이 아닌 transition 은 보지 않는다. Canvas 가 닫힐 때의 visibility 는 늘 180ms 를 다 채워, 되돌아가느라 일찍 끝난
 // 폭의 `transitionend` 를 놓치게 한다.
 const PANEL_SIZES = ['width', 'flex-basis']
@@ -412,32 +418,32 @@ const panelsMoving = (): boolean =>
           PANEL_SIZES.includes(a.transitionProperty)
       )
   )
-const gridObserver = new ResizeObserver((entries) => {
+const panesObserver = new ResizeObserver((entries) => {
   if (panelsMoving()) return
   for (const {
     target,
     contentRect: { width, height }
   } of entries) {
-    const key = gridKeys.get(target)
+    const key = panesKeys.get(target)
     if (key === undefined) continue
-    const old = gridSizes.get(key)
-    if (!sameSize(old, { width, height })) gridSizes.set(key, { width, height })
+    const old = panesSizes.get(key)
+    if (!sameSize(old, { width, height })) panesSizes.set(key, { width, height })
   }
 })
-function observeGrid(key: number, el: unknown): void {
-  const old = gridEls.get(key)
+function observePanes(key: number, el: unknown): void {
+  const old = panesEls.get(key)
   if (old === el) return
-  if (old) gridObserver.unobserve(old)
+  if (old) panesObserver.unobserve(old)
   if (el instanceof Element) {
-    gridEls.set(key, el)
-    gridKeys.set(el, key)
-    gridObserver.observe(el)
+    panesEls.set(key, el)
+    panesKeys.set(el, key)
+    panesObserver.observe(el)
   } else {
-    gridEls.delete(key)
-    gridSizes.delete(key)
+    panesEls.delete(key)
+    panesSizes.delete(key)
   }
 }
-onBeforeUnmount(() => gridObserver.disconnect())
+onBeforeUnmount(() => panesObserver.disconnect())
 
 function panelTransition(e: TransitionEvent): void {
   if (!PANEL_SIZES.includes(e.propertyName)) return
@@ -445,9 +451,9 @@ function panelTransition(e: TransitionEvent): void {
   // 움직이는 도중에 다시 토글하면 `transitioncancel` 이 오지만, 그때는 이미 반대로 가는 transition 이 돌고 있다.
   if (panelsMoving()) return
   // 다시 observe 하면 지금 크기로 콜백이 한 번 온다.
-  for (const el of gridEls.values()) {
-    gridObserver.unobserve(el)
-    gridObserver.observe(el)
+  for (const el of panesEls.values()) {
+    panesObserver.unobserve(el)
+    panesObserver.observe(el)
   }
 }
 
@@ -515,9 +521,10 @@ function areaOf(layout: Layout, paneCols: number, cell: Size, measured: Size): S
 
 function roomFor(from: number, direction: SplitDirection, full: boolean): boolean {
   const c = workspaces.owner(from)
-  const measured = c && gridSizes.get(c.key)
-  if (!c || !measured) return true
+  if (!c) return true
   const cell = cellOf(fontOf(c))
+  const measured = gridOf(c.key, cell)
+  if (!measured) return true
   const next = full ? splitRoot(c.layout, -1, direction) : splitPane(c.layout, from, -1, direction)
   const area = (layout: Layout): Size => areaOf(layout, paneColsOf(c), cell, measured)
   return canSplit(c.layout, area(c.layout), next, area(next), paneMin(cell))
@@ -540,9 +547,9 @@ function splitSelected(direction: SplitDirection): void {
 const views = computed(() =>
   workspaces.cells().map((c) => {
     const selected = c.key === workspaces.selectedKey.value
-    const measured = gridSizes.get(c.key)
     const font = fontOf(c)
     const cell = cellOf(font)
+    const measured = gridOf(c.key, cell)
     const paneCols = paneColsOf(c)
     const width = columnsWidthOf(c.layout, paneCols, cell)
     const places = placements(
@@ -768,6 +775,7 @@ void window.maru.restoreScreen().then((s) => {
       <div
         v-for="{ c, selected, width, font, vars, panes } in views"
         :key="c.key"
+        :ref="(el) => observePanes(c.key, el)"
         class="panes"
         :class="{ selected }"
         :style="{ width, ...vars }"
@@ -785,7 +793,7 @@ void window.maru.restoreScreen().then((s) => {
             labels.get(c.key)!.branch
           }}</span>
         </div>
-        <div :ref="(el) => observeGrid(c.key, el)" class="grid">
+        <div class="grid">
           <div
             v-for="{ p, active, style, body, edge } in panes"
             :key="p.key"

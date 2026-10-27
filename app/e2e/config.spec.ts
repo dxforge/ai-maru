@@ -6,6 +6,7 @@ import {
   clickMenu,
   configFile,
   expect,
+  expectRowsChangeOnce,
   newWorkspace,
   openCanvas,
   shellSize,
@@ -85,6 +86,47 @@ test('줄 높이만 바꿔도 셸이 본 행 수가 바뀐다', async ({ launch,
       return after.cols === before.cols && after.rows < before.rows
     })
     .toBe(true)
+})
+
+const settings = (dataDir: string, text: string) => async () => writeConfig(dataDir, text)
+
+test('columns 보기에서 줄 높이를 바꾸면 터미널 행 수가 중간 값 없이 한 번에 바뀐다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch()
+  await toggleView(launched, 'columns')
+  await expectRowsChangeOnce(
+    launched,
+    settings(dataDir, '[terminal]\nline-height = 2\n'),
+    settings(dataDir, '')
+  )
+})
+
+test('single 보기에서 글꼴 크기를 줄여도 터미널 행 수가 중간 값 없이 한 번에 바뀐다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch()
+  await expectRowsChangeOnce(
+    launched,
+    settings(dataDir, '[terminal]\nfont-size = 10\n'),
+    settings(dataDir, '')
+  )
+})
+
+test('cell 헤더가 위에 있어도 줄 높이를 바꾸면 터미널 행 수가 중간 값 없이 한 번에 바뀐다', async ({
+  launch,
+  dataDir
+}) => {
+  const top = '[layout]\nheader = "top"\n'
+  writeConfig(dataDir, top)
+  const launched = await launch()
+  await expectRowsChangeOnce(
+    launched,
+    settings(dataDir, `${top}[terminal]\nline-height = 2\n`),
+    settings(dataDir, top)
+  )
 })
 
 test('폴더가 있는 채로 띄운 뒤 파일을 고치면 적용한다', async ({ launch, dataDir }) => {
