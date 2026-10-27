@@ -1245,6 +1245,46 @@ fn cell_new_resolves_a_relative_cwd() {
     let sub = std::fs::canonicalize(tmp.path()).unwrap().join("sub");
     assert_eq!(req["params"]["cwd"], sub.to_str().unwrap());
     assert_eq!(req["params"]["command"], json!(["-x"]));
+    assert!(req["params"].get("after").is_none());
+    assert!(req["params"].get("before").is_none());
+}
+
+#[test]
+fn cell_new_sends_the_pty_to_place_the_cell_by() {
+    for (flag, other) in [("--after", "before"), ("--before", "after")] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+        let out = maru_in(
+            tmp.path(),
+            &sock,
+            &["cell", "new", flag, "p-0000000b", "echo", "--after"],
+        );
+        let req = server.join().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(req["params"][&flag[2..]], "p-0000000b");
+        assert!(req["params"].get(other).is_none());
+        assert_eq!(req["params"]["command"], json!(["echo", "--after"]));
+    }
+}
+
+#[test]
+fn cell_new_refuses_after_and_before_together_without_calling_the_app() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let out = maru_in(
+        tmp.path(),
+        &sock,
+        &[
+            "cell",
+            "new",
+            "--after",
+            "p-0000000b",
+            "--before",
+            "p-0000000b",
+        ],
+    );
+    assert_fails_with(&out, "cannot be used with");
 }
 
 #[test]

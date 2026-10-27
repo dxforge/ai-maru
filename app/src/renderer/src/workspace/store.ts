@@ -51,6 +51,8 @@ export type Workspace = Omit<ScreenWorkspace, 'cells'> & { cells: Cell[] }
 
 export { focusedPane, startDirOf }
 
+export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
+
 /** pty 상태 저장소(`pty/states.ts`)에서 store 가 읽는 것. */
 export type PaneSource = {
   get(ptyId: string): PtyState | undefined
@@ -110,31 +112,26 @@ export function createWorkspaces(
     selectedKey.value = c.key
   }
 
-  /**
-   * id 가 `from` 인 cell 의 workspace 에서, 그 cell 뒤에 그 cell 이 앞서 띄운 것들(그것들이 띄운 것 포함)을 지나
-   * cell 을 넣는다. 그 cell 이 없으면 새 workspace 를 목록 끝에 만들어 넣는다. 선택과 포커스는 바꾸지 않고,
-   * 새 pane 의 key 를 돌려준다.
-   */
   function openCellFrom(
     from: string | undefined,
-    init: Pick<Pane, 'startDir' | 'command'>
-  ): number {
-    return insertCell(from, init).focused
-  }
-
-  function insertCell(from: string | undefined, init: Pick<Pane, 'startDir' | 'command'>): Cell {
-    const c = createCell(init)
+    init: Pick<Pane, 'startDir' | 'command'>,
+    place?: { cell: string; before: boolean }
+  ): number | PlaceError {
     const w = list.value.find((x) => x.cells.some((y) => y.id === from))
     if (!w) {
+      if (place) return 'no_caller'
+      const c = createCell(init)
       list.value.push(createWorkspace(c))
-      return c
+      return c.focused
     }
-    let at = w.cells.findIndex((x) => x.id === from)
-    // 띄운 것은 늘 부른 cell 바로 뒤에 이어 놓이므로, 묶음은 부른 cell 뒤에서 끊기지 않고 이어진다.
-    const caller = w.cells[at++].key
-    const group = new Set([caller])
-    while (at < w.cells.length && group.has(w.cells[at].openedBy!)) group.add(w.cells[at++].key)
-    c.openedBy = caller
+    const { cell, before } = place ?? { cell: from!, before: false }
+    const at = w.cells.findIndex((x) => x.id === cell)
+    if (at < 0) return cells().some((x) => x.id === cell) ? 'other_workspace' : 'no_cell'
+    return insertCell(w, before ? at : at + 1, init).focused
+  }
+
+  function insertCell(w: Workspace, at: number, init: Pick<Pane, 'startDir' | 'command'>): Cell {
+    const c = createCell(init)
     w.cells.splice(at, 0, c)
     return c
   }
@@ -142,7 +139,9 @@ export function createWorkspaces(
   function openCell(startDir?: string): void {
     const from = selected()
     if (!from) return open(startDir)
-    selectedKey.value = insertCell(from.id, { startDir }).key
+    const w = workspaceOf(from.key)!
+    const at = w.cells.findIndex((c) => c.key === from.key) + 1
+    selectedKey.value = insertCell(w, at, { startDir }).key
   }
 
   function step(by: 1 | -1): number | undefined {
@@ -153,17 +152,14 @@ export function createWorkspaces(
     return all[(i + by + n) % n].key
   }
 
-  // 닫힌 cell 이 띄운 것은 그것을 부른 cell 이 띄운 것으로 옮겨, 처음 부른 cell 뒤의 묶음에 남긴다. 닫힌 cell 은
-  // 재시작 때 저장되지 않으므로, 그것을 가리킨 채로 두면 재시작 뒤 묶음이 끊긴다.
   function close(key: number): void {
     const w = workspaceOf(key)
     if (!w) return
     const i = cells().findIndex((c) => c.key === key)
-    const closed = detach(
+    detach(
       w,
       w.cells.findIndex((c) => c.key === key)
     )
-    for (const c of w.cells) if (c.openedBy === key) c.openedBy = closed.openedBy
     if (selectedKey.value !== key) return
     const rest = cells()
     selectedKey.value = (rest[i] ?? rest[i - 1])?.key ?? null
@@ -172,7 +168,7 @@ export function createWorkspaces(
   /**
    * cell 을 `to.workspace` 의 `to.index` 번째 cell 앞(옮기기 전 목록의 자리)으로 옮긴다. `'new'` 면 그 cell 하나로 된
    * workspace 를 목록 끝에 둔다. cell 이 하나뿐인 workspace 면 새로 만들지 않고 그 workspace 를 id 그대로 끝으로 옮긴다.
-   * 선택·포커스와 `openedBy` 는 바꾸지 않는다. 마지막 cell 이 빠진 workspace 는 닫는다.
+   * 선택·포커스는 바꾸지 않는다. 마지막 cell 이 빠진 workspace 는 닫는다.
    */
   function moveCell(key: number, to: { workspace: number; index: number } | 'new'): void {
     const from = workspaceOf(key)

@@ -5,6 +5,8 @@ import { isPtyId } from './pty'
 /**
  * 재시작 전 앱이 쓰고 다시 뜬 앱이 읽으므로 두 앱의 빌드가 다를 수 있다. 다시 뜬 앱이 옛 모양을 읽지 못하게
  * 바꾸면 버전을 올린다 — 다시 뜬 앱은 모르는 버전을 되살리지 않는다. 없어도 되는 필드를 더할 때는 올리지 않는다.
+ * 그 필드는 해당 parse 함수에서도 옮긴다. `parseScreen` 은 아는 필드만 옮기고, 선택 필드는 빠뜨려도 타입 검사를
+ * 통과하기 때문이다.
  */
 export const SCREEN_VERSION = 3
 
@@ -28,11 +30,6 @@ export type ScreenCell = {
   panes: ScreenPane[]
   layout: Layout
   focused: number
-  /**
-   * `openCellFrom`·`openCell` 로 띄웠을 때 부른 cell 의 key 다. 부른 cell 이 닫히면 그것을 부른 cell 의 key 로
-   * 바뀌고, 부른 쪽이 모두 닫혔으면 없다.
-   */
-  openedBy?: number
   fontSize?: number
   /** columns 보기에서 늘어선 pane 하나가 받는 터미널 열 수. 없으면 설정 파일의 `layout.column-cols` 다. */
   paneCols?: number
@@ -72,68 +69,107 @@ type Obj = Record<string, unknown>
 
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isKey = (v: unknown): v is number => Number.isInteger(v)
-const optString = (v: unknown): boolean => v === undefined || typeof v === 'string'
-const optKey = (v: unknown): boolean => v === undefined || isKey(v)
-const optGit = (v: unknown): boolean =>
-  v === undefined || (isObj(v) && typeof v.repo === 'string' && optString(v.branch))
+const optString = (v: unknown): v is string | undefined => v === undefined || typeof v === 'string'
 
-function isLayout(v: unknown): v is Layout {
-  if (!isObj(v)) return false
-  if ('pane' in v) return isKey(v.pane)
-  return (v.split === 'right' || v.split === 'down') && isLayout(v.first) && isLayout(v.second)
+function compact<T extends object>(o: T): T {
+  for (const k of Object.keys(o) as (keyof T)[]) if (o[k] === undefined) delete o[k]
+  return o
 }
 
-function isPane(v: unknown): v is ScreenPane {
-  return (
-    isObj(v) &&
-    isKey(v.key) &&
-    isPtyId(v.ptyId) &&
-    optString(v.startDir) &&
-    optString(v.cwd) &&
-    optString(v.title) &&
-    optGit(v.git) &&
-    (v.command === undefined ||
-      (Array.isArray(v.command) && v.command.every((a) => typeof a === 'string')))
-  )
+function parseList<T>(v: unknown, parse: (x: unknown) => T | null, empty = false): T[] | null {
+  if (!Array.isArray(v) || (!empty && v.length === 0)) return null
+  const out = v.map(parse)
+  return out.every((x) => x !== null) ? (out as T[]) : null
 }
 
-function isCell(v: unknown): v is ScreenCell {
-  return (
-    isObj(v) &&
-    isKey(v.key) &&
-    typeof v.id === 'string' &&
-    Array.isArray(v.panes) &&
-    v.panes.length > 0 &&
-    v.panes.every(isPane) &&
-    isLayout(v.layout) &&
-    isKey(v.focused) &&
-    optKey(v.openedBy) &&
-    (v.fontSize === undefined || Number.isFinite(v.fontSize)) &&
-    (v.paneCols === undefined || (isKey(v.paneCols) && v.paneCols > 0))
-  )
+// 아래 parse 함수는 검사한 필드만 새 객체로 옮긴다. 받은 객체를 그대로 돌려주면 옛 빌드가 쓴 필드가 메모리에 남아 다음 저장에 다시 쓰인다.
+
+function parseLayout(v: unknown): Layout | null {
+  if (!isObj(v)) return null
+  if ('pane' in v) return isKey(v.pane) ? { pane: v.pane } : null
+  if (v.split !== 'right' && v.split !== 'down') return null
+  const first = parseLayout(v.first)
+  const second = parseLayout(v.second)
+  return first && second ? { split: v.split, first, second } : null
 }
 
-function isWorkspace(v: unknown): v is ScreenWorkspace {
-  return (
-    isObj(v) &&
-    isKey(v.key) &&
-    typeof v.id === 'string' &&
-    Array.isArray(v.cells) &&
-    v.cells.length > 0 &&
-    v.cells.every(isCell)
+function parseGit(v: unknown): GitHead | null {
+  if (
+    !isObj(v) ||
+    typeof v.repo !== 'string' ||
+    !optString(v.branch) ||
+    !optString(v.common) ||
+    !optString(v.sub)
   )
+    return null
+  return compact({ repo: v.repo, branch: v.branch, common: v.common, sub: v.sub })
+}
+
+function parsePane(v: unknown): ScreenPane | null {
+  if (
+    !isObj(v) ||
+    !isKey(v.key) ||
+    !isPtyId(v.ptyId) ||
+    !optString(v.startDir) ||
+    !optString(v.cwd) ||
+    !optString(v.title)
+  )
+    return null
+  const { command } = v
+  if (
+    command !== undefined &&
+    !(Array.isArray(command) && command.every((a): a is string => typeof a === 'string'))
+  )
+    return null
+  const git = v.git === undefined ? undefined : parseGit(v.git)
+  if (git === null) return null
+  return compact({
+    key: v.key,
+    ptyId: v.ptyId,
+    startDir: v.startDir,
+    command,
+    cwd: v.cwd,
+    title: v.title,
+    git
+  })
+}
+
+function parseCell(v: unknown): ScreenCell | null {
+  if (!isObj(v) || !isKey(v.key) || typeof v.id !== 'string' || !isKey(v.focused)) return null
+  const { fontSize, paneCols } = v
+  if (fontSize !== undefined && !(typeof fontSize === 'number' && Number.isFinite(fontSize)))
+    return null
+  if (paneCols !== undefined && !(isKey(paneCols) && paneCols > 0)) return null
+  const panes = parseList(v.panes, parsePane)
+  const layout = parseLayout(v.layout)
+  if (!panes || !layout) return null
+  return compact({ key: v.key, id: v.id, panes, layout, focused: v.focused, fontSize, paneCols })
+}
+
+function parseWorkspace(v: unknown): ScreenWorkspace | null {
+  if (!isObj(v) || !isKey(v.key) || typeof v.id !== 'string') return null
+  const cells = parseList(v.cells, parseCell)
+  return cells && { key: v.key, id: v.id, cells }
 }
 
 export function parseScreen(v: unknown): ScreenState | null {
   if (!isObj(v) || v.version !== SCREEN_VERSION) return null
-  const { workspaces, selected, sidebar } = v
-  if (!Array.isArray(workspaces) || !workspaces.every(isWorkspace)) return null
+  const { selected, sidebar } = v
+  const workspaces = parseList(v.workspaces, parseWorkspace, true)
+  if (!workspaces) return null
   if (selected !== null && !isKey(selected)) return null
   const prefs = parseViewPrefs(v)
   if (!prefs.viewMode || !prefs.sidebar) return null
   if (v.canvas !== undefined && !prefs.canvas) return null
   if (!isObj(sidebar) || !Array.isArray(sidebar.folded) || !sidebar.folded.every(isKey)) return null
-  return v as ScreenState
+  return compact<ScreenState>({
+    version: SCREEN_VERSION,
+    workspaces,
+    selected,
+    sidebar: { ...prefs.sidebar, folded: sidebar.folded },
+    viewMode: prefs.viewMode,
+    canvas: prefs.canvas
+  })
 }
 
 export function screenPanes(

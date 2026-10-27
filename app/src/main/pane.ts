@@ -79,7 +79,8 @@ export function createPanes(
   async function ask(channel: PaneChannel, arg: () => unknown): Promise<PaneReply> {
     const reply = await request(channel, arg)
     if (reply && 'error' in reply) {
-      if (reply.error === 'no_pane') throw new InvalidParams(reply.message)
+      if (reply.error === 'no_pane' || reply.error === 'bad_place')
+        throw new InvalidParams(reply.message)
       if (reply.error === 'no_space') throw new CliError(-32001, 'no_space', reply.message)
       throw new Error(reply.message)
     }
@@ -112,9 +113,23 @@ export function createPanes(
     'cell.new': async (params, pty) => {
       const cwd = requireCwd(params.cwd)
       const command = optionalCommand(params.command)
+      if (params.after !== undefined && params.before !== undefined) {
+        throw new InvalidParams('params.after and params.before cannot be used together')
+      }
+      const key = params.after !== undefined ? 'after' : 'before'
+      const target = params[key]
+      if (target !== undefined && !isPtyId(target)) {
+        throw new InvalidParams(`params.${key} must be a pty id`)
+      }
+      const placeOf = (by: string): CellNewRequest['place'] => {
+        const cell = cellOf(by)
+        if (!cell) throw new InvalidParams(`no cell for pty ${by}`)
+        return { cell, before: key === 'before' }
+      }
       return askPty('cell:new', (): CellNewRequest => {
         const cell = cellOf(pty)
-        return { cwd, ...(cell && { cell }), ...(command && { command }) }
+        const place = target === undefined ? undefined : placeOf(target)
+        return { cwd, ...(cell && { cell }), ...(command && { command }), ...(place && { place }) }
       })
     }
   }

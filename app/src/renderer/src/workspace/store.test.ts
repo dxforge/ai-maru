@@ -3,6 +3,7 @@ import type { GitHead } from '../../../shared/git'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import { isPtyId } from '../../../shared/pty'
 import type { PtyState } from '../../../shared/pty-state'
+import { parseScreen, SCREEN_VERSION } from '../../../shared/screen'
 import { createWorkspaces, focusedPane } from './store'
 
 type Workspaces = ReturnType<typeof createWorkspaces>
@@ -215,25 +216,23 @@ describe('workspaces', () => {
     expect(ws.workspaceOf(selected(ws).key)?.key).toBe(wsKeys(ws)[1])
   })
 
-  it('openCell 은 선택한 cell 이 띄운 자리에 cell 을 더해 선택하고(openedBy 가 선택한 cell), 선택이 없으면 새 workspace 다', () => {
+  it('openCell 은 선택한 cell 바로 뒤에 cell 을 더해 선택하고, 선택이 없으면 새 workspace 다', () => {
     const ws = opened(2)
     const [c0, c1] = keys(ws)
     ws.select(c0)
     ws.openCell('/a')
     const a = selected(ws)
-    expect(a.openedBy).toBe(c0)
     expect(a.panes[0].startDir).toBe('/a')
     ws.select(c0)
     ws.openCell()
     const b = ws.selectedKey.value
-    expect(keys(ws)).toEqual([c0, a.key, b, c1])
+    expect(keys(ws)).toEqual([c0, b, a.key, c1])
     expect(ws.list.value.map((w) => w.cells.length)).toEqual([3, 1])
 
     const empty = createWorkspaces()
     empty.openCell('/e')
     expect(empty.list.value).toHaveLength(1)
     expect(selected(empty).panes[0].startDir).toBe('/e')
-    expect(selected(empty).openedBy).toBeUndefined()
   })
 
   it('workspace 의 마지막 cell 이 닫히면 workspace 도 닫고 편 목록의 다음(없으면 앞) cell 을 선택한다', () => {
@@ -725,9 +724,21 @@ describe('panes', () => {
 })
 
 describe('openCellFrom', () => {
-  function spawn(ws: Workspaces, from: number | undefined, init = {}): number {
-    const pane = ws.openCellFrom(ws.cells().find((w) => w.key === from)?.id, init)
-    return ws.cells().find((w) => w.panes.some((p) => p.key === pane))!.key
+  const idOf = (ws: Workspaces, key: number | undefined) =>
+    ws.cells().find((c) => c.key === key)?.id
+
+  function spawn(
+    ws: Workspaces,
+    from: number | undefined,
+    init = {},
+    place?: { cell: number; before: boolean }
+  ): number | undefined {
+    const pane = ws.openCellFrom(
+      idOf(ws, from),
+      init,
+      place && { cell: idOf(ws, place.cell) ?? 'c-gone', before: place.before }
+    )
+    return ws.cells().find((w) => w.panes.some((p) => p.key === pane))?.key
   }
 
   it('부른 cell 바로 뒤에 pane 하나로 넣고, 선택과 포커스는 그대로다', () => {
@@ -748,55 +759,80 @@ describe('openCellFrom', () => {
     expect(ws.list.value[0].cells.map((c) => c.key)).toEqual([w0, a])
   })
 
-  it('같은 cell 에서 여러 번 띄우면 띄운 순서대로 놓인다', () => {
+  it('같은 cell 에서 여러 번 띄우면 늘 부른 cell 바로 뒤라, 나중에 띄운 것이 앞에 놓인다', () => {
     const ws = opened(2)
     const [d, e] = keys(ws)
     const a = spawn(ws, d)
     const b = spawn(ws, d)
     const c = spawn(ws, d)
-    expect(keys(ws)).toEqual([d, a, b, c, e])
+    expect(keys(ws)).toEqual([d, c, b, a, e])
   })
 
-  const restarts: [string, (ws: Workspaces) => Workspaces][] = [
-    ['', (ws) => ws],
-    ['되살린 뒤에도 ', restarted]
-  ]
-
-  it.each(restarts)('%s앞서 띄운 것이 띄운 것도 건너뛴다', (_, through) => {
-    const from = opened(2)
-    const [d, e] = keys(from)
-    const a = spawn(from, d)
-    const a1 = spawn(from, a)
-    const ws = through(from)
-    const b = spawn(ws, d)
-    const a2 = spawn(ws, a)
-    expect(keys(ws)).toEqual([d, a, a1, a2, b, e])
-  })
-
-  it('앞서 띄운 것이 닫히면 남은 것 뒤에 넣는다', () => {
-    const ws = opened(2)
-    const [d, e] = keys(ws)
+  it('띄운 cell 이 다시 띄운 것은 그 cell 바로 뒤에 놓인다', () => {
+    const ws = opened(1)
+    const [d] = keys(ws)
     const a = spawn(ws, d)
     const b = spawn(ws, d)
-    ws.closePane(ws.cells()[1].panes[0].key)
-    const c = spawn(ws, d)
-    expect(keys(ws)).toEqual([d, b, c, e])
-    expect(keys(ws)).not.toContain(a)
+    const a1 = spawn(ws, a)
+    expect(keys(ws)).toEqual([d, b, a, a1])
   })
 
-  it.each(restarts)(
-    '%s띄운 쪽이 닫혀도 그것이 띄운 것은 처음 부른 cell 의 묶음에 남는다',
-    (_, through) => {
-      const from = opened(2)
-      const [d, e] = keys(from)
-      const a = spawn(from, d)
-      const a1 = spawn(from, a)
-      from.closePane(from.cells()[1].panes[0].key)
-      const ws = through(from)
-      const b = spawn(ws, d)
-      expect(keys(ws)).toEqual([d, a1, b, e])
+  describe('place', () => {
+    function arranged() {
+      const ws = opened(2)
+      const [d, o] = keys(ws)
+      const y = spawn(ws, d)!
+      const x = spawn(ws, d)!
+      return { ws, d, x, y, o }
     }
-  )
+    const after = (cell: number) => ({ cell, before: false })
+    const before = (cell: number) => ({ cell, before: true })
+
+    it('가리킨 cell 바로 뒤나 바로 앞에 넣고, 선택은 그대로다', () => {
+      const { ws, d, x, y, o } = arranged()
+      ws.select(d)
+      const a = spawn(ws, d, {}, after(x))
+      expect(keys(ws)).toEqual([d, x, a, y, o])
+      const b = spawn(ws, d, {}, before(x))
+      expect(keys(ws)).toEqual([d, b, x, a, y, o])
+      const first = spawn(ws, x, {}, before(d))
+      expect(keys(ws)[0]).toBe(first)
+      expect(ws.selectedKey.value).toBe(d)
+    })
+
+    it('부른 cell 자신의 뒤를 가리키면 옵션이 없을 때와 같다', () => {
+      const { ws, d, x } = arranged()
+      const a = spawn(ws, d, {}, after(d))
+      expect(keys(ws).slice(0, 3)).toEqual([d, a, x])
+    })
+
+    it('가리킨 cell 이 다른 workspace 에 있거나, 부른 cell 이나 가리킨 cell 을 모르면 넣지 않는다', () => {
+      const { ws, d, o } = arranged()
+      const was = keys(ws)
+      expect(spawn(ws, d, {}, after(o))).toBeUndefined()
+      expect(spawn(ws, o, {}, before(d))).toBeUndefined()
+      expect(spawn(ws, undefined, {}, after(d))).toBeUndefined()
+      expect(spawn(ws, -1, {}, after(d))).toBeUndefined()
+      expect(spawn(ws, d, {}, after(-1))).toBeUndefined()
+      expect(keys(ws)).toEqual(was)
+    })
+
+    it('넣지 않을 때는 부른 cell 을 모르는지, 가리킨 cell 이 없는지, 다른 workspace 에 있는지를 돌려준다', () => {
+      const { ws, d, o } = arranged()
+      const id = (key: number) => idOf(ws, key)!
+      expect(ws.openCellFrom(undefined, {}, { cell: id(d), before: false })).toBe('no_caller')
+      expect(ws.openCellFrom('c-gone', {}, { cell: 'c-gone2', before: false })).toBe('no_caller')
+      expect(ws.openCellFrom(id(d), {}, { cell: 'c-gone', before: false })).toBe('no_cell')
+      expect(ws.openCellFrom(id(d), {}, { cell: id(o), before: true })).toBe('other_workspace')
+    })
+
+    it('옮긴 뒤에는 옮긴 자리를 기준으로 넣는다', () => {
+      const { ws, d, x, y, o } = arranged()
+      ws.moveCell(y, { workspace: wsKeys(ws)[0], index: 0 })
+      const a = spawn(ws, d, {}, after(y))
+      expect(keys(ws)).toEqual([y, a, d, x, o])
+    })
+  })
 
   it('부른 cell 이 없거나 목록에 없으면 새 workspace 를 목록 끝에 만들고 선택은 그대로다', () => {
     const ws = opened(2)
@@ -817,38 +853,26 @@ describe('openCellFrom', () => {
     ws.open()
     const e = keys(ws).at(-1)!
     const b = spawn(ws, d)
-    expect(keys(ws)).toEqual([d, a, b, e])
+    expect(keys(ws)).toEqual([d, b, a, e])
     expect(ws.list.value.map((w) => w.cells.length)).toEqual([3, 1])
   })
 
-  it('되살린 뒤 띄운 쪽을 닫아도 그것이 띄운 것은 처음 부른 cell 의 묶음에 남는다', () => {
-    const from = opened(2)
-    const [d, e] = keys(from)
-    const a = spawn(from, d)
-    const a1 = spawn(from, a)
-    const ws = restarted(from)
-    ws.closePane(ws.cells()[1].panes[0].key)
-    const b = spawn(ws, d)
-    expect(keys(restarted(ws))).toEqual([d, a1, b, e])
-  })
-
-  it('부른 cell 을 적지 않은 화면을 되살리면 부른 cell 바로 뒤에 넣는다', () => {
+  it('옛 빌드가 openedBy 를 쓴 화면을 되살려도 부른 cell 바로 뒤에 넣고, 다음 snapshot 에 openedBy 가 없다', () => {
     const from = opened(1)
     const [d] = keys(from)
     const a = spawn(from, d)
-    const screen = from.snapshot()
-    for (const w of screen.workspaces) for (const c of w.cells) delete c.openedBy
+    const old = {
+      ...from.snapshot(),
+      version: SCREEN_VERSION,
+      sidebar: { open: true, width: 282, folded: [] },
+      viewMode: 'single'
+    }
+    Object.assign(old.workspaces[0].cells[1], { openedBy: d })
     const ws = createWorkspaces()
-    ws.restore(screen)
+    ws.restore(parseScreen(old)!)
     const b = spawn(ws, d)
     expect(keys(ws)).toEqual([d, b, a])
-  })
-
-  it('아무도 부르지 않은 cell 이 닫히면 그것이 띄운 것은 어느 묶음에도 들지 않는다', () => {
-    const ws = opened(1)
-    spawn(ws, keys(ws)[0])
-    ws.closePane(ws.cells()[0].panes[0].key)
-    expect(restarted(ws).cells()[0].openedBy).toBeUndefined()
+    expect(JSON.stringify(ws.snapshot())).not.toContain('openedBy')
   })
 })
 
@@ -934,17 +958,15 @@ describe('moveCell·moveWorkspace', () => {
     expect(ws.list.value[2].id).toBe(id)
   })
 
-  it('옮겨도 선택·포커스·openedBy 는 그대로이고, step 은 옮긴 순서를 따른다', () => {
+  it('옮겨도 선택·포커스는 그대로이고, step 은 옮긴 순서를 따른다', () => {
     const ws = arranged()
     const [[a, b], [c], [d, e]] = shape(ws)
     ws.select(b)
     ws.split('right')
     const focused = selected(ws).focused
-    const opener = new Map(ws.cells().map((x) => [x.key, x.openedBy]))
     ws.moveCell(b, { workspace: wsKeys(ws)[2], index: 2 })
     expect(ws.selectedKey.value).toBe(b)
     expect(selected(ws).focused).toBe(focused)
-    expect(new Map(ws.cells().map((x) => [x.key, x.openedBy]))).toEqual(opener)
     expect(keys(ws)).toEqual([a, c, d, e, b])
     expect(ws.step(1)).toBe(a)
     expect(ws.step(-1)).toBe(e)

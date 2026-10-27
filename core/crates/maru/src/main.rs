@@ -49,7 +49,7 @@
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
 //! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `full`(bool, 선택) | `{"pty":<새 pty id>}` |
 //! | `pane.close` | `target`(pty id) | `null` |
-//! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택) | `{"pty":<새 pty id>}` |
+//! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택), `after`·`before`(pty id, 선택, 둘 중 하나만) | `{"pty":<새 pty id>}` |
 //! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"pty":<job 의 pty id>}` |
 //! | `job.list` | 없음 | `{"jobs":[{"pty","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
 //! | `job.read` | `target`(job 이름이나 pty id) | `{"text":<글자>}` |
@@ -86,12 +86,13 @@
 //! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 pty 를 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
 //! 전에 끝날 수 있다.
 //!
-//! `cell.new` 는 pane 하나인 cell 을 만들어 `pty` 의 cell 뒤에 넣고, 그 pane 에서 `pane.new` 처럼
-//! pty 를 띄운다. `pty` 가 job 이면 그 job 의 cell 이다(`job.*` 와 같다). 그 cell 이 앞서 띄운
-//! cell(`cell.new` 나 New Cell 로 연 것, 그것들이 다시 띄운 것 포함)이 뒤에 이어져 있으면 그것들 뒤에 놓아,
-//! 띄운 순서를 지킨다.
-//! `pty` 의 cell 을 모르면 새 workspace 를 목록 끝에 만들어 거기에 넣는다. 포커스와 선택한 cell 은
-//! 바꾸지 않는다. 명령이 끝나 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이면 workspace 도
+//! `cell.new` 는 pane 하나인 cell 을 만들어 `pty` 의 cell 바로 뒤에 넣고, 그 pane 에서 `pane.new` 처럼
+//! pty 를 띄운다. `pty` 가 job 이면 그 job 의 cell 이다(`job.*` 와 같다). 한 cell 에서 여러 번 부르면
+//! 나중에 연 cell 이 앞에 놓인다. `after`·`before` 가 있으면 그 pty(pane 이나 job)의 cell 바로 뒤나
+//! 바로 앞에 넣는다. 둘이 함께 오거나, pty id 가 아니거나, 그 pty 의 cell 이 없거나, 그 cell 이
+//! `pty` 의 cell 과 다른 workspace 에 있으면 `invalid_params` 다.
+//! `pty` 의 cell 을 모르면 새 workspace 를 목록 끝에 만들어 거기에 넣고, 이때 `after`·`before` 는
+//! `invalid_params` 다. 포커스와 선택한 cell 은 바꾸지 않는다. 명령이 끝나 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이면 workspace 도
 //! 닫힌다. 답하는 때와 pty 를 띄우지 못할 때는 `pane.new` 와 같고, 그때 닫는 pane 이 cell 의 하나뿐인
 //! pane 이므로 cell 도 닫힌다.
 //!
@@ -285,18 +286,24 @@ enum PaneCommand {
 
 #[derive(Subcommand)]
 enum CellCommand {
-    /// Open a cell after this terminal's cell and run COMMAND in its pane, or a shell when
+    /// Open a cell right after this terminal's cell and run COMMAND in its pane, or a shell when
     /// COMMAND is omitted. The cell closes when COMMAND exits. Focus and the selected cell stay
     /// where they are.
     ///
     /// Prints the new pane's pty id; `maru inbox push` sends messages to it and
-    /// `maru pane close` closes it. Cells opened from the same cell follow it in the order they
-    /// were opened. Options go before COMMAND; everything from COMMAND on is passed
-    /// to COMMAND. Use `sh -c '...'` for a pipeline.
+    /// `maru pane close` closes it. `--after` or `--before` places the cell next to another
+    /// cell in this terminal's workspace instead. Options go before COMMAND; everything from
+    /// COMMAND on is passed to COMMAND. Use `sh -c '...'` for a pipeline.
     New {
         /// Directory to start in. Defaults to the current directory.
         #[arg(long)]
         cwd: Option<PathBuf>,
+        /// Open the cell right after the cell of this pty (a pane or a job), e.g. p-1a2b3c4d.
+        #[arg(long, value_name = "PTY", conflicts_with = "before")]
+        after: Option<String>,
+        /// Open the cell right before the cell of this pty (a pane or a job).
+        #[arg(long, value_name = "PTY")]
+        before: Option<String>,
         /// Command and its arguments.
         #[arg(trailing_var_arg = true)]
         command: Vec<String>,
@@ -449,9 +456,15 @@ fn run(command: Command) -> Result<()> {
             }
         },
         Command::Cell {
-            command: CellCommand::New { cwd, command },
+            command:
+                CellCommand::New {
+                    cwd,
+                    after,
+                    before,
+                    command,
+                },
         } => {
-            let pty = cell_new(cwd, command)?;
+            let pty = cell_new(cwd, after, before, command)?;
             writeln!(std::io::stdout(), "{pty}")?;
         }
         Command::Job { command } => match command {
@@ -826,10 +839,21 @@ fn pane_new(cwd: Option<PathBuf>, down: bool, full: bool, command: Vec<String>) 
     pty_of(call(&target, "pane.new", params)?)
 }
 
-fn cell_new(cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
+fn cell_new(
+    cwd: Option<PathBuf>,
+    after: Option<String>,
+    before: Option<String>,
+    command: Vec<String>,
+) -> Result<String> {
     let target = target()?;
     let mut params = Map::new();
     params.insert("cwd".into(), start_dir(cwd)?.into());
+    if let Some(pty) = after {
+        params.insert("after".into(), pty.into());
+    }
+    if let Some(pty) = before {
+        params.insert("before".into(), pty.into());
+    }
     if !command.is_empty() {
         params.insert("command".into(), command.into());
     }
