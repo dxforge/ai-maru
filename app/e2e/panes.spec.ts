@@ -5,6 +5,7 @@ import {
   delayPtyPort,
   expect,
   expectCols,
+  focusPane,
   openPalette,
   paneBox,
   panes,
@@ -301,7 +302,7 @@ test('나눈 pane 들은 창 크기를 따라 셸이 보는 크기가 바뀐다'
   await split(app, page, 'split-right', 2)
   await typesInto(page, 1, 'ready')
   const right = await shellSize(page)
-  await clickMenu(app, 'focus-pane-left')
+  await focusPane(app, page, 'focus-pane-left', 0)
   const left = await shellSize(page)
 
   await resizeBy(app, 200, 100)

@@ -4,6 +4,7 @@ import {
   clickMenu,
   expect,
   expectCols,
+  focusPane,
   newWorkspace,
   openPalette,
   paneRows,
@@ -127,8 +128,7 @@ test('columns 에서 좌우로 나누면 고르지 않게 나눠도 pane 마다 
   await split(app, page, 'split-right', 3)
   await expectCols(page, 80)
   for (const i of [1, 0]) {
-    await clickMenu(app, 'focus-pane-left')
-    await expect(panes(page).nth(i).locator('.terminal-view')).toHaveClass(/active/)
+    await focusPane(app, page, 'focus-pane-left', i)
     await expectCols(page, 80)
   }
 })
@@ -144,8 +144,7 @@ test('columns 에서 위아래 두 쪽의 늘어선 pane 수가 다르면 적은
   await split(app, page, 'split-down', 3)
   await split(app, page, 'split-right', 4)
   await expectCols(page, 80)
-  await clickMenu(app, 'focus-pane-up')
-  await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
+  await focusPane(app, page, 'focus-pane-up', 1)
   // 오른쪽 아래에 pane 이 둘 늘어서 있어 위쪽 pane 은 pane 두 개 폭이다.
   const wide = (await shellSize(page)).cols
   expect(wide).toBeGreaterThan(155)
