@@ -78,6 +78,7 @@ test('손잡이로 cell 을 끌어 같은 workspace 의 다른 자리에 놓으�
   await grabHandle(page, grip(page, 2), 0)
   await moveTo(page, cards(page).nth(0), 0.25)
   await expect(cards(page).nth(2)).toHaveClass(/dragging/)
+  await expect(grip(page, 2)).toHaveCSS('opacity', '0')
   await expect(ghost(page)).toHaveCount(1)
   await expect(line(page)).toBeVisible()
   await page.mouse.up()
@@ -272,7 +273,7 @@ test('끄는 동안 포인터가 목록의 아래·위 끝 가까이 오면 그�
   await page.mouse.up()
 })
 
-test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우스를 올린 cell 에만 보이며 창을 끄는 영역이 아니다', async ({
+test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우스를 올린 cell 에만 흐리게 보이다가 손잡이에 올리면 진해지며 창을 끄는 영역이 아니다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -287,13 +288,39 @@ test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우�
   await expect.poll(() => shape(page)).toEqual([['alpha', 'bravo']])
 
   await cards(page).nth(1).hover()
-  await expect(grip(page, 1)).toHaveCSS('opacity', '1')
+  await expect(grip(page, 1)).toHaveCSS('opacity', '0.35')
   await expect(grip(page, 0)).toHaveCSS('opacity', '0')
+  await grip(page, 1).hover()
+  await expect(grip(page, 1)).toHaveCSS('opacity', '0.8')
   expect(
     await grip(page, 0).evaluate((el) =>
       getComputedStyle(el).getPropertyValue('-webkit-app-region')
     )
   ).toBe('no-drag')
+})
+
+test('첫 행의 위쪽이라도 손잡이 밖을 누르면 cell 을 끌지 않고 그 pane 을 고른다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await arrange(launched, [['alpha', 'bravo']])
+  await expect(cards(page).nth(1)).toHaveClass(/selected/)
+
+  const handle = (await grip(page, 0).boundingBox())!
+  const beside: [number, number] = [handle.x + handle.width + 4, handle.y + handle.height / 2]
+  const below: [number, number] = [handle.x + handle.width / 2, handle.y + handle.height + 4]
+  for (const [x, y] of [beside, below]) {
+    await cards(page).nth(1).locator('.pane-row').click()
+    await expect(cards(page).nth(1)).toHaveClass(/selected/)
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 10, y, { steps: 4 })
+    await expect(ghost(page)).toHaveCount(0)
+    await page.mouse.up()
+    await expect(cards(page).nth(0)).toHaveClass(/selected/)
+  }
+  await expect.poll(() => shape(page)).toEqual([['alpha', 'bravo']])
 })
 
 test('끄는 동안 같은 workspace 의 다른 cell 이 닫힌 뒤 놓아도 끌던 cell 과 그 터미널이 남는다', async ({
@@ -334,6 +361,11 @@ test('접은 사이드바에서도 손잡이로 cell 을 끌어 옮긴다', asyn
   await clickMenu(app, 'toggle-sidebar')
   await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
   await expect.poll(() => sidebarWidth(page)).toBe(85)
+  const side = (await page.locator('.sidebar').boundingBox())!
+  const handle = (await grip(page, 1).boundingBox())!
+  expect(Math.abs(handle.x + handle.width / 2 - (side.x + side.width / 2))).toBeLessThanOrEqual(1)
+  await cards(page).nth(1).hover()
+  await expect(grip(page, 1)).toHaveCSS('opacity', '0.35')
 
   await grabHandle(page, grip(page, 1), 0)
   await moveTo(page, cards(page).nth(0), 0.25)

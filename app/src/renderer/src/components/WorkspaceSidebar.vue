@@ -321,8 +321,7 @@ const workspaceDragged = (workspace: number): boolean =>
             aria-hidden="true"
             @mousedown.prevent
             @pointerdown="grabCell($event, w.key, c.key, ci)"
-            >⋮</span
-          >
+          />
           <button
             v-for="r in rows"
             :key="r.pane"
@@ -673,34 +672,47 @@ button {
   display: none;
 }
 
-/* 손잡이는 행 위에 겹쳐 그려 행 앞 아이콘의 x 를 그대로 둔다. 폭은 행의 왼쪽 여백(6px)과 같으므로 아이콘을 가리지 않는다. */
+/* 손잡이는 첫 행 위쪽 가운데에 겹쳐 그려 cell 의 높이를 늘리지 않는다. 누르는 자리는 점 둘레뿐이므로 첫 행의 나머지를
+   누르면 pane 을 고른다. */
 .grip {
   -webkit-app-region: no-drag;
   position: absolute;
   top: 0;
-  bottom: 0;
-  left: 0;
+  left: 50%;
   z-index: 1;
   display: grid;
-  place-items: center;
-  width: 6px;
-  border-radius: 6px 0 0 6px;
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  place-items: start center;
+  width: 24px;
+  height: 10px;
+  padding-top: 1px;
+  box-sizing: border-box;
+  transform: translateX(-50%);
   color: var(--fg);
-  font-size: 11px;
   cursor: grab;
   opacity: 0;
 }
 
+.grip::before {
+  content: '';
+  width: 12px;
+  height: 6px;
+  background: radial-gradient(circle, currentColor 0.85px, transparent 1.1px) 0 0 / 4px 3px;
+}
+
 .group:hover .grip {
-  opacity: 1;
+  opacity: 0.35;
+}
+
+.group .grip:hover {
+  opacity: 0.8;
 }
 
 .dragging {
   opacity: 0.35;
 }
 
-.dragging .grip {
+.dragging .grip,
+.dragging .grip:hover {
   opacity: 0;
 }
 
