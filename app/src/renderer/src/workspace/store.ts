@@ -159,15 +159,51 @@ export function createWorkspaces(
     const w = workspaceOf(key)
     if (!w) return
     const i = cells().findIndex((c) => c.key === key)
-    const [closed] = w.cells.splice(
-      w.cells.findIndex((c) => c.key === key),
-      1
+    const closed = detach(
+      w,
+      w.cells.findIndex((c) => c.key === key)
     )
-    if (!w.cells.length) list.value.splice(list.value.indexOf(w), 1)
     for (const c of w.cells) if (c.openedBy === key) c.openedBy = closed.openedBy
     if (selectedKey.value !== key) return
     const rest = cells()
     selectedKey.value = (rest[i] ?? rest[i - 1])?.key ?? null
+  }
+
+  /**
+   * cell 을 `to.workspace` 의 `to.index` 번째 cell 앞(옮기기 전 목록의 자리)으로 옮긴다. `'new'` 면 그 cell 하나로 된
+   * workspace 를 목록 끝에 둔다. cell 이 하나뿐인 workspace 면 새로 만들지 않고 그 workspace 를 id 그대로 끝으로 옮긴다.
+   * 선택·포커스와 `openedBy` 는 바꾸지 않는다. 마지막 cell 이 빠진 workspace 는 닫는다.
+   */
+  function moveCell(key: number, to: { workspace: number; index: number } | 'new'): void {
+    const from = workspaceOf(key)
+    if (!from) return
+    const at = from.cells.findIndex((c) => c.key === key)
+    if (to === 'new') {
+      // 혼자인 cell 을 새 workspace 로 빼면 그 workspace 를 id 그대로 끝으로 옮긴다. 보이는 결과는 같고, `maru mate list` 의
+      // workspace 열과 닫기 확인이 보는 workspace id 가 바뀌지 않기 때문이다.
+      if (from.cells.length === 1) return moveWorkspace(from.key, list.value.length)
+      list.value.push(createWorkspace(detach(from, at)))
+      return
+    }
+    const dest = list.value.find((w) => w.key === to.workspace)
+    // cell 이 하나뿐인 workspace 안에서 그 cell 을 옮기면, `detach` 가 cell 을 빼면서 그 workspace 를 목록에서 지우므로 cell 이
+    // 목록에 없는 workspace 에 들어가 사라진다.
+    if (!dest || (dest === from && from.cells.length === 1)) return
+    dest.cells.splice(dest === from && at < to.index ? to.index - 1 : to.index, 0, detach(from, at))
+  }
+
+  function detach(w: Workspace, at: number): Cell {
+    const [c] = w.cells.splice(at, 1)
+    if (!w.cells.length) list.value.splice(list.value.indexOf(w), 1)
+    return c
+  }
+
+  /** workspace 를 `index` 번째 workspace 앞(옮기기 전 목록의 자리)으로 옮긴다. */
+  function moveWorkspace(key: number, index: number): void {
+    const at = list.value.findIndex((w) => w.key === key)
+    if (at < 0) return
+    const [w] = list.value.splice(at, 1)
+    list.value.splice(at < index ? index - 1 : index, 0, w)
   }
 
   function split(direction: SplitDirection): void {
@@ -333,6 +369,8 @@ export function createWorkspaces(
     open,
     openCell,
     openCellFrom,
+    moveCell,
+    moveWorkspace,
     split,
     splitFrom,
     pane,
