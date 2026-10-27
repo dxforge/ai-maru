@@ -272,7 +272,8 @@ const restartHandlers: Handlers = {
 
 const programDeps: ProgramDeps = {
   foreground: (id) => foreground(ptyDir(), id),
-  shellPid: shellPidOf
+  shellPid: shellPidOf,
+  command: (id) => ptyStates.command(id)
 }
 
 async function confirm(options: Dialog): Promise<boolean> {

@@ -3,10 +3,16 @@ import { computed, ref, useTemplateRef, type DeepReadonly } from 'vue'
 import type { JobView } from '../../../shared/job'
 import { sidebarLabel, workspaceName, type SidebarLabel } from '../../../shared/names'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
-import { AGENT_ICONS, ICONS, STATE_LABELS } from '../icons'
+import { AGENT_ICONS, commandClass, commandIcon, ICONS, STATE_LABELS } from '../icons'
 import StatusIcon from './StatusIcon.vue'
 import { tildePath } from '../workspace/cwd'
-import { elapsed, paneName } from '../workspace/display'
+import {
+  commandLabel,
+  commandTail,
+  elapsed,
+  paneName,
+  type CommandView
+} from '../workspace/display'
 import {
   dropAt,
   scrollStep,
@@ -23,6 +29,7 @@ const {
   workspaces,
   selectedKey,
   root,
+  command,
   urgent,
   folded,
   collapsed,
@@ -34,6 +41,7 @@ const {
   workspaces: readonly DeepReadonly<Workspace>[]
   selectedKey: number | null
   root: (pty?: string) => ProgramStatusRecord | undefined
+  command: (pty?: string) => CommandView | undefined
   urgent: ReadonlyMap<number, ProgramStatusState>
   folded: ReadonlySet<number>
   collapsed: boolean
@@ -55,10 +63,12 @@ type Row = {
   pane: number
   state?: ProgramStatusState
   agent?: string
+  command?: CommandView
+  commandTail: boolean
   focused: boolean
   text: string
   place?: SidebarLabel
-  tip: string
+  path?: string
   aria: string
 }
 
@@ -71,25 +81,31 @@ type JobRow = {
   exited: boolean
 }
 
-// 모든 pane 줄의 오른쪽 끝에 그 pane 의 위치를 붙인다. agent 아이콘은 쉬는(idle) 동안만 앞 칸의 상태 아이콘 자리에 둔다.
-// 오른쪽 끝을 위치만 쓰게 해서, agent 가 뜨고 끝나도 위치가 움직이지 않게 하기 위해서다.
+// pane 줄의 오른쪽 끝에 그 pane 의 위치를 붙인다. agent 아이콘은 쉬는(idle) 동안만 앞 칸의 상태 아이콘 자리에 둔다.
+// 오른쪽 끝을 위치만 쓰게 해서, agent 가 뜨고 끝나도 위치가 움직이지 않게 하기 위해서다. 셸 pane 에서는 명령이 도는 동안과
+// 실패한 명령이 남아 있는 동안만 그 자리에 돈 시간이나 종료 코드를 쓴다. 명령 pane 은 늘 도는 중이라 같은 규칙을 따르면
+// 위치를 한 번도 보이지 못하므로 위치를 둔다.
 function paneRow(p: DeepReadonly<Pane>, focused: boolean, base: DeepReadonly<Pane>): Row {
   const r = root(p.ptyId)
   const s = r?.state
-  const place = p.cwd ? sidebarLabel(p, base, home) : undefined
-  const text = paneName(p, r, shell)
+  const cmd = command(p.ptyId)
+  const tail = !!cmd && !p.command?.length
+  const place = p.cwd && !tail ? sidebarLabel(p, base, home) : undefined
+  const text = paneName(p, r, shell, cmd)
   const where = place && [place.name, place.branch, place.sub].filter(Boolean).join(' ')
   const name = where ? `${text}, ${where}` : text
-  const path = p.cwd && tildePath(p.cwd, home)
+  const label = s ? STATE_LABELS[s] : cmd && commandLabel(cmd)
   return {
     pane: p.key,
     state: s,
     agent: s === 'idle' && r ? AGENT_ICONS.get(r.app) : undefined,
+    command: cmd,
+    commandTail: tail,
     focused,
     text,
     place,
-    tip: path ? `${text}\n${path}` : text,
-    aria: s ? `${STATE_LABELS[s]}: ${name}` : name
+    path: p.cwd && tildePath(p.cwd, home),
+    aria: label ? `${label}: ${name}` : name
   }
 }
 
@@ -149,6 +165,14 @@ const groups = computed(() =>
 function jobTime(j: JobRow): string {
   if (j.exited) return 'exited'
   return j.started === undefined ? '' : elapsed(now - j.started)
+}
+
+// 이름 자리에서 잘릴 수 있는 명령을 툴팁에 다 보인다. 돈 시간이 들어가므로 `groups` 밖에서 만든다.
+function paneTip(r: Row): string {
+  const c = r.command
+  const time = c?.running && commandTail(c, now)
+  const detail = c && (time ? `${commandLabel(c)} for ${time}` : commandLabel(c))
+  return [r.text, detail, r.path].filter(Boolean).join('\n')
 }
 
 const nav = useTemplateRef<HTMLElement>('nav')
@@ -303,8 +327,8 @@ const workspaceDragged = (workspace: number): boolean =>
             v-for="r in rows"
             :key="r.pane"
             class="row pane-row"
-            :class="[r.state ?? 'shell', { focused: r.focused }]"
-            :title="r.tip"
+            :class="[r.state ?? ['shell', commandClass(r.command)], { focused: r.focused }]"
+            :title="paneTip(r)"
             :aria-label="r.aria"
             @mousedown.prevent
             @click="emit('focus', c.key, r.pane)"
@@ -315,7 +339,7 @@ const workspaceDragged = (workspace: number): boolean =>
               :title="r.state && STATE_LABELS[r.state]"
               ><template v-if="r.agent">{{ r.agent }}</template
               ><StatusIcon v-else-if="r.state" :state="r.state" /><template v-else>{{
-                ICONS.terminal
+                commandIcon(r.command)
               }}</template></span
             >
             <span class="title">{{ r.text }}</span>
@@ -326,6 +350,9 @@ const workspaceDragged = (workspace: number): boolean =>
                 ><span class="branch-name">{{ r.place.branch }}</span></span
               ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
             >
+            <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
+              commandTail(r.command, now)
+            }}</span>
           </button>
           <div
             v-for="j in jobsByCell.get(c.id)"
@@ -567,6 +594,15 @@ button {
 
 .pane-row.focused .title {
   color: var(--fg);
+}
+
+.command-tail {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.command-failed .command-tail {
+  color: var(--error);
 }
 
 .place {

@@ -889,3 +889,54 @@ test('접은 workspace 는 머리 줄 앞 칸에 cell 들 가운데 가장 급�
   const x = await head.locator('.state').evaluate((el) => el.getBoundingClientRect().x)
   expect(x).toBe(12)
 })
+
+test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리에 돈 시간을 보이고, 실패하면 종료 코드를 남기며, 다음 명령이 지운다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir)
+  const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const row = shellRows(page)
+  await expect(row.locator('.title')).toHaveText('zsh')
+  await expect(row.locator('.place')).toHaveText('~')
+
+  await page.keyboard.type('sleep 30\n')
+  await expect(row.locator('.title')).toHaveText('sleep 30')
+  await expect(row).toHaveClass(/command-running/)
+  await expect(row.locator('.state')).toHaveText(ICONS.running)
+  await expect(row.locator('.command-tail')).toHaveText('<1m')
+  await expect(row.locator('.place')).toHaveCount(0)
+  await expect(row).toHaveAttribute('title', 'sleep 30\nRunning for <1m\n~')
+  await expect(row).toHaveAttribute('aria-label', 'Running: sleep 30')
+
+  await page.keyboard.press('Control+C')
+  await expect(row).toHaveClass(/command-failed/)
+  await expect(row.locator('.title')).toHaveText('sleep 30')
+  await expect(row.locator('.state')).toHaveText(ICONS.error)
+  await expect(row.locator('.command-tail')).toHaveText('130')
+  await expect(row).toHaveAttribute('title', 'sleep 30\nExited with code 130\n~')
+
+  await page.keyboard.type('false\n')
+  await expect(row.locator('.title')).toHaveText('false')
+  await expect(row.locator('.command-tail')).toHaveText('1')
+
+  await page.keyboard.type('true\n')
+  await expect(row.locator('.title')).toHaveText('zsh')
+  await expect(row).not.toHaveClass(/command-/)
+  await expect(row.locator('.command-tail')).toHaveCount(0)
+  await expect(row.locator('.place')).toHaveText('~')
+})
+
+test('명령을 주어 띄운 pane 은 이름 자리에 명령 전체를 쓰고, 꼬리에는 돈 시간 대신 위치를 둔다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await page.keyboard.type(`maru pane new bash -c 'read x'\n`)
+  await expect(panes(page)).toHaveCount(2)
+  const row = shellRows(page).nth(1)
+  await expect(row.locator('.title')).toHaveText('bash -c read x')
+  await expect(row).toHaveClass(/command-running/)
+  await expect(row.locator('.command-tail')).toHaveCount(0)
+  await expect(row.locator('.place')).not.toHaveCount(0)
+  await expect(row).toHaveAttribute('title', /^bash -c read x\nRunning for <1m\n/)
+})

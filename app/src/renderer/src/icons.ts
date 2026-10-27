@@ -1,5 +1,7 @@
 import { CLAUDE_APP, type ProgramStatusState } from '../../shared/program-status'
 
+type Command = { running: boolean }
+
 /** 화면에 쓰는 Codicons glyph 의 Symbols Nerd Font 코드 포인트. */
 export const ICONS = {
   claude: '\uEC82',
@@ -10,8 +12,20 @@ export const ICONS = {
   error: '\uEA87',
   warning: '\uEA6C',
   close: '\uEA76',
-  gear: '\uEAF8'
+  gear: '\uEAF8',
+  running: '\uEB2C'
 } as const
+
+/** OSC 7501 레코드가 없는 pane 의 아이콘이다. 색은 `commandClass` 가 붙이는 class(`style.css`)가 정한다. */
+export function commandIcon(c: Command | undefined): string {
+  if (!c) return ICONS.terminal
+  return c.running ? ICONS.running : ICONS.error
+}
+
+export function commandClass(c: Command | undefined): string {
+  if (!c) return ''
+  return c.running ? 'command-running' : 'command-failed'
+}
 
 // OSC 7501 의 `app` 은 아무 문자열이나 오므로 객체 대신 Map 으로 찾는다. 객체면 `constructor` 같은 키에 prototype 의 값을 돌려준다.
 export const AGENT_ICONS: ReadonlyMap<string, string> = new Map([[CLAUDE_APP, ICONS.claude]])

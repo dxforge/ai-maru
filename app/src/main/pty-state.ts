@@ -1,5 +1,5 @@
 import { rootRecord, type ProgramStatusRecord } from '../shared/program-status'
-import type { PtyStateEntry } from '../shared/pty-state'
+import type { PtyCommand, PtyState, PtyStateEntry } from '../shared/pty-state'
 import type { StateHandlers } from './pty'
 
 export type PtyStatesDeps = {
@@ -64,8 +64,16 @@ export function createPtyStates(deps: PtyStatesDeps) {
       return Object.fromEntries([...watches].flatMap(([id, w]) => (w.entry ? [[id, w.entry]] : [])))
     },
     root(pty: string): ProgramStatusRecord | undefined {
-      const entry = watches.get(pty)?.entry
-      return entry && 'state' in entry ? rootRecord(entry.state.records) : undefined
+      const state = stateOf(pty)
+      return state && rootRecord(state.records)
+    },
+    command(pty: string): PtyCommand | null {
+      return stateOf(pty)?.command ?? null
     }
+  }
+
+  function stateOf(pty: string): PtyState | undefined {
+    const entry = watches.get(pty)?.entry
+    return entry && 'state' in entry ? entry.state : undefined
   }
 }

@@ -32,6 +32,15 @@ body,
   --claude: var(--faint);
 }
 
+/* 명령 상태의 색은 상태 아이콘이 읽는 --claude 변수를 바꿔 정한다. */
+.command-running {
+  --claude: var(--working);
+}
+
+.command-failed {
+  --claude: var(--error);
+}
+
 .row-bar {
   height: var(--row);
   display: flex;

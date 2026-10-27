@@ -2,6 +2,7 @@ import { basename } from 'node:path'
 import type { Page } from '@playwright/test'
 import { foreground } from '../src/main/pty'
 import {
+  activeHeader,
   cellItems,
   clickMenu,
   closeWindow,
@@ -15,7 +16,8 @@ import {
   sockets,
   split,
   stubDialog,
-  test
+  test,
+  zshHome
 } from './app'
 
 /** 확인 창은 `foreground` 의 답으로 실행 중인지 가리므로, 프로그램이 뜬 것을 이 값으로 기다린다. */
@@ -100,10 +102,23 @@ test('확인 창이 뜨면 그 사이에 누른 ⌘W 는 버린다', async ({ la
   await expect(panes(page)).toHaveCount(3)
 })
 
-test('명령을 주어 띄운 pane 은 명령의 이름으로 묻고, Close 면 닫는다', async ({
+test('셸이 알린 명령이 도는 pane 은 프로세스 이름 대신 친 명령으로 묻는다', async ({
   launch,
   dataDir
 }) => {
+  const home = zshHome(dataDir)
+  const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  await page.keyboard.type('sleep 30\n')
+  await expect.poll(() => foregroundNames(dataDir)).toContain('sleep')
+  await expect(activeHeader(page).locator('.title')).toHaveText('sleep 30')
+  await stubDialog(app, 1)
+  await clickMenu(app, 'close-pane')
+  await expect
+    .poll(async () => (await dialogCalls(app)).map((c) => c.detail))
+    .toEqual(['`sleep 30` is still running.'])
+})
+
+test('명령을 주어 띄운 pane 은 명령 전체로 묻고, Close 면 닫는다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await page.keyboard.type(`maru pane new bash -c 'read x'\n`)
   await expect(panes(page)).toHaveCount(2)
@@ -113,7 +128,7 @@ test('명령을 주어 띄운 pane 은 명령의 이름으로 묻고, Close 면 
   await clickMenu(app, 'close-pane')
   await expect
     .poll(async () => (await dialogCalls(app)).map((c) => c.detail))
-    .toEqual(['`bash` is still running.'])
+    .toEqual(['`bash -c read x` is still running.'])
 
   await stubDialog(app, 0)
   await clickMenu(app, 'close-pane')

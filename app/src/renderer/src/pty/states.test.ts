@@ -8,7 +8,7 @@ function rec(state: ProgramStatusState, id = ''): ProgramStatusRecord {
 }
 
 function state(records: ProgramStatusRecord[] = [], title: string | null = null): PtyState {
-  return { cwd: '/w', cwdReports: 1, title, foregroundCwd: null, records }
+  return { cwd: '/w', cwdReports: 1, title, foregroundCwd: null, command: null, records }
 }
 
 describe('createPtyStates', () => {
@@ -22,6 +22,18 @@ describe('createPtyStates', () => {
     s.apply('p-1', null)
     expect([s.get('p-1'), s.state('p-1')]).toEqual([undefined, undefined])
     expect(s.state(undefined)).toBeUndefined()
+  })
+
+  it('보일 명령은 같은 상태에서 같은 객체이고, 새 상태가 오면 다시 고른다', () => {
+    const s = createPtyStates()
+    const running = { running: true, text: 'make', exitCode: null, startedAt: 1 }
+    s.apply('p-1', { state: { ...state(), command: running } })
+    const first = s.command('p-1')
+    expect(first).toEqual({ running: true, text: 'make', startedAt: 1 })
+    expect(s.command('p-1')).toBe(first)
+    s.apply('p-1', { state: { ...state(), command: { ...running, running: false, exitCode: 2 } } })
+    expect(s.command('p-1')).toEqual({ running: false, text: 'make', exitCode: 2 })
+    expect([s.command('p-2'), s.command(undefined)]).toEqual([undefined, undefined])
   })
 
   it('attach 스트림의 레코드는 이전 maru-pty 의 pty 에서만 쓴다', () => {

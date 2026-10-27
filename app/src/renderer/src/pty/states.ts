@@ -5,6 +5,7 @@ import {
   type ProgramStatusState
 } from '../../../shared/program-status'
 import type { PtyState, PtyStateEntry } from '../../../shared/pty-state'
+import { commandView, type CommandView } from '../workspace/display'
 
 const NONE: readonly ProgramStatusRecord[] = []
 
@@ -29,11 +30,20 @@ export function createPtyStates() {
   }
   const root = (pty?: string): ProgramStatusRecord | undefined =>
     pty === undefined ? undefined : rootRecord(records(pty))
+  // 상태가 같으면 같은 객체를 돌려준다. 새 객체면 그것을 prop 으로 받은 pane 헤더가 다른 pane 의 상태가 바뀔 때도 다시 그려진다.
+  const views = new WeakMap<PtyState, CommandView | undefined>()
+  const command = (pty?: string): CommandView | undefined => {
+    const state = pty === undefined ? undefined : get(pty)
+    if (!state) return undefined
+    if (!views.has(state)) views.set(state, commandView(state))
+    return views.get(state)
+  }
 
   return {
     get,
     root,
     state: (pty?: string): ProgramStatusState | undefined => root(pty)?.state,
+    command,
     isOld: (pty: string): boolean => {
       const e = entries.get(pty)
       return e !== undefined && 'old' in e

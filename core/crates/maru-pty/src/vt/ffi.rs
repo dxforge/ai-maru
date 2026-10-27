@@ -173,10 +173,24 @@ pub struct GhosttyTerminalProgramStatus {
     pub message: GhosttyString,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyTerminalSemanticPrompt {
+    pub size: usize,
+    pub kind: i32,
+    pub prompt_kind: i32,
+    pub has_exit_code: bool,
+    pub exit_code: i32,
+    pub command: GhosttyString,
+    pub error: GhosttyString,
+}
+
 pub type GhosttyTerminalWritePtyFn =
     unsafe extern "C" fn(GhosttyTerminal, *mut c_void, *const u8, usize);
 pub type GhosttyTerminalProgramStatusFn =
     unsafe extern "C" fn(GhosttyTerminal, *mut c_void, *const GhosttyTerminalProgramStatus);
+pub type GhosttyTerminalSemanticPromptFn =
+    unsafe extern "C" fn(GhosttyTerminal, *mut c_void, *const GhosttyTerminalSemanticPrompt);
 /// `OPT_TITLE_CHANGED`·`OPT_PWD_CHANGED`·`OPT_RESET` 콜백은 모두 이 모양이다.
 pub type GhosttyTerminalNotifyFn = unsafe extern "C" fn(GhosttyTerminal, *mut c_void);
 
@@ -255,6 +269,15 @@ mod tests {
             app,
             title,
             message,
+        });
+        check!(GhosttyTerminalSemanticPrompt {
+            size,
+            kind,
+            prompt_kind,
+            has_exit_code,
+            exit_code,
+            command,
+            error,
         });
         if !layouts["GhosttyString"].is_null() {
             check!(GhosttyString { ptr, len });

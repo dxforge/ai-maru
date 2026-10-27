@@ -7,7 +7,14 @@ import { createWorkspaces, focusedPane } from './store'
 
 type Workspaces = ReturnType<typeof createWorkspaces>
 
-const EMPTY: PtyState = { cwd: null, cwdReports: 0, title: null, foregroundCwd: null, records: [] }
+const EMPTY: PtyState = {
+  cwd: null,
+  cwdReports: 0,
+  title: null,
+  foregroundCwd: null,
+  command: null,
+  records: []
+}
 
 function record(state: ProgramStatusState, message = ''): ProgramStatusRecord {
   return { id: '', state, kind: null, progress: null, app: 'claude-code', title: '', message }

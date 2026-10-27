@@ -176,10 +176,7 @@ fn publish(id: &str, paths: &Paths, pty: &Pty) -> Result<UnixListener> {
             pid: std::process::id(),
             shell_pid: pty.shell_pid,
             tty: pty.tty.clone(),
-            created_at_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
+            created_at_ms: crate::pty::epoch_millis(),
         },
     )?;
     UnixListener::bind(&paths.socket)

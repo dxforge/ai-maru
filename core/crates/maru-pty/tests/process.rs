@@ -1441,7 +1441,7 @@ fn subscribing_sends_the_current_state_first_and_nothing_from_the_screen() {
         first,
         json!({
             "type": "state", "cwd": null, "cwd_reports": 0, "title": null,
-            "foreground_cwd": null, "records": [],
+            "foreground_cwd": null, "command": null, "records": [],
         })
     );
     let (mut a, _, _) = p.attach("primary", 80, 24);
@@ -1523,6 +1523,90 @@ fn an_empty_osc_7_clears_the_cwd_and_a_full_reset_clears_everything() {
     assert_eq!(st["title"], Value::Null, "{st}");
     assert_eq!(st["records"], json!([]), "{st}");
     assert_eq!(st["foreground_cwd"], Value::Null, "{st}");
+}
+
+/// `/bin/sh` 는 OSC 133 을 찍지 않으므로 셸 통합 대신 `printf` 로 찍는다.
+fn osc133(body: &str) -> String {
+    let body = body.replace('%', "%%");
+    format!(r"printf '\033]133;{body}\007'")
+}
+
+#[test]
+fn osc_133_runs_and_ends_a_command_and_a_full_reset_keeps_it() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    a.input(&format!("{}\n", osc133("A")));
+    let st = s.state_until(|v| !v["command"].is_null());
+    assert_eq!(
+        st["command"],
+        json!({ "running": false, "text": null, "exit_code": null, "started_at": null })
+    );
+
+    a.input(&format!(
+        "{}; printf '\\033]2;t\\007'\n",
+        osc133("C;cmdline_url=npm%20run%20dev")
+    ));
+    let st = s.state_until(|v| v["command"]["running"] == true && v["title"] == "t");
+    assert_eq!(st["command"]["text"], "npm run dev", "{st}");
+    assert!(
+        st["command"]["started_at"].as_u64().unwrap() >= before,
+        "{st}"
+    );
+
+    a.input("printf '\\033c'\n");
+    let st = s.state_until(|v| v["title"].is_null());
+    assert_eq!(
+        st["command"]["running"], true,
+        "RIS 는 명령 상태를 두어야 한다: {st}"
+    );
+
+    a.input(&format!("{}; {}\n", osc133("D;101"), osc133("A")));
+    let st = s.state_until(|v| v["command"]["running"] == false);
+    assert_eq!(st["command"]["exit_code"], 101, "{st}");
+    assert_eq!(st["command"]["text"], "npm run dev", "{st}");
+}
+
+#[test]
+fn a_prompt_without_an_end_stops_the_command_with_no_exit_code() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input(&format!("{}\n", osc133("C;cmdline_url=vim")));
+    s.state_until(|v| v["command"]["running"] == true);
+    a.input(&format!("{}\n", osc133("A")));
+    let st = s.state_until(|v| v["command"]["running"] == false);
+    assert_eq!(st["command"]["exit_code"], Value::Null, "{st}");
+    assert_eq!(st["command"]["text"], "vim", "{st}");
+}
+
+#[test]
+fn a_command_pane_runs_its_command_from_the_start_and_ignores_osc_133() {
+    let script = format!("{}; {}; sleep 30", osc133("D;1"), osc133("A"));
+    let args = ["--", "/bin/sh", "-c", &script];
+    let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
+    let p = start_in(tmpdir(), &args);
+    let (mut s, first) = p.subscribe();
+    let want = json!({
+        "running": true,
+        "text": format!("/bin/sh -c {script}"),
+        "exit_code": null,
+    });
+    let check = |v: &Value| {
+        assert_eq!(v["command"]["running"], want["running"], "{v}");
+        assert_eq!(v["command"]["text"], want["text"], "{v}");
+        assert_eq!(v["command"]["exit_code"], want["exit_code"], "{v}");
+        assert!(v["command"]["started_at"].as_u64().is_some(), "{v}");
+    };
+    check(&first);
+    // 명령이 찍은 133 은 상태를 바꾸지 않으므로 새 상태가 오지 않거나, 와도 같다.
+    for v in s.texts_for(Duration::from_millis(500)) {
+        check(&v);
+    }
 }
 
 #[test]

@@ -21,8 +21,10 @@ import {
   cellGroups,
   cellPlaces,
   cellViews,
-  writeConfig
+  writeConfig,
+  zshHome
 } from './app'
+import { ICONS } from '../src/renderer/src/icons'
 
 function headerBelowPane(page: Page): Promise<{ gap: number; above: number }> {
   return page.evaluate(() => {
@@ -48,6 +50,43 @@ test('pane 헤더는 OSC 0·2 로 받은 제목을, 받기 전에는 셸 이름�
   await expect(activeHeader(page).locator('.title')).toHaveText('bash')
   await page.keyboard.type("printf '\\033]0;both-%s\\007' $((1+1))\n")
   await expect(activeHeader(page).locator('.title')).toHaveText('both-2')
+})
+
+test('pane 헤더는 도는 명령과 돈 시간을, 실패한 명령은 종료 코드를 보이고, 셸이 보낸 제목보다 명령을 먼저 쓴다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir)
+  const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const header = activeHeader(page)
+  await expect(header.locator('.title')).toHaveText('zsh')
+
+  await page.keyboard.type("printf '\\033]2;my-title\\007'; sleep 30\n")
+  await expect(header.locator('.title')).toHaveText("printf '\\033]2;my-title\\007'; sleep 30")
+  await expect(header).toHaveClass(/command-running/)
+  await expect(header.locator('.row-bar-icon')).toHaveText(ICONS.running)
+  await expect(header.locator('.command-tail')).toHaveText('<1m')
+  await expect(header.locator('.cwd')).toHaveText(basename(home))
+
+  await page.keyboard.press('Control+C')
+  await expect(header).toHaveClass(/command-failed/)
+  await expect(header.locator('.row-bar-icon')).toHaveText(ICONS.error)
+  await expect(header.locator('.command-tail')).toHaveText('130')
+
+  await page.keyboard.type('true\n')
+  await expect(header.locator('.title')).toHaveText('my-title')
+  await expect(header.locator('.command-tail')).toHaveCount(0)
+  await expect(header.locator('.row-bar-icon')).toHaveText(ICONS.terminal)
+})
+
+test('명령을 주어 띄운 pane 의 헤더는 명령 전체와 돈 시간을 보인다', async ({ launch }) => {
+  const { page } = await launch()
+  await page.keyboard.type(`maru pane new bash -c 'read x'\n`)
+  await expect(panes(page)).toHaveCount(2)
+  const header = paneHeader(page, 1)
+  await expect(header.locator('.title')).toHaveText('bash -c read x')
+  await expect(header).toHaveClass(/command-running/)
+  await expect(header.locator('.command-tail')).toHaveText('<1m')
 })
 
 test('앱이 뜰 때 그린 pane 헤더 아이콘도 함께 실은 Nerd Font 로 그린다', async ({ launch }) => {

@@ -7,24 +7,69 @@ if [[ -n $MARU_CLAUDE_FORCED_HYPERLINK ]]; then
 fi
 [[ -f $HOME/.zshenv ]] && source $HOME/.zshenv
 
-_maru_osc7() {
+_maru_pct() {
   emulate -L zsh
-  local LC_ALL=C c hex out=
+  local LC_ALL=C c hex
   local -i i
-  for (( i = 1; i <= ${#PWD}; i++ )); do
-    c=${PWD[i]}
+  REPLY=
+  for (( i = 1; i <= ${#1}; i++ )); do
+    c=${1[i]}
     if [[ $c == [A-Za-z0-9/._~-] ]]; then
-      out+=$c
+      REPLY+=$c
     else
       printf -v hex '%%%02X' "'$c"
-      out+=$hex
+      REPLY+=$hex
     fi
   done
+}
+
+_maru_osc7() {
+  emulate -L zsh
+  local REPLY
+  _maru_pct $PWD
   # 호스트를 비워야 앱이 ssh 로 붙은 다른 머신의 OSC 7 과 가른다.
-  printf '\e]7;file://%s\a' $out
+  printf '\e]7;file://%s\a' $REPLY
 }
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _maru_osc7
+
+# 명령의 시작(C)·끝(D)과 프롬프트(A)를 OSC 133 으로 알린다. 방식은 ghostty 의 zsh 셸 통합을 따랐다.
+# claude 의 Bash 도구가 띄운 셸(CLAUDECODE)은 바깥 pane 의 tty 를 물려받으므로 알리지 않는다.
+# stdout 은 리다이렉트될 수 있어 tty 에 쓴다. 자식에게 새지 않게 cloexec 로 연다.
+if [[ -o interactive && -z $CLAUDECODE ]]; then
+  typeset -gi _maru_tty=-1 _maru_ran=0
+  { zmodload zsh/system && sysopen -o cloexec -wu _maru_tty /dev/tty } 2> /dev/null
+  # 사용자 시작 파일이 preexec_functions 를 덮어도 걸리게 첫 프롬프트에서 건다. precmd_functions 까지 덮으면 걸리지 않는다.
+  (( _maru_tty >= 0 )) && add-zsh-hook precmd _maru_osc133_init
+fi
+
+_maru_osc133_init() {
+  emulate -L zsh
+  add-zsh-hook -d precmd _maru_osc133_init
+  add-zsh-hook preexec _maru_osc133_preexec
+  add-zsh-hook precmd _maru_osc133_precmd
+  _maru_osc133_precmd
+}
+
+# OSC 133 은 2048 바이트를 넘으면 통째로 버려진다. 한 글자는 인코딩해 12 바이트까지 되므로 앞 169 글자만 싣는다.
+_maru_osc133_preexec() {
+  emulate -L zsh
+  local REPLY
+  _maru_pct ${1[1,169]}
+  { print -nu $_maru_tty "\e]133;C;cmdline_url=$REPLY\a" } 2> /dev/null
+  _maru_ran=1
+}
+
+_maru_osc133_precmd() {
+  local -i code=$?
+  emulate -L zsh
+  # zle 위젯이 다시 부른 precmd 는 명령이 끝난 자리가 아니다.
+  if (( _maru_ran )) && ! zle; then
+    { print -nu $_maru_tty "\e]133;D;$code\a" } 2> /dev/null
+    _maru_ran=0
+  fi
+  { print -nu $_maru_tty '\e]133;A\a' } 2> /dev/null
+}
 
 # 로그인 셸은 이 파일 뒤에 /etc/zprofile 을 읽는다. 거기서 path_helper 가 /etc/paths 의 디렉토리를 앞에 두므로,
 # 앱이 PATH 맨 앞에 붙인 maru 디렉토리가 뒤로 밀린다.

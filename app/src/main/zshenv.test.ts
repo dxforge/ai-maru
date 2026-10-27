@@ -210,6 +210,78 @@ function ttyShellWith(homeDir: string, env: Record<string, string>, command: str
   return r.stdout
 }
 
+const PROMPT = 'P> '
+
+function ttyPrompt(
+  files: Record<string, string>,
+  commands: string[],
+  env: Record<string, string> = {}
+): string {
+  const h = home({ ...files, '.zshrc': `${files['.zshrc'] ?? ''}\nPS1='${PROMPT}'` })
+  const script = [
+    `spawn -noecho ${ZSH} -l -i`,
+    `expect "${PROMPT}"`,
+    `foreach c [split $env(MARU_TEST_COMMANDS) "\\n"] { send -- "$c\\r"; expect "${PROMPT}" }`,
+    'send "exit\\r"',
+    'expect eof'
+  ].join('\n')
+  const r = spawnSync(EXPECT, ['-c', script], {
+    cwd: h,
+    env: { ...zshEnv(h, env), MARU_TEST_COMMANDS: commands.join('\n') },
+    encoding: 'utf8',
+    timeout: 10_000,
+    killSignal: 'SIGKILL'
+  })
+  return r.stdout
+}
+
+const marks = (out: string): string[] =>
+  // eslint-disable-next-line no-control-regex
+  [...out.matchAll(/\x1b\]133;([^\x07]*)\x07/g)].map((m) => m[1])
+
+describe.skipIf(!existsSync(ZSH) || !existsSync(EXPECT))('앱의 .zshenv 의 OSC 133', () => {
+  it('프롬프트마다 A, 명령이 시작하면 명령 텍스트를 실은 C, 끝나면 종료 코드를 실은 D 를 tty 에 쓴다', () => {
+    expect(marks(ttyPrompt({}, ['print hi', 'false']))).toEqual([
+      'A',
+      'C;cmdline_url=print%20hi',
+      'D;0',
+      'A',
+      'C;cmdline_url=false',
+      'D;1',
+      'A',
+      'C;cmdline_url=exit'
+    ])
+  })
+
+  it('명령 텍스트의 ; 와 % 와 한글을 바이트 단위로 퍼센트 인코딩한다', () => {
+    expect(marks(ttyPrompt({}, ["print 'a;b%c 한'"]))[1]).toBe(
+      'C;cmdline_url=print%20%27a%3Bb%25c%20%ED%95%9C%27'
+    )
+  })
+
+  it('명령 텍스트는 앞 169 글자만 싣고, 명령은 자르지 않고 실행한다', () => {
+    const long = '한'.repeat(200)
+    const out = ttyPrompt({}, [`print -r -- ${long}`])
+    expect(marks(out)[1]).toBe(
+      `C;cmdline_url=print%20-r%20--%20${'%ED%95%9C'.repeat(169 - 'print -r -- '.length)}`
+    )
+    expect(out).toContain(`${long}\r\n`)
+  })
+
+  it('claude 안(CLAUDECODE)의 셸은 OSC 133 을 쓰지 않는다', () => {
+    expect(marks(ttyPrompt({}, ['true'], { CLAUDECODE: '1' }))).toEqual([])
+  })
+
+  it('사용자 ~/.zshrc 가 preexec 배열을 덮고 precmd hook 을 더해도 그대로 알리고, 사용자 hook 도 돈다', () => {
+    const out = ttyPrompt(
+      { '.zshrc': '_mine() { print -n MINE }; preexec_functions=(); precmd_functions+=(_mine)' },
+      ['false']
+    )
+    expect(marks(out)).toEqual(['A', 'C;cmdline_url=false', 'D;1', 'A', 'C;cmdline_url=exit'])
+    expect(out.match(/MINE/g)).toHaveLength(2)
+  })
+})
+
 function loginShellWith(homeDir: string, env: Record<string, string>, command: string): string {
   return stdoutOf(spawnLogin(homeDir, command, homeDir, env))
 }
