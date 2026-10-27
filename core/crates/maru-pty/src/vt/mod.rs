@@ -208,13 +208,19 @@ unsafe extern "C" fn on_semantic_prompt(
 }
 
 /// libghostty-vt 는 `cmdline_url` 의 `%XX` 를 푼 바이트를 UTF-8 인지도, 제어 문자가 섞였는지도 보지 않고 넘긴다.
-/// 이 텍스트는 사이드바·헤더·확인 창에 그대로 쓰이므로 제어 문자(C0·DEL·C1)는 지운다.
+/// 이 텍스트는 사이드바·헤더·확인 창에 한 줄로 쓰이므로 제어 문자(C0·DEL·C1)는 지운다. 줄바꿈·탭은 공백으로
+/// 바꾼다 — 지우면 여러 줄로 친 명령의 앞뒤 줄이 붙는다.
 pub fn command_text(bytes: &[u8]) -> Option<String> {
     let text: String = String::from_utf8_lossy(bytes)
         .chars()
-        .filter(|c| !c.is_control())
+        .filter_map(|c| match c {
+            '\n' | '\t' => Some(' '),
+            c if c.is_control() => None,
+            c => Some(c),
+        })
         .collect();
-    (!text.is_empty()).then_some(text)
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
 }
 
 unsafe extern "C" fn on_title_changed(_terminal: ffi::GhosttyTerminal, userdata: *mut c_void) {
@@ -942,13 +948,29 @@ mod tests {
     fn command_text_keeps_semicolons_percents_and_hangul_but_drops_control_characters() {
         let mut t = term();
         t.write(b"\x1b]133;C;cmdline_url=a%3Bb%25c%20%ED%95%9C\x07");
-        t.write(b"\x1b]133;C;cmdline_url=%1B[31mred%7F%C2%9Bx%0A\x07");
+        t.write(b"\x1b]133;C;cmdline_url=%1B[31mred%7F%C2%9Bx%0D\x07");
         t.write(b"\x1b]133;C;cmdline_url=%07%1B\x07");
         assert_eq!(
             t.take_events().commands,
             vec![
                 CommandEvent::Start(Some("a;b%c 한".into())),
                 CommandEvent::Start(Some("[31mredx".into())),
+                CommandEvent::Start(None),
+            ]
+        );
+    }
+
+    #[test]
+    fn command_text_turns_newlines_and_tabs_into_spaces() {
+        let mut t = term();
+        t.write(b"\x1b]133;C;cmdline_url=for%20i%20in%201%202%3B%20do%0Aprint%20$i%0Adone\x07");
+        t.write(b"\x1b]133;C;cmdline_url=echo%20a%3B%5C%0Aecho%09b%0A\x07");
+        t.write(b"\x1b]133;C;cmdline_url=%0A%09\x07");
+        assert_eq!(
+            t.take_events().commands,
+            vec![
+                CommandEvent::Start(Some("for i in 1 2; do print $i done".into())),
+                CommandEvent::Start(Some("echo a;\\ echo b".into())),
                 CommandEvent::Start(None),
             ]
         );

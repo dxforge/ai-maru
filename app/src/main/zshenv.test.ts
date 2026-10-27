@@ -268,6 +268,49 @@ describe.skipIf(!existsSync(ZSH) || !existsSync(EXPECT))('앱의 .zshenv 의 OSC
     expect(out).toContain(`${long}\r\n`)
   })
 
+  // Ctrl-Z 대신 스스로 SIGSTOP 을 보낸다. 테스트를 띄운 환경이 SIGTSTP 를 무시하게 해 두었으면 셸이 그것을 물려받아
+  // Ctrl-Z 로 멈추지 않기 때문이다.
+  const stops = (n: number): string => `sh -c '${Array(n).fill('kill -STOP $$').join('; ')}'`
+  const startOf = (command: string): string => {
+    const url = [...Buffer.from(command)]
+      .map((b) =>
+        /[A-Za-z0-9/._~-]/.test(String.fromCharCode(b))
+          ? String.fromCharCode(b)
+          : `%${b.toString(16).toUpperCase().padStart(2, '0')}`
+      )
+      .join('')
+    return `C;cmdline_url=${url}`
+  }
+
+  it('멈춘 명령은 종료 코드 없는 D 를 보내고, fg 로 다시 이으면 그 job 의 명령을 C 에 싣는다', () => {
+    expect(marks(ttyPrompt({}, [stops(1), 'false', 'fg']))).toEqual([
+      'A',
+      startOf(stops(1)),
+      'D',
+      'A',
+      'C;cmdline_url=false',
+      'D;1',
+      'A',
+      startOf(stops(1)),
+      'D;0',
+      'A',
+      'C;cmdline_url=exit'
+    ])
+  })
+
+  it('fg %번호·%접두어·%?부분과 %만 친 job 지정도 그 job 의 명령으로 싣는다', () => {
+    const out = ttyPrompt({}, [stops(4), 'fg %1', '%sh', '%?STOP', '%'])
+    expect(marks(out).filter((m) => m.startsWith('C'))).toEqual([
+      ...Array(5).fill(startOf(stops(4))),
+      'C;cmdline_url=exit'
+    ])
+    expect(marks(out).filter((m) => m.startsWith('D'))).toEqual(['D', 'D', 'D', 'D', 'D;0'])
+  })
+
+  it('exec 로 시작하는 명령에는 C 를 보내지 않는다', () => {
+    expect(marks(ttyPrompt({}, ['exec zsh']))).toEqual(['A'])
+  })
+
   it('claude 안(CLAUDECODE)의 셸은 OSC 133 을 쓰지 않는다', () => {
     expect(marks(ttyPrompt({}, ['true'], { CLAUDECODE: '1' }))).toEqual([])
   })

@@ -96,8 +96,9 @@ describe('commandView', () => {
     })
   })
 
-  it('성공했거나 종료 코드를 모르거나, 텍스트가 없거나, 신호를 받은 적 없거나, 레코드가 있으면 보이지 않는다', () => {
+  it('성공했거나 Ctrl-C(130)로 끝났거나 종료 코드를 모르거나, 텍스트가 없거나, 신호를 받은 적 없거나, 레코드가 있으면 보이지 않는다', () => {
     expect(commandView(cmd({ exitCode: 0 }))).toBeUndefined()
+    expect(commandView(cmd({ exitCode: 130 }))).toBeUndefined()
     expect(commandView(cmd({}))).toBeUndefined()
     expect(commandView(cmd({ running: true, text: null }))).toBeUndefined()
     expect(commandView(cmd({ running: true, text: '' }))).toBeUndefined()
@@ -131,7 +132,7 @@ describe('commandTail·commandLabel', () => {
     const running = { running: true, text: 'a', startedAt: 1_000 } as const
     expect(commandTail(running, 1_000 + 3 * 60_000)).toBe('3m')
     expect(commandTail({ running: true, text: 'a' }, 5)).toBe('')
-    expect(commandTail({ running: false, text: 'a', exitCode: 130 }, 5)).toBe('130')
+    expect(commandTail({ running: false, text: 'a', exitCode: 2 }, 5)).toBe('2')
     expect(commandLabel(running)).toBe('Running')
     expect(commandLabel({ running: false, text: 'a', exitCode: 1 })).toBe('Exited with code 1')
   })

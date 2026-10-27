@@ -79,7 +79,6 @@ impl PaneState {
                 exit_code: *code,
                 ..self.command.clone().unwrap()
             },
-            // 프롬프트를 다시 그릴 때 온 A, 시작 없이 온 D
             CommandEvent::PromptStart | CommandEvent::End(_) => return false,
         };
         let changed = self.command.as_ref() != Some(&next);
@@ -253,12 +252,12 @@ mod tests {
     }
 
     #[test]
-    fn a_command_pane_drops_control_characters_from_its_argv() {
+    fn a_command_pane_spaces_newlines_and_drops_other_control_characters_from_its_argv() {
         let s = PaneState::for_command(
             &["sh".into(), "-c".into(), "echo a\n\x1b[1msleep 9".into()],
             1,
         );
-        assert_eq!(command(&s).1, Some("sh -c echo a[1msleep 9"));
+        assert_eq!(command(&s).1, Some("sh -c echo a [1msleep 9"));
         let s = PaneState::for_command(&["\x07".into()], 1);
         assert_eq!(command(&s), (true, None, None, Some(1)));
     }

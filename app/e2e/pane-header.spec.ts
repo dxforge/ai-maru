@@ -69,9 +69,14 @@ test('pane 헤더는 도는 명령과 돈 시간을, 실패한 명령은 종료 
   await expect(header.locator('.cwd')).toHaveText(basename(home))
 
   await page.keyboard.press('Control+C')
+  await expect(header.locator('.title')).toHaveText('my-title')
+  await expect(header.locator('.command-tail')).toHaveCount(0)
+
+  await page.keyboard.type('false\n')
+  await expect(header.locator('.title')).toHaveText('false')
   await expect(header).toHaveClass(/command-failed/)
   await expect(header.locator('.row-bar-icon')).toHaveText(ICONS.error)
-  await expect(header.locator('.command-tail')).toHaveText('130')
+  await expect(header.locator('.command-tail')).toHaveText('1')
 
   await page.keyboard.type('true\n')
   await expect(header.locator('.title')).toHaveText('my-title')

@@ -33,7 +33,7 @@ _maru_osc7() {
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _maru_osc7
 
-# claude 의 Bash 도구가 띄운 셸(CLAUDECODE)은 바깥 pane 의 tty 를 물려받으므로 알리지 않는다.
+# claude 의 Bash 도구가 띄운 셸(CLAUDECODE)은 바깥 pane 의 tty 를 물려받으므로 OSC 133 을 쓰지 않는다.
 # stdout 은 리다이렉트될 수 있어 tty 에 쓴다. 자식에게 새지 않게 cloexec 로 연다.
 if [[ -o interactive && -z $CLAUDECODE ]]; then
   typeset -gi _maru_tty=-1 _maru_ran=0
@@ -53,10 +53,50 @@ _maru_osc133_init() {
 # OSC 133 은 2048 바이트를 넘으면 통째로 버려진다. 한 글자는 인코딩해 12 바이트까지 되므로 앞 169 글자만 싣는다.
 _maru_osc133_preexec() {
   emulate -L zsh
-  local REPLY
-  _maru_pct ${1[1,169]}
+  local -a words=(${(z)1})
+  # exec 로 바뀐 프로그램은 이 훅이 없어 D·A 를 보내지 않으므로, C 를 보내면 pane 이 끝까지 도는 중으로 남는다.
+  [[ $words[1] == exec ]] && return
+  local REPLY cmd=$1
+  _maru_osc133_job $words && cmd=$REPLY
+  _maru_pct ${cmd[1,169]}
   { print -nu $_maru_tty "\e]133;C;cmdline_url=$REPLY\a" } 2> /dev/null
   _maru_ran=1
+}
+
+# `fg`·`fg %spec`·`%spec` 로 다시 이은 job 이면 그 job 의 명령을 REPLY 에 넣는다.
+_maru_osc133_job() {
+  emulate -L zsh
+  local spec n m
+  if [[ $1 == fg && $# -le 2 ]]; then
+    spec=${2:-%+}
+  elif [[ $1 == %* && $# -eq 1 ]]; then
+    spec=$1
+  else
+    return 1
+  fi
+  case $spec in
+    (%|%%|%+|%-)
+      m=${spec[2]:-+}
+      [[ $m == % ]] && m=+
+      for n in ${(k)jobstates}; do
+        [[ ${${(s.:.)jobstates[$n]}[2]} == $m ]] && break
+        n=
+      done ;;
+    (%<->) n=${spec[2,-1]} ;;
+    (%\?*)
+      for n in ${(kon)jobtexts}; do
+        [[ $jobtexts[$n] == *${spec[3,-1]}* ]] && break
+        n=
+      done ;;
+    (%*)
+      for n in ${(kon)jobtexts}; do
+        [[ $jobtexts[$n] == ${spec[2,-1]}* ]] && break
+        n=
+      done ;;
+    (*) return 1 ;;
+  esac
+  [[ -n $n && -n $jobtexts[$n] ]] || return 1
+  REPLY=$jobtexts[$n]
 }
 
 _maru_osc133_precmd() {
@@ -64,7 +104,12 @@ _maru_osc133_precmd() {
   emulate -L zsh
   # zle 위젯이 다시 부른 precmd 는 명령이 끝난 자리가 아니다.
   if (( _maru_ran )) && ! zle; then
-    { print -nu $_maru_tty "\e]133;D;$code\a" } 2> /dev/null
+    # Ctrl-Z 로 멈춘 명령은 끝나지 않았으므로 종료 코드 없이 D 를 보내 실패로 보이지 않게 한다. 멈춘 job 은 현재 job(+)이 된다.
+    if (( code > 128 )) && [[ $signals[code-127] == (TSTP|STOP|TTIN|TTOU) && -n ${(M)${(v)jobstates}:#suspended:+:*} ]]; then
+      { print -nu $_maru_tty '\e]133;D\a' } 2> /dev/null
+    else
+      { print -nu $_maru_tty "\e]133;D;$code\a" } 2> /dev/null
+    fi
     _maru_ran=0
   fi
   { print -nu $_maru_tty '\e]133;A\a' } 2> /dev/null

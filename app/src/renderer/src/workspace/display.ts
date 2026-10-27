@@ -45,17 +45,22 @@ export function fallbackName(p: Pick<Named, 'command'>, shell: string | undefine
   return shell ? dirName(shell) : 'sh'
 }
 
-/** pane 에 보일 명령. 도는 중이거나, 끝났는데 종료 코드가 0 이 아닌(실패한) 것만 보인다. */
+/**
+ * pane 에 보일 명령. 도는 중이거나, 끝났는데 실패한 것만 보인다. 실패는 종료 코드가 0 도 130 도 아닌 것이다. 130(SIGINT)은
+ * dev 서버처럼 Ctrl-C 로 끄는 명령이 흔히 내므로 실패로 보지 않는다.
+ */
 export type CommandView =
   | { running: true; text: string; startedAt?: number }
   | { running: false; text: string; exitCode: number }
+
+const SIGINT_EXIT = 130
 
 /** OSC 7501 레코드가 있는 pane 은 그 프로그램(claude 등)이 알리는 상태를 쓰므로 명령을 보이지 않는다. */
 export function commandView(state: PtyState | undefined): CommandView | undefined {
   const c = state?.command
   if (!c?.text || state!.records.length) return undefined
   if (c.running) return { running: true, text: c.text, startedAt: c.startedAt ?? undefined }
-  if (c.exitCode !== null && c.exitCode !== 0)
+  if (c.exitCode !== null && c.exitCode !== 0 && c.exitCode !== SIGINT_EXIT)
     return { running: false, text: c.text, exitCode: c.exitCode }
   return undefined
 }

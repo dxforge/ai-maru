@@ -84,12 +84,13 @@
 //!   - `A`(프롬프트 시작): null 이면 안 도는 중으로 둔다. 도는 중이면 안 도는 중, `exit_code` null 로 바꾼다 — `D` 없이
 //!     프롬프트가 떴다. 그 밖에는 바꾸지 않는다(프롬프트를 다시 그릴 때도 온다).
 //!   - `C`(명령 시작): 도는 중, `text` 는 `cmdline_url`·`cmdline` 을 푼 명령(없으면 null), `started_at` 은 받은 시각,
-//!     `exit_code` 는 null. 텍스트의 제어 문자는 지우고 UTF-8 이 아닌 바이트는 U+FFFD 로 바꾼다.
+//!     `exit_code` 는 null. 텍스트의 줄바꿈·탭은 공백으로 바꾸고, 나머지 제어 문자는 지우고, 앞뒤 공백을 떼고,
+//!     UTF-8 이 아닌 바이트는 U+FFFD 로 바꾼다.
 //!   - `D`(명령 끝): 도는 중일 때만 안 도는 중으로 바꾸고 `exit_code` 에 종료 코드(없으면 null)를 넣는다. `text`·
 //!     `started_at` 은 둔다.
 //!   - RIS 는 바꾸지 않는다.
 //!
-//!   명령을 주어 띄웠으면 `command` 는 처음부터 `{"running":true,"text":<argv 를 공백으로 잇고 제어 문자를 지운 것>,
+//!   명령을 주어 띄웠으면 `command` 는 처음부터 `{"running":true,"text":<argv 를 공백으로 잇고 C 의 텍스트처럼 다듬은 것>,
 //!   "exit_code":null,"started_at":<띄운 시각>}` 이다. 명령이 끝나면 이 프로세스도 끝나므로 늘 도는 중으로 둔다(`--keep`
 //!   이면 끝난 뒤에도 이 값이 남는다). 명령이 스스로 OSC 133 을 찍어도 이 값은 바뀌지 않는다.
 //! - `records` — 프로그램이 OSC 7501(Program Status Protocol)로 보고한 레코드 전체:

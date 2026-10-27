@@ -16,8 +16,8 @@ export type ProgramDeps = {
  * bash 에서는 셸 pid 로, zsh 에서는 0 으로 나오기 때문이다. 명령이 끝나면 pane 도 닫히므로, 떠 있는 명령 pane 에서는
  * 명령이 도는 중이다.
  *
- * 셸 pane 이 실행 중인지는 foreground 로 가른다. 셸이 알린 명령 상태는 이름에만 쓴다 — 셸 훅이 빠져 멈춘 상태로 확인 창이
- * 뜨거나 빠지지 않게 하기 위해서다.
+ * 셸 pane 이 실행 중인지는 foreground 로 가른다. 셸이 알린 명령 상태는 이름에만 쓴다 — 셸 훅이 빠져 낡은 명령 상태
+ * 때문에 확인 창이 잘못 뜨거나 떠야 할 때 뜨지 않는 일을 막기 위해서다.
  */
 export async function runningProgram(
   pane: PaneTarget,

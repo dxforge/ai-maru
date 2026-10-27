@@ -890,7 +890,7 @@ test('접은 workspace 는 머리 줄 앞 칸에 cell 들 가운데 가장 급�
   expect(x).toBe(12)
 })
 
-test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리에 돈 시간을 보이고, 실패하면 종료 코드를 남기며, 다음 명령이 지운다', async ({
+test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리에 돈 시간을 보이고, 실패하면 종료 코드를 남기며, 다음 명령이 지운다. Ctrl-Z 로 멈추거나 Ctrl-C 로 끈 명령은 실패로 남지 않는다', async ({
   launch,
   dataDir
 }) => {
@@ -909,12 +909,23 @@ test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리
   await expect(row).toHaveAttribute('title', 'sleep 30\nRunning for <1m\n~')
   await expect(row).toHaveAttribute('aria-label', 'Running: sleep 30')
 
-  await page.keyboard.press('Control+C')
-  await expect(row).toHaveClass(/command-failed/)
+  await page.keyboard.press('Control+Z')
+  await expect(row.locator('.title')).toHaveText('zsh')
+  await expect(row).not.toHaveClass(/command-/)
+  await page.keyboard.type('fg\n')
   await expect(row.locator('.title')).toHaveText('sleep 30')
+  await expect(row).toHaveClass(/command-running/)
+
+  await page.keyboard.press('Control+C')
+  await expect(row.locator('.title')).toHaveText('zsh')
+  await expect(row).not.toHaveClass(/command-/)
+
+  await page.keyboard.type("sh -c 'exit 3'\n")
+  await expect(row).toHaveClass(/command-failed/)
+  await expect(row.locator('.title')).toHaveText("sh -c 'exit 3'")
   await expect(row.locator('.state')).toHaveText(ICONS.error)
-  await expect(row.locator('.command-tail')).toHaveText('130')
-  await expect(row).toHaveAttribute('title', 'sleep 30\nExited with code 130\n~')
+  await expect(row.locator('.command-tail')).toHaveText('3')
+  await expect(row).toHaveAttribute('title', "sh -c 'exit 3'\nExited with code 3\n~")
 
   await page.keyboard.type('false\n')
   await expect(row.locator('.title')).toHaveText('false')
