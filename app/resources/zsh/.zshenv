@@ -50,17 +50,48 @@ _maru_osc133_init() {
   _maru_osc133_precmd
 }
 
-# OSC 133 은 2048 바이트를 넘으면 통째로 버려진다. 한 글자는 인코딩해 12 바이트까지 되므로 앞 169 글자만 싣는다.
+# libghostty-vt 는 2048 바이트를 넘는 OSC 133 을 통째로 버린다. 한 글자는 %XX 로 인코딩하면 12 바이트까지 되므로 앞 169 글자만 싣는다.
 _maru_osc133_preexec() {
   emulate -L zsh
   local -a words=(${(z)1})
   # exec 로 바뀐 프로그램은 이 훅이 없어 D·A 를 보내지 않으므로, C 를 보내면 pane 이 끝까지 도는 중으로 남는다.
-  [[ $words[1] == exec ]] && return
+  _maru_osc133_execs "${words[@]}" && return
   local REPLY cmd=$1
   _maru_osc133_job $words && cmd=$REPLY
   _maru_pct ${cmd[1,169]}
   { print -nu $_maru_tty "\e]133;C;cmdline_url=$REPLY\a" } 2> /dev/null
   _maru_ran=1
+}
+
+# `${(z)}` 로 나눈 명령줄에서 명령 자리의 exec 가 리다이렉션 말고 명령을 받으면 참이다.
+# 리다이렉션만 받은 exec(`exec 2>file`)는 셸을 바꾸지 않는다. `(…)` 안의 exec 는 subshell 만 바꾸므로 보지 않는다.
+_maru_osc133_execs() {
+  emulate -L zsh -o extended_glob
+  local w
+  local -i at=1 inexec=0 target=0
+  for w in "$@"; do
+    if (( target )); then
+      target=0
+      continue
+    fi
+    if [[ $w == (\;|\&\&|\|\||\||\|\&|\&|\&\||\&\!) ]]; then
+      at=1 inexec=0
+    elif (( inexec )); then
+      # `2>`·`>&`·`&>`·`<<<` 같은 연산자 다음 낱말은 그 대상이다. `{fd}>file` 의 `{fd}` 는 따로 나뉜다.
+      if [[ $w == (<->|)(\<|\>|\&\>)* ]]; then
+        target=1
+      elif [[ $w != \{[[:IDENT:]]##\} ]]; then
+        return 0
+      fi
+    elif (( at )); then
+      case $w in
+        (exec) inexec=1 ;;
+        (\{|\!|if|then|else|elif|do|while|until|time|[[:IDENT:]]##=*) ;;
+        (*) at=0 ;;
+      esac
+    fi
+  done
+  return 1
 }
 
 # `fg`·`fg %spec`·`%spec` 로 다시 이은 job 이면 그 job 의 명령을 REPLY 에 넣는다.

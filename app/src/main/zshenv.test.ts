@@ -307,8 +307,35 @@ describe.skipIf(!existsSync(ZSH) || !existsSync(EXPECT))('앱의 .zshenv 의 OSC
     expect(marks(out).filter((m) => m.startsWith('D'))).toEqual(['D', 'D', 'D', 'D', 'D;0'])
   })
 
-  it('exec 로 시작하는 명령에는 C 를 보내지 않는다', () => {
-    expect(marks(ttyPrompt({}, ['exec zsh']))).toEqual(['A'])
+  // exec 로 바뀐 zsh 는 앱의 .zshenv 를 읽지 않으므로 OSC 133 을 보내지 않는다.
+  it.each([
+    'exec zsh',
+    'true && exec zsh',
+    'false || exec zsh',
+    'FOO=1 exec zsh',
+    '{ exec zsh }',
+    'if true; then exec zsh; fi'
+  ])('명령 자리의 exec 가 명령을 받는 %s 에는 C 를 보내지 않는다', (command) => {
+    expect(marks(ttyPrompt({}, [command]))).toEqual(['A'])
+  })
+
+  it('앞 명령 뒤의 exec 가 명령을 받으면 그 줄에는 C 를 보내지 않는다', () => {
+    const exec = 'print x; exec bash --norc --noprofile'
+    expect(marks(ttyPrompt({}, ['export PS1', exec]))).toEqual([
+      'A',
+      'C;cmdline_url=export%20PS1',
+      'D;0',
+      'A'
+    ])
+  })
+
+  it('리다이렉션만 받은 exec 와 명령 자리가 아닌 exec 에는 C 와 D 를 보낸다', () => {
+    const commands = ['exec 2>err', 'exec {fd}>out 3<&-', 'print exec zsh']
+    expect(marks(ttyPrompt({}, commands))).toEqual([
+      'A',
+      ...commands.flatMap((c) => [startOf(c), 'D;0', 'A']),
+      'C;cmdline_url=exit'
+    ])
   })
 
   it('claude 안(CLAUDECODE)의 셸은 OSC 133 을 쓰지 않는다', () => {
