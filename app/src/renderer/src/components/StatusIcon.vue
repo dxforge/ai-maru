@@ -5,12 +5,13 @@ const { state } = defineProps<{ state: ProgramStatusState }>()
 </script>
 
 <template>
+  <!-- viewBox 는 원(r=6)과 선 반폭(0.55)의 바깥 테두리에 맞춘다. 같은 자리에 번갈아 보이는 Nerd Font 글자의 잉크가 12px 글꼴에서 약 12.3px 로 1em 을 거의 채우기 때문이다. viewBox 가 `0 0 16 16` 이면 원이 10px 로 글자보다 작아 보인다. -->
   <svg
     class="status-svg"
     :class="{ spin: state === 'working' }"
     :data-state="state"
     xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 16 16"
+    viewBox="1.45 1.45 13.1 13.1"
     aria-hidden="true"
   >
     <circle v-if="state === 'idle'" cx="8" cy="8" r="2.5" fill="currentColor" />
