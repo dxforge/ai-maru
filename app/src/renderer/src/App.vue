@@ -726,10 +726,7 @@ void window.maru.restoreScreen().then((s) => {
       ref="side"
       class="side"
       :class="{ resizing: resizing === 'side' }"
-      :style="{
-        width: `${sidebarOpen ? sidebarWidth : RAIL_WIDTH}px`,
-        '--rail': `${RAIL_WIDTH}px`
-      }"
+      :style="{ width: `${sidebarOpen ? sidebarWidth : RAIL_WIDTH}px` }"
     >
       <WorkspaceSidebar
         :collapsed="!sidebarOpen"
