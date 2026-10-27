@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { Locator, Page } from '@playwright/test'
 import {
   activeHeader,
+  type Box,
   clickMenu,
   expect,
   newWorkspace,
@@ -331,28 +332,42 @@ test('사이드바·pane 헤더·cell 헤더의 상태 원은 셸의 터미널 �
     'blocked'
   )
 
+  const sameHeight = async (icon: Locator, a: number, b: number) => {
+    const em = await icon.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
+    // 0.15em 은 viewBox 가 `0 0 16 16` 인 원(차이 0.19em 이상)은 걸러 내고 지금 원(차이 0.11em 이하)은 통과시킨다. 두 값은 DPR 1·2, 글꼴 9~14px 에서 쟀다.
+    expect(Math.abs(a - b)).toBeLessThanOrEqual(em * 0.15)
+  }
+
   const [sidebarShell] = await inkExtents(page, shellRows(page), ['.state'])
   const [sidebarBlocked] = await inkExtents(page, paneRows(page), ['.state'])
-  expect(Math.abs(sidebarBlocked.height - sidebarShell.height)).toBeLessThanOrEqual(1)
+  await sameHeight(paneRows(page).locator('.state'), sidebarBlocked.height, sidebarShell.height)
 
   const [headerShell] = await inkExtents(page, paneHeader(page, 0), ['.row-bar-icon'])
   const [headerBlocked] = await inkExtents(page, paneHeader(page, 1), ['.row-bar-icon'])
   const [cellBlocked] = await inkExtents(page, page.locator('.cell-header'), ['.row-bar-icon'])
-  expect(Math.abs(headerBlocked.height - headerShell.height)).toBeLessThanOrEqual(1)
-  expect(Math.abs(cellBlocked.height - headerShell.height)).toBeLessThanOrEqual(1)
+  const headerIcon = paneHeader(page, 1).locator('.row-bar-icon')
+  await sameHeight(headerIcon, headerBlocked.height, headerShell.height)
+  await sameHeight(headerIcon, cellBlocked.height, headerShell.height)
 })
 
 async function inkOffsets(page: Page, row: Locator, icons: readonly string[]): Promise<number[]> {
-  const height = (await row.boundingBox())!.height
-  return (await inkExtents(page, row, icons)).map((ink) => ink.top + ink.height / 2 - height / 2)
+  const clip = (await row.boundingBox())!
+  return (await inkExtents(page, row, icons, clip)).map(
+    (ink) => ink.top + ink.height / 2 - clip.height / 2
+  )
 }
 
+/**
+ * 맨 위·맨 아래 잉크 줄은 그 줄의 가장 짙은 픽셀이 아이콘의 가장 짙은 픽셀에 견줘 얼마나 짙은지만큼만 센다.
+ * 줄 단위로 세면 가장자리가 픽셀 경계 어디에 걸리는지에 따라 높이가 한 픽셀씩 달라지기 때문이다.
+ */
 async function inkExtents(
   page: Page,
   row: Locator,
-  icons: readonly string[]
+  icons: readonly string[],
+  rowBox?: Box
 ): Promise<{ top: number; height: number }[]> {
-  const clip = (await row.boundingBox())!
+  const clip = rowBox ?? (await row.boundingBox())!
   const boxes = await Promise.all(icons.map(async (s) => (await row.locator(s).boundingBox())!))
   const image = await screenshotPixels(page, clip)
   const scale = image.width / clip.width
@@ -361,17 +376,24 @@ async function inkExtents(
     return image.data.slice(i, i + 3)
   }
   const background = at(image.width - 1, 0)
-  return boxes.map((box) => {
-    const inked = (y: number) => {
+  return boxes.map((box, n) => {
+    const darkness = (y: number) => {
+      let most = 0
       for (
         let x = Math.floor((box.x - clip.x) * scale);
         x < (box.x + box.width - clip.x) * scale;
         x++
       )
-        if (at(x, y).some((v, i) => Math.abs(v - background[i]) > 30)) return true
-      return false
+        for (const [i, v] of at(x, y).entries()) most = Math.max(most, Math.abs(v - background[i]))
+      return most
     }
-    const rows = [...Array(image.height).keys()].filter(inked)
-    return { top: rows[0] / scale, height: (rows[rows.length - 1] + 1 - rows[0]) / scale }
+    const byRow = [...Array(image.height).keys()].map(darkness)
+    const rows = byRow.flatMap((d, y) => (d > 30 ? [y] : []))
+    if (rows.length === 0) throw new Error(`'${icons[n]}' 의 영역에서 잉크가 있는 줄을 찾지 못했다`)
+    const [first, last] = [rows[0], rows[rows.length - 1]]
+    const peak = Math.max(...byRow)
+    const top = first + 1 - byRow[first] / peak
+    const bottom = last + byRow[last] / peak
+    return { top: top / scale, height: (bottom - top) / scale }
   })
 }
