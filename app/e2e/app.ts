@@ -126,7 +126,8 @@ async function launchApp(
     } as Record<string, string>
   })
   const page = await app.firstWindow()
-  await page.waitForSelector('.xterm-screen')
+  // single 보기에서는 고르지 않은 cell 이 숨으므로, 맨 앞 cell 이 아니라 고른 cell 의 터미널을 기다린다.
+  await activeTerminal(page)
   return { app, page }
 }
 
