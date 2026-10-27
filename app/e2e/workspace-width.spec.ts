@@ -144,7 +144,7 @@ test('재시작 화면의 pane 폭이 정류장 밖이면 그 폭으로 되살�
 }) => {
   const first = await launch()
   await toggleView(first, 'columns')
-  await activeTerminal(first.page)
+  await expectCols(first.page, 80)
   await restartWith(first.app)
   const file = join(dataDir, 'restart.json')
   const saved = JSON.parse(readFileSync(file, 'utf8'))
