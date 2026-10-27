@@ -287,7 +287,7 @@ test('zsh 에서 선택된 cell 의 디렉토리가 지워졌으면 ⌘N 은 홈
   await run(page, '[ "$PWD" = "$HOME" ] && echo at-home-$((1+1))', 'at-home-2')
 })
 
-test('zsh 에서 ⌘T 는 선택한 cell 뒤(그 cell 이 띄운 것들 뒤)에 선택한 pane 의 디렉토리에서 cell 을 더해 선택한다', async ({
+test('zsh 에서 ⌘T 는 선택한 cell 바로 뒤(그 cell 이 앞서 띄운 것보다 앞)에 선택한 pane 의 디렉토리에서 cell 을 더해 선택한다', async ({
   launch,
   dataDir
 }) => {
@@ -304,8 +304,8 @@ test('zsh 에서 ⌘T 는 선택한 cell 뒤(그 cell 이 띄운 것들 뒤)에 
   await newCell(launched, 4)
 
   await expect(workspaceNames(page)).toHaveCount(2)
-  await expect(cellGroups(page).nth(2)).toHaveClass(/selected/)
-  await expect(cellViews(page).nth(1).locator('.xterm-rows')).toContainText('mark-spawned')
+  await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
+  await expect(cellViews(page).nth(2).locator('.xterm-rows')).toContainText('mark-spawned')
   await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
 })
 

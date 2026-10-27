@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
   cellItems,
@@ -44,7 +45,7 @@ test('maru cell new 는 부른 cell 뒤에 cell 을 더해 명령을 띄우고 p
   await run(page, 'echo still-$((1+1))', 'still-2')
 })
 
-test('부른 cell 뒤에 띄운 순서대로 놓이고, columns 에서는 그 오른쪽에 놓인다', async ({
+test('부른 cell 바로 뒤에 놓여 나중에 띄운 것이 앞에 오고, columns 에서는 그 오른쪽에 놓인다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -58,9 +59,9 @@ test('부른 cell 뒤에 띄운 순서대로 놓이고, columns 에서는 그 �
   await page.keyboard.type(
     `maru cell new bash -c "maru cell new ${marked('p1')}; echo mark-p; read x" >/dev/null\n`
   )
-  await expectOrder(page, [null, 'a', 'p', 'p1', null])
+  await expectOrder(page, [null, 'p', 'p1', 'a', null])
   await page.keyboard.type(`maru cell new ${marked('b')} >/dev/null\n`)
-  await expectOrder(page, [null, 'a', 'p', 'p1', 'b', null])
+  await expectOrder(page, [null, 'b', 'p', 'p1', 'a', null])
   await expect(workspaceNames(page)).toHaveCount(2)
   await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
 
@@ -73,7 +74,7 @@ test('부른 cell 뒤에 띄운 순서대로 놓이고, columns 에서는 그 �
   await run(page, 'echo still-$((1+1))', 'still-2')
 })
 
-test('재시작한 뒤에도 부른 cell 이 앞서 띄운 것 뒤에 놓는다', async ({ launch }) => {
+test('재시작한 뒤에도 부른 cell 바로 뒤에 놓는다', async ({ launch }) => {
   const { app, page } = await launch()
   await page.keyboard.type(`maru cell new ${marked('a1')} >/dev/null\n`)
   await expectOrder(page, [null, 'a1'])
@@ -83,8 +84,49 @@ test('재시작한 뒤에도 부른 cell 이 앞서 띄운 것 뒤에 놓는다'
   await expectOrder(again, [null, 'a1'])
   await expect(workspaceNames(again)).toHaveCount(1)
   await again.keyboard.type(`maru cell new ${marked('a2')} >/dev/null\n`)
-  await expectOrder(again, [null, 'a1', 'a2'])
+  await expectOrder(again, [null, 'a2', 'a1'])
   await expect(workspaceNames(again)).toHaveCount(1)
+})
+
+test('--after·--before 는 가리킨 pane·job 의 cell 바로 뒤·앞에 놓는다', async ({ launch }) => {
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await cellItems(page).nth(0).click()
+  await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
+
+  await page.keyboard.type(`A=$(maru cell new ${marked('a')})\n`)
+  await expectOrder(page, [null, 'a', null])
+  await page.keyboard.type(`maru cell new --after $A ${marked('b')} >/dev/null\n`)
+  await expectOrder(page, [null, 'a', 'b', null])
+  await page.keyboard.type(`maru cell new --before $A ${marked('c')} >/dev/null\n`)
+  await expectOrder(page, [null, 'c', 'a', 'b', null])
+  await page.keyboard.type(`J=$(maru job new sleep 100)\n`)
+  await page.keyboard.type(`maru cell new --before $J ${marked('d')} >/dev/null\n`)
+  await expectOrder(page, ['d', null, 'c', 'a', 'b', null])
+  await expect(workspaceNames(page)).toHaveCount(2)
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+})
+
+test('--after 가 다른 workspace 의 pane, 없는 pty, pty id 가 아닌 값이면 cell 을 열지 않고 실패한다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  const saved = join(dataDir, 'first-pty')
+  await run(page, `echo $MARU_PTY_ID > '${saved}'; echo saved-$((1+1))`, 'saved-2')
+  await newWorkspace(launched, 2)
+  for (const [target, reason] of [
+    [`$(cat '${saved}')`, 'not in the workspace'],
+    ['p-00000000', 'no cell for pty'],
+    ['nope', 'must be a pty id']
+  ]) {
+    await run(page, `clear; maru cell new --after ${target} true; echo "code-$?"`, 'code-1')
+    await expect(rows(page)).toContainText(reason)
+  }
+  await expect(cellItems(page)).toHaveCount(2)
+  await expect(workspaceNames(page)).toHaveCount(2)
 })
 
 test('명령이 끝나면 cell 이 닫히고, 곧바로 끝나는 명령도 pty id 를 찍고 성공한다', async ({
@@ -126,7 +168,7 @@ test('명령 없이 띄운 cell 은 셸이고, maru pane close 로 닫는다', a
   await expect(cellItems(page)).toHaveCount(1)
 })
 
-test('job 에서 부르면 그 job 의 cell 뒤에, 그 cell 이 띄운 순서대로 놓는다', async ({ launch }) => {
+test('job 에서 부르면 그 job 의 cell 바로 뒤에 놓는다', async ({ launch }) => {
   const launched = await launch()
   const { page } = launched
   await newWorkspace(launched, 2)
@@ -135,7 +177,7 @@ test('job 에서 부르면 그 job 의 cell 뒤에, 그 cell 이 띄운 순서�
   await page.keyboard.type(`maru cell new ${marked('p')} >/dev/null\n`)
   await expectOrder(page, [null, 'p', null])
   await page.keyboard.type(`maru job new --name opener maru cell new ${marked('j')}\n`)
-  await expectOrder(page, [null, 'p', 'j', null])
+  await expectOrder(page, [null, 'j', 'p', null])
   await expect(workspaceNames(page)).toHaveCount(2)
   await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
 })

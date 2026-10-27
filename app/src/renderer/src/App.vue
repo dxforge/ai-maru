@@ -264,8 +264,15 @@ window.maru.onPaneNew((id, { pty, cwd, direction, command, full }) => {
   paneRequests.set(workspaces.splitFrom(from.key, direction, { startDir: cwd, command }, full), id)
 })
 
-window.maru.onCellNew((id, { cell, cwd, command }) => {
-  paneRequests.set(workspaces.openCellFrom(cell, { startDir: cwd, command }), id)
+window.maru.onCellNew((id, { cell, cwd, command, place }) => {
+  const pane = workspaces.openCellFrom(cell, { startDir: cwd, command }, place)
+  if (pane === undefined) {
+    return window.maru.paneReply(id, {
+      error: 'bad_place',
+      message: 'the cell to place the new cell by is not in the workspace of this terminal'
+    })
+  }
+  paneRequests.set(pane, id)
 })
 
 // `pane:cancel` 은 main 이 시간 초과한 요청의 id 를 싣는다. 그 요청으로 열어 아직 pty 를 기다리는 pane 을 닫는다

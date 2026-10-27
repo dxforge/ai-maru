@@ -265,6 +265,30 @@ test('재시작 직후 선택하지 않은 cell 의 남은 pty 가 곧바로 부
   await expect(cellViews(again).nth(2).locator('.xterm-rows')).toContainText('mark-new')
 })
 
+test('재시작 직후 남은 pty 가 곧바로 부른 maru cell new --before 는 가리킨 cell 앞에 띄운다', async ({
+  launch,
+  dataDir
+}) => {
+  const first = await launch()
+  const { app, page } = first
+  await newWorkspace(first, 2)
+  await newWorkspace(first, 3)
+  await cellItems(page).nth(1).click()
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  const out = join(dataDir, 'cell-new-before')
+  await page.keyboard.type(
+    callOnReturn(`cell new --before $MARU_PTY_ID bash -c 'echo mark-new; read x'`, out)
+  )
+  await cellItems(page).nth(0).click()
+  await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
+  await restartWith(app)
+  const { page: again } = await launch()
+  await expect.poll(readResult(out), { timeout: 15_000 }).toBe('code=0')
+  await expect(cellItems(again)).toHaveCount(4)
+  await expect(workspaceNames(again)).toHaveCount(3)
+  await expect(cellViews(again).nth(1).locator('.xterm-rows')).toContainText('mark-new')
+})
+
 test('재시작 직후 남은 pty 가 곧바로 부른 maru pane new 는 그 pane 을 나눈다', async ({
   launch,
   dataDir

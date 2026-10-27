@@ -251,6 +251,58 @@ describe('cell.new', () => {
     answer(null)
     await expect(empty).rejects.toThrow('without a pty')
   })
+
+  it.each([
+    ['after', false],
+    ['before', true]
+  ] as const)('%s 로 가리킨 pty 의 cell 을 place 로 넘긴다', async (key, before) => {
+    const { handlers, sent, answer, cells } = setup()
+    cells.set(B, 'c-0000000b')
+    const done = handlers['cell.new']({ cwd: '/', [key]: B }, A)
+    expect(sent[0].arg).toEqual({
+      cell: 'c-0000000a',
+      cwd: '/',
+      place: { cell: 'c-0000000b', before }
+    })
+    answer({ pty: 'p-0000000c' })
+    await done
+  })
+
+  it('가리킨 cell 도 쌓을 때가 아니라 넘길 때 정한다', async () => {
+    const { handlers, sent, ready, answer, cells } = setup({ ready: false })
+    const done = handlers['cell.new']({ cwd: '/', before: B }, A)
+    cells.set(B, 'c-0000000b')
+    ready()
+    expect(sent[0].arg).toMatchObject({ place: { cell: 'c-0000000b', before: true } })
+    answer({ pty: 'p-0000000c' })
+    await done
+  })
+
+  it('가리킨 pty 의 cell 을 모르면 창에 넘기지 않고 invalid_params', async () => {
+    const { handlers, sent } = setup()
+    await expect(handlers['cell.new']({ cwd: '/', after: B }, A)).rejects.toBeInstanceOf(
+      InvalidParams
+    )
+    expect(sent).toEqual([])
+  })
+
+  it.each([
+    [{ cwd: '/', after: A, before: A }],
+    [{ cwd: '/', after: 'c-0000000a' }],
+    [{ cwd: '/', before: 1 }],
+    [{ cwd: '/', after: null }]
+  ])('맞지 않는 자리 %j 는 창에 넘기지 않고 거절한다', async (params) => {
+    const { handlers, sent } = setup()
+    await expect(handlers['cell.new'](params, A)).rejects.toBeInstanceOf(InvalidParams)
+    expect(sent).toEqual([])
+  })
+
+  it('창이 bad_place 로 답하면 invalid_params', async () => {
+    const { handlers, answer } = setup()
+    const done = handlers['cell.new']({ cwd: '/', after: A }, A)
+    answer({ error: 'bad_place', message: 'other workspace' })
+    await expect(done).rejects.toBeInstanceOf(InvalidParams)
+  })
 })
 
 describe('pane.close', () => {

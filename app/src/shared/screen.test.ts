@@ -24,7 +24,7 @@ const screen: ScreenState = {
               startDir: '/a',
               cwd: '/b',
               title: 't',
-              git: { repo: 'r', branch: 'main' }
+              git: { repo: 'r', branch: 'main', common: '/r/.git', sub: 'app' }
             },
             { key: 2, ptyId: 'p-0000000b', command: ['sh', '-c', 'true'] }
           ],
@@ -60,12 +60,12 @@ describe('parseScreen', () => {
     ['명령이 문자열 배열이 아님', (s) => (s.workspaces[0].cells[0].panes[1].command = [1])],
     ['git 의 저장소 이름이 없음', (s) => (s.workspaces[0].cells[0].panes[0].git = { branch: 'x' })],
     ['git 의 branch 가 문자열이 아님', (s) => (s.workspaces[0].cells[0].panes[0].git.branch = 1)],
+    ['git 의 common 이 문자열이 아님', (s) => (s.workspaces[0].cells[0].panes[0].git.common = 1)],
+    ['git 의 sub 가 문자열이 아님', (s) => (s.workspaces[0].cells[0].panes[0].git.sub = 1)],
     ['선택이 정수가 아님', (s) => (s.selected = '1')],
     ['접은 목록이 없음', (s) => delete s.sidebar.folded],
     ['보기 모드가 틀림', (s) => (s.viewMode = 'grid')],
     ['Canvas 폭이 숫자가 아님', (s) => (s.canvas = { width: '300' })],
-    ['부른 cell 이 문자열', (s) => (s.workspaces[0].cells[0].openedBy = '1')],
-    ['부른 cell 이 정수가 아님', (s) => (s.workspaces[0].cells[0].openedBy = 1.5)],
     ['글꼴 크기가 숫자가 아님', (s) => (s.workspaces[0].cells[0].fontSize = '16')],
     ['글꼴 크기가 유한하지 않음', (s) => (s.workspaces[0].cells[0].fontSize = null)],
     ['pane 폭이 숫자가 아님', (s) => (s.workspaces[0].cells[0].paneCols = '110')],
@@ -97,10 +97,21 @@ describe('parseScreen', () => {
     })
   })
 
-  it('부른 cell 은 없어도 되고, 있으면 그대로 돌려준다', () => {
-    const w = screen.workspaces[0]
-    const s = { ...screen, workspaces: [{ ...w, cells: [{ ...w.cells[0], openedBy: 3 }] }] }
-    expect(parseScreen(s)).toEqual(s)
+  it('모르는 필드는 어느 단계에 있든 버린다 — 옛 빌드가 cell 에 쓴 openedBy 도', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 모르는 필드를 일부러 더한다.
+    const s: Record<string, any> = clone()
+    s.extra = 1
+    s.sidebar.extra = 1
+    s.canvas = { width: 300, extra: 1 }
+    const w = s.workspaces[0]
+    w.extra = 1
+    const c = w.cells[0]
+    c.openedBy = 3
+    c.layout.extra = 1
+    c.layout.first.extra = 1
+    c.panes[0].extra = 1
+    c.panes[0].git.extra = 1
+    expect(parseScreen(s)).toEqual({ ...screen, canvas: { width: 300 } })
   })
 
   it('객체가 아니면 null', () => {
