@@ -5,6 +5,7 @@ import {
   canvasPanel,
   clickMenu,
   expect,
+  focusPane,
   newWorkspace,
   paneHeader,
   panes,
@@ -562,8 +563,7 @@ for (const header of ['bottom', 'top'] as const) {
     const { app, page } = await launch()
     await toggleView({ app, page }, 'columns')
     await split(app, page, 'split-down', 2)
-    await clickMenu(app, 'focus-pane-up')
-    await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
+    await focusPane(app, page, 'focus-pane-up', 0)
 
     for (const b of await measure(page))
       expect(

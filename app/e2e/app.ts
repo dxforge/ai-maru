@@ -459,6 +459,20 @@ export async function clickMenu(app: ElectronApplication, id: string): Promise<v
   await app.evaluate(({ Menu }, id) => Menu.getApplicationMenu()!.getMenuItemById(id)!.click(), id)
 }
 
+/**
+ * `clickMenu` 가 돌아와도 renderer 는 아직 포커스를 옮기기 전일 수 있어, 바로 친 글자 가운데 앞 글자가 옛 pane 에 들어갈 수 있다.
+ * `TerminalView.vue` 는 `active` 가 바뀐 같은 flush 에서 `term.focus()` 를 부르므로, `.terminal-view` 가 `active` 가 되면 포커스도 옮겨 간 뒤다.
+ */
+export async function focusPane(
+  app: ElectronApplication,
+  page: Page,
+  id: 'focus-pane-left' | 'focus-pane-right' | 'focus-pane-up' | 'focus-pane-down',
+  i: number
+): Promise<void> {
+  await clickMenu(app, id)
+  await expect(panes(page).nth(i).locator('.terminal-view')).toHaveClass(/active/)
+}
+
 // pty 가 다 뜨기 전에 재시작하면 다시 뜬 앱이 그 pty 에 붙을지가 시점에 달리므로, 부르는 쪽이 셸이 답한
 // 것을 본 뒤에 부른다.
 export async function restartWith(

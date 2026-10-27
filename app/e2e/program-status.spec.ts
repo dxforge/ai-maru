@@ -6,6 +6,7 @@ import {
   type Box,
   clickMenu,
   expect,
+  focusPane,
   newWorkspace,
   paneHeader,
   paneRows,
@@ -238,7 +239,7 @@ test('상태가 있는 pane 의 셸이 끝나면 pane 과 함께 사라지고, �
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await page.keyboard.type(status('working'))
-  await clickMenu(app, 'focus-pane-left')
+  await focusPane(app, page, 'focus-pane-left', 0)
   await page.keyboard.type(status('done'))
   await expect(paneRows(page)).toHaveClass([/done/, /working/])
 
@@ -256,13 +257,13 @@ test('cell 헤더는 pane 상태 가운데 blocked, error, done, working 순으�
   const header = page.locator('.cell-header')
   await page.keyboard.type(status('working'))
   await expect(header).toHaveClass(/working/)
-  await clickMenu(app, 'focus-pane-left')
+  await focusPane(app, page, 'focus-pane-left', 0)
   await page.keyboard.type(status('done'))
   await expect(header).toHaveClass(/done/)
-  await clickMenu(app, 'focus-pane-right')
+  await focusPane(app, page, 'focus-pane-right', 1)
   await page.keyboard.type(status('error'))
   await expect(header).toHaveClass(/error/)
-  await clickMenu(app, 'focus-pane-left')
+  await focusPane(app, page, 'focus-pane-left', 0)
   await page.keyboard.type(status('blocked'))
   await expect(header).toHaveClass(/blocked/)
 })
