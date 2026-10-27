@@ -193,12 +193,16 @@ function drag(what: Dragged, source: HTMLElement, from: PointerEvent): DragSessi
   nav.value!.append(ghost)
   dragged.value = what
   const el = list.value!
-  // 끄는 동안 `.list` 의 화면 위치와 높이는 바뀌지 않으므로 처음에 한 번만 잰다.
+  // 끄는 동안 사이드바와 `.list` 의 화면 위치와 크기는 바뀌지 않으므로 처음에 한 번만 잰다.
   const bounds = spanOf(el)
+  const side = nav.value!.getBoundingClientRect()
+  let x = from.clientX
   let y = from.clientY
-  // 포인터가 같은 틈 안에서 움직이면 사이드바를 다시 그리지 않는다.
+  // 포인터가 사이드바 밖이면 놓을 곳을 고르지 않아, 거기서 떼면 아무것도 옮기지 않는다. 터미널 위에서 뗀 버튼이 그 높이의
+  // 자리로 cell 을 옮기지 않게 하기 위해서다.
+  const inside = (): boolean => x >= side.left && x < side.right && y >= side.top && y < side.bottom
   const pick = (): void => {
-    const at = dropAt(what, spans(), y)
+    const at = inside() ? dropAt(what, spans(), y) : undefined
     const next = at?.line === undefined ? at : { ...at, line: at.line - bounds.top + el.scrollTop }
     if (!sameTarget(next, target.value)) target.value = next
   }
@@ -209,6 +213,7 @@ function drag(what: Dragged, source: HTMLElement, from: PointerEvent): DragSessi
   }
   return {
     move(m) {
+      x = m.clientX
       y = m.clientY
       ghost.style.transform = `translate(${m.clientX - from.clientX}px, ${y - from.clientY}px)`
       pick()

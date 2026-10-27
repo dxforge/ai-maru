@@ -179,15 +179,14 @@ export function createWorkspaces(
     if (!from) return
     const at = from.cells.findIndex((c) => c.key === key)
     if (to === 'new') {
-      // 혼자인 cell 을 새 workspace 로 빼면 그 workspace 를 id 그대로 끝으로 옮긴다. 보이는 결과는 같고, `maru mate list` 의
-      // workspace 열과 닫기 확인이 보는 workspace id 가 바뀌지 않기 때문이다.
+      // 새 workspace 를 만들지 않는 것은 `maru mate list` 의 workspace 열과 닫기 확인이 보는 workspace id 를 바꾸지 않기 위해서다.
       if (from.cells.length === 1) return moveWorkspace(from.key, list.value.length)
       list.value.push(createWorkspace(detach(from, at)))
       return
     }
     const dest = list.value.find((w) => w.key === to.workspace)
-    // cell 이 하나뿐인 workspace 안에서 그 cell 을 옮기면, `detach` 가 cell 을 빼면서 그 workspace 를 목록에서 지우므로 cell 이
-    // 목록에 없는 workspace 에 들어가 사라진다.
+    // cell 이 하나뿐인 workspace 안에서 그 cell 을 옮기면 아무것도 하지 않는다. `detach` 가 cell 을 빼면서 그 workspace 를
+    // 목록에서 지우므로, 그대로 넣으면 cell 이 목록에 없는 workspace 에 들어가 사라지기 때문이다.
     if (!dest || (dest === from && from.cells.length === 1)) return
     dest.cells.splice(dest === from && at < to.index ? to.index - 1 : to.index, 0, detach(from, at))
   }

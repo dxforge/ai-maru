@@ -1,6 +1,6 @@
 /**
- * 사이드바의 끌어 놓기. 끌어 옮기는 대상(`Dragged`)과 놓을 곳(`Drop`)을 따로 둔다. `dropAt` 은 사이드바가 잰 세로
- * 범위(`SidebarSpans`)와 포인터의 y 로 놓을 곳을 고른다. `dropAt`·`scrollStep` 은 DOM 을 읽지 않으므로 unit 테스트로 잰다.
+ * 사이드바의 끌어 놓기. 끄는 것(`Dragged`)과 놓을 곳(`Drop`)을 따로 둔다. #88(pane 옮기기)이 두 쪽에 종류를 더해 이
+ * 모듈을 다시 쓰기 위해서다. `dropAt`·`scrollStep` 은 DOM 을 읽지 않으므로 unit 테스트로 잰다.
  */
 
 /** 끄는 것. `index` 는 끌기 전 목록에서의 자리다(cell 은 그 workspace 안, workspace 는 목록 안). */
@@ -71,7 +71,7 @@ function workspaceDrop(
   }
 }
 
-/** 놓아도 순서가 그대로인 곳이면 `dropAt` 은 아무것도 주지 않는다. */
+/** 놓아도 순서가 그대로인 곳이면 `dropAt` 은 `undefined` 를 돌려준다. */
 export function dropAt(d: Dragged, s: SidebarSpans, y: number): DropAt | undefined {
   return d.kind === 'cell' ? cellDrop(d, s, y) : workspaceDrop(d, s, y)
 }

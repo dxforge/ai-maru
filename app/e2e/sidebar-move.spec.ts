@@ -193,6 +193,44 @@ test('Esc 를 누르면 끌기를 그만두어 순서가 그대로이고, 그 Es
   await page.keyboard.press('Control+C')
 })
 
+test('포인터가 사이드바 밖에 있을 때 떼면 끌기를 그만두어 cell 도 workspace 도 옮기지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await arrange(launched, [['alpha', 'bravo'], ['charlie']])
+  const sidebar = (await page.locator('.sidebar').boundingBox())!
+  const outside = async (target: Locator): Promise<void> => {
+    const b = (await target.boundingBox())!
+    await page.mouse.move(sidebar.x + sidebar.width + 120, b.y + b.height * 0.25, { steps: 6 })
+  }
+
+  await grabHandle(page, grip(page, 2), 0)
+  await moveTo(page, cards(page).nth(0), 0.25)
+  await expect(line(page)).toBeVisible()
+  await outside(cards(page).nth(0))
+  await expect(ghost(page)).toHaveCount(1)
+  await expect(line(page)).toHaveCount(0)
+  await moveTo(page, cards(page).nth(0), 0.25)
+  await expect(line(page)).toBeVisible()
+  await outside(cards(page).nth(0))
+  await expect(line(page)).toHaveCount(0)
+  await page.mouse.up()
+  await expect(ghost(page)).toHaveCount(0)
+  await expect(slot(page)).toHaveCount(0)
+  await expect.poll(() => shape(page)).toEqual([['alpha', 'bravo'], ['charlie']])
+
+  await grabHandle(page, workspaceHeads(page).nth(1), 0)
+  await moveTo(page, workspaceHeads(page).nth(0), 0.25)
+  await expect(line(page)).toBeVisible()
+  await outside(workspaceHeads(page).nth(0))
+  await expect(line(page)).toHaveCount(0)
+  await page.mouse.up()
+  await expect(ghost(page)).toHaveCount(0)
+  await expect(workspaceHeads(page).nth(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect.poll(() => shape(page)).toEqual([['alpha', 'bravo'], ['charlie']])
+})
+
 test('접힌 workspace 의 이름 줄에 놓으면 그 workspace 의 끝에 넣는다', async ({ launch }) => {
   const launched = await launch()
   const { page } = launched
@@ -226,7 +264,7 @@ test('끄는 동안 포인터가 목록의 아래·위 끝 가까이 오면 그�
   await grabHandle(page, grip(page, 0), 0)
   const box = (await list(page).boundingBox())!
   await page.mouse.move(box.x + box.width / 2, box.y + box.height - 4, { steps: 4 })
-  // 끄는 동안 목록 끝에 New Workspace 칸이 붙으므로 스크롤할 수 있는 폭이 그만큼 늘어난다.
+  // 끄는 동안 목록 끝에 New Workspace 칸이 붙으므로 스크롤할 수 있는 길이가 그만큼 늘어난다.
   await expect.poll(scroll).toBeGreaterThan(max)
   await page.mouse.move(box.x + box.width / 2, box.y + 4, { steps: 4 })
   await expect.poll(scroll).toBe(0)
@@ -307,7 +345,7 @@ test('접은 사이드바에서도 손잡이로 cell 을 끌어 옮긴다', asyn
 test('옮긴 workspace·cell 의 순서는 재시작한 뒤에도 남는다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
-  // `launch` 는 첫 터미널이 보이기를 기다리는데, single 에서는 선택한 cell 이 맨 앞이 아니면 그 터미널이 보이지 않는다.
+  // `launch` 는 첫 터미널이 보이기를 기다린다. single 에서는 선택한 cell 이 맨 앞이 아니면 첫 터미널이 보이지 않으므로 columns 로 돌린다.
   await toggleView(launched, 'columns')
   await arrange(launched, [['alpha'], ['bravo', 'charlie']])
   await grabHandle(page, grip(page, 2), 0)
