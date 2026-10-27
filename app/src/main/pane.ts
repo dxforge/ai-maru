@@ -121,9 +121,9 @@ export function createPanes(
       if (target !== undefined && !isPtyId(target)) {
         throw new InvalidParams(`params.${key} must be a pty id`)
       }
-      const placeOf = (target: string): CellNewRequest['place'] => {
-        const cell = cellOf(target)
-        if (!cell) throw new InvalidParams(`no cell for pty ${target}`)
+      const placeOf = (by: string): CellNewRequest['place'] => {
+        const cell = cellOf(by)
+        if (!cell) throw new InvalidParams(`no cell for pty ${by}`)
         return { cell, before: key === 'before' }
       }
       return askPty('cell:new', (): CellNewRequest => {
