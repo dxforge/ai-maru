@@ -7,6 +7,7 @@ import {
   clickMenu,
   dialogCalls,
   expect,
+  newCell,
   newWorkspace,
   dragCanvas,
   openCanvas,
@@ -85,6 +86,23 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 �
   await expect(panes(again)).toHaveCount(2)
   await expect(panes(again).nth(1).locator('.terminal-view')).toHaveClass(/active/)
   await run(again, 'echo $MARK', 'kept-2')
+})
+
+test('single 보기에서 맨 앞이 아닌 cell 을 고른 채 재시작하면 그 cell 의 터미널이 입력을 받는다', async ({
+  launch
+}) => {
+  const first = await launch()
+  const { app, page } = first
+  await newWorkspace(first, 2)
+  await newCell(first, 3)
+  await expect(cellViews(page).nth(2)).toHaveClass(/selected/)
+  await typesInto(page, 0, 'up')
+
+  await restartWith(app)
+  const { page: again } = await launch()
+  await expect(again.locator('.terminals')).toHaveClass(/single/)
+  await expect(cellViews(again).nth(2)).toHaveClass(/selected/)
+  await typesInto(again, 0, 'back')
 })
 
 test('재시작 뒤 Canvas 는 재시작 전에 끌어 정한 폭으로 열린다', async ({ launch }) => {
