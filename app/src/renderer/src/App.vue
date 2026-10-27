@@ -583,6 +583,17 @@ function selectPane(cell: number, pane: number): void {
   selectCell(cell)
 }
 
+// 순서가 바뀌면 Vue 가 터미널의 DOM 을 옮기고, 옮겨진 터미널은 포커스를 잃는다.
+function moveCell(cell: number, to: { workspace: number; index: number } | 'new'): void {
+  workspaces.moveCell(cell, to)
+  void focusSelected()
+}
+
+function moveWorkspace(workspace: number, index: number): void {
+  workspaces.moveWorkspace(workspace, index)
+  void focusSelected()
+}
+
 const appTitle = document.title
 watchEffect(() => {
   const c = workspaces.selected()
@@ -731,6 +742,8 @@ void window.maru.restoreScreen().then((s) => {
         @focus="selectPane"
         @fold="toggleFold"
         @kill-job="killJob"
+        @move-cell="moveCell"
+        @move-workspace="moveWorkspace"
       />
     </div>
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />

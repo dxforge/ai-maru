@@ -844,3 +844,156 @@ describe('openCellFrom', () => {
     expect(restarted(ws).cells()[0].openedBy).toBeUndefined()
   })
 })
+
+describe('moveCell·moveWorkspace', () => {
+  /** workspace 셋에 cell 을 [2, 1, 2] 개씩 둔다. */
+  function arranged() {
+    const ws = opened(3)
+    ws.select(ws.cells()[0].key)
+    ws.openCell()
+    ws.select(ws.cells()[3].key)
+    ws.openCell()
+    return ws
+  }
+  const shape = (ws: Workspaces) => ws.list.value.map((w) => w.cells.map((c) => c.key))
+
+  it('같은 workspace 안에서 뒤로·앞으로 옮기고, 자리는 옮기기 전 목록의 틈으로 센다', () => {
+    const ws = opened(1)
+    for (let i = 0; i < 3; i++) ws.openCell()
+    const [a, b, c, d] = keys(ws)
+    const w = wsKeys(ws)[0]
+    ws.moveCell(a, { workspace: w, index: 3 })
+    expect(keys(ws)).toEqual([b, c, a, d])
+    ws.moveCell(d, { workspace: w, index: 0 })
+    expect(keys(ws)).toEqual([d, b, c, a])
+    ws.moveCell(b, { workspace: w, index: 4 })
+    expect(keys(ws)).toEqual([d, c, a, b])
+  })
+
+  it('제자리 앞뒤의 틈으로 옮기면 순서가 그대로다', () => {
+    const ws = opened(1)
+    ws.openCell()
+    ws.openCell()
+    const before = keys(ws)
+    const w = wsKeys(ws)[0]
+    ws.moveCell(before[1], { workspace: w, index: 1 })
+    ws.moveCell(before[1], { workspace: w, index: 2 })
+    expect(keys(ws)).toEqual(before)
+  })
+
+  it('다른 workspace 의 앞·가운데·끝으로 옮긴다', () => {
+    const ws = arranged()
+    const [[a, b], [c], [d, e]] = shape(ws)
+    const [w0, , w2] = wsKeys(ws)
+    ws.moveCell(c, { workspace: w2, index: 1 })
+    expect(shape(ws)).toEqual([
+      [a, b],
+      [d, c, e]
+    ])
+    ws.moveCell(e, { workspace: w0, index: 0 })
+    ws.moveCell(d, { workspace: w0, index: 3 })
+    expect(shape(ws)).toEqual([[e, a, b, d], [c]])
+  })
+
+  it('마지막 cell 이 빠진 workspace 는 닫히고, 남은 workspace 의 id 는 그대로다', () => {
+    const ws = arranged()
+    const [[a, b], [c], [d, e]] = shape(ws)
+    const ids = ws.list.value.map((w) => w.id)
+    ws.moveCell(c, { workspace: wsKeys(ws)[2], index: 0 })
+    expect(shape(ws)).toEqual([
+      [a, b],
+      [c, d, e]
+    ])
+    expect(ws.list.value.map((w) => w.id)).toEqual([ids[0], ids[2]])
+  })
+
+  it("'new' 는 그 cell 하나로 된 workspace 를 목록 끝에 새 id 로 만든다", () => {
+    const ws = arranged()
+    const [[a, b], [c], [d, e]] = shape(ws)
+    const ids = ws.list.value.map((w) => w.id)
+    ws.moveCell(a, 'new')
+    expect(shape(ws)).toEqual([[b], [c], [d, e], [a]])
+    expect(ws.list.value.slice(0, 3).map((w) => w.id)).toEqual(ids)
+    expect(ws.list.value[3].id).toMatch(/^w-[0-9a-f]{8}$/)
+    expect(ids).not.toContain(ws.list.value[3].id)
+  })
+
+  it("혼자인 cell 을 'new' 로 옮기면 그 workspace 를 id 그대로 목록 끝으로 옮긴다", () => {
+    const ws = arranged()
+    const [[a, b], [c], [d, e]] = shape(ws)
+    const id = ws.list.value[1].id
+    ws.moveCell(c, 'new')
+    expect(shape(ws)).toEqual([[a, b], [d, e], [c]])
+    expect(ws.list.value[2].id).toBe(id)
+  })
+
+  it('옮겨도 선택·포커스·openedBy 는 그대로이고, step 은 옮긴 순서를 따른다', () => {
+    const ws = arranged()
+    const [[a, b], [c], [d, e]] = shape(ws)
+    ws.select(b)
+    ws.split('right')
+    const focused = selected(ws).focused
+    const opener = new Map(ws.cells().map((x) => [x.key, x.openedBy]))
+    ws.moveCell(b, { workspace: wsKeys(ws)[2], index: 2 })
+    expect(ws.selectedKey.value).toBe(b)
+    expect(selected(ws).focused).toBe(focused)
+    expect(new Map(ws.cells().map((x) => [x.key, x.openedBy]))).toEqual(opener)
+    expect(keys(ws)).toEqual([a, c, d, e, b])
+    expect(ws.step(1)).toBe(a)
+    expect(ws.step(-1)).toBe(e)
+  })
+
+  it('옮긴 순서는 snapshot 에 실리고 되살려도 남는다', () => {
+    const ws = arranged()
+    const [[a]] = shape(ws)
+    ws.moveCell(a, { workspace: wsKeys(ws)[2], index: 1 })
+    ws.moveWorkspace(wsKeys(ws)[2], 0)
+    expect(shape(restarted(ws))).toEqual(shape(ws))
+    expect(shape(ws)[0]).toContain(a)
+  })
+
+  it('moveWorkspace 는 workspace 를 뒤로·앞으로·끝으로 옮기고, 제자리 앞뒤의 틈이면 그대로다', () => {
+    const ws = opened(4)
+    const [p, q, r, s] = wsKeys(ws)
+    ws.moveWorkspace(p, 2)
+    expect(wsKeys(ws)).toEqual([q, p, r, s])
+    ws.moveWorkspace(s, 0)
+    expect(wsKeys(ws)).toEqual([s, q, p, r])
+    ws.moveWorkspace(s, 4)
+    expect(wsKeys(ws)).toEqual([q, p, r, s])
+    ws.moveWorkspace(p, 1)
+    ws.moveWorkspace(p, 2)
+    expect(wsKeys(ws)).toEqual([q, p, r, s])
+  })
+
+  it('없는 cell·workspace 를 옮기거나 없는 workspace 로 옮기면 아무것도 바뀌지 않는다', () => {
+    const ws = arranged()
+    const before = shape(ws)
+    ws.moveCell(9999, 'new')
+    ws.moveCell(9999, { workspace: wsKeys(ws)[0], index: 0 })
+    ws.moveCell(before[0][0], { workspace: 9999, index: 0 })
+    ws.moveWorkspace(9999, 0)
+    expect(shape(ws)).toEqual(before)
+  })
+
+  it('혼자인 cell 을 제 workspace 의 어느 자리로 옮겨도 cell 과 workspace 가 그대로 남는다', () => {
+    const ws = arranged()
+    const before = shape(ws)
+    const [, [c]] = before
+    const w = wsKeys(ws)[1]
+    for (const index of [0, 1, 2]) ws.moveCell(c, { workspace: w, index })
+    expect(shape(ws)).toEqual(before)
+    expect(ws.workspaceOf(c)?.key).toBe(w)
+  })
+
+  it('pane 이 여럿인 cell 을 다른 workspace 로 옮겨도 pane·배치·포커스된 pane 이 그대로다', () => {
+    const ws = arranged()
+    const [[a]] = shape(ws)
+    ws.select(a)
+    ws.split('right')
+    ws.split('down')
+    const before = JSON.parse(JSON.stringify(selected(ws)))
+    ws.moveCell(a, { workspace: wsKeys(ws)[2], index: 2 })
+    expect(JSON.parse(JSON.stringify(ws.cells().find((c) => c.key === a)))).toEqual(before)
+  })
+})
