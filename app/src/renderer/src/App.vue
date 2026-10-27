@@ -52,7 +52,13 @@ import {
   type SplitDirection,
   type Widths
 } from './workspace/layout'
-import { createWorkspaces, focusedPane, startDirOf, type Cell } from './workspace/store'
+import {
+  createWorkspaces,
+  focusedPane,
+  startDirOf,
+  type Cell,
+  type PlaceError
+} from './workspace/store'
 
 const canvas = createCanvas()
 window.maru.onCanvasPut(canvas.put)
@@ -266,14 +272,17 @@ window.maru.onPaneNew((id, { pty, cwd, direction, command, full }) => {
 
 window.maru.onCellNew((id, { cell, cwd, command, place }) => {
   const pane = workspaces.openCellFrom(cell, { startDir: cwd, command }, place)
-  if (pane === undefined) {
-    return window.maru.paneReply(id, {
-      error: 'bad_place',
-      message: 'the cell to place the new cell by is not in the workspace of this terminal'
-    })
+  if (typeof pane !== 'number') {
+    return window.maru.paneReply(id, { error: 'bad_place', message: placeErrors[pane] })
   }
   paneRequests.set(pane, id)
 })
+
+const placeErrors: Record<PlaceError, string> = {
+  no_caller: 'this terminal is not in a cell, so there is no workspace to place the new cell in',
+  no_cell: 'the cell to place the new cell by was closed',
+  other_workspace: 'the cell to place the new cell by is not in the workspace of this terminal'
+}
 
 // `pane:cancel` 은 main 이 시간 초과한 요청의 id 를 싣는다. 그 요청으로 열어 아직 pty 를 기다리는 pane 을 닫는다
 // (docs/architecture.md 의 "시간 초과한 pane 요청은 창이 취소한다").

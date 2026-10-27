@@ -51,6 +51,8 @@ export type Workspace = Omit<ScreenWorkspace, 'cells'> & { cells: Cell[] }
 
 export { focusedPane, startDirOf }
 
+export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
+
 /** pty 상태 저장소(`pty/states.ts`)에서 store 가 읽는 것. */
 export type PaneSource = {
   get(ptyId: string): PtyState | undefined
@@ -114,17 +116,17 @@ export function createWorkspaces(
     from: string | undefined,
     init: Pick<Pane, 'startDir' | 'command'>,
     place?: { cell: string; before: boolean }
-  ): number | undefined {
+  ): number | PlaceError {
     const w = list.value.find((x) => x.cells.some((y) => y.id === from))
     if (!w) {
-      if (place) return undefined
+      if (place) return 'no_caller'
       const c = createCell(init)
       list.value.push(createWorkspace(c))
       return c.focused
     }
     const { cell, before } = place ?? { cell: from!, before: false }
     const at = w.cells.findIndex((x) => x.id === cell)
-    if (at < 0) return undefined
+    if (at < 0) return cells().some((x) => x.id === cell) ? 'other_workspace' : 'no_cell'
     return insertCell(w, before ? at : at + 1, init).focused
   }
 

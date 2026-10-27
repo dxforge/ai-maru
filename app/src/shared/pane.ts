@@ -37,8 +37,8 @@ export type MateRow = {
 }
 
 /**
- * `no_space` 는 나눌 자리가 없어 거절한 것이다(docs/architecture.md 의 "pane 경계와 글자 칸 격자"). `bad_place` 는
- * `cell.new` 가 가리킨 cell 이 부른 cell 과 같은 workspace 에 없어 거절한 것이다.
+ * `no_space` 는 나눌 자리가 없어 거절한 것이다(`docs/architecture.md` 의 "pane 경계와 글자 칸 격자"). `bad_place` 는
+ * `cell.new` 가 가리킨 자리에 cell 을 넣지 못해 거절한 것이다.
  */
 export type PaneReply =
   | { pty: string }

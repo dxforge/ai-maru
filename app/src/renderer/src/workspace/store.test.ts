@@ -817,6 +817,15 @@ describe('openCellFrom', () => {
       expect(keys(ws)).toEqual(was)
     })
 
+    it('넣지 않을 때는 부른 cell 을 모르는지, 가리킨 cell 이 없는지, 다른 workspace 에 있는지를 돌려준다', () => {
+      const { ws, d, o } = arranged()
+      const id = (key: number) => idOf(ws, key)!
+      expect(ws.openCellFrom(undefined, {}, { cell: id(d), before: false })).toBe('no_caller')
+      expect(ws.openCellFrom('c-gone', {}, { cell: 'c-gone2', before: false })).toBe('no_caller')
+      expect(ws.openCellFrom(id(d), {}, { cell: 'c-gone', before: false })).toBe('no_cell')
+      expect(ws.openCellFrom(id(d), {}, { cell: id(o), before: true })).toBe('other_workspace')
+    })
+
     it('옮긴 뒤에는 옮긴 자리를 기준으로 넣는다', () => {
       const { ws, d, x, y, o } = arranged()
       ws.moveCell(y, { workspace: wsKeys(ws)[0], index: 0 })
