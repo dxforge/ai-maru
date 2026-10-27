@@ -321,8 +321,7 @@ const workspaceDragged = (workspace: number): boolean =>
             aria-hidden="true"
             @mousedown.prevent
             @pointerdown="grabCell($event, w.key, c.key, ci)"
-            >⋮</span
-          >
+          />
           <button
             v-for="r in rows"
             :key="r.pane"
@@ -394,9 +393,9 @@ const workspaceDragged = (workspace: number): boolean =>
 </template>
 
 <style scoped>
-/* 접은 사이드바는 오른쪽을 잘라 낼 뿐이라, 아이콘과 글자의 x 와 행의 높이는 펼친 판과 같다. 행 앞 칸의 아이콘과
-   workspace 이름의 첫 글자는 신호등의 첫 원과 같은 x(12px)에 선다. 12px 는 cell 면의 바깥 여백 6px 와 안쪽 여백 6px
-   를 더한 값이다. */
+/* 접은 사이드바는 폭을 줄이고 행 끝의 칸을 숨길 뿐이라, 아이콘과 글자의 x 와 행의 높이는 펼친 판과 같다.
+   행 앞 칸의 아이콘과 workspace 이름의 첫 글자는 신호등의 첫 원과 같은 x(12px)에 선다. 12px 는 cell 면의 바깥 여백
+   6px 와 안쪽 여백 6px 를 더한 값이다. */
 .sidebar {
   -webkit-app-region: drag;
   flex: 1;
@@ -503,7 +502,9 @@ button {
   cursor: pointer;
 }
 
-.pane-row:hover {
+/* 손잡이는 첫 행 위에 겹친 형제 요소라, 마우스가 손잡이 위에 있으면 첫 행은 :hover 를 잃는다. */
+.pane-row:hover,
+.group:not(.dragging) > .grip:hover + .pane-row:not(.focused) {
   background: var(--hover);
 }
 
@@ -673,34 +674,48 @@ button {
   display: none;
 }
 
-/* 손잡이는 행 위에 겹쳐 그려 행 앞 아이콘의 x 를 그대로 둔다. 폭은 행의 왼쪽 여백(6px)과 같으므로 아이콘을 가리지 않는다. */
 .grip {
   -webkit-app-region: no-drag;
   position: absolute;
   top: 0;
-  bottom: 0;
-  left: 0;
+  left: 50%;
   z-index: 1;
   display: grid;
-  place-items: center;
-  width: 6px;
-  border-radius: 6px 0 0 6px;
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  place-items: start center;
+  width: 24px;
+  height: 10px;
+  padding-top: 1px;
+  box-sizing: border-box;
+  transform: translateX(-50%);
   color: var(--fg);
-  font-size: 11px;
   cursor: grab;
   opacity: 0;
 }
 
+/* 점 중심을 가로·세로 모두 정수 px 에 두어야 1x 화면에서 점이 2×2px 로 찍힌다. 높이 3px 타일의 가운데(1.5px)에 두면
+   점이 가로 2px·세로 1px 로 납작하게 찍힌다. */
+.grip::before {
+  content: '';
+  width: 12px;
+  height: 6px;
+  background-image: radial-gradient(circle at 2px 1px, currentColor 0.85px, transparent 1.1px);
+  background-size: 4px 3px;
+}
+
 .group:hover .grip {
-  opacity: 1;
+  opacity: 0.35;
+}
+
+.group .grip:hover {
+  opacity: 0.8;
 }
 
 .dragging {
   opacity: 0.35;
 }
 
-.dragging .grip {
+.dragging .grip,
+.dragging .grip:hover {
   opacity: 0;
 }
 

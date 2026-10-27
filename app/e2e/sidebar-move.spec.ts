@@ -11,6 +11,7 @@ import {
   restartWith,
   rows,
   run,
+  screenshotPixels,
   sidebarWidth,
   test,
   toggleView,
@@ -78,6 +79,7 @@ test('손잡이로 cell 을 끌어 같은 workspace 의 다른 자리에 놓으�
   await grabHandle(page, grip(page, 2), 0)
   await moveTo(page, cards(page).nth(0), 0.25)
   await expect(cards(page).nth(2)).toHaveClass(/dragging/)
+  await expect(grip(page, 2)).toHaveCSS('opacity', '0')
   await expect(ghost(page)).toHaveCount(1)
   await expect(line(page)).toBeVisible()
   await page.mouse.up()
@@ -272,7 +274,7 @@ test('끄는 동안 포인터가 목록의 아래·위 끝 가까이 오면 그�
   await page.mouse.up()
 })
 
-test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우스를 올린 cell 에만 보이며 창을 끄는 영역이 아니다', async ({
+test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우스를 올린 cell 에만 흐리게 보이다가 손잡이에 올리면 진해지며 창을 끄는 영역이 아니다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -287,13 +289,138 @@ test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우�
   await expect.poll(() => shape(page)).toEqual([['alpha', 'bravo']])
 
   await cards(page).nth(1).hover()
-  await expect(grip(page, 1)).toHaveCSS('opacity', '1')
+  await expect(grip(page, 1)).toHaveCSS('opacity', '0.35')
   await expect(grip(page, 0)).toHaveCSS('opacity', '0')
+  await grip(page, 1).hover()
+  await expect(grip(page, 1)).toHaveCSS('opacity', '0.8')
   expect(
     await grip(page, 0).evaluate((el) =>
       getComputedStyle(el).getPropertyValue('-webkit-app-region')
     )
   ).toBe('no-drag')
+})
+
+test('마우스를 첫 행에서 손잡이 위로 옮겨도 첫 행은 hover 배경을 지키고, 고른 pane 의 행은 선택 배경을 지킨다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await arrange(launched, [['alpha', 'bravo']])
+  const background = (i: number) =>
+    cards(page)
+      .nth(i)
+      .locator('.pane-row')
+      .first()
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+
+  const handle = (await grip(page, 0).boundingBox())!
+  await page.mouse.move(handle.x + handle.width + 4, handle.y + handle.height / 2)
+  const hovered = await background(0)
+  const focused = await background(1)
+  await cards(page).nth(1).locator('.pane-row').hover()
+  expect(await background(0)).not.toBe(hovered)
+
+  await page.mouse.move(handle.x + handle.width + 4, handle.y + handle.height / 2)
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2, { steps: 4 })
+  await expect(grip(page, 0)).toHaveCSS('opacity', '0.8')
+  expect(await background(0)).toBe(hovered)
+
+  await grip(page, 1).hover()
+  await expect(grip(page, 1)).toHaveCSS('opacity', '0.8')
+  expect(await background(1)).toBe(focused)
+})
+
+async function dotSizes(page: Page, i: number): Promise<string[]> {
+  await grip(page, i).evaluate((el) => ((el as HTMLElement).style.opacity = '1'))
+  const b = (await grip(page, i).boundingBox())!
+  // 손잡이 아래쪽에는 첫 행 제목의 글자가 걸리므로, 위쪽 여백과 점을 그리는 `::before` 의 높이까지만 찍는다.
+  const dots = await grip(page, i).evaluate(
+    (el) =>
+      parseFloat(getComputedStyle(el).paddingTop) +
+      parseFloat(getComputedStyle(el, '::before').height)
+  )
+  const clip = {
+    x: Math.floor(b.x),
+    y: Math.floor(b.y),
+    width: Math.ceil(b.width) + 1,
+    height: dots
+  }
+  const { data, width, height } = await screenshotPixels(page, clip, 'css')
+  const ink = (x: number, y: number) => data[(y * width + x) * 4] > data[0] + 60
+  const seen = new Set<number>()
+  const sizes: string[] = []
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      if (seen.has(y * width + x) || !ink(x, y)) continue
+      const box = { x0: x, x1: x, y0: y, y1: y }
+      const todo = [[x, y]]
+      seen.add(y * width + x)
+      while (todo.length) {
+        const [px, py] = todo.pop()!
+        box.x0 = Math.min(box.x0, px)
+        box.x1 = Math.max(box.x1, px)
+        box.y0 = Math.min(box.y0, py)
+        box.y1 = Math.max(box.y1, py)
+        for (const [nx, ny] of [
+          [px + 1, py],
+          [px - 1, py],
+          [px, py + 1],
+          [px, py - 1]
+        ])
+          if (
+            nx >= 0 &&
+            ny >= 0 &&
+            nx < width &&
+            ny < height &&
+            !seen.has(ny * width + nx) &&
+            ink(nx, ny)
+          ) {
+            seen.add(ny * width + nx)
+            todo.push([nx, ny])
+          }
+      }
+      sizes.push(`${box.x1 - box.x0 + 1}x${box.y1 - box.y0 + 1}`)
+    }
+  return sizes
+}
+
+test('1x 화면에서 손잡이의 점 6개가 펼친 사이드바와 접은 사이드바 모두 2×2px 로 찍힌다', async ({
+  launch
+}) => {
+  const launched = await launch(undefined, undefined, ['--force-device-scale-factor=1'])
+  const { app, page } = launched
+  await arrange(launched, [['alpha', 'bravo']])
+  expect(await page.evaluate(() => devicePixelRatio)).toBe(1)
+  const six = Array(6).fill('2x2')
+
+  expect(await dotSizes(page, 1)).toEqual(six)
+  await clickMenu(app, 'toggle-sidebar')
+  await expect.poll(() => sidebarWidth(page)).toBe(85)
+  expect(await dotSizes(page, 1)).toEqual(six)
+})
+
+test('첫 행의 위쪽이라도 손잡이 밖을 누르면 cell 을 끌지 않고 그 pane 을 고른다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await arrange(launched, [['alpha', 'bravo']])
+  await expect(cards(page).nth(1)).toHaveClass(/selected/)
+
+  const handle = (await grip(page, 0).boundingBox())!
+  const beside: [number, number] = [handle.x + handle.width + 4, handle.y + handle.height / 2]
+  const below: [number, number] = [handle.x + handle.width / 2, handle.y + handle.height + 4]
+  for (const [x, y] of [beside, below]) {
+    await cards(page).nth(1).locator('.pane-row').click()
+    await expect(cards(page).nth(1)).toHaveClass(/selected/)
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 10, y, { steps: 4 })
+    await expect(ghost(page)).toHaveCount(0)
+    await page.mouse.up()
+    await expect(cards(page).nth(0)).toHaveClass(/selected/)
+  }
+  await expect.poll(() => shape(page)).toEqual([['alpha', 'bravo']])
 })
 
 test('끄는 동안 같은 workspace 의 다른 cell 이 닫힌 뒤 놓아도 끌던 cell 과 그 터미널이 남는다', async ({
@@ -334,6 +461,11 @@ test('접은 사이드바에서도 손잡이로 cell 을 끌어 옮긴다', asyn
   await clickMenu(app, 'toggle-sidebar')
   await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
   await expect.poll(() => sidebarWidth(page)).toBe(85)
+  const side = (await page.locator('.sidebar').boundingBox())!
+  const handle = (await grip(page, 1).boundingBox())!
+  expect(Math.abs(handle.x + handle.width / 2 - (side.x + side.width / 2))).toBeLessThanOrEqual(1)
+  await cards(page).nth(1).hover()
+  await expect(grip(page, 1)).toHaveCSS('opacity', '0.35')
 
   await grabHandle(page, grip(page, 1), 0)
   await moveTo(page, cards(page).nth(0), 0.25)
