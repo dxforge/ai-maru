@@ -74,10 +74,13 @@ const shell = window.maru.shell
 
 const jobs = shallowRef<JobView[]>([])
 syncJobs((list) => (jobs.value = list), window.maru)
-// job 이 돈 시간은 분 단위로 보이므로 그보다 잦게만 다시 센다.
+// job 과 pane 의 명령이 돈 시간은 분 단위로 보이므로 그보다 잦게만 다시 센다.
 const now = ref(Date.now())
 setInterval(() => {
-  if (jobs.value.some((j) => !j.exit)) now.value = Date.now()
+  const running =
+    jobs.value.some((j) => !j.exit) ||
+    workspaces.cells().some((c) => c.panes.some((p) => ptyStates.command(p.ptyId)?.running))
+  if (running) now.value = Date.now()
 }, 30_000)
 
 function killJob(pty: string): void {
@@ -733,6 +736,7 @@ void window.maru.restoreScreen().then((s) => {
         :workspaces="workspaces.list.value"
         :selected-key="workspaces.selectedKey.value"
         :root="ptyStates.root"
+        :command="ptyStates.command"
         :urgent="urgent"
         :folded="folded"
         :jobs="jobs"
@@ -779,8 +783,10 @@ void window.maru.restoreScreen().then((s) => {
           >
             <PaneHeader
               :status="ptyStates.root(p.ptyId)"
+              :command="ptyStates.command(p.ptyId)"
               :pane="p"
               :focused="active"
+              :now="ptyStates.command(p.ptyId)?.running ? now : 0"
               :shell="shell"
               @mousedown.prevent="terminals.get(p.key)?.focus()"
             />

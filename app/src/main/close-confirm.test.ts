@@ -8,19 +8,31 @@ import {
   stopJobDialog,
   type ProgramDeps
 } from './close-confirm'
+import type { PtyCommand } from '../shared/pty-state'
 
 const SHELL = 100
 
-function deps(fg: Record<string, { pid: number; name: string | null }>): ProgramDeps {
+function deps(
+  fg: Record<string, { pid: number; name: string | null }>,
+  commands: Record<string, PtyCommand> = {}
+): ProgramDeps {
   return {
     foreground: vi.fn(async (pty: string) => {
       const f = fg[pty]
       if (!f) throw new Error(`pty ${pty} is not running`)
       return { ...f, cwd: '/w' }
     }),
-    shellPid: async (pty: string) => (pty === 'p-norecord' ? null : SHELL)
+    shellPid: async (pty: string) => (pty === 'p-norecord' ? null : SHELL),
+    command: (pty: string) => commands[pty] ?? null
   }
 }
+
+const command = (running: boolean, text: string | null): PtyCommand => ({
+  running,
+  text,
+  exitCode: null,
+  startedAt: 1
+})
 
 describe('runningProgram', () => {
   it('foreground 가 셸이면 실행 중이 아니고, 다른 프로세스면 그 이름으로 실행 중이다', async () => {
@@ -34,10 +46,32 @@ describe('runningProgram', () => {
     expect(await runningProgram({ ptyId: 'p-1' }, d)).toEqual({ name: null })
   })
 
-  it('명령 pane 은 foreground 를 묻지 않고 명령의 첫 단어로 실행 중이다', async () => {
+  it('셸이 알린 명령이 도는 중이면 foreground 이름 대신 그 명령으로 실행 중이다', async () => {
+    const d = deps(
+      { 'p-1': { pid: 7, name: 'node' }, 'p-2': { pid: 7, name: 'node' } },
+      { 'p-1': command(true, 'npm run dev'), 'p-2': command(true, null) }
+    )
+    expect(await runningProgram({ ptyId: 'p-1' }, d)).toEqual({ name: 'npm run dev' })
+    expect(await runningProgram({ ptyId: 'p-2' }, d)).toEqual({ name: 'node' })
+  })
+
+  it('셸이 알린 명령 상태는 실행 중인지를 바꾸지 않는다', async () => {
+    const d = deps(
+      { 'p-1': { pid: SHELL, name: 'zsh' }, 'p-2': { pid: 7, name: 'vim' } },
+      { 'p-1': command(true, 'slow_function'), 'p-2': command(false, 'old') }
+    )
+    expect(await runningProgram({ ptyId: 'p-1' }, d)).toBeNull()
+    expect(await runningProgram({ ptyId: 'p-2' }, d)).toEqual({ name: 'vim' })
+  })
+
+  it('명령 pane 은 foreground 를 묻지 않고, maru-pty 가 준 명령 텍스트(없으면 명령 전체)로 실행 중이다', async () => {
     const d = deps({ 'p-1': { pid: SHELL, name: 'bash' } })
     expect(await runningProgram({ ptyId: 'p-1', command: ['npm', 'run', 'dev'] }, d)).toEqual({
-      name: 'npm'
+      name: 'npm run dev'
+    })
+    const withState = deps({}, { 'p-2': command(true, 'from-pty') })
+    expect(await runningProgram({ ptyId: 'p-2', command: ['npm'] }, withState)).toEqual({
+      name: 'from-pty'
     })
     expect(d.foreground).not.toHaveBeenCalled()
   })

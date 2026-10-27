@@ -45,12 +45,48 @@ export function fallbackName(p: Pick<Named, 'command'>, shell: string | undefine
   return shell ? dirName(shell) : 'sh'
 }
 
+/** pane 에 보일 명령이다. 도는 명령이거나 실패하고 끝난 명령이다. */
+export type CommandView =
+  | { running: true; text: string; startedAt?: number }
+  | { running: false; text: string; exitCode: number }
+
+const SIGINT_EXIT = 130
+
+/**
+ * 도는 명령과 실패한 명령만 돌려준다. 종료 코드가 0 이나 130 이면 실패로 보지 않는다. 130(SIGINT)은 dev 서버처럼
+ * Ctrl-C 로 끄는 명령이 흔히 내기 때문이다. OSC 7501 레코드가 있는 pane 은 그 프로그램(claude 등)이 알리는 상태를
+ * 쓰므로 명령을 보이지 않는다.
+ */
+export function commandView(state: PtyState | undefined): CommandView | undefined {
+  const c = state?.command
+  if (!c?.text || state!.records.length) return undefined
+  if (c.running) return { running: true, text: c.text, startedAt: c.startedAt ?? undefined }
+  if (c.exitCode !== null && c.exitCode !== 0 && c.exitCode !== SIGINT_EXIT)
+    return { running: false, text: c.text, exitCode: c.exitCode }
+  return undefined
+}
+
+export function commandLabel(c: CommandView): string {
+  return c.running ? 'Running' : `Exited with code ${c.exitCode}`
+}
+
+export function commandTail(c: CommandView, now: number): string {
+  if (!c.running) return String(c.exitCode)
+  return c.startedAt === undefined ? '' : elapsed(now - c.startedAt)
+}
+
+/**
+ * 레코드가 없는 pane 에서는 명령이 제목보다 먼저다. 프롬프트마다 제목을 찍는 셸 설정(oh-my-zsh 등)에서도 명령이 보이게
+ * 하기 위해서다.
+ */
 export function paneName(
   p: Named,
   root: Pick<ProgramStatusRecord, 'app'> | undefined,
-  shell: string | undefined
+  shell: string | undefined,
+  command?: CommandView
 ): string {
-  return p.title || (root ? programName(root.app) : fallbackName(p, shell))
+  if (root) return p.title || programName(root.app)
+  return command?.text || p.title || fallbackName(p, shell)
 }
 
 export function elapsed(ms: number): string {

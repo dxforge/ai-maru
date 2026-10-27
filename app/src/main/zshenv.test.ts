@@ -210,6 +210,170 @@ function ttyShellWith(homeDir: string, env: Record<string, string>, command: str
   return r.stdout
 }
 
+const PROMPT = 'P> '
+
+function ttyPrompt(
+  files: Record<string, string>,
+  commands: string[],
+  env: Record<string, string> = {}
+): string {
+  const h = home({ ...files, '.zshrc': `${files['.zshrc'] ?? ''}\nPS1='${PROMPT}'` })
+  const script = [
+    `spawn -noecho ${ZSH} -l -i`,
+    `expect "${PROMPT}"`,
+    `foreach c [split $env(MARU_TEST_COMMANDS) "\\n"] { send -- "$c\\r"; expect "${PROMPT}" }`,
+    'send "exit\\r"',
+    'expect eof'
+  ].join('\n')
+  const r = spawnSync(EXPECT, ['-c', script], {
+    cwd: h,
+    env: { ...zshEnv(h, env), MARU_TEST_COMMANDS: commands.join('\n') },
+    encoding: 'utf8',
+    timeout: 10_000,
+    killSignal: 'SIGKILL'
+  })
+  return r.stdout
+}
+
+const marks = (out: string): string[] =>
+  // eslint-disable-next-line no-control-regex
+  [...out.matchAll(/\x1b\]133;([^\x07]*)\x07/g)].map((m) => m[1])
+
+describe.skipIf(!existsSync(ZSH) || !existsSync(EXPECT))('앱의 .zshenv 의 OSC 133', () => {
+  it('프롬프트마다 A, 명령이 시작하면 명령 텍스트를 실은 C, 끝나면 종료 코드를 실은 D 를 tty 에 쓴다', () => {
+    expect(marks(ttyPrompt({}, ['print hi', 'false']))).toEqual([
+      'A',
+      'C;cmdline_url=print%20hi',
+      'D;0',
+      'A',
+      'C;cmdline_url=false',
+      'D;1',
+      'A',
+      'C;cmdline_url=exit'
+    ])
+  })
+
+  it('명령 텍스트의 ; 와 % 와 한글을 바이트 단위로 퍼센트 인코딩한다', () => {
+    expect(marks(ttyPrompt({}, ["print 'a;b%c 한'"]))[1]).toBe(
+      'C;cmdline_url=print%20%27a%3Bb%25c%20%ED%95%9C%27'
+    )
+  })
+
+  it('명령 텍스트는 앞 169 글자만 싣고, 명령은 자르지 않고 실행한다', () => {
+    const long = '한'.repeat(200)
+    const out = ttyPrompt({}, [`print -r -- ${long}`])
+    expect(marks(out)[1]).toBe(
+      `C;cmdline_url=print%20-r%20--%20${'%ED%95%9C'.repeat(169 - 'print -r -- '.length)}`
+    )
+    expect(out).toContain(`${long}\r\n`)
+  })
+
+  // Ctrl-Z 대신 스스로 SIGSTOP 을 보낸다. 테스트를 띄운 환경이 SIGTSTP 를 무시하게 해 두었으면 셸이 그것을 물려받아
+  // Ctrl-Z 로 멈추지 않기 때문이다.
+  const stops = (n: number): string => `sh -c '${Array(n).fill('kill -STOP $$').join('; ')}'`
+  const startOf = (command: string): string => {
+    const url = [...Buffer.from(command)]
+      .map((b) =>
+        /[A-Za-z0-9/._~-]/.test(String.fromCharCode(b))
+          ? String.fromCharCode(b)
+          : `%${b.toString(16).toUpperCase().padStart(2, '0')}`
+      )
+      .join('')
+    return `C;cmdline_url=${url}`
+  }
+
+  it('멈춘 명령은 종료 코드 없는 D 를 보내고, fg 로 다시 이으면 그 job 의 명령을 C 에 싣는다', () => {
+    expect(marks(ttyPrompt({}, [stops(1), 'false', 'fg']))).toEqual([
+      'A',
+      startOf(stops(1)),
+      'D',
+      'A',
+      'C;cmdline_url=false',
+      'D;1',
+      'A',
+      startOf(stops(1)),
+      'D;0',
+      'A',
+      'C;cmdline_url=exit'
+    ])
+  })
+
+  it('fg %번호·%접두어·%?부분과 %만 친 job 지정도 그 job 의 명령으로 싣는다', () => {
+    const out = ttyPrompt({}, [stops(4), 'fg %1', '%sh', '%?STOP', '%'])
+    expect(marks(out).filter((m) => m.startsWith('C'))).toEqual([
+      ...Array(5).fill(startOf(stops(4))),
+      'C;cmdline_url=exit'
+    ])
+    expect(marks(out).filter((m) => m.startsWith('D'))).toEqual(['D', 'D', 'D', 'D', 'D;0'])
+  })
+
+  // exec 로 바뀐 zsh 는 앱의 .zshenv 를 읽지 않으므로 OSC 133 을 보내지 않는다.
+  it.each([
+    'exec zsh',
+    'true && exec zsh',
+    'false || exec zsh',
+    'FOO=1 exec zsh',
+    '{ exec zsh }',
+    'if true; then exec zsh; fi',
+    'case x in (x) exec zsh ;; esac',
+    'builtin exec zsh',
+    'noglob exec zsh',
+    '- exec zsh',
+    '() { exec zsh }'
+  ])('명령 자리의 exec 가 명령을 받는 %s 에는 C 를 보내지 않는다', (command) => {
+    expect(marks(ttyPrompt({}, [command]))).toEqual(['A'])
+  })
+
+  it('alias 가 펴져 exec 가 되면 C 를 보내지 않고, 명령 텍스트는 친 그대로 싣는다', () => {
+    const zshrc = "alias reload='exec zsh' again=reload greet='print hi'"
+    expect(marks(ttyPrompt({ '.zshrc': zshrc }, ['greet', 'again']))).toEqual([
+      'A',
+      'C;cmdline_url=greet',
+      'D;0',
+      'A'
+    ])
+  })
+
+  it('앞 명령 뒤의 exec 가 명령을 받으면 그 줄에는 C 를 보내지 않는다', () => {
+    const exec = 'print x; exec bash --norc --noprofile'
+    expect(marks(ttyPrompt({}, ['export PS1', exec]))).toEqual([
+      'A',
+      'C;cmdline_url=export%20PS1',
+      'D;0',
+      'A'
+    ])
+  })
+
+  it('리다이렉션만 받은 exec, 명령 자리가 아닌 exec, 서브셸과 함수 정의 안의 exec 에는 C 와 D 를 보낸다', () => {
+    const commands = [
+      'exec 2>err',
+      'exec {fd}>out 3<&-',
+      'print exec zsh',
+      '( true; exec true )',
+      'f() { true; exec zsh }',
+      'function g { { exec zsh } }; print done'
+    ]
+    expect(marks(ttyPrompt({}, commands))).toEqual([
+      'A',
+      ...commands.flatMap((c) => [startOf(c), 'D;0', 'A']),
+      'C;cmdline_url=exit'
+    ])
+  })
+
+  it('claude 안(CLAUDECODE)의 셸은 OSC 133 을 쓰지 않는다', () => {
+    expect(marks(ttyPrompt({}, ['true'], { CLAUDECODE: '1' }))).toEqual([])
+  })
+
+  it('사용자 ~/.zshrc 가 preexec 배열을 덮고 precmd hook 을 더해도 그대로 알리고, 사용자 hook 도 돈다', () => {
+    const out = ttyPrompt(
+      { '.zshrc': '_mine() { print -n MINE }; preexec_functions=(); precmd_functions+=(_mine)' },
+      ['false']
+    )
+    expect(marks(out)).toEqual(['A', 'C;cmdline_url=false', 'D;1', 'A', 'C;cmdline_url=exit'])
+    expect(out.match(/MINE/g)).toHaveLength(2)
+  })
+})
+
 function loginShellWith(homeDir: string, env: Record<string, string>, command: string): string {
   return stdoutOf(spawnLogin(homeDir, command, homeDir, env))
 }

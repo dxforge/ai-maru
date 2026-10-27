@@ -4,7 +4,15 @@ import type { StateHandlers } from './pty'
 import { createPtyStates } from './pty-state'
 
 function state(over: Partial<PtyState> = {}): PtyState {
-  return { cwd: '/w', cwdReports: 1, title: null, foregroundCwd: null, records: [], ...over }
+  return {
+    cwd: '/w',
+    cwdReports: 1,
+    title: null,
+    foregroundCwd: null,
+    command: null,
+    records: [],
+    ...over
+  }
 }
 
 function setup(live = true) {

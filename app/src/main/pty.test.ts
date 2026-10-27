@@ -419,6 +419,7 @@ describe('subscribeState', () => {
     cwd_reports: 3,
     title: null,
     foreground_cwd: '/fg',
+    command: { running: true, text: 'make', exit_code: null, started_at: 5 },
     records: [
       { id: '', state: 'working', kind: null, progress: null, app: 'x', title: '', message: '' }
     ]
@@ -453,6 +454,7 @@ describe('subscribeState', () => {
           cwdReports: 3,
           title: null,
           foregroundCwd: '/fg',
+          command: { running: true, text: 'make', exitCode: null, startedAt: 5 },
           records: wire.records
         },
         expect.objectContaining({ title: 't' })

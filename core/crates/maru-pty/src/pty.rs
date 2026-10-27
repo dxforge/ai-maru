@@ -125,6 +125,12 @@ impl Output {
     }
 }
 
+pub(crate) fn epoch_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
 pub async fn wait_exit(rx: &mut watch::Receiver<Option<Exit>>) -> Option<Exit> {
     rx.wait_for(|e| e.is_some()).await.ok().and_then(|e| *e)
 }
@@ -179,6 +185,12 @@ impl Screen {
         }
         for event in &events.cwd {
             changed |= self.pane.apply(event);
+        }
+        if !events.commands.is_empty() {
+            let now = epoch_millis();
+            for event in &events.commands {
+                changed |= self.pane.apply_command(event, now);
+            }
         }
         if self.status.is_empty() {
             changed |= self.pane.foreground_cwd.take().is_some();
@@ -249,7 +261,11 @@ impl Pty {
             cols,
             rows,
             status: Records::default(),
-            pane: PaneState::default(),
+            pane: if command.is_empty() {
+                PaneState::default()
+            } else {
+                PaneState::for_command(command, epoch_millis())
+            },
             outputs: Vec::new(),
             state_tx: None,
         };

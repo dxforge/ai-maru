@@ -68,7 +68,7 @@
 //! 연결은 이 프로세스가 끝날 때(`--keep` 이 아니면 셸이 끝날 때) 소켓·레코드를 지운 뒤 닫힌다. 클라이언트가 읽지
 //! 않는 동안 바뀐 상태는 마지막 것만 보낸다. 이 요청을 모르는 옛 서버는 `unknown_request` 로 답한다.
 //!
-//! `{"type":"state","cwd","cwd_reports","title","foreground_cwd","records"}`:
+//! `{"type":"state","cwd","cwd_reports","title","foreground_cwd","command","records"}`:
 //!
 //! - `cwd` — 셸이 OSC 7 로 보고한 경로. `file:///path` 만 받아 percent 디코딩하고, 호스트가 실린 것이나 디코딩할
 //!   수 없는 것은 버리고 이전 값을 둔다. 빈 OSC 7 과 RIS 는 null 로 지운다. 받은 적이 없으면 null 이다.
@@ -79,6 +79,20 @@
 //!   OSC 7 을 보고하면 바로 한 번 잰다. `cwd` 와 같은 디렉토리면 `cwd` 의 경로를 싣는다(OSC 7 은 `$PWD` 라 심볼릭
 //!   링크 경로일 수 있다). `cwd` 가 null 이면 `--cwd` 와 견주어, 같은 디렉토리면 `--cwd` 의 경로를 싣는다.
 //!   레코드가 없으면 null 이고, 잴 수 없으면(`a | b` 에서 `a` 가 먼저 끝남) 이전 값을 둔다.
+//! - `command` — 셸이 OSC 133 으로 알린 명령 실행 상태 `{"running","text","exit_code","started_at"}`. 신호를 받은 적이
+//!   없으면 null 이다. `started_at` 은 명령이 시작한 epoch 밀리초다.
+//!   - `A`(프롬프트 시작): null 이면 안 도는 중으로 둔다. 도는 중이면 `D` 없이 프롬프트가 뜬 것이므로 안 도는 중, `exit_code` null 로
+//!     바꾼다. 그 밖에는 바꾸지 않는다(프롬프트를 다시 그릴 때도 온다).
+//!   - `C`(명령 시작): 도는 중, `text` 는 `cmdline_url`·`cmdline` 을 푼 명령(없으면 null), `started_at` 은 받은 시각,
+//!     `exit_code` 는 null. 텍스트의 줄바꿈·탭은 공백으로 바꾸고, 나머지 제어 문자는 지우고, 앞뒤 공백을 떼고,
+//!     UTF-8 이 아닌 바이트는 U+FFFD 로 바꾼다. 다듬고 나서 비면 null 이다.
+//!   - `D`(명령 끝): 도는 중일 때만 안 도는 중으로 바꾸고 `exit_code` 에 종료 코드(없으면 null)를 넣는다. `text`·
+//!     `started_at` 은 둔다.
+//!   - RIS 는 바꾸지 않는다.
+//!
+//!   명령을 주어 띄웠으면 `command` 는 처음부터 `{"running":true,"text":<argv 를 공백으로 잇고 C 의 텍스트처럼 다듬은 것>,
+//!   "exit_code":null,"started_at":<띄운 시각>}` 이다. 명령이 끝나면 이 프로세스도 끝나므로 늘 도는 중으로 둔다(`--keep`
+//!   이면 끝난 뒤에도 이 값이 남는다). 명령이 스스로 OSC 133 을 찍어도 이 값은 바뀌지 않는다.
 //! - `records` — 프로그램이 OSC 7501(Program Status Protocol)로 보고한 레코드 전체:
 //!   `[{"id","state","kind","progress","app","title","message"}, …]`. `id` 는 루트 레코드가 `""` 이고 `/` 로
 //!   하위를 나타낸다. `state` 는 `idle`·`working`·`done`·`blocked`·`error`, `kind` 는

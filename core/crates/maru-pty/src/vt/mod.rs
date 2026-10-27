@@ -63,6 +63,17 @@ pub enum CwdEvent {
     Reset,
 }
 
+/// 셸이 OSC 133 으로 알린 명령의 단계. 입력 시작(B) 같은 나머지 단계는 쓰지 않아 싣지 않는다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandEvent {
+    /// A — 프롬프트를 그리기 시작했다. 같은 프롬프트를 다시 그릴 때도 온다.
+    PromptStart,
+    /// C — 명령이 돌기 시작했다. 셸이 명령 텍스트를 싣지 않았거나 지우고 나니 비었으면 None 이다.
+    Start(Option<String>),
+    /// D — 명령이 끝났다. 셸이 종료 코드를 싣지 않았으면 None 이다.
+    End(Option<i32>),
+}
+
 /// ghostty 콜백이 `write` 동안 쌓은 것. 콜백은 screen 락 안에서 동기로 불리므로 여기에 넣기만
 /// 하고, 처리는 `take_events` 로 꺼낸 쪽이 한다.
 #[derive(Debug, Default)]
@@ -70,6 +81,7 @@ pub struct VtEvents {
     pub reports: Vec<ProgramStatusReport>,
     pub pty_replies: Vec<Vec<u8>>,
     pub cwd: Vec<CwdEvent>,
+    pub commands: Vec<CommandEvent>,
     /// OSC 0/2 나 RIS 로 제목이 바뀌었을 수 있다. 값은 `VtTerminal::title` 로 읽는다.
     pub title_changed: bool,
 }
@@ -169,6 +181,48 @@ unsafe extern "C" fn on_program_status(
     });
 }
 
+unsafe extern "C" fn on_semantic_prompt(
+    _terminal: ffi::GhosttyTerminal,
+    userdata: *mut c_void,
+    event: *const ffi::GhosttyTerminalSemanticPrompt,
+) {
+    // SAFETY: userdata 는 `on_write_pty` 와 같다. event 와 그 문자열은 호출 동안 유효하다.
+    let events = unsafe { &mut *(userdata as *mut VtEvents) };
+    let event = unsafe { &*event };
+    if event.size < size_of::<ffi::GhosttyTerminalSemanticPrompt>() {
+        return;
+    }
+    let command = match event.kind {
+        k if k == ffi::GHOSTTY_SEMANTIC_PROMPT_PROMPT_START => CommandEvent::PromptStart,
+        k if k == ffi::GHOSTTY_SEMANTIC_PROMPT_OUTPUT_START => {
+            // SAFETY: 라이브러리가 만든 빈 문자열도 NULL 이 아닌 포인터를 가진다(`types.h`).
+            let bytes = unsafe { std::slice::from_raw_parts(event.command.ptr, event.command.len) };
+            CommandEvent::Start(command_text(bytes))
+        }
+        k if k == ffi::GHOSTTY_SEMANTIC_PROMPT_COMMAND_END => {
+            CommandEvent::End(event.has_exit_code.then_some(event.exit_code))
+        }
+        _ => return,
+    };
+    events.commands.push(command);
+}
+
+/// libghostty-vt 는 `cmdline_url` 의 `%XX` 를 푼 바이트를 UTF-8 인지도, 제어 문자가 섞였는지도 보지 않고 넘긴다.
+/// 이 텍스트는 사이드바·헤더·확인 창에 한 줄로 쓰이므로 제어 문자(C0·DEL·C1)는 지운다. 줄바꿈·탭은 공백으로
+/// 바꾼다 — 지우면 여러 줄로 친 명령의 앞뒤 줄이 붙는다.
+pub fn command_text(bytes: &[u8]) -> Option<String> {
+    let text: String = String::from_utf8_lossy(bytes)
+        .chars()
+        .filter_map(|c| match c {
+            '\n' | '\t' => Some(' '),
+            c if c.is_control() => None,
+            c => Some(c),
+        })
+        .collect();
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
 unsafe extern "C" fn on_title_changed(_terminal: ffi::GhosttyTerminal, userdata: *mut c_void) {
     // SAFETY: userdata 는 `on_write_pty` 와 같다.
     let events = unsafe { &mut *(userdata as *mut VtEvents) };
@@ -246,6 +300,10 @@ impl VtTerminal {
                 on_reset as ffi::GhosttyTerminalNotifyFn as *const c_void,
             ),
             (
+                ffi::GHOSTTY_TERMINAL_OPT_SEMANTIC_PROMPT,
+                on_semantic_prompt as ffi::GhosttyTerminalSemanticPromptFn as *const c_void,
+            ),
+            (
                 ffi::GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES,
                 &SCROLLBACK_MAX_BYTES as *const usize as *const c_void,
             ),
@@ -254,7 +312,7 @@ impl VtTerminal {
                 &CONTINUATION_MAX_BYTES as *const usize as *const c_void,
             ),
         ] {
-            // SAFETY: 앞 여섯의 입력은 포인터 값 그대로(userdata 와 콜백 함수)이고 뒤 둘은 `size_t*`
+            // SAFETY: 앞 일곱의 입력은 포인터 값 그대로(userdata 와 콜백 함수)이고 뒤 둘은 `size_t*`
             // 로 호출 동안만 읽힌다. userdata 가 가리키는 Box 는 `t` 와 같이 살고 터미널이 먼저
             // 해제된다.
             let rc = unsafe { ffi::ghostty_terminal_set(t.raw, opt, value) };
@@ -867,6 +925,55 @@ mod tests {
         );
         assert!(ev.pty_replies[1].ends_with(b"\x07"));
         assert!(ev.reports.is_empty());
+    }
+
+    #[test]
+    fn semantic_prompt_steps_are_queued_in_order() {
+        let mut t = term();
+        t.write(b"\x1b]133;A\x07$ \x1b]133;B\x07\x1b]133;C;cmdline_url=npm%20run%20dev\x07out\r\n");
+        t.write(b"\x1b]133;D;1\x07\x1b]133;D\x07\x1b]133;C\x07");
+        assert_eq!(
+            t.take_events().commands,
+            vec![
+                CommandEvent::PromptStart,
+                CommandEvent::Start(Some("npm run dev".into())),
+                CommandEvent::End(Some(1)),
+                CommandEvent::End(None),
+                CommandEvent::Start(None),
+            ]
+        );
+    }
+
+    #[test]
+    fn command_text_keeps_semicolons_percents_and_hangul_but_drops_control_characters() {
+        let mut t = term();
+        t.write(b"\x1b]133;C;cmdline_url=a%3Bb%25c%20%ED%95%9C\x07");
+        t.write(b"\x1b]133;C;cmdline_url=%1B[31mred%7F%C2%9Bx%0D\x07");
+        t.write(b"\x1b]133;C;cmdline_url=%07%1B\x07");
+        assert_eq!(
+            t.take_events().commands,
+            vec![
+                CommandEvent::Start(Some("a;b%c 한".into())),
+                CommandEvent::Start(Some("[31mredx".into())),
+                CommandEvent::Start(None),
+            ]
+        );
+    }
+
+    #[test]
+    fn command_text_turns_newlines_and_tabs_into_spaces() {
+        let mut t = term();
+        t.write(b"\x1b]133;C;cmdline_url=for%20i%20in%201%202%3B%20do%0Aprint%20$i%0Adone\x07");
+        t.write(b"\x1b]133;C;cmdline_url=echo%20a%3B%5C%0Aecho%09b%0A\x07");
+        t.write(b"\x1b]133;C;cmdline_url=%0A%09\x07");
+        assert_eq!(
+            t.take_events().commands,
+            vec![
+                CommandEvent::Start(Some("for i in 1 2; do print $i done".into())),
+                CommandEvent::Start(Some("echo a;\\ echo b".into())),
+                CommandEvent::Start(None),
+            ]
+        );
     }
 
     #[test]

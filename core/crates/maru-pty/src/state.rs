@@ -1,14 +1,24 @@
-//! pane 상태(셸 cwd·제목·foreground cwd·OSC 7501 레코드)와 그것을 받는 `subscribe` 연결.
+//! pane 상태(셸 cwd·제목·foreground cwd·명령·OSC 7501 레코드)와 그것을 받는 `subscribe` 연결.
 //! 메시지 모양은 모듈 doc(`lib.rs`)의 `subscribe` 에 있다.
 
 use crate::frame::{TAG_TEXT, write_frame};
 use crate::program_status::Records;
 use crate::pty::Pty;
-use crate::vt::{CwdEvent, osc7_path};
+use crate::vt::{CommandEvent, CwdEvent, command_text, osc7_path};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+
+/// 셸의 명령 실행 상태. `text`·`started_at` 은 명령이 끝난 뒤에도 남는다 — 실패한 명령을 보이는 데 쓴다.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CommandState {
+    pub running: bool,
+    pub text: Option<String>,
+    pub exit_code: Option<i32>,
+    /// epoch 밀리초
+    pub started_at: Option<u64>,
+}
 
 /// 상태 가운데 VT 와 레코드 밖에서 드는 것. 제목은 VT 가, 레코드는 `Records` 가 든다.
 #[derive(Debug, Default)]
@@ -18,9 +28,64 @@ pub struct PaneState {
     /// 받아들인 OSC 7 보고 수. 같은 경로를 다시 보고해도 는다.
     pub cwd_reports: u64,
     pub foreground_cwd: Option<String>,
+    /// OSC 133 을 받은 적이 없는 셸이면 None 이다.
+    pub command: Option<CommandState>,
+    /// true 면 명령 pane 이다. 명령이 스스로 찍은 OSC 133 이 띄울 때 채운 상태를 덮지 않게 한다.
+    command_fixed: bool,
 }
 
 impl PaneState {
+    /// 명령을 주어 띄운 pane 의 상태를 만든다. 명령이 끝나면 pane 도 끝나므로 늘 도는 중으로 둔다. `--keep` 이면 끝난 뒤에도 이 값이 남는다.
+    pub fn for_command(argv: &[String], started_at: u64) -> Self {
+        PaneState {
+            command: Some(CommandState {
+                running: true,
+                text: command_text(argv.join(" ").as_bytes()),
+                exit_code: None,
+                started_at: Some(started_at),
+            }),
+            command_fixed: true,
+            ..Default::default()
+        }
+    }
+
+    /// 상태가 바뀌었으면 true 다. `now` 는 epoch 밀리초다.
+    pub fn apply_command(&mut self, event: &CommandEvent, now: u64) -> bool {
+        if self.command_fixed {
+            return false;
+        }
+        let running = self.command.as_ref().is_some_and(|c| c.running);
+        let next = match event {
+            CommandEvent::Start(text) => CommandState {
+                running: true,
+                text: text.clone(),
+                exit_code: None,
+                started_at: Some(now),
+            },
+            // `D` 가 오지 않은 채 다음 프롬프트가 떴다(훅이 빠진 경우 등). 종료 코드는 모른다.
+            CommandEvent::PromptStart if running => CommandState {
+                running: false,
+                exit_code: None,
+                ..self.command.clone().unwrap()
+            },
+            CommandEvent::PromptStart if self.command.is_none() => CommandState {
+                running: false,
+                text: None,
+                exit_code: None,
+                started_at: None,
+            },
+            CommandEvent::End(code) if running => CommandState {
+                running: false,
+                exit_code: *code,
+                ..self.command.clone().unwrap()
+            },
+            CommandEvent::PromptStart | CommandEvent::End(_) => return false,
+        };
+        let changed = self.command.as_ref() != Some(&next);
+        self.command = Some(next);
+        changed
+    }
+
     /// 상태가 바뀌었으면 true 다.
     pub fn apply(&mut self, event: &CwdEvent) -> bool {
         let before = (self.cwd_reports, self.cwd.is_some());
@@ -47,6 +112,7 @@ impl PaneState {
             "cwd_reports": self.cwd_reports,
             "title": title,
             "foreground_cwd": self.foreground_cwd,
+            "command": self.command,
             "records": records.to_json(),
         })
         .to_string()
@@ -134,7 +200,120 @@ mod tests {
             m,
             serde_json::json!({
                 "type": "state", "cwd": null, "cwd_reports": 0, "title": null,
-                "foreground_cwd": null, "records": [],
+                "foreground_cwd": null, "command": null, "records": [],
+            })
+        );
+    }
+
+    fn command(s: &PaneState) -> (bool, Option<&str>, Option<i32>, Option<u64>) {
+        let c = s.command.as_ref().expect("command");
+        (c.running, c.text.as_deref(), c.exit_code, c.started_at)
+    }
+
+    fn start(text: &str) -> CommandEvent {
+        CommandEvent::Start(Some(text.into()))
+    }
+
+    #[test]
+    fn a_prompt_turns_an_unknown_shell_into_an_idle_one() {
+        let mut s = PaneState::default();
+        assert!(s.apply_command(&CommandEvent::PromptStart, 5));
+        assert_eq!(command(&s), (false, None, None, None));
+        assert!(
+            !s.apply_command(&CommandEvent::PromptStart, 6),
+            "다시 그린 프롬프트"
+        );
+    }
+
+    #[test]
+    fn a_command_runs_from_start_and_keeps_its_text_after_it_ends() {
+        let mut s = PaneState::default();
+        s.apply_command(&CommandEvent::PromptStart, 1);
+        assert!(s.apply_command(&start("cargo test"), 10));
+        assert_eq!(command(&s), (true, Some("cargo test"), None, Some(10)));
+        assert!(s.apply_command(&CommandEvent::End(Some(101)), 20));
+        assert_eq!(
+            command(&s),
+            (false, Some("cargo test"), Some(101), Some(10))
+        );
+        assert!(
+            !s.apply_command(&CommandEvent::PromptStart, 21),
+            "D 뒤의 A 는 그대로 둔다"
+        );
+        assert_eq!(
+            command(&s),
+            (false, Some("cargo test"), Some(101), Some(10))
+        );
+        assert!(
+            s.apply_command(&start("ls"), 30),
+            "다음 명령이 실패를 지운다"
+        );
+        assert_eq!(command(&s), (true, Some("ls"), None, Some(30)));
+    }
+
+    #[test]
+    fn a_command_pane_spaces_newlines_and_drops_other_control_characters_from_its_argv() {
+        let s = PaneState::for_command(
+            &["sh".into(), "-c".into(), "echo a\n\x1b[1msleep 9".into()],
+            1,
+        );
+        assert_eq!(command(&s).1, Some("sh -c echo a [1msleep 9"));
+        let s = PaneState::for_command(&["\x07".into()], 1);
+        assert_eq!(command(&s), (true, None, None, Some(1)));
+    }
+
+    #[test]
+    fn a_second_start_without_an_end_restarts_the_command() {
+        let mut s = PaneState::default();
+        s.apply_command(&start("a"), 2);
+        assert!(s.apply_command(&start("b"), 5));
+        assert_eq!(command(&s), (true, Some("b"), None, Some(5)));
+    }
+
+    #[test]
+    fn an_end_without_a_running_command_is_dropped() {
+        let mut s = PaneState::default();
+        assert!(!s.apply_command(&CommandEvent::End(Some(1)), 1));
+        assert!(s.command.is_none());
+        s.apply_command(&start("a"), 2);
+        s.apply_command(&CommandEvent::End(Some(0)), 3);
+        assert!(!s.apply_command(&CommandEvent::End(Some(1)), 4));
+        assert_eq!(command(&s), (false, Some("a"), Some(0), Some(2)));
+    }
+
+    #[test]
+    fn a_prompt_without_an_end_stops_the_command_with_no_exit_code() {
+        let mut s = PaneState::default();
+        s.apply_command(&start("vim"), 2);
+        assert!(s.apply_command(&CommandEvent::PromptStart, 3));
+        assert_eq!(command(&s), (false, Some("vim"), None, Some(2)));
+    }
+
+    #[test]
+    fn an_end_without_an_exit_code_stops_the_command_with_none() {
+        let mut s = PaneState::default();
+        s.apply_command(&start("a"), 2);
+        assert!(s.apply_command(&CommandEvent::End(None), 3));
+        assert_eq!(command(&s), (false, Some("a"), None, Some(2)));
+    }
+
+    #[test]
+    fn a_command_pane_runs_from_spawn_and_ignores_osc_133() {
+        let mut s = PaneState::for_command(&["npm".into(), "run".into(), "dev".into()], 7);
+        for e in [
+            CommandEvent::PromptStart,
+            CommandEvent::End(Some(1)),
+            start("other"),
+        ] {
+            assert!(!s.apply_command(&e, 9));
+        }
+        assert_eq!(command(&s), (true, Some("npm run dev"), None, Some(7)));
+        let m: serde_json::Value =
+            serde_json::from_str(&s.message(None, &Records::default())).unwrap();
+        assert_eq!(
+            m["command"],
+            serde_json::json!({
+                "running": true, "text": "npm run dev", "exit_code": null, "started_at": 7,
             })
         );
     }
