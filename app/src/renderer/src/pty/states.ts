@@ -30,7 +30,7 @@ export function createPtyStates() {
   }
   const root = (pty?: string): ProgramStatusRecord | undefined =>
     pty === undefined ? undefined : rootRecord(records(pty))
-  // 상태가 같으면 같은 객체를 돌려준다. 새 객체면 그것을 prop 으로 받은 pane 헤더가 다른 pane 의 상태가 바뀔 때도 다시 그려진다.
+  // 상태가 같으면 같은 객체를 돌려준다. 매번 새 객체를 돌려주면, 그것을 prop 으로 받은 pane 헤더가 다른 pane 의 상태가 바뀔 때도 다시 그려지기 때문이다.
   const views = new WeakMap<PtyState, CommandView | undefined>()
   const command = (pty?: string): CommandView | undefined => {
     const state = pty === undefined ? undefined : get(pty)

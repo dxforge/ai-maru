@@ -82,9 +82,9 @@ type JobRow = {
 }
 
 // pane 줄의 오른쪽 끝에 그 pane 의 위치를 붙인다. agent 아이콘은 쉬는(idle) 동안만 앞 칸의 상태 아이콘 자리에 둔다.
-// 오른쪽 끝을 위치만 쓰게 해서, agent 가 뜨고 끝나도 위치가 움직이지 않게 하기 위해서다. 셸 pane 에서는 명령이 도는 동안과
-// 실패한 명령이 남아 있는 동안만 그 자리에 돈 시간이나 종료 코드를 쓴다. 명령 pane 은 늘 도는 중이라 같은 규칙을 따르면
-// 위치를 한 번도 보이지 못하므로, 그 자리에 늘 위치를 쓴다.
+// agent 아이콘을 오른쪽 끝에 두지 않아야 agent 가 뜨고 끝나도 위치가 움직이지 않기 때문이다. 셸 pane 에서는 명령이 도는 동안과
+// 실패한 명령이 남아 있는 동안만 오른쪽 끝에 위치 대신 돈 시간이나 종료 코드를 쓴다. 명령 pane 은 늘 도는 중이라 같은 규칙을 따르면
+// 위치를 한 번도 보이지 못하므로, 오른쪽 끝에 늘 위치를 쓴다.
 function paneRow(p: DeepReadonly<Pane>, focused: boolean, base: DeepReadonly<Pane>): Row {
   const r = root(p.ptyId)
   const s = r?.state

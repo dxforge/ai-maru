@@ -20,7 +20,7 @@ const {
   command?: CommandView
   pane: Pick<Pane, 'title' | 'cwd' | 'command'>
   focused: boolean
-  /** 명령이 돈 시간을 셀 시각. 도는 명령이 없으면 쓰지 않는다. */
+  /** 명령이 돈 시간을 셀 때 쓰는 현재 시각이다. 도는 명령이 없으면 쓰지 않는다. */
   now: number
   shell?: string
 }>()

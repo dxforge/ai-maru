@@ -30,12 +30,12 @@ pub struct PaneState {
     pub foreground_cwd: Option<String>,
     /// OSC 133 을 받은 적이 없는 셸이면 None 이다.
     pub command: Option<CommandState>,
-    /// 명령 pane 이다. 명령이 스스로 찍은 OSC 133 이 띄울 때 채운 상태를 덮지 않게 한다.
+    /// true 면 명령 pane 이다. 명령이 스스로 찍은 OSC 133 이 띄울 때 채운 상태를 덮지 않게 한다.
     command_fixed: bool,
 }
 
 impl PaneState {
-    /// 명령을 띄운 pane. 명령이 끝나면 pane 도 끝나므로 늘 도는 중으로 둔다. `--keep` 이면 끝난 뒤에도 이 값이 남는다.
+    /// 명령을 주어 띄운 pane 의 상태를 만든다. 명령이 끝나면 pane 도 끝나므로 늘 도는 중으로 둔다. `--keep` 이면 끝난 뒤에도 이 값이 남는다.
     pub fn for_command(argv: &[String], started_at: u64) -> Self {
         PaneState {
             command: Some(CommandState {
@@ -62,7 +62,7 @@ impl PaneState {
                 exit_code: None,
                 started_at: Some(now),
             },
-            // 끝이 오지 않은 채 다음 프롬프트가 떴다(훅이 빠짐 등). 종료 코드는 모른다.
+            // `D` 가 오지 않은 채 다음 프롬프트가 떴다(훅이 빠진 경우 등). 종료 코드는 모른다.
             CommandEvent::PromptStart if running => CommandState {
                 running: false,
                 exit_code: None,
