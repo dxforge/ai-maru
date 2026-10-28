@@ -1,10 +1,10 @@
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 use serde_json::{Value, json};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::os::unix::process::ExitStatusExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread::JoinHandle;
@@ -1602,4 +1602,309 @@ fn job_errors_pass_the_message_through() {
     let out = maru_in(tmp.path(), &sock, &["job", "new", "--name", "dev", "true"]);
     server.join().unwrap();
     assert_fails_with(&out, "maru: job dev is running in this cell");
+}
+
+fn status_cmd(args: &[&str]) -> Command {
+    let mut cmd = maru_cmd(None, &[&["status"], args].concat());
+    cmd.stdin(Stdio::null());
+    cmd
+}
+
+fn on_tty(args: &[&str]) -> (Output, Vec<u8>) {
+    run_on_tty(status_cmd(args))
+}
+
+fn run_on_tty(mut cmd: Command) -> (Output, Vec<u8>) {
+    let pty = nix::pty::openpty(None, None).unwrap();
+    let mut master = std::fs::File::from(pty.master);
+    // slave 가 모두 닫히면 master 읽기가 끝난다. 쓴 것을 놓치지 않게 띄우기 전부터 읽는다.
+    let reader = std::thread::spawn(move || {
+        let mut got = Vec::new();
+        let mut buf = [0; 8192];
+        while let Ok(n @ 1..) = master.read(&mut buf) {
+            got.extend_from_slice(&buf[..n]);
+        }
+        got
+    });
+    cmd.stdin(Stdio::from(pty.slave));
+    unsafe {
+        cmd.pre_exec(|| {
+            nix::unistd::setsid()?;
+            if nix::libc::ioctl(0, nix::libc::TIOCSCTTY.into(), 0) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let child = cmd.spawn().unwrap();
+    // cmd 가 든 slave 를 닫아야 CLI 가 끝난 뒤 master 읽기가 끝난다.
+    drop(cmd);
+    let out = wait_within(child);
+    (out, reader.join().unwrap())
+}
+
+fn writes(args: &[&str], body: &str) {
+    let (out, got) = on_tty(args);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.stdout.is_empty());
+    assert!(out.stderr.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&got),
+        format!("\x1b]7501;{body}\x1b\\")
+    );
+}
+
+fn refuses(args: &[&str], expected: &str) {
+    let (out, got) = on_tty(args);
+    assert_fails_with(&out, expected);
+    assert!(
+        got.is_empty(),
+        "{args:?}: {}",
+        String::from_utf8_lossy(&got)
+    );
+}
+
+fn longest_id() -> String {
+    let id = format!(
+        "{}/{}/{}/{}",
+        "a".repeat(32),
+        "b".repeat(32),
+        "c".repeat(31),
+        "d".repeat(30)
+    );
+    assert_eq!(id.len(), 128);
+    id
+}
+
+#[test]
+fn status_put_without_an_id_writes_the_root_record() {
+    writes(&["put", "done"], "state=done");
+}
+
+#[test]
+fn status_put_writes_every_key_and_wraps_text_in_base64() {
+    writes(
+        &[
+            "put",
+            "blocked",
+            "--msg",
+            "Which one?",
+            "--title",
+            "Ask",
+            "--app",
+            "claude-code",
+            "--progress",
+            "40",
+            "--kind",
+            "question",
+            "--id",
+            "ask/sub_1.a+b-c",
+        ],
+        "state=blocked:id=ask/sub_1.a+b-c:kind=question:progress=40:app=claude-code:title=QXNr:msg=V2hpY2ggb25lPw==",
+    );
+    writes(
+        &["put", "working", "--progress", "0"],
+        "state=working:progress=0",
+    );
+    writes(&["put", "idle", "--msg", "-x"], "state=idle:msg=LXg=");
+    writes(
+        &[
+            "put",
+            "blocked",
+            "--progress",
+            "100",
+            "--id",
+            "-x",
+            "--app",
+            "-1",
+        ],
+        "state=blocked:id=-x:progress=100:app=-1",
+    );
+    writes(&["clear", "--id", "-x/-y"], "state=clear:id=-x/-y");
+}
+
+#[test]
+fn status_text_is_padded_base64_of_its_utf8_bytes() {
+    for (text, encoded) in [
+        ("a", "YQ=="),
+        ("ab", "YWI="),
+        ("abc", "YWJj"),
+        ("안전", "7JWI7KCE"),
+        ("☀️ ok", "4piA77iPIG9r"),
+    ] {
+        writes(
+            &["put", "done", "--msg", text],
+            &format!("state=done:msg={encoded}"),
+        );
+    }
+}
+
+#[test]
+fn status_empty_text_is_left_out() {
+    writes(&["put", "done", "--title", "", "--msg", ""], "state=done");
+}
+
+#[test]
+fn status_text_at_its_byte_limits_is_written() {
+    let (out, got) = on_tty(&["put", "done", "--title", &"가".repeat(64)]);
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(got.len(), "\x1b]7501;state=done:title=".len() + 256 + 2);
+    let (out, got) = on_tty(&["put", "done", "--msg", &"a".repeat(2048)]);
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(got.len(), "\x1b]7501;state=done:msg=".len() + 2732 + 2);
+}
+
+#[test]
+fn status_clear_writes_clear_for_one_record_or_every_record() {
+    writes(&["clear"], "state=clear");
+    writes(&["clear", "--id", "ask/sub"], "state=clear:id=ask/sub");
+}
+
+#[test]
+fn status_ids_at_the_limits_are_written() {
+    let long = longest_id();
+    writes(&["clear", "--id", &long], &format!("state=clear:id={long}"));
+    writes(
+        &["clear", "--id", "a/b/c/d/e/f/g/h"],
+        "state=clear:id=a/b/c/d/e/f/g/h",
+    );
+}
+
+#[test]
+fn status_ids_the_protocol_does_not_allow_are_refused() {
+    let segment = "a".repeat(33);
+    let long = format!("{}a", longest_id());
+    for id in [
+        "", "/", "a/", "/a", "a//b", "a b", "a,b", "a=b", "a:b", "가", &segment,
+    ] {
+        refuses(&["put", "done", "--id", id], "--id must be names");
+        refuses(&["clear", "--id", id], "--id must be names");
+    }
+    refuses(
+        &["put", "done", "--id", "a/b/c/d/e/f/g/h/i"],
+        "more than 8 parts",
+    );
+    refuses(&["clear", "--id", &long], "over the 128 allowed");
+}
+
+#[test]
+fn status_apps_the_protocol_does_not_allow_are_refused() {
+    for app in ["", "a/b", "a b", &"a".repeat(33)] {
+        refuses(&["put", "done", "--app", app], "--app must be");
+    }
+    writes(
+        &["put", "done", "--app", &"a".repeat(32)],
+        &format!("state=done:app={}", "a".repeat(32)),
+    );
+}
+
+#[test]
+fn status_kind_and_progress_are_refused_with_states_that_ignore_them() {
+    for state in ["idle", "working", "done", "error"] {
+        refuses(
+            &["put", state, "--kind", "auth"],
+            "--kind is only for the blocked state",
+        );
+    }
+    for state in ["idle", "done", "error"] {
+        refuses(
+            &["put", state, "--progress", "5"],
+            "--progress is only for the working and blocked",
+        );
+    }
+    refuses(&["put", "working", "--progress", "101"], "101");
+    refuses(&["put", "blocked", "--kind", "dance"], "dance");
+    refuses(&["put", "sleeping"], "sleeping");
+    refuses(&["put", "clear"], "clear");
+}
+
+#[test]
+fn status_text_over_its_byte_limit_is_refused() {
+    refuses(
+        &["put", "done", "--title", &format!("{}a", "가".repeat(64))],
+        "--title is 193 bytes, over the 192 allowed",
+    );
+    refuses(
+        &["put", "done", "--msg", &"a".repeat(2049)],
+        "--msg is 2049 bytes, over the 2048 allowed",
+    );
+}
+
+#[test]
+fn status_text_with_control_characters_is_refused() {
+    for text in ["a\nb", "tab\there", "\x1b[m", "del\x7f", "c1\u{85}"] {
+        refuses(
+            &["put", "done", "--msg", text],
+            "--msg must not contain control characters",
+        );
+        refuses(
+            &["put", "done", "--title", text],
+            "--title must not contain control characters",
+        );
+    }
+}
+
+#[test]
+fn status_without_a_controlling_terminal_writes_to_the_nearest_ancestors_terminal() {
+    // Claude Code 의 Bash 도구 명령처럼 CLI 는 제어 터미널 없이 돌고, 그 부모 셸은 pty 를 제어 터미널로 갖는다.
+    let mut sh = Command::new("/bin/sh");
+    sh.args([
+        "-c",
+        r#"/usr/bin/perl -MPOSIX -e 'POSIX::setsid() > 0 or die "setsid: $!"; exec @ARGV or die "exec: $!"' "$MARU" status put blocked --id ask; exit $?"#,
+    ])
+    .env("MARU", env!("CARGO_BIN_EXE_maru"))
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+    let (out, got) = run_on_tty(sh);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(out.stdout.is_empty());
+    assert!(out.stderr.is_empty(), "{}", stderr(&out));
+    assert_eq!(
+        String::from_utf8_lossy(&got),
+        "\x1b]7501;state=blocked:id=ask\x1b\\"
+    );
+}
+
+#[test]
+fn status_without_a_terminal_in_itself_or_any_ancestor_fails_and_says_why() {
+    // 테스트를 띄운 프로세스가 제어 터미널을 가질 수 있으므로, 부모 셸을 먼저 끝내 CLI 의 조상에서 뺀다.
+    let tmp = tempfile::tempdir().unwrap();
+    let log = tmp.path().join("out");
+    let mut sh = Command::new("/bin/sh");
+    sh.args([
+        "-c",
+        r#"(sleep 0.5; "$MARU" status put done; echo "exit=$?") >"$LOG" 2>&1 &"#,
+    ])
+    .env("MARU", env!("CARGO_BIN_EXE_maru"))
+    .env("LOG", &log)
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null());
+    unsafe {
+        sh.pre_exec(|| {
+            nix::unistd::setsid()?;
+            Ok(())
+        });
+    }
+    assert!(wait_within(sh.spawn().unwrap()).status.success());
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let out = loop {
+        let out = std::fs::read_to_string(&log).unwrap_or_default();
+        if out.contains("exit=") {
+            break out;
+        }
+        assert!(Instant::now() < deadline, "CLI 가 끝나지 않았다: {out}");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(out.ends_with("exit=1\n"), "{out}");
+    assert!(
+        out.contains("cannot open the controlling terminal /dev/tty")
+            && out.contains("no ancestor"),
+        "{out}"
+    );
 }

@@ -7,7 +7,7 @@ type MateCell = { panes: readonly MatePane[]; focused: number }
 
 export function mateRows(
   workspaces: readonly { cells: readonly MateCell[] }[],
-  root: (pty: string) => ProgramStatusRecord | undefined
+  shown: (pty: string) => ProgramStatusRecord | undefined
 ): MateRow[] {
   const rows: MateRow[] = []
   for (const w of workspaces) {
@@ -15,7 +15,7 @@ export function mateRows(
     for (const c of w.cells) {
       const cell = windowTitle(cellLabel(focusedPane(c)), ' ')
       for (const p of c.panes) {
-        const r = root(p.ptyId)
+        const r = shown(p.ptyId)
         if (r?.app !== CLAUDE_APP) continue
         rows.push({
           pty: p.ptyId,

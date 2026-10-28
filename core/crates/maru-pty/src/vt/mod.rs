@@ -835,6 +835,34 @@ mod tests {
         assert_eq!((r.id.as_str(), r.title.as_str()), ("build", "Build"));
     }
 
+    // `maru status put` 이 검사하는 상한이 파서가 받는 값과 같은지 잰다. "QUFB" 는 "AAA" 로 풀린다.
+    #[test]
+    fn reports_at_the_specification_limits_are_kept() {
+        let title = "QUFB".repeat(64);
+        let msg = format!("{}QUE=", "QUFB".repeat(682));
+        let id = format!(
+            "{}/{}/{}/{}",
+            "a".repeat(32),
+            "b".repeat(32),
+            "c".repeat(31),
+            "d".repeat(30)
+        );
+        assert_eq!(id.len(), 128);
+        let app = "e".repeat(32);
+        let mut t = term();
+        t.write(
+            format!("\x1b]7501;state=blocked:id={id}:kind=question:progress=100:app={app}:title={title}:msg={msg}\x1b\\")
+                .as_bytes(),
+        );
+        let r = t.take_events().reports.remove(0);
+        assert_eq!(r.state, ProgramStatusState::Blocked);
+        assert_eq!((r.id.as_str(), r.app.as_str()), (id.as_str(), app.as_str()));
+        assert_eq!((r.title.len(), r.message.len()), (192, 2048));
+
+        t.write(format!("\x1b]7501;state=done:title={title}QQ==\x1b\\").as_bytes());
+        assert!(t.take_events().reports.is_empty());
+    }
+
     #[test]
     fn a_clear_report_and_a_full_reset_are_queued_as_clear() {
         let mut t = term();

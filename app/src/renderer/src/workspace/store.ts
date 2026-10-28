@@ -57,13 +57,13 @@ export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
 export type PaneSource = {
   get(ptyId: string): PtyState | undefined
   /** 루트 OSC 7501 레코드의 상태 */
-  state(ptyId: string): ProgramStatusState | undefined
+  rootState(ptyId: string): ProgramStatusState | undefined
   isOld(ptyId: string): boolean
 }
 
 export function createWorkspaces(
   readGit: (cwd: string) => Promise<GitHead | null> = async () => null,
-  source: PaneSource = { get: () => undefined, state: () => undefined, isOld: () => false },
+  source: PaneSource = { get: () => undefined, rootState: () => undefined, isOld: () => false },
   ptyId: () => string = newPtyId,
   cellId: () => string = () => randomId('c'),
   workspaceId: () => string = () => randomId('w')
@@ -268,7 +268,7 @@ export function createWorkspaces(
     if (p.title !== title) p.title = title
     const cwd = paneCwd({ ...p, state })
     const before = seen.get(p.key)
-    const now = { reports: state?.cwdReports, program: source.state(p.ptyId) }
+    const now = { reports: state?.cwdReports, program: source.rootState(p.ptyId) }
     seen.set(p.key, now)
     const reported =
       before?.reports !== undefined && now.reports !== undefined && now.reports !== before.reports

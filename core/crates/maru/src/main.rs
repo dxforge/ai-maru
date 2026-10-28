@@ -58,11 +58,12 @@
 //! | `mate.list` | 없음 | `{"mates":[{"pty","state","kind","workspace","cell","dir","message"}…]}` |
 //! | `app.restart` | `kill_ptys`(bool, 선택) | `null` |
 //!
-//! `mate.list` 는 창의 모든 workspace·cell 에서, pty 가 보낸 루트 program_status 레코드의 `app` 이
-//! `claude-code` 인 pane 을 화면 순서(workspace → cell → pane)로 돌려준다. job 은 들지 않는다.
-//! `state` 는 레코드의 상태(`idle`·`working`·`done`·`blocked`·`error`)다. `kind` 는 `permission`·`question`·
-//! `auth` 나 null 이다. `workspace`·`cell` 은 사이드바가 보이는 이름이다. `cell` 은 브랜치가 있으면 이름 뒤에
-//! 공백 하나를 두고 브랜치를 붙인다. `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면
+//! `mate.list` 는 창의 모든 workspace·cell 에서, 루트 program_status 레코드의 `app` 이 `claude-code` 인
+//! pane 을 화면 순서(workspace → cell → pane)로 돌려준다. job 은 들지 않는다. `state`·`kind`·`message` 는
+//! 사이드바가 보이는 레코드(루트와 하위 가운데 앱이 고른 것)의 값이다. `state` 는 레코드의 상태
+//! (`idle`·`working`·`done`·`blocked`·`error`)다. `kind` 는 `permission`·`question`·`auth` 나 null 이다.
+//! `workspace`·`cell` 은 사이드바가 보이는 이름이다. `cell` 은 브랜치가 있으면 이름 뒤에 공백 하나를 두고
+//! 브랜치를 붙인다. `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면
 //! 빈 문자열이다. `message` 는 레코드의 `message` 이고, 비었으면 `title` 이다.
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
@@ -136,6 +137,14 @@
 //! - job 의 셸이 스스로 끝나면 그 job 을 띄운 pty 에 `{"event":"job","pty":<job 의 pty id>,
 //!   "name":<이름, 없으면 뺀다>,"code","signal"}` 을 보낸다. 그 pty 에 구독이 없으면 보류했다가
 //!   구독이 생길 때 보낸다. `job.kill` 이나 cell 닫기로 끝난 job 은 알리지 않는다.
+//!
+//! # status
+//!
+//! `maru status` 는 앱에 요청을 보내지 않는다. 자기 제어 터미널(`/dev/tty`)에 OSC 7501 보고를 써서,
+//! 터미널 안의 프로그램이 보낸 보고와 같은 경로로 레코드를 쓰거나 지운다. 그래서 `MARU_SOCKET`·`MARU_PTY_ID`
+//! 가 없어도 된다. OSC 7501 을 받는 다른 터미널에서도 동작한다. 제어 터미널이 없으면 제어 터미널이 있는
+//! 가장 가까운 조상 프로세스의 터미널 장치에 쓴다. Claude Code 의 Bash 도구 명령과 hook 은 제어 터미널 없이
+//! 돌기 때문이다. 사양에 어긋나는 보고는 터미널이 말없이 버리므로 `maru status` 가 쓰기 전에 거절한다.
 //!
 //! # claude monitor
 //!
@@ -217,6 +226,16 @@ enum Command {
     App {
         #[command(subcommand)]
         command: AppCommand,
+    },
+    /// Report this terminal's status with OSC 7501 (the program status protocol).
+    ///
+    /// Writes to the controlling terminal, so it also works outside AI Maru in any terminal
+    /// that speaks the protocol. Without one, as in Claude Code's Bash tool and hooks, writes
+    /// to the terminal of the nearest ancestor process that has one. Nothing is printed on
+    /// success.
+    Status {
+        #[command(subcommand)]
+        command: StatusCommand,
     },
     /// Commands the app's claude plugin runs from its hooks and monitors.
     #[command(hide = true)]
@@ -385,6 +404,62 @@ enum AppCommand {
 }
 
 #[derive(Subcommand)]
+enum StatusCommand {
+    /// Write one status record. Without --id, writes the root record, the status of the
+    /// program itself; a record with an id lives beside it until cleared.
+    ///
+    /// A report the protocol does not allow is refused here, because terminals drop it
+    /// without saying so.
+    Put {
+        /// The state to report.
+        state: StatusState,
+        /// The record to write, e.g. `ask` or `deploy/us-east`: names of letters, digits,
+        /// `_`, `.`, `+` and `-` joined by `/`.
+        #[arg(long, allow_hyphen_values = true)]
+        id: Option<String>,
+        /// What a blocked program needs from the user. Only with `blocked`.
+        #[arg(long)]
+        kind: Option<StatusKind>,
+        /// Percent done, 0 to 100. Only with `working` or `blocked`.
+        #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
+        progress: Option<u8>,
+        /// Name of the program for machines, e.g. `claude-code`. A record without one takes
+        /// its nearest ancestor's.
+        #[arg(long, allow_hyphen_values = true)]
+        app: Option<String>,
+        /// Short label for people, at most 192 bytes.
+        #[arg(long, allow_hyphen_values = true)]
+        title: Option<String>,
+        /// One line for people, at most 2048 bytes.
+        #[arg(long, allow_hyphen_values = true)]
+        msg: Option<String>,
+    },
+    /// Remove a record and the records under it. Without --id, removes every record of this
+    /// terminal.
+    Clear {
+        /// The record to remove.
+        #[arg(long, allow_hyphen_values = true)]
+        id: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum StatusState {
+    Idle,
+    Working,
+    Done,
+    Blocked,
+    Error,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum StatusKind {
+    Permission,
+    Question,
+    Auth,
+}
+
+#[derive(Subcommand)]
 enum CanvasCommand {
     /// Show markdown in the Canvas panel. With --id, replaces the document with that id if
     /// there is one.
@@ -503,12 +578,192 @@ fn run(command: Command) -> Result<()> {
             params.insert("kill_ptys".into(), kill_ptys.into());
             call(&target()?, "app.restart", params)?;
         }
+        Command::Status { command } => write_tty(&status_report(command)?)?,
         Command::Claude { command } => match command {
             ClaudeCommand::Hook => claude_hook()?,
             ClaudeCommand::Monitor => claude_monitor()?,
         },
     }
     Ok(())
+}
+
+// 사양(revision 0.4)의 상한. libghostty-vt 의 파서도 이 값을 넘는 보고를 버린다.
+const MAX_ID_BYTES: usize = 128;
+const MAX_ID_DEPTH: usize = 8;
+const MAX_NAME_BYTES: usize = 32;
+const MAX_TITLE_BYTES: usize = 192;
+const MAX_MSG_BYTES: usize = 2048;
+
+fn status_report(command: StatusCommand) -> Result<Vec<u8>> {
+    let mut pairs = Vec::new();
+    match command {
+        StatusCommand::Put {
+            state,
+            id,
+            kind,
+            progress,
+            app,
+            title,
+            msg,
+        } => {
+            pairs.push(format!("state={}", value_name(state)));
+            push_id(&mut pairs, id)?;
+            if let Some(kind) = kind {
+                if !matches!(state, StatusState::Blocked) {
+                    bail!("--kind is only for the blocked state");
+                }
+                pairs.push(format!("kind={}", value_name(kind)));
+            }
+            if let Some(progress) = progress {
+                if !matches!(state, StatusState::Working | StatusState::Blocked) {
+                    bail!("--progress is only for the working and blocked states");
+                }
+                pairs.push(format!("progress={progress}"));
+            }
+            if let Some(app) = app {
+                if !is_name(&app) {
+                    bail!(
+                        "--app must be 1 to {MAX_NAME_BYTES} letters, digits, `_`, `.`, `+` or `-`"
+                    );
+                }
+                pairs.push(format!("app={app}"));
+            }
+            for (key, option, text, max) in [
+                ("title", "--title", title, MAX_TITLE_BYTES),
+                ("msg", "--msg", msg, MAX_MSG_BYTES),
+            ] {
+                // 사양에서 빈 값은 그 키를 보내지 않은 것과 같으므로 키를 뺀다.
+                let Some(text) = text.filter(|t| !t.is_empty()) else {
+                    continue;
+                };
+                if text.len() > max {
+                    bail!("{option} is {} bytes, over the {max} allowed", text.len());
+                }
+                if text.chars().any(char::is_control) {
+                    bail!("{option} must not contain control characters such as newlines");
+                }
+                pairs.push(format!("{key}={}", base64(text.as_bytes())));
+            }
+        }
+        StatusCommand::Clear { id } => {
+            pairs.push("state=clear".to_owned());
+            push_id(&mut pairs, id)?;
+        }
+    }
+    Ok(format!("\x1b]7501;{}\x1b\\", pairs.join(":")).into_bytes())
+}
+
+fn push_id(pairs: &mut Vec<String>, id: Option<String>) -> Result<()> {
+    if let Some(id) = id {
+        check_id(&id)?;
+        pairs.push(format!("id={id}"));
+    }
+    Ok(())
+}
+
+fn value_name(value: impl clap::ValueEnum) -> String {
+    value
+        .to_possible_value()
+        .expect("every value has a name")
+        .get_name()
+        .to_owned()
+}
+
+fn is_name(s: &str) -> bool {
+    (1..=MAX_NAME_BYTES).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_.+-".contains(&b))
+}
+
+fn check_id(id: &str) -> Result<()> {
+    if id.len() > MAX_ID_BYTES {
+        bail!(
+            "--id is {} bytes, over the {MAX_ID_BYTES} allowed",
+            id.len()
+        );
+    }
+    if id.split('/').count() > MAX_ID_DEPTH {
+        bail!("--id has more than {MAX_ID_DEPTH} parts");
+    }
+    if !id.split('/').all(is_name) {
+        bail!(
+            "--id must be names of 1 to {MAX_NAME_BYTES} letters, digits, `_`, `.`, `+` or `-` joined by single `/`"
+        );
+    }
+    Ok(())
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, &b)| n | u32::from(b) << (16 - 8 * i));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() {
+                char::from(DIGITS[(n >> (18 - 6 * i) & 63) as usize])
+            } else {
+                '='
+            });
+        }
+    }
+    out
+}
+
+/// 시퀀스를 `write` 한 번으로 쓴다. 터미널을 함께 쓰는 프로그램의 출력 사이에 끼어도 시퀀스가 갈라지지 않게 하기 위해서다.
+fn write_tty(bytes: &[u8]) -> Result<()> {
+    let (mut tty, path) = open_terminal()?;
+    let n = tty
+        .write(bytes)
+        .with_context(|| format!("cannot write to the terminal {path}"))?;
+    if n != bytes.len() {
+        bail!("the terminal {path} took {n} of {} bytes", bytes.len());
+    }
+    Ok(())
+}
+
+/// 제어 터미널을 연다. 없으면 제어 터미널이 있는 가장 가까운 조상 프로세스의 터미널 장치를 연다. Claude Code 의 Bash
+/// 도구 명령과 hook 은 제어 터미널 없이 돌고, 그 조상인 claude 는 자기가 그리는 터미널을 제어 터미널로 갖기 때문이다.
+fn open_terminal() -> Result<(File, String)> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let open = |path: &str| {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(nix::libc::O_NOCTTY)
+            .open(path)
+    };
+    let err = match open("/dev/tty") {
+        Ok(tty) => return Ok((tty, "/dev/tty".into())),
+        Err(e) => e,
+    };
+    let Some(path) = ancestors().into_iter().find_map(terminal_of) else {
+        bail!(
+            "cannot open the controlling terminal /dev/tty ({err}), and no ancestor process has one"
+        );
+    };
+    let tty = open(&path).with_context(|| {
+        format!("cannot open {path}, the controlling terminal of an ancestor process")
+    })?;
+    Ok((tty, path))
+}
+
+/// `pid` 의 제어 터미널 장치 경로. 제어 터미널이 없거나 알 수 없으면 `None` 이다.
+fn terminal_of(pid: u32) -> Option<String> {
+    use nix::libc;
+    let dev = bsd_info(pid)?.e_tdev;
+    // 제어 터미널이 없으면 e_tdev 는 NODEV(-1)다.
+    if dev == u32::MAX {
+        return None;
+    }
+    // SAFETY: devname 은 정적 버퍼의 C 문자열이나 null 을 돌려준다. 이 프로세스에서는 다른 스레드가 devname 을 부르지 않는다.
+    let name = unsafe { libc::devname(dev as libc::dev_t, libc::S_IFCHR) };
+    if name.is_null() {
+        return None;
+    }
+    let name = unsafe { std::ffi::CStr::from_ptr(name) }.to_str().ok()?;
+    Some(format!("/dev/{name}"))
 }
 
 fn claude_hook() -> Result<()> {
@@ -702,15 +957,15 @@ fn ancestors() -> Vec<u32> {
     let mut pid = std::os::unix::process::parent_id();
     while pid > 1 && pids.len() < MAX_ANCESTORS {
         pids.push(pid);
-        match parent_of(pid) {
-            Some(parent) => pid = parent,
+        match bsd_info(pid) {
+            Some(info) => pid = info.pbi_ppid,
             None => break,
         }
     }
     pids
 }
 
-fn parent_of(pid: u32) -> Option<u32> {
+fn bsd_info(pid: u32) -> Option<nix::libc::proc_bsdinfo> {
     use nix::libc;
     let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
     let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
@@ -725,7 +980,7 @@ fn parent_of(pid: u32) -> Option<u32> {
         )
     };
     // SAFETY: 위에서 size 바이트를 다 채웠다.
-    (n == size).then(|| unsafe { info.assume_init() }.pbi_ppid)
+    (n == size).then(|| unsafe { info.assume_init() })
 }
 
 fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) -> Result<String> {

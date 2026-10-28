@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mateRows } from './mates'
-import type { ProgramStatusRecord } from './program-status'
+import { shownRecord, type ProgramStatusRecord } from './program-status'
 import type { ScreenPane, ScreenWorkspace } from './screen'
 
 function record(app: string, fields: Partial<ProgramStatusRecord> = {}): ProgramStatusRecord {
@@ -117,10 +117,10 @@ describe('mateRows', () => {
 
   it('하위 레코드만 claude 인 pane 은 들지 않는다', () => {
     const records = new Map([
-      ['p-a', [record('codex'), record('claude-code', { id: '/sub' })]],
-      ['p-b', [record('claude-code', { id: '/sub' })]]
+      ['p-a', [record('codex'), record('claude-code', { id: 'sub' })]],
+      ['p-b', [record('claude-code', { id: 'sub' })]]
     ])
-    const root = (pty: string) => records.get(pty)?.find((r) => r.id === '')
+    const shown = (pty: string) => shownRecord(records.get(pty) ?? [])
     const workspaces = [
       {
         key: 1,
@@ -133,7 +133,45 @@ describe('mateRows', () => {
         ]
       }
     ]
-    expect(mateRows(workspaces, root)).toEqual([])
+    expect(mateRows(workspaces, shown)).toEqual([])
+  })
+
+  it('claude 의 루트가 done 이고 하위가 blocked 면 하위의 상태·kind·메시지를 낸다', () => {
+    const records = [
+      record('claude-code', { state: 'done', message: 'finished' }),
+      record('', { id: 'ask', state: 'blocked', kind: 'question', message: 'Which one?' })
+    ]
+    const workspaces = [{ key: 1, id: 'w-1', cells: [cell(2, [{ key: 3, ptyId: 'p-a' }])] }]
+    expect(
+      mateRows(workspaces, () => shownRecord(records)).map((r) => [r.state, r.kind, r.message])
+    ).toEqual([['blocked', 'question', 'Which one?']])
+  })
+
+  it('mate 인지는 보일 레코드가 하위여도 루트의 app 으로 정한다', () => {
+    const records = new Map([
+      [
+        'p-a',
+        [record('claude-code', { state: 'done' }), record('cargo', { id: 'build', state: 'error' })]
+      ],
+      [
+        'p-b',
+        [record('codex', { state: 'idle' }), record('claude-code', { id: 'ask', state: 'blocked' })]
+      ]
+    ])
+    const shown = (pty: string) => shownRecord(records.get(pty) ?? [])
+    const workspaces = [
+      {
+        key: 1,
+        id: 'w-1',
+        cells: [
+          cell(2, [
+            { key: 3, ptyId: 'p-a' },
+            { key: 4, ptyId: 'p-b' }
+          ])
+        ]
+      }
+    ]
+    expect(mateRows(workspaces, shown).map((r) => [r.pty, r.state])).toEqual([['p-a', 'error']])
   })
 
   it('pane 이 하나도 claude 가 아니면 빈 목록이다', () => {

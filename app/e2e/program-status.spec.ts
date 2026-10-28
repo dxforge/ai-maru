@@ -51,6 +51,30 @@ test('claude 가 clear 를 보내지 못하고 죽어도 셸 함수가 clear 를
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
 })
 
+test('claude 가 끝나면 셸 함수의 clear 가 maru status 로 쓴 하위 레코드도 지운다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir)
+  const bin = join(dataDir, 'fakebin')
+  mkdirSync(bin)
+  writeFileSync(
+    join(bin, 'claude'),
+    `#!/bin/sh\nprintf '\\033]7501;state=done:app=claude-code\\033\\\\'\n"$MARU_CLI" status put blocked --id ask --kind question\nsleep 2\n`,
+    { mode: 0o755 }
+  )
+  const { page } = await launch({
+    SHELL: '/bin/zsh',
+    HOME: home,
+    PATH: `${bin}:${process.env.PATH}`
+  })
+  await page.keyboard.type('claude\n')
+  await expect(paneRows(page)).toHaveClass(/blocked/)
+
+  await expect(paneRows(page)).toHaveCount(0)
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
+})
+
 test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상태가 바뀌고, clear 로 사라진다', async ({
   launch
 }) => {
@@ -189,6 +213,64 @@ test('루트가 아닌 레코드만 있으면 상태를 보이지 않고, 루트
   await page.keyboard.type(status('error'))
   await expect(paneRows(page)).toHaveClass(/error/)
   await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Error')
+})
+
+test('maru status 로 쓴 하위 레코드가 루트보다 급하면 그것을, 루트가 working 이면 루트를 보이고, 하위를 지우면 루트로 돌아온다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  const cellHeader = page.locator('.cell-header')
+  await page.keyboard.type(status('done'))
+  await expect(paneRows(page)).toHaveClass(/done/)
+
+  await page.keyboard.type("maru status put blocked --id ask --kind question --msg 'Which one?'\n")
+  await expect(paneRows(page)).toHaveClass(/blocked/)
+  await expect(paneRows(page).locator('.title')).toHaveText('Claude')
+  await expect(activeHeader(page)).toHaveClass(/blocked/)
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
+  await expect(cellHeader).toHaveClass(/blocked/)
+
+  await page.keyboard.type(status('working'))
+  await expect(paneRows(page)).toHaveClass(/working/)
+  await expect(activeHeader(page)).toHaveClass(/working/)
+  await expect(cellHeader).toHaveClass(/working/)
+  await page.keyboard.type(status('done'))
+  await expect(paneRows(page)).toHaveClass(/blocked/)
+
+  await page.keyboard.type(
+    'maru status clear --id ask && maru status put error --id build --app cargo\n'
+  )
+  await expect(paneRows(page)).toHaveClass(/error/)
+  await expect(paneRows(page).locator('.title')).toHaveText('Claude')
+  await expect(activeHeader(page).locator('.title')).toHaveText('Claude')
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
+  await page.keyboard.type('maru status clear --id build && maru status put blocked --id ask\n')
+  await expect(paneRows(page)).toHaveClass(/blocked/)
+
+  // 하위의 하위도 함께 지워져야 error 가 남지 않는다.
+  await page.keyboard.type('maru status put error --id ask/sub && maru status clear --id ask\n')
+  await expect(paneRows(page)).toHaveClass(/done/)
+  await expect(activeHeader(page)).toHaveClass(/done/)
+  await expect(cellHeader).toHaveClass(/done/)
+})
+
+test('maru status 는 --id 없이 루트 레코드를 쓰고, clear 는 모든 레코드를 지운다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await page.keyboard.type(
+    'maru status put error --id fail && maru status put working --app make\n'
+  )
+  await expect(paneRows(page)).toHaveClass(/working/)
+  await expect(paneRows(page).locator('.title')).toHaveText('make')
+  await page.keyboard.type('maru status put done --app make\n')
+  await expect(paneRows(page)).toHaveClass(/error/)
+
+  await page.keyboard.type('maru status clear\n')
+  await expect(paneRows(page)).toHaveCount(0)
+  // 하위 error 가 남았다면 루트가 다시 와도 error 가 보인다.
+  await page.keyboard.type('maru status put idle --app make\n')
+  await expect(paneRows(page)).toHaveClass(/idle/)
 })
 
 test('pane 줄은 그 터미널의 cell 아래에만, pane 헤더는 보이는 pane 의 상태를 따른다', async ({

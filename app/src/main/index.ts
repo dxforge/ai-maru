@@ -353,7 +353,7 @@ const cliHandlers: Handlers = {
   'mate.list': () => {
     const screen = parseScreen(lastScreen)
     if (!screen) throw new Error('the window has not reported its layout yet')
-    return { mates: mateRows(screen.workspaces, ptyStates.root) }
+    return { mates: mateRows(screen.workspaces, ptyStates.shown) }
   },
   'canvas.put': canvasPut(mainWindow),
   ...monitor.handlers,

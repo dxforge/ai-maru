@@ -1,6 +1,6 @@
 import { shallowReactive } from 'vue'
 import {
-  rootRecord,
+  shownRecord,
   type ProgramStatusRecord,
   type ProgramStatusState
 } from '../../../shared/program-status'
@@ -28,8 +28,15 @@ export function createPtyStates() {
     if (!e) return NONE
     return 'state' in e ? e.state.records : (legacy.get(pty) ?? NONE)
   }
-  const root = (pty?: string): ProgramStatusRecord | undefined =>
-    pty === undefined ? undefined : rootRecord(records(pty))
+  // 같은 레코드 배열에는 같은 객체를 돌려준다. `shownRecord` 는 고른 하위 레코드의 `app` 이 루트와 다르면 부를 때마다 루트의 `app` 을 단 새 객체를 만든다.
+  // 매번 새 객체를 돌려주면 그것을 prop 으로 받은 pane 헤더가 다른 pane 의 상태가 바뀔 때도 다시 그려진다.
+  const picked = new WeakMap<readonly ProgramStatusRecord[], ProgramStatusRecord | undefined>()
+  const shown = (pty?: string): ProgramStatusRecord | undefined => {
+    if (pty === undefined) return undefined
+    const list = records(pty)
+    if (!picked.has(list)) picked.set(list, shownRecord(list))
+    return picked.get(list)
+  }
   // 상태가 같으면 같은 객체를 돌려준다. 매번 새 객체를 돌려주면, 그것을 prop 으로 받은 pane 헤더가 다른 pane 의 상태가 바뀔 때도 다시 그려지기 때문이다.
   const views = new WeakMap<PtyState, CommandView | undefined>()
   const command = (pty?: string): CommandView | undefined => {
@@ -41,8 +48,10 @@ export function createPtyStates() {
 
   return {
     get,
-    root,
-    state: (pty?: string): ProgramStatusState | undefined => root(pty)?.state,
+    shown,
+    state: (pty?: string): ProgramStatusState | undefined => shown(pty)?.state,
+    rootState: (pty: string): ProgramStatusState | undefined =>
+      records(pty).find((r) => r.id === '')?.state,
     command,
     isOld: (pty: string): boolean => {
       const e = entries.get(pty)

@@ -76,3 +76,22 @@ test('maru mate list 는 claude 가 보고한 pane 만 화면 순서대로, 사�
     [second, 'working', 'proj-b', 'proj-b', expect.stringMatching(/\/proj-b$/), 'reading']
   ])
 })
+
+test('maru mate list 는 claude 의 루트가 done 이어도 maru status 로 쓴 하위 blocked 의 상태와 메시지를 찍는다', async ({
+  launch,
+  dataDir
+}) => {
+  const { page } = await launch()
+  await page.keyboard.type(programStatus('done', `msg=${base64('finished')}`))
+  await run(
+    page,
+    "maru status put blocked --id ask --kind question --msg 'Which one?'; echo code-$?",
+    'code-0'
+  )
+  await expect(paneRows(page)).toHaveClass(/blocked/)
+
+  const out = join(dataDir, 'mates.out')
+  await run(page, `maru mate list >${out}; echo listed-$?`, 'listed-0')
+  const cols = readFileSync(out, 'utf8').split('\n')[1].split('\t')
+  expect([cols[1], cols[5]]).toEqual(['blocked(question)', 'Which one?'])
+})
