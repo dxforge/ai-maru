@@ -15,7 +15,11 @@ import { PANE_MIN } from '../../shared/layout'
 import { cellLabel, windowTitle } from '../../shared/names'
 import type { JobView } from '../../shared/job'
 import type { PaneReply } from '../../shared/pane'
-import type { ProgramStatusRecord } from '../../shared/program-status'
+import {
+  URGENCY,
+  type ProgramStatusRecord,
+  type ProgramStatusState
+} from '../../shared/program-status'
 import {
   clampCanvasWidth,
   clampSidebarWidth,
@@ -604,11 +608,9 @@ const labels = computed(
   () => new Map(workspaces.cells().map((c) => [c.key, cellLabel(focusedPane(c))]))
 )
 
-const URGENCY = ['blocked', 'error', 'done', 'working', 'idle'] as const
-
 // workspace 와 cell 의 key 는 겹치지 않으므로 한 표에 둔다. workspace 의 값은 그 cell 들 가운데 가장 급한 것이다.
 const urgent = computed(() => {
-  const map = new Map<number, (typeof URGENCY)[number]>()
+  const map = new Map<number, ProgramStatusState>()
   for (const w of workspaces.list.value) {
     const all = new Set<string | undefined>()
     for (const c of w.cells) {
@@ -788,7 +790,7 @@ void window.maru.restoreScreen().then((s) => {
         :collapsed="!sidebarOpen"
         :workspaces="workspaces.list.value"
         :selected-key="workspaces.selectedKey.value"
-        :root="ptyStates.root"
+        :shown="ptyStates.shown"
         :command="ptyStates.command"
         :urgent="urgent"
         :folded="folded"
@@ -836,7 +838,7 @@ void window.maru.restoreScreen().then((s) => {
             @focusin="focusPane(c.key, p.key)"
           >
             <PaneHeader
-              :status="ptyStates.root(p.ptyId)"
+              :status="ptyStates.shown(p.ptyId)"
               :command="ptyStates.command(p.ptyId)"
               :pane="p"
               :focused="active"

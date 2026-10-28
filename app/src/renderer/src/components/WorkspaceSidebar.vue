@@ -28,7 +28,7 @@ import { focusedPane, type Cell, type Pane, type Workspace } from '../workspace/
 const {
   workspaces,
   selectedKey,
-  root,
+  shown,
   command,
   urgent,
   folded,
@@ -40,7 +40,7 @@ const {
 } = defineProps<{
   workspaces: readonly DeepReadonly<Workspace>[]
   selectedKey: number | null
-  root: (pty?: string) => ProgramStatusRecord | undefined
+  shown: (pty?: string) => ProgramStatusRecord | undefined
   command: (pty?: string) => CommandView | undefined
   urgent: ReadonlyMap<number, ProgramStatusState>
   folded: ReadonlySet<number>
@@ -86,7 +86,7 @@ type JobRow = {
 // 실패한 명령이 남아 있는 동안만 오른쪽 끝에 위치 대신 돈 시간이나 종료 코드를 쓴다. 명령 pane 은 늘 도는 중이라 같은 규칙을 따르면
 // 위치를 한 번도 보이지 못하므로, 오른쪽 끝에 늘 위치를 쓴다.
 function paneRow(p: DeepReadonly<Pane>, focused: boolean, base: DeepReadonly<Pane>): Row {
-  const r = root(p.ptyId)
+  const r = shown(p.ptyId)
   const s = r?.state
   const cmd = command(p.ptyId)
   const tail = !!cmd && !p.command?.length

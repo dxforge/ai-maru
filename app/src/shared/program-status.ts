@@ -23,11 +23,41 @@ export function programName(app: string): string {
   return app || 'Program'
 }
 
-/** 루트 레코드(`id` 가 `""`). 프로그램 자신의 상태다. */
-export function rootRecord(
+/** 앞일수록 급한 상태다. */
+export const URGENCY: readonly ProgramStatusState[] = [
+  'blocked',
+  'error',
+  'done',
+  'working',
+  'idle'
+]
+
+/**
+ * 루트(`id` 가 `""`)와 하위 레코드 가운데 pane 의 상태로 보일 레코드. 루트가 없으면 없다. 루트가 working 이면 루트다.
+ * 하위의 blocked 는 쓴 쪽이 아직 지우지 않은 것일 수 있기 때문이다. 그 밖에는 `URGENCY` 로 가장 급한 것이고, 같으면 루트,
+ * 그다음 `records` 의 순서(maru-pty 가 보내는 id 순)다. 고른 하위에 `app` 이 없으면 OSC 7501 사양대로 가장 가까운 조상의
+ * `app` 을 쓴다.
+ */
+export function shownRecord(
   records: readonly ProgramStatusRecord[]
 ): ProgramStatusRecord | undefined {
-  return records.find((r) => r.id === '')
+  const root = records.find((r) => r.id === '')
+  if (!root || root.state === 'working') return root
+  let shown = root
+  for (const r of records) {
+    if (URGENCY.indexOf(r.state) < URGENCY.indexOf(shown.state)) shown = r
+  }
+  if (shown === root || shown.app) return shown
+  return { ...shown, app: inheritedApp(records, shown.id) ?? root.app }
+}
+
+function inheritedApp(records: readonly ProgramStatusRecord[], id: string): string | undefined {
+  for (let i = id.lastIndexOf('/'); i > 0; i = id.lastIndexOf('/', i - 1)) {
+    const parent = id.slice(0, i)
+    const app = records.find((r) => r.id === parent)?.app
+    if (app) return app
+  }
+  return undefined
 }
 
 const KINDS: ReadonlySet<unknown> = new Set(['permission', 'question', 'auth'])

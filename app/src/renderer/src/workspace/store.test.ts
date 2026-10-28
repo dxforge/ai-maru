@@ -27,7 +27,7 @@ function source() {
   const old = new Set<string>()
   return {
     get: (pty: string) => states.get(pty),
-    state: (pty: string) => states.get(pty)?.records.find((r) => r.id === '')?.state,
+    rootState: (pty: string) => states.get(pty)?.records.find((r) => r.id === '')?.state,
     isOld: (pty: string) => old.has(pty),
     set(ws: Workspaces, pty: string, over: Partial<PtyState>): void {
       states.set(pty, { ...(states.get(pty) ?? EMPTY), ...over })
@@ -475,6 +475,21 @@ describe('git', () => {
     report({ records: [record('working', 'b')] })
     expect(r.pending).toHaveLength(1)
     report({ records: [record('blocked', 'b')] })
+    expect(r.pending).toHaveLength(2)
+  })
+
+  it('하위 레코드만 바뀌면 읽지 않고, 하위가 보이는 동안에도 루트 레코드의 상태가 바뀌면 읽는다', async () => {
+    const r = reader()
+    const { report } = setup(r.read)
+    report({ cwd: '/a', cwdReports: 1 })
+    r.pending.length = 0
+    const child = (state: ProgramStatusState) => ({ ...record(state), id: 'ask' })
+    report({ records: [record('idle'), child('working')] })
+    expect(r.pending).toHaveLength(1)
+    report({ records: [record('idle'), child('blocked')] })
+    report({ records: [record('idle')] })
+    expect(r.pending).toHaveLength(1)
+    report({ records: [record('working'), child('working')] })
     expect(r.pending).toHaveLength(2)
   })
 

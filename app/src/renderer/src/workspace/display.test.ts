@@ -96,7 +96,7 @@ describe('commandView', () => {
     })
   })
 
-  it('성공했거나 Ctrl-C(130)로 끝났거나 종료 코드를 모르거나, 텍스트가 없거나, 신호를 받은 적 없거나, 레코드가 있으면 보이지 않는다', () => {
+  it('성공했거나 Ctrl-C(130)로 끝났거나 종료 코드를 모르거나, 텍스트가 없거나, 신호를 받은 적 없거나, 보일 레코드가 있으면 보이지 않는다', () => {
     expect(commandView(cmd({ exitCode: 0 }))).toBeUndefined()
     expect(commandView(cmd({ exitCode: 130 }))).toBeUndefined()
     expect(commandView(cmd({}))).toBeUndefined()
@@ -114,6 +114,9 @@ describe('commandView', () => {
       message: ''
     } as const
     expect(commandView({ ...cmd({ running: true }), records: [record] })).toBeUndefined()
+    expect(
+      commandView({ ...cmd({ running: true }), records: [{ ...record, id: 'ask' }] })
+    ).toMatchObject({ running: true })
   })
 })
 

@@ -1,4 +1,4 @@
-import { programName, type ProgramStatusRecord } from '../../../shared/program-status'
+import { programName, shownRecord, type ProgramStatusRecord } from '../../../shared/program-status'
 import { dirName } from '../../../shared/names'
 import type { PtyState } from '../../../shared/pty-state'
 
@@ -54,12 +54,12 @@ const SIGINT_EXIT = 130
 
 /**
  * 도는 명령과 실패한 명령만 돌려준다. 종료 코드가 0 이나 130 이면 실패로 보지 않는다. 130(SIGINT)은 dev 서버처럼
- * Ctrl-C 로 끄는 명령이 흔히 내기 때문이다. OSC 7501 레코드가 있는 pane 은 그 프로그램(claude 등)이 알리는 상태를
- * 쓰므로 명령을 보이지 않는다.
+ * Ctrl-C 로 끄는 명령이 흔히 내기 때문이다. 보일 OSC 7501 레코드(`shownRecord`)가 있는 pane 은 그 프로그램(claude 등)이
+ * 알리는 상태를 쓰므로 명령을 보이지 않는다.
  */
 export function commandView(state: PtyState | undefined): CommandView | undefined {
   const c = state?.command
-  if (!c?.text || state!.records.length) return undefined
+  if (!c?.text || shownRecord(state!.records)) return undefined
   if (c.running) return { running: true, text: c.text, startedAt: c.startedAt ?? undefined }
   if (c.exitCode !== null && c.exitCode !== 0 && c.exitCode !== SIGINT_EXIT)
     return { running: false, text: c.text, exitCode: c.exitCode }
@@ -81,11 +81,11 @@ export function commandTail(c: CommandView, now: number): string {
  */
 export function paneName(
   p: Named,
-  root: Pick<ProgramStatusRecord, 'app'> | undefined,
+  record: Pick<ProgramStatusRecord, 'app'> | undefined,
   shell: string | undefined,
   command?: CommandView
 ): string {
-  if (root) return p.title || programName(root.app)
+  if (record) return p.title || programName(record.app)
   return command?.text || p.title || fallbackName(p, shell)
 }
 

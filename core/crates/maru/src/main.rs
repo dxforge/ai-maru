@@ -58,9 +58,9 @@
 //! | `mate.list` | 없음 | `{"mates":[{"pty","state","kind","workspace","cell","dir","message"}…]}` |
 //! | `app.restart` | `kill_ptys`(bool, 선택) | `null` |
 //!
-//! `mate.list` 는 창의 모든 workspace·cell 에서, pty 가 보낸 루트 program_status 레코드의 `app` 이
-//! `claude-code` 인 pane 을 화면 순서(workspace → cell → pane)로 돌려준다. job 은 들지 않는다.
-//! `state` 는 레코드의 상태(`idle`·`working`·`done`·`blocked`·`error`)다. `kind` 는 `permission`·`question`·
+//! `mate.list` 는 창의 모든 workspace·cell 에서, 사이드바가 보이는 program_status 레코드(루트와 하위
+//! 가운데 앱이 고른 것)의 `app` 이 `claude-code` 인 pane 을 화면 순서(workspace → cell → pane)로 돌려준다.
+//! job 은 들지 않는다. `state` 는 레코드의 상태(`idle`·`working`·`done`·`blocked`·`error`)다. `kind` 는 `permission`·`question`·
 //! `auth` 나 null 이다. `workspace`·`cell` 은 사이드바가 보이는 이름이다. `cell` 은 브랜치가 있으면 이름 뒤에
 //! 공백 하나를 두고 브랜치를 붙인다. `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면
 //! 빈 문자열이다. `message` 는 레코드의 `message` 이고, 비었으면 `title` 이다.
@@ -136,6 +136,13 @@
 //! - job 의 셸이 스스로 끝나면 그 job 을 띄운 pty 에 `{"event":"job","pty":<job 의 pty id>,
 //!   "name":<이름, 없으면 뺀다>,"code","signal"}` 을 보낸다. 그 pty 에 구독이 없으면 보류했다가
 //!   구독이 생길 때 보낸다. `job.kill` 이나 cell 닫기로 끝난 job 은 알리지 않는다.
+//!
+//! # status
+//!
+//! `maru status` 는 앱에 요청을 보내지 않는다. 자기 제어 터미널(`/dev/tty`)에 OSC 7501 보고를 써서,
+//! 터미널 안의 프로그램이 보낸 보고와 같은 경로로 레코드를 쓰거나 지운다. 그래서 `MARU_SOCKET`·`MARU_PTY_ID`
+//! 가 없어도 된다. OSC 7501 을 받는 다른 터미널에서도 동작한다. 사양에 어긋나는 보고는 터미널이 말없이
+//! 버리므로 `maru status` 가 쓰기 전에 거절한다.
 //!
 //! # claude monitor
 //!
@@ -217,6 +224,14 @@ enum Command {
     App {
         #[command(subcommand)]
         command: AppCommand,
+    },
+    /// Report this terminal's status with OSC 7501 (the program status protocol).
+    ///
+    /// Writes to the controlling terminal, so it also works outside AI Maru in any terminal
+    /// that speaks the protocol. Nothing is printed on success.
+    Status {
+        #[command(subcommand)]
+        command: StatusCommand,
     },
     /// Commands the app's claude plugin runs from its hooks and monitors.
     #[command(hide = true)]
@@ -385,6 +400,62 @@ enum AppCommand {
 }
 
 #[derive(Subcommand)]
+enum StatusCommand {
+    /// Write one status record. Without --id, writes the root record, the status of the
+    /// program itself; a record with an id lives beside it until cleared.
+    ///
+    /// A report the protocol does not allow is refused here, because terminals drop it
+    /// without saying so.
+    Put {
+        /// The state to report.
+        state: StatusState,
+        /// The record to write, e.g. `ask` or `deploy/us-east`: names of letters, digits,
+        /// `_`, `.`, `+` and `-` joined by `/`.
+        #[arg(long, allow_hyphen_values = true)]
+        id: Option<String>,
+        /// What a blocked program needs from the user. Only with `blocked`.
+        #[arg(long)]
+        kind: Option<StatusKind>,
+        /// Percent done, 0 to 100. Only with `working` or `blocked`.
+        #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
+        progress: Option<u8>,
+        /// Name of the program for machines, e.g. `claude-code`. A record without one takes
+        /// its nearest ancestor's.
+        #[arg(long, allow_hyphen_values = true)]
+        app: Option<String>,
+        /// Short label for people, at most 192 bytes.
+        #[arg(long, allow_hyphen_values = true)]
+        title: Option<String>,
+        /// One line for people, at most 2048 bytes.
+        #[arg(long, allow_hyphen_values = true)]
+        msg: Option<String>,
+    },
+    /// Remove a record and the records under it. Without --id, removes every record of this
+    /// terminal.
+    Clear {
+        /// The record to remove.
+        #[arg(long, allow_hyphen_values = true)]
+        id: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum StatusState {
+    Idle,
+    Working,
+    Done,
+    Blocked,
+    Error,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum StatusKind {
+    Permission,
+    Question,
+    Auth,
+}
+
+#[derive(Subcommand)]
 enum CanvasCommand {
     /// Show markdown in the Canvas panel. With --id, replaces the document with that id if
     /// there is one.
@@ -503,10 +574,151 @@ fn run(command: Command) -> Result<()> {
             params.insert("kill_ptys".into(), kill_ptys.into());
             call(&target()?, "app.restart", params)?;
         }
+        Command::Status { command } => write_tty(&status_report(command)?)?,
         Command::Claude { command } => match command {
             ClaudeCommand::Hook => claude_hook()?,
             ClaudeCommand::Monitor => claude_monitor()?,
         },
+    }
+    Ok(())
+}
+
+// 사양(revision 0.4)의 상한. libghostty-vt 의 파서도 이 값을 넘는 보고를 버린다.
+const MAX_ID_BYTES: usize = 128;
+const MAX_ID_DEPTH: usize = 8;
+const MAX_NAME_BYTES: usize = 32;
+const MAX_TITLE_BYTES: usize = 192;
+const MAX_MSG_BYTES: usize = 2048;
+
+fn status_report(command: StatusCommand) -> Result<Vec<u8>> {
+    let mut pairs = Vec::new();
+    match command {
+        StatusCommand::Put {
+            state,
+            id,
+            kind,
+            progress,
+            app,
+            title,
+            msg,
+        } => {
+            pairs.push(format!("state={}", value_name(state)));
+            push_id(&mut pairs, id)?;
+            if let Some(kind) = kind {
+                if !matches!(state, StatusState::Blocked) {
+                    bail!("--kind is only for the blocked state");
+                }
+                pairs.push(format!("kind={}", value_name(kind)));
+            }
+            if let Some(progress) = progress {
+                if !matches!(state, StatusState::Working | StatusState::Blocked) {
+                    bail!("--progress is only for the working and blocked states");
+                }
+                pairs.push(format!("progress={progress}"));
+            }
+            if let Some(app) = app {
+                if !is_name(&app) {
+                    bail!(
+                        "--app must be 1 to {MAX_NAME_BYTES} letters, digits, `_`, `.`, `+` or `-`"
+                    );
+                }
+                pairs.push(format!("app={app}"));
+            }
+            for (key, option, text, max) in [
+                ("title", "--title", title, MAX_TITLE_BYTES),
+                ("msg", "--msg", msg, MAX_MSG_BYTES),
+            ] {
+                // 사양에서 빈 값은 그 키를 보내지 않은 것과 같으므로 키를 뺀다.
+                let Some(text) = text.filter(|t| !t.is_empty()) else {
+                    continue;
+                };
+                if text.len() > max {
+                    bail!("{option} is {} bytes, over the {max} allowed", text.len());
+                }
+                if text.chars().any(char::is_control) {
+                    bail!("{option} must not contain control characters such as newlines");
+                }
+                pairs.push(format!("{key}={}", base64(text.as_bytes())));
+            }
+        }
+        StatusCommand::Clear { id } => {
+            pairs.push("state=clear".to_owned());
+            push_id(&mut pairs, id)?;
+        }
+    }
+    Ok(format!("\x1b]7501;{}\x1b\\", pairs.join(":")).into_bytes())
+}
+
+fn push_id(pairs: &mut Vec<String>, id: Option<String>) -> Result<()> {
+    if let Some(id) = id {
+        check_id(&id)?;
+        pairs.push(format!("id={id}"));
+    }
+    Ok(())
+}
+
+fn value_name(value: impl clap::ValueEnum) -> String {
+    value
+        .to_possible_value()
+        .expect("every value has a name")
+        .get_name()
+        .to_owned()
+}
+
+fn is_name(s: &str) -> bool {
+    (1..=MAX_NAME_BYTES).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_.+-".contains(&b))
+}
+
+fn check_id(id: &str) -> Result<()> {
+    if id.len() > MAX_ID_BYTES {
+        bail!(
+            "--id is {} bytes, over the {MAX_ID_BYTES} allowed",
+            id.len()
+        );
+    }
+    if id.split('/').count() > MAX_ID_DEPTH {
+        bail!("--id has more than {MAX_ID_DEPTH} parts");
+    }
+    if !id.split('/').all(is_name) {
+        bail!(
+            "--id must be names of 1 to {MAX_NAME_BYTES} letters, digits, `_`, `.`, `+` or `-` joined by single `/`"
+        );
+    }
+    Ok(())
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, &b)| n | u32::from(b) << (16 - 8 * i));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() {
+                char::from(DIGITS[(n >> (18 - 6 * i) & 63) as usize])
+            } else {
+                '='
+            });
+        }
+    }
+    out
+}
+
+/// 시퀀스를 한 번의 write 로 쓴다. 터미널을 함께 쓰는 프로그램의 출력 사이에 끼어도 시퀀스가 갈라지지 않게 하기 위해서다.
+fn write_tty(bytes: &[u8]) -> Result<()> {
+    let mut tty = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/tty")
+        .context("cannot open the controlling terminal /dev/tty")?;
+    let n = tty
+        .write(bytes)
+        .context("cannot write to the controlling terminal")?;
+    if n != bytes.len() {
+        bail!("the controlling terminal took {n} of {} bytes", bytes.len());
     }
     Ok(())
 }

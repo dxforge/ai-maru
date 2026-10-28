@@ -12,16 +12,28 @@ function state(records: ProgramStatusRecord[] = [], title: string | null = null)
 }
 
 describe('createPtyStates', () => {
-  it('main 이 보낸 상태에서 루트 레코드와 그 상태를 찾고, 지우면 없다', () => {
+  it('main 이 보낸 상태에서 보일 레코드와 그 상태를 고르고, 지우면 없다', () => {
     const s = createPtyStates()
     s.apply('p-1', { state: state([rec('working', 'build')]) })
-    expect(s.root('p-1')).toBeUndefined()
+    expect(s.shown('p-1')).toBeUndefined()
     s.apply('p-1', { state: state([rec('blocked'), rec('working', 'build')]) })
     expect(s.state('p-1')).toBe('blocked')
+    s.apply('p-1', { state: state([rec('done'), rec('error', 'build')]) })
+    expect(s.shown('p-1')?.id).toBe('build')
+    expect(s.state('p-1')).toBe('error')
+    expect(s.rootState('p-1')).toBe('done')
     expect(s.get('p-1')?.cwd).toBe('/w')
     s.apply('p-1', null)
     expect([s.get('p-1'), s.state('p-1')]).toEqual([undefined, undefined])
     expect(s.state(undefined)).toBeUndefined()
+  })
+
+  it('app 을 물려받은 하위 레코드도 같은 상태에서는 같은 객체다', () => {
+    const s = createPtyStates()
+    s.apply('p-1', { state: state([rec('done'), { ...rec('blocked', 'ask'), app: '' }]) })
+    const first = s.shown('p-1')
+    expect(first).toMatchObject({ id: 'ask', app: 'make' })
+    expect(s.shown('p-1')).toBe(first)
   })
 
   it('보일 명령은 같은 상태에서 같은 객체이고, 새 상태가 오면 다시 고른다', () => {
