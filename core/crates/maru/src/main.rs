@@ -154,7 +154,7 @@
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use nix::errno::Errno;
-use nix::sys::event::{EventFilter, EventFlag, FilterFlag, KEvent, Kqueue};
+use nix::sys::event::{EvFlags, EventFilter, FilterFlag, KEvent, Kqueue};
 use serde_json::{Map, Value, json};
 use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, IsTerminal, Read, Write};
@@ -556,7 +556,7 @@ fn claude_monitor() -> Result<()> {
     let idle = KEvent::new(
         0,
         EventFilter::EVFILT_WRITE,
-        EventFlag::empty(),
+        EvFlags::empty(),
         FilterFlag::empty(),
         0,
         0,
@@ -570,7 +570,7 @@ fn claude_monitor() -> Result<()> {
         };
         for ev in &events[..n] {
             if ev.ident() == 1 {
-                if ev.flags().contains(EventFlag::EV_EOF) {
+                if ev.flags().contains(EvFlags::EV_EOF) {
                     return Ok(());
                 }
             } else if dir
@@ -618,7 +618,7 @@ fn watch(kq: &Kqueue, fd: usize, filter: EventFilter, fflags: FilterFlag) -> nix
     let ev = KEvent::new(
         fd,
         filter,
-        EventFlag::EV_ADD | EventFlag::EV_CLEAR,
+        EvFlags::EV_ADD | EvFlags::EV_CLEAR,
         fflags,
         0,
         0,
