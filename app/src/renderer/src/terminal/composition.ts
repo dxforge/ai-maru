@@ -66,8 +66,42 @@ function cellCount(term: Terminal, text: string): number | undefined {
   return unicode?.getStringCellWidth?.(text)
 }
 
-/** 조합이 커서 뒤 남은 폭 안에 들어갈 때 조합창에 붙이는 class. `TerminalView.vue` 의 CSS 가 이 class 로 방향을 바꾼다. */
+/**
+ * 조합이 커서 뒤 남은 폭 안에 들어갈 때 조합창에 붙이는 class. `TerminalView.vue` 의 CSS 가 이 class 로 방향을 ltr 로 바꾸고
+ * 넘친 글자를 보인다.
+ */
 const FITS = 'composition-fits'
+
+const LRM = '\u200E'
+let graphemes: Intl.Segmenter | undefined
+
+/**
+ * 조합창 글자를 grapheme 마다 span 으로 나누고, 각 span 이 확정되면 차지할 글자 칸 폭만큼 나아가게 `letter-spacing` 을 준다.
+ * 글자 폭과 글자 칸 폭은 따로 정해진다. 그래서 글자를 span 으로 나누지 않고 그리면 글자마다 차이가 쌓여, 뒤의 글자일수록 확정되면
+ * 그려질 자리에서 멀어진다. 조합한 글자가 확정되면 차지할 글자 칸 수를 돌려준다. 칸 수를 셀 수 없으면 글자를 나누지 않고 0 을
+ * 돌려준다.
+ */
+function spaceGlyphs(term: Terminal, view: HTMLElement, data: string, cellWidth: number): number {
+  graphemes ??= new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  const parts = Array.from(graphemes.segment(data), (s) => ({
+    text: s.segment,
+    cells: cellCount(term, s.segment)
+  }))
+  if (parts.length === 0 || parts.some((p) => p.cells === undefined)) return 0
+  const spans = parts.map((p) => {
+    const span = document.createElement('span')
+    span.textContent = p.text
+    return span
+  })
+  // `replaceChildren` 이 지운 U+200E 를 xterm 처럼 글자 양쪽에 다시 넣는다. xterm 이 rtl 인 조합창에서도 글자를 ltr 순서로
+  // 그리려고 붙이는 표시다.
+  view.replaceChildren(LRM, ...spans, LRM)
+  const advances = spans.map((span) => span.getBoundingClientRect().width)
+  spans.forEach((span, i) => {
+    span.style.letterSpacing = `${parts[i].cells! * cellWidth - advances[i]}px`
+  })
+  return parts.reduce((sum, p) => sum + p.cells!, 0)
+}
 
 function shift(view: HTMLElement, offset: number): void {
   // 조합창을 통째로 옮기면 비켜난 만큼 그 아래의 커서가 드러난다. 그래서 배경은 글자 칸을 덮은 채 여백으로 글자만 옮긴다.
@@ -77,8 +111,8 @@ function shift(view: HTMLElement, offset: number): void {
 }
 
 /**
- * `term.open()` 뒤에 부른다. xterm 이 open 에서 거는 조합 listener 보다 뒤에 돌아야 한다. xterm 의 listener 가
- * 조합창의 글꼴·줄 높이·`maxWidth` 를 정한 뒤에 재야 하기 때문이다.
+ * `term.open()` 뒤에 부른다. xterm 이 open 에서 거는 조합 listener 와 `onRender` listener 보다 뒤에 돌아야 한다. xterm 의
+ * listener 가 조합창의 글자·글꼴·줄 높이·위치를 정한 뒤에 재야 하기 때문이다.
  * `webglCanvas` 는 WebGL 로 그리는 동안 그 캔버스를 돌려준다. DOM renderer 는 조합창과 같은 CSS 로 줄을
  * 그려 기준선이 이미 같다.
  */
@@ -88,11 +122,10 @@ export function alignComposition(
 ): void {
   let key = ''
   let offset = 0
-  // xterm 은 compositionupdate 에서야 조합창의 글꼴·줄 높이를 정하므로 compositionstart 에서 재면 틀린다.
-  term.textarea!.addEventListener('compositionupdate', (e) => {
-    const view = term.element!.querySelector<HTMLElement>('.composition-view')
-    const dims = term.dimensions
-    if (!view || !dims) return
+  let data = ''
+  let spacedKey = ''
+
+  const align = (view: HTMLElement, dims: NonNullable<Terminal['dimensions']>): void => {
     const dpr = devicePixelRatio
     const canvas = webglCanvas()
     const overflow = canvas ? canvas.height - dims.device.canvas.height : 0
@@ -117,18 +150,41 @@ export function alignComposition(
             })
     }
     shift(view, offset)
-    // xterm 은 조합창을 글자 폭만큼 넓게 둔다. 글자 폭은 글자 칸 폭과 따로 정해지므로 한글이 두 글자 칸보다 좁을 수 있다.
-    // WebGL renderer 는 글자 칸 폭을 device px 로 내림하므로, 글꼴 크기에 따라 한글이 두 글자 칸보다 넓을 수도 있다. 그래서
-    // 조합창의 폭을 renderer 의 글자 칸 폭으로 정한다.
-    // xterm 은 조합창 글자 양쪽에 U+200E 를 붙이고, `UnicodeGraphemesAddon` 은 이 글자의 폭을 1로 센다. 그래서
-    // `textContent` 가 아니라 `e.data` 를 센다.
+
+    // xterm 이 조합창을 두는 열과 같게 센다. 커서가 마지막 열 뒤에 있으면 xterm 은 마지막 열에 둔다.
+    const room = term.cols - Math.min(term.buffer.active.cursorX, term.cols - 1)
+    const cellWidth = dims.css.cell.width
+    const spacing = [data, cellWidth, term.options.fontFamily, term.options.fontSize, room].join(
+      '|'
+    )
+    if (spacing === spacedKey) return
+    spacedKey = spacing
     // xterm 이 커서 뒤 남은 폭으로 둔 `maxWidth` 가 `width` 보다 앞서므로, 마지막 열에서도 조합창이 터미널 밖으로 넘치지 않는다.
-    const cells = cellCount(term, e.data)
-    const width = cells ? cells * dims.css.cell.width : 0
-    view.style.width = width ? `${width}px` : ''
-    // xterm 은 긴 조합의 끝을 보이려고 조합창을 `direction: rtl` 로 둔다. 그러면 조합창보다 넓은 글자가 왼쪽으로 넘쳐, 확정되면
-    // 그려질 자리보다 왼쪽에 그려진다. 그래서 조합이 남은 폭 안에 들어가면 ltr 로 두어 넘친 끝을 오른쪽에서 자른다.
-    const max = parseFloat(view.style.maxWidth)
-    view.classList.toggle(FITS, width > 0 && (Number.isNaN(max) || width <= max))
+    const cells = spaceGlyphs(term, view, data, cellWidth)
+    view.style.width = cells ? `${cells * cellWidth}px` : ''
+    // xterm 은 긴 조합의 끝을 보이려고 조합창을 `direction: rtl`·`overflow: hidden` 으로 둔다. 남은 폭 안에 들어가는 조합은
+    // ltr 로 두고, 글자 칸보다 넓은 마지막 글자의 끝이 잘리지 않게 넘친 것을 보인다.
+    view.classList.toggle(FITS, cells > 0 && cells <= room)
+  }
+
+  term.textarea!.addEventListener('compositionstart', () => {
+    data = ''
+  })
+  term.textarea!.addEventListener('compositionupdate', (e) => {
+    const view = term.element!.querySelector<HTMLElement>('.composition-view')
+    const dims = term.dimensions
+    if (!view || !dims) return
+    // xterm 이 조합창의 글자를 `e.data` 로 다시 넣었으므로 글자를 다시 나눈다.
+    data = e.data
+    spacedKey = ''
+    align(view, dims)
+  })
+  // 조합 중에 커서가 옮겨지거나 터미널 크기·글꼴 크기가 바뀌면 xterm 은 다시 그린 뒤 조합창의 위치·글꼴·`maxWidth` 를 고친다.
+  // 그때 남은 폭과 글자 칸 폭이 바뀌므로 다시 맞춘다.
+  term.onRender(() => {
+    const view = term.element?.querySelector<HTMLElement>('.composition-view.active')
+    const dims = term.dimensions
+    if (!view || !dims || !data) return
+    align(view, dims)
   })
 }

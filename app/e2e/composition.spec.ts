@@ -36,30 +36,46 @@ async function inkTop(page: Page, clip: Box): Promise<number> {
   return -1
 }
 
-async function inkLeft(page: Page, clip: Box): Promise<number> {
+/**
+ * 조합한 글자마다, 확정되면 그 글자가 차지할 글자 칸에서 처음 글자 픽셀이 나오는 x 와 `clip` 안의 마지막 글자 픽셀의 x(device
+ * px). `clip` 은 커서에서 시작한다.
+ */
+async function glyphInk(
+  page: Page,
+  clip: Box,
+  cellWidth: number,
+  cells: number[]
+): Promise<{ starts: number[]; end: number }> {
   const { data, width, height } = await screenshotPixels(page, clip)
-  for (let x = 0; x < width; x++)
-    for (let y = 0; y < height; y++) if (isInk(data, (y * width + x) * 4)) return x
-  return -1
+  const ink = Array.from({ length: width }, (_, x) => {
+    for (let y = 0; y < height; y++) if (isInk(data, (y * width + x) * 4)) return true
+    return false
+  })
+  const scale = width / clip.width
+  let at = 0
+  const starts = cells.map((n) => {
+    const from = Math.round(at * cellWidth * scale)
+    at += n
+    const to = Math.round(at * cellWidth * scale)
+    const x = ink.slice(from, to).indexOf(true)
+    return x < 0 ? -1 : from + x
+  })
+  return { starts, end: ink.lastIndexOf(true) }
 }
 
 /**
- * `ink` 가 세 번 연달아 같게 잰 값. WebGL renderer 는 커서(textarea)가 옮겨 간 다음 프레임에 캔버스를 그린다.
+ * `read` 가 세 번 연달아 같게 잰 값. WebGL renderer 는 커서(textarea)가 옮겨 간 다음 프레임에 캔버스를 그린다.
  * 그 사이에 찍으면 지우기 전의 글자나 빈 화면이 잡힌다.
  */
-async function settledInk(
-  page: Page,
-  clip: Box,
-  ink: (page: Page, clip: Box) => Promise<number>
-): Promise<number> {
-  const seen: number[] = []
+async function settled<T>(read: () => Promise<T>): Promise<T> {
+  const seen: string[] = []
   await expect
     .poll(async () => {
-      seen.push(await ink(page, clip))
+      seen.push(JSON.stringify(await read()))
       return seen.length >= 3 && seen.slice(-3).every((v) => v === seen.at(-1))
     })
     .toBe(true)
-  return seen.at(-1)!
+  return JSON.parse(seen.at(-1)!)
 }
 
 async function compose(cdp: CDPSession, text: string): Promise<void> {
@@ -88,10 +104,6 @@ async function printHan({ page }: Launched): Promise<void> {
     .toBe(true)
 }
 
-/**
- * `renderer`·`dpr` 로 앱을 띄워 첫 줄에 한을 찍는다. `clip` 은 커서 뒤 두 글자 칸이다. `committedClip` 은 그 위 줄의
- * 첫 두 글자 칸으로, 찍은 한이 있다.
- */
 async function launchWithHan(
   launch: (
     env?: Record<string, string>,
@@ -123,45 +135,60 @@ for (const renderer of ['webgl', 'dom'] as const)
       launch
     }) => {
       const { page, clip, committedClip } = await launchWithHan(launch, renderer, dpr)
-      const committed = await settledInk(page, committedClip, inkTop)
+      const committed = await settled(() => inkTop(page, committedClip))
       expect(committed).toBeGreaterThan(0)
 
       const cdp = await page.context().newCDPSession(page)
       await compose(cdp, '한')
       await expect(page.locator('.terminal-view.active .composition-view')).toBeVisible()
-      expect(await settledInk(page, clip, inkTop)).toBe(committed)
+      expect(await settled(() => inkTop(page, clip))).toBe(committed)
     })
 
-// 글꼴 크기 15, DPR 1 에서는 WebGL renderer 가 글자 칸 폭을 device px 로 내림하므로 한글이 두 글자 칸보다 넓다.
-for (const size of [undefined, 15])
+// 일본어·중국어 입력은 여러 글자를 한 번에 조합하고, 로마자 입력 중에는 영문이 섞인다. 확정되면 두 글자 칸을 차지하는 한글·가나와
+// 한 글자 칸을 차지하는 영문을 섞는다.
+const MIXED = ['한', '글', 'に', 'ほ', 'w', 'o', 'か', 'く']
+
+// 글꼴 크기 13·15, DPR 1 에서는 WebGL renderer 가 글자 칸 폭을 device px 로 내림하므로 한글·가나가 두 글자 칸보다 넓다.
+for (const size of [undefined, 13, 15, 16])
   for (const renderer of ['webgl', 'dom'] as const)
     for (const dpr of [1, 2])
-      test(`글꼴 크기 ${size ?? '기본값'}, ${renderer}, DPR ${dpr}: 조합 중인 한글을 확정되면 그려질 가로 위치에 그린다`, async ({
+      test(`글꼴 크기 ${size ?? '기본값'}, ${renderer}, DPR ${dpr}: 여러 글자를 조합하면 글자마다 확정되면 그려질 가로 위치에 그리고 끝을 자르지 않는다`, async ({
         launch,
         dataDir
       }) => {
         if (size !== undefined) writeConfig(dataDir, `[terminal]\nfont-size = ${size}\n`)
-        // DOM renderer 의 글자 칸 폭은 소수일 수 있어, 열마다 글자가 놓이는 px 안의 자리가 다르다. 그래서 찍은 한이 있는
-        // `committedClip` 이 아니라, 조합한 글자를 그 자리에서 확정해 같은 글자 칸에서 견준다.
-        const { page, at, clip } = await launchWithHan(launch, renderer, dpr)
+        const { page, at } = await launchWithHan(launch, renderer, dpr)
+        const cell = await cellSize(page)
+        const cells = MIXED.map((c) => (c.length === 1 && c.charCodeAt(0) < 0x80 ? 1 : 2))
+        const total = cells.reduce((a, b) => a + b, 0)
+        // 마지막 글자가 글자 칸 밖으로 넘친 것까지 보도록 한 글자 칸을 더 잰다.
+        const clip = { x: at.x, y: at.y, width: (total + 1) * cell.width, height: cell.height }
+        const ink = (): Promise<{ starts: number[]; end: number }> =>
+          glyphInk(page, clip, cell.width, cells)
 
         const cdp = await page.context().newCDPSession(page)
-        await compose(cdp, '한')
+        await compose(cdp, MIXED.join(''))
         const view = page.locator('.terminal-view.active .composition-view')
         await expect(view).toBeVisible()
-        // 밑줄이 조합창의 왼쪽 끝부터 그어져, `inkLeft` 가 글자 대신 밑줄의 왼쪽 끝을 잰다.
+        // 밑줄은 조합창의 왼쪽 끝부터 그어지므로, 밑줄을 두면 글자 대신 밑줄의 왼쪽 끝을 잰다. 그래서 밑줄을 지운다.
         await view.evaluate((el) => (el.style.textDecoration = 'none'))
-        const composing = await settledInk(page, clip, inkLeft)
+        const composing = await settled(ink)
 
-        await cdp.send('Input.insertText', { text: '한' })
+        // 커서가 마지막 글자 뒤에 남으면 잰 영역 끝에 그려진 커서가 글자 픽셀로 잡히므로, 확정한 뒤 Enter 로 커서를 다음 줄로
+        // 보낸다.
+        await cdp.send('Input.insertText', { text: MIXED.join('') })
         await expect(view).toBeHidden()
-        await expect.poll(async () => (await cursor(page)).x).toBeGreaterThan(at.x)
-        expect(composing).toBeGreaterThanOrEqual(0)
-        expect(await settledInk(page, clip, inkLeft)).toBe(composing)
+        await expect
+          .poll(async () => (await cursor(page)).x)
+          .toBeGreaterThan(at.x + total * cell.width - 1)
+        await page.keyboard.press('Enter')
+        await expect.poll(async () => (await cursor(page)).y).toBeGreaterThan(at.y)
+        expect(composing.starts.every((x) => x >= 0)).toBe(true)
+        expect(await settled(ink)).toEqual(composing)
       })
 
-// 기본 글꼴 크기와 13·15·16 에서 잰다. DPR 1 에서는 WebGL renderer 가 글자 칸 폭을 device px 로 내림하므로 13·15 에서는
-// 한글이 두 글자 칸보다 넓고, 16 에서는 두 글자 칸과 같다.
+// DPR 1 에서는 WebGL renderer 가 글자 칸 폭을 device px 로 내림하므로 13·15 에서는 한글이 두 글자 칸보다 넓고, 16 에서는
+// 두 글자 칸과 같다.
 for (const size of [undefined, 13, 15, 16])
   test(`글꼴 크기 ${size ?? '기본값'}: 조합창은 터미널 배경에 밑줄로 두 글자 칸을 덮어 그 아래의 커서를 가린다`, async ({
     launch,
@@ -227,6 +254,28 @@ test('마지막 열에서 조합해도 조합창이 터미널 밖으로 넘치�
     right + 0.5
   )
   expect(await direction()).toBe('rtl')
+})
+
+test('조합 중에 커서가 마지막 열로 옮겨지면 조합창을 남은 폭에 다시 맞춘다', async ({ launch }) => {
+  const { page } = await launch({ MARU_DOM_RENDERER: '' })
+  const cell = await cellSize(page)
+  const cdp = await page.context().newCDPSession(page)
+  const view = page.locator('.terminal-view.active .composition-view')
+  const direction = (): Promise<string> => view.evaluate((el) => getComputedStyle(el).direction)
+  const screen = page.locator('.terminal-view.active .xterm-screen')
+  const { left, right } = await screen.evaluate((el) => el.getBoundingClientRect())
+  // 조합하는 동안 sleep 이 끝나면 CUF 999 가 커서를 마지막 열로 옮긴다.
+  await page.keyboard.type(`clear; sleep 2; printf '\\033[999C'; read -rs\n`)
+  await expect.poll(async () => (await cursor(page)).x - left).toBeLessThan(1)
+  await compose(cdp, '한')
+  await expect(view).toBeVisible()
+  expect(await direction()).toBe('ltr')
+
+  await expect.poll(async () => (await cursor(page)).x).toBeGreaterThan(right - 2 * cell.width)
+  await expect.poll(direction).toBe('rtl')
+  expect(await view.evaluate((el) => el.getBoundingClientRect().right)).toBeLessThanOrEqual(
+    right + 0.5
+  )
 })
 
 test('한글과 영문을 설치된 D2Coding 으로 그린다', async ({ launch }) => {

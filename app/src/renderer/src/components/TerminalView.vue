@@ -380,10 +380,12 @@ onBeforeUnmount(() => {
   text-decoration: underline;
 }
 
-/* xterm 이 조합을 고칠 때마다 inline 으로 `direction: rtl` 을 다시 넣으므로, `composition.ts` 가 `composition-fits` 를
-   붙인 조합창은 `!important` 로 ltr 로 덮는다. */
+/* xterm 은 조합창을 갱신할 때마다(조합 입력과 렌더마다) inline 으로 `direction: rtl`·`overflow: hidden` 을 다시 넣으므로,
+   `composition.ts` 가 `composition-fits` 를 붙인 조합창은 `!important` 로 덮는다. 조합창 폭은 글자 칸에 맞췄으므로, 글자 칸보다 넓게 그려지는
+   마지막 글자는 조합창 밖으로 넘친다. 넘친 끝을 자르면 글자가 깨져 보이므로 자르지 않는다. */
 .terminal-view :deep(.xterm .composition-view.composition-fits) {
   direction: ltr !important;
+  overflow: visible !important;
 }
 
 /* 막대를 둥글게 스크롤바 안쪽 1px 에 그린다. 폭은 xterm 이 inline 으로 정해 투명 테두리로 줄이고, xterm 이
