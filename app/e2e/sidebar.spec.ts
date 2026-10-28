@@ -141,6 +141,49 @@ test('cell 이름은 workspace 와 다른 부분만 적는다: 같은 저장소�
   await expect(cellGroups(page).nth(0).locator('.name')).toHaveCount(0)
 })
 
+test('reftable 저장소로 cd 하면 앱이 git 으로 branch 를 읽는 동안 cell 이름에 이전 저장소의 branch 를 남기지 않고 디렉토리 이름을 보인다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = repoHome(dataDir)
+  mkdirSync(join(home, 'proj', 'app', 'e2e'), { recursive: true })
+  mkdirSync(join(home, 'rt'))
+  git(join(home, 'rt'), 'init', '-q', '-b', 'dev', '--ref-format=reftable')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await page.keyboard.type('cd proj\n')
+  await expect(branch(page)).toHaveText(/main$/)
+  await newCell(launched, 2)
+  await page.keyboard.type('cd app/e2e\n')
+  const place = cellPlaces(page).nth(1)
+  await expect(place).toHaveText(/^\S?main· app\/e2e$/)
+
+  // 화면에 그린 cell 이름을 바뀔 때마다 모은다. 명령이 도는 동안에는 `.place` 대신 명령을 그리므로 null 이 섞인다.
+  await cellGroups(page)
+    .nth(1)
+    .evaluate((g) => {
+      const read = () => g.querySelector('.pane-row:first-of-type .place')?.textContent ?? null
+      const places = [read()]
+      Object.assign(window, { places })
+      new MutationObserver(() => {
+        const now = read()
+        if (places.at(-1) !== now) places.push(now)
+      }).observe(g, { childList: true, subtree: true, characterData: true })
+    })
+  await page.keyboard.type('cd ~/rt\n')
+  await expect(place).toHaveText(/^rt\S?dev$/, shellGit)
+  const drawn = await page.evaluate(
+    () => (window as unknown as { places: (string | null)[] }).places
+  )
+  const places: string[] = []
+  for (const p of drawn) if (p !== null && p !== places.at(-1)) places.push(p)
+  expect(places).toEqual([
+    expect.stringMatching(/^\S?main· app\/e2e$/),
+    'rt',
+    expect.stringMatching(/^rt\S?dev$/)
+  ])
+})
+
 for (const format of ['files', 'reftable'] as const) {
   test(`${format} 저장소에서 셸로 branch 를 바꾸면 다음 프롬프트에 따라가고, worktree 는 원래 저장소 이름을 쓴다`, async ({
     launch,
