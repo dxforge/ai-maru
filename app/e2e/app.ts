@@ -558,7 +558,7 @@ export async function expectRowsChangeOnce(
   await revert()
   await expect.poll(rowHeight).toBe(before)
 
-  // `App.vue` 의 `bodyHeight` 대로면 영역 높이 h 에 floor(h / 행 높이 - 1) 행이 들어간다.
+  // `App.vue` 의 `terminalSize` 대로면 영역 높이 h 에 floor(h / 행 높이 - 1) 행이 들어간다.
   const height = await panesHeight()
   const base = Math.floor(height / after) * after
   const target = Math.ceil(after > before ? base + before : base)

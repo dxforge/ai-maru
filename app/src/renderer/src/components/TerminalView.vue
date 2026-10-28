@@ -12,12 +12,11 @@ metaKey.onChange((pressed) => (metaPressed.value = pressed))
 </script>
 
 <script setup lang="ts">
-import { FitAddon } from '@xterm/addon-fit'
 import { UnicodeGraphemesAddon } from '@xterm/addon-unicode-graphemes'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal, type IRenderDimensions, type ITheme } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../pty/attach'
 import { openPty, type PtyConnection } from '../pty/connection'
 import type { ProgramStatusRecord } from '../../../shared/program-status'
@@ -38,7 +37,9 @@ const {
   active,
   shown,
   font,
-  theme
+  theme,
+  cols = undefined,
+  rows = undefined
 } = defineProps<{
   ptyId: string
   cellId: string
@@ -50,6 +51,10 @@ const {
   shown: boolean
   font: TerminalFont
   theme: ITheme
+  /** App 이 pane 배치와 함께 정한 열 수. 처음 받은 열·행 수로 pty 에 붙고, 그 뒤에는 primary 일 때만 이 값으로 크기를 바꾼다. */
+  cols?: number
+  /** App 이 pane 배치와 함께 정한 행 수. */
+  rows?: number
 }>()
 const emit = defineEmits<{
   exit: []
@@ -59,8 +64,7 @@ const emit = defineEmits<{
   /** 이전 maru-pty 의 pty 만 attach 스트림으로 보내는 OSC 7501 레코드(`pty/states.ts`). */
   programStatus: [records: ProgramStatusRecord[]]
   linkFailed: [reason: string]
-  /** `floored` 면 글자 칸 폭이 WebGL 이 내림한 값이고, `fitTerminal` 이 열 수를 이 폭으로 직접 나눈다. */
-  cell: [cell: Size, floored: boolean]
+  cell: [cell: Size]
 }>()
 
 const host = useTemplateRef<HTMLDivElement>('host')
@@ -90,8 +94,6 @@ function activateLink(event: MouseEvent, text: string): void {
 const hoveredUrl = ref<string | null>(null)
 term.options.linkHandler = createLinkHandler(activateLink, (url) => (hoveredUrl.value = url))
 const textLinks = registerLinkProvider(term, metaKey, activateLink)
-const fit = new FitAddon()
-term.loadAddon(fit)
 const selectAllKeys = menuKeys('selectAll')!
 // 메뉴는 자판 위치가 아니라 글자로 맞추므로(AZERTY 의 A 는 KeyQ 자리) 글자로 맞춘다. 라틴 글자가 없는 자판에서
 // ⌘ 를 쥐었을 때 `e.key` 가 무엇으로 오는지는 확인하지 않아, 글자가 라틴 글자가 아닐 때만 자판 위치(`KeyA`)로 맞춘다.
@@ -149,48 +151,29 @@ const cell = (d: IRenderDimensions): Size => ({
 })
 let lastCell: Size | undefined
 /**
- * 창을 DPR 이 다른 화면으로 옮기거나 글꼴 설정이 바뀌면 글자 칸 크기가 바뀐다. 이때 pane 크기는 그대로라
- * `ResizeObserver` 가 돌지 않으므로, 이 함수가 열·행 수를 다시 맞춘다.
+ * 창을 DPR 이 다른 화면으로 옮기거나 글꼴 설정이 바뀌면 글자 칸 크기가 바뀐다. 이 함수가 App 에 알리면 App 이 새 글자 칸
+ * 크기로 pane 배치와 열·행 수를 다시 정해 `cols`·`rows` 로 넘긴다.
  */
 function checkCell(force = false): void {
   if (!term.dimensions) return
   const c = cell(term.dimensions)
-  const changed = lastCell && (c.width !== lastCell.width || c.height !== lastCell.height)
-  if (lastCell && !changed && !force) return
+  if (!force && lastCell && c.width === lastCell.width && c.height === lastCell.height) return
   lastCell = c
-  emit('cell', c, floorCell())
-  if (!(changed || force) || !started) return
-  // App 이 새 글자 칸 크기로 pane 배치를 고친 뒤에 맞춘다. 먼저 맞추면 옛 pane 높이로 한 번, 새 pane 높이로 또 한 번
-  // 프로그램에 resize 가 간다.
-  void nextTick(() => host.value && pty!.primary && fitTerminal())
+  emit('cell', c)
 }
 term.onDimensionsChange(() => checkCell())
-function fitTerminal(): void {
-  if (!floorCell()) return fit.fit()
-  const size = fit.proposeDimensions()
-  if (!size || !term.dimensions) return
-  const padding = getComputedStyle(term.element!)
-  const width =
-    (parseInt(getComputedStyle(host.value!).width) || 0) -
-    (parseInt(padding.paddingLeft) || 0) -
-    (parseInt(padding.paddingRight) || 0) -
-    SCROLLBAR_WIDTH
-  term.resize(Math.max(2, Math.floor(width / cell(term.dimensions).width)), size.rows)
-}
 let pty: Attachment | null = null
 let started = false
-const observer = new ResizeObserver(() => {
-  if (!started) {
-    // columns 보기는 글자 폭을 재기 전 pane 폭이 0 이다. 그때 붙으면 FitAddon 의 최소인 2열로 붙는다.
-    // pty 는 그 폭으로 행마다 개행을 넣어 재생하므로 뒤에 넓혀도 펼쳐지지 않는다.
-    if (host.value!.clientWidth === 0) return
-    started = true
-    fitTerminal()
-    pty!.start()
-    return
-  }
-  if (pty!.primary) fitTerminal()
-})
+// pty 는 붙을 때의 크기로 행마다 개행을 넣어 재생하므로, 뒤에 넓혀도 펼쳐지지 않는다. 그래서 App 이 열·행 수를 정한 뒤에 붙는다.
+function applySize(): void {
+  if (cols === undefined || rows === undefined || !pty) return
+  if (started && !pty.primary) return
+  term.resize(cols, rows)
+  if (started) return
+  started = true
+  pty.start()
+}
+watch([() => cols, () => rows], applySize)
 
 // Chromium 이 동시에 유지하는 WebGL context 는 16개뿐이라, 보이는 터미널만 WebGL 로 그리고 나머지는 DOM 으로 둔다.
 let webgl: WebglAddon | undefined
@@ -233,8 +216,8 @@ function updateRenderer(): void {
     if (!webglLoaded) webglUnavailable.value = true
   }
 }
-// 글자 칸 폭을 내림하는지가 바뀌므로, 폭이 같아도 `cell` 을 다시 알린다.
-watch(webglUnavailable, () => checkCell(true))
+// 글자 칸 폭을 내림하는지가 바뀌어도 xterm 의 dimensions 는 그대로라 `onDimensionsChange` 가 오지 않는다.
+watch(webglUnavailable, () => checkCell())
 const intersection = window.maru.webgl
   ? new IntersectionObserver((entries) => {
       inView = entries[entries.length - 1].isIntersecting
@@ -324,11 +307,10 @@ onMounted(() => {
   term.onData(() => {
     if (!composing) flushAfterComposition()
   })
-  observer.observe(host.value!)
+  applySize()
 })
 
 onBeforeUnmount(() => {
-  observer.disconnect()
   intersection?.disconnect()
   textLinks.dispose()
   if (webgl) disposeWebgl()
@@ -350,9 +332,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* 왼쪽 여백은 터미널 요소 밖에 둔다. 여백은 pane 의 배경(`--ground`, 테마 배경과 같다)으로 보인다. */
 .terminal-view {
   position: absolute;
-  inset: 0;
+  inset: 0 0 0 var(--pad);
 }
 
 /* xterm 의 스크롤바(z-index 11)가 pane 을 흐리게 덮는 층(App.vue) 위로 올라오지 않게 쌓임 맥락을 따로 둔다. */
@@ -378,16 +361,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
-}
-
-.terminal-view :deep(.xterm) {
-  padding-left: var(--pad);
-}
-
-/* xterm.css 가 viewport 를 검게 칠하는데, viewport 는 여백까지 덮고 테마 배경은 그 안쪽에만 칠해진다.
-   투명하게 두어 여백에도 .xterm 의 테마 배경이 보이게 한다. */
-.terminal-view :deep(.xterm .xterm-viewport) {
-  background-color: transparent;
 }
 
 /* xterm.css 는 조합창을 검은 바탕에 흰 글자로 칠한다. 바탕은 테마 색으로 바꾸되 불투명하게 두어, 조합하는

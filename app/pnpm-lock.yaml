@@ -20,9 +20,6 @@ importers:
       '@vitejs/plugin-vue':
         specifier: ^6.0.9
         version: 6.0.9(vite@7.3.6(@types/node@24.19.1)(jiti@2.7.0))(vue@3.5.43(typescript@6.0.3))
-      '@xterm/addon-fit':
-        specifier: 0.12.0-beta.311
-        version: 0.12.0-beta.311(@xterm/xterm@6.1.0-beta.315)
       '@xterm/addon-unicode-graphemes':
         specifier: 0.5.0-beta.310
         version: 0.5.0-beta.310(@xterm/xterm@6.1.0-beta.315)
@@ -987,11 +984,6 @@ packages:
   '@xmldom/xmldom@0.8.15':
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
     engines: {node: '>=10.0.0'}
-
-  '@xterm/addon-fit@0.12.0-beta.311':
-    resolution: {integrity: sha512-M40mAWDoAVKz+0zs5ipmBJ+tNilw8CzUbbGIX05NANmTiw0MS47FYeJ4d2El4zdvFphDJjtVLrxTKXuz2wUM6Q==}
-    peerDependencies:
-      '@xterm/xterm': ^6.1.0-beta.315
 
   '@xterm/addon-unicode-graphemes@0.5.0-beta.310':
     resolution: {integrity: sha512-oCvQV7rKNekf7KcNdVicPhOo47W160QS6tIhXG7VpQ9OKGKTrAnMAxD+fr/nTlbd3h86+zvMqJpfd7NKEm/fYA==}
@@ -3279,10 +3271,6 @@ snapshots:
   '@vue/shared@3.5.43': {}
 
   '@xmldom/xmldom@0.8.15': {}
-
-  '@xterm/addon-fit@0.12.0-beta.311(@xterm/xterm@6.1.0-beta.315)':
-    dependencies:
-      '@xterm/xterm': 6.1.0-beta.315
 
   '@xterm/addon-unicode-graphemes@0.5.0-beta.310(@xterm/xterm@6.1.0-beta.315)':
     dependencies:

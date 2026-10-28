@@ -2,10 +2,12 @@ import { basename } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
   activeHeader,
+  activeTerminal,
   canvasPanel,
   clickMenu,
   expect,
   focusPane,
+  isInk,
   newWorkspace,
   paneHeader,
   panes,
@@ -340,15 +342,31 @@ test('터미널 스크롤바는 pane 폭에서 8px 를 차지하고, 막대는 �
   expect(clip).toBe('padding-box')
 })
 
-test('터미널 왼쪽 여백도 터미널 배경으로 칠한다', async ({ launch }) => {
+test('터미널 왼쪽 여백은 터미널 배경으로 보이고, xterm.css 가 검게 칠한 viewport 는 테마 배경을 칠한 요소에 가려진다', async ({
+  launch
+}) => {
   const { page } = await launch()
-  const [viewport, xterm, scrollable] = await page.evaluate(() =>
-    ['.xterm-viewport', '.xterm', '.xterm-scrollable-element'].map(
-      (s) => getComputedStyle(document.querySelector(s)!).backgroundColor
-    )
-  )
-  expect(viewport).toBe('rgba(0, 0, 0, 0)')
-  expect(xterm).toBe(scrollable)
+  await activeTerminal(page)
+  const place = await page.evaluate(() => {
+    const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect().toJSON()
+    const bg = (s: string) => getComputedStyle(document.querySelector(s)!).backgroundColor
+    return {
+      viewport: rect('.xterm-viewport'),
+      scrollable: rect('.xterm-scrollable-element'),
+      pane: rect('.pane'),
+      screenTop: rect('.xterm-screen').top,
+      colors: [bg('.xterm-scrollable-element'), bg('.pane')]
+    }
+  })
+  expect(place.scrollable).toEqual(place.viewport)
+  expect(place.colors[0]).toBe(place.colors[1])
+  const gap = await screenshotPixels(page, {
+    x: place.pane.left + 2,
+    y: place.screenTop + 2,
+    width: 1,
+    height: 1
+  })
+  expect(isInk(gap.data, 0)).toBe(false)
 })
 
 async function measure(page: Page) {
@@ -572,7 +590,7 @@ for (const header of ['bottom', 'top'] as const) {
   })
 }
 
-test('pane 헤더는 기본으로 pane 맨 아래에 있고 본문의 넘친 반 행을 덮으며, 위아래로 나누면 위 pane 의 헤더가 경계가 된다', async ({
+test('pane 헤더는 기본으로 pane 맨 아래에 있고 본문은 헤더 위에서 끝나며, 위아래로 나누면 위 pane 의 헤더가 경계가 된다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -591,7 +609,7 @@ test('pane 헤더는 기본으로 pane 맨 아래에 있고 본문의 넘친 반
       hit: head.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
     }
   })
-  expect(covered.overlap).toBeGreaterThan(0)
+  expect(covered.overlap).toBeCloseTo(0, 1)
   expect(covered.hit).toBe(true)
 })
 

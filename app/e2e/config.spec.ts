@@ -364,7 +364,7 @@ test('토스트가 떠 있어도 Canvas 헤더의 닫기 버튼으로 Canvas 를
   await expect(toast(page)).toHaveCount(1)
 })
 
-test('토스트는 사이드바 왼쪽 아래 안쪽에 뜨고, 사이드바를 접으면 258px 폭이다', async ({
+test('토스트는 사이드바 왼쪽 아래 안쪽에 뜨고, 사이드바를 접으면 256px 폭이다', async ({
   launch,
   dataDir
 }) => {
@@ -377,5 +377,5 @@ test('토스트는 사이드바 왼쪽 아래 안쪽에 뜨고, 사이드바를 
   expect(box.y + box.height).toBe(height - 12)
   expect(box.x + box.width).toBeLessThanOrEqual((await sidebarWidth(page)) - 12)
   await clickMenu(app, 'toggle-sidebar')
-  await expect.poll(async () => (await toast(page).boundingBox())!.width).toBe(258)
+  await expect.poll(async () => (await toast(page).boundingBox())!.width).toBe(256)
 })

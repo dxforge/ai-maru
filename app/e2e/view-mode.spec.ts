@@ -1,6 +1,8 @@
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
   activePane,
+  cellSize,
+  cellWidth,
   clickMenu,
   expect,
   expectCols,
@@ -22,6 +24,7 @@ import {
   cellGroups,
   cellItems,
   cellViews,
+  writeConfig,
   zshHome
 } from './app'
 
@@ -455,6 +458,21 @@ test('columns 에서 줌을 바꿔도 pane 은 80열이다', async ({ launch }) 
     await expectCols(page, 80)
   }
 })
+
+for (const size of [8, 9, 16]) {
+  test(`DOM 으로 그려도 글꼴 크기 ${size} 의 columns pane 은 80열이고, 카드 폭은 80열에 여백과 스크롤바를 더한 폭이다`, async ({
+    launch,
+    dataDir
+  }) => {
+    writeConfig(dataDir, `[terminal]\nfont-size = ${size}\n`)
+    const launched = await launch()
+    const { page } = launched
+    await toggleView(launched, 'columns')
+    await expectCols(page, 80)
+    const { width } = await cellSize(page)
+    expect(await cellWidth(page)).toBeCloseTo(80 * width + 12, 0)
+  })
+}
 
 test('columns 에서 창 크기를 바꿔도 pane 은 80열이다', async ({ launch }) => {
   const launched = await launch()

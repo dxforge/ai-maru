@@ -100,16 +100,11 @@ test('WebGL context 를 잃은 터미널은 보이는 동안 DOM 으로 그리�
 async function screenWidth(
   terminal: Locator
 ): Promise<{ screen: number; room: number; cell: number }> {
-  return terminal.evaluate((el) => {
-    const xterm = el.querySelector<HTMLElement>('.xterm')!
-    const style = getComputedStyle(xterm)
-    const room =
-      el.getBoundingClientRect().width -
-      parseFloat(style.paddingLeft) -
-      parseFloat(style.paddingRight)
-    const cell = parseFloat(getComputedStyle(el).getPropertyValue('--cell'))
-    return { screen: el.querySelector('.xterm-screen')!.getBoundingClientRect().width, room, cell }
-  })
+  return terminal.evaluate((el) => ({
+    screen: el.querySelector('.xterm-screen')!.getBoundingClientRect().width,
+    room: el.getBoundingClientRect().width,
+    cell: parseFloat(getComputedStyle(el).getPropertyValue('--cell'))
+  }))
 }
 
 test('WebGL 터미널은 pane 폭을 글자 칸 단위로 채우고, renderer 가 바뀌어도 셸이 보는 열 수는 그대로다', async ({
