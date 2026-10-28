@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { killPty } from '../src/main/pty'
 import {
-  activeTerminal,
   canvasWidth,
   clickMenu,
   dialogCalls,
@@ -448,7 +447,6 @@ test('columns 보기로 재시작한 뒤 대체 화면을 나가도 그 아래 �
 
   await restartWith(app)
   const { page: again } = await launch()
-  await activeTerminal(again)
   await run(again, "printf '\\033[?1049l'; echo back-$((1+1))", 'back-2')
   expect((await rows(again).innerText()).split('\n')).toContain(
     'under-abcdefghijklmnopqrstuvwxyz-2'

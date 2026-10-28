@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { activePane, activeTerminal, expect, panes, rows, split, test } from './app'
+import { activePane, expect, panes, rows, split, test } from './app'
 
 const NAMES = ['plain.png', "it's $HOME (1) & `x`.png", '스크린샷 오후 3.04.05.png']
 
@@ -80,7 +80,6 @@ test('파일을 터미널에 드롭하면 셸이 경로마다 한 인자로 읽�
   dataDir
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   const files = makeFiles(dataDir)
   const out = join(dataDir, 'drop-out')
   await armPrintf(page)
@@ -93,7 +92,6 @@ test('이름에 제어문자·개행이 든 파일을 드롭해도 쳐 둔 줄�
   dataDir
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   const file = join(dataDir, 'ctl\u0016\nname')
   writeFileSync(file, '')
   const out = join(dataDir, 'drop-out')
@@ -107,7 +105,6 @@ test('포커스가 없는 pane 에 드롭하면 그 pane 에 붙고 그 pane 이
   dataDir
 }) => {
   const { app, page } = await launch()
-  await activeTerminal(page)
   const files = makeFiles(dataDir)
   const out = join(dataDir, 'drop-out')
   await armPrintf(page)
@@ -126,7 +123,6 @@ test('Finder 에서 복사한 파일을 붙여넣으면 경로로 붙고, 텍스
   defer
 }) => {
   const { app, page } = await launch()
-  await activeTerminal(page)
   const files = makeFiles(dataDir)
 
   const out = join(dataDir, 'paste-out')
@@ -147,7 +143,6 @@ test('이미지만 든 클립보드를 붙여넣으면 경로를 넣지 않고 x
   dataDir
 }) => {
   const { app, page } = await launch()
-  await activeTerminal(page)
   const png = join(dataDir, 'shot.png')
   writeFileSync(png, Buffer.from(PNG_1X1, 'base64'))
   execFileSync('osascript', [

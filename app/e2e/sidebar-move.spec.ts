@@ -477,8 +477,6 @@ test('접은 사이드바에서도 손잡이로 cell 을 끌어 옮긴다', asyn
 test('옮긴 workspace·cell 의 순서는 재시작한 뒤에도 남는다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
-  // `launch` 는 첫 터미널이 보이기를 기다린다. single 에서는 선택한 cell 이 맨 앞이 아니면 첫 터미널이 보이지 않으므로 columns 로 돌린다.
-  await toggleView(launched, 'columns')
   await arrange(launched, [['alpha'], ['bravo', 'charlie']])
   await grabHandle(page, grip(page, 2), 0)
   await moveTo(page, cards(page).nth(0), 0.25)

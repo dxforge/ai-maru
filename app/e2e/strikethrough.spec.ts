@@ -1,14 +1,5 @@
 import type { Page } from '@playwright/test'
-import {
-  activeTerminal,
-  cellSize,
-  expect,
-  isInk,
-  screenshotPixels,
-  test,
-  WEBGL_CANVAS,
-  type Box
-} from './app'
+import { cellSize, expect, isInk, screenshotPixels, test, WEBGL_CANVAS, type Box } from './app'
 
 // `shellEnv` 가 넣는 CLAUDE_CODE_FORCE_STRIKETHROUGH 는 xterm.js 가 SGR 9 를 그린다는 전제 위에 있다.
 // xterm.js 를 올려 전제가 깨지면 claude 의 취소선이 글자 그대로도, 취소선으로도 보이지 않으므로 여기서 잰다.
@@ -29,7 +20,6 @@ async function inkFractions(page: Page, clip: Box): Promise<number[]> {
 for (const renderer of ['webgl', 'dom'] as const) {
   test(`${renderer}: SGR 9 는 글자 칸 폭 전체를 가로지르는 줄로 그려진다`, async ({ launch }) => {
     const { page } = await launch({ MARU_DOM_RENDERER: renderer === 'dom' ? '1' : '' })
-    await activeTerminal(page)
     if (renderer === 'webgl') await expect(page.locator(WEBGL_CANVAS)).toHaveCount(1)
     await page.keyboard.type(`clear; printf '\\033[9m${TEXT}\\033[0m\\n${TEXT}\\n'\n`)
     const screen = (await page.locator('.terminal-view.active .xterm-screen').boundingBox())!

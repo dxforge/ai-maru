@@ -80,7 +80,6 @@ test('single 에서는 아무것도 하지 않고 셸에도 가지 않으며, co
 }) => {
   const launched = await launch()
   const { app, page } = launched
-  await activeTerminal(page)
   const full = (await shellSize(page)).cols
 
   await clickMenu(app, 'widen-cell')
@@ -131,7 +130,6 @@ test('재시작 뒤 cell 의 pane 폭이 남고, 80 으로 돌아온 cell 은 �
 
   const { app: againApp, page: again } = await launch()
   await expect(again.locator('.terminals')).toHaveClass(/columns/)
-  await activeTerminal(again)
   await expectCols(again, 80)
   await clickMenu(againApp, 'previous-cell')
   await activeTerminal(again)
@@ -152,7 +150,6 @@ test('재시작 화면의 pane 폭이 정류장 밖이면 그 폭으로 되살�
   writeFileSync(file, JSON.stringify(saved))
 
   const { app, page } = await launch()
-  await activeTerminal(page)
   await expectCols(page, 100)
   await clickMenu(app, 'widen-cell')
   await expectCols(page, 110)
@@ -213,7 +210,6 @@ test('column-cols 를 고치면 폭을 바꾸지 않은 cell 은 따라가고 �
 
   writeConfig(dataDir, '[layout]\ncolumn-cols = 120\n')
   const { app: againApp, page: again } = await launch()
-  await activeTerminal(again)
   await expectCols(again, 120)
   await clickMenu(againApp, 'next-cell')
   await activeTerminal(again)
