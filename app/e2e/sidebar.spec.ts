@@ -34,8 +34,16 @@ import {
   zshHome
 } from './app'
 
+// 사용자 git 설정의 `init.defaultRefFormat` 이 reftable 이면 `--ref-format` 없이 만든 저장소도 reftable 이 된다.
+// 앱은 reftable 저장소의 branch 를 `git` 을 실행해 읽는다. 같은 테스트 40개를 병렬로 돌리면 cell 이름이 바뀌기까지
+// 최대 4.9초 걸렸고, 40번 가운데 1번은 `expect` 의 기본 대기 5초를 넘겼다. 그래서 이 helper 는 `--ref-format` 을
+// 주지 않은 저장소를 files 로 만든다.
 function git(cwd: string, ...args: string[]): void {
-  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd })
+  execFileSync(
+    'git',
+    ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'init.defaultRefFormat=files', ...args],
+    { cwd }
+  )
 }
 
 // 셸에서 친 git 은 `/usr/bin/git`(xcrun shim)을 거치므로, 부하가 걸리면 `git switch` 한 번에 최대 3.6초 걸렸다. 15초는 그 값에 여유를 둔 것이고 잰 근거는 없다.
