@@ -2,7 +2,6 @@ import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
-  activeTerminal,
   expect,
   newWorkspace,
   paneRows,
@@ -44,7 +43,6 @@ test('maru mate list 는 claude 가 보고한 pane 만 화면 순서대로, 사�
 }) => {
   const launched = await launch()
   const { app, page } = launched
-  await activeTerminal(page)
   const first = await enter(page, join(dataDir, 'proj-a'))
   await expect(workspaceNames(page).nth(0)).toHaveText('proj-a')
   await page.keyboard.type(

@@ -95,7 +95,6 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
   launch
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await page.evaluate(() => {
     const seen: { code: string; prevented: boolean }[] = []
     Object.assign(window, { seen })
@@ -136,7 +135,6 @@ test('터미널에서 ⇧↩ 은 kitty 키보드 프로토콜을 켠 프로그�
   launch
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await page.keyboard.type('echo plain-$((1+1))')
   await page.keyboard.press('Shift+Enter')
   await expect(rows(page)).toContainText('plain-2')
@@ -149,7 +147,6 @@ test('터미널에서 ⇧↩ 은 kitty 키보드 프로토콜을 켠 프로그�
 
 test('터미널에서 ⌘← / ⌘→ 는 줄 처음·끝으로 간다', async ({ launch }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await page.keyboard.type('cho edge-$((1+1))')
 
   await page.keyboard.press('Meta+ArrowLeft')
@@ -162,7 +159,6 @@ test('터미널에서 ⌘← / ⌘→ 는 줄 처음·끝으로 간다', async (
 
 test('터미널에서 ⌘⌫ 은 커서 앞의 입력을 지운다', async ({ launch }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await page.keyboard.type('echo gone')
 
   await page.keyboard.press('Meta+Backspace')
@@ -186,7 +182,6 @@ test('터미널에서 한글을 조합하는 중에 ⌘⌫ 을 누르면 조합�
   launch
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await page.keyboard.insertText('안녕')
 
   await composeThenMetaKey(page, 'Backspace', 8)
@@ -199,7 +194,6 @@ test('터미널에서 한글을 조합하는 중에 ⌘← 를 누르면 조합�
   launch
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await page.keyboard.insertText('안녕')
 
   await composeThenMetaKey(page, 'ArrowLeft', 37)
@@ -212,7 +206,6 @@ test('터미널에서 한글을 조합하는 중에 ⌘← 를 누르면 조합�
 
 test('터미널에서 ⌥ 는 Meta 로 가서 ⌥P 는 ESC p 를 보낸다', async ({ launch }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await page.keyboard.type('IFS= read -rsn2 k; printf \'got=%q\\n\' "$k"\n')
 
   await page.keyboard.press('Alt+KeyP')
@@ -224,7 +217,6 @@ test('kitty 키보드 모드인 프로그램이 떠 있어도 ⌘ 조합은 프�
   launch
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   // ⌘ 조합의 누름이나 뗌(flag 2)이 하나라도 새면 그 ESC 가 먼저 읽힌다. 새지 않으면 뒤에 누르는 x 를 읽고 바로 끝난다.
   await armKitty(page, 3, '-t 2 -n1')
   await page.evaluate(() => {
@@ -266,7 +258,6 @@ test('kitty 키보드 모드인 프로그램이 떠 있어도 ⌘ 조합은 프�
 
 test('kitty 키보드 모드가 아닌 프로그램에도 표에 없는 ⌘↩ 은 가지 않는다', async ({ launch }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await page.keyboard.type('IFS= read -rs -t 2 -n1 k; printf \'got=%q\\n\' "$k"\n')
 
   await page.keyboard.press('Meta+Enter')
@@ -279,7 +270,6 @@ test('kitty 키보드 모드인 프로그램은 ⌘ 와, ⌘ 를 쥔 채 누른 
   launch
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await armKitty(page, 8, '-t 2 -n43')
 
   await page.keyboard.down('Meta')

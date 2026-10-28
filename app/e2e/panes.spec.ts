@@ -111,7 +111,6 @@ test('pane 이 하나면 ⇧⌘방향키는 포커스를 그대로 두고 셸에
   launch
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await page.keyboard.type('echo edge-$((1+')
   for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'])
     await page.keyboard.press(`Shift+Meta+${key}`)

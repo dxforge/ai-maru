@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { activeTerminal, expect, run, screenshotPixels, test } from './app'
+import { expect, run, screenshotPixels, test } from './app'
 
 async function brightPixelsAtRightEdge(page: Page): Promise<number> {
   const bar = page.locator('.terminal-view.active .xterm-scrollbar.xterm-vertical')
@@ -14,7 +14,6 @@ test('alt screen 에 들어갔다 나와도 터미널 오른쪽 끝에 밝은 �
   launch
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   expect(await brightPixelsAtRightEdge(page)).toBe(0)
 
   await run(page, "printf '\\e[?1049h'; sleep 0.3; printf '\\e[?1049l'; echo alt-$((1+1))", 'alt-2')

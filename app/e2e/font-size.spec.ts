@@ -1,6 +1,5 @@
 import type { ElectronApplication, Page } from '@playwright/test'
 import {
-  activeTerminal,
   clickMenu,
   expect,
   expectRowsChangeOnce,
@@ -142,7 +141,6 @@ test('재시작하면 cell 마다 바꾼 크기를 되살리고, columns 카드 
 
   await restartWith(first.app)
   const { page } = await launch()
-  await activeTerminal(page)
   await expect.poll(() => fontSizes(page)).toEqual([['14px'], ['16px']])
   await expect.poll(() => cardWidths(page)).toEqual(widths)
   await expect.poll(() => shellSize(page)).toEqual(before)
@@ -194,7 +192,6 @@ test('명령 팔레트에서 Increase·Decrease·Reset Font Size 를 실행한�
 // ⌘+ / ⌘- / ⌘0 자체는 macOS 메뉴가 받으므로 Playwright 키로는 재지 못한다. 메뉴에 걸리지 않아 창이 받는 키만 잰다.
 test('⌘= 과 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 도 터미널에서 글꼴 크기를 바꾼다', async ({ launch }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   for (const [key, size] of [
     ['Meta+Equal', '15px'],
     ['Meta+Equal', '16px'],

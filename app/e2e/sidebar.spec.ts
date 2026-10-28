@@ -150,12 +150,13 @@ for (const format of ['files', 'reftable'] as const) {
     launch,
     dataDir
   }) => {
-    // 셸 git 을 세 번 기다리므로 `shellGit` 을 다 쓰면 기본 30초를 넘는다.
+    // `shellGit` 을 네 번 기다리므로 다 쓰면 기본 30초를 넘는다.
     test.slow()
     const home = repoHome(dataDir, format)
     const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
     await page.keyboard.type('cd proj\n')
-    await expect(branch(page)).toHaveText(/main$/)
+    // reftable 저장소는 앱도 `git` 을 실행해 branch 를 읽는다. 첫 대기에는 zsh 가 뜨는 시간도 더해진다.
+    await expect(branch(page)).toHaveText(/main$/, shellGit)
 
     await page.keyboard.type('git switch -q -c feat/1-x\n')
     await expect(branch(page)).toHaveText(/feat\/1-x$/, shellGit)
@@ -809,6 +810,8 @@ test('다른 저장소의 이름이 길어도 셸 줄의 branch 아이콘은 cel
   await newCell(launched, 2)
   await page.keyboard.type(`cd ~/${long}\n`)
   await expect(cellGroups(page).nth(1).locator('.name')).toHaveText(long)
+  // `.name` 은 git 을 읽기 전에도 디렉토리 이름이라 이미 맞으므로, 아이콘이 생길 때까지 따로 기다린다.
+  await expect(cellGroups(page).nth(1).locator('.branch')).toHaveText(/dev$/)
   const inside = (): Promise<boolean> =>
     cellGroups(page)
       .nth(1)

@@ -1,17 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import {
-  activeTerminal,
-  canvasTitles,
-  cellSize,
-  expect,
-  restartWith,
-  rows,
-  run,
-  test,
-  toast
-} from './app'
+import { canvasTitles, cellSize, expect, restartWith, rows, run, test, toast } from './app'
 
 type Opened = { opened?: string[]; paths?: string[] }
 
@@ -57,7 +47,6 @@ const OSC8 = (url: string, label: string) => `printf '\\e]8;;${url}\\a${label}\\
 
 test('OSC 8 링크는 ⌘+클릭으로 열고, 그냥 클릭은 열지 않는다', async ({ launch }) => {
   const { app, page } = await launch()
-  await activeTerminal(page)
   await recordShell(app)
   await run(page, `${OSC8('https://example.com/osc', 'repo#7')}; echo done-$((1+1))`, 'done-2')
 
@@ -74,7 +63,6 @@ test('⌘ 를 누른 채 OSC 8 링크에 올리면 주소가 보이고, 떼거�
   launch
 }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await run(page, `${OSC8('https://example.com/addr', 'repo#8')}; echo done-$((1+1))`, 'done-2')
   const address = page.locator('.terminal-view.active .link-address')
   const { x, y } = await pointAt(page, 'repo#8')
@@ -98,7 +86,6 @@ test('글자로 찍힌 URL 은 OS 로, .md 는 Canvas 로, 그 밖의 파일은 
   dataDir
 }) => {
   const { app, page } = await launch()
-  await activeTerminal(page)
   await recordShell(app)
   writeFileSync(join(dataDir, 'note.md'), '# From link')
   writeFileSync(join(dataDir, 'a.txt'), 'x')
@@ -122,7 +109,6 @@ test('글자로 찍힌 URL 은 OS 로, .md 는 Canvas 로, 그 밖의 파일은 
 
 test('상대경로는 돌고 있는 명령의 cwd 기준이다', async ({ launch, dataDir }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   mkdirSync(join(dataDir, 'sub'))
   writeFileSync(join(dataDir, 'sub', 'rel.md'), '# In sub')
   await run(
@@ -138,7 +124,6 @@ test('상대경로는 돌고 있는 명령의 cwd 기준이다', async ({ launch
 
 test('못 여는 링크는 이유를 토스트로 보인다', async ({ launch, dataDir }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await run(page, `echo '${dataDir}/none.md'; echo done-$((1+1))`, 'done-2')
 
   await metaClick(page, 'none.md')
@@ -163,12 +148,10 @@ for (const [kind, print, text, url] of [
 ] as const)
   test(`재시작해 pty 에 다시 붙어도 ${kind}는 열린다`, async ({ launch }) => {
     const first = await launch()
-    await activeTerminal(first.page)
     await run(first.page, `${print}; echo done-$((1+1))`, 'done-2')
 
     await restartWith(first.app)
     const { app, page } = await launch()
-    await activeTerminal(page)
     await expect(rows(page)).toContainText(text)
     await recordShell(app)
 

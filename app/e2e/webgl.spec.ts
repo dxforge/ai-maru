@@ -11,8 +11,7 @@ import {
   toggleView,
   WEBGL_CANVAS,
   cellItems,
-  cellViews,
-  type Launched
+  cellViews
 } from './app'
 
 type Renderer = 'webgl' | 'dom'
@@ -33,12 +32,6 @@ async function renderers(scope: Page | Locator): Promise<Renderer[]> {
   return Promise.all(all.map(renderer)) as Promise<Renderer[]>
 }
 
-async function launchWebgl(launch: (env?: Record<string, string>) => Promise<Launched>) {
-  const launched = await launch({ MARU_DOM_RENDERER: '' })
-  await activeTerminal(launched.page)
-  return launched
-}
-
 // 3초 안에 되살아나지 않으면 addon 이 onContextLoss 를 낸다.
 async function loseContext(terminal: Locator): Promise<void> {
   await terminal.evaluate((el, webgl) => {
@@ -50,7 +43,7 @@ async function loseContext(terminal: Locator): Promise<void> {
 test('선택된 cell 의 터미널은 WebGL 로, 선택되지 않은 cell 의 터미널은 DOM 으로 그리고, 선택을 바꾸면 따라 바뀐다', async ({
   launch
 }) => {
-  const launched = await launchWebgl(launch)
+  const launched = await launch({ MARU_DOM_RENDERER: '' })
   const { app, page } = launched
   await split(app, page, 'split-right', 2)
   await expect.poll(() => renderers(cellViews(page).nth(0))).toEqual(['webgl', 'webgl'])
@@ -67,7 +60,7 @@ test('선택된 cell 의 터미널은 WebGL 로, 선택되지 않은 cell 의 �
 test('columns 에서는 화면에 보이는 cell 의 터미널만 WebGL 로 그리고, 스크롤해서 보이면 WebGL 로 바뀐다', async ({
   launch
 }) => {
-  const launched = await launchWebgl(launch)
+  const launched = await launch({ MARU_DOM_RENDERER: '' })
   const { page } = launched
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
@@ -88,7 +81,7 @@ test('columns 에서는 화면에 보이는 cell 의 터미널만 WebGL 로 그�
 test('WebGL context 를 잃은 터미널은 보이는 동안 DOM 으로 그리고, 숨었다 다시 보이면 WebGL 로 돌아온다', async ({
   launch
 }) => {
-  const launched = await launchWebgl(launch)
+  const launched = await launch({ MARU_DOM_RENDERER: '' })
   const { page } = launched
   const first = terminals(cellViews(page).nth(0))
   await expect.poll(() => renderer(first)).toBe('webgl')
@@ -123,7 +116,7 @@ test('WebGL 터미널은 pane 폭을 글자 칸 단위로 채우고, renderer �
   launch,
   dataDir
 }) => {
-  const launched = await launchWebgl(launch)
+  const launched = await launch({ MARU_DOM_RENDERER: '' })
   const { page } = launched
   const first = terminals(cellViews(page).nth(0))
   await expect.poll(() => renderer(first)).toBe('webgl')
@@ -180,7 +173,7 @@ test('WebGL2 를 쓸 수 없으면 DOM 으로 그리고, pane 폭을 DOM 의 글
 })
 
 test('WebGL 로 그려도 columns 의 pane 은 80열이다', async ({ launch, dataDir }) => {
-  const launched = await launchWebgl(launch)
+  const launched = await launch({ MARU_DOM_RENDERER: '' })
   await toggleView(launched, 'columns')
   await expect.poll(async () => (await sttySize(launched.page, dataDir)).cols).toBe(80)
 })
@@ -188,7 +181,7 @@ test('WebGL 로 그려도 columns 의 pane 은 80열이다', async ({ launch, da
 test('pane 이 많은 cell 사이를 한도보다 많이 오가도 WebGL context 가 한도를 넘지 않는다', async ({
   launch
 }) => {
-  const launched = await launchWebgl(launch)
+  const launched = await launch({ MARU_DOM_RENDERER: '' })
   const { app, page } = launched
   const warnings: string[] = []
   page.on('console', (m) => {
@@ -210,7 +203,6 @@ test('pane 이 많은 cell 사이를 한도보다 많이 오가도 WebGL context
 
 test('MARU_DOM_RENDERER 를 주고 띄우면 보이는 터미널도 DOM 으로 그린다', async ({ launch }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   await page.waitForTimeout(500)
   expect(await renderers(page)).toEqual(['dom'])
 })

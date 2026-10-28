@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { activeTerminal, expect, restartWith, test } from './app'
+import { expect, restartWith, test } from './app'
 
 // Unicode 14 이후에 추가된 emoji(🫠 등)는 `@xterm/addon-unicode-graphemes` 의 폭 표에 없어 폭을 1로 세므로
 // 넣지 않는다.
@@ -28,7 +28,6 @@ async function cursorColumn(page: Page): Promise<number> {
 
 test('emoji·한글을 찍은 뒤 커서를 Claude Code 가 세는 열에 둔다', async ({ launch }) => {
   const { page } = await launch()
-  await activeTerminal(page)
   for (const [name, text, cells] of SAMPLES) {
     // read 가 Enter 를 기다리는 동안 커서는 글자 바로 뒤에 있다.
     await page.keyboard.type(`clear; printf '${octal(text)}'; read -rs\n`)
@@ -41,12 +40,10 @@ test('emoji 를 찍고 재시작하면 maru-pty 가 재생한 커서가 xterm �
   launch
 }) => {
   const first = await launch()
-  await activeTerminal(first.page)
   await first.page.keyboard.type(`clear; printf '${octal('👨‍👩‍👧👍🏽❤️')}'; read -rs\n`)
   await expect.poll(() => cursorColumn(first.page)).toBe(6)
 
   await restartWith(first.app)
   const again = await launch()
-  await activeTerminal(again.page)
   await expect.poll(() => cursorColumn(again.page)).toBe(6)
 })

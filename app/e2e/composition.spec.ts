@@ -1,6 +1,5 @@
 import type { CDPSession, Page } from '@playwright/test'
 import {
-  activeTerminal,
   cellSize,
   expect,
   GROUND,
@@ -88,7 +87,6 @@ for (const renderer of ['webgl', 'dom'] as const)
         [`--force-device-scale-factor=${dpr}`]
       )
       const { page } = launched
-      await activeTerminal(page)
       expect(await page.evaluate(() => devicePixelRatio)).toBe(dpr)
       await printHan(launched)
       const cell = await cellSize(page)
@@ -114,7 +112,6 @@ test('조합창은 터미널 배경에 밑줄로 두 글자 칸을 덮어 그 �
 }) => {
   const launched = await launch({ MARU_DOM_RENDERER: '' })
   const { page } = launched
-  await activeTerminal(page)
   const cell = await cellSize(page)
   const at = await cursor(page)
   const cdp = await page.context().newCDPSession(page)
@@ -141,7 +138,6 @@ test('조합창은 터미널 배경에 밑줄로 두 글자 칸을 덮어 그 �
 
 test('마지막 열에서 조합해도 조합창이 터미널 밖으로 넘치지 않는다', async ({ launch }) => {
   const { page } = await launch({ MARU_DOM_RENDERER: '' })
-  await activeTerminal(page)
   const cell = await cellSize(page)
   // CUF 999 는 커서를 마지막 열에 둔다.
   await page.keyboard.type(`clear; printf '\\033[999C'; read -rs\n`)
@@ -161,7 +157,6 @@ test('마지막 열에서 조합해도 조합창이 터미널 밖으로 넘치�
 test('한글과 영문을 설치된 D2Coding 으로 그린다', async ({ launch }) => {
   const launched = await launch({ MARU_DOM_RENDERER: '' })
   const { page } = launched
-  await activeTerminal(page)
   // 설치되지 않은 글꼴을 앞에 두면 뒤의 글꼴로 그려 폭이 같다.
   const installed = await page.evaluate(() => {
     const ctx = document.createElement('canvas').getContext('2d')!
