@@ -373,13 +373,17 @@ onBeforeUnmount(() => {
 }
 
 /* xterm.css 는 조합창을 검은 바탕에 흰 글자로 칠한다. 바탕은 테마 색으로 바꾸되 불투명하게 두어, 조합하는
-   동안 그 아래의 커서를 가린다. 조합창은 긴 조합의 끝을 보이려고 `direction: rtl` 이다. 그래서 조합창
-   폭(`minWidth`)보다 좁은 한글이 오른쪽에 붙지 않게 왼쪽에 맞춘다. */
+   동안 그 아래의 커서를 가린다. */
 .terminal-view :deep(.xterm .composition-view) {
   background: var(--ground);
   color: var(--fg);
   text-decoration: underline;
-  text-align: left;
+}
+
+/* xterm 이 조합을 고칠 때마다 inline 으로 `direction: rtl` 을 다시 넣으므로, `composition.ts` 가 `composition-fits` 를
+   붙인 조합창은 `!important` 로 ltr 로 덮는다. */
+.terminal-view :deep(.xterm .composition-view.composition-fits) {
+  direction: ltr !important;
 }
 
 /* 막대를 둥글게 스크롤바 안쪽 1px 에 그린다. 폭은 xterm 이 inline 으로 정해 투명 테두리로 줄이고, xterm 이

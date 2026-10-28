@@ -66,6 +66,9 @@ function cellCount(term: Terminal, text: string): number | undefined {
   return unicode?.getStringCellWidth?.(text)
 }
 
+/** 조합이 커서 뒤 남은 폭 안에 들어갈 때 조합창에 붙이는 class. `TerminalView.vue` 의 CSS 가 이 class 로 방향을 바꾼다. */
+const FITS = 'composition-fits'
+
 function shift(view: HTMLElement, offset: number): void {
   // 조합창을 통째로 옮기면 비켜난 만큼 그 아래의 커서가 드러난다. 그래서 배경은 글자 칸을 덮은 채 여백으로 글자만 옮긴다.
   view.style.paddingTop = offset > 0 ? `${offset}px` : ''
@@ -114,14 +117,18 @@ export function alignComposition(
             })
     }
     shift(view, offset)
-    // 조합창은 글자 폭만큼만 넓다. 한글이 두 글자 칸보다 좁으면 두 번째 글자 칸이 비어 반쪽 상자처럼 보인다.
+    // xterm 은 조합창을 글자 폭만큼 넓게 둔다. 글자 폭은 글자 칸 폭과 따로 정해지므로 한글이 두 글자 칸보다 좁을 수 있다.
+    // WebGL renderer 는 글자 칸 폭을 device px 로 내림하므로, 글꼴 크기에 따라 한글이 두 글자 칸보다 넓을 수도 있다. 그래서
+    // 조합창의 폭을 renderer 의 글자 칸 폭으로 정한다.
     // xterm 은 조합창 글자 양쪽에 U+200E 를 붙이고, `UnicodeGraphemesAddon` 은 이 글자의 폭을 1로 센다. 그래서
     // `textContent` 가 아니라 `e.data` 를 센다.
+    // xterm 이 커서 뒤 남은 폭으로 둔 `maxWidth` 가 `width` 보다 앞서므로, 마지막 열에서도 조합창이 터미널 밖으로 넘치지 않는다.
     const cells = cellCount(term, e.data)
-    // xterm 은 조합창이 터미널 밖으로 넘치지 않게 `maxWidth` 를 커서 뒤 남은 폭으로 둔다. CSS 에서는 `min-width` 가
-    // `max-width` 보다 크면 `min-width` 를 따르므로, 남은 폭보다 넓게 두지 않는다.
-    const max = parseFloat(view.style.maxWidth)
     const width = cells ? cells * dims.css.cell.width : 0
-    view.style.minWidth = width ? `${Number.isFinite(max) ? Math.min(width, max) : width}px` : ''
+    view.style.width = width ? `${width}px` : ''
+    // xterm 은 긴 조합의 끝을 보이려고 조합창을 `direction: rtl` 로 둔다. 그러면 조합창보다 넓은 글자가 왼쪽으로 넘쳐, 확정되면
+    // 그려질 자리보다 왼쪽에 그려진다. 그래서 조합이 남은 폭 안에 들어가면 ltr 로 두어 넘친 끝을 오른쪽에서 자른다.
+    const max = parseFloat(view.style.maxWidth)
+    view.classList.toggle(FITS, width > 0 && (Number.isNaN(max) || width <= max))
   })
 }
