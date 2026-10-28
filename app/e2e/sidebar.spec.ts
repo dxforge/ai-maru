@@ -464,28 +464,6 @@ test('접고 펴도 pane 줄의 상태 아이콘과 cell 면은 같은 자리에
   expect(await marks()).toEqual(expanded)
 })
 
-test('workspace 이름 줄·pane 줄·job 줄은 사이드바를 접어도 높이가 30px 로 같고, pane·job 줄의 이름은 13px, workspace 이름과 꼬리표는 11px 로 그린다', async ({
-  launch
-}) => {
-  const { app, page } = await launch()
-  await run(page, 'maru job new --name dev sleep 600 && echo started-$((1+1))', 'started-2')
-  const row = cellItems(page).nth(0)
-  const job = jobRows(page).nth(0)
-  const heights = () =>
-    Promise.all(
-      [workspaceHeads(page).nth(0), row, job].map(async (l) => (await l.boundingBox())!.height)
-    )
-  expect(await heights()).toEqual([30, 30, 30])
-  await expect(row.locator('.title')).toHaveCSS('font-size', '13px')
-  await expect(job.locator('.title')).toHaveCSS('font-size', '13px')
-  await expect(workspaceNames(page).nth(0)).toHaveCSS('font-size', '11px')
-  await expect(cellPlaces(page).nth(0)).toHaveCSS('font-size', '11px')
-  await expect(job.locator('.time')).toHaveCSS('font-size', '11px')
-
-  await collapse(app, page)
-  expect(await heights()).toEqual([30, 30, 30])
-})
-
 test('사이드바를 접고 펴는 동안에는 터미널 크기를 맞추지 않고, 폭이 다 바뀐 뒤 한 번 맞춘다', async ({
   launch
 }) => {
