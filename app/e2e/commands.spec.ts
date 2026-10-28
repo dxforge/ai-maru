@@ -57,6 +57,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
   expect(menus.file).toEqual([
     ['new-workspace', 'New Workspace', 'Command+N'],
     ['new-cell', 'New Cell', 'Command+T'],
+    ['launcher', 'Open Launcher', 'Command+P'],
     ['split-right', 'Split Right', 'Command+D'],
     ['split-down', 'Split Down', 'Shift+Command+D'],
     ['close-pane', 'Close Pane', 'Command+W'],
@@ -334,6 +335,7 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
   await expect(items(page)).toHaveText([
     'New Workspace⌘N',
     'New Cell⌘T',
+    'Open Launcher⌘P',
     'Split Right⌘D',
     'Split Down⇧⌘D',
     'Close Pane⌘W',

@@ -6,7 +6,7 @@ import {
   requireCwd,
   type Handlers
 } from './cli-server'
-import type { PtyExit } from './pty'
+import type { PtyExit } from '../shared/pty'
 import { isPtyId } from '../shared/pty'
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/

@@ -4,6 +4,7 @@ import type { ConfigRead } from '../shared/config'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
 import type { JobView } from '../shared/job'
+import type { LaunchResult, LauncherState } from '../shared/launcher'
 import type { LinkOpenResult } from '../shared/link'
 import type { CellNewRequest, CloseAnswer, PaneNewRequest, PaneReply } from '../shared/pane'
 import type { ScreenState, ViewPrefs } from '../shared/screen'
@@ -92,6 +93,13 @@ const api = {
     if (lastConfig) cb(lastConfig)
   },
   restart: (): void => ipcRenderer.send('app:restart'),
+  launcherState: (): Promise<LauncherState> => ipcRenderer.invoke('launcher:read'),
+  /** `dir` 이 디렉토리면 런처의 최근 목록 맨 앞에 두고 `command` 를 기억한다. 아니면 이유를 준다. */
+  launched: (dir: string, command: string): Promise<LaunchResult> =>
+    ipcRenderer.invoke('launcher:launched', dir, command),
+  forgetLaunch: (dir: string): Promise<LauncherState> => ipcRenderer.invoke('launcher:forget', dir),
+  /** `dir` 의 하위 디렉토리 이름. 읽지 못하면 빈 목록이다. */
+  listDirs: (dir: string): Promise<string[]> => ipcRenderer.invoke('launcher:dirs', dir),
   /** pty 에서 셸 말고 도는 프로그램이 있으면 main 이 확인 창을 띄운다. */
   confirmClosePane: (ptyId: string): Promise<CloseAnswer> =>
     ipcRenderer.invoke('pane:confirm-close', ptyId),

@@ -327,6 +327,7 @@ impl Pty {
         });
 
         let mut child = spawned.child;
+        let screen_e = screen.clone();
         std::thread::spawn(move || {
             let exit = match child.wait() {
                 Ok(s) => Exit {
@@ -339,6 +340,11 @@ impl Pty {
                 },
             };
             let _ = drained_rx.recv_timeout(DRAIN_AFTER_EXIT);
+            let mut screen = screen_e.lock().unwrap();
+            if screen.pane.command_exited(exit.code, exit.signal) {
+                screen.publish_state();
+            }
+            drop(screen);
             let _ = exit_tx.send(Some(exit));
         });
 

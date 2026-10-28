@@ -2,6 +2,7 @@ import { readonly, shallowRef } from 'vue'
 import type { ConfigRead } from '../../../shared/config'
 import type { Toast } from '../toast/store'
 import { DEFAULT_THEME, sameThemeChoice } from '../themes'
+import { DEFAULT_LAUNCHER, sameLauncher } from './launcher'
 import { DEFAULT_LAYOUT, sameLayout } from './layout'
 import { DEFAULT_FONT, parseConfig, sameFont } from './terminal'
 
@@ -20,6 +21,7 @@ export function createConfig(first: ConfigRead, report: (r: ConfigReport) => voi
   const font = shallowRef(DEFAULT_FONT)
   const theme = shallowRef(DEFAULT_THEME)
   const layout = shallowRef(DEFAULT_LAYOUT)
+  const launcher = shallowRef(DEFAULT_LAUNCHER)
   let applied = false
 
   function apply(read: ConfigRead): void {
@@ -34,6 +36,8 @@ export function createConfig(first: ConfigRead, report: (r: ConfigReport) => voi
       if (!sameThemeChoice(theme.value, nextTheme)) theme.value = nextTheme
       const nextLayout = ok?.layout ?? DEFAULT_LAYOUT
       if (!sameLayout(layout.value, nextLayout)) layout.value = nextLayout
+      const nextLauncher = ok?.launcher ?? DEFAULT_LAUNCHER
+      if (!sameLauncher(launcher.value, nextLauncher)) launcher.value = nextLauncher
     }
     report({
       path: read.path,
@@ -46,7 +50,13 @@ export function createConfig(first: ConfigRead, report: (r: ConfigReport) => voi
   }
 
   apply(first)
-  return { font: readonly(font), theme: readonly(theme), layout: readonly(layout), apply }
+  return {
+    font: readonly(font),
+    theme: readonly(theme),
+    layout: readonly(layout),
+    launcher: readonly(launcher),
+    apply
+  }
 }
 
 export function configToast(r: ConfigReport, missing: string[], detail: string): Toast | null {

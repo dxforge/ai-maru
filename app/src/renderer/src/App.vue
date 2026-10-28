@@ -33,12 +33,14 @@ import { createPtyStates, syncPtyStates } from './pty/states'
 import { syncJobs } from './workspace/jobs'
 import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
+import LauncherPalette, { type Launch } from './components/LauncherPalette.vue'
 import PaneHeader from './components/PaneHeader.vue'
 import StatusIcon from './components/StatusIcon.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import TerminalView from './components/TerminalView.vue'
 import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
+import { commandArgv } from './config/launcher'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { activeTheme, windowTheme } from './themes'
@@ -679,13 +681,27 @@ function keepHorizontalScroll(e: WheelEvent): void {
   if (viewMode.value === 'columns' && Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.stopPropagation()
 }
 
-const paletteOpen = ref(false)
+type Overlay = 'palette' | 'launcher'
+/** 떠 있는 명령 팔레트나 런처. 하나를 열면 다른 하나는 터미널에 포커스를 돌려주지 않고 바로 닫힌다. */
+const overlay = ref<Overlay | null>(null)
 const palette = useTemplateRef<InstanceType<typeof CommandPalette>>('palette')
+const launcher = useTemplateRef<InstanceType<typeof LauncherPalette>>('launcher')
 
-function closePalette(): void {
-  if (!paletteOpen.value) return
-  paletteOpen.value = false
+/**
+ * `which` 를 주면 그것이 떠 있을 때만 닫는다. 팔레트와 런처를 바꿔 열면 닫히는 쪽이 보낸 close 가 늦게 와서 새로 연
+ * 쪽을 닫을 수 있기 때문이다.
+ */
+function closeOverlay(which?: Overlay): void {
+  if (overlay.value === null || (which && overlay.value !== which)) return
+  overlay.value = null
   void focusSelected()
+}
+
+function launch({ dir, command, where }: Launch): void {
+  const pane = { command: commandArgv(command), keep: true } as const
+  if (where === 'cell') workspaces.openCell(dir, pane)
+  else workspaces.open(dir, pane)
+  closeOverlay()
 }
 
 const handlers: Record<CommandId, () => void> = {
@@ -701,8 +717,12 @@ const handlers: Record<CommandId, () => void> = {
   'focus-pane-right': () => workspaces.moveFocus('right', widths.value),
   'focus-pane-up': () => workspaces.moveFocus('up', widths.value),
   'focus-pane-down': () => workspaces.moveFocus('down', widths.value),
+  launcher: () => {
+    overlay.value = 'launcher'
+    launcher.value?.focus()
+  },
   'command-palette': () => {
-    paletteOpen.value = true
+    overlay.value = 'palette'
     palette.value?.focus()
   },
   'toggle-sidebar': () => {
@@ -721,8 +741,10 @@ const handlers: Record<CommandId, () => void> = {
   restart: window.maru.restart
 }
 
+// 팔레트·런처를 부르는 명령은 여기서 닫지 않는다. 같은 쪽을 다시 부르면 입력을 그대로 두고 포커스만 되찾고, 다른 쪽을
+// 부르면 `overlay` 가 바뀌며 떠 있던 쪽이 닫히기 때문이다.
 function runCommand(id: CommandId): void {
-  if (id !== 'command-palette') closePalette()
+  if (id !== 'command-palette' && id !== 'launcher') closeOverlay()
   handlers[id]()
 }
 window.maru.onCommand(runCommand)
@@ -854,6 +876,7 @@ void window.maru.restoreScreen().then((s) => {
                 :start-dir="p.startDir"
                 :command="p.command"
                 :attach="p.attach"
+                :keep="p.keep"
                 :active="active"
                 :shown="selected || viewMode === 'columns'"
                 :font="font"
@@ -886,11 +909,20 @@ void window.maru.restoreScreen().then((s) => {
     />
     <ToastStack :toasts="toasts.list.value" :width="toastWidth" @close="toasts.close" />
     <CommandPalette
-      v-if="paletteOpen"
+      v-if="overlay === 'palette'"
       ref="palette"
       :position="config.layout.value.palette"
       @run="runCommand"
-      @close="closePalette"
+      @close="closeOverlay('palette')"
+    />
+    <LauncherPalette
+      v-else-if="overlay === 'launcher'"
+      ref="launcher"
+      :position="config.layout.value.palette"
+      :commands="config.launcher.value.commands"
+      :home="home"
+      @launch="launch"
+      @close="closeOverlay('launcher')"
     />
   </div>
 </template>

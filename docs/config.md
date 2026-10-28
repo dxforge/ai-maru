@@ -13,6 +13,9 @@ theme = "Catppuccin Mocha"
 header = "top"
 palette = "top"
 column-cols = 110
+
+[launcher]
+commands = ["claude", "codex"]
 ```
 
 `MARU_CONFIG_DIR` 환경 변수를 주면 `~/.ai-maru` 대신 그 폴더의 `config.toml` 을 읽는다.
@@ -28,8 +31,9 @@ column-cols = 110
 | `terminal.line-height` | `1.2` | 1–2 의 숫자. 글자 높이에 곱한 값이 행 높이다. 글자 높이는 글꼴이 정하고 글꼴 크기보다 조금 크다(기본 글꼴 14px 이면 15px). |
 | `terminal.theme` | 없음(Ghostty 의 기본 색) | 테마 이름, 또는 라이트·다크 모드마다 다른 테마를 적는 `{ light = "…", dark = "…" }`. |
 | `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 cell 헤더를 pane·cell 의 아래에 둘지 위에 둘지. |
-| `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트를 창의 아래에 띄울지 위에 띄울지. |
+| `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트와 런처를 창의 아래에 띄울지 위에 띄울지. |
 | `layout.column-cols` | `80` | 20–500 의 정수(열 수). columns 보기에서 pane 하나가 받는 터미널 열 수. |
+| `launcher.commands` | `["claude", "codex"]` | 비지 않은 문자열 배열. 런처(⌘P)가 띄울 명령. |
 
 pane 헤더와 cell 헤더도 터미널의 글꼴과 크기를 따른다.
 
@@ -44,6 +48,13 @@ Claude Code 의 입력창은 터미널 아래에 있어 시선이 아래에 머�
 columns 보기에서 cell 은 pane 하나가 이 열 수를 받는 폭으로 그려진다. 좌우로 나눈 cell 은 pane 수만큼 넓어진다. 터미널 열 수라서 글꼴 크기를 바꾸면 픽셀 폭도 바뀐다.
 
 Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-cols`·110·144 사이에서 옮긴다. 110 과 144 는 Claude Code 가 `/diff` 패널과 docked pane 을 그리기 시작하는 열 수다. 두 명령으로 폭을 바꾼 cell 은 `column-cols` 가 바뀌어도 그 폭을 지킨다. 바꾸지 않은 cell 은 저장하면 바로 새 폭이 된다. 두 명령으로 `column-cols` 와 같은 폭에 돌아온 cell 은 다시 `column-cols` 를 따른다. 바꾼 폭은 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다.
+
+### `launcher`
+
+런처(⌘P, File 메뉴의 Open Launcher)는 디렉토리를 골라 `commands` 의 명령을 그 디렉토리에서 띄운다. Enter 는 새 workspace 에, ⌘Enter 는 지금 workspace 의 새 cell 에 띄운다. Tab·⇧Tab 이 띄울 명령을 바꾸고, 런처는 마지막으로 띄운 명령을 다음에 열 때 고른다.
+
+항목 하나가 명령 하나다. 앱은 항목을 공백으로 나눠 인자로 넘기고 따옴표는 풀지 않는다(`"claude --model opus"` 는 `claude`·`--model`·`opus`). 로그인 셸이 sh·bash·zsh·ksh·dash 면 명령은 그 셸의 대화형 모드(`-i -c`)를 거쳐 뜨므로, 터미널에서 친 것과 같이 rc 가 정한 PATH·함수를 쓴다. 그 밖의 셸이면 `/bin/sh -c` 로 뜬다. 명령이 0 으로 끝나면 pane 이 닫히고, 0 이 아닌 코드나 시그널로 끝나면 pane 이 출력과 `[exited with code N]`(시그널이면 `[exited with signal N]`)을 남긴다. PATH 에 없는 명령은 셸이 127 로 끝나므로 pane 에 오류가 남는다.
+런처의 최근 목록은 `config.toml` 이 아니라 앱 데이터 폴더의 `launcher.json` 에 앱이 쓴다. 런처로 연 디렉토리만 들어가고, 런처에서 ⌘⌫ 로 고른 행을 지운다.
 
 ### `font-family`
 
@@ -76,7 +87,7 @@ theme = { light = "Catppuccin Latte", dark = "Catppuccin Mocha" }
 ### 범위를 벗어나거나 잘못 적은 값
 
 - 범위를 벗어난 숫자는 가까운 끝값으로 맞춘다(`font-size = 40` 이면 32, `column-cols = 10` 이면 20).
-- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `column-cols` 에 정수가 아닌 값(`100.5`)을 적어도 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적거나 `theme` 에 모르는 이름을 적어도 기본값을 쓴다.
+- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `column-cols` 에 정수가 아닌 값(`100.5`)을 적어도 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적거나 `theme` 에 모르는 이름을 적어도 기본값을 쓴다. `launcher.commands` 가 배열이 아니거나 비었거나, 문자열이 아닌 항목이나 빈(공백뿐인) 문자열이 있어도 기본값을 쓴다.
 - 모르는 키는 무시한다.
 
 ## 고치면 바로 적용된다

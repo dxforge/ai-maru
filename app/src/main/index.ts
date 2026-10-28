@@ -33,6 +33,7 @@ import { createMonitor } from './monitor'
 import { isDevReload } from './navigation'
 import { createPanes } from './pane'
 import { createJobs, JOB_REPLY_MS } from './job'
+import { createLauncherStore, listDirs } from './launcher'
 import { openLink } from './links'
 import { createPortWatch, readPorts } from './ports'
 import {
@@ -490,6 +491,19 @@ function start(): void {
     return screen
   })
   ipcMain.on('screen:prefs', (event) => (event.returnValue = viewPrefs()))
+  const launcher = createLauncherStore(join(userData, 'launcher.json'))
+  ipcMain.handle('launcher:read', () => launcher.read())
+  ipcMain.handle('launcher:launched', (_event, dir: unknown, command: unknown) =>
+    typeof dir === 'string' && typeof command === 'string'
+      ? launcher.launched(dir, command)
+      : { ok: false, reason: 'not a directory path' }
+  )
+  ipcMain.handle('launcher:forget', (_event, dir: unknown) =>
+    typeof dir === 'string' ? launcher.forget(dir) : launcher.read()
+  )
+  ipcMain.handle('launcher:dirs', (_event, dir: unknown) =>
+    typeof dir === 'string' ? listDirs(dir) : []
+  )
   const configPath = configFile()
   let config = readConfigFile(configPath)
   ipcMain.on('config:read', (event) => (event.returnValue = config))
@@ -647,7 +661,7 @@ function start(): void {
     contents.once('destroyed', () => opened.delete(contents.id))
   })
   ipcMain.on('pty:open', (event, key: string, open: PtyOpen) => {
-    const { id, cell, cwd, command, attach } = open
+    const { id, cell, cwd, command, attach, keep } = open
     const keys = opened.get(event.sender.id) ?? new Set<string>()
     opened.set(event.sender.id, keys.add(key))
     ptyCells.open(key, id, cell)
@@ -658,6 +672,7 @@ function start(): void {
       cwd,
       command,
       attach,
+      keep,
       dir: ptyDir(),
       bin: ptyBin(),
       setup

@@ -71,7 +71,8 @@ describe('parseScreen', () => {
     ['pane 폭이 숫자가 아님', (s) => (s.workspaces[0].cells[0].paneCols = '110')],
     ['pane 폭이 정수가 아님', (s) => (s.workspaces[0].cells[0].paneCols = 110.5)],
     ['pane 폭이 0', (s) => (s.workspaces[0].cells[0].paneCols = 0)],
-    ['pane 폭이 음수', (s) => (s.workspaces[0].cells[0].paneCols = -5)]
+    ['pane 폭이 음수', (s) => (s.workspaces[0].cells[0].paneCols = -5)],
+    ['keep 이 true 가 아님', (s) => (s.workspaces[0].cells[0].panes[1].keep = false)]
   ])('%s 이면 null', (_, spoil) => {
     const s = clone()
     spoil(s)
@@ -82,6 +83,13 @@ describe('parseScreen', () => {
     const s = clone() as ScreenState
     s.workspaces[0].cells[0].fontSize = 16.5
     expect(parseScreen(s)!.workspaces[0].cells[0].fontSize).toBe(16.5)
+  })
+
+  it('pane 의 keep 은 없어도 되고, 있으면 그대로 돌려준다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].cells[0].panes[1].keep = true
+    expect(parseScreen(s)!.workspaces[0].cells[0].panes[1].keep).toBe(true)
+    expect(parseScreen(clone())!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('keep')
   })
 
   it('cell 의 pane 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {

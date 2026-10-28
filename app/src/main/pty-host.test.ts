@@ -36,12 +36,13 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
 
 const dir = '/tmp/s'
 
-function open(id: string, attach = false): ReturnType<typeof fakePort> {
+function open(id: string, attach = false, keep?: boolean): ReturnType<typeof fakePort> {
   const port = fakePort()
   const req: OpenRequest = {
     type: 'open',
     id,
     attach,
+    keep,
     dir,
     bin: 'maru-pty',
     setup: {} as never
@@ -101,6 +102,15 @@ describe('pty host', () => {
     await vi.waitFor(() => expect(port.messages).toContain(null))
     expect(port.messages).toContainEqual({ type: 'exit', code: null, signal: null })
     expect(pty.killPty).toHaveBeenCalledWith(dir, 'p-00000001')
+  })
+
+  it('keep 으로 연 pty 만 --keep 으로 띄운다', async () => {
+    pty.spawnPty.mockResolvedValue('ended')
+    const kept = open('p-00000001', false, true)
+    const plain = open('p-00000002')
+    await vi.waitFor(() => expect(kept.messages).toContain(null))
+    await vi.waitFor(() => expect(plain.messages).toContain(null))
+    expect(pty.spawnPty.mock.calls.map((c) => c[6])).toEqual([{ keep: true }, { keep: undefined }])
   })
 
   it('띄우자마자 끝난 pty 는 끄지 않는다', async () => {

@@ -82,3 +82,94 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* 사이드바와 Canvas 헤더의 drag 영역은 그 위에 덮인 요소와 상관없이 클릭을 창 끌기로 가져가므로, 팔레트를 no-drag 로 둔다. */
+.palette-backdrop {
+  -webkit-app-region: no-drag;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+
+.palette-backdrop.bottom {
+  justify-content: flex-end;
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(500px, calc(100% - 32px));
+  max-height: calc(100% - 16px);
+  margin: 8px auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--raised);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 50%);
+  color: var(--fg);
+  font:
+    13px system-ui,
+    sans-serif;
+}
+
+.palette .query {
+  flex: none;
+  box-sizing: border-box;
+  width: calc(100% - 12px);
+  margin: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  outline: none;
+  background: var(--ground);
+  color: inherit;
+  font: inherit;
+}
+
+.palette .query:focus {
+  border-color: var(--accent);
+}
+
+.palette .list {
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.bottom .palette,
+.bottom .palette .list {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.bottom .palette .list {
+  padding: 4px 0 0;
+}
+
+.palette .item,
+.palette .empty {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 12px;
+}
+
+.palette .item {
+  cursor: pointer;
+}
+
+.palette .item.selected {
+  background: var(--selected);
+}
+
+.palette kbd {
+  font: inherit;
+  color: var(--muted);
+}
+
+.palette .empty {
+  color: var(--muted);
+}

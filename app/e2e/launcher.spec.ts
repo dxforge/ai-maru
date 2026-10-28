@@ -1,0 +1,546 @@
+import { chmodSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { ElectronApplication, Page } from '@playwright/test'
+import {
+  activeHeader,
+  activeTerminal,
+  cellGroups,
+  cellItems,
+  clickMenu,
+  dialogCalls,
+  expect,
+  openPalette,
+  panes,
+  restartWith,
+  rows,
+  run,
+  stubDialog,
+  test,
+  workspaceNames,
+  writeConfig,
+  type Launched
+} from './app'
+
+function launcher(page: Page) {
+  return page.locator('.palette.launcher')
+}
+
+function items(page: Page) {
+  return launcher(page).locator('.item')
+}
+
+function query(page: Page) {
+  return launcher(page).locator('.query')
+}
+
+function command(page: Page) {
+  return launcher(page).locator('.command')
+}
+
+async function delayHandler(app: ElectronApplication, channel: string, ms = 800): Promise<void> {
+  await app.evaluate(
+    ({ ipcMain }, [channel, ms]) => {
+      type Handler = (...args: unknown[]) => unknown
+      const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, Handler> })
+        ._invokeHandlers
+      const original = handlers.get(channel)!
+      ipcMain.removeHandler(channel)
+      ipcMain.handle(channel, async (...args) => {
+        await new Promise((r) => setTimeout(r, ms))
+        return original(...args)
+      })
+    },
+    [channel, ms] as const
+  )
+}
+
+function writeLauncherState(dataDir: string, recent: string[], command: string): void {
+  writeFileSync(join(dataDir, 'launcher.json'), JSON.stringify({ recent, command }))
+}
+
+async function finish(page: Page): Promise<void> {
+  await page.keyboard.type('0\n')
+  await expect(cellItems(page)).toHaveCount(1)
+}
+
+async function openLauncher({ app, page }: Launched): Promise<void> {
+  await clickMenu(app, 'launcher')
+  await expect(query(page)).toBeFocused()
+}
+
+function tool(dataDir: string): string {
+  const bin = join(dataDir, 'tool')
+  writeFileSync(bin, '#!/bin/sh\necho "$1-ran-in-$(pwd -P)"\nread code\nexit "$code"\n')
+  chmodSync(bin, 0o755)
+  return bin
+}
+
+function useTool(dataDir: string, config = ''): [string, string] {
+  const bin = tool(dataDir)
+  const commands: [string, string] = [`${bin} A`, `${bin} B`]
+  writeConfig(dataDir, `${config}[launcher]\ncommands = ${JSON.stringify(commands)}\n`)
+  return commands
+}
+
+function project(dataDir: string, name: string): string {
+  const dir = join(dataDir, name)
+  mkdirSync(dir, { recursive: true })
+  return realpathSync(dir)
+}
+
+async function launchAt(launched: Launched, dir: string, key = 'Enter'): Promise<void> {
+  await openLauncher(launched)
+  await launched.page.keyboard.type(dir)
+  await launched.page.keyboard.press(key)
+  await expect(launcher(launched.page)).toHaveCount(0)
+  await activeTerminal(launched.page)
+}
+
+test('File 메뉴와 팔레트의 Open Launcher 가 런처를 열고, Esc 로 닫으면 키는 터미널로 간다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await openLauncher(launched)
+  await page.keyboard.press('Escape')
+  await expect(launcher(page)).toHaveCount(0)
+  await run(page, 'echo back-$((1+1))', 'back-2')
+
+  await openPalette(launched)
+  await page.keyboard.type('launcher')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.palette:not(.launcher)')).toHaveCount(0)
+  await expect(query(page)).toBeFocused()
+})
+
+test('런처가 열린 채 메뉴의 다른 명령을 부르면 런처가 닫히고, 팔레트를 부르면 런처 대신 팔레트가 뜬다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await openLauncher(launched)
+  await clickMenu(app, 'new-workspace')
+  await expect(launcher(page)).toHaveCount(0)
+  await expect(cellItems(page)).toHaveCount(2)
+
+  await openLauncher(launched)
+  await openPalette(launched)
+  await expect(launcher(page)).toHaveCount(0)
+})
+
+test('Enter 는 고른 디렉토리에서 명령을 새 workspace 에 띄우고, 명령이 0 으로 끝나면 pane·cell·workspace 가 닫힌다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { page } = launched
+  await launchAt(launched, dir)
+  await expect(cellItems(page)).toHaveCount(2)
+  await expect(workspaceNames(page)).toHaveCount(2)
+  await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
+  await expect(rows(page)).toContainText(`A-ran-in-${dir}`)
+
+  await finish(page)
+  await expect(workspaceNames(page)).toHaveCount(1)
+  await run(page, 'echo left-$((1+1))', 'left-2')
+})
+
+test('⌘Enter 는 지금 workspace 의 고른 cell 바로 뒤에 새 cell 로 띄운다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { app, page } = launched
+  await clickMenu(app, 'new-cell')
+  await expect(cellItems(page)).toHaveCount(2)
+  await clickMenu(app, 'previous-cell')
+  await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
+
+  await launchAt(launched, dir, 'Meta+Enter')
+  await expect(cellItems(page)).toHaveCount(3)
+  await expect(workspaceNames(page)).toHaveCount(1)
+  await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
+  await expect(rows(page)).toContainText(`A-ran-in-${dir}`)
+})
+
+test('workspace 가 하나도 없으면 ⌘Enter 도 새 workspace 에 띄운다', async ({ launch, dataDir }) => {
+  useTool(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { page } = launched
+  await page.keyboard.type('exit\n')
+  await expect(workspaceNames(page)).toHaveCount(0)
+  await launchAt(launched, dir, 'Meta+Enter')
+  await expect(workspaceNames(page)).toHaveCount(1)
+  await expect(rows(page)).toContainText(`A-ran-in-${dir}`)
+})
+
+test('명령이 0 이 아닌 코드로 끝나면 pane 이 화면을 남긴 채 종료 코드를 보이고, ⌘W 는 묻지 않고 닫는다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { app, page } = launched
+  await launchAt(launched, dir)
+  await expect(rows(page)).toContainText('A-ran-in-')
+  await page.keyboard.type('3\n')
+  await expect(rows(page)).toContainText('[exited with code 3]')
+  await expect(rows(page)).toContainText(`A-ran-in-${dir}`)
+  await expect(cellItems(page)).toHaveCount(2)
+  await expect(activeHeader(page).locator('.command-tail')).toHaveText('3')
+  await expect(activeHeader(page)).toHaveClass(/command-failed/)
+
+  await stubDialog(app, 1)
+  await clickMenu(app, 'close-pane')
+  await expect(cellItems(page)).toHaveCount(1)
+  expect(await dialogCalls(app)).toEqual([])
+})
+
+test('커서를 그린 내용 위에 두고 끝난 명령의 종료 코드는 그 내용을 덮지 않고 마지막 줄 아래에 쓴다', async ({
+  launch,
+  dataDir
+}) => {
+  const bin = join(dataDir, 'tui')
+  writeFileSync(bin, "#!/bin/sh\nprintf 'top\\ninput\\nstatus-bar\\n\\033[2A'\nexit 3\n")
+  chmodSync(bin, 0o755)
+  writeConfig(dataDir, `[launcher]\ncommands = ["${bin}"]\n`)
+  const dir = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { page } = launched
+  await launchAt(launched, dir)
+  await expect(rows(page)).toContainText('[exited with code 3]')
+  const lines = (await rows(page).innerText()).split('\n').map((l) => l.trim())
+  const status = lines.indexOf('status-bar')
+  expect(status).toBeGreaterThan(lines.indexOf('input'))
+  expect(lines.indexOf('[exited with code 3]')).toBe(status + 1)
+})
+
+test('PATH 에 없는 명령은 셸의 오류와 종료 코드 127 을 남긴다', async ({ launch, dataDir }) => {
+  writeConfig(dataDir, '[launcher]\ncommands = ["no-such-command-xyz"]\n')
+  const dir = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { page } = launched
+  await launchAt(launched, dir)
+  await expect(rows(page)).toContainText('[exited with code 127]')
+  await expect(rows(page)).toContainText('no-such-command-xyz')
+  await expect(cellItems(page)).toHaveCount(2)
+})
+
+test('최근 목록은 런처로 연 디렉토리를 최근 순으로 보이고, 친 단어로 거르며, ⌘⌫ 로 지운 행은 다시 띄워도 없다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const b = project(dataDir, 'proj-b')
+  const first = await launch()
+  await launchAt(first, a)
+  await finish(first.page)
+  await launchAt(first, b)
+  await finish(first.page)
+
+  await openLauncher(first)
+  await expect(items(first.page)).toHaveText([b, a])
+  await first.page.keyboard.type('PROJ-A')
+  await expect(items(first.page)).toHaveText([a])
+  await first.page.keyboard.press('Meta+Backspace')
+  await expect(items(first.page)).toHaveCount(0)
+  await expect(query(first.page)).toHaveValue('PROJ-A')
+  await expect(launcher(first.page)).toContainText('No matching directories')
+  await first.app.close()
+
+  const again = await launch()
+  await openLauncher(again)
+  await expect(items(again.page)).toHaveText([b])
+})
+
+test('최근 목록이 비었으면 그렇다고 보이고, 입력이 경로가 아니면 Enter 는 아무것도 띄우지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await openLauncher(launched)
+  await expect(launcher(page)).toContainText('No recent directories')
+  await page.keyboard.type('anything')
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toBeVisible()
+  await expect(cellItems(page)).toHaveCount(1)
+})
+
+test('/ 로 시작한 입력은 하위 디렉토리를 후보로 보이고, → 는 고른 후보로 한 단계 들어가며, 숨은 디렉토리는 . 을 칠 때만 보인다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const tree = project(dataDir, 'tree')
+  for (const name of ['alpha', 'Beta', '.hidden', 'alpha/inner']) mkdirSync(join(tree, name))
+  writeFileSync(join(tree, 'file'), '')
+  const launched = await launch()
+  const { page } = launched
+  await openLauncher(launched)
+  await page.keyboard.type(`${tree}/`)
+  await expect(items(page)).toHaveText([`${tree}/alpha`, `${tree}/Beta`])
+  await page.keyboard.type('b')
+  await expect(items(page)).toHaveText([`${tree}/Beta`])
+  await page.keyboard.press('Backspace')
+  await page.keyboard.type('.')
+  await expect(items(page)).toHaveText([`${tree}/.hidden`])
+  await page.keyboard.press('Backspace')
+  await page.keyboard.type('al')
+  // 커서가 입력 끝이 아니면 → 는 커서만 옮긴다.
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowRight')
+  await expect(query(page)).toHaveValue(`${tree}/al`)
+  await page.keyboard.press('ArrowRight')
+  await expect(query(page)).toHaveValue(`${tree}/alpha/`)
+  await expect(items(page)).toHaveText([`${tree}/alpha/inner`])
+
+  // 후보 행에서 ⌘⌫ 는 행을 지우지 않고 입력을 지운다.
+  await page.keyboard.press('Meta+Backspace')
+  await expect(query(page)).toHaveValue('')
+
+  await page.keyboard.type(`${tree}/alpha/in`)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await activeTerminal(page)
+  await expect(rows(page)).toContainText(`A-ran-in-${tree}/alpha/inner`)
+})
+
+test('후보가 오기 전에 누른 Enter 는 후보를 기다려 고른 후보를 연다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const tree = project(dataDir, 'tree')
+  mkdirSync(join(tree, 'alpha'))
+  const launched = await launch()
+  const { app, page } = launched
+  await delayHandler(app, 'launcher:dirs')
+  await openLauncher(launched)
+  await page.keyboard.type(`${tree}/al`)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await activeTerminal(page)
+  await expect(rows(page)).toContainText(`A-ran-in-${tree}/alpha`)
+})
+
+test('~ 로 시작한 입력은 홈 아래의 디렉토리를 ~ 로 줄여 보이고, 연 디렉토리도 목록에 ~ 로 보인다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const home = project(dataDir, 'home')
+  mkdirSync(join(home, 'code'))
+  const launched = await launch({ HOME: home })
+  const { page } = launched
+  await openLauncher(launched)
+  await page.keyboard.type('~/c')
+  await expect(items(page)).toHaveText(['~/code'])
+  await page.keyboard.press('Enter')
+  await activeTerminal(page)
+  await expect(rows(page)).toContainText(`A-ran-in-${home}/code`)
+  await finish(page)
+
+  await openLauncher(launched)
+  await expect(items(page)).toHaveText(['~/code'])
+})
+
+test('없는 디렉토리는 띄우지 않고 런처 안에 이유를 보이며, 최근 목록의 행은 지우지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const gone = project(dataDir, 'gone')
+  const launched = await launch()
+  const { page } = launched
+  await launchAt(launched, gone)
+  await finish(page)
+  rmSync(gone, { recursive: true })
+
+  await openLauncher(launched)
+  await expect(items(page)).toHaveText([gone])
+  await page.keyboard.press('Enter')
+  await expect(launcher(page).locator('.problem')).toHaveText(`No such directory: ${gone}`)
+  await expect(items(page)).toHaveText([gone])
+  await expect(cellItems(page)).toHaveCount(1)
+
+  const file = join(dataDir, 'plain')
+  writeFileSync(file, '')
+  await page.keyboard.type(file)
+  await expect(launcher(page).locator('.problem')).toHaveCount(0)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page).locator('.problem')).toHaveText(`Not a directory: ${file}`)
+  await expect(cellItems(page)).toHaveCount(1)
+})
+
+test('Tab·⇧Tab 은 띄울 명령을 돌리고, 마지막으로 띄운 명령을 다음에 열 때와 재시작 뒤에도 고른다', async ({
+  launch,
+  dataDir
+}) => {
+  const [a, b] = useTool(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  const first = await launch()
+  const { app, page } = first
+  await openLauncher(first)
+  await expect(command(page)).toHaveText(a)
+  await page.keyboard.press('Tab')
+  await expect(command(page)).toHaveText(b)
+  await page.keyboard.press('Tab')
+  await expect(command(page)).toHaveText(a)
+  await page.keyboard.press('Shift+Tab')
+  await expect(command(page)).toHaveText(b)
+  await expect(query(page)).toBeFocused()
+  await page.keyboard.type(dir)
+  await page.keyboard.press('Enter')
+  await activeTerminal(page)
+  await expect(rows(page)).toContainText(`B-ran-in-${dir}`)
+
+  await openLauncher(first)
+  await expect(command(page)).toHaveText(b)
+  await page.keyboard.press('Escape')
+  await restartWith(app)
+
+  const again = await launch()
+  await openLauncher(again)
+  await expect(command(again.page)).toHaveText(b)
+})
+
+test('재시작 뒤에도 실패한 채 남긴 pane 은 화면과 종료 코드를 보이고, 런처의 목록이 남는다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  const first = await launch()
+  await launchAt(first, dir)
+  await first.page.keyboard.type('4\n')
+  await expect(rows(first.page)).toContainText('[exited with code 4]')
+  await restartWith(first.app)
+
+  const again = await launch()
+  const { app, page } = again
+  await expect(cellItems(page)).toHaveCount(2)
+  const kept = panes(page).filter({ hasText: '[exited with code 4]' })
+  await cellItems(page).nth(1).click()
+  await expect(kept).toContainText(`A-ran-in-${dir}`)
+  await expect(activeHeader(page).locator('.command-tail')).toHaveText('4')
+
+  await openLauncher(again)
+  await expect(items(page)).toHaveText([dir])
+  await page.keyboard.press('Escape')
+  await stubDialog(app, 1)
+  await clickMenu(app, 'close-pane')
+  await expect(cellItems(page)).toHaveCount(1)
+  expect(await dialogCalls(app)).toEqual([])
+})
+
+test('config.toml 의 launcher.commands 를 고치면 열린 런처의 명령도 바뀐다', async ({
+  launch,
+  dataDir
+}) => {
+  writeConfig(dataDir, '[launcher]\ncommands = ["first", "second"]\n')
+  const launched = await launch()
+  const { page } = launched
+  await openLauncher(launched)
+  await expect(command(page)).toHaveText('first')
+  writeConfig(dataDir, '[launcher]\ncommands = ["third"]\n')
+  await expect(command(page)).toHaveText('third')
+  await page.keyboard.press('Tab')
+  await expect(command(page)).toHaveText('third')
+})
+
+test('기본 명령은 claude 다', async ({ launch }) => {
+  const launched = await launch()
+  await openLauncher(launched)
+  await expect(command(launched.page)).toHaveText('claude')
+  await launched.page.keyboard.press('Tab')
+  await expect(command(launched.page)).toHaveText('codex')
+})
+
+test('layout.palette = "top" 이면 런처도 창 위에 뜬다', async ({ launch, dataDir }) => {
+  writeConfig(dataDir, '[layout]\npalette = "top"\n')
+  const launched = await launch()
+  await openLauncher(launched)
+  const box = (await launcher(launched.page).boundingBox())!
+  expect(box.y).toBe(8)
+})
+
+for (const [position, label, next] of [
+  ['bottom', '아래', 'ArrowUp'],
+  ['top', '위', 'ArrowDown']
+] as const) {
+  test(`런처가 ${label}일 때 ${next} 로 다음 행을 고르고, 한글을 조합하는 중의 Enter 는 띄우지 않는다`, async ({
+    launch,
+    dataDir
+  }) => {
+    const [a] = useTool(dataDir, `[layout]\npalette = "${position}"\n`)
+    const first = project(dataDir, 'proj-a')
+    const second = project(dataDir, 'proj-b')
+    writeLauncherState(dataDir, [first, second], a)
+    const launched = await launch()
+    const { page } = launched
+    await openLauncher(launched)
+    await expect(items(page)).toHaveText([first, second])
+    await expect(items(page).nth(0)).toHaveClass(/selected/)
+    await page.keyboard.press(next)
+    await expect(items(page).nth(1)).toHaveClass(/selected/)
+
+    await query(page).dispatchEvent('keydown', { key: 'Enter', isComposing: true })
+    await expect(launcher(page)).toBeVisible()
+    await expect(cellItems(page)).toHaveCount(1)
+
+    await page.keyboard.press('Enter')
+    await activeTerminal(page)
+    await expect(rows(page)).toContainText(`A-ran-in-${second}`)
+  })
+}
+
+test('행을 누르면 새 workspace 에, ⌘ 를 누른 채 누르면 지금 workspace 의 새 cell 에 띄운다', async ({
+  launch,
+  dataDir
+}) => {
+  const [a] = useTool(dataDir)
+  const first = project(dataDir, 'proj-a')
+  const second = project(dataDir, 'proj-b')
+  writeLauncherState(dataDir, [first, second], a)
+  const launched = await launch()
+  const { page } = launched
+  await openLauncher(launched)
+  await items(page).nth(1).click()
+  await activeTerminal(page)
+  await expect(workspaceNames(page)).toHaveCount(2)
+  await expect(rows(page)).toContainText(`A-ran-in-${second}`)
+  await finish(page)
+
+  await openLauncher(launched)
+  await expect(items(page)).toHaveText([second, first])
+  await items(page)
+    .nth(1)
+    .click({ modifiers: ['Meta'] })
+  await activeTerminal(page)
+  await expect(cellItems(page)).toHaveCount(2)
+  await expect(workspaceNames(page)).toHaveCount(1)
+  await expect(rows(page)).toContainText(`A-ran-in-${first}`)
+})
+
+test('최근 목록이 오기 전에 누른 Enter 는 목록과 기억한 명령을 기다려 맨 앞 디렉토리에 띄운다', async ({
+  launch,
+  dataDir
+}) => {
+  const [, b] = useTool(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  writeLauncherState(dataDir, [dir], b)
+  const launched = await launch()
+  await delayHandler(launched.app, 'launcher:read')
+  await openLauncher(launched)
+  await launched.page.keyboard.press('Enter')
+  await expect(launcher(launched.page)).toHaveCount(0)
+  await activeTerminal(launched.page)
+  await expect(rows(launched.page)).toContainText(`B-ran-in-${dir}`)
+})

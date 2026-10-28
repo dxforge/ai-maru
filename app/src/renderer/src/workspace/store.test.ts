@@ -235,6 +235,27 @@ describe('workspaces', () => {
     expect(selected(empty).panes[0].startDir).toBe('/e')
   })
 
+  it('open·openCell 에 준 명령과 keep 은 새 pane 에 붙고, 선택이 없는 openCell 의 새 workspace 에도 붙는다', () => {
+    const launch = { command: ['claude'], keep: true } as const
+    const ws = opened(1)
+    ws.open('/w', launch)
+    expect(selected(ws).panes[0]).toMatchObject({ startDir: '/w', command: ['claude'], keep: true })
+    ws.openCell('/c', launch)
+    expect(selected(ws).panes[0]).toMatchObject({ startDir: '/c', command: ['claude'], keep: true })
+    expect(ws.list.value.map((w) => w.cells.length)).toEqual([1, 2])
+
+    const empty = createWorkspaces()
+    empty.openCell('/e', launch)
+    expect(selected(empty).panes[0]).toMatchObject({ command: ['claude'], keep: true })
+    const screen = {
+      version: SCREEN_VERSION,
+      sidebar: { open: true, width: 280, folded: [] },
+      viewMode: 'single',
+      ...empty.snapshot()
+    }
+    expect(parseScreen(screen)!.workspaces[0].cells[0].panes[0]).toMatchObject({ keep: true })
+  })
+
   it('workspace 의 마지막 cell 이 닫히면 workspace 도 닫고 편 목록의 다음(없으면 앞) cell 을 선택한다', () => {
     const ws = opened(2)
     const [first, second] = keys(ws)

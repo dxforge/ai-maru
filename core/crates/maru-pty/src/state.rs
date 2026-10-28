@@ -35,7 +35,7 @@ pub struct PaneState {
 }
 
 impl PaneState {
-    /// 명령을 주어 띄운 pane 의 상태를 만든다. 명령이 끝나면 pane 도 끝나므로 늘 도는 중으로 둔다. `--keep` 이면 끝난 뒤에도 이 값이 남는다.
+    /// 명령을 주어 띄운 pane 의 상태를 만든다. 명령이 끝날 때까지 도는 중이다(`command_exited`).
     pub fn for_command(argv: &[String], started_at: u64) -> Self {
         PaneState {
             command: Some(CommandState {
@@ -47,6 +47,18 @@ impl PaneState {
             command_fixed: true,
             ..Default::default()
         }
+    }
+
+    /// 명령 pane 의 셸이 끝나면 안 도는 중으로 바꾸고 종료 코드를 넣는다. 시그널로 끝났으면 셸의 `$?` 처럼 128+번호를
+    /// 넣는다. 상태가 바뀌었으면 true 다.
+    pub fn command_exited(&mut self, code: Option<i32>, signal: Option<i32>) -> bool {
+        let fixed = self.command_fixed;
+        let Some(c) = self.command.as_mut().filter(|c| fixed && c.running) else {
+            return false;
+        };
+        c.running = false;
+        c.exit_code = code.or(signal.map(|s| 128 + s));
+        true
     }
 
     /// 상태가 바뀌었으면 true 다. `now` 는 epoch 밀리초다.
@@ -316,6 +328,27 @@ mod tests {
                 "running": true, "text": "npm run dev", "exit_code": null, "started_at": 7,
             })
         );
+    }
+
+    #[test]
+    fn a_command_pane_stops_with_the_exit_code_once_and_a_shell_pane_ignores_it() {
+        let mut s = PaneState::for_command(&["npm".into()], 7);
+        assert!(s.command_exited(Some(3), None));
+        assert_eq!(command(&s), (false, Some("npm"), Some(3), Some(7)));
+        assert!(
+            !s.command_exited(Some(0), None),
+            "끝난 명령은 다시 바꾸지 않는다"
+        );
+        assert_eq!(command(&s).2, Some(3));
+
+        let mut signaled = PaneState::for_command(&["npm".into()], 7);
+        assert!(signaled.command_exited(None, Some(9)));
+        assert_eq!(command(&signaled).2, Some(137));
+
+        let mut shell = PaneState::default();
+        shell.apply_command(&start("vim"), 2);
+        assert!(!shell.command_exited(Some(0), None));
+        assert_eq!(command(&shell), (true, Some("vim"), None, Some(2)));
     }
 
     #[test]
