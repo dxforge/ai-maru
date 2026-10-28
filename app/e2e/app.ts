@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import {
   chmodSync,
   existsSync,
@@ -95,13 +96,34 @@ export const test = base.extend<Fixtures>({
   }
 })
 
+/**
+ * 테스트가 실행하는 git 과 앱이 띄운 셸의 git 이 쓰는 env. 개발자의 git 설정(예: `init.defaultRefFormat=reftable`)과 env 의
+ * `GIT_*`(예: hook 안에서 돌릴 때의 `GIT_DIR`)에 따라 테스트 저장소가 달라지지 않도록, 전역·시스템 설정을 읽지 않게 하고
+ * `GIT_*` 를 물려주지 않는다. 전역 설정이 없으면 커밋할 사용자 정보도 없으므로 env 로 준다.
+ */
+export function gitEnv(): Record<string, string | undefined> {
+  return {
+    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_'))),
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_AUTHOR_NAME: 't',
+    GIT_AUTHOR_EMAIL: 't@t',
+    GIT_COMMITTER_NAME: 't',
+    GIT_COMMITTER_EMAIL: 't@t'
+  }
+}
+
+export function git(cwd: string, ...args: string[]): string {
+  return execFileSync('git', args, { cwd, env: gitEnv() }).toString()
+}
+
 async function launchApp(
   dataDir: string,
   env: Record<string, string>,
   executablePath: string | undefined,
   args: string[]
 ): Promise<Launched> {
-  const inherited = { ...process.env }
+  const inherited = gitEnv()
   // 패키징한 앱이 번들 안의 바이너리를 쓰는지 봐야 하므로 바깥의 덮어쓰기를 물려주지 않는다.
   if (executablePath) {
     delete inherited.MARU_PTY_BIN
