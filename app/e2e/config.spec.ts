@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import type { Page } from '@playwright/test'
-import { FONT_FAMILY, FONT_SIZE } from '../src/renderer/src/font'
+import { FONT_FAMILY, FONT_SIZE, LINE_HEIGHT } from '../src/renderer/src/font'
 import {
   activePane,
   activeTerminal,
@@ -59,7 +59,7 @@ test('설정 파일이 없으면 지금 기본값으로 그린다', async ({ lau
   const { page } = await launch()
   const font = await terminalFont(page)
   expect(font.size).toBe(DEFAULT_SIZE)
-  // computed style 은 글꼴 이름을 큰따옴표로 감싼다.
+  // computed style 은 작은따옴표로 쓴 글꼴 이름을 큰따옴표로 바꿔 보여 준다.
   expect(font.family.replaceAll('"', "'")).toBe(FONT_FAMILY)
   await expect(toast(page)).toHaveCount(0)
 })
@@ -70,9 +70,14 @@ test('띄울 때 설정 파일의 글꼴·크기·줄 높이를 쓴다', async (
   const font = await terminalFont(page)
   expect(font.family).toMatch(/^Menlo, D2Coding/)
   expect(font.size).toBe('18px')
-  // 이 설정이면 행 높이는 28px 이고, 기본값(14px, 1.2)이면 18px 이다.
-  expect(font.row).toBeGreaterThanOrEqual(26)
   await expect(toast(page)).toHaveCount(0)
+
+  // 행 높이는 글꼴의 글자 높이에 줄 높이를 곱한 값이다. 글자 높이는 글꼴마다 다르므로, 같은 글꼴·크기에서
+  // 줄 높이만 기본값(LINE_HEIGHT)으로 돌린 행 높이와 비교한다. 1px 안팎은 반올림 차이다.
+  writeConfig(dataDir, '[terminal]\nfont-family = "Menlo"\nfont-size = 18\n')
+  await expect.poll(async () => (await terminalFont(page)).row).not.toBe(font.row)
+  const byDefault = (await terminalFont(page)).row
+  expect(Math.abs(font.row - (byDefault * 1.5) / LINE_HEIGHT)).toBeLessThanOrEqual(1.5)
 })
 
 test('폴더가 없는 채로 띄운 뒤 폴더와 파일을 만들면 적용하고 셸이 본 크기도 바뀐다', async ({

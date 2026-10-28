@@ -6,6 +6,7 @@ import {
   clickMenu,
   expect,
   focusPane,
+  isInk,
   newWorkspace,
   paneHeader,
   panes,
@@ -15,6 +16,7 @@ import {
   run,
   screenshotPixels,
   setZoom,
+  shellSize,
   split,
   test,
   toggleView,
@@ -327,12 +329,17 @@ test('명령 팔레트와 Canvas 패널은 앱 테마 색을 쓴다', async ({ l
 
 test('터미널 왼쪽 여백도 터미널 배경으로 칠한다', async ({ launch }) => {
   const { page } = await launch()
-  const [xterm, scrollable] = await page.evaluate(() =>
-    ['.xterm', '.xterm-scrollable-element'].map(
-      (s) => getComputedStyle(document.querySelector(s)!).backgroundColor
-    )
-  )
-  expect(xterm).toBe(scrollable)
+  await shellSize(page)
+  // 띄운 직후 맨 아래 행은 비어 있으므로, 그 행에서 왼쪽 여백과 첫 글자 칸의 앞부분을 1px 높이로 잘라 색을 비교한다.
+  const line = await page.locator('.terminal-view.active .xterm').evaluate((xterm) => {
+    const left = xterm.getBoundingClientRect().left
+    const screen = xterm.querySelector('.xterm-screen')!.getBoundingClientRect()
+    return { x: left, y: screen.bottom - 4, width: screen.left - left + 4, height: 1 }
+  })
+  const { width, data } = await screenshotPixels(page, line, 'css')
+  const rgb = (x: number) => data.slice(x * 4, x * 4 + 3)
+  expect(isInk(data, (width - 1) * 4)).toBe(false)
+  expect(rgb(1)).toEqual(rgb(width - 1))
 })
 
 async function measure(page: Page) {

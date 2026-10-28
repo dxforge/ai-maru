@@ -97,6 +97,40 @@ test('터미널 영역이 720px 일 때 위아래로 나눈 두 pane 은 같은 
   expect((await shellSize(page)).cols).toBe(cols)
 })
 
+// 위 테스트는 앱과 같은 상수로 기대 열 수를 구하므로, 스크롤바 폭과 왼쪽 여백이 그 상수대로 그려지는지는 아래 테스트들이 잰다.
+test('터미널 스크롤바는 열 수 계산이 빼는 SCROLLBAR_WIDTH 만큼의 폭으로 그린다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await shellSize(page)
+  const width = await page
+    .locator('.terminal-view.active .xterm-scrollbar.xterm-vertical')
+    .evaluate((bar) => bar.getBoundingClientRect().width)
+  expect(width).toBe(SCROLLBAR_WIDTH)
+})
+
+for (const mode of ['single', 'columns'] as const) {
+  test(`${mode} 에서 터미널은 열 수 계산이 빼는 TERMINAL_PADDING 만큼 pane 왼쪽 끝에서 떨어져 시작한다`, async ({
+    launch
+  }) => {
+    const launched = await launch()
+    const { page } = launched
+    if (mode === 'columns') {
+      await toggleView(launched, 'columns')
+      await expectCols(page, 80)
+    } else await shellSize(page)
+
+    const gap = await panes(page)
+      .first()
+      .evaluate(
+        (pane) =>
+          pane.querySelector('.xterm-screen')!.getBoundingClientRect().left -
+          pane.getBoundingClientRect().left
+      )
+    expect(gap).toBeCloseTo(TERMINAL_PADDING, 1)
+  })
+}
+
 function blankSpots(page: Page, i: number) {
   return panes(page)
     .nth(i)

@@ -608,6 +608,7 @@ export const CANVAS_MIN_WIDTH = clampCanvasWidth(0)
 
 /** 사이드바를 접고, `.side` 의 width transition 이 끝나 그린 폭이 접은 폭(inline style 의 width)과 같아질 때까지 기다린다. */
 export async function collapseSidebar(app: ElectronApplication, page: Page): Promise<void> {
+  const open = await sidebarWidth(page)
   await clickMenu(app, 'toggle-sidebar')
   await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
   await expect
@@ -619,6 +620,7 @@ export async function collapseSidebar(app: ElectronApplication, page: Page): Pro
         )
     )
     .toBe(true)
+  expect(await sidebarWidth(page)).toBeLessThan(open)
 }
 
 export function sidebarResizer(page: Page): Locator {
