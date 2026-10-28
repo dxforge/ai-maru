@@ -314,6 +314,9 @@ test('보던 문서가 바뀌면 스크롤 자리를 지키고, 다른 문서를
 
   await putCanvas(app, { id: 'b', kind: 'markdown', text: long('b'), title: 'B' })
   await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await expect(markdown(page)).toContainText('a line 0')
+  // 패널 폭 transition 이 끝나기 전에 스크롤하면 폭이 넓어지면서 scrollTop 이 바뀌어 1000 에 머물지 않는다.
+  await expect.poll(() => panel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
   await view.evaluate((el) => el.scrollTo(0, 1000))
   await expect.poll(scrollTop).toBe(1000)
 
