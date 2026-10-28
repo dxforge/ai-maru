@@ -1,3 +1,4 @@
+import { SHELL } from '../../../shared/launcher'
 import { foldCase, matchesWords } from '../../../shared/commands'
 import { tildePath } from '../workspace/cwd'
 
@@ -52,12 +53,9 @@ export function joinDir(parent: string, name: string): string {
   return parent.endsWith('/') ? parent + name : `${parent}/${name}`
 }
 
+/** 기억한 명령이 `commands` 에 있거나 셸(`SHELL`)이면 그것을, 아니면 첫 명령을 고른다. */
 export function pickCommand(commands: readonly string[], remembered: string | null): string {
-  return remembered !== null && commands.includes(remembered) ? remembered : commands[0]
-}
-
-export function stepCommand(commands: readonly string[], current: string, by: 1 | -1): string {
-  const n = commands.length
-  const i = Math.max(0, commands.indexOf(current))
-  return commands[(i + by + n) % n]
+  return remembered === SHELL || (remembered !== null && commands.includes(remembered))
+    ? remembered
+    : commands[0]
 }

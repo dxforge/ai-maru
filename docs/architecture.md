@@ -66,7 +66,7 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 ## 런처로 띄운 pane 은 명령이 실패하면 남는다
 
-런처(⌘P)로 띄운 pane 은 화면 snapshot 에 `keep` 이 붙고(`ScreenPane`), pty 를 `maru-pty --keep` 으로 띄운다. 명령이 0 이나 130 으로 끝나거나 셸이 SIGINT 로 끝나면 다른 명령 pane 처럼 pane 을 지운다. 130 과 SIGINT 는 사용자가 Ctrl-C 로 끈 것이기 때문이다. 그 밖의 코드나 시그널로 끝나면 renderer 는 pane 을 지우지 않고 종료 상태를 터미널 마지막 줄에 쓴다. 재시작 뒤 다시 붙은 pane 도 `exit` 를 다시 받아 종료 상태를 마지막 줄에 쓰고 남는다. maru-pty 가 화면과 종료 상태를 들고 있기 때문이다. maru-pty 는 명령이 끝나면 상태의 명령을 안 도는 중으로 바꾸고 종료 코드를 싣는다. 그래서 OSC 7501 레코드가 없는 남긴 pane 은 헤더·사이드바가 종료 코드를 보인다. ⌘W 는 그 pane 을 실행 중으로 보지 않으므로 확인 창을 띄우지 않는다. 남긴 pane 을 닫으면 renderer 가 보내는 kill 로 maru-pty 도 끝난다.
+런처(⌘P)가 명령으로 띄운 pane 은 화면 snapshot 에 `keep` 이 붙고(`ScreenPane`), pty 를 `maru-pty --keep` 으로 띄운다. 명령이 0 이나 130 으로 끝나거나 셸이 SIGINT 로 끝나면 다른 명령 pane 처럼 pane 을 지운다. 130 과 SIGINT 는 사용자가 Ctrl-C 로 끈 것이기 때문이다. 그 밖의 코드나 시그널로 끝나면 renderer 는 pane 을 지우지 않고 종료 상태를 터미널 마지막 줄에 쓴다. 재시작 뒤 다시 붙은 pane 도 `exit` 를 다시 받아 종료 상태를 마지막 줄에 쓰고 남는다. maru-pty 가 화면과 종료 상태를 들고 있기 때문이다. maru-pty 는 명령이 끝나면 상태의 명령을 안 도는 중으로 바꾸고 종료 코드를 싣는다. 그래서 OSC 7501 레코드가 없는 남긴 pane 은 헤더와 사이드바에 종료 코드를 보인다. ⌘W 는 그 pane 을 실행 중으로 보지 않으므로 확인 창을 띄우지 않는다. 남긴 pane 을 닫으면 renderer 가 보내는 kill 로 maru-pty 도 끝난다.
 
 ## 닫기 전 확인 창은 main 이 띄운다
 

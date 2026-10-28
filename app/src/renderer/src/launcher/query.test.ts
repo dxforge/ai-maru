@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  expandPath,
-  filterRecent,
-  joinDir,
-  matchDirs,
-  pathQuery,
-  pickCommand,
-  stepCommand
-} from './query'
+import { expandPath, filterRecent, joinDir, matchDirs, pathQuery, pickCommand } from './query'
+import { SHELL } from '../../../shared/launcher'
 
 const HOME = '/Users/me'
 
@@ -98,7 +91,7 @@ describe('joinDir', () => {
   })
 })
 
-describe('pickCommand · stepCommand', () => {
+describe('pickCommand', () => {
   const commands = ['claude', 'codex', 'aider']
 
   it('기억한 명령이 목록에 있으면 그것을, 없으면 첫 명령을 고른다', () => {
@@ -107,10 +100,7 @@ describe('pickCommand · stepCommand', () => {
     expect(pickCommand(commands, null)).toBe('claude')
   })
 
-  it('다음·이전 명령으로 돌고 끝에서는 반대쪽 끝으로 간다', () => {
-    expect(stepCommand(commands, 'claude', 1)).toBe('codex')
-    expect(stepCommand(commands, 'aider', 1)).toBe('claude')
-    expect(stepCommand(commands, 'claude', -1)).toBe('aider')
-    expect(stepCommand(['claude'], 'claude', 1)).toBe('claude')
+  it('기억한 것이 셸이면 목록과 상관없이 셸을 고른다', () => {
+    expect(pickCommand(commands, SHELL)).toBe(SHELL)
   })
 })

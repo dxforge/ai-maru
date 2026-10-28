@@ -41,6 +41,7 @@ import TerminalView from './components/TerminalView.vue'
 import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
 import { commandArgv } from './config/launcher'
+import { SHELL } from '../../shared/launcher'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { activeTheme, windowTheme } from './themes'
@@ -682,7 +683,6 @@ function keepHorizontalScroll(e: WheelEvent): void {
 }
 
 type Overlay = 'palette' | 'launcher'
-/** 떠 있는 명령 팔레트나 런처. 하나를 열면 다른 하나는 터미널에 포커스를 돌려주지 않고 바로 닫힌다. */
 const overlay = ref<Overlay | null>(null)
 const palette = useTemplateRef<InstanceType<typeof CommandPalette>>('palette')
 const launcher = useTemplateRef<InstanceType<typeof LauncherPalette>>('launcher')
@@ -698,7 +698,7 @@ function closeOverlay(which?: Overlay): void {
 }
 
 function launch({ dir, command, where }: Launch): void {
-  const pane = { command: commandArgv(command), keep: true } as const
+  const pane = command === SHELL ? {} : ({ command: commandArgv(command), keep: true } as const)
   if (where === 'cell') workspaces.openCell(dir, pane)
   else workspaces.open(dir, pane)
   closeOverlay()
