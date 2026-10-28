@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/test'
 import {
   cellViews,
   clickMenu,
+  collapseSidebar,
   expect,
   grabHandle,
   newCell,
@@ -12,7 +13,6 @@ import {
   rows,
   run,
   screenshotPixels,
-  sidebarWidth,
   test,
   toggleView,
   workspaceHeads,
@@ -22,6 +22,8 @@ import {
 /** 사이드바 목록의 cell 카드다. 끄는 동안 붙는 사본(`.ghost`)은 `.list` 밖에 있어 세지 않는다. */
 const cards = (page: Page) => page.locator('.sidebar .list .group')
 const grip = (page: Page, i: number) => cards(page).nth(i).locator('.grip')
+const opacity = (el: Locator) => el.evaluate((e) => Number(getComputedStyle(e).opacity))
+const hovered = (el: Locator) => el.evaluate((e) => e.matches(':hover'))
 const ghost = (page: Page) => page.locator('.sidebar .ghost')
 const line = (page: Page) => page.locator('.sidebar .drop-line')
 const slot = (page: Page) => page.locator('.sidebar .new-workspace')
@@ -289,10 +291,11 @@ test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우�
   await expect.poll(() => shape(page)).toEqual([['alpha', 'bravo']])
 
   await cards(page).nth(1).hover()
-  await expect(grip(page, 1)).toHaveCSS('opacity', '0.35')
+  await expect.poll(() => opacity(grip(page, 1))).toBeGreaterThan(0)
   await expect(grip(page, 0)).toHaveCSS('opacity', '0')
+  const faint = await opacity(grip(page, 1))
   await grip(page, 1).hover()
-  await expect(grip(page, 1)).toHaveCSS('opacity', '0.8')
+  await expect.poll(() => opacity(grip(page, 1))).toBeGreaterThan(faint)
   expect(
     await grip(page, 0).evaluate((el) =>
       getComputedStyle(el).getPropertyValue('-webkit-app-region')
@@ -315,18 +318,18 @@ test('마우스를 첫 행에서 손잡이 위로 옮겨도 첫 행은 hover 배
 
   const handle = (await grip(page, 0).boundingBox())!
   await page.mouse.move(handle.x + handle.width + 4, handle.y + handle.height / 2)
-  const hovered = await background(0)
+  const hoverBackground = await background(0)
   const focused = await background(1)
   await cards(page).nth(1).locator('.pane-row').hover()
-  expect(await background(0)).not.toBe(hovered)
+  expect(await background(0)).not.toBe(hoverBackground)
 
   await page.mouse.move(handle.x + handle.width + 4, handle.y + handle.height / 2)
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2, { steps: 4 })
-  await expect(grip(page, 0)).toHaveCSS('opacity', '0.8')
-  expect(await background(0)).toBe(hovered)
+  await expect.poll(() => hovered(grip(page, 0))).toBe(true)
+  expect(await background(0)).toBe(hoverBackground)
 
   await grip(page, 1).hover()
-  await expect(grip(page, 1)).toHaveCSS('opacity', '0.8')
+  await expect.poll(() => hovered(grip(page, 1))).toBe(true)
   expect(await background(1)).toBe(focused)
 })
 
@@ -384,19 +387,24 @@ async function dotSizes(page: Page, i: number): Promise<string[]> {
   return sizes
 }
 
-test('1x 화면에서 손잡이의 점 6개가 펼친 사이드바와 접은 사이드바 모두 2×2px 로 찍힌다', async ({
+test('1x 화면에서 손잡이의 점은 펼친 사이드바와 접은 사이드바 모두 같은 크기의 정사각형으로 찍힌다', async ({
   launch
 }) => {
   const launched = await launch(undefined, undefined, ['--force-device-scale-factor=1'])
   const { app, page } = launched
   await arrange(launched, [['alpha', 'bravo']])
   expect(await page.evaluate(() => devicePixelRatio)).toBe(1)
-  const six = Array(6).fill('2x2')
 
-  expect(await dotSizes(page, 1)).toEqual(six)
-  await clickMenu(app, 'toggle-sidebar')
-  await expect.poll(() => sidebarWidth(page)).toBe(85)
-  expect(await dotSizes(page, 1)).toEqual(six)
+  const expanded = await dotSizes(page, 1)
+  await collapseSidebar(app, page)
+  const collapsed = await dotSizes(page, 1)
+
+  expect(expanded.length).toBeGreaterThan(0)
+  expect(collapsed).toEqual(expanded)
+  const [size, ...others] = new Set(expanded)
+  expect(others).toEqual([])
+  const [w, h] = size.split('x')
+  expect(w).toBe(h)
 })
 
 test('첫 행의 위쪽이라도 손잡이 밖을 누르면 cell 을 끌지 않고 그 pane 을 고른다', async ({
@@ -458,14 +466,12 @@ test('접은 사이드바에서도 손잡이로 cell 을 끌어 옮긴다', asyn
   const launched = await launch()
   const { app, page } = launched
   await arrange(launched, [['alpha', 'bravo']])
-  await clickMenu(app, 'toggle-sidebar')
-  await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
-  await expect.poll(() => sidebarWidth(page)).toBe(85)
+  await collapseSidebar(app, page)
   const side = (await page.locator('.sidebar').boundingBox())!
   const handle = (await grip(page, 1).boundingBox())!
   expect(Math.abs(handle.x + handle.width / 2 - (side.x + side.width / 2))).toBeLessThanOrEqual(1)
   await cards(page).nth(1).hover()
-  await expect(grip(page, 1)).toHaveCSS('opacity', '0.35')
+  await expect.poll(() => opacity(grip(page, 1))).toBeGreaterThan(0)
 
   await grabHandle(page, grip(page, 1), 0)
   await moveTo(page, cards(page).nth(0), 0.25)

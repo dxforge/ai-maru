@@ -1,4 +1,5 @@
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import { SCROLLBAR_WIDTH, TERMINAL_PADDING } from '../src/renderer/src/workspace/columns'
 import {
   activePane,
   cellSize,
@@ -493,7 +494,10 @@ for (const size of [8, 9, 16]) {
     await toggleView(launched, 'columns')
     await expectCols(page, 80)
     const { width } = await cellSize(page)
-    expect(await cellWidth(page)).toBeCloseTo(Math.ceil(80 + 12 / width) * width, 0)
+    expect(await cellWidth(page)).toBeCloseTo(
+      Math.ceil(80 + (TERMINAL_PADDING + SCROLLBAR_WIDTH) / width) * width,
+      0
+    )
   })
 }
 

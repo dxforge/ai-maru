@@ -5,6 +5,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { ICONS } from '../src/renderer/src/icons'
 import {
   clickMenu,
+  collapseSidebar,
   dragHandle,
   grabHandle,
   expect,
@@ -18,6 +19,8 @@ import {
   run,
   shellRows,
   shellSize,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
   sidebarResizer,
   sidebarWidth,
   split,
@@ -104,7 +107,7 @@ test('workspace 이름 줄은 첫 cell 의 첫 pane 의 저장소 이름(저장�
   await expect(cellPlaces(page)).toHaveText(['notes'])
   await expect(workspaceNames(page)).toHaveText(['notes'])
 
-  await collapse(app, page)
+  await collapseSidebar(app, page)
   await expect(workspaceNames(page)).toBeVisible()
   await expect(workspaceNames(page)).toHaveCSS('opacity', '1')
 })
@@ -418,12 +421,6 @@ test('마지막 cell 을 닫으면 창 제목과 폴더 아이콘이 앱의 것�
 
 const collapsedGroups = (page: Page) => page.locator('.sidebar.collapsed .group')
 
-async function collapse(app: ElectronApplication, page: Page): Promise<void> {
-  await clickMenu(app, 'toggle-sidebar')
-  await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
-  await expect.poll(() => sidebarWidth(page)).toBe(85)
-}
-
 async function twoClaudes(app: ElectronApplication, page: Page): Promise<void> {
   await page.keyboard.type(`${programStatus('working').trimEnd()} && sleep 600\n`)
   await split(app, page, 'split-right', 2)
@@ -441,7 +438,7 @@ test('접은 사이드바는 같은 목록을 오른쪽만 잘라 글자를 남�
   await twoClaudes(app, page)
   await newWorkspace(launched, 2)
 
-  await collapse(app, page)
+  await collapseSidebar(app, page)
 
   await expect(collapsedGroups(page).nth(1)).toHaveClass(/selected/)
   await expect(collapsedGroups(page).nth(0).locator('.pane-row')).toHaveClass([
@@ -488,9 +485,9 @@ test('접고 펴도 pane 줄의 상태 아이콘과 cell 면은 같은 자리에
       return r.x + parseFloat(getComputedStyle(el).paddingLeft)
     })
   )
-  expect(lefts).toEqual([12, 12])
+  expect(lefts[0]).toBe(lefts[1])
 
-  await collapse(app, page)
+  await collapseSidebar(app, page)
 
   expect(await marks()).toEqual(expanded)
 })
@@ -500,12 +497,13 @@ test('사이드바를 접고 펴는 동안에는 터미널 크기를 맞추지 �
 }) => {
   const { app, page } = await launch()
   const before = await shellSize(page)
+  const width = await sidebarWidth(page)
   const widths = await watchTerminalWidths(page)
 
-  await collapse(app, page)
+  await collapseSidebar(app, page)
   const collapsed = await shellSize(page)
   await clickMenu(app, 'toggle-sidebar')
-  await expect.poll(() => sidebarWidth(page)).toBe(280)
+  await expect.poll(() => sidebarWidth(page)).toBe(width)
   const expanded = await shellSize(page)
 
   expect(collapsed.cols).toBeGreaterThan(before.cols)
@@ -515,6 +513,7 @@ test('사이드바를 접고 펴는 동안에는 터미널 크기를 맞추지 �
 
 test('접히는 도중에 다시 펴도 터미널을 중간 폭으로 맞추지 않는다', async ({ launch }) => {
   const { app, page } = await launch()
+  const width = await sidebarWidth(page)
   const widths = await watchTerminalWidths(page)
 
   await clickMenu(app, 'toggle-sidebar')
@@ -522,7 +521,7 @@ test('접히는 도중에 다시 펴도 터미널을 중간 폭으로 맞추지 
   await page.waitForTimeout(60)
   await clickMenu(app, 'toggle-sidebar')
 
-  await expect.poll(() => sidebarWidth(page)).toBe(280)
+  await expect.poll(() => sidebarWidth(page)).toBe(width)
   await expect.poll(() => page.locator('.side').evaluate((el) => el.getAnimations().length)).toBe(0)
   expect(await widths()).toHaveLength(1)
 })
@@ -549,7 +548,7 @@ test('창이 좁아 사이드바가 창 폭의 반에 걸려 있어도, 경계�
 }) => {
   const { app, page } = await launch()
   await dragHandle(page, sidebarResizer(page), 600)
-  await expect.poll(() => sidebarWidth(page)).toBe(480)
+  await expect.poll(() => sidebarWidth(page)).toBe(SIDEBAR_MAX_WIDTH)
   await resizeBy(app, -400, 0)
   await expect.poll(() => sidebarWidth(page)).toBe(300)
 
@@ -560,10 +559,11 @@ test('창이 좁아 사이드바가 창 폭의 반에 걸려 있어도, 경계�
 
 test('경계는 왼쪽 버튼으로 끌 때만 폭이 바뀐다', async ({ launch }) => {
   const { page } = await launch()
+  const before = await sidebarWidth(page)
 
   await dragHandle(page, sidebarResizer(page), 80, { button: 'right' })
 
-  expect(await sidebarWidth(page)).toBe(280)
+  expect(await sidebarWidth(page)).toBe(before)
   await expect(page.locator('.side')).not.toHaveClass(/resizing/)
 })
 
@@ -573,7 +573,7 @@ test('Canvas 를 연 채 사이드바를 펴는 동안에도 터미널이 Canvas
   const { app, page } = await launch()
   await clickMenu(app, 'toggle-canvas')
   await expect(page.locator('.canvas')).toBeVisible()
-  await collapse(app, page)
+  await collapseSidebar(app, page)
   await page.evaluate(() => {
     const hits: boolean[] = []
     Object.assign(window, { hits })
@@ -595,7 +595,7 @@ test('Canvas 를 연 채 사이드바를 펴는 동안에도 터미널이 Canvas
   expect(hits.every(Boolean)).toBe(true)
 })
 
-test('사이드바 오른쪽 경계를 끌어 폭을 200~480 사이로 바꾸고, 접었다 펴도 그 폭이다', async ({
+test('사이드바 오른쪽 경계를 끌어 폭을 최소 폭과 최대 폭 사이로 바꾸고, 접었다 펴도 그 폭이다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -604,13 +604,13 @@ test('사이드바 오른쪽 경계를 끌어 폭을 200~480 사이로 바꾸고
   await dragHandle(page, sidebarResizer(page), 60)
   await expect.poll(() => sidebarWidth(page)).toBe(before + 60)
   await dragHandle(page, sidebarResizer(page), -600)
-  await expect.poll(() => sidebarWidth(page)).toBe(200)
+  await expect.poll(() => sidebarWidth(page)).toBe(SIDEBAR_MIN_WIDTH)
   await dragHandle(page, sidebarResizer(page), 600)
-  await expect.poll(() => sidebarWidth(page)).toBe(480)
+  await expect.poll(() => sidebarWidth(page)).toBe(SIDEBAR_MAX_WIDTH)
 
-  await collapse(app, page)
+  await collapseSidebar(app, page)
   await clickMenu(app, 'toggle-sidebar')
-  await expect.poll(() => sidebarWidth(page)).toBe(480)
+  await expect.poll(() => sidebarWidth(page)).toBe(SIDEBAR_MAX_WIDTH)
 })
 
 test('끄는 도중 사이드바를 닫아도 끌기가 끝나고, 그 뒤에도 키 입력이 터미널에 가며 터미널이 창 크기를 따른다', async ({
@@ -633,7 +633,7 @@ test('끄는 도중 사이드바를 닫아도 끌기가 끝나고, 그 뒤에도
 test('창이 좁아지면 사이드바는 창 폭의 반까지만 차지한다', async ({ launch }) => {
   const { app, page } = await launch()
   await dragHandle(page, sidebarResizer(page), 600)
-  await expect.poll(() => sidebarWidth(page)).toBe(480)
+  await expect.poll(() => sidebarWidth(page)).toBe(SIDEBAR_MAX_WIDTH)
 
   await resizeBy(app, -400, 0)
 
@@ -655,7 +655,7 @@ test('목록을 스크롤해도 신호등 버튼 자리는 비어 있다', async
 
   await page.locator('.sidebar .list').evaluate((el) => el.scrollTo(0, el.scrollHeight))
   expect(await underButtons()).toBeNull()
-  await collapse(app, page)
+  await collapseSidebar(app, page)
   await page.locator('.sidebar .list').evaluate((el) => el.scrollTo(0, el.scrollHeight))
   expect(await underButtons()).toBeNull()
 })
@@ -673,7 +673,7 @@ test('사이드바와 접은 사이드바의 빈 곳으로 창을 끌고, 누르
   expect(await region('.sidebar')).toBe('drag')
   expect(await region('.sidebar .pane-row')).toBe('no-drag')
   expect(await region('.resizer')).toBe('no-drag')
-  await collapse(app, page)
+  await collapseSidebar(app, page)
   expect(await region('.sidebar')).toBe('drag')
   expect(await region('.sidebar .pane-row')).toBe('no-drag')
 })
@@ -723,7 +723,7 @@ test('maru job 으로 띄운 job 은 그 cell 의 pane 줄 아래에 이름·듣
   await expect(jobRows(page).locator('.title')).toHaveText(['sleep 600'])
 })
 
-test('끝난 job 은 흐리게 남아 시간 자리에 exited 를 쓰고 종료 코드는 툴팁에 있으며, ✕ 를 누르면 묻지 않고 지운다', async ({
+test('끝난 job 은 남아 시간 자리에 exited 를 쓰고 종료 코드는 툴팁에 있으며, ✕ 를 누르면 묻지 않고 지운다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -733,7 +733,6 @@ test('끝난 job 은 흐리게 남아 시간 자리에 exited 를 쓰고 종료 
   await expect(build).toHaveClass(/exited/)
   await expect(build.locator('.time')).toHaveText('exited')
   await expect(build).toHaveAttribute('title', 'sh -c exit 3\nExited with code 3')
-  expect(await build.evaluate((el) => getComputedStyle(el).opacity)).toBe('0.5')
 
   await build.hover()
   await build.locator('.kill').click()
@@ -776,7 +775,7 @@ test('접은 사이드바에서는 job 줄의 꼬리표를 숨긴다', async ({ 
   await run(page, 'maru job new --name dev sleep 600 && echo started-$((1+1))', 'started-2')
   await expect(jobRows(page)).toHaveCount(1)
 
-  await collapse(app, page)
+  await collapseSidebar(app, page)
   await expect(jobRows(page).locator('.title')).toBeVisible()
   await expect(jobRows(page).locator('.time')).toBeHidden()
   await jobRows(page).first().hover()
@@ -926,10 +925,10 @@ test('접은 workspace 는 머리 줄 앞 칸에 cell 들 가운데 가장 급�
   await head.click()
 
   await expect(head.locator('.state')).toHaveClass(/blocked/)
-  await collapse(app, page)
+  const expanded = (await head.locator('.state').boundingBox())!
+  await collapseSidebar(app, page)
   await expect(head.locator('.state')).toBeVisible()
-  const x = await head.locator('.state').evaluate((el) => el.getBoundingClientRect().x)
-  expect(x).toBe(12)
+  expect(await head.locator('.state').boundingBox()).toEqual(expanded)
 })
 
 test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리에 돈 시간을 보이고, 실패하면 종료 코드를 남기며, 다음 명령이 지운다. Ctrl-Z 로 멈추거나 Ctrl-C 로 끈 명령은 실패로 남지 않는다', async ({

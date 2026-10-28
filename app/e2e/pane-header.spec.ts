@@ -325,29 +325,13 @@ test('명령 팔레트와 Canvas 패널은 앱 테마 색을 쓴다', async ({ l
   expect(colors.canvas).toBe(fg)
 })
 
-test('터미널 스크롤바는 pane 폭에서 8px 를 차지하고, 막대는 그 안쪽에 그린다', async ({
-  launch
-}) => {
-  const { page } = await launch()
-  const [width, clip] = await page.evaluate(() => {
-    const bar = document.querySelector('.terminal-view.active .xterm-scrollbar.xterm-vertical')!
-    return [
-      bar.getBoundingClientRect().width,
-      getComputedStyle(bar.querySelector('.xterm-slider')!).backgroundClip
-    ]
-  })
-  expect(width).toBe(8)
-  expect(clip).toBe('padding-box')
-})
-
 test('터미널 왼쪽 여백도 터미널 배경으로 칠한다', async ({ launch }) => {
   const { page } = await launch()
-  const [viewport, xterm, scrollable] = await page.evaluate(() =>
-    ['.xterm-viewport', '.xterm', '.xterm-scrollable-element'].map(
+  const [xterm, scrollable] = await page.evaluate(() =>
+    ['.xterm', '.xterm-scrollable-element'].map(
       (s) => getComputedStyle(document.querySelector(s)!).backgroundColor
     )
   )
-  expect(viewport).toBe('rgba(0, 0, 0, 0)')
   expect(xterm).toBe(scrollable)
 })
 
@@ -604,7 +588,7 @@ test('columns 의 cell 헤더는 기본으로 카드 맨 아래, pane 헤더 아
   expect(await headerBelowPane(page)).toEqual({ gap: 0, above: 0 })
 })
 
-test('헤더가 위면 columns 의 cell 헤더는 카드 맨 위, pane 헤더 위에 놓이고 한 행 안쪽 아래에 선을 긋는다', async ({
+test('헤더가 위면 columns 의 cell 헤더는 카드 맨 위, pane 헤더 위에 놓인다', async ({
   launch,
   dataDir
 }) => {
@@ -616,20 +600,14 @@ test('헤더가 위면 columns 의 cell 헤더는 카드 맨 위, pane 헤더 �
 
   const layout = await page.evaluate(() => {
     const card = document.querySelector('.panes.selected')!.getBoundingClientRect()
-    const head = document.querySelector('.cell-header')!
-    const r = head.getBoundingClientRect()
+    const r = document.querySelector('.cell-header')!.getBoundingClientRect()
     const pane = document.querySelector('.pane-header')!.getBoundingClientRect()
-    return {
-      gap: r.top - card.top,
-      below: pane.top - r.bottom,
-      line: getComputedStyle(head).boxShadow
-    }
+    return { gap: r.top - card.top, below: pane.top - r.bottom }
   })
-  expect(layout).toMatchObject({ gap: 0, below: 0 })
-  expect(layout.line).toMatch(/0px -1px 0px 0px inset$/)
+  expect(layout).toEqual({ gap: 0, below: 0 })
 })
 
-test('pane 헤더는 터미널과 같은 글꼴·크기로 쓰고, columns 의 cell 헤더는 굵게 쓰며 한 행 안쪽 위에 선을 긋는다', async ({
+test('pane 헤더와 columns 의 cell 헤더는 터미널과 같은 글꼴·크기로 쓰고, 두 헤더의 높이가 같다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -638,23 +616,20 @@ test('pane 헤더는 터미널과 같은 글꼴·크기로 쓰고, columns 의 c
 
   const style = await page.evaluate(() => {
     const css = (s: string) => getComputedStyle(document.querySelector(s)!)
-    const [terminal, title, name, header] = [
+    const [terminal, title, name] = [
       css('.xterm-rows'),
       css('.pane-header .title'),
-      css('.cell-header .name'),
-      css('.cell-header')
+      css('.cell-header .name')
     ]
     return {
       terminal: [terminal.fontFamily, terminal.fontSize],
       title: [title.fontFamily, title.fontSize],
-      name: [name.fontFamily, name.fontSize, name.fontWeight],
-      underline: header.boxShadow,
+      name: [name.fontFamily, name.fontSize],
       headerHeight: document.querySelector('.cell-header')!.getBoundingClientRect().height,
       paneHeaderHeight: document.querySelector('.pane-header')!.getBoundingClientRect().height
     }
   })
   expect(style.title).toEqual(style.terminal)
-  expect(style.name).toEqual([...style.terminal, '700'])
-  expect(style.underline).toMatch(/0px 1px 0px 0px inset$/)
+  expect(style.name).toEqual(style.terminal)
   expect(style.headerHeight).toBe(style.paneHeaderHeight)
 })

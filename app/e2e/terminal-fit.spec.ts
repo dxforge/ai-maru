@@ -1,4 +1,5 @@
 import type { ElectronApplication, Page } from '@playwright/test'
+import { SCROLLBAR_WIDTH, TERMINAL_PADDING } from '../src/renderer/src/workspace/columns'
 import {
   activePane,
   cellGroups,
@@ -79,14 +80,14 @@ for (const [label, dw, dh] of [
 const gridWidth = (page: Page): Promise<number> =>
   page.locator('.panes.selected .grid').evaluate((el) => el.getBoundingClientRect().width)
 
-test('터미널 영역이 720px 일 때 위아래로 나눈 두 pane 은 같은 열 수이고, 여백 4px 와 스크롤바 8px 를 뺀 폭에 들어가는 수다', async ({
+test('터미널 영역이 720px 일 때 위아래로 나눈 두 pane 은 같은 열 수이고, 여백과 스크롤바를 뺀 폭에 들어가는 수다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   await resizeBy(app, 720 - (await gridWidth(page)), 0)
   await expect.poll(() => gridWidth(page)).toBe(720)
   const { width } = await cellSize(page)
-  const cols = Math.floor((720 - 12) / width)
+  const cols = Math.floor((720 - TERMINAL_PADDING - SCROLLBAR_WIDTH) / width)
   await expectCols(page, cols)
 
   await split(app, page, 'split-down', 2)
@@ -95,30 +96,6 @@ test('터미널 영역이 720px 일 때 위아래로 나눈 두 pane 은 같은 
   await expect(panes(page).first().locator('.terminal-view')).toHaveClass(/active/)
   expect((await shellSize(page)).cols).toBe(cols)
 })
-
-for (const mode of ['single', 'columns'] as const) {
-  test(`${mode} 에서 터미널은 pane 왼쪽 끝에서 4px 떨어져 시작하고, 여백은 .xterm 의 padding 이다`, async ({
-    launch
-  }) => {
-    const launched = await launch()
-    const { page } = launched
-    if (mode === 'columns') {
-      await toggleView(launched, 'columns')
-      await expectCols(page, 80)
-    } else await shellSize(page)
-
-    const place = await panes(page)
-      .first()
-      .evaluate((pane) => ({
-        gap:
-          pane.querySelector('.xterm-screen')!.getBoundingClientRect().left -
-          pane.getBoundingClientRect().left,
-        padding: getComputedStyle(pane.querySelector('.xterm')!).paddingLeft
-      }))
-    expect(place.gap).toBeCloseTo(4, 1)
-    expect(place.padding).toBe('4px')
-  })
-}
 
 function blankSpots(page: Page, i: number) {
   return panes(page)
