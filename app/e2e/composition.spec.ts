@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { CDPSession, Page } from '@playwright/test'
 import {
   cellSize,
@@ -36,10 +38,6 @@ async function inkTop(page: Page, clip: Box): Promise<number> {
   return -1
 }
 
-/**
- * 조합한 글자마다, 확정되면 그 글자가 차지할 글자 칸에서 처음 글자 픽셀이 나오는 x 와 `clip` 안의 마지막 글자 픽셀의 x(device
- * px). `clip` 은 커서에서 시작한다.
- */
 async function glyphInk(
   page: Page,
   clip: Box,
@@ -187,8 +185,6 @@ for (const size of [undefined, 13, 15, 16])
         expect(await settled(ink)).toEqual(composing)
       })
 
-// DPR 1 에서는 WebGL renderer 가 글자 칸 폭을 device px 로 내림하므로 13·15 에서는 한글이 두 글자 칸보다 넓고, 16 에서는
-// 두 글자 칸과 같다.
 for (const size of [undefined, 13, 15, 16])
   test(`글꼴 크기 ${size ?? '기본값'}: 조합창은 터미널 배경에 밑줄로 두 글자 칸을 덮어 그 아래의 커서를 가린다`, async ({
     launch,
@@ -256,7 +252,10 @@ test('마지막 열에서 조합해도 조합창이 터미널 밖으로 넘치�
   expect(await direction()).toBe('rtl')
 })
 
-test('조합 중에 커서가 마지막 열로 옮겨지면 조합창을 남은 폭에 다시 맞춘다', async ({ launch }) => {
+test('조합 중에 커서가 마지막 열로 옮겨지면 조합창을 남은 폭에 다시 맞춘다', async ({
+  launch,
+  dataDir
+}) => {
   const { page } = await launch({ MARU_DOM_RENDERER: '' })
   const cell = await cellSize(page)
   const cdp = await page.context().newCDPSession(page)
@@ -264,13 +263,17 @@ test('조합 중에 커서가 마지막 열로 옮겨지면 조합창을 남은 
   const direction = (): Promise<string> => view.evaluate((el) => getComputedStyle(el).direction)
   const screen = page.locator('.terminal-view.active .xterm-screen')
   const { left, right } = await screen.evaluate((el) => el.getBoundingClientRect())
-  // 조합하는 동안 sleep 이 끝나면 CUF 999 가 커서를 마지막 열로 옮긴다.
-  await page.keyboard.type(`clear; sleep 2; printf '\\033[999C'; read -rs\n`)
+  const go = join(dataDir, 'go')
+  // 조합하는 동안 테스트가 `go` 를 만들면 CUF 999 가 커서를 마지막 열로 옮긴다.
+  await page.keyboard.type(
+    `clear; while [ ! -e '${go}' ]; do sleep 0.1; done; printf '\\033[999C'; read -rs\n`
+  )
   await expect.poll(async () => (await cursor(page)).x - left).toBeLessThan(1)
   await compose(cdp, '한')
   await expect(view).toBeVisible()
   expect(await direction()).toBe('ltr')
 
+  writeFileSync(go, '')
   await expect.poll(async () => (await cursor(page)).x).toBeGreaterThan(right - 2 * cell.width)
   await expect.poll(direction).toBe('rtl')
   expect(await view.evaluate((el) => el.getBoundingClientRect().right)).toBeLessThanOrEqual(

@@ -66,10 +66,6 @@ function cellCount(term: Terminal, text: string): number | undefined {
   return unicode?.getStringCellWidth?.(text)
 }
 
-/**
- * 조합이 커서 뒤 남은 폭 안에 들어갈 때 조합창에 붙이는 class. `TerminalView.vue` 의 CSS 가 이 class 로 방향을 ltr 로 바꾸고
- * 넘친 글자를 보인다.
- */
 const FITS = 'composition-fits'
 
 const LRM = '\u200E'
