@@ -28,7 +28,7 @@ jobs:
       # rust-cache 는 저장하기 전에 target 아래에서 deps·build·.fingerprint 의 의존성 산출물 말고는 파일을 지우므로, build.rs 가 target/ghostty-vt 에 둔 라이브러리가 다음 실행에 남지 않는다.
       - run: echo "MARU_GHOSTTY_VT_DIR=$RUNNER_TEMP/ghostty-vt" >> "$GITHUB_ENV"
       - id: ghostty-vt
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.MARU_GHOSTTY_VT_DIR }}
           key: ghostty-vt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('core/ghostty-vt.env', 'core/scripts/build-ghostty-vt.sh') }}
@@ -40,7 +40,7 @@ jobs:
         run: scripts/build-ghostty-vt.sh "$MARU_GHOSTTY_VT_DIR"
       # clippy·test 가 실패해도 빌드한 라이브러리를 저장하려고 save 단계를 따로 둔다. actions/cache 의 post 단계는 job 이 성공할 때만 저장하기 때문이다.
       - if: steps.ghostty-vt.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ env.MARU_GHOSTTY_VT_DIR }}
           key: ${{ steps.ghostty-vt.outputs.cache-primary-key }}
