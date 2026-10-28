@@ -28,6 +28,8 @@ import { gitEnv } from '../src/main/test-repo-env'
 import type { CanvasMarkdown } from '../src/shared/canvas'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import type { PtyOpen } from '../src/shared/pty'
+import { clampCanvasWidth, clampSidebarWidth } from '../src/shared/screen'
+import { GHOSTTY } from '../src/shared/theme'
 
 export { expect }
 export { git } from '../src/main/test-repo-env'
@@ -277,8 +279,7 @@ export function attachFromOutside(sockPath: string, cols: number, rows: number):
 // xterm 이 그리는 canvas 가운데 render layer 가 아닌 것이 WebGL renderer 의 것이다.
 export const WEBGL_CANVAS = '.xterm-screen > canvas:not([class*="-layer"])'
 
-// 앱의 테마 배경(GHOSTTY). 이 색과 다른 픽셀을 글자가 그려진 픽셀로 본다.
-export const GROUND = [0x28, 0x2c, 0x34]
+export const GROUND = [1, 3, 5].map((i) => parseInt(GHOSTTY.background.slice(i, i + 2), 16))
 
 export function isInk(data: number[], i: number): boolean {
   return (
@@ -599,6 +600,27 @@ export async function cellWidth(page: Page, i = 0): Promise<number> {
 
 export async function sidebarWidth(page: Page): Promise<number> {
   return (await page.locator('.side').boundingBox())!.width
+}
+
+export const SIDEBAR_MIN_WIDTH = clampSidebarWidth(0)
+export const SIDEBAR_MAX_WIDTH = clampSidebarWidth(Infinity)
+export const CANVAS_MIN_WIDTH = clampCanvasWidth(0)
+
+/** 사이드바를 접고, `.side` 의 width transition 이 끝나 그린 폭이 접은 폭(inline style 의 width)과 같아질 때까지 기다린다. */
+export async function collapseSidebar(app: ElectronApplication, page: Page): Promise<void> {
+  const open = await sidebarWidth(page)
+  await clickMenu(app, 'toggle-sidebar')
+  await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
+  await expect
+    .poll(() =>
+      page
+        .locator('.side')
+        .evaluate(
+          (el) => el.getBoundingClientRect().width === parseFloat((el as HTMLElement).style.width)
+        )
+    )
+    .toBe(true)
+  expect(await sidebarWidth(page)).toBeLessThan(open)
 }
 
 export function sidebarResizer(page: Page): Locator {

@@ -1,4 +1,5 @@
 import type { ElectronApplication, Page } from '@playwright/test'
+import { SCROLLBAR_WIDTH, TERMINAL_PADDING } from '../src/renderer/src/workspace/columns'
 import {
   activePane,
   cellGroups,
@@ -79,14 +80,14 @@ for (const [label, dw, dh] of [
 const gridWidth = (page: Page): Promise<number> =>
   page.locator('.panes.selected .grid').evaluate((el) => el.getBoundingClientRect().width)
 
-test('터미널 영역이 720px 일 때 위아래로 나눈 두 pane 은 같은 열 수이고, 여백 4px 와 스크롤바 8px 를 뺀 폭에 들어가는 수다', async ({
+test('터미널 영역이 720px 일 때 위아래로 나눈 두 pane 은 같은 열 수이고, 여백과 스크롤바를 뺀 폭에 들어가는 수다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   await resizeBy(app, 720 - (await gridWidth(page)), 0)
   await expect.poll(() => gridWidth(page)).toBe(720)
   const { width } = await cellSize(page)
-  const cols = Math.floor((720 - 12) / width)
+  const cols = Math.floor((720 - TERMINAL_PADDING - SCROLLBAR_WIDTH) / width)
   await expectCols(page, cols)
 
   await split(app, page, 'split-down', 2)
@@ -96,8 +97,20 @@ test('터미널 영역이 720px 일 때 위아래로 나눈 두 pane 은 같은 
   expect((await shellSize(page)).cols).toBe(cols)
 })
 
+// 위 테스트는 앱과 같은 상수로 기대 열 수를 구하므로, 스크롤바 폭과 왼쪽 여백이 그 상수대로 그려지는지는 아래 테스트들이 잰다.
+test('터미널 스크롤바는 열 수 계산이 빼는 SCROLLBAR_WIDTH 만큼의 폭으로 그린다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await shellSize(page)
+  const width = await page
+    .locator('.terminal-view.active .xterm-scrollbar.xterm-vertical')
+    .evaluate((bar) => bar.getBoundingClientRect().width)
+  expect(width).toBe(SCROLLBAR_WIDTH)
+})
+
 for (const mode of ['single', 'columns'] as const) {
-  test(`${mode} 에서 터미널은 pane 왼쪽 끝에서 4px 떨어져 시작하고, 여백은 .xterm 의 padding 이다`, async ({
+  test(`${mode} 에서 터미널은 열 수 계산이 빼는 TERMINAL_PADDING 만큼 pane 왼쪽 끝에서 떨어져 시작한다`, async ({
     launch
   }) => {
     const launched = await launch()
@@ -107,16 +120,14 @@ for (const mode of ['single', 'columns'] as const) {
       await expectCols(page, 80)
     } else await shellSize(page)
 
-    const place = await panes(page)
+    const gap = await panes(page)
       .first()
-      .evaluate((pane) => ({
-        gap:
+      .evaluate(
+        (pane) =>
           pane.querySelector('.xterm-screen')!.getBoundingClientRect().left -
-          pane.getBoundingClientRect().left,
-        padding: getComputedStyle(pane.querySelector('.xterm')!).paddingLeft
-      }))
-    expect(place.gap).toBeCloseTo(4, 1)
-    expect(place.padding).toBe('4px')
+          pane.getBoundingClientRect().left
+      )
+    expect(gap).toBeCloseTo(TERMINAL_PADDING, 1)
   })
 }
 

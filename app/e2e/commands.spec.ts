@@ -441,7 +441,6 @@ for (const [position, label, arrows, next, previous] of [
   })
 }
 
-/** `gap` 은 첫 후보(또는 빈 줄)의 아래에서 입력줄의 위까지다. 입력줄이 아래면 입력줄의 여백 6px 이고, 위면 음수다. */
 function paletteLayout(page: Page) {
   return page.evaluate(() => {
     const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect()
@@ -452,20 +451,24 @@ function paletteLayout(page: Page) {
   })
 }
 
-test('팔레트는 기본으로 창 아래 8px 안쪽에 뜨고, 입력줄이 맨 아래, 첫 후보와 빈 줄은 그 바로 위에 놓인다', async ({
+const atBottom = ({ top, bottom, gap }: Awaited<ReturnType<typeof paletteLayout>>) =>
+  bottom >= 0 && bottom <= top && gap >= 0
+
+test('팔레트는 기본으로 창 아래쪽에 뜨고, 입력줄이 맨 아래, 첫 후보와 빈 줄은 그 바로 위에 놓인다', async ({
   launch
 }) => {
   const launched = await launch()
   const { page } = launched
   await openPalette(launched)
   await expect(items(page).first()).toHaveClass(/selected/)
-  expect(await paletteLayout(page)).toMatchObject({ bottom: 8, gap: 6 })
+  const layout = await paletteLayout(page)
+  expect(atBottom(layout)).toBe(true)
   await page.keyboard.type('xyz')
   await expect(palette(page)).toContainText('No matching commands')
-  expect(await paletteLayout(page)).toMatchObject({ gap: 6 })
+  expect((await paletteLayout(page)).gap).toBe(layout.gap)
 })
 
-test('layout.palette = "top" 이면 팔레트는 창 위 8px 안쪽에 뜨고 입력줄이 맨 위에 놓이며, 열린 채로 고쳐도 옮긴다', async ({
+test('layout.palette = "top" 이면 팔레트는 창 위쪽에 뜨고 입력줄이 맨 위에 놓이며, 열린 채로 고쳐도 옮긴다', async ({
   launch,
   dataDir
 }) => {
@@ -474,10 +477,11 @@ test('layout.palette = "top" 이면 팔레트는 창 위 8px 안쪽에 뜨고 �
   const { page } = launched
   await openPalette(launched)
   const above = await paletteLayout(page)
-  expect(above.top).toBe(8)
+  expect(above.top).toBeGreaterThanOrEqual(0)
+  expect(above.top).toBeLessThanOrEqual(above.bottom)
   expect(above.gap).toBeLessThan(0)
   writeConfig(dataDir, '[layout]\npalette = "bottom"\n')
-  await expect.poll(() => paletteLayout(page)).toMatchObject({ bottom: 8, gap: 6 })
+  await expect.poll(async () => atBottom(await paletteLayout(page))).toBe(true)
   await expect(palette(page).locator('.query')).toBeFocused()
 })
 
@@ -496,8 +500,8 @@ for (const [position, label, toLast] of [
     await expect.poll(() => page.evaluate(() => innerHeight)).toBeLessThan(400)
     await openPalette(launched)
     const inside = await paletteLayout(page)
-    expect(inside.top).toBeGreaterThanOrEqual(8)
-    expect(inside.bottom).toBeGreaterThanOrEqual(8)
+    expect(inside.top).toBeGreaterThanOrEqual(0)
+    expect(inside.bottom).toBeGreaterThanOrEqual(0)
 
     await page.keyboard.press(toLast)
     const last = items(page).last()

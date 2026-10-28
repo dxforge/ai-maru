@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import {
   attachFromOutside,
+  CANVAS_MIN_WIDTH,
   canvasPanel,
   canvasResizer,
   canvasWidth,
@@ -387,7 +388,7 @@ test('FILE 없이 stdin 이 터미널이면 기다리지 않고 실패한다', a
   await expect(rows(page)).toContainText('code-1')
 })
 
-test('왼쪽 경계를 끌어 Canvas 폭을 바꾸고, 240 아래로는 줄지 않으며, 터미널 영역이 0 이 되는 데서 멈춘다', async ({
+test('왼쪽 경계를 끌어 Canvas 폭을 바꾸고, 최소 폭 아래로는 줄지 않으며, 터미널 영역이 0 이 되는 데서 멈춘다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -398,7 +399,7 @@ test('왼쪽 경계를 끌어 Canvas 폭을 바꾸고, 240 아래로는 줄지 �
   await dragCanvas(page, -100)
   await expect.poll(async () => (await shellSize(page)).cols).toBeLessThan(beforeCols)
   await dragHandle(page, canvasResizer(page), 2000)
-  await expect.poll(() => canvasWidth(page)).toBe(240)
+  await expect.poll(() => canvasWidth(page)).toBe(CANVAS_MIN_WIDTH)
   await dragHandle(page, canvasResizer(page), -3000)
 
   await expect.poll(async () => (await page.locator('.terminals').boundingBox())!.width).toBe(0)

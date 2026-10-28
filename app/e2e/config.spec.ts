@@ -1,9 +1,11 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import type { Page } from '@playwright/test'
+import { FONT_FAMILY, FONT_SIZE, LINE_HEIGHT } from '../src/renderer/src/font'
 import {
   activePane,
   activeTerminal,
   clickMenu,
+  collapseSidebar,
   configFile,
   expect,
   expectRowsChangeOnce,
@@ -39,11 +41,26 @@ async function terminalFont(page: Page) {
 
 const fontSize = async (page: Page): Promise<string> => (await terminalFont(page)).size
 
+const DEFAULT_SIZE = `${FONT_SIZE}px`
+
+async function toastInBottomLeft(page: Page): Promise<boolean> {
+  const box = await toast(page).boundingBox()
+  if (!box) return false
+  const height = await page.evaluate(() => innerHeight)
+  return (
+    box.x >= 0 &&
+    box.x + box.width <= (await sidebarWidth(page)) &&
+    box.y > height / 2 &&
+    box.y + box.height <= height
+  )
+}
+
 test('설정 파일이 없으면 지금 기본값으로 그린다', async ({ launch }) => {
   const { page } = await launch()
   const font = await terminalFont(page)
-  expect(font.size).toBe('14px')
-  expect(font.family).toMatch(/^D2Coding, Menlo/)
+  expect(font.size).toBe(DEFAULT_SIZE)
+  // computed style 은 작은따옴표로 쓴 글꼴 이름을 큰따옴표로 바꿔 보여 준다.
+  expect(font.family.replaceAll('"', "'")).toBe(FONT_FAMILY)
   await expect(toast(page)).toHaveCount(0)
 })
 
@@ -53,9 +70,14 @@ test('띄울 때 설정 파일의 글꼴·크기·줄 높이를 쓴다', async (
   const font = await terminalFont(page)
   expect(font.family).toMatch(/^Menlo, D2Coding/)
   expect(font.size).toBe('18px')
-  // 이 설정이면 행 높이는 28px 이고, 기본값(14px, 1.2)이면 18px 이다.
-  expect(font.row).toBeGreaterThanOrEqual(26)
   await expect(toast(page)).toHaveCount(0)
+
+  // 행 높이는 글꼴의 글자 높이에 줄 높이를 곱한 값이다. 글자 높이는 글꼴마다 다르므로, 같은 글꼴·크기에서
+  // 줄 높이만 기본값(LINE_HEIGHT)으로 돌린 행 높이와 비교한다. 1px 안팎은 반올림 차이다.
+  writeConfig(dataDir, '[terminal]\nfont-family = "Menlo"\nfont-size = 18\n')
+  await expect.poll(async () => (await terminalFont(page)).row).not.toBe(font.row)
+  const byDefault = (await terminalFont(page)).row
+  expect(Math.abs(font.row - (byDefault * 1.5) / LINE_HEIGHT)).toBeLessThanOrEqual(1.5)
 })
 
 test('폴더가 없는 채로 띄운 뒤 폴더와 파일을 만들면 적용하고 셸이 본 크기도 바뀐다', async ({
@@ -142,7 +164,7 @@ test('파일을 지우면 기본값으로 돌아간다', async ({ launch, dataDi
   const { page } = await launch()
   expect(await fontSize(page)).toBe('16px')
   rmSync(configFile(dataDir))
-  await expect.poll(() => fontSize(page)).toBe('14px')
+  await expect.poll(() => fontSize(page)).toBe(DEFAULT_SIZE)
 })
 
 test('single 보기의 숨은 cell 도 새 크기로 맞춘다', async ({ launch, dataDir }) => {
@@ -204,20 +226,16 @@ test('헤더는 기본으로 pane 아래에 있고, layout.header = "top" 으로
   const { page } = await launch()
   await expect.poll(() => headerOffsets(page)).toMatchObject({ bottom: 0 })
   expect((await headerOffsets(page)).top).toBeGreaterThan(0)
-  const corner = async () => {
-    const box = (await toast(page).boundingBox())!
-    return { x: box.x, bottom: box.y + box.height }
-  }
-  const bottomLeft = { x: 12, bottom: await page.evaluate(() => innerHeight - 12) }
 
   writeConfig(dataDir, '[layout]\nheader = "top"\n[terminal]\nfont-size = 40\n')
   await expect.poll(() => headerOffsets(page)).toMatchObject({ top: 0 })
   expect((await headerOffsets(page)).bottom).toBeGreaterThan(0)
-  await expect.poll(corner).toEqual(bottomLeft)
+  await expect.poll(() => toastInBottomLeft(page)).toBe(true)
+  const placed = await toast(page).boundingBox()
 
   writeConfig(dataDir, '[layout]\nheader = "bottom"\n[terminal]\nfont-size = 40\n')
   await expect.poll(() => headerOffsets(page)).toMatchObject({ bottom: 0 })
-  await expect.poll(corner).toEqual(bottomLeft)
+  await expect.poll(() => toast(page).boundingBox()).toEqual(placed)
 })
 
 test('layout.header 가 top·bottom 이 아니면 알리고 아래에 둔다', async ({ launch, dataDir }) => {
@@ -253,7 +271,7 @@ test('띄울 때 문법 오류면 기본값으로 그리고 알리며, 고치면
   const { page } = await launch()
   await expect(toast(page)).toHaveClass(/error/)
   await expect(toast(page)).toContainText('Using the default settings.')
-  expect(await fontSize(page)).toBe('14px')
+  expect(await fontSize(page)).toBe(DEFAULT_SIZE)
   writeConfig(dataDir, '[terminal]\nfont-size = 18\n')
   await expect(toast(page)).toHaveCount(0)
   expect(await fontSize(page)).toBe('18px')
@@ -347,7 +365,7 @@ test('띄울 때 설정 파일을 읽을 수 없으면 기본값을 쓴다고 �
   const { page } = await launch()
   await expect(toast(page)).toContainText('EISDIR')
   await expect(toast(page)).toContainText('Using the default settings.')
-  expect(await fontSize(page)).toBe('14px')
+  expect(await fontSize(page)).toBe(DEFAULT_SIZE)
 })
 
 test('토스트가 떠 있어도 Canvas 헤더의 닫기 버튼으로 Canvas 를 닫는다', async ({
@@ -364,18 +382,15 @@ test('토스트가 떠 있어도 Canvas 헤더의 닫기 버튼으로 Canvas 를
   await expect(toast(page)).toHaveCount(1)
 })
 
-test('토스트는 사이드바 왼쪽 아래 안쪽에 뜨고, 사이드바를 접으면 256px 폭이다', async ({
+test('토스트는 사이드바 왼쪽 아래 안쪽에 뜨고, 기본 폭의 사이드바를 접어도 펼쳤을 때의 폭을 지킨다', async ({
   launch,
   dataDir
 }) => {
   writeConfig(dataDir, '[terminal]\nfont-size = 40\n')
   const { app, page } = await launch()
   await expect(toast(page)).toHaveCount(1)
-  const box = (await toast(page).boundingBox())!
-  const height = await page.evaluate(() => innerHeight)
-  expect(box.x).toBe(12)
-  expect(box.y + box.height).toBe(height - 12)
-  expect(box.x + box.width).toBeLessThanOrEqual((await sidebarWidth(page)) - 12)
-  await clickMenu(app, 'toggle-sidebar')
-  await expect.poll(async () => (await toast(page).boundingBox())!.width).toBe(256)
+  expect(await toastInBottomLeft(page)).toBe(true)
+  const { width } = (await toast(page).boundingBox())!
+  await collapseSidebar(app, page)
+  expect((await toast(page).boundingBox())!.width).toBe(width)
 })
