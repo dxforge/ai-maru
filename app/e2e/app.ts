@@ -129,6 +129,12 @@ async function launchApp(
       ...env
     } as Record<string, string>
   })
+  // main 의 JS 가 끝난(`exit`) 뒤 Electron 이 하는 뒷정리(Chromium 의 종료 작업, macOS CoreAnalytics 의 exit barrier)는
+  // 머신이 바쁘면 수십 초 걸린다. 테스트가 재는 앱의 종료 동작은 `exit` 전에 끝나므로, `exit` 가 나면 main 프로세스를
+  // SIGKILL 로 바로 종료한다.
+  await app.evaluate(() => {
+    process.once('exit', () => process.kill(process.pid, 'SIGKILL'))
+  })
   const page = await app.firstWindow()
   // single 보기에서는 고르지 않은 cell 이 숨으므로, 맨 앞 cell 이 아니라 고른 cell 의 터미널을 기다린다.
   await activeTerminal(page)
