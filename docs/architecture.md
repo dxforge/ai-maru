@@ -66,7 +66,7 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 ## pane 경계와 글자 칸 격자
 
-나란히 놓인 pane 끼리 터미널 행이, 위아래로 놓인 pane 끼리 열이 이어지도록 pane 경계를 터미널 글자 칸 크기의 배수에 둔다. columns 보기의 좌우 경계는 글자 칸이 아니라 pane 하나의 폭의 배수에 둔다. pane 하나의 폭은 글자 칸 폭의 배수가 아니므로, pane 여럿의 폭에 걸친 pane 과 그 위나 아래의 두 번째 이후 pane 은 열이 이어지지 않는다. ⌘+ / ⌘- 로 cell 마다 글꼴 크기가 다를 수 있으므로 `App.vue` 는 글꼴마다 마지막으로 잰 글자 칸 크기를 둔다. cell 마다 그 글꼴의 글자 칸 크기를 `--row`·`--cell` 로, 터미널 왼쪽 여백 4px 를 `--pad` 로 그 cell 의 `.panes` 요소에 둔다. 여백은 터미널 요소 밖, pane 안에 둔다.
+나란히 놓인 pane 끼리 터미널 행이, 위아래로 놓인 pane 끼리 열이 이어지도록 pane 경계를 터미널 글자 칸 크기의 배수에 둔다. columns 보기의 좌우 경계는 글자 칸이 아니라 pane 하나의 폭의 배수에 둔다. pane 하나의 폭(열 수 × 글자 칸 폭 + 12px)이 글자 칸 폭의 배수가 아니면, pane 여럿의 폭에 걸친 pane 과 그 위나 아래의 두 번째 이후 pane 은 열이 이어지지 않는다. ⌘+ / ⌘- 로 cell 마다 글꼴 크기가 다를 수 있으므로 `App.vue` 는 글꼴마다 마지막으로 잰 글자 칸 크기를 둔다. cell 마다 그 글꼴의 글자 칸 크기를 `--row`·`--cell` 로, 터미널 왼쪽 여백 4px 를 `--pad` 로 그 cell 의 `.panes` 요소에 둔다. 여백은 터미널 요소 밖, pane 안에 둔다.
 
 `App.vue` 는 pane 배치(`snapRects`(`grid.ts`))와 함께 터미널의 열·행 수를 정해 `TerminalView` 에 `cols`·`rows` 로 넘긴다. `TerminalView` 는 처음 받은 열·행 수로 pty 에 붙고, 그 뒤에는 primary 일 때만 그 값으로 `term.resize` 를 부른다. pane 크기를 정하려고 화면에서 재는 것은 cell 마다 pane 이 놓일 영역(`.panes`)의 크기와 글자 칸 크기다. columns 보기는 영역 폭을 쓰지 않고, cell 의 pane 열 수(`layout.column-cols` 나 ⇧⌘. / ⇧⌘, 로 바꾼 값)로 pane 폭을 만든다.
 
