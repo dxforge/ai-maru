@@ -41,8 +41,7 @@ pub fn spawn(
     let pair = nix::pty::openpty(Some(&ws), None).context("openpty failed")?;
     // openpty 는 CLOEXEC 를 안 건다. 안 걸면 셸과 그 자식들이 master 를 물려받는다.
     for fd in [&pair.master, &pair.slave] {
-        fcntl(fd.as_raw_fd(), FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC))
-            .context("cannot set FD_CLOEXEC")?;
+        fcntl(fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).context("cannot set FD_CLOEXEC")?;
     }
 
     let tty_path = nix::unistd::ttyname(&pair.slave).context("cannot get the slave name")?;
