@@ -8,6 +8,7 @@ describe('filterCommands', () => {
     const all = [
       'New Workspace',
       'New Cell',
+      'Open Launcher',
       'Split Right',
       'Split Down',
       'Close Pane',

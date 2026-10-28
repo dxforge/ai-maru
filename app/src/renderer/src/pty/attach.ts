@@ -1,10 +1,11 @@
 import type { Terminal } from '@xterm/xterm'
 import { parseProgramStatus, type ProgramStatusRecord } from '../../../shared/program-status'
 import { PROTOCOL_VERSION } from '../../../shared/protocol'
+import type { PtyExit } from '../../../shared/pty'
 import type { PtyConnection } from './connection'
 
 export type AttachHandlers = {
-  onExit(): void
+  onExit(exit: PtyExit): void
   /** 되살린 pane 이 붙으면 `cwd` 가 없다. */
   onSpawned(id: string, cwd: string | undefined): void
   onOpenFailed(message: string): void
@@ -75,7 +76,7 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
       }
       case 'exit':
         ended = true
-        handlers.onExit()
+        handlers.onExit({ code: m.code ?? null, signal: m.signal ?? null })
         break
       // 되살린 pane 은 지우지 않고 이유를 보인다 — 말없이 사라지면 재시작 전 배치와 달라 헷갈린다.
       case 'gone':

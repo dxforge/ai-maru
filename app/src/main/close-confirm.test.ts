@@ -76,6 +76,12 @@ describe('runningProgram', () => {
     expect(d.foreground).not.toHaveBeenCalled()
   })
 
+  it('명령 pane 은 maru-pty 가 명령이 끝났다고 알렸으면 실행 중이 아니다', async () => {
+    const d = deps({}, { 'p-1': { ...command(false, 'claude'), exitCode: 3 } })
+    expect(await runningProgram({ ptyId: 'p-1', command: ['claude'] }, d)).toBeNull()
+    expect(d.foreground).not.toHaveBeenCalled()
+  })
+
   it('빈 명령은 명령 pane 이 아니다', async () => {
     const d = deps({ 'p-1': { pid: SHELL, name: 'bash' } })
     expect(await runningProgram({ ptyId: 'p-1', command: [] }, d)).toBeNull()

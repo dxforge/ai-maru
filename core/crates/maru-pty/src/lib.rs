@@ -91,8 +91,9 @@
 //!   - RIS 는 바꾸지 않는다.
 //!
 //!   명령을 주어 띄웠으면 `command` 는 처음부터 `{"running":true,"text":<argv 를 공백으로 잇고 C 의 텍스트처럼 다듬은 것>,
-//!   "exit_code":null,"started_at":<띄운 시각>}` 이다. 명령이 끝나면 이 프로세스도 끝나므로 늘 도는 중으로 둔다(`--keep`
-//!   이면 끝난 뒤에도 이 값이 남는다). 명령이 스스로 OSC 133 을 찍어도 이 값은 바뀌지 않는다.
+//!   "exit_code":null,"started_at":<띄운 시각>}` 이다. 셸이 끝나면 안 도는 중으로 바꾸고 `exit_code` 에 셸의 종료
+//!   코드(시그널로 끝났으면 128+번호)를 넣는다. `--keep` 이 아니면 이 상태를 보낸 직후 이 프로세스가 끝난다. 명령이
+//!   스스로 OSC 133 을 찍어도 이 값은 바뀌지 않는다.
 //! - `records` — 프로그램이 OSC 7501(Program Status Protocol)로 보고한 레코드 전체:
 //!   `[{"id","state","kind","progress","app","title","message"}, …]`. `id` 는 루트 레코드가 `""` 이고 `/` 로
 //!   하위를 나타낸다. `state` 는 `idle`·`working`·`done`·`blocked`·`error`, `kind` 는

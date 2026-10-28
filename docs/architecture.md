@@ -64,6 +64,10 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 다시 뜬 앱의 남은 pty 정리는 이 파일에 있는 pty 만 남기고, 그 가운데 프로토콜 버전이 다른 pty 는 끈다. 되살린 pane 은 `pty:open` 의 `attach` 로 pty 를 띄우지 않고 붙는다.
 
+## 런처로 띄운 pane 은 명령이 실패하면 남는다
+
+런처(⌘P)가 명령으로 띄운 pane 은 화면 snapshot 에 `keep` 이 붙고(`ScreenPane`), pty 를 `maru-pty --keep` 으로 띄운다. 명령이 0 이나 130 으로 끝나거나 셸이 SIGINT 로 끝나면 다른 명령 pane 처럼 pane 을 지운다. 130 과 SIGINT 는 사용자가 Ctrl-C 로 끈 것이기 때문이다. 그 밖의 코드나 시그널로 끝나면 renderer 는 pane 을 지우지 않고 종료 상태를 터미널 마지막 줄에 쓴다. 재시작 뒤 다시 붙은 pane 도 `exit` 를 다시 받아 종료 상태를 마지막 줄에 쓰고 남는다. maru-pty 가 화면과 종료 상태를 들고 있기 때문이다. maru-pty 는 명령이 끝나면 상태의 명령을 안 도는 중으로 바꾸고 종료 코드를 싣는다. 그래서 OSC 7501 레코드가 없는 남긴 pane 은 헤더와 사이드바에 종료 코드를 보인다. ⌘W 는 그 pane 을 실행 중으로 보지 않으므로 확인 창을 띄우지 않는다. 남긴 pane 을 닫으면 renderer 가 보내는 kill 로 maru-pty 도 끝난다.
+
 ## 닫기 전 확인 창은 main 이 띄운다
 
 ⌘W(pane)·⇧⌘W(workspace)·창 닫기·⌘Q 는 셸 말고 도는 프로그램이나 끝나지 않은 job 이 있으면 확인 창을 띄운다(`app/src/main/close-confirm.ts`). 실행 중인지는 maru-pty 의 `foreground` 응답과 main 의 job 표로 가리므로, ⌘W·⇧⌘W 도 renderer 가 아니라 main 이 묻고 renderer 는 답을 받은 뒤에 닫는다. 어느 경로든 main 은 renderer 가 마지막으로 보낸 화면(`lastScreen`)에서 pane 과 cell 을 찾는다. `maru pane close` 는 프로그램이 돌아도 묻지 않는다 — CLI 의 답 상한 안에 사용자의 답을 기다릴 수 없기 때문이다.

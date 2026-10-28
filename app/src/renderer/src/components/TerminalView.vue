@@ -20,6 +20,7 @@ import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../pty/attach'
 import { openPty, type PtyConnection } from '../pty/connection'
 import type { ProgramStatusRecord } from '../../../shared/program-status'
+import { exitMessage, failedExit } from '../../../shared/pty'
 import { matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
 import { sameFont, type TerminalFont } from '../config/terminal'
 import { alignComposition } from '../terminal/composition'
@@ -34,6 +35,7 @@ const {
   startDir = undefined,
   command = undefined,
   attach = undefined,
+  keep = undefined,
   active,
   shown,
   font,
@@ -46,6 +48,8 @@ const {
   startDir?: string
   command?: readonly string[]
   attach?: boolean
+  /** pty 를 `--keep` 으로 띄우고, 명령이 실패하면 `exit` 를 내지 않고 종료 상태를 마지막 줄에 쓴다. */
+  keep?: boolean
   active: boolean
   /** 터미널이 속한 cell 이 화면에 나와 있다. 겹쳐 숨은 cell 도 화면 안에 있어 IntersectionObserver 로는 가려낼 수 없다. */
   shown: boolean
@@ -269,6 +273,20 @@ function onPaste(e: ClipboardEvent): void {
 
 let conn: PtyConnection | undefined
 
+// claude 처럼 입력란 아래에 상태줄을 그려 두는 프로그램은 커서를 그 위에 둔 채 끝나므로, 커서 자리에 쓰면 아래 줄을 덮는다.
+// 앞서 받은 출력을 xterm 이 다 그린 뒤, 화면에 그려진 마지막 줄 바로 아래로 커서를 옮겨 쓴다.
+function writeBelowContent(text: string): void {
+  term.write('', () => {
+    const buffer = term.buffer.active
+    let last = -1
+    for (let y = term.rows - 1; y >= 0 && last < 0; y--)
+      if (buffer.getLine(buffer.baseY + y)?.translateToString(true)) last = y
+    const row = last + 2
+    const move = row > term.rows ? `\x1b[${term.rows};1H\r\n` : `\x1b[${row};1H`
+    term.write(`${move}${text}\r\n`)
+  })
+}
+
 defineExpose({
   focus: () => term.focus(),
   kill: () => conn?.kill(),
@@ -294,10 +312,14 @@ onMounted(() => {
     cell: cellId,
     cwd: startDir,
     command: command && [...command],
-    attach
+    attach,
+    keep
   })
   pty = attachTerminal(term, conn, {
-    onExit: () => emit('exit'),
+    onExit: (exit) => {
+      if (keep && failedExit(exit)) writeBelowContent(exitMessage(exit))
+      else emit('exit')
+    },
     onOpenFailed: (message) => emit('failed', message),
     onSpawned: (_id, dir) => emit('spawned', dir),
     onProgramStatus: (records) => emit('programStatus', records)

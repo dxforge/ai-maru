@@ -12,13 +12,15 @@ export const SCREEN_VERSION = 3
 
 /**
  * `cwd`·`title`·`git` 은 저장할 때 화면에 보이던 값이다. main 은 `maru mate list` 의 이름을 이 값으로 짓고, 다시 뜬
- * 앱은 pty 의 상태가 오기 전까지 이 값을 보인다.
+ * 앱은 pty 의 상태가 오기 전까지 이 값을 보인다. `keep` 은 런처로 띄운 pane 에 붙는다. 앱은 그 pane 의 pty 를
+ * `--keep` 으로 띄우고, 명령이 실패하면(`failedExit`) pane 을 남긴다.
  */
 export type ScreenPane = {
   key: number
   ptyId: string
   startDir?: string
   command?: string[]
+  keep?: true
   cwd?: string
   title?: string
   git?: GitHead
@@ -123,11 +125,14 @@ function parsePane(v: unknown): ScreenPane | null {
     return null
   const git = v.git === undefined ? undefined : parseGit(v.git)
   if (git === null) return null
+  if (v.keep !== undefined && v.keep !== true) return null
+  const keep = v.keep === true || undefined
   return compact({
     key: v.key,
     ptyId: v.ptyId,
     startDir: v.startDir,
     command,
+    keep,
     cwd: v.cwd,
     title: v.title,
     git

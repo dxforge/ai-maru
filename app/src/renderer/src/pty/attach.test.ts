@@ -132,6 +132,21 @@ describe('attach', () => {
     expect(term.written).toEqual([])
   })
 
+  it('셸의 종료 코드와 시그널을 넘기고, 없는 값은 null 로 넘긴다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, deliver } = fakeConnection()
+    const exits: unknown[] = []
+    attach(term as unknown as Terminal, conn, { ...handlers, onExit: (e) => exits.push(e) })
+    deliver(JSON.stringify({ type: 'exit', code: 3, signal: null }))
+    deliver(JSON.stringify({ type: 'exit', code: null, signal: 9 }))
+    deliver(JSON.stringify({ type: 'exit' }))
+    expect(exits).toEqual([
+      { code: 3, signal: null },
+      { code: null, signal: 9 },
+      { code: null, signal: null }
+    ])
+  })
+
   it('셸이 끝나지 않았는데 연결이 닫히면 끊김을 보인다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, close } = fakeConnection()

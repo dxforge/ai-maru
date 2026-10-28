@@ -1,6 +1,7 @@
 export type CommandId =
   | 'new-workspace'
   | 'new-cell'
+  | 'launcher'
   | 'next-cell'
   | 'previous-cell'
   | 'split-right'
@@ -33,6 +34,7 @@ export type Command = {
 export const commands: readonly Command[] = [
   { id: 'new-workspace', title: 'New Workspace', menu: 'file' },
   { id: 'new-cell', title: 'New Cell', menu: 'file' },
+  { id: 'launcher', title: 'Open Launcher', menu: 'file' },
   { id: 'split-right', title: 'Split Right', menu: 'file' },
   { id: 'split-down', title: 'Split Down', menu: 'file' },
   { id: 'close-pane', title: 'Close Pane', menu: 'file' },
@@ -60,9 +62,18 @@ export function available(c: Command, { canRestart }: { canRestart: boolean }): 
   return c.id !== 'restart' || canRestart
 }
 
+export function matchesWords(text: string, query: string): boolean {
+  const t = foldCase(text)
+  return foldCase(query)
+    .split(/\s+/)
+    .every((w) => t.includes(w))
+}
+
+// 런처가 거르는 경로에는 Finder 가 만든 한글 이름(NFD)이 섞이므로, 입력기로 친 이름(NFC)과 맞추려고 NFC 로 정규화한다.
+export function foldCase(s: string): string {
+  return s.normalize('NFC').toLowerCase()
+}
+
 export function filterCommands(query: string): Command[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
-  return commands.filter(
-    (c) => c.palette !== false && words.every((w) => c.title.toLowerCase().includes(w))
-  )
+  return commands.filter((c) => c.palette !== false && matchesWords(c.title, query))
 }

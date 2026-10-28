@@ -57,6 +57,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
   expect(menus.file).toEqual([
     ['new-workspace', 'New Workspace', 'Command+N'],
     ['new-cell', 'New Cell', 'Command+T'],
+    ['launcher', 'Open Launcher', 'Command+P'],
     ['split-right', 'Split Right', 'Command+D'],
     ['split-down', 'Split Down', 'Shift+Command+D'],
     ['close-pane', 'Close Pane', 'Command+W'],
@@ -334,6 +335,7 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
   await expect(items(page)).toHaveText([
     'New Workspace⌘N',
     'New Cell⌘T',
+    'Open Launcher⌘P',
     'Split Right⌘D',
     'Split Down⇧⌘D',
     'Close Pane⌘W',
@@ -447,14 +449,20 @@ function paletteLayout(page: Page) {
     const box = rect('.palette')
     const query = rect('.palette .query')
     const first = rect('.palette .item, .palette .empty')
-    return { top: box.top, bottom: innerHeight - box.bottom, gap: query.top - first.bottom }
+    const header = rect('.pane.focused .pane-header')
+    return {
+      top: box.top,
+      bottom: innerHeight - box.bottom,
+      gap: query.top - first.bottom,
+      clearsHeader: box.bottom <= header.top
+    }
   })
 }
 
 const atBottom = ({ top, bottom, gap }: Awaited<ReturnType<typeof paletteLayout>>) =>
   bottom >= 0 && bottom <= top && gap >= 0
 
-test('팔레트는 기본으로 창 아래쪽에 뜨고, 입력줄이 맨 아래, 첫 후보와 빈 줄은 그 바로 위에 놓인다', async ({
+test('팔레트는 기본으로 창 아래쪽에 pane 헤더를 가리지 않게 뜨고, 입력줄이 맨 아래, 첫 후보와 빈 줄은 그 바로 위에 놓인다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -463,6 +471,7 @@ test('팔레트는 기본으로 창 아래쪽에 뜨고, 입력줄이 맨 아래
   await expect(items(page).first()).toHaveClass(/selected/)
   const layout = await paletteLayout(page)
   expect(atBottom(layout)).toBe(true)
+  expect(layout.clearsHeader).toBe(true)
   await page.keyboard.type('xyz')
   await expect(palette(page)).toContainText('No matching commands')
   expect((await paletteLayout(page)).gap).toBe(layout.gap)

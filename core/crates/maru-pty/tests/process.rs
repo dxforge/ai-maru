@@ -1610,6 +1610,19 @@ fn a_command_pane_runs_its_command_from_the_start_and_ignores_osc_133() {
 }
 
 #[test]
+fn a_kept_command_pane_reports_the_exit_code_once_its_command_ends() {
+    let p = start_keep("read x; exit 3");
+    let (mut s, first) = p.subscribe();
+    assert_eq!(first["command"]["running"], true, "{first}");
+    let (mut c, _, _) = p.attach("primary", 80, 24);
+    c.input("go\n");
+    let st = s.state_until(|v| v["command"]["running"] == false);
+    assert_eq!(st["command"]["exit_code"], 3, "{st}");
+    assert_eq!(st["command"]["text"], "/bin/sh -c read x; exit 3", "{st}");
+    assert_eq!(p.subscribe().1["command"], st["command"]);
+}
+
+#[test]
 fn osc_9_9_and_1337_paths_are_not_taken_but_an_empty_osc_9_9_clears_like_osc_7() {
     let p = start();
     let (mut s, _) = p.subscribe();
@@ -1841,7 +1854,9 @@ fn the_subscription_outlives_the_shell_under_keep_and_closes_on_kill() {
     c.send_text(status(true));
     assert_eq!(c.text()["exit"]["code"], 3);
     let texts = s.texts_for(Duration::from_millis(500));
-    assert!(texts.is_empty(), "{texts:?}");
+    assert_eq!(texts.len(), 1, "{texts:?}");
+    assert_eq!(texts[0]["command"]["running"], false, "{texts:?}");
+    assert_eq!(texts[0]["title"], "job", "{texts:?}");
     let (_, again) = p.subscribe();
     assert_eq!(
         again["title"], "job",

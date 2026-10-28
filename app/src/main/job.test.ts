@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CliError, InvalidParams } from './cli-server'
 import { createJobs, parseJobsFile, type JobDeps, type JobsFile } from './job'
-import type { PtyExit } from './pty'
+import type { PtyExit } from '../shared/pty'
 
 const A = 'p-0000000a'
 const B = 'p-0000000b'

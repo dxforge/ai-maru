@@ -8,7 +8,7 @@ import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
-import { isPtyId } from '../shared/pty'
+import { isPtyId, type PtyExit } from '../shared/pty'
 import { parsePtyState, type PtyState } from '../shared/pty-state'
 import { appHome } from './config-file'
 import { encodeFrame, FrameDecoder } from './frame'
@@ -228,8 +228,6 @@ async function askWithin(
   if (!reached()) throw new Error(`pty ${id} is not running`)
   throw new Error(timedOut ? late : `pty ${id} closed the connection without answering`)
 }
-
-export type PtyExit = { code: number | null; signal: number | null }
 
 /** 셸이 스스로 끝나면 그 종료 상태로 끝난다. pty 가 셸을 끝냈거나 닿지 못하면 null 이다. */
 export function waitPtyExit(

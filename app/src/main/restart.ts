@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process'
-import { readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { parseScreen, screenPanes, type ScreenState } from '../shared/screen'
 import { parseJobsFile, type JobsFile } from './job'
+import { writeJsonAtomic } from './json-file'
 import { livePtys } from './pty'
 
 export function restartFile(userData: string): string {
@@ -20,11 +21,8 @@ export type RestartState = {
   jobs: JobsFile | null
 }
 
-/** 제자리 truncate 로 쓰면 그 사이 앱이 죽을 때 깨진 파일이 남는다. */
-export async function writeRestart(path: string, state: RestartState): Promise<void> {
-  const tmp = `${path}.tmp`
-  await writeFile(tmp, JSON.stringify(state), { mode: 0o600 })
-  await rename(tmp, path)
+export function writeRestart(path: string, state: RestartState): Promise<void> {
+  return writeJsonAtomic(path, state)
 }
 
 function parseRestart(v: unknown): RestartState | null {

@@ -17,16 +17,18 @@ import {
 } from './layout'
 
 /**
- * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령이다. `cwd`·`title` 은 화면에 보일
- * 값으로 `paneCwd`·`paneTitle` 이 고르고, `restoredCwd`·`restoredTitle`·`spawnedCwd` 는 그 재료다. `attach` 는
- * 재시작으로 되살린 pane 이 떠 있는 pty 에 붙어야 할 때 true 다. `gitRoot` 는 `git` 을 읽은 cwd 에서 구한 작업 트리
- * 최상위 경로이고, 구하지 못했으면 없다.
+ * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령이다. `keep` 은 런처로 띄운 pane 에
+ * 붙는다. 그 pane 은 명령이 실패해도 닫히지 않고 남는다(`ScreenPane`). `cwd`·`title` 은 화면에 보일 값으로
+ * `paneCwd`·`paneTitle` 이 고르고, `restoredCwd`·`restoredTitle`·`spawnedCwd` 는 그 재료다. `attach` 는 재시작으로
+ * 되살린 pane 이 떠 있는 pty 에 붙어야 할 때 true 다. `gitRoot` 는 `git` 을 읽은 cwd 에서 구한 작업 트리 최상위
+ * 경로이고, 구하지 못했으면 없다.
  */
 export type Pane = {
   key: number
   ptyId: string
   startDir?: string
   command?: readonly string[]
+  keep?: true
   cwd?: string
   title?: string
   git?: GitHead
@@ -74,6 +76,10 @@ export { focusedPane, startDirOf }
 
 export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
 
+type PaneCommand = Pick<Pane, 'command' | 'keep'>
+
+type PaneInit = Pick<Pane, 'startDir'> & PaneCommand
+
 /** pty 상태 저장소(`pty/states.ts`)에서 store 가 읽는 것. */
 export type PaneSource = {
   get(ptyId: string): PtyState | undefined
@@ -114,7 +120,7 @@ export function createWorkspaces(
     return list.value.find((w) => w.cells.some((c) => c.key === cell))
   }
 
-  function createCell(init: Pick<Pane, 'startDir' | 'command'>): Cell {
+  function createCell(init: PaneInit): Cell {
     const pane = nextKey++
     const key = nextKey++
     return {
@@ -130,15 +136,15 @@ export function createWorkspaces(
     return { key: nextKey++, id: workspaceId(), cells: [cell] }
   }
 
-  function open(startDir?: string): void {
-    const c = createCell({ startDir })
+  function open(startDir?: string, extra: PaneCommand = {}): void {
+    const c = createCell({ startDir, ...extra })
     list.value.push(createWorkspace(c))
     selectedKey.value = c.key
   }
 
   function openCellFrom(
     from: string | undefined,
-    init: Pick<Pane, 'startDir' | 'command'>,
+    init: PaneInit,
     place?: { cell: string; before: boolean }
   ): number | PlaceError {
     const w = list.value.find((x) => x.cells.some((y) => y.id === from))
@@ -154,18 +160,18 @@ export function createWorkspaces(
     return insertCell(w, before ? at : at + 1, init).focused
   }
 
-  function insertCell(w: Workspace, at: number, init: Pick<Pane, 'startDir' | 'command'>): Cell {
+  function insertCell(w: Workspace, at: number, init: PaneInit): Cell {
     const c = createCell(init)
     w.cells.splice(at, 0, c)
     return c
   }
 
-  function openCell(startDir?: string): void {
+  function openCell(startDir?: string, extra: PaneCommand = {}): void {
     const from = selected()
-    if (!from) return open(startDir)
+    if (!from) return open(startDir, extra)
     const w = workspaceOf(from.key)!
     const at = w.cells.findIndex((c) => c.key === from.key) + 1
-    selectedKey.value = insertCell(w, at, { startDir }).key
+    selectedKey.value = insertCell(w, at, { startDir, ...extra }).key
   }
 
   function step(by: 1 | -1): number | undefined {
@@ -235,7 +241,7 @@ export function createWorkspaces(
   function splitFrom(
     from: number,
     direction: SplitDirection,
-    init: Pick<Pane, 'startDir' | 'command'>,
+    init: PaneInit,
     full = false
   ): number {
     const c = owner(from)!

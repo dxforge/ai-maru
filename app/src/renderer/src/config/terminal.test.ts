@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { GHOSTTY } from '../../../shared/theme'
 import { DEFAULT_THEME, themeNamed } from '../themes'
+import { commandArgv, DEFAULT_LAUNCHER } from './launcher'
 import { DEFAULT_LAYOUT } from './layout'
 import { DEFAULT_FONT, fontNames, fontSizeOverride, parseConfig, stepFontSize } from './terminal'
 
@@ -19,9 +20,11 @@ describe('parseConfig', () => {
       font: DEFAULT_FONT,
       theme: DEFAULT_THEME,
       layout: DEFAULT_LAYOUT,
+      launcher: DEFAULT_LAUNCHER,
       names: [],
       warnings: []
     })
+    expect(DEFAULT_LAUNCHER).toEqual({ commands: ['claude', 'codex'] })
     expect(DEFAULT_THEME).toEqual({ kind: 'one', theme: GHOSTTY })
     expect(DEFAULT_FONT).toEqual({ fontFamily: FAMILY, fontSize: 14, lineHeight: 1.2 })
     expect(DEFAULT_LAYOUT).toEqual({ header: 'bottom', palette: 'bottom', columnCols: 80 })
@@ -232,6 +235,34 @@ describe('parseConfig', () => {
     expect(r.warnings).toEqual(['terminal must be a table, using the defaults.'])
   })
 
+  it('launcher.commands 를 적은 순서대로 읽는다', () => {
+    const r = ok('[launcher]\ncommands = ["claude --resume", "codex", "aider"]\n')
+    expect(r.launcher).toEqual({ commands: ['claude --resume', 'codex', 'aider'] })
+    expect(r.warnings).toEqual([])
+  })
+
+  for (const [label, value] of [
+    ['빈 배열', '[]'],
+    ['문자열이 아닌 항목', '["claude", 1]'],
+    ['빈 문자열', '["claude", ""]'],
+    ['공백뿐인 문자열', '["  "]'],
+    ['배열이 아닌 값', '"claude"']
+  ]) {
+    it(`launcher.commands 가 ${label}이면 알리고 기본값을 쓴다`, () => {
+      const r = ok(`[launcher]\ncommands = ${value}\n`)
+      expect(r.launcher).toEqual(DEFAULT_LAUNCHER)
+      expect(r.warnings).toEqual([
+        'launcher.commands must be a non-empty list of commands, using the default.'
+      ])
+    })
+  }
+
+  it('launcher 의 모르는 키를 알린다', () => {
+    const r = ok('[launcher]\ncommand = "claude"\n')
+    expect(r.launcher).toEqual(DEFAULT_LAUNCHER)
+    expect(r.warnings).toEqual(['Unknown key launcher.command.'])
+  })
+
   it('문법 오류는 줄과 열을 준다', () => {
     expect(parseConfig('[terminal]\nfont-size =\n')).toEqual({
       ok: false,
@@ -243,6 +274,12 @@ describe('parseConfig', () => {
     const r = ok('﻿[terminal]\r\nfont-size = 13\r\n')
     expect(r.font.fontSize).toBe(13)
     expect(r.warnings).toEqual([])
+  })
+})
+
+describe('commandArgv', () => {
+  it('공백으로 나누고 따옴표는 풀지 않는다', () => {
+    expect(commandArgv('  claude  --model "opus 4" ')).toEqual(['claude', '--model', '"opus', '4"'])
   })
 })
 

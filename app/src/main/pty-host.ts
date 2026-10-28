@@ -9,6 +9,7 @@ export type OpenRequest = {
   cwd?: string
   command?: string[]
   attach?: boolean
+  keep?: boolean
   dir: string
   bin: string
   setup: ShellSetup
@@ -45,7 +46,9 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
   if (quitting) return end(port)
   if (req.attach) return reattach(req, port)
   const spawned = startDir(req.cwd).then(async (cwd) => {
-    const state = await spawnPty(req.bin, req.dir, req.setup, req.id, cwd, req.command)
+    const state = await spawnPty(req.bin, req.dir, req.setup, req.id, cwd, req.command, {
+      keep: req.keep
+    })
     return { cwd, state }
   })
   // pty 가 뜨는 동안 pane 을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 `spawning` 에 넣는다.
