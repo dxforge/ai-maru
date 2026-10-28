@@ -24,11 +24,13 @@ import {
 } from '@playwright/test'
 import { encodeFrame, TAG_TEXT } from '../src/main/frame'
 import { appSocketPath, killPtys, runDir } from '../src/main/pty'
+import { gitEnv } from '../src/main/test-repo-env'
 import type { CanvasMarkdown } from '../src/shared/canvas'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import type { PtyOpen } from '../src/shared/pty'
 
 export { expect }
+export { git } from '../src/main/test-repo-env'
 
 export type Launched = { app: ElectronApplication; page: Page }
 
@@ -101,7 +103,7 @@ async function launchApp(
   executablePath: string | undefined,
   args: string[]
 ): Promise<Launched> {
-  const inherited = { ...process.env }
+  const inherited = gitEnv()
   // 패키징한 앱이 번들 안의 바이너리를 쓰는지 봐야 하므로 바깥의 덮어쓰기를 물려주지 않는다.
   if (executablePath) {
     delete inherited.MARU_PTY_BIN
