@@ -35,7 +35,7 @@
     "dompurify": "^3.4.17",
     "electron": "^44.5.1",
     "electron-builder": "^26.18.0",
-    "electron-vite": "^5.0.0",
+    "electron-vite": "^6.0.0",
     "entities": "^7.0.1",
     "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
