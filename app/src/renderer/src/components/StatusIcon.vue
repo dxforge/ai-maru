@@ -5,7 +5,7 @@ const { state } = defineProps<{ state: ProgramStatusState }>()
 </script>
 
 <template>
-  <!-- viewBox 는 원(r=6)과 선 반폭(0.55)의 바깥 테두리에 맞춘다. 같은 자리에 번갈아 보이는 Nerd Font 글자의 잉크가 12px 글꼴에서 약 12.3px 로 1em 을 거의 채우기 때문이다. viewBox 가 `0 0 16 16` 이면 원이 10px 로 글자보다 작아 보인다. -->
+  <!-- viewBox 는 원(r=6)과 선 반폭(0.55)의 바깥 테두리에 맞춘다. 같은 자리에 번갈아 보이는 Nerd Font 글자의 잉크가 1em 을 거의 채우기 때문이다(12px 글꼴에서 잰 값은 약 12.3px). viewBox 가 `0 0 16 16` 이면 원의 바깥 지름이 약 0.82em(12px 글꼴에서 약 10px)이 되어 글자보다 작아 보인다. -->
   <svg
     class="status-svg"
     :class="{ spin: state === 'working' }"
