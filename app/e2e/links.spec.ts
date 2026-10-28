@@ -1,7 +1,18 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { canvasTitles, cellSize, expect, restartWith, rows, run, test, toast } from './app'
+import {
+  canvasTitles,
+  cellSize,
+  expect,
+  resizeBy,
+  restartWith,
+  rows,
+  run,
+  test,
+  toast,
+  writeConfig
+} from './app'
 
 type Opened = { opened?: string[]; paths?: string[] }
 
@@ -80,6 +91,45 @@ test('⌘ 를 누른 채 OSC 8 링크에 올리면 주소가 보이고, 떼거�
   await expect(address).toBeHidden()
   await page.keyboard.up('Meta')
 })
+
+for (const header of ['bottom', 'top'] as const) {
+  test(`헤더가 ${header === 'bottom' ? '아래' : '위'}일 때 ⌘ 를 누른 채 링크에 올려 뜬 주소는 pane 왼쪽 끝에 붙고 pane 헤더나 pane 끝에 가리지 않는다`, async ({
+    launch,
+    dataDir
+  }) => {
+    if (header === 'top') writeConfig(dataDir, '[layout]\nheader = "top"\n')
+    const { app, page } = await launch()
+    // 본문이 헤더를 뺀 행 수보다 반 행 길면 주소의 아래 끝이 가려지는지 보려고, pane 높이를 행 높이의 배수보다 1/4 행 크게 맞춘다.
+    const { height: row } = await cellSize(page)
+    const grid = () =>
+      page.locator('.panes.selected .grid').evaluate((el) => el.getBoundingClientRect().height)
+    const before = await grid()
+    const target = (Math.floor(before / row) + 0.25) * row
+    await resizeBy(app, 0, Math.round(target - before))
+    await expect.poll(async () => Math.abs((await grid()) - target)).toBeLessThan(1)
+    await run(page, `${OSC8('https://example.com/clip', 'repo#9')}; echo done-$((1+1))`, 'done-2')
+    const address = page.locator('.terminal-view.active .link-address')
+    const { x, y } = await pointAt(page, 'repo#9')
+    await page.mouse.move(x, y)
+    await page.keyboard.down('Meta')
+    await expect(address).toBeVisible()
+
+    const place = await address.evaluate((el) => {
+      const pane = el.closest('.pane')!
+      return {
+        left: el.getBoundingClientRect().left,
+        paneLeft: pane.getBoundingClientRect().left,
+        bottom: el.getBoundingClientRect().bottom,
+        paneBottom: pane.getBoundingClientRect().bottom,
+        headTop: pane.querySelector('.pane-header')!.getBoundingClientRect().top
+      }
+    })
+    await page.keyboard.up('Meta')
+    expect(place.left).toBeCloseTo(place.paneLeft, 1)
+    expect(place.bottom).toBeLessThanOrEqual(place.paneBottom)
+    if (header === 'bottom') expect(place.bottom).toBeLessThanOrEqual(place.headTop)
+  })
+}
 
 test('글자로 찍힌 URL 은 OS 로, .md 는 Canvas 로, 그 밖의 파일은 OS 기본 앱으로 간다', async ({
   launch,

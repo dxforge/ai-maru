@@ -466,7 +466,7 @@ test('사이드바를 접고 펴는 동안에는 터미널 크기를 맞추지 �
   await collapse(app, page)
   const collapsed = await shellSize(page)
   await clickMenu(app, 'toggle-sidebar')
-  await expect.poll(() => sidebarWidth(page)).toBe(282)
+  await expect.poll(() => sidebarWidth(page)).toBe(280)
   const expanded = await shellSize(page)
 
   expect(collapsed.cols).toBeGreaterThan(before.cols)
@@ -483,7 +483,7 @@ test('접히는 도중에 다시 펴도 터미널을 중간 폭으로 맞추지 
   await page.waitForTimeout(60)
   await clickMenu(app, 'toggle-sidebar')
 
-  await expect.poll(() => sidebarWidth(page)).toBe(282)
+  await expect.poll(() => sidebarWidth(page)).toBe(280)
   await expect.poll(() => page.locator('.side').evaluate((el) => el.getAnimations().length)).toBe(0)
   expect(await widths()).toHaveLength(1)
 })
@@ -524,7 +524,7 @@ test('경계는 왼쪽 버튼으로 끌 때만 폭이 바뀐다', async ({ launc
 
   await dragHandle(page, sidebarResizer(page), 80, { button: 'right' })
 
-  expect(await sidebarWidth(page)).toBe(282)
+  expect(await sidebarWidth(page)).toBe(280)
   await expect(page.locator('.side')).not.toHaveClass(/resizing/)
 })
 

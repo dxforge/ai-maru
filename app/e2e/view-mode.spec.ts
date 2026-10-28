@@ -1,6 +1,8 @@
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
   activePane,
+  cellSize,
+  cellWidth,
   clickMenu,
   expect,
   expectCols,
@@ -22,6 +24,7 @@ import {
   cellGroups,
   cellItems,
   cellViews,
+  writeConfig,
   zshHome
 } from './app'
 
@@ -149,6 +152,29 @@ test('columns 에서 위아래 두 쪽의 늘어선 pane 수가 다르면 적은
   const wide = (await shellSize(page)).cols
   expect(wide).toBeGreaterThan(155)
   expect(wide).toBeLessThan(170)
+})
+
+test('columns 에서 pane 두 개 폭의 pane 과 그 아래 두 번째 pane 은 글자 열이 이어진다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-down', 3)
+  await split(app, page, 'split-right', 4)
+  await expectCols(page, 80)
+
+  // 오른쪽 위 pane(1)은 아래의 pane 두 개(2·3) 폭이다.
+  const { width } = await cellSize(page)
+  const left = (i: number) =>
+    panes(page)
+      .nth(i)
+      .locator('.xterm-screen')
+      .evaluate((el) => el.getBoundingClientRect().left)
+  const cols = ((await left(3)) - (await left(1))) / width
+  expect(cols).toBeGreaterThan(80)
+  expect(Math.abs(cols - Math.round(cols))).toBeLessThan(0.05)
 })
 
 test('columns 에서 다른 cell 의 pane 을 누르면 그 cell 을 선택하고 키가 그리로 간다', async ({
@@ -455,6 +481,21 @@ test('columns 에서 줌을 바꿔도 pane 은 80열이다', async ({ launch }) 
     await expectCols(page, 80)
   }
 })
+
+for (const size of [8, 9, 16]) {
+  test(`DOM 으로 그려도 글꼴 크기 ${size} 의 columns pane 은 80열이고, 카드 폭은 80열에 여백과 스크롤바를 더해 글자 칸 폭의 배수로 올린 폭이다`, async ({
+    launch,
+    dataDir
+  }) => {
+    writeConfig(dataDir, `[terminal]\nfont-size = ${size}\n`)
+    const launched = await launch()
+    const { page } = launched
+    await toggleView(launched, 'columns')
+    await expectCols(page, 80)
+    const { width } = await cellSize(page)
+    expect(await cellWidth(page)).toBeCloseTo(Math.ceil(80 + 12 / width) * width, 0)
+  })
+}
 
 test('columns 에서 창 크기를 바꿔도 pane 은 80열이다', async ({ launch }) => {
   const launched = await launch()

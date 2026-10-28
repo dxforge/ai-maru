@@ -14,14 +14,14 @@ export function required(layout: Layout, min: Size): Size {
 }
 
 /**
- * pane 경계를 글자 칸의 배수로 반올림한 px 상자. cell 끝에 닿는 경계는 그대로 둔다 — docs/architecture.md 의
- * "pane 경계와 글자 칸 격자". `min` 은 pane 하나의 px 하한이고 글자 칸의 배수다. cell 이 `required` 보다 작으면 그
- * 크기에 놓아, 뒤쪽 pane 이 cell 밖으로 나간다.
+ * pane 경계를 `unit` 의 배수로 반올림한 px 상자. `unit` 은 글자 칸 크기이고, columns 보기에서는 `unit` 의 폭으로 pane
+ * 하나의 폭을 받는다. cell 끝에 닿는 경계는 그대로 둔다 — docs/architecture.md 의 "pane 경계와 글자 칸 격자". `min` 은 pane 하나의
+ * px 하한이고 `unit` 의 배수다. cell 이 `required` 보다 작으면 그 크기에 놓아, 뒤쪽 pane 이 cell 밖으로 나간다.
  */
 export function snapRects(
   layout: Layout,
   size: Size,
-  cell: Size,
+  unit: Size,
   widths: Widths = 'half',
   min: Size = NO_MIN
 ): Map<number, Box> {
@@ -33,15 +33,15 @@ export function snapRects(
     width: Math.max(size.width, need.width),
     height: Math.max(size.height, need.height)
   }
-  place(layout, box, cell, widths, min, boxes)
+  place(layout, box, unit, widths, min, boxes)
   return boxes
 }
 
-// `box` 는 `required(layout)` 이상이므로 나눈 두 쪽도 각자 필요한 글자 칸 수를 받는다.
+// `box` 는 `required(layout)` 이상이므로 나눈 두 쪽도 각자 필요한 `unit` 수를 받는다.
 function place(
   layout: Layout,
   box: Box,
-  cell: Size,
+  unit: Size,
   widths: Widths,
   min: Size,
   boxes: Map<number, Box>
@@ -49,17 +49,17 @@ function place(
   if ('pane' in layout) return void boxes.set(layout.pane, box)
   const [along, length] =
     layout.split === 'right' ? (['left', 'width'] as const) : (['top', 'height'] as const)
-  const unit = cell[length] > 0 ? cell[length] : 1
+  const step = unit[length] > 0 ? unit[length] : 1
   const total = box[length]
-  const cells = Math.floor(total / unit + EPSILON)
-  const need = (part: Layout): number => Math.ceil(required(part, min)[length] / unit - EPSILON)
+  const steps = Math.floor(total / step + EPSILON)
+  const need = (part: Layout): number => Math.ceil(required(part, min)[length] / step - EPSILON)
   const n = Math.min(
-    Math.max(Math.round(share(layout, widths) * cells), need(layout.first)),
-    cells - need(layout.second)
+    Math.max(Math.round(share(layout, widths) * steps), need(layout.first)),
+    steps - need(layout.second)
   )
-  place(layout.first, { ...box, [length]: n * unit }, cell, widths, min, boxes)
-  const second = { ...box, [along]: box[along] + n * unit, [length]: total - n * unit }
-  place(layout.second, second, cell, widths, min, boxes)
+  place(layout.first, { ...box, [length]: n * step }, unit, widths, min, boxes)
+  const second = { ...box, [along]: box[along] + n * step, [length]: total - n * step }
+  place(layout.second, second, unit, widths, min, boxes)
 }
 
 /** `layout` 을 `size` 에 놓을 때 cell 끝 밖으로 나가는 길이(px). `snapRects` 는 `required` 만큼만 넘친다. */

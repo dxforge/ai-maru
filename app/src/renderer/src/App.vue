@@ -39,7 +39,13 @@ import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { activeTheme, windowTheme } from './themes'
 import { createToasts } from './toast/store'
-import { columnsWidth, paneCells, stepPaneCols, terminalPadding } from './workspace/columns'
+import {
+  columnWidth,
+  fitCols,
+  paneCells,
+  stepPaneCols,
+  TERMINAL_PADDING
+} from './workspace/columns'
 import { tildePath } from './workspace/cwd'
 import { canSplit, snapRects, type Box, type Size } from './workspace/grid'
 import {
@@ -300,15 +306,14 @@ window.maru.onPaneClose((id, pty) => {
   removePane(pane.key)
 })
 
-// 기억한 값을 처음 값으로 쓴다. 나중에 적용하면 사이드바를 기본값(열림·282px)으로 그린 뒤 기억한 값으로 transition 이 돈다.
+// 기억한 값을 처음 값으로 쓴다. 나중에 적용하면 사이드바를 기본값(열림·280px)으로 그린 뒤 기억한 값으로 transition 이 돈다.
 const prefs = window.maru.viewPrefs
 const sidebarOpen = ref(prefs.sidebar?.open ?? true)
 const folded = reactive(new Set<number>())
 function toggleFold(key: number): void {
   if (!folded.delete(key)) folded.add(key)
 }
-// 280 이면 기본 창에서 터미널 영역이 열 수의 경계에 걸려 pane 마다 열 수가 갈린다(#58).
-const SIDEBAR_WIDTH = 282
+const SIDEBAR_WIDTH = 280
 const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
 // 토스트는 사이드바 안쪽 양옆 12px 을 비운다.
 const toastWidth = computed(
@@ -358,7 +363,6 @@ const widths = computed<Widths>(() => (viewMode.value === 'columns' ? 'columns' 
 // 글자 칸 크기는 글꼴이 정하므로 글꼴마다 마지막으로 잰 값 하나로 셈한다. 그래서 새로 연 cell 도 같은 글꼴의 터미널이
 // 잰 값으로 바로 그린다.
 const cells = reactive(new Map<string, Size>())
-const cellFloored = ref(false)
 const FALLBACK_ROW = 18
 const NO_CELL: Size = { width: 0, height: 0 }
 
@@ -379,7 +383,7 @@ function gridVars(cell: Size, font: TerminalFont) {
   return {
     '--row': `${rowOf(cell)}px`,
     '--cell': `${cell.width}px`,
-    '--pad': `${terminalPadding(cell.width)}px`,
+    '--pad': `${TERMINAL_PADDING}px`,
     '--font-size': `${font.fontSize}px`,
     '--font-family': font.fontFamily
   }
@@ -457,13 +461,14 @@ function panelTransition(e: TransitionEvent): void {
   }
 }
 
-function setCell(font: TerminalFont, c: Size, floored: boolean): void {
+function setCell(font: TerminalFont, c: Size): void {
   const key = fontKey(font)
   if (!sameSize(cells.get(key), c)) cells.set(key, c)
-  cellFloored.value = floored
 }
 
-function placement(b: Box, unit: string, bodyHeight?: number) {
+type TerminalSize = { cols: number; rows: number }
+
+function placement(b: Box, unit: string, size?: TerminalSize) {
   return {
     style: {
       left: `${b.left}${unit}`,
@@ -471,20 +476,32 @@ function placement(b: Box, unit: string, bodyHeight?: number) {
       width: `${b.width}${unit}`,
       height: `${b.height}${unit}`
     },
-    body: bodyHeight === undefined ? {} : { height: `${bodyHeight}px` },
+    size,
     edge: b.left > 0
   }
 }
 
-// FitAddon 은 pane 높이를 정수로 잘라 읽고 반올림한 글자 칸 높이로 나눠 행 하나를 잃곤 하므로, 헤더를 뺀 행 수보다
-// 반 행 큰 높이를 준다. 넘친 반 행은 헤더가 아래면 헤더가 덮고, 위면 pane 이 자른다.
-function bodyHeight(b: Box, row: number): number {
-  const rows = Math.max(0, Math.floor(b.height / row - 1 + EPSILON))
-  return (rows + 0.5) * row
+/** columns 보기에서는 cell 의 pane 열 수(`paneColsOf`), single 보기에서는 없다. */
+type ColumnCols = number | undefined
+
+/**
+ * pane 상자 `b` 에 놓을 터미널의 열·행 수. 행 수는 헤더 한 행을 뺀 높이로 센다. columns 보기에서 pane 하나 폭인 pane 은
+ * 그 폭을 `cols` 로 만들었으므로 `cols` 열이고, pane 여럿의 폭에 걸친 pane 만 그 폭에 들어가는 만큼 더 많은 열을 받는다.
+ */
+function terminalSize(b: Box, cell: Size, cols: ColumnCols): TerminalSize | undefined {
+  if (cell.width <= 0 || cell.height <= 0) return undefined
+  const rows = Math.max(0, Math.floor(b.height / cell.height - 1 + EPSILON))
+  const fit = fitCols(b.width, cell.width)
+  return { cols: cols === undefined ? fit : Math.max(cols, fit), rows }
 }
 
-function placements(layout: Layout, size: Size | undefined, widths: Widths, cell: Size) {
-  // 영역을 재기 전의 첫 렌더는 비율로 그린다. 0×0 으로 그리면 터미널이 그 크기로 pty 를 연다.
+function unitOf(cell: Size, cols: ColumnCols): Size {
+  return cols === undefined ? cell : { ...cell, width: columnWidth(cols, cell.width) }
+}
+
+function placements(layout: Layout, size: Size | undefined, cell: Size, cols: ColumnCols) {
+  const widths: Widths = cols === undefined ? 'half' : 'columns'
+  // 영역을 재기 전의 첫 렌더는 비율로 그린다. 터미널은 열·행 수를 받을 때까지 pty 에 붙지 않는다.
   if (!size)
     return new Map(
       [...rects(layout, widths)].map(([pane, r]) => [
@@ -493,28 +510,36 @@ function placements(layout: Layout, size: Size | undefined, widths: Widths, cell
       ])
     )
   return new Map(
-    [...snapRects(layout, size, cell, widths, paneMin(cell))].map(([pane, b]) => [
-      pane,
-      placement(b, 'px', bodyHeight(b, rowOf(cell)))
-    ])
+    [...snapRects(layout, size, unitOf(cell, cols), widths, paneMin(cell, cols))].map(
+      ([pane, b]) => [pane, placement(b, 'px', terminalSize(b, cell, cols))]
+    )
   )
 }
 
-function paneMin(cell: Size): Size {
+// columns 보기에서는 pane 하나의 폭을 폭의 하한으로 둔다. `layout.column-cols` 와 ⇧⌘. / ⇧⌘, 로 바꾼 값은
+// `PANE_MIN.cols` 이상이므로 이 하한이 `PANE_MIN` 도 지킨다.
+function paneMin(cell: Size, cols: ColumnCols): Size {
   return {
-    width: paneCells(PANE_MIN.cols, cell.width, cellFloored.value) * cell.width,
+    width:
+      cols === undefined
+        ? paneCells(PANE_MIN.cols, cell.width) * cell.width
+        : columnWidth(cols, cell.width),
     height: (PANE_MIN.rows + 1) * cell.height
   }
 }
 
-function columnsWidthOf(layout: Layout, paneCols: number, cell: Size) {
-  if (viewMode.value !== 'columns') return undefined
-  return columnsWidth(columnCount(layout), cell.width, cellFloored.value, paneCols)
+function columnColsOf(c: Pick<Cell, 'paneCols'>): ColumnCols {
+  return viewMode.value === 'columns' ? paneColsOf(c) : undefined
 }
 
-function areaOf(layout: Layout, paneCols: number, cell: Size, measured: Size): Size {
+function columnsWidthOf(layout: Layout, cols: ColumnCols, cell: Size): number | undefined {
+  if (cols === undefined) return undefined
+  return columnCount(layout) * columnWidth(cols, cell.width)
+}
+
+function areaOf(layout: Layout, cols: ColumnCols, cell: Size, measured: Size): Size {
   return {
-    width: columnsWidthOf(layout, paneCols, cell) ?? measured.width,
+    width: columnsWidthOf(layout, cols, cell) ?? measured.width,
     height: measured.height
   }
 }
@@ -526,8 +551,9 @@ function roomFor(from: number, direction: SplitDirection, full: boolean): boolea
   const measured = gridOf(c.key, cell)
   if (!measured) return true
   const next = full ? splitRoot(c.layout, -1, direction) : splitPane(c.layout, from, -1, direction)
-  const area = (layout: Layout): Size => areaOf(layout, paneColsOf(c), cell, measured)
-  return canSplit(c.layout, area(c.layout), next, area(next), paneMin(cell))
+  const cols = columnColsOf(c)
+  const area = (layout: Layout): Size => areaOf(layout, cols, cell, measured)
+  return canSplit(c.layout, area(c.layout), next, area(next), paneMin(cell, cols))
 }
 
 function splitSelected(direction: SplitDirection): void {
@@ -550,13 +576,13 @@ const views = computed(() =>
     const font = fontOf(c)
     const cell = cellOf(font)
     const measured = gridOf(c.key, cell)
-    const paneCols = paneColsOf(c)
-    const width = columnsWidthOf(c.layout, paneCols, cell)
+    const cols = columnColsOf(c)
+    const width = columnsWidthOf(c.layout, cols, cell)
     const places = placements(
       c.layout,
-      measured && areaOf(c.layout, paneCols, cell, measured),
-      widths.value,
-      cell
+      measured && areaOf(c.layout, cols, cell, measured),
+      cell,
+      cols
     )
     return {
       c,
@@ -596,6 +622,13 @@ const urgent = computed(() => {
   }
   return map
 })
+
+// 터미널 아래에 남는 한 행 미만의 자리는 xterm 요소 밖이라, 눌러도 xterm 이 포커스를 주지 않는다.
+function focusFromBody(e: MouseEvent, pane: number): void {
+  if ((e.target as Element).closest('.xterm')) return
+  e.preventDefault()
+  terminals.get(pane)?.focus()
+}
 
 // columns 에서는 다른 cell 의 pane 도 보여 눌러 포커스를 줄 수 있으므로, 그 cell 을 선택한다.
 // 포커스가 같은 pane 으로 돌아올 때도 불려, 여기서 pane 을 다시 보이면 스크롤해 둔 자리를 잃는다.
@@ -795,7 +828,7 @@ void window.maru.restoreScreen().then((s) => {
         </div>
         <div class="grid">
           <div
-            v-for="{ p, active, style, body, edge } in panes"
+            v-for="{ p, active, style, size, edge } in panes"
             :key="p.key"
             class="pane"
             :class="{ 'edge-left': edge, focused: active }"
@@ -811,7 +844,7 @@ void window.maru.restoreScreen().then((s) => {
               :shell="shell"
               @mousedown.prevent="terminals.get(p.key)?.focus()"
             />
-            <div class="body" :style="body">
+            <div class="body" @mousedown="(e) => focusFromBody(e, p.key)">
               <TerminalView
                 :ref="(t) => setTerminal(p.key, t)"
                 :pty-id="p.ptyId"
@@ -823,12 +856,14 @@ void window.maru.restoreScreen().then((s) => {
                 :shown="selected || viewMode === 'columns'"
                 :font="font"
                 :theme="terminalTheme"
+                :cols="size?.cols"
+                :rows="size?.rows"
                 @exit="removePane(p.key)"
                 @failed="(message) => paneFailed(p.key, message)"
                 @spawned="(dir) => onSpawned(p.key, p.ptyId, dir)"
                 @program-status="(records) => onLegacyProgramStatus(p.ptyId, records)"
                 @link-failed="linkFailed"
-                @cell="(size, floored) => setCell(fontOf(c), size, floored)"
+                @cell="(cell) => setCell(fontOf(c), cell)"
               />
             </div>
           </div>
@@ -981,7 +1016,7 @@ void window.maru.restoreScreen().then((s) => {
 
 .pane {
   position: absolute;
-  /* 다른 클라이언트가 primary 면 fit 하지 않아, 터미널이 pane 보다 넓으면 옆 pane 과 패널을 덮는다.
+  /* 다른 클라이언트가 primary 면 터미널은 그 클라이언트의 열·행 수를 따르므로, pane 보다 넓으면 옆 pane 과 패널을 덮는다.
      hidden 이면 pane 이 스크롤 영역이 되어, pane 보다 큰 터미널을 scrollIntoView 할 때 헤더가 밀려 올라간다. */
   overflow: clip;
   background: var(--ground);
@@ -999,8 +1034,6 @@ void window.maru.restoreScreen().then((s) => {
   background: var(--line);
 }
 
-/* 헤더는 본문 위에 겹친다. 본문은 `bodyHeight` 가 준 반 행만큼 pane 을 넘칠 수 있다. 헤더가 아래면 넘친 부분을 헤더가 덮고,
-   위면 pane 이 자른다. */
 .pane-header {
   position: absolute;
   top: 0;
@@ -1009,7 +1042,7 @@ void window.maru.restoreScreen().then((s) => {
   z-index: 2;
 }
 
-/* 영역을 재기 전에는 본문이 pane 아래 끝까지 채운다. 잰 뒤에는 `placement` 가 준 height 가 bottom 보다 앞선다. */
+/* 터미널은 받은 열·행 수만큼만 그리므로, 본문 오른쪽과 아래에 한 글자 칸 미만의 빈 자리가 남을 수 있다. */
 .body {
   position: absolute;
   top: var(--row);

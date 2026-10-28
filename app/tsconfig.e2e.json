@@ -16,6 +16,7 @@
     "src/main/pty.ts",
     "src/renderer/src/icons.ts",
     "src/renderer/src/workspace/columns.ts",
+    "src/renderer/src/workspace/layout.ts",
     "playwright.config.ts",
     "vitest.config.ts",
     "e2e/**/*"

@@ -32,9 +32,10 @@ async function readArgs(page: Page, out: string): Promise<string[]> {
   return readFileSync(out, 'utf8').split('\n').slice(0, -1)
 }
 
-async function dropFiles(page: Page, i: number, files: string[]): Promise<void> {
+/** `gap` 이면 pane 왼쪽 끝에서 2px, 곧 터미널 왼쪽 여백 4px 안에 떨어뜨린다. */
+async function dropFiles(page: Page, i: number, files: string[], gap = false): Promise<void> {
   const box = (await panes(page).nth(i).locator('.terminal-view').boundingBox())!
-  const x = box.x + box.width / 2
+  const x = gap ? (await panes(page).nth(i).boundingBox())!.x + 2 : box.x + box.width / 2
   const y = box.y + box.height / 2
   const cdp = await page.context().newCDPSession(page)
   const data = { items: [], files, dragOperationsMask: 1 }
@@ -85,6 +86,15 @@ test('파일을 터미널에 드롭하면 셸이 경로마다 한 인자로 읽�
   await armPrintf(page)
   await dropFiles(page, 0, files)
   expect(await readArgs(page, out)).toEqual([...files, 'END'])
+})
+
+test('파일을 터미널 왼쪽 여백에 드롭해도 경로가 붙는다', async ({ launch, dataDir }) => {
+  const { page } = await launch()
+  const files = makeFiles(dataDir)
+  const out = join(dataDir, 'drop-out')
+  await armPrintf(page)
+  await dropFiles(page, 0, files.slice(0, 1), true)
+  expect(await readArgs(page, out)).toEqual([files[0], 'END'])
 })
 
 test('이름에 제어문자·개행이 든 파일을 드롭해도 쳐 둔 줄이 실행되지 않고 경로가 그대로 붙는다', async ({

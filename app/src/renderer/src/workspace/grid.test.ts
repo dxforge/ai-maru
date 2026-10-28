@@ -75,6 +75,31 @@ describe('snapRects', () => {
     ])
   })
 
+  it('columns 에서 폭의 단위를 pane 하나의 폭으로 주면 좌우 경계를 그 배수에 두고, 높이는 글자 칸 배수에 둔다', () => {
+    const pane = 80 * 7.82666 + 12
+    const layout: Layout = {
+      split: 'right',
+      first: { pane: 1 },
+      second: {
+        split: 'down',
+        first: { pane: 2 },
+        second: { split: 'right', first: { pane: 3 }, second: { pane: 4 } }
+      }
+    }
+    const boxes = snapRects(
+      layout,
+      { width: 3 * pane, height: 700 },
+      { width: pane, height: 18 },
+      'columns',
+      { width: pane, height: 6 * 18 }
+    )
+    expect(boxes.get(1)).toMatchObject({ left: 0, width: pane })
+    expect(boxes.get(2)).toMatchObject({ left: pane, width: 2 * pane, height: 19 * 18 })
+    expect(boxes.get(3)).toMatchObject({ left: pane, width: pane, top: 19 * 18 })
+    expect(boxes.get(4)!.left).toBeCloseTo(2 * pane)
+    expect(boxes.get(4)!.width).toBeCloseTo(pane)
+  })
+
   describe('하한', () => {
     const min = { width: 23 * 8, height: 6 * 18 }
     const twoRight: Layout = { split: 'right', first: { pane: 1 }, second: { pane: 2 } }

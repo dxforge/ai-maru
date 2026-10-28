@@ -572,7 +572,7 @@ for (const header of ['bottom', 'top'] as const) {
   })
 }
 
-test('pane 헤더는 기본으로 pane 맨 아래에 있고 본문의 넘친 반 행을 덮으며, 위아래로 나누면 위 pane 의 헤더가 경계가 된다', async ({
+test('pane 헤더는 기본으로 pane 맨 아래에 있고 본문은 헤더 위에서 끝나며, 위아래로 나누면 위 pane 의 헤더가 경계가 된다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -591,7 +591,7 @@ test('pane 헤더는 기본으로 pane 맨 아래에 있고 본문의 넘친 반
       hit: head.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
     }
   })
-  expect(covered.overlap).toBeGreaterThan(0)
+  expect(covered.overlap).toBeCloseTo(0, 1)
   expect(covered.hit).toBe(true)
 })
 
