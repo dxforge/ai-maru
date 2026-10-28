@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import {
   chmodSync,
   existsSync,
@@ -25,11 +24,13 @@ import {
 } from '@playwright/test'
 import { encodeFrame, TAG_TEXT } from '../src/main/frame'
 import { appSocketPath, killPtys, runDir } from '../src/main/pty'
+import { gitEnv } from '../src/main/test-repo-env'
 import type { CanvasMarkdown } from '../src/shared/canvas'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import type { PtyOpen } from '../src/shared/pty'
 
 export { expect }
+export { git } from '../src/main/test-repo-env'
 
 export type Launched = { app: ElectronApplication; page: Page }
 
@@ -95,27 +96,6 @@ export const test = base.extend<Fixtures>({
     for (const fn of fns) fn()
   }
 })
-
-/**
- * 테스트가 실행하는 git 과 앱이 띄운 셸의 git 이 쓰는 env. 개발자의 git 설정(예: `init.defaultRefFormat=reftable`)과 env 의
- * `GIT_*`(예: hook 안에서 돌릴 때의 `GIT_DIR`)에 따라 테스트 저장소가 달라지지 않도록, 전역·시스템 설정을 읽지 않게 하고
- * `GIT_*` 를 물려주지 않는다. 전역 설정이 없으면 커밋할 사용자 정보도 없으므로 env 로 준다.
- */
-export function gitEnv(): Record<string, string | undefined> {
-  return {
-    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_'))),
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_AUTHOR_NAME: 't',
-    GIT_AUTHOR_EMAIL: 't@t',
-    GIT_COMMITTER_NAME: 't',
-    GIT_COMMITTER_EMAIL: 't@t'
-  }
-}
-
-export function git(cwd: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd, env: gitEnv() }).toString()
-}
 
 async function launchApp(
   dataDir: string,

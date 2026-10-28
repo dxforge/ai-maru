@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import {
   mkdirSync,
   mkdtempSync,
@@ -14,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { gitHead } from './git'
+import { git } from './test-repo-env'
 
 // 테스트 하나가 진짜 git 을 많게는 7번 실행한다. load average 100 인 Mac 에서 `git symbolic-ref` 하나가 가장 오래
 // 걸린 것이 2984ms 였으므로(`git.ts` 의 `GIT_TIMEOUT_MS` 주석), 부하가 걸리면 테스트 하나가 vitest 기본 시간 제한
@@ -31,16 +31,6 @@ function tempDir(): string {
   const d = realpathSync(mkdtempSync(join(tmpdir(), 'maru-git-')))
   dirs.push(d)
   return d
-}
-
-// `git` 은 `--ref-format` 을 넘기지 않고 만드는 저장소의 ref 형식을 `files` 로 고정한다. 전역
-// `init.defaultRefFormat` 이 reftable 이면 `.git` 을 직접 읽는 files 경로를 시험하지 못하기 때문이다.
-function git(cwd: string, ...args: string[]): string {
-  return execFileSync(
-    'git',
-    ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'init.defaultRefFormat=files', ...args],
-    { cwd, encoding: 'utf8' }
-  ).trim()
 }
 
 async function head(cwd: string, timeoutMs?: number) {
