@@ -221,6 +221,24 @@ test('pty 를 잇는 utilityProcess 가 멈춰 있어도 앱은 7초 뒤에 꺼�
   expect(sockets(dataDir)).toEqual([])
 })
 
+test('main 의 JS 가 끝난 뒤의 뒷정리가 오래 걸려도 테스트의 app.close 는 그것을 기다리지 않는다', async ({
+  launch
+}) => {
+  const { app } = await launch()
+  const slowMs = 20_000
+  // Electron 이 `exit` 뒤에 하는 뒷정리 대신, `exit` 에서 main 을 `slowMs` 동안 멈추는 listener 를 더한다. fixture 가
+  // `launch` 때 등록한 SIGKILL listener 가 먼저 불리므로, 이 listener 는 돌지 않는다.
+  await app.evaluate((_electron, ms) => {
+    process.on('exit', () => {
+      const end = Date.now() + ms
+      while (Date.now() < end);
+    })
+  }, slowMs)
+  const started = Date.now()
+  await app.close()
+  expect(Date.now() - started).toBeLessThan(slowMs / 2)
+})
+
 test('앱을 끌 때 소켓을 열기 전에 멈춘 pty 는 host 가 spawn 시간 제한 뒤에 끝낸다', async ({
   launch,
   dataDir
