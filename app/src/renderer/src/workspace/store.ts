@@ -18,7 +18,7 @@ import {
 
 /**
  * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령이다. `keep` 은 런처로 띄운 pane 에
- * 붙고, 명령이 실패해도 pane 을 남긴다(`ScreenPane`). `cwd`·`title` 은 화면에 보일 값으로 `paneCwd`·`paneTitle` 이
+ * 붙고, 명령이 실패하면 pane 을 남긴다(`ScreenPane`). `cwd`·`title` 은 화면에 보일 값으로 `paneCwd`·`paneTitle` 이
  * 고르고, `restoredCwd`·`restoredTitle`·`spawnedCwd` 는 그 재료다. `attach` 는 재시작으로 되살린 pane 이 떠 있는
  * pty 에 붙어야 할 때 true 다. `gitRoot` 는 `git` 을 읽은 cwd 에서 구한 작업 트리 최상위 경로이고, 구하지 못했으면
  * 없다.

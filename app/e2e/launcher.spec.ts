@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import {
@@ -10,7 +10,9 @@ import {
   dialogCalls,
   expect,
   openPalette,
+  paneRows,
   panes,
+  programStatus,
   restartWith,
   rows,
   run,
@@ -18,6 +20,7 @@ import {
   test,
   workspaceNames,
   writeConfig,
+  zshHome,
   type Launched
 } from './app'
 
@@ -80,6 +83,44 @@ function useTool(dataDir: string, config = ''): [string, string] {
   const commands: [string, string] = [`${bin} A`, `${bin} B`]
   writeConfig(dataDir, `${config}[launcher]\ncommands = ${JSON.stringify(commands)}\n`)
   return commands
+}
+
+type FakeClaude = { fake: string; env: Record<string, string>; signal(s: NodeJS.Signals): void }
+
+/**
+ * PATH 맨 앞에 OSC 7501 로 `working` 을 알리고 기다리는 `claude` 를 둔다. 런처의 `claude` 는 앱의 `.zshenv` 가 정의한
+ * `claude` 함수를 거치고, 절대경로 `fake` 는 거치지 않는다.
+ */
+function fakeClaude(dataDir: string): FakeClaude {
+  const bin = join(dataDir, 'fakebin')
+  mkdirSync(bin)
+  const fake = join(bin, 'claude')
+  const pidFile = join(dataDir, 'claude.pid')
+  writeFileSync(
+    fake,
+    `#!/bin/sh\necho $$ > '${pidFile}'\n${programStatus('working')}exec sleep 60\n`,
+    { mode: 0o755 }
+  )
+  writeConfig(dataDir, `[launcher]\ncommands = ["claude", "${fake}"]\n`)
+  return {
+    fake,
+    env: { SHELL: '/bin/zsh', HOME: zshHome(dataDir), PATH: `${bin}:${process.env.PATH}` },
+    signal(s) {
+      process.kill(Number(readFileSync(pidFile, 'utf8')), s)
+      rmSync(pidFile)
+    }
+  }
+}
+
+async function launchFake(launched: Launched, { fake }: FakeClaude, dir: string): Promise<void> {
+  const { page } = launched
+  await openLauncher(launched)
+  await page.keyboard.press('Tab')
+  await expect(command(page)).toHaveText(fake)
+  await page.keyboard.type(dir)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await expect(activeHeader(page)).toHaveClass(/working/)
 }
 
 function project(dataDir: string, name: string): string {
@@ -200,6 +241,70 @@ test('명령이 0 이 아닌 코드로 끝나면 pane 이 화면을 남긴 채 �
   await clickMenu(app, 'close-pane')
   await expect(cellItems(page)).toHaveCount(1)
   expect(await dialogCalls(app)).toEqual([])
+})
+
+test('명령이 Ctrl-C 의 종료 코드 130 으로 끝나면 0 처럼 pane·cell·workspace 가 닫힌다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { page } = launched
+  await launchAt(launched, dir)
+  await expect(rows(page)).toContainText(`A-ran-in-${dir}`)
+  await page.keyboard.type('130\n')
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect(workspaceNames(page)).toHaveCount(1)
+  await run(page, 'echo left-$((1+1))', 'left-2')
+})
+
+test('런처로 띄운 claude 가 working 을 알린 뒤 SIGKILL 로 끝나면 셸 함수의 clear 로 Working 이 사라지고 종료 코드 137 을 보인다', async ({
+  launch,
+  dataDir
+}) => {
+  const claude = fakeClaude(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  const launched = await launch(claude.env)
+  const { page } = launched
+  await launchAt(launched, dir)
+  await expect(activeHeader(page)).toHaveClass(/working/)
+  await expect(paneRows(page)).toHaveClass(/working/)
+  claude.signal('SIGKILL')
+  await expect(rows(page)).toContainText('[exited with code 137]')
+  await expect(activeHeader(page)).not.toHaveClass(/working/)
+  await expect(activeHeader(page)).toHaveClass(/command-failed/)
+  await expect(activeHeader(page).locator('.command-tail')).toHaveText('137')
+  await expect(paneRows(page)).toHaveCount(0)
+  const row = cellItems(page).nth(1)
+  await expect(row).toHaveClass(/shell/)
+  await expect(row).toHaveClass(/command-failed/)
+  await expect(row).toHaveAttribute('aria-label', 'Exited with code 137: claude, proj-a')
+
+  // 셸 함수를 거치지 않는 명령은 끝날 때 OSC 7501 `clear` 를 보내는 쪽이 없어 레코드가 남는다. zsh 가 명령을 exec 하므로
+  // 셸이 시그널로 끝난다.
+  await launchFake(launched, claude, dir)
+  claude.signal('SIGKILL')
+  await expect(rows(page)).toContainText('[exited with signal 9]')
+  await expect(activeHeader(page)).toHaveClass(/working/)
+  await expect(activeHeader(page).locator('.command-tail')).toHaveCount(0)
+  await expect(paneRows(page)).toHaveClass(/working/)
+  await expect(paneRows(page)).toHaveAttribute('aria-label', 'Working: Claude, proj-a')
+})
+
+test('셸이 SIGINT 로 끝나도 종료 코드 130 처럼 pane·cell·workspace 가 닫힌다', async ({
+  launch,
+  dataDir
+}) => {
+  const claude = fakeClaude(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  const launched = await launch(claude.env)
+  const { page } = launched
+  await launchFake(launched, claude, dir)
+  await expect(cellItems(page)).toHaveCount(2)
+  claude.signal('SIGINT')
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect(workspaceNames(page)).toHaveCount(1)
 })
 
 test('커서를 그린 내용 위에 두고 끝난 명령의 종료 코드는 그 내용을 덮지 않고 마지막 줄 아래에 쓴다', async ({
@@ -468,7 +573,8 @@ test('layout.palette = "top" 이면 런처도 창 위에 뜬다', async ({ launc
   const launched = await launch()
   await openLauncher(launched)
   const box = (await launcher(launched.page).boundingBox())!
-  expect(box.y).toBe(8)
+  const height = await launched.page.evaluate(() => window.innerHeight)
+  expect(box.y).toBeLessThan(height / 2)
 })
 
 for (const [position, label, next] of [

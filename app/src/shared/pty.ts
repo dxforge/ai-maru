@@ -14,8 +14,15 @@ export type PtyOpen = {
 /** maru-pty 의 `exit` 메시지·`status` 응답의 종료 상태. 둘 다 null 이면 종료 상태를 모른다. */
 export type PtyExit = { code: number | null; signal: number | null }
 
+const SIGINT = 2
+const SIGINT_EXIT = 128 + SIGINT
+
+/**
+ * 종료 코드 130 과 시그널 2(SIGINT)는 실패로 보지 않는다. 사용자가 Ctrl-C 로 끈 명령이기 때문이다.
+ */
 export function failedExit({ code, signal }: PtyExit): boolean {
-  return signal !== null || (code !== null && code !== 0)
+  if (signal !== null) return signal !== SIGINT
+  return code !== null && code !== 0 && code !== SIGINT_EXIT
 }
 
 export function exitMessage({ code, signal }: PtyExit): string {

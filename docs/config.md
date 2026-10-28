@@ -53,7 +53,8 @@ Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-cols`·110�
 
 런처(⌘P, File 메뉴의 Open Launcher)는 디렉토리를 골라 `commands` 의 명령을 그 디렉토리에서 띄운다. Enter 는 새 workspace 에, ⌘Enter 는 지금 workspace 의 새 cell 에 띄운다. Tab·⇧Tab 이 띄울 명령을 바꾸고, 런처는 마지막으로 띄운 명령을 다음에 열 때 고른다.
 
-항목 하나가 명령 하나다. 앱은 항목을 공백으로 나눠 인자로 넘기고 따옴표는 풀지 않는다(`"claude --model opus"` 는 `claude`·`--model`·`opus`). 로그인 셸이 sh·bash·zsh·ksh·dash 면 명령은 그 셸의 대화형 모드(`-i -c`)를 거쳐 뜨므로, 터미널에서 친 것과 같이 rc 가 정한 PATH·함수를 쓴다. 그 밖의 셸이면 `/bin/sh -c` 로 뜬다. 명령이 0 으로 끝나면 pane 이 닫히고, 0 이 아닌 코드나 시그널로 끝나면 pane 이 출력과 `[exited with code N]`(시그널이면 `[exited with signal N]`)을 남긴다. PATH 에 없는 명령은 셸이 127 로 끝나므로 pane 에 오류가 남는다.
+항목 하나가 명령 하나다. 앱은 항목을 공백으로 나눠 인자로 넘기고 따옴표는 풀지 않는다(`"claude --model opus"` 는 `claude`·`--model`·`opus`). 로그인 셸이 sh·bash·zsh·ksh·dash 면 명령은 그 셸의 대화형 모드(`-i -c`)를 거쳐 뜨므로, 터미널에서 친 것과 같이 rc 가 정한 PATH·함수를 쓴다. 그 밖의 셸이면 `/bin/sh -c` 로 뜬다. 명령이 0 이나 130(Ctrl-C 의 SIGINT)으로 끝나면 pane 이 닫힌다. 그 밖의 코드나 SIGINT 가 아닌 시그널로 끝나면 pane 이 출력과 `[exited with code N]`(시그널이면 `[exited with signal N]`)을 남긴다. PATH 에 없는 명령은 셸이 127 로 끝나므로 pane 에 오류가 남는다.
+
 런처의 최근 목록은 `config.toml` 이 아니라 앱 데이터 폴더의 `launcher.json` 에 앱이 쓴다. 런처로 연 디렉토리만 들어가고, 런처에서 ⌘⌫ 로 고른 행을 지운다.
 
 ### `font-family`

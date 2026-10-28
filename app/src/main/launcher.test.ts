@@ -93,7 +93,8 @@ describe('createLauncherStore', () => {
     const a = join(dir, 'a')
     const b = join(dir, 'b')
     await Promise.all([store.launched(a, 'claude'), store.launched(b, 'codex')])
-    // 디렉토리 검사가 끝나는 순서대로 쓰므로 순서는 정하지 않는다. 둘 다 남고, 명령은 맨 앞 디렉토리를 띄운 명령이다.
+    // `launched` 는 디렉토리 검사가 끝나는 순서대로 쓰므로 이 테스트는 순서를 보지 않는다. 둘 다 남고, 명령은 맨 앞
+    // 디렉토리를 띄운 명령이다.
     const s = saved() as { recent: string[]; command: string }
     expect([...s.recent].sort()).toEqual([a, b])
     expect(s.command).toBe(s.recent[0] === a ? 'claude' : 'codex')

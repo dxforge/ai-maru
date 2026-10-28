@@ -4,7 +4,6 @@ export const DEFAULT_LAUNCHER: LauncherConfig = { commands: ['claude', 'codex'] 
 
 export const LAUNCHER_KEYS: readonly string[] = ['commands']
 
-/** 따옴표는 풀지 않는다. 공백으로만 나눈다. */
 export function commandArgv(entry: string): string[] {
   return entry.split(/\s+/).filter(Boolean)
 }

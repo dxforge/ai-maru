@@ -38,24 +38,22 @@ const loaded = window.maru.launcherState().then((state) => {
   recent.value = state.recent
   if (!picked) command.value = pickCommand(commands, state.command)
 })
-// 열린 채 `config.toml` 에서 고른 명령이 빠지면 첫 명령으로 돌아간다.
 watch(
   () => commands,
   (list) => (command.value = pickCommand(list, command.value))
 )
 
-/** 경로 모드에서 마지막으로 읽은 부모 디렉토리와 그 하위 디렉토리 이름. */
 const dirs = shallowRef<{ parent: string; names: string[] } | null>(null)
 const path = computed(() => pathQuery(query.value, home))
 let reads = 0
-/** 마지막으로 청한 나열이다. Enter 는 이것을 기다린 뒤 고른다. 후보가 오기 전에 누른 Enter 가 친 경로를 그대로 열면 안 되기 때문이다. */
+/** 마지막으로 요청한 나열이다. Enter 는 이것을 기다린 뒤 고른다. 후보가 오기 전에 누른 Enter 가 친 경로를 그대로 열면 안 되기 때문이다. */
 let listing: Promise<void> = Promise.resolve()
 watch(
   () => path.value?.parent,
   (parent) => {
     const read = ++reads
     if (parent === undefined) return
-    // 입력이 바뀌는 동안 늦게 온 답이 새 답을 덮지 않게 마지막으로 청한 답만 쓴다.
+    // 입력이 바뀌는 동안 늦게 온 답이 새 답을 덮지 않게 마지막 요청의 답만 쓴다.
     listing = window.maru.listDirs(parent).then((names) => {
       if (read === reads) dirs.value = { parent, names }
     })

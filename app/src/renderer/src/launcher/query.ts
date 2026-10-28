@@ -1,17 +1,12 @@
 import { foldCase, matchesWords } from '../../../shared/commands'
 import { tildePath } from '../workspace/cwd'
 
-/** `~`·`~/…` 를 `home` 으로 풀고 끝의 `/` 를 뗀다. `/` 하나는 그대로 둔다. `~user` 는 풀지 않는다. */
 export function expandPath(input: string, home: string | undefined): string {
   const h = home?.replace(/\/+$/, '')
   const expanded = h && (input === '~' || input.startsWith('~/')) ? h + input.slice(1) : input
   return expanded.replace(/(?<=.)\/+$/, '')
 }
 
-/**
- * 경로 모드의 입력. `~`·`/` 로 시작하고 `/` 가 있는 입력에서 마지막 `/` 까지가 `prefix`(친 그대로), 그 뒤가 `fragment`,
- * `prefix` 를 푼 것이 `parent` 다.
- */
 export type PathQuery = { prefix: string; fragment: string; parent: string }
 
 export function isPathInput(input: string): boolean {
@@ -25,7 +20,6 @@ export function pathQuery(input: string, home: string | undefined): PathQuery | 
   return { prefix, fragment: input.slice(slash + 1), parent: expandPath(prefix, home) }
 }
 
-/** 런처의 행. `label` 은 보이는 경로다. */
 export type Row = { path: string; label: string }
 
 export function filterRecent(

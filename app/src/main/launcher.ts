@@ -66,7 +66,7 @@ function samePath(a: string, b: string): boolean {
 }
 
 /**
- * pty 를 띄우는 `startDir`(`pty.ts`)이 `$HOME` 으로 떨어뜨리는 디렉토리를 미리 거른다. 상대경로는 main 의 작업
+ * pty 를 띄우는 `startDir`(`pty.ts`)이 `$HOME` 으로 바꿔 띄우는 디렉토리를 미리 거른다. 상대경로는 main 의 작업
  * 디렉토리를 기준으로 읽히므로 받지 않는다(`~user` 처럼 풀지 않은 입력).
  */
 async function notDirectory(dir: string): Promise<string | null> {
