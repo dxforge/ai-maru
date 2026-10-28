@@ -33,7 +33,7 @@
     "@xterm/addon-webgl": "0.20.0-beta.309",
     "@xterm/xterm": "6.1.0-beta.315",
     "dompurify": "^3.4.17",
-    "electron": "^44.5.1",
+    "electron": "^45.0.0",
     "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "entities": "^8.1.0",
