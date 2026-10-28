@@ -403,6 +403,7 @@ const workspaceDragged = (workspace: number): boolean =>
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  --row-height: 30px;
   background: var(--side);
   font:
     13px system-ui,
@@ -491,7 +492,7 @@ button {
   -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
-  height: 26px;
+  height: var(--row-height);
   padding: 0;
   border: 0;
   background: none;
@@ -541,11 +542,10 @@ button {
   display: flex;
   align-items: center;
   width: 100%;
-  height: 26px;
+  height: var(--row-height);
   gap: 4px;
   padding: 0 6px;
   box-sizing: border-box;
-  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
 }

@@ -78,11 +78,11 @@ export function dropAt(d: Dragged, s: SidebarSpans, y: number): DropAt | undefin
 
 /**
  * 목록의 위·아래 끝에서 이만큼 안쪽에 포인터가 들어오면 목록을 스크롤한다. 값은 사이드바 행 높이(`WorkspaceSidebar.vue` 의
- * `button` `height: 26px`)다.
+ * `--row-height`)다.
  */
-export const SCROLL_EDGE = 26
+export const SCROLL_EDGE = 30
 /** 한 프레임에 스크롤하는 가장 큰 폭이다. 행 높이의 반이다. */
-export const SCROLL_MAX = 13
+export const SCROLL_MAX = SCROLL_EDGE / 2
 
 /** 한 프레임에 목록을 스크롤할 폭이다. 위로는 음수다. 끝에 가까울수록 크고, 끝을 넘으면 가장 크다. */
 export function scrollStep(list: Span, y: number): number {
