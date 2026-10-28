@@ -13,7 +13,7 @@ jobs:
   fmt:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: cargo fmt --check
 
   rust:
@@ -23,7 +23,7 @@ jobs:
         runner: [macos-15]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: grep '^ZIG_VERSION=' ghostty-vt.env >> "$GITHUB_ENV"
       # rust-cache 는 저장하기 전에 target 아래에서 deps·build·.fingerprint 의 의존성 산출물 말고는 파일을 지우므로, build.rs 가 target/ghostty-vt 에 둔 라이브러리가 다음 실행에 남지 않는다.
       - run: echo "MARU_GHOSTTY_VT_DIR=$RUNNER_TEMP/ghostty-vt" >> "$GITHUB_ENV"
@@ -56,7 +56,7 @@ jobs:
       run:
         working-directory: app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: app/package.json
