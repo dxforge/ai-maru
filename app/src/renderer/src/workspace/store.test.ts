@@ -540,6 +540,107 @@ describe('git', () => {
     expect(selected(ws).panes[0].cwd).toBe('/a')
     expect(r.pending.map((p) => p.cwd)).toEqual(['/wt', '/a'])
   })
+
+  it('작업 트리 밖으로 옮기면 답이 오기 전에 이전 저장소를 지우고, 작업 트리 안으로 옮기면 답이 올 때까지 둔다', async () => {
+    const r = reader()
+    const { ws, report } = setup(r.read)
+    const git = () => selected(ws).panes[0].git
+    report({ cwd: '/a/x', cwdReports: 1 })
+    await r.answer('/a/x', { repo: 'a', branch: 'main', sub: 'x' })
+    for (const [cwd, n] of [
+      ['/a', 2],
+      ['/a/y/z', 3]
+    ] as const) {
+      report({ cwd, cwdReports: n })
+      expect(git()).toEqual({ repo: 'a', branch: 'main', sub: 'x' })
+    }
+    await r.answer('/a/y/z', { repo: 'a', branch: 'main', sub: 'y/z' })
+    // `/ab` 는 `/a` 로 시작하지만 `/a` 아래 디렉토리가 아니다.
+    report({ cwd: '/ab', cwdReports: 4 })
+    expect(git()).toBeUndefined()
+    await r.answer('/ab', { repo: 'ab', branch: 'dev', sub: '' })
+    expect(git()).toEqual({ repo: 'ab', branch: 'dev', sub: '' })
+  })
+
+  it('돌고 있는 프로그램이 다른 worktree 로 옮겨 가도 답이 오기 전에 이전 worktree 의 branch 를 지운다', async () => {
+    const r = reader()
+    const { ws, report } = setup(r.read)
+    report({ cwd: '/a', cwdReports: 1, records: [record('working')] })
+    await r.answer('/a', { repo: 'a', branch: 'main', common: '/a/.git', sub: '' })
+    report({ foregroundCwd: '/a-wt' })
+    expect(selected(ws).panes[0].git).toBeUndefined()
+  })
+
+  it('작업 트리 최상위를 구하지 못한 git 은 셸이 알린 cwd 가 바뀌면 지운다', async () => {
+    const r = reader()
+    const { ws, report } = setup(r.read)
+    // 셸은 심링크 경로(`/link/x`)를 보고하고, git 은 실제 경로로 센 `sub` 를 준다.
+    report({ cwd: '/link/x', cwdReports: 1 })
+    await r.answer('/link/x', { repo: 'a', branch: 'main', sub: 'real/x' })
+    report({ cwd: '/link/x/y', cwdReports: 2 })
+    expect(selected(ws).panes[0].git).toBeUndefined()
+  })
+
+  it.each([
+    ['심링크를 푼 경로', '/link/repo', { sub: '' }, '/real/repo'],
+    ['끝의 / 를 뺀 경로', '/a/b/', { sub: 'b' }, '/a/b']
+  ])(
+    '셸이 띄운 경로를 %s 로 처음 보고하면 답이 올 때까지 git 을 둔다',
+    async (_, spawned, at, first) => {
+      const r = reader()
+      const { ws, p, report } = setup(r.read)
+      ws.setSpawnedCwd(p.key, spawned)
+      const git = { repo: 'repo', branch: 'main', ...at }
+      await r.answer(spawned, git)
+      report({ cwd: first, cwdReports: 1 })
+      expect(selected(ws).panes[0].git).toEqual(git)
+    }
+  )
+
+  it('되살린 pane 은 셸이 처음 보고한 cwd 로 저장한 git 을 지우지 않는다', async () => {
+    const from = createWorkspaces(async () => ({ repo: 'r', branch: 'old' }))
+    from.open('/r')
+    from.setSpawnedCwd(selected(from).panes[0].key, '/r')
+    await new Promise((resolve) => setTimeout(resolve))
+    const r = reader()
+    const src = source()
+    const to = createWorkspaces(r.read, src)
+    to.restore(from.snapshot())
+    src.set(to, selected(to).panes[0].ptyId, { cwd: '/private/r', cwdReports: 1 })
+    expect(selected(to).panes[0].git).toEqual({ repo: 'r', branch: 'old' })
+  })
+
+  it('저장소가 / 이면 어느 디렉토리로 옮겨도 답이 올 때까지 git 을 둔다', async () => {
+    const r = reader()
+    const { ws, report } = setup(r.read)
+    const git = () => selected(ws).panes[0].git
+    report({ cwd: '/', cwdReports: 1 })
+    await r.answer('/', { repo: 'root', branch: 'main', sub: '' })
+    report({ cwd: '/x', cwdReports: 2 })
+    expect(git()).toEqual({ repo: 'root', branch: 'main', sub: '' })
+    await r.answer('/x', { repo: 'root', branch: 'main', sub: 'x' })
+    report({ cwd: '/y', cwdReports: 3 })
+    expect(git()).toEqual({ repo: 'root', branch: 'main', sub: 'x' })
+  })
+
+  it('셸이 같은 디렉토리를 다시 보고하면 답이 올 때까지 git 을 둔다', async () => {
+    const r = reader()
+    const { ws, report } = setup(r.read)
+    report({ cwd: '/link', cwdReports: 1 })
+    // 최상위를 구하지 못한 git 이어도 같은 디렉토리면 지우지 않는다.
+    await r.answer('/link', { repo: 'a', branch: 'main', sub: 'real' })
+    report({ cwd: '/link', cwdReports: 2 })
+    expect(selected(ws).panes[0].git).toEqual({ repo: 'a', branch: 'main', sub: 'real' })
+  })
+
+  it('작업 트리 최상위는 snapshot 에 싣지 않는다', async () => {
+    const r = reader()
+    const { ws, report } = setup(r.read)
+    report({ cwd: '/a', cwdReports: 1 })
+    await r.answer('/a', { repo: 'a', branch: 'main', sub: '' })
+    expect(selected(ws).panes[0].gitRoot).toBe('/a')
+    expect(Object.keys(ws.snapshot().workspaces[0].cells[0].panes[0])).not.toContain('gitRoot')
+  })
 })
 
 describe('panes', () => {

@@ -19,7 +19,8 @@ import {
 /**
  * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령이다. `cwd`·`title` 은 화면에 보일
  * 값으로 `paneCwd`·`paneTitle` 이 고르고, `restoredCwd`·`restoredTitle`·`spawnedCwd` 는 그 재료다. `attach` 는
- * 재시작으로 되살린 pane 이 떠 있는 pty 에 붙어야 할 때 true 다.
+ * 재시작으로 되살린 pane 이 떠 있는 pty 에 붙어야 할 때 true 다. `gitRoot` 는 `git` 을 읽은 cwd 에서 구한 작업 트리
+ * 최상위 경로이고, 구하지 못했으면 없다.
  */
 export type Pane = {
   key: number
@@ -29,14 +30,34 @@ export type Pane = {
   cwd?: string
   title?: string
   git?: GitHead
+  gitRoot?: string
   attach?: boolean
   restoredCwd?: string
   restoredTitle?: string
   spawnedCwd?: string
 }
 
-/** snapshot 에 싣지 않는 pane 필드. `attach` 는 `restore` 가 정하고, 나머지는 화면에 보이는 `cwd`·`title` 의 재료다. */
-const UNSAVED = new Set(['attach', 'restoredCwd', 'restoredTitle', 'spawnedCwd'])
+/**
+ * snapshot 에 싣지 않는 pane 필드. `attach` 는 `restore` 가 정하고, `gitRoot` 는 `git` 을 다시 읽으면 생긴다. 나머지는
+ * 화면에 보이는 `cwd`·`title` 의 재료다.
+ */
+const UNSAVED = new Set(['attach', 'gitRoot', 'restoredCwd', 'restoredTitle', 'spawnedCwd'])
+
+/**
+ * `git` 을 읽은 cwd 에서 `sub` 를 떼어 작업 트리 최상위 경로를 구한다. `sub` 는 심링크를 푼 경로로 세므로, cwd 의
+ * 끝이 `sub` 와 다르면 구하지 않는다.
+ */
+function gitRootOf(cwd: string, sub: string | undefined): string | undefined {
+  if (sub === undefined) return undefined
+  // 끝의 `/` 를 뗀다. 저장소가 `/` 면 루트가 빈 문자열이 되어 `within` 이 모든 절대 경로를 그 안으로 본다.
+  const dir = cwd.replace(/\/+$/, '')
+  if (sub === '') return dir
+  return dir.endsWith(`/${sub}`) ? dir.slice(0, -sub.length - 1) : undefined
+}
+
+function within(cwd: string, root: string | undefined): boolean {
+  return root !== undefined && (cwd === root || cwd.startsWith(`${root}/`))
+}
 
 export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
 
@@ -73,7 +94,10 @@ export function createWorkspaces(
   let nextKey = 0
   let reads = 0
   const lastRead = new Map<number, number>()
-  const seen = new Map<number, { reports?: number; program?: ProgramStatusState }>()
+  const seen = new Map<
+    number,
+    { reports?: number; program?: ProgramStatusState; fromState: boolean }
+  >()
 
   const cells = (): Cell[] => list.value.flatMap((w) => w.cells)
 
@@ -268,13 +292,25 @@ export function createWorkspaces(
     if (p.title !== title) p.title = title
     const cwd = paneCwd({ ...p, state })
     const before = seen.get(p.key)
-    const now = { reports: state?.cwdReports, program: source.rootState(p.ptyId) }
+    const now = {
+      reports: state?.cwdReports,
+      program: source.rootState(p.ptyId),
+      fromState: (state?.foregroundCwd ?? state?.cwd) != null
+    }
     seen.set(p.key, now)
     const reported =
       before?.reports !== undefined && now.reports !== undefined && now.reports !== before.reports
     const changed = cwd !== p.cwd
     if (changed) p.cwd = cwd
     if (cwd === undefined || !(changed || reported || now.program !== before?.program)) return false
+    // 작업 트리 밖으로 옮기면 답을 기다리지 않고 이전 저장소를 지운다. reftable 저장소는 `git` 을 실행해 읽으므로 답이
+    // 늦게 오고, 그동안 이전 저장소의 이름과 branch 가 보이기 때문이다. 작업 트리 안이면 이름이 깜빡이지 않게 둔다.
+    // 이전 cwd 를 셸이나 프로그램이 알리지 않았으면(띄운 경로·되살린 경로) 지우지 않는다. 셸은 띄운 경로를 심링크를 푼
+    // 경로나 끝의 `/` 를 뺀 경로로 처음 보고하므로, 옮기지 않았어도 글자가 다를 수 있기 때문이다.
+    if (changed && before?.fromState && p.git && !within(cwd, p.gitRoot)) {
+      p.git = undefined
+      p.gitRoot = undefined
+    }
     readGitFor(p.key, cwd)
     return true
   }
@@ -305,14 +341,16 @@ export function createWorkspaces(
     void readGit(cwd)
       .catch(() => null)
       .then((git) => {
-        if (latest()) setGit(key, git ?? undefined)
+        if (latest()) setGit(key, git ?? undefined, cwd)
       })
   }
 
-  function setGit(key: number, git: GitHead | undefined): void {
+  function setGit(key: number, git: GitHead | undefined, cwd: string): void {
     const p = pane(key)
     if (!p) return
     if (!sameGitHead(p.git, git)) p.git = git
+    const root = git && gitRootOf(cwd, git.sub)
+    if (p.gitRoot !== root) p.gitRoot = root
   }
 
   function setFontSize(key: number, size: number | undefined): void {
