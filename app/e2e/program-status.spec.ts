@@ -237,6 +237,16 @@ test('maru status 로 쓴 하위 레코드가 루트보다 급하면 그것을, 
   await page.keyboard.type(status('done'))
   await expect(paneRows(page)).toHaveClass(/blocked/)
 
+  await page.keyboard.type(
+    'maru status clear --id ask && maru status put error --id build --app cargo\n'
+  )
+  await expect(paneRows(page)).toHaveClass(/error/)
+  await expect(paneRows(page).locator('.title')).toHaveText('Claude')
+  await expect(activeHeader(page).locator('.title')).toHaveText('Claude')
+  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
+  await page.keyboard.type('maru status clear --id build && maru status put blocked --id ask\n')
+  await expect(paneRows(page)).toHaveClass(/blocked/)
+
   // 하위의 하위도 함께 지워져야 error 가 남지 않는다.
   await page.keyboard.type('maru status put error --id ask/sub && maru status clear --id ask\n')
   await expect(paneRows(page)).toHaveClass(/done/)

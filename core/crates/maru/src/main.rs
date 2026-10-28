@@ -58,11 +58,12 @@
 //! | `mate.list` | 없음 | `{"mates":[{"pty","state","kind","workspace","cell","dir","message"}…]}` |
 //! | `app.restart` | `kill_ptys`(bool, 선택) | `null` |
 //!
-//! `mate.list` 는 창의 모든 workspace·cell 에서, 사이드바가 보이는 program_status 레코드(루트와 하위
-//! 가운데 앱이 고른 것)의 `app` 이 `claude-code` 인 pane 을 화면 순서(workspace → cell → pane)로 돌려준다.
-//! job 은 들지 않는다. `state` 는 레코드의 상태(`idle`·`working`·`done`·`blocked`·`error`)다. `kind` 는 `permission`·`question`·
-//! `auth` 나 null 이다. `workspace`·`cell` 은 사이드바가 보이는 이름이다. `cell` 은 브랜치가 있으면 이름 뒤에
-//! 공백 하나를 두고 브랜치를 붙인다. `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면
+//! `mate.list` 는 창의 모든 workspace·cell 에서, 루트 program_status 레코드의 `app` 이 `claude-code` 인
+//! pane 을 화면 순서(workspace → cell → pane)로 돌려준다. job 은 들지 않는다. `state`·`kind`·`message` 는
+//! 사이드바가 보이는 레코드(루트와 하위 가운데 앱이 고른 것)의 값이다. `state` 는 레코드의 상태
+//! (`idle`·`working`·`done`·`blocked`·`error`)다. `kind` 는 `permission`·`question`·`auth` 나 null 이다.
+//! `workspace`·`cell` 은 사이드바가 보이는 이름이다. `cell` 은 브랜치가 있으면 이름 뒤에 공백 하나를 두고
+//! 브랜치를 붙인다. `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면
 //! 빈 문자열이다. `message` 는 레코드의 `message` 이고, 비었으면 `title` 이다.
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
@@ -141,8 +142,9 @@
 //!
 //! `maru status` 는 앱에 요청을 보내지 않는다. 자기 제어 터미널(`/dev/tty`)에 OSC 7501 보고를 써서,
 //! 터미널 안의 프로그램이 보낸 보고와 같은 경로로 레코드를 쓰거나 지운다. 그래서 `MARU_SOCKET`·`MARU_PTY_ID`
-//! 가 없어도 된다. OSC 7501 을 받는 다른 터미널에서도 동작한다. 사양에 어긋나는 보고는 터미널이 말없이
-//! 버리므로 `maru status` 가 쓰기 전에 거절한다.
+//! 가 없어도 된다. OSC 7501 을 받는 다른 터미널에서도 동작한다. 제어 터미널이 없으면 제어 터미널이 있는
+//! 가장 가까운 조상 프로세스의 터미널 장치에 쓴다. Claude Code 의 Bash 도구 명령과 hook 은 제어 터미널 없이
+//! 돌기 때문이다. 사양에 어긋나는 보고는 터미널이 말없이 버리므로 `maru status` 가 쓰기 전에 거절한다.
 //!
 //! # claude monitor
 //!
@@ -228,7 +230,9 @@ enum Command {
     /// Report this terminal's status with OSC 7501 (the program status protocol).
     ///
     /// Writes to the controlling terminal, so it also works outside AI Maru in any terminal
-    /// that speaks the protocol. Nothing is printed on success.
+    /// that speaks the protocol. Without one, as in Claude Code's Bash tool and hooks, writes
+    /// to the terminal of the nearest ancestor process that has one. Nothing is printed on
+    /// success.
     Status {
         #[command(subcommand)]
         command: StatusCommand,
@@ -708,19 +712,58 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// 시퀀스를 한 번의 write 로 쓴다. 터미널을 함께 쓰는 프로그램의 출력 사이에 끼어도 시퀀스가 갈라지지 않게 하기 위해서다.
+/// 시퀀스를 `write` 한 번으로 쓴다. 터미널을 함께 쓰는 프로그램의 출력 사이에 끼어도 시퀀스가 갈라지지 않게 하기 위해서다.
 fn write_tty(bytes: &[u8]) -> Result<()> {
-    let mut tty = std::fs::OpenOptions::new()
-        .write(true)
-        .open("/dev/tty")
-        .context("cannot open the controlling terminal /dev/tty")?;
+    let (mut tty, path) = open_terminal()?;
     let n = tty
         .write(bytes)
-        .context("cannot write to the controlling terminal")?;
+        .with_context(|| format!("cannot write to the terminal {path}"))?;
     if n != bytes.len() {
-        bail!("the controlling terminal took {n} of {} bytes", bytes.len());
+        bail!("the terminal {path} took {n} of {} bytes", bytes.len());
     }
     Ok(())
+}
+
+/// 제어 터미널을 연다. 없으면 제어 터미널이 있는 가장 가까운 조상 프로세스의 터미널 장치를 연다. Claude Code 의 Bash
+/// 도구 명령과 hook 은 제어 터미널 없이 돌고, 그 조상인 claude 는 자기가 그리는 터미널을 제어 터미널로 갖기 때문이다.
+fn open_terminal() -> Result<(File, String)> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let open = |path: &str| {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(nix::libc::O_NOCTTY)
+            .open(path)
+    };
+    let err = match open("/dev/tty") {
+        Ok(tty) => return Ok((tty, "/dev/tty".into())),
+        Err(e) => e,
+    };
+    let Some(path) = ancestors().into_iter().find_map(terminal_of) else {
+        bail!(
+            "cannot open the controlling terminal /dev/tty ({err}), and no ancestor process has one"
+        );
+    };
+    let tty = open(&path).with_context(|| {
+        format!("cannot open {path}, the controlling terminal of an ancestor process")
+    })?;
+    Ok((tty, path))
+}
+
+/// `pid` 의 제어 터미널 장치 경로. 제어 터미널이 없거나 알 수 없으면 `None` 이다.
+fn terminal_of(pid: u32) -> Option<String> {
+    use nix::libc;
+    let dev = bsd_info(pid)?.e_tdev;
+    // 제어 터미널이 없으면 e_tdev 는 NODEV(-1)다.
+    if dev == u32::MAX {
+        return None;
+    }
+    // SAFETY: devname 은 정적 버퍼의 C 문자열이나 null 을 돌려준다. 이 프로세스에서는 다른 스레드가 devname 을 부르지 않는다.
+    let name = unsafe { libc::devname(dev as libc::dev_t, libc::S_IFCHR) };
+    if name.is_null() {
+        return None;
+    }
+    let name = unsafe { std::ffi::CStr::from_ptr(name) }.to_str().ok()?;
+    Some(format!("/dev/{name}"))
 }
 
 fn claude_hook() -> Result<()> {
@@ -914,15 +957,15 @@ fn ancestors() -> Vec<u32> {
     let mut pid = std::os::unix::process::parent_id();
     while pid > 1 && pids.len() < MAX_ANCESTORS {
         pids.push(pid);
-        match parent_of(pid) {
-            Some(parent) => pid = parent,
+        match bsd_info(pid) {
+            Some(info) => pid = info.pbi_ppid,
             None => break,
         }
     }
     pids
 }
 
-fn parent_of(pid: u32) -> Option<u32> {
+fn bsd_info(pid: u32) -> Option<nix::libc::proc_bsdinfo> {
     use nix::libc;
     let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
     let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
@@ -937,7 +980,7 @@ fn parent_of(pid: u32) -> Option<u32> {
         )
     };
     // SAFETY: 위에서 size 바이트를 다 채웠다.
-    (n == size).then(|| unsafe { info.assume_init() }.pbi_ppid)
+    (n == size).then(|| unsafe { info.assume_init() })
 }
 
 fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) -> Result<String> {

@@ -47,22 +47,20 @@ describe('shownRecord', () => {
     expect(picked([rec('a', 'done'), rec('', 'idle'), rec('b', 'done')])).toEqual(['a', 'done'])
   })
 
-  it('고른 하위에 app 이 없으면 가장 가까운 조상의 app 을, 조상에 없으면 루트의 app 을 쓴다', () => {
+  it('고른 하위의 app 은 하위와 조상의 app 과 상관없이 루트의 app 이다', () => {
     const root = rec('', 'done', 'claude-code')
     expect(shownRecord([root, rec('ask', 'blocked')])).toEqual({
       ...rec('ask', 'blocked'),
       app: 'claude-code'
     })
+    expect(shownRecord([root, rec('build', 'error', 'cargo')])?.app).toBe('claude-code')
     expect(
       shownRecord([root, rec('a', 'idle', 'make'), rec('a/b', 'idle'), rec('a/b/c', 'error')])?.app
-    ).toBe('make')
-    expect(shownRecord([root, rec('a', 'idle', 'make'), rec('a/b', 'error', 'cargo')])?.app).toBe(
-      'cargo'
+    ).toBe('claude-code')
+    expect(shownRecord([rec('', 'idle', 'codex'), rec('ask', 'blocked', 'claude-code')])?.app).toBe(
+      'codex'
     )
-    expect(shownRecord([root, rec('ab', 'idle', 'make'), rec('a/b', 'error')])?.app).toBe(
-      'claude-code'
-    )
-    expect(shownRecord([rec('', 'idle'), rec('ask', 'error')])?.app).toBe('')
+    expect(shownRecord([rec('', 'idle'), rec('ask', 'error', 'cargo')])?.app).toBe('')
   })
 
   it('고른 레코드의 kind·progress·title·message 는 그 레코드의 것이다', () => {

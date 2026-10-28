@@ -28,7 +28,7 @@ export function createPtyStates() {
     if (!e) return NONE
     return 'state' in e ? e.state.records : (legacy.get(pty) ?? NONE)
   }
-  // 같은 레코드 배열에는 같은 객체를 돌려준다. `shownRecord` 는 app 을 물려받은 하위 레코드를 부를 때마다 새 객체로 만든다.
+  // 같은 레코드 배열에는 같은 객체를 돌려준다. `shownRecord` 는 고른 하위 레코드의 `app` 이 루트와 다르면 부를 때마다 루트의 `app` 을 단 새 객체를 만든다.
   // 매번 새 객체를 돌려주면 그것을 prop 으로 받은 pane 헤더가 다른 pane 의 상태가 바뀔 때도 다시 그려진다.
   const picked = new WeakMap<readonly ProgramStatusRecord[], ProgramStatusRecord | undefined>()
   const shown = (pty?: string): ProgramStatusRecord | undefined => {

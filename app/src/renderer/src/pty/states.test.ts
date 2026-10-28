@@ -28,9 +28,9 @@ describe('createPtyStates', () => {
     expect(s.state(undefined)).toBeUndefined()
   })
 
-  it('app 을 물려받은 하위 레코드도 같은 상태에서는 같은 객체다', () => {
+  it('루트의 app 을 단 하위 레코드도 같은 상태에서는 같은 객체다', () => {
     const s = createPtyStates()
-    s.apply('p-1', { state: state([rec('done'), { ...rec('blocked', 'ask'), app: '' }]) })
+    s.apply('p-1', { state: state([rec('done'), { ...rec('blocked', 'ask'), app: 'cargo' }]) })
     const first = s.shown('p-1')
     expect(first).toMatchObject({ id: 'ask', app: 'make' })
     expect(s.shown('p-1')).toBe(first)

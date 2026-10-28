@@ -1604,9 +1604,6 @@ fn job_errors_pass_the_message_through() {
     assert_fails_with(&out, "maru: job dev is running in this cell");
 }
 
-// `maru status` 는 앱 소켓 대신 제어 터미널에 쓴다. pty 를 열어 그 slave 를 제어 터미널로 준 CLI 를 띄우고
-// master 로 읽는다.
-
 fn status_cmd(args: &[&str]) -> Command {
     let mut cmd = maru_cmd(None, &[&["status"], args].concat());
     cmd.stdin(Stdio::null());
@@ -1614,6 +1611,10 @@ fn status_cmd(args: &[&str]) -> Command {
 }
 
 fn on_tty(args: &[&str]) -> (Output, Vec<u8>) {
+    run_on_tty(status_cmd(args))
+}
+
+fn run_on_tty(mut cmd: Command) -> (Output, Vec<u8>) {
     let pty = nix::pty::openpty(None, None).unwrap();
     let mut master = std::fs::File::from(pty.master);
     // slave 가 모두 닫히면 master 읽기가 끝난다. 쓴 것을 놓치지 않게 띄우기 전부터 읽는다.
@@ -1625,7 +1626,6 @@ fn on_tty(args: &[&str]) -> (Output, Vec<u8>) {
         }
         got
     });
-    let mut cmd = status_cmd(args);
     cmd.stdin(Stdio::from(pty.slave));
     unsafe {
         cmd.pre_exec(|| {
@@ -1850,15 +1850,61 @@ fn status_text_with_control_characters_is_refused() {
 }
 
 #[test]
-fn status_without_a_controlling_terminal_it_fails_and_says_why() {
-    let mut cmd = status_cmd(&["put", "done"]);
+fn status_without_a_controlling_terminal_writes_to_the_nearest_ancestors_terminal() {
+    // Claude Code 의 Bash 도구 명령처럼 CLI 는 제어 터미널 없이 돌고, 그 부모 셸은 pty 를 제어 터미널로 갖는다.
+    let mut sh = Command::new("/bin/sh");
+    sh.args([
+        "-c",
+        r#"/usr/bin/perl -MPOSIX -e 'POSIX::setsid() > 0 or die "setsid: $!"; exec @ARGV or die "exec: $!"' "$MARU" status put blocked --id ask; exit $?"#,
+    ])
+    .env("MARU", env!("CARGO_BIN_EXE_maru"))
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+    let (out, got) = run_on_tty(sh);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(out.stdout.is_empty());
+    assert!(out.stderr.is_empty(), "{}", stderr(&out));
+    assert_eq!(
+        String::from_utf8_lossy(&got),
+        "\x1b]7501;state=blocked:id=ask\x1b\\"
+    );
+}
+
+#[test]
+fn status_without_a_terminal_in_itself_or_any_ancestor_fails_and_says_why() {
+    // 테스트를 띄운 프로세스가 제어 터미널을 가질 수 있으므로, 부모 셸을 먼저 끝내 CLI 의 조상에서 뺀다.
+    let tmp = tempfile::tempdir().unwrap();
+    let log = tmp.path().join("out");
+    let mut sh = Command::new("/bin/sh");
+    sh.args([
+        "-c",
+        r#"(sleep 0.5; "$MARU" status put done; echo "exit=$?") >"$LOG" 2>&1 &"#,
+    ])
+    .env("MARU", env!("CARGO_BIN_EXE_maru"))
+    .env("LOG", &log)
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null());
     unsafe {
-        cmd.pre_exec(|| {
+        sh.pre_exec(|| {
             nix::unistd::setsid()?;
             Ok(())
         });
     }
-    let out = wait_within(cmd.spawn().unwrap());
-    assert!(out.stdout.is_empty());
-    assert_fails_with(&out, "cannot open the controlling terminal");
+    assert!(wait_within(sh.spawn().unwrap()).status.success());
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let out = loop {
+        let out = std::fs::read_to_string(&log).unwrap_or_default();
+        if out.contains("exit=") {
+            break out;
+        }
+        assert!(Instant::now() < deadline, "CLI 가 끝나지 않았다: {out}");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(out.ends_with("exit=1\n"), "{out}");
+    assert!(
+        out.contains("cannot open the controlling terminal /dev/tty")
+            && out.contains("no ancestor"),
+        "{out}"
+    );
 }

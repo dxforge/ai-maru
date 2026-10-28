@@ -147,6 +147,33 @@ describe('mateRows', () => {
     ).toEqual([['blocked', 'question', 'Which one?']])
   })
 
+  it('mate 인지는 보일 레코드가 하위여도 루트의 app 으로 정한다', () => {
+    const records = new Map([
+      [
+        'p-a',
+        [record('claude-code', { state: 'done' }), record('cargo', { id: 'build', state: 'error' })]
+      ],
+      [
+        'p-b',
+        [record('codex', { state: 'idle' }), record('claude-code', { id: 'ask', state: 'blocked' })]
+      ]
+    ])
+    const shown = (pty: string) => shownRecord(records.get(pty) ?? [])
+    const workspaces = [
+      {
+        key: 1,
+        id: 'w-1',
+        cells: [
+          cell(2, [
+            { key: 3, ptyId: 'p-a' },
+            { key: 4, ptyId: 'p-b' }
+          ])
+        ]
+      }
+    ]
+    expect(mateRows(workspaces, shown).map((r) => [r.pty, r.state])).toEqual([['p-a', 'error']])
+  })
+
   it('pane 이 하나도 claude 가 아니면 빈 목록이다', () => {
     const workspaces = [{ key: 1, id: 'w-1', cells: [cell(2, [{ key: 3, ptyId: 'p-a' }])] }]
     expect(mateRows(workspaces, () => undefined)).toEqual([])
