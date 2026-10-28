@@ -93,13 +93,13 @@ test('⌘ 를 누른 채 OSC 8 링크에 올리면 주소가 보이고, 떼거�
 })
 
 for (const header of ['bottom', 'top'] as const) {
-  test(`헤더가 ${header === 'bottom' ? '아래' : '위'}일 때 ⌘ 를 누른 채 링크에 올려 뜬 주소는 pane 헤더나 pane 끝에 가리지 않는다`, async ({
+  test(`헤더가 ${header === 'bottom' ? '아래' : '위'}일 때 ⌘ 를 누른 채 링크에 올려 뜬 주소는 pane 왼쪽 끝에 붙고 pane 헤더나 pane 끝에 가리지 않는다`, async ({
     launch,
     dataDir
   }) => {
     if (header === 'top') writeConfig(dataDir, '[layout]\nheader = "top"\n')
     const { app, page } = await launch()
-    // 본문이 헤더를 뺀 행 수보다 반 행 길면 주소의 아래 끝이 가리는지 보려고, pane 높이를 행 높이의 배수보다 1/4 행 크게 맞춘다.
+    // 본문이 헤더를 뺀 행 수보다 반 행 길면 주소의 아래 끝이 가려지는지 보려고, pane 높이를 행 높이의 배수보다 1/4 행 크게 맞춘다.
     const { height: row } = await cellSize(page)
     const grid = () =>
       page.locator('.panes.selected .grid').evaluate((el) => el.getBoundingClientRect().height)
@@ -117,12 +117,15 @@ for (const header of ['bottom', 'top'] as const) {
     const place = await address.evaluate((el) => {
       const pane = el.closest('.pane')!
       return {
+        left: el.getBoundingClientRect().left,
+        paneLeft: pane.getBoundingClientRect().left,
         bottom: el.getBoundingClientRect().bottom,
         paneBottom: pane.getBoundingClientRect().bottom,
         headTop: pane.querySelector('.pane-header')!.getBoundingClientRect().top
       }
     })
     await page.keyboard.up('Meta')
+    expect(place.left).toBeCloseTo(place.paneLeft, 1)
     expect(place.bottom).toBeLessThanOrEqual(place.paneBottom)
     if (header === 'bottom') expect(place.bottom).toBeLessThanOrEqual(place.headTop)
   })

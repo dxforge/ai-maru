@@ -485,10 +485,8 @@ function placement(b: Box, unit: string, size?: TerminalSize) {
 type ColumnCols = number | undefined
 
 /**
- * pane 상자 `b` 에 놓을 터미널의 열·행 수. 행은 헤더 한 행을 뺀 높이에 들어가는 수다. 열은 pane 폭에서 여백과
- * 스크롤바를 뺀 폭에 들어가는 수다. columns 보기에서는 이 수와 cell 의 pane 열 수(`cols`) 가운데 큰 쪽이다. pane 하나의
- * 폭은 `cols` 로 만든 폭이라 `cols` 가 되고, pane 여럿의 폭에 걸친 pane 만 더 많은 열을 받는다. 글자 칸 크기를 모르면
- * `undefined` 다.
+ * pane 상자 `b` 에 놓을 터미널의 열·행 수. 행 수는 헤더 한 행을 뺀 높이로 센다. columns 보기에서 pane 하나 폭인 pane 은
+ * 그 폭을 `cols` 로 만들었으므로 `cols` 열이고, pane 여럿의 폭에 걸친 pane 만 그 폭에 들어가는 만큼 더 많은 열을 받는다.
  */
 function terminalSize(b: Box, cell: Size, cols: ColumnCols): TerminalSize | undefined {
   if (cell.width <= 0 || cell.height <= 0) return undefined
@@ -503,7 +501,7 @@ function unitOf(cell: Size, cols: ColumnCols): Size {
 
 function placements(layout: Layout, size: Size | undefined, cell: Size, cols: ColumnCols) {
   const widths: Widths = cols === undefined ? 'half' : 'columns'
-  // 영역을 재기 전의 첫 렌더는 비율로 그린다. 터미널은 열·행 수를 받을 때까지 pty 를 열지 않는다.
+  // 영역을 재기 전의 첫 렌더는 비율로 그린다. 터미널은 열·행 수를 받을 때까지 pty 에 붙지 않는다.
   if (!size)
     return new Map(
       [...rects(layout, widths)].map(([pane, r]) => [
@@ -625,7 +623,7 @@ const urgent = computed(() => {
   return map
 })
 
-// 왼쪽 여백과 아래에 남는 한 행 미만의 자리는 xterm 요소 밖이라, 눌러도 xterm 이 포커스를 주지 않는다.
+// 터미널 아래에 남는 한 행 미만의 자리는 xterm 요소 밖이라, 눌러도 xterm 이 포커스를 주지 않는다.
 function focusFromBody(e: MouseEvent, pane: number): void {
   if ((e.target as Element).closest('.xterm')) return
   e.preventDefault()
@@ -665,9 +663,8 @@ watchEffect(() => {
 
 // cell 이 화면보다 넓을 수 있어, cell 이 아니라 포커스된 pane 이 보이게 한다.
 function revealFocused(): void {
-  // 터미널 요소는 왼쪽 여백만큼 pane 안쪽에 있으므로, 여백까지 보이도록 pane 을 `scrollIntoView` 한다.
   if (viewMode.value === 'columns')
-    focusedTerminal()?.$el.closest('.pane')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    focusedTerminal()?.$el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
 // 포커스가 그대로여도 앞의 cell 이 닫히거나 폭이 바뀌면 pane 이 밀려나 views 도 지켜본다.
 watch([viewMode, () => workspaces.selected()?.focused, views], revealFocused, { flush: 'post' })

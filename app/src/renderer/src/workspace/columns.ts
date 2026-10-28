@@ -14,7 +14,7 @@ export function stepPaneCols(cols: number, by: 1 | -1, configured: number): numb
 
 export const SCROLLBAR_WIDTH = 8
 
-/** pane 왼쪽 끝과 터미널 사이의 여백(px). */
+/** 터미널 왼쪽 여백(px). `App.vue` 가 `--pad` 로 넘기고, `TerminalView.vue` 가 그 값을 `.xterm` 의 `padding-left` 로 둔다. */
 export const TERMINAL_PADDING = 4
 
 const CHROME = TERMINAL_PADDING + SCROLLBAR_WIDTH
@@ -30,7 +30,10 @@ export function paneCells(cols: number, cellWidth: number): number {
   return Math.ceil(cols + CHROME / cellWidth - EPSILON)
 }
 
-/** columns 에서 터미널 `cols` 열이 남는 자리 없이 들어가는 pane 의 폭(px). 글자 칸 폭을 모르면 0 이다. */
+/**
+ * columns 에서 터미널 `cols` 열이 들어가는 pane 의 폭(px). 글자 칸 폭의 배수라, pane 경계에 놓인 글자 열이 위아래 pane
+ * 끼리 이어진다. 글자 칸 폭을 모르면 0 이다.
+ */
 export function columnWidth(cols: number, cellWidth: number): number {
-  return cellWidth > 0 ? cols * cellWidth + CHROME : 0
+  return paneCells(cols, cellWidth) * cellWidth
 }

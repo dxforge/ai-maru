@@ -2,12 +2,10 @@ import { basename } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
   activeHeader,
-  activeTerminal,
   canvasPanel,
   clickMenu,
   expect,
   focusPane,
-  isInk,
   newWorkspace,
   paneHeader,
   panes,
@@ -342,31 +340,15 @@ test('터미널 스크롤바는 pane 폭에서 8px 를 차지하고, 막대는 �
   expect(clip).toBe('padding-box')
 })
 
-test('터미널 왼쪽 여백은 터미널 배경으로 보이고, xterm.css 가 검게 칠한 viewport 는 테마 배경을 칠한 요소에 가려진다', async ({
-  launch
-}) => {
+test('터미널 왼쪽 여백도 터미널 배경으로 칠한다', async ({ launch }) => {
   const { page } = await launch()
-  await activeTerminal(page)
-  const place = await page.evaluate(() => {
-    const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect().toJSON()
-    const bg = (s: string) => getComputedStyle(document.querySelector(s)!).backgroundColor
-    return {
-      viewport: rect('.xterm-viewport'),
-      scrollable: rect('.xterm-scrollable-element'),
-      pane: rect('.pane'),
-      screenTop: rect('.xterm-screen').top,
-      colors: [bg('.xterm-scrollable-element'), bg('.pane')]
-    }
-  })
-  expect(place.scrollable).toEqual(place.viewport)
-  expect(place.colors[0]).toBe(place.colors[1])
-  const gap = await screenshotPixels(page, {
-    x: place.pane.left + 2,
-    y: place.screenTop + 2,
-    width: 1,
-    height: 1
-  })
-  expect(isInk(gap.data, 0)).toBe(false)
+  const [viewport, xterm, scrollable] = await page.evaluate(() =>
+    ['.xterm-viewport', '.xterm', '.xterm-scrollable-element'].map(
+      (s) => getComputedStyle(document.querySelector(s)!).backgroundColor
+    )
+  )
+  expect(viewport).toBe('rgba(0, 0, 0, 0)')
+  expect(xterm).toBe(scrollable)
 })
 
 async function measure(page: Page) {

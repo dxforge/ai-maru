@@ -51,9 +51,9 @@ const {
   shown: boolean
   font: TerminalFont
   theme: ITheme
-  /** App 이 pane 배치와 함께 정한 열 수. 처음 받은 열·행 수로 pty 에 붙고, 그 뒤에는 primary 일 때만 이 값으로 크기를 바꾼다. */
+  /** `App` 이 pane 배치와 함께 정한 열 수. 처음 받은 열·행 수로 pty 에 붙고, 그 뒤에는 primary 일 때만 이 값으로 크기를 바꾼다. */
   cols?: number
-  /** App 이 pane 배치와 함께 정한 행 수. */
+  /** `App` 이 pane 배치와 함께 정한 행 수. */
   rows?: number
 }>()
 const emit = defineEmits<{
@@ -151,7 +151,7 @@ const cell = (d: IRenderDimensions): Size => ({
 })
 let lastCell: Size | undefined
 /**
- * 창을 DPR 이 다른 화면으로 옮기거나 글꼴 설정이 바뀌면 글자 칸 크기가 바뀐다. 이 함수가 App 에 알리면 App 이 새 글자 칸
+ * 창을 DPR 이 다른 화면으로 옮기거나 글꼴 설정이 바뀌면 글자 칸 크기가 바뀐다. 이 함수가 `App` 에 알리면 `App` 이 새 글자 칸
  * 크기로 pane 배치와 열·행 수를 다시 정해 `cols`·`rows` 로 넘긴다.
  */
 function checkCell(force = false): void {
@@ -164,7 +164,7 @@ function checkCell(force = false): void {
 term.onDimensionsChange(() => checkCell())
 let pty: Attachment | null = null
 let started = false
-// pty 는 붙을 때의 크기로 행마다 개행을 넣어 재생하므로, 뒤에 넓혀도 펼쳐지지 않는다. 그래서 App 이 열·행 수를 정한 뒤에 붙는다.
+// pty 는 붙을 때의 크기로 행마다 개행을 넣어 재생하므로, 뒤에 넓혀도 펼쳐지지 않는다. 그래서 `App` 이 열·행 수를 정한 뒤에 붙는다.
 function applySize(): void {
   if (cols === undefined || rows === undefined || !pty) return
   if (started && !pty.primary) return
@@ -332,10 +332,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* 왼쪽 여백은 터미널 요소 밖에 둔다. 여백은 pane 의 배경(`--ground`, 테마 배경과 같다)으로 보인다. */
 .terminal-view {
   position: absolute;
-  inset: 0 0 0 var(--pad);
+  inset: 0;
 }
 
 /* xterm 의 스크롤바(z-index 11)가 pane 을 흐리게 덮는 층(App.vue) 위로 올라오지 않게 쌓임 맥락을 따로 둔다. */
@@ -361,6 +360,16 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+}
+
+.terminal-view :deep(.xterm) {
+  padding-left: var(--pad);
+}
+
+/* xterm.css 가 viewport 를 검게 칠하는데, viewport 는 여백까지 덮고 테마 배경은 그 안쪽에만 칠해진다.
+   투명하게 두어 여백에도 .xterm 의 테마 배경이 보이게 한다. */
+.terminal-view :deep(.xterm .xterm-viewport) {
+  background-color: transparent;
 }
 
 /* xterm.css 는 조합창을 검은 바탕에 흰 글자로 칠한다. 바탕은 테마 색으로 바꾸되 불투명하게 두어, 조합하는

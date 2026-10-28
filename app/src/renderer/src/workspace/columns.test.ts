@@ -16,9 +16,10 @@ describe('fitCols', () => {
 })
 
 describe('columnWidth', () => {
-  it('열 수 × 글자 칸 폭에 왼쪽 여백 4px 와 스크롤바 8px 를 더한다. 글자 칸 폭의 배수로 올리지 않는다', () => {
-    expect(columnWidth(80, 9)).toBe(732)
-    expect(columnWidth(80, 7.8)).toBeCloseTo(636)
+  it('열 수 × 글자 칸 폭에 왼쪽 여백 4px 와 스크롤바 8px 를 더하고, 글자 칸 폭의 배수로 올린다', () => {
+    expect(columnWidth(80, 9)).toBe(738)
+    expect(columnWidth(80, 7.8)).toBeCloseTo(639.6)
+    expect(columnWidth(80, 6)).toBe(492)
   })
 
   it('글자 칸 폭을 모르면 0 이다', () => {
@@ -26,13 +27,22 @@ describe('columnWidth', () => {
   })
 
   it('그 폭을 다시 열 수로 세어도 같은 열 수다', () => {
-    for (const cell of CELL_WIDTHS)
+    const cells = [...CELL_WIDTHS, ...Array.from({ length: 1600 }, (_, i) => 4 + i / 100)]
+    for (const cell of cells)
       for (const cols of [20, 80, 110, 144, 500])
         expect(fitCols(columnWidth(cols, cell), cell)).toBe(cols)
   })
 
+  it('글자 칸 폭의 배수다', () => {
+    for (const cell of CELL_WIDTHS)
+      for (const cols of [20, 80, 110, 144, 500]) {
+        const n = columnWidth(cols, cell) / cell
+        expect(n).toBeCloseTo(Math.round(n), 9)
+      }
+  })
+
   it('pane 여럿의 폭에서는 늘어선 pane 들의 여백·스크롤바 자리까지 열로 센다', () => {
-    expect(fitCols(2 * columnWidth(80, 8), 8)).toBe(161)
+    expect(fitCols(2 * columnWidth(80, 8), 8)).toBe(162)
     expect(fitCols(3 * columnWidth(80, 6), 6)).toBe(244)
   })
 })
