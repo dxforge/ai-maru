@@ -251,6 +251,12 @@ impl Conn {
         }
     }
 
+    fn expect_resync_replay(&mut self) {
+        let (tag, replay) = self.frame().expect("resync 재생 전에 끊겼다");
+        assert_eq!(tag, TAG_BINARY);
+        assert!(replay.starts_with(b"\x1bc"), "리셋으로 시작하지 않는다");
+    }
+
     fn next_text(&mut self) -> Value {
         loop {
             match self.frame() {
@@ -1121,42 +1127,37 @@ fn a_client_that_falls_behind_is_resynced() {
         assert!(v["cursor_x"].is_u64(), "{v}");
         break;
     }
-    let (tag, replay) = slow.frame().unwrap();
-    assert_eq!(tag, TAG_BINARY);
-    assert!(replay.starts_with(b"\x1bc"), "리셋으로 시작하지 않는다");
+    slow.expect_resync_replay();
 }
 
 #[test]
 fn a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs() {
+    // `OUTPUT_BACKLOG`(4MiB, `pty.rs`)의 두 배보다 1MiB 큰 양이다. 서버가 큐에서 꺼내 소켓에 쓰다 막힌 청크는
+    // 큐 크기에 세지 않고 그 크기는 한도 이하이므로, 그 청크와 소켓 버퍼를 빼도 큐가 한도를 넘는다.
+    const FLOOD: usize = 9 * 1024 * 1024;
     let p = start();
     let (mut slow, _, _) = p.attach("observer", 80, 24);
-    let (mut flood, _, _) = p.attach("primary", 80, 24);
-    flood.input("yes 0123456789\n");
-    drop(flood);
 
-    // 쉬지 않고 읽으면 밀리지 않으므로, 처음과 resync 마다 한 번씩 멈춰 밀리게 한다.
-    let pause = Duration::from_secs(1);
-    std::thread::sleep(pause);
-    let mut resyncs = 0;
-    loop {
-        let (tag, payload) = slow.frame().expect("한도 에러 없이 끊겼다");
-        if tag != TAG_TEXT {
-            continue;
-        }
-        let v: Value = serde_json::from_slice(&payload).unwrap();
-        match v["type"].as_str() {
-            Some("resync") => {
-                resyncs += 1;
-                std::thread::sleep(pause);
-            }
-            Some("error") => {
-                assert_eq!(v["code"], "resync_limit_exceeded", "{v}");
-                break;
-            }
-            _ => panic!("{v}"),
+    // 서버는 출력을 모든 클라이언트 큐에 같은 순서로 넣는다. 그래서 `fast` 가 끝 표지를 받았으면 그 앞의 출력은
+    // 읽지 않은 `slow` 의 큐에도 들어가 있으므로, `slow` 가 밀리는지는 출력 속도에 따라 달라지지 않는다. 출력이
+    // 유한하고 읽기마다 `WAIT` 시간 제한이 걸리므로, 밀리지 않으면 테스트가 멈추지 않고 실패한다. 출력은 VT 가
+    // 무시하는 NUL 로 채운다. 줄을 그리고 스크롤하는 데 드는 시간을 없애기 때문이다.
+    for round in 1..=6 {
+        // `fast` 도 부하로 읽기가 늦어지면 밀릴 수 있다. 서버가 resync 횟수를 연결마다 세므로, 판마다 `fast` 를
+        // 새로 붙여 여러 판의 resync 가 한 연결에 쌓여 `fast` 가 끊기는 일을 막는다.
+        let (mut fast, _, _) = p.attach("primary", 80, 24);
+        fast.input(&format!(
+            "head -c {FLOOD} /dev/zero; echo flood-$(({round}*7))\n"
+        ));
+        fast.output_until(&format!("flood-{}", round * 7));
+        let v = slow.next_text();
+        if round <= 5 {
+            assert_eq!(v["type"], "resync", "{round}번째: {v}");
+            slow.expect_resync_replay();
+        } else {
+            assert_eq!(v["code"], "resync_limit_exceeded", "{v}");
         }
     }
-    assert_eq!(resyncs, 5);
     assert!(slow.frame().is_none(), "한도 에러 뒤에도 연결이 남았다");
     assert_eq!(p.request(json!({ "type": "kill" }))["type"], "killed");
 }
