@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import {
@@ -155,6 +155,29 @@ test('글자로 찍힌 URL 은 OS 로, .md 는 Canvas 로, 그 밖의 파일은 
   await metaClick(page, 'note.md:3')
   await expect(canvasTitles(page)).toHaveText(['note.md'])
   await expect(page.locator('.canvas .markdown h1')).toHaveText('From link')
+})
+
+test('줄 끝에서 끊겨 다음 줄에 이어 찍힌 경로는 어느 줄을 ⌘+클릭해도 이어 붙인 경로를 연다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await recordShell(app)
+  mkdirSync(join(dataDir, 'sub', 'c769d050-299b'), { recursive: true })
+  // 상대경로는 foreground 프로세스의 cwd 로 푼다. 그 cwd 는 symlink 를 푼 경로(`/private/var/…`)이므로 기대값도 `realpathSync` 로 푼다.
+  const file = join(realpathSync(dataDir), 'sub', 'c769d050-299b', 'robot.txt')
+  writeFileSync(file, 'x')
+  // Claude Code 처럼 경로를 끊고, 다음 줄은 앞에 공백 두 칸을 두고 잇는다.
+  await run(
+    page,
+    `cd '${dataDir}'; printf '  Path: sub/c769d050\\n  -299b/robot.txt\\n'; echo done-$((1+1))`,
+    'done-2'
+  )
+
+  await metaClick(page, '-299b/robot.txt')
+  await expect.poll(() => paths(app)).toEqual([file])
+  await metaClick(page, 'sub/c769d050')
+  await expect.poll(() => paths(app)).toEqual([file, file])
 })
 
 test('상대경로는 돌고 있는 명령의 cwd 기준이다', async ({ launch, dataDir }) => {

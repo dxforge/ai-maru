@@ -36,7 +36,7 @@ import { isDevReload } from './navigation'
 import { createPanes } from './pane'
 import { createJobs, JOB_REPLY_MS } from './job'
 import { createLauncherStore, listDirs } from './launcher'
-import { openLink } from './links'
+import { longestExistingPaths, openLink, type LinkOpener } from './links'
 import { createPortWatch, readPorts } from './ports'
 import {
   checkRestart,
@@ -77,6 +77,7 @@ import {
   windowBounds
 } from './window-state'
 import type { JobView } from '../shared/job'
+import { isPathCandidates } from '../shared/link'
 import { paneRows } from '../shared/pane-list'
 import type { CloseAnswer, PaneReply } from '../shared/pane'
 import { PROTOCOL_VERSION } from '../shared/protocol'
@@ -632,16 +633,23 @@ function start(): void {
     }
   })
   ipcMain.on('pane:seen', (_event, pty: unknown) => void (isPtyId(pty) && seen(pty)))
+  const linkOpener: LinkOpener = {
+    openExternal: (url) => shell.openExternal(url),
+    openPath: (path) => shell.openPath(path),
+    putCanvas: (doc) => putCanvas(mainWindow, doc),
+    foregroundCwd: (id) => foregroundCwd(ptyDir(), id)
+  }
   ipcMain.handle('link:open', (_event, text: unknown, pty: unknown) => {
     if (typeof text !== 'string' || typeof pty !== 'string') {
       return { ok: false, reason: 'not a link' }
     }
-    return openLink(text, pty, {
-      openExternal: (url) => shell.openExternal(url),
-      openPath: (path) => shell.openPath(path),
-      putCanvas: (doc) => putCanvas(mainWindow, doc),
-      foregroundCwd: (id) => foregroundCwd(ptyDir(), id)
-    })
+    return openLink(text, pty, linkOpener)
+  })
+  ipcMain.handle('link:longest-existing', (_event, groups: unknown, pty: unknown) => {
+    if (!Array.isArray(groups) || !groups.every(isPathCandidates) || typeof pty !== 'string') {
+      return []
+    }
+    return longestExistingPaths(groups, pty, linkOpener)
   })
   ipcMain.on('window:path', (event, path: unknown) => {
     if (process.platform === 'darwin' && typeof path === 'string')

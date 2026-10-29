@@ -5,7 +5,7 @@ import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
 import type { JobView } from '../shared/job'
 import type { LaunchResult, LauncherState } from '../shared/launcher'
-import type { LinkOpenResult } from '../shared/link'
+import type { FoundPath, LinkOpenResult, PathCandidates } from '../shared/link'
 import type { CellNewRequest, CloseAnswer, PaneNewRequest, PaneReply } from '../shared/pane'
 import type { ScreenState, ViewPrefs } from '../shared/screen'
 import type { PtyOpen } from '../shared/pty'
@@ -78,6 +78,9 @@ const api = {
   /** 터미널 링크를 연다. 상대경로는 `ptyId` 의 foreground 프로세스의 cwd 기준이다. */
   openLink: (text: string, ptyId: string): Promise<LinkOpenResult> =>
     ipcRenderer.invoke('link:open', text, ptyId),
+  /** 줄을 넘어 이어 붙인 경로 후보마다 있는 가장 긴 것. 상대경로는 `openLink` 와 같은 기준으로 푼다. */
+  longestExistingPaths: (groups: PathCandidates[], ptyId: string): Promise<FoundPath[]> =>
+    ipcRenderer.invoke('link:longest-existing', groups, ptyId),
   setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),
   saveScreen: (screen: ScreenState): void => ipcRenderer.send('screen:state', screen),
   /**
