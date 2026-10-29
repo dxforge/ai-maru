@@ -2,7 +2,7 @@ import type { ProgramStatusKind, ProgramStatusState } from './program-status'
 
 /**
  * `pane.new` 가 renderer 에 넘기는 요청. `pty` 는 나눌 pane 의 pty 다. `full` 이면 그 pane 이 아니라
- * pane 이 든 cell 전체를 나눈다.
+ * pane 이 든 cell 전체를 나눈다. `cell` 이 있으면 `pty` 를 보지 않고 그 id 의 cell 전체를 나눈다.
  */
 export type PaneNewRequest = {
   pty: string
@@ -10,6 +10,7 @@ export type PaneNewRequest = {
   direction: 'right' | 'down'
   command?: string[]
   full: boolean
+  cell?: string
 }
 
 /**
@@ -39,10 +40,14 @@ export type PaneRow = {
 }
 
 /**
- * `no_space` 는 나눌 자리가 없어 거절한 것이다(`docs/architecture.md` 의 "pane 경계와 글자 칸 격자"). `bad_place` 는
+ * `cell` 은 `cell.new` 가 연 cell 의 id 다. `no_space` 는 나눌 자리가 없어 거절한 것이다(`docs/architecture.md` 의
+ * "pane 경계와 글자 칸 격자"). `no_cell` 은 `pane.new` 가 가리킨 cell 이 창에 없다는 것이다. `bad_place` 는
  * `cell.new` 가 가리킨 자리에 cell 을 넣지 못해 거절한 것이다.
  */
 export type PaneReply =
-  | { pty: string }
-  | { error: 'no_pane' | 'no_space' | 'bad_place' | 'open_failed'; message: string }
+  | { pty: string; cell?: string }
+  | {
+      error: 'no_pane' | 'no_cell' | 'no_space' | 'bad_place' | 'open_failed'
+      message: string
+    }
   | null

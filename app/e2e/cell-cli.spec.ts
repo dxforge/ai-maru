@@ -27,22 +27,26 @@ async function expectOrder(page: Page, marks: (string | null)[]): Promise<void> 
   }
 }
 
-test('maru cell new 는 부른 cell 뒤에 cell 을 더해 명령을 띄우고 pty id 를 찍으며, 선택과 포커스는 부른 쪽에 남는다', async ({
+test('maru cell new 는 부른 cell 뒤에 cell 을 더해 명령을 띄우고 머리 줄과 함께 pty id 와 cell id 를 찍으며, 선택과 포커스는 부른 쪽에 남는다', async ({
   launch
 }) => {
   const { page } = await launch()
   await page.keyboard.type(
-    `ID=$(maru cell new bash -c 'echo "me=[$MARU_PTY_ID]"; read x'); echo "got=[$ID]"\n`
+    `echo "got=[$(maru cell new bash -c 'echo "me=[$MARU_PTY_ID]"; read x' | tr '\\t\\n' '|/')]"\n`
   )
   await expect(cellItems(page)).toHaveCount(2)
   await expect(workspaceNames(page)).toHaveCount(1)
-  const got = /got=\[(p-[0-9a-f]{8})\]/
+  const got = /got=\[PTY\|CELL\/(p-[0-9a-f]{8})\|(c-[0-9a-f]{8})\/\]/
   await expect(rows(page)).toContainText(got)
-  const id = (await rows(page).innerText()).match(got)![1]
-  await expect(cellViews(page).nth(1).locator('.xterm-rows')).toContainText(`me=[${id}]`)
+  const [, pty, cell] = (await rows(page).innerText()).match(got)!
+  await expect(cellViews(page).nth(1).locator('.xterm-rows')).toContainText(`me=[${pty}]`)
   await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
   await expect(cellViews(page).nth(1)).not.toHaveClass(/selected/)
-  await run(page, 'echo still-$((1+1))', 'still-2')
+  await run(
+    page,
+    `clear; maru pane list | awk -F'\\t' '$1 == "${pty}" { print "listed=[" $5 "]" }'`,
+    `listed=[${cell}]`
+  )
 })
 
 test('부른 cell 바로 뒤에 놓여 나중에 띄운 것이 앞에 오고, columns 에서는 그 오른쪽에 놓인다', async ({
@@ -95,7 +99,7 @@ test('--after·--before 는 가리킨 pane·job 의 cell 바로 뒤·앞에 놓�
   await cellItems(page).nth(0).click()
   await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
 
-  await page.keyboard.type(`A=$(maru cell new ${marked('a')})\n`)
+  await page.keyboard.type(`A=$(maru cell new ${marked('a')} | awk 'NR == 2 { print $1 }')\n`)
   await expectOrder(page, [null, 'a', null])
   await page.keyboard.type(`maru cell new --after $A ${marked('b')} >/dev/null\n`)
   await expectOrder(page, [null, 'a', 'b', null])
@@ -129,7 +133,7 @@ test('--after 가 다른 workspace 의 pane, 없는 pty, pty id 가 아닌 값�
   await expect(workspaceNames(page)).toHaveCount(2)
 })
 
-test('명령이 끝나면 cell 이 닫히고, 곧바로 끝나는 명령도 pty id 를 찍고 성공한다', async ({
+test('명령이 끝나면 cell 이 닫히고, 곧바로 끝나는 명령도 pty id 와 cell id 를 찍고 성공한다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -139,7 +143,7 @@ test('명령이 끝나면 cell 이 닫히고, 곧바로 끝나는 명령도 pty 
   await expect(workspaceNames(page)).toHaveCount(1)
   for (const command of ['true', 'no-such-command-xyz']) {
     await page.keyboard.type(`clear; maru cell new ${command}; echo "code-$?"\n`)
-    await expect(rows(page)).toContainText(/p-[0-9a-f]{8}\s*code-0/)
+    await expect(rows(page)).toContainText(/p-[0-9a-f]{8}\s+c-[0-9a-f]{8}\s*code-0/)
     await expect(cellItems(page)).toHaveCount(1)
   }
 })
@@ -159,7 +163,7 @@ test('명령이 끝나 workspace 의 마지막 cell 이 닫히면 workspace 도 
 
 test('명령 없이 띄운 cell 은 셸이고, maru pane close 로 닫는다', async ({ launch }) => {
   const { page } = await launch()
-  await page.keyboard.type('ID=$(maru cell new)\n')
+  await page.keyboard.type(`ID=$(maru cell new | awk 'NR == 2 { print $1 }')\n`)
   await expect(cellItems(page)).toHaveCount(2)
   await cellItems(page).nth(1).click()
   await run(page, 'echo shell-$((1+1))', 'shell-2')

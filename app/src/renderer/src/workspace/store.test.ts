@@ -823,6 +823,14 @@ describe('panes', () => {
     expect(ws.paneByPty('p-00000000')).toBeUndefined()
   })
 
+  it('cell id 로 어느 workspace 의 cell 이든 찾는다', () => {
+    const ws = opened(2)
+    const [hidden, shown] = ws.cells()
+    expect(ws.cellById(hidden.id)?.key).toBe(hidden.key)
+    expect(ws.cellById(shown.id)?.key).toBe(shown.key)
+    expect(ws.cellById('c-00000000')).toBeUndefined()
+  })
+
   it('선택된 cell 이 없으면 split·moveFocus 는 아무것도 바꾸지 않는다', () => {
     const ws = createWorkspaces()
     ws.split('right')

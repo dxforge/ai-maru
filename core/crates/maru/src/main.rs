@@ -47,10 +47,10 @@
 //! | `inbox.push` | `to`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
 //! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 pty id>,"text":<본문>}…]}` |
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
-//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `full`(bool, 선택) | `{"pty":<새 pty id>}` |
+//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `full`(bool, 선택), `cell`(cell id, 선택) | `{"pty":<새 pty id>}` |
 //! | `pane.close` | `target`(pty id) | `null` |
 //! | `pane.list` | 없음 | `{"panes":[{"pty","state","kind","app","workspace","cell","title","dir","message"}…]}` |
-//! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택), `after`·`before`(pty id, 선택, 둘 중 하나만) | `{"pty":<새 pty id>}` |
+//! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택), `after`·`before`(pty id, 선택, 둘 중 하나만) | `{"pty":<새 pty id>,"cell":<새 cell id>}` |
 //! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"pty":<job 의 pty id>}` |
 //! | `job.list` | 없음 | `{"jobs":[{"pty","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
 //! | `job.read` | `target`(job 이름이나 pty id) | `{"text":<글자>}` |
@@ -63,9 +63,11 @@
 //! 가운데 앱이 고른 것)의 값이다. `state` 는 레코드의 상태(`idle`·`working`·`done`·`blocked`·`error`)다.
 //! `kind` 는 `permission`·`question`·`auth` 나 null 이다. `app` 은 루트 레코드의 `app` 이다. 보일 레코드가
 //! 없는 pane 은 `state`·`app`·`message` 가 빈 문자열이고 `kind` 는 null 이다. `workspace`·`title` 은
-//! 사이드바가 보이는 이름이다. `cell` 은 cell 헤더가 보이는 이름이다. 그 cell 의 focus 된 pane 의 저장소
-//! 이름이나 폴더 이름이고, 브랜치가 있으면 이름 뒤에 공백 하나를 두고 브랜치를 붙인다.
+//! 사이드바가 보이는 이름이다. `cell` 은 pane 이 든 cell 의 id(`c-` 와 hex 8자리)다.
 //! `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면 빈 문자열이다.
+//!
+//! cell id 는 cell 이 닫힐 때까지 바뀌지 않는다. cell 을 다른 workspace 로 옮겨도, `app.restart` 뒤에도
+//! 같다.
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
 //! `id` 가 없으면 앱이 새 id 를 만든다. id 는 형식 없는 문자열이다.
@@ -77,7 +79,9 @@
 //!
 //! `pane.new` 는 `pty` 의 pane 을 `direction` 쪽으로 나누고, 새 pane 에서 `cwd` 를 시작 디렉토리로
 //! pty 를 띄운다. `full` 이 true 면 그 pane 이 든 cell 전체를 나눠 새 pane 을 `direction` 쪽 끝에
-//! 붙인다. 포커스와 선택한 cell 은 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
+//! 붙인다. `cell` 이 있으면 `pty` 의 pane 대신 그 id 의 cell 전체를 `full` 처럼 나눈다. 창 안의 어느
+//! workspace 의 cell 이든 되고, 부른 pty 가 job 이어도 된다. `cell` 이 `c-` 와 hex 8자리가 아니거나 그
+//! cell 이 창에 없으면 `invalid_params` 다. 포커스와 선택한 cell 은 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
 //! 그 명령을 실행한다(셸이 sh·bash·zsh·ksh·dash 가 아니면 `/bin/sh` 가 실행한다). 명령이 끝나면 셸과
 //! 함께 pane 이 닫힌다. 새 pty 가 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. `pty` 의 pane 이 창에
 //! 없으면 `invalid_params` 로 답한다. 나눈 pane 들이 하한(터미널 20열 × 5행) 아래로 내려가 나눌 자리가
@@ -89,7 +93,8 @@
 //! 전에 끝날 수 있다.
 //!
 //! `cell.new` 는 pane 하나인 cell 을 만들어 `pty` 의 cell 바로 뒤에 넣고, 그 pane 에서 `pane.new` 처럼
-//! pty 를 띄운다. `pty` 가 job 이면 그 job 의 cell 이다(`job.*` 와 같다). 한 cell 에서 여러 번 부르면
+//! pty 를 띄운다. 답의 `cell` 은 새 cell 의 id 다. `cell` 이 없는 답(이전 앱)이면 `maru cell new` 는 CELL 을
+//! 비워 찍는다. `pty` 가 job 이면 그 job 의 cell 이다(`job.*` 와 같다). 한 cell 에서 여러 번 부르면
 //! 나중에 연 cell 이 앞에 놓인다. `after`·`before` 가 있으면 그 pty(pane 이나 job)의 cell 바로 뒤나
 //! 바로 앞에 넣는다. 둘이 함께 오거나, pty id 가 아니거나, 그 pty 의 cell 이 없거나, 그 cell 이
 //! `pty` 의 cell 과 다른 workspace 에 있으면 `invalid_params` 다.
@@ -275,8 +280,9 @@ enum PaneCommand {
     /// is omitted. The pane closes when COMMAND exits. Focus stays where it is.
     ///
     /// Prints the new pane's pty id; `maru inbox push` sends messages to it and
-    /// `maru pane close` closes it. Options go before COMMAND; everything from COMMAND on is
-    /// passed to COMMAND. Use `sh -c '...'` for a pipeline.
+    /// `maru pane close` closes it. `--cell` opens the pane in another cell instead. Options
+    /// go before COMMAND; everything from COMMAND on is passed to COMMAND. Use `sh -c '...'`
+    /// for a pipeline.
     New {
         /// Directory to start in. Defaults to the current directory.
         #[arg(long)]
@@ -288,6 +294,12 @@ enum PaneCommand {
         /// end (bottom end with --down).
         #[arg(long)]
         full: bool,
+        /// Split the whole cell with this id instead, adding the new pane at its right end
+        /// (bottom end with --down), e.g. c-1a2b3c4d. Any cell in this window works.
+        /// `maru cell new` prints the id of the cell it opens, and the CELL column of
+        /// `maru pane list` shows the cell of each pane.
+        #[arg(long, value_name = "CELL")]
+        cell: Option<String>,
         /// Command and its arguments.
         #[arg(trailing_var_arg = true)]
         command: Vec<String>,
@@ -304,9 +316,9 @@ enum PaneCommand {
     /// reported, and are empty when it reported none. STATE is idle, working, done, blocked or
     /// error; a blocked state with a reason reads e.g. blocked(permission). APP is the program,
     /// e.g. claude-code. WORKSPACE and TITLE are the names shown in the sidebar. CELL is the
-    /// name shown in the cell header: the repository and branch, or the folder, of the cell's
-    /// focused pane. DIR is the pane's directory. Control characters in a value, such as tabs
-    /// and newlines, become spaces, and an unknown value is an empty column.
+    /// id of the pane's cell, e.g. c-1a2b3c4d, which `maru pane new --cell` takes. DIR is the
+    /// pane's directory. Control characters in a value, such as tabs and newlines, become
+    /// spaces, and an unknown value is an empty column.
     List,
 }
 
@@ -316,10 +328,12 @@ enum CellCommand {
     /// COMMAND is omitted. The cell closes when COMMAND exits. Focus and the selected cell stay
     /// where they are.
     ///
-    /// Prints the new pane's pty id; `maru inbox push` sends messages to it and
-    /// `maru pane close` closes it. `--after` or `--before` places the cell next to another
-    /// cell in this terminal's workspace instead. Options go before COMMAND; everything from
-    /// COMMAND on is passed to COMMAND. Use `sh -c '...'` for a pipeline.
+    /// Prints tab-separated columns with a header: PTY, the new pane's pty id, and CELL, the
+    /// new cell's id. `maru inbox push` sends messages to the pty and `maru pane close` closes
+    /// its pane; `maru pane new --cell` opens more panes in the cell. `--after` or `--before`
+    /// places the cell next to another cell in this terminal's workspace instead. Options go
+    /// before COMMAND; everything from COMMAND on is passed to COMMAND. Use `sh -c '...'` for a
+    /// pipeline.
     New {
         /// Directory to start in. Defaults to the current directory.
         #[arg(long)]
@@ -498,7 +512,7 @@ fn main() -> ExitCode {
 fn run(command: Command) -> Result<()> {
     match command {
         Command::Ping => {
-            let pty = pty_of(call(&target()?, "ping", Map::new())?)?;
+            let pty = field(&call(&target()?, "ping", Map::new())?, "pty")?;
             writeln!(std::io::stdout(), "pong (pty {pty})")?;
         }
         Command::Canvas {
@@ -516,9 +530,10 @@ fn run(command: Command) -> Result<()> {
                 cwd,
                 down,
                 full,
+                cell,
                 command,
             } => {
-                let pty = pane_new(cwd, down, full, command)?;
+                let pty = pane_new(cwd, down, full, cell, command)?;
                 writeln!(std::io::stdout(), "{pty}")?;
             }
             PaneCommand::Close { pty } => {
@@ -535,8 +550,8 @@ fn run(command: Command) -> Result<()> {
                     command,
                 },
         } => {
-            let pty = cell_new(cwd, after, before, command)?;
-            writeln!(std::io::stdout(), "{pty}")?;
+            let (pty, cell) = cell_new(cwd, after, before, command)?;
+            write!(std::io::stdout(), "PTY\tCELL\n{pty}\t{cell}\n")?;
         }
         Command::Job { command } => match command {
             JobCommand::New { name, cwd, command } => {
@@ -1070,7 +1085,13 @@ fn start_dir(cwd: Option<PathBuf>) -> Result<String> {
         .map_err(|_| anyhow!("the directory is not UTF-8"))
 }
 
-fn pane_new(cwd: Option<PathBuf>, down: bool, full: bool, command: Vec<String>) -> Result<String> {
+fn pane_new(
+    cwd: Option<PathBuf>,
+    down: bool,
+    full: bool,
+    cell: Option<String>,
+    command: Vec<String>,
+) -> Result<String> {
     let target = target()?;
     let mut params = Map::new();
     params.insert("cwd".into(), start_dir(cwd)?.into());
@@ -1081,10 +1102,13 @@ fn pane_new(cwd: Option<PathBuf>, down: bool, full: bool, command: Vec<String>) 
     if full {
         params.insert("full".into(), true.into());
     }
+    if let Some(cell) = cell {
+        params.insert("cell".into(), cell.into());
+    }
     if !command.is_empty() {
         params.insert("command".into(), command.into());
     }
-    pty_of(call(&target, "pane.new", params)?)
+    field(&call(&target, "pane.new", params)?, "pty")
 }
 
 fn cell_new(
@@ -1092,7 +1116,7 @@ fn cell_new(
     after: Option<String>,
     before: Option<String>,
     command: Vec<String>,
-) -> Result<String> {
+) -> Result<(String, String)> {
     let target = target()?;
     let mut params = Map::new();
     params.insert("cwd".into(), start_dir(cwd)?.into());
@@ -1105,7 +1129,10 @@ fn cell_new(
     if !command.is_empty() {
         params.insert("command".into(), command.into());
     }
-    pty_of(call(&target, "cell.new", params)?)
+    let result = call(&target, "cell.new", params)?;
+    // `cell` 을 답에 싣기 전의 앱도 cell 을 이미 열고 pty 를 띄운 뒤 답하므로, 실패로 끝내지 않고 CELL 을 비운다.
+    let cell = result["cell"].as_str().unwrap_or_default().to_owned();
+    Ok((field(&result, "pty")?, cell))
 }
 
 fn job_new(name: Option<String>, cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
@@ -1116,13 +1143,13 @@ fn job_new(name: Option<String>, cwd: Option<PathBuf>, command: Vec<String>) -> 
     if let Some(name) = name {
         params.insert("name".into(), name.into());
     }
-    pty_of(call(&target, "job.new", params)?)
+    field(&call(&target, "job.new", params)?, "pty")
 }
 
-fn pty_of(result: Value) -> Result<String> {
-    match result["pty"].as_str() {
-        Some(pty) => Ok(pty.to_owned()),
-        None => bail!("the app answered without a pty: {result}"),
+fn field(result: &Value, key: &str) -> Result<String> {
+    match result[key].as_str() {
+        Some(value) => Ok(value.to_owned()),
+        None => bail!("the app answered without a {key}: {result}"),
     }
 }
 

@@ -36,6 +36,8 @@ async function paneList(page: Page, out: string): Promise<string[][]> {
 
 const HEADER = ['PTY', 'STATE', 'APP', 'WORKSPACE', 'CELL', 'TITLE', 'DIR', 'MESSAGE']
 
+const CELL_ID = expect.stringMatching(/^c-[0-9a-f]{8}$/)
+
 const sidebarTitles = (page: Page) => page.locator('.sidebar .pane-row .title').allInnerTexts()
 
 test('레코드가 없는 pane 만 있어도 maru pane list 는 그 pane 을 빈 STATE·APP·MESSAGE 와 사이드바의 이름으로 찍는다', async ({
@@ -47,7 +49,7 @@ test('레코드가 없는 pane 만 있어도 maru pane list 는 그 pane 을 빈
   const table = await paneList(page, join(dataDir, 'panes.out'))
   expect(table).toEqual([
     HEADER,
-    [me, '', '', 'solo', 'solo', expect.any(String), expect.stringMatching(/\/solo$/), '']
+    [me, '', '', 'solo', CELL_ID, expect.any(String), expect.stringMatching(/\/solo$/), '']
   ])
   expect([table[1][5]]).toEqual(await sidebarTitles(page))
 })
@@ -94,15 +96,17 @@ test('maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순
       'blocked(permission)',
       'claude-code',
       'proj-a',
-      'proj-a',
+      CELL_ID,
       'Claude',
       dir('proj-a'),
       'Bash: git push -u origin x'
     ],
-    [plain, '', '', 'proj-a', 'proj-a', expect.any(String), expect.any(String), ''],
-    [second, 'working', 'cargo', 'proj-b', 'proj-b', 'cargo', dir('proj-b'), 'reading']
+    [plain, '', '', 'proj-a', CELL_ID, expect.any(String), expect.any(String), ''],
+    [second, 'working', 'cargo', 'proj-b', CELL_ID, 'cargo', dir('proj-b'), 'reading']
   ])
   expect(table.slice(1).map((r) => r[5])).toEqual(await sidebarTitles(page))
+  expect(table[2][4]).toBe(table[1][4])
+  expect(table[3][4]).not.toBe(table[1][4])
 })
 
 test('레코드가 있는 pane 의 TITLE 은 터미널 제목이 있으면 그 제목이고 사이드바의 이름과 같다', async ({

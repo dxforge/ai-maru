@@ -303,6 +303,31 @@ test('재시작 직후 남은 pty 가 곧바로 부른 maru pane new 는 그 pan
   await expect(panes(again).nth(1).locator('.xterm-rows')).toContainText('split-2')
 })
 
+test('재시작 전에 maru cell new 가 찍은 cell id 로 재시작 뒤에도 maru pane new --cell 이 그 cell 에 띄운다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  const saved = join(dataDir, 'cell-id')
+  await run(
+    page,
+    `maru cell new bash -c 'read x' | awk 'NR == 2 { print $2 }' > '${saved}'; echo saved-$((1+1))`,
+    'saved-2'
+  )
+  await expect(cellItems(page)).toHaveCount(2)
+  await restartWith(app)
+  const { page: again } = await launch()
+  await expect(cellItems(again)).toHaveCount(2)
+  await shellUp(again, 0)
+  await run(
+    again,
+    `maru pane new --cell $(cat '${saved}') bash -c 'echo mark-added; read x'; echo code-$?`,
+    /p-[0-9a-f]{8}\s*code-0/
+  )
+  await expect(cellViews(again).nth(1).locator('.pane')).toHaveCount(2)
+  await expect(cellViews(again).nth(1).locator('.xterm-rows').nth(1)).toContainText('mark-added')
+})
+
 test('재시작한 뒤의 종료는 pty 를 끄고 restart 파일을 남기지 않는다', async ({
   launch,
   dataDir
