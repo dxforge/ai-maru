@@ -459,8 +459,21 @@ function paletteLayout(page: Page) {
   })
 }
 
-const atBottom = ({ top, bottom, gap }: Awaited<ReturnType<typeof paletteLayout>>) =>
-  bottom >= 0 && bottom <= top && gap >= 0
+type PaletteLayout = Awaited<ReturnType<typeof paletteLayout>>
+
+// 목록이 줄었을 때 그대로인 가장자리가 팔레트를 붙인 쪽이다.
+// 위아래 여백끼리 견주면 팔레트 높이에 따라 결과가 바뀌므로, 두 상태의 가장자리를 견준다.
+const fixedEdge = (full: PaletteLayout, shrunk: PaletteLayout) =>
+  shrunk.bottom === full.bottom && shrunk.top > full.top
+    ? 'bottom'
+    : shrunk.top === full.top && shrunk.bottom > full.bottom
+      ? 'top'
+      : 'none'
+
+async function shrinkList(page: Page) {
+  await page.keyboard.type('xyz')
+  await expect(palette(page)).toContainText('No matching commands')
+}
 
 test('팔레트는 기본으로 창 아래쪽에 pane 헤더를 가리지 않게 뜨고, 입력줄이 맨 아래, 첫 후보와 빈 줄은 그 바로 위에 놓인다', async ({
   launch
@@ -469,12 +482,14 @@ test('팔레트는 기본으로 창 아래쪽에 pane 헤더를 가리지 않게
   const { page } = launched
   await openPalette(launched)
   await expect(items(page).first()).toHaveClass(/selected/)
-  const layout = await paletteLayout(page)
-  expect(atBottom(layout)).toBe(true)
-  expect(layout.clearsHeader).toBe(true)
-  await page.keyboard.type('xyz')
-  await expect(palette(page)).toContainText('No matching commands')
-  expect((await paletteLayout(page)).gap).toBe(layout.gap)
+  const full = await paletteLayout(page)
+  expect(full.bottom).toBeGreaterThanOrEqual(0)
+  expect(full.gap).toBeGreaterThanOrEqual(0)
+  expect(full.clearsHeader).toBe(true)
+  await shrinkList(page)
+  const shrunk = await paletteLayout(page)
+  expect(fixedEdge(full, shrunk), JSON.stringify({ full, shrunk })).toBe('bottom')
+  expect(shrunk.gap).toBe(full.gap)
 })
 
 test('layout.palette = "top" 이면 팔레트는 창 위쪽에 뜨고 입력줄이 맨 위에 놓이며, 열린 채로 고쳐도 옮긴다', async ({
@@ -487,11 +502,20 @@ test('layout.palette = "top" 이면 팔레트는 창 위쪽에 뜨고 입력줄�
   await openPalette(launched)
   const above = await paletteLayout(page)
   expect(above.top).toBeGreaterThanOrEqual(0)
-  expect(above.top).toBeLessThanOrEqual(above.bottom)
   expect(above.gap).toBeLessThan(0)
+  await shrinkList(page)
+  const aboveShrunk = await paletteLayout(page)
+  expect(fixedEdge(above, aboveShrunk), JSON.stringify({ above, aboveShrunk })).toBe('top')
+
   writeConfig(dataDir, '[layout]\npalette = "bottom"\n')
-  await expect.poll(async () => atBottom(await paletteLayout(page))).toBe(true)
+  await expect.poll(async () => (await paletteLayout(page)).gap).toBeGreaterThanOrEqual(0)
   await expect(palette(page).locator('.query')).toBeFocused()
+  const belowShrunk = await paletteLayout(page)
+  await palette(page).locator('.query').fill('')
+  await expect(items(page).first()).toHaveClass(/selected/)
+  const below = await paletteLayout(page)
+  expect(below.bottom).toBeGreaterThanOrEqual(0)
+  expect(fixedEdge(below, belowShrunk), JSON.stringify({ below, belowShrunk })).toBe('bottom')
 })
 
 for (const [position, label, toLast] of [
