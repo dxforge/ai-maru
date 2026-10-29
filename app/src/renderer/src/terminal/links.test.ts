@@ -1,15 +1,19 @@
-import type { ILink, ILinkProvider, Terminal } from '@xterm/xterm'
+import type { IBufferRange, ILink, ILinkProvider, Terminal } from '@xterm/xterm'
 import { describe, expect, it } from 'vitest'
+import type { FoundPath, PathCandidates } from '../../../shared/link'
 import {
   createLinkHandler,
   detectLinks,
+  joinedPaths,
   linkRange,
+  readJoinedLines,
   readWrappedLine,
   registerLinkProvider,
   type Activate,
   type BufferLike,
   type CellLike,
   type LineLike,
+  type LongestExisting,
   type MetaKey
 } from './links'
 
@@ -166,8 +170,187 @@ function provided(term: ReturnType<typeof fakeTerm>, y: number): ILink[] | undef
 const register = (
   term: ReturnType<typeof fakeTerm>,
   meta: MetaKey,
-  activate: Activate = () => {}
-) => registerLinkProvider(term as unknown as Terminal, meta, activate)
+  activate: Activate = () => {},
+  longestExisting: LongestExisting = async (paths) => paths.map(() => null)
+) => registerLinkProvider(term as unknown as Terminal, meta, activate, longestExisting)
+
+/** `existing` 에 든 경로만 있는 것으로 보고, main 의 `longestExistingPaths` 처럼 후보마다 가장 긴 것을 고른다. */
+function fakeFs(existing: string[]) {
+  const asked: PathCandidates[][] = []
+  const longestExisting: LongestExisting = async (paths) => {
+    asked.push(paths)
+    return paths.map(({ text, starts, ends }) => {
+      let best: readonly [number, number] | null = null
+      for (const s of starts)
+        for (const e of ends)
+          if (e > s && existing.includes(text.slice(s, e)) && (!best || e - s > best[1] - best[0]))
+            best = [s, e]
+      return best
+    })
+  }
+  return { asked, longestExisting }
+}
+
+async function providedLater(
+  term: ReturnType<typeof fakeTerm>,
+  y: number
+): Promise<[string, IBufferRange][] | undefined> {
+  const links = await new Promise<ILink[] | undefined>((done) =>
+    term.provider!.provideLinks(y, done)
+  )
+  return links?.map((l) => [l.text, l.range])
+}
+
+const range = (x1: number, y1: number, x2: number, y2: number): IBufferRange => ({
+  start: { x: x1, y: y1 },
+  end: { x: x2, y: y2 }
+})
+
+describe('줄 끝에서 끊겨 다음 줄에 이어 찍힌 경로', () => {
+  // Claude Code 가 긴 경로를 끊어 찍은 꼴 — 둘째 줄은 앞에 공백 두 칸을 두고 이어진다.
+  const split = ['  Path: /tmp/abc/c769', '  -299b/robot.svg', 'after']
+  const whole = '/tmp/abc/c769-299b/robot.svg'
+
+  it('이어 붙인 경로가 있으면 어느 줄에서 물어도 두 줄을 걸치는 링크 하나다', async () => {
+    const term = fakeTerm(split)
+    register(term, fakeMeta(), undefined, fakeFs([whole]).longestExisting)
+    for (const y of [1, 2]) {
+      expect(await providedLater(term, y)).toEqual([[whole, range(9, 1, 17, 2)]])
+    }
+  })
+
+  it('이어 붙인 경로가 없으면 줄마다 따로 찾는다', async () => {
+    const term = fakeTerm(split)
+    register(term, fakeMeta(), undefined, fakeFs([]).longestExisting)
+    expect(await providedLater(term, 1)).toBeUndefined()
+    expect(await providedLater(term, 2)).toEqual([['-299b/robot.svg', range(3, 2, 17, 2)]])
+  })
+
+  it('이어 붙인 링크를 ⌘+클릭하면 이어 붙인 경로를 activate 에 넘긴다', async () => {
+    const got: string[] = []
+    const term = fakeTerm(split)
+    register(term, fakeMeta(), (_e, t) => got.push(t), fakeFs([whole]).longestExisting)
+    const links = await new Promise<ILink[] | undefined>((done) =>
+      term.provider!.provideLinks(2, done)
+    )
+    links![0].activate({ metaKey: true } as MouseEvent, links![0].text)
+    expect(got).toEqual([whole])
+  })
+
+  it('토큰 하나뿐인 가운데 줄을 지나 세 줄을 잇고, 가운데 줄에서 물어도 같다', async () => {
+    const term = fakeTerm(['see /a/bb', '  cc/dd', '  ee.md', 'x'])
+    register(term, fakeMeta(), undefined, fakeFs(['/a/bbcc/ddee.md']).longestExisting)
+    for (const y of [1, 2, 3]) {
+      expect(await providedLater(term, y)).toEqual([['/a/bbcc/ddee.md', range(5, 1, 7, 3)]])
+    }
+  })
+
+  it('토큰이 여럿인 가운데 줄 너머는 잇지 않는다', async () => {
+    const fs = fakeFs([])
+    const term = fakeTerm(['see /a/bb', '  cc/dd.md x.md', '  ee.md'])
+    register(term, fakeMeta(), undefined, fs.longestExisting)
+    await providedLater(term, 1)
+    expect(fs.asked).toEqual([[{ text: '/a/bbcc/dd.md', starts: [0], ends: [5, 13] }]])
+  })
+
+  it('이은 후보 가운데 있는 가장 긴 것을 쓰고, 나머지 글자는 줄마다 찾은 링크로 남긴다', async () => {
+    // 셋째 줄까지 이으면 `/a/b.mdc/d.mdxx/y.md` 로 잡히지만 있는 것은 둘째 줄까지 이은 `/a/b.mdc/d.md` 다.
+    const term = fakeTerm(['/a/b.md', 'c/d.md', 'xx/y.md and src/z.ts'])
+    register(term, fakeMeta(), undefined, fakeFs(['/a/b.md', '/a/b.mdc/d.md']).longestExisting)
+    expect(await providedLater(term, 1)).toEqual([['/a/b.mdc/d.md', range(1, 1, 6, 2)]])
+    expect(await providedLater(term, 3)).toEqual([
+      ['xx/y.md', range(1, 3, 7, 3)],
+      ['src/z.ts', range(13, 3, 20, 3)]
+    ])
+  })
+
+  it('이을 후보가 없으면 묻지 않고 바로 답한다', () => {
+    const fs = fakeFs([])
+    const term = fakeTerm(['go /a/b.md now', 'next line', '', 'solo/x.md'])
+    register(term, fakeMeta(), undefined, fs.longestExisting)
+    expect(provided(term, 1)!.map((l) => l.text)).toEqual(['/a/b.md'])
+    expect(provided(term, 4)!.map((l) => l.text)).toEqual(['solo/x.md'])
+    expect(fs.asked).toEqual([])
+  })
+
+  it('줄 끝에서 끊긴 URL 은 잇지 않는다', () => {
+    const fs = fakeFs([])
+    const term = fakeTerm(['https://e.io/aa', '  bb/c.md'])
+    register(term, fakeMeta(), undefined, fs.longestExisting)
+    expect(provided(term, 1)!.map((l) => l.text)).toEqual(['https://e.io/aa'])
+    expect(fs.asked).toEqual([])
+  })
+
+  it('늦게 온 답은 그 뒤에 다른 줄을 물었으면 내지 않는다', async () => {
+    let answer: (found: FoundPath[]) => void = () => {}
+    const term = fakeTerm(split)
+    register(term, fakeMeta(), undefined, () => new Promise((done) => (answer = done)))
+    const late: (ILink[] | undefined)[] = []
+    term.provider!.provideLinks(1, (links) => late.push(links))
+    const first = answer
+    term.provider!.provideLinks(2, () => {})
+    first([[0, whole.length]])
+    await new Promise((done) => setTimeout(done, 0))
+    expect(late).toEqual([])
+  })
+
+  it('늦게 온 답은 그 뒤에 물은 줄이 바로 답했어도 내지 않는다', async () => {
+    let answer: (found: FoundPath[]) => void = () => {}
+    const term = fakeTerm([...split, '', 'go /x/y.md'])
+    register(term, fakeMeta(), undefined, () => new Promise((done) => (answer = done)))
+    const late: (ILink[] | undefined)[] = []
+    term.provider!.provideLinks(1, (links) => late.push(links))
+    expect(provided(term, 5)!.map((l) => l.text)).toEqual(['/x/y.md'])
+    answer([[0, whole.length]])
+    await new Promise((done) => setTimeout(done, 0))
+    expect(late).toEqual([])
+  })
+
+  it('이어 붙인 링크와 겹치지 않는 줄마다 찾은 링크는 함께 낸다', async () => {
+    const term = fakeTerm(['  Path: /tmp/abc/c769', '  -299b/robot.svg and a/b.md'])
+    register(term, fakeMeta(), undefined, fakeFs([whole]).longestExisting)
+    expect(await providedLater(term, 2)).toEqual([
+      [whole, range(9, 1, 17, 2)],
+      ['a/b.md', range(23, 2, 28, 2)]
+    ])
+  })
+
+  it('main 에 묻다 실패하면 줄마다 찾은 링크를 낸다', async () => {
+    const term = fakeTerm(split)
+    register(term, fakeMeta(), undefined, () => Promise.reject(new Error('gone')))
+    expect(await providedLater(term, 2)).toEqual([['-299b/robot.svg', range(3, 2, 17, 2)]])
+  })
+})
+
+describe('readJoinedLines·joinedPaths', () => {
+  it('앞 줄의 글자 전체와 다음 줄들의 앞 공백을 뺀 글자를 잇고, 이음 자리와 물은 줄의 자리를 준다', () => {
+    const lines = readJoinedLines(buffer(['a /x/y', '  z.md'].map((r) => line([...r]))), 2)
+    expect([lines.text, lines.joints, lines.start, lines.end]).toEqual(['a /x/yz.md', [6], 6, 10])
+    expect(lines.cells.slice(6).map((c) => [c.x, c.y])).toEqual([
+      [2, 2],
+      [3, 2],
+      [4, 2],
+      [5, 2]
+    ])
+    expect(joinedPaths(lines)).toEqual([
+      { offset: 2, candidates: { text: '/x/yz.md', starts: [0, 4], ends: [8] } }
+    ])
+  })
+
+  it('글자 칸이 십만 개를 넘는 접힌 줄과 그 이웃 줄도 읽는다', () => {
+    const wide = Array.from({ length: 1040 }, (_, i) => line([...'x'.repeat(150)], i > 0))
+    const rows = [line([...'see /a/b.md']), ...wide, line([...'after'])]
+    for (const y of [1, 2, rows.length]) {
+      expect(() => joinedPaths(readJoinedLines(buffer(rows), y))).not.toThrow()
+    }
+  })
+
+  it('경로 줄이 길게 이어져도 PATH_MAX 를 넘는 곳에서 멈춘다', () => {
+    const rows = Array.from({ length: 3000 }, (_, i) => line([...`d${i}/f.ts`]))
+    const lines = readJoinedLines(buffer(rows), 1500)
+    expect(lines.text.length).toBeLessThan(2 * 1024 + 100)
+  })
+})
 
 describe('registerLinkProvider', () => {
   it('줄의 링크마다 1 기반 글자 칸 범위를 주고, 링크가 없는 줄과 버퍼 밖의 줄은 undefined 다', () => {

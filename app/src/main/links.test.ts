@@ -3,7 +3,7 @@ import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { CanvasDoc } from '../shared/canvas'
-import { openLink, resolveLinkTarget, type LinkOpener } from './links'
+import { longestExistingPaths, openLink, resolveLinkTarget, type LinkOpener } from './links'
 
 const dir = mkdtempSync(join(tmpdir(), 'maru-links-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -156,5 +156,72 @@ describe('openLink', () => {
     writeFileSync(path, 'x')
     const { o } = opener({ putCanvas: () => Promise.reject(new Error('no window')) })
     expect(await openLink(path, 'p-1', o)).toEqual({ ok: false, reason: 'no window' })
+  })
+})
+
+describe('longestExistingPaths', () => {
+  const root = join(dir, 'joined')
+  mkdirSync(join(root, 'c769-299b'), { recursive: true })
+  writeFileSync(join(root, 'c769-299b', 'robot.svg'), 'x')
+  const cwdAt = (cwd: string | null) => ({ foregroundCwd: async () => cwd })
+  const whole = (text: string) => ({ text, starts: [0], ends: [text.length] })
+
+  it('후보 가운데 있는 가장 긴 것을 고르고, 있는 것이 없으면 null 이다', async () => {
+    // 셋째 줄의 `after.md` 까지 이은 것은 없고, 둘째 줄까지 이은 것이 있다.
+    const text = `${root}/c769-299b/robot.svgafter.md`
+    const ends = [`${root}/c76`.length, `${root}/c769-299b/robot.svg`.length, text.length]
+    expect(
+      await longestExistingPaths(
+        [{ text, starts: [0], ends }, whole(`${root}/none/x.md`)],
+        'p-1',
+        cwdAt(null)
+      )
+    ).toEqual([[0, ends[1]], null])
+  })
+
+  it('끝의 :줄:칸 은 떼고 보고, 경로 꼴이 아닌 후보는 있어도 고르지 않는다', async () => {
+    const withPosition = `${root}/c769-299b/robot.svg:12`
+    expect(await longestExistingPaths([whole(withPosition)], 'p-1', cwdAt(null))).toEqual([
+      [0, withPosition.length]
+    ])
+    // 확장자로 끝나지 않는 디렉토리는 있지만 링크로 보는 경로 꼴이 아니다.
+    expect(await longestExistingPaths([whole(`${root}/c769-299b`)], 'p-1', cwdAt(null))).toEqual([
+      null
+    ])
+  })
+
+  it('상대경로는 foreground 프로세스의 cwd 기준이고, 그 cwd 를 모르면 null 이다', async () => {
+    const group = { text: 'x c769-299b/robot.svg', starts: [2], ends: [21] }
+    expect(await longestExistingPaths([group], 'p-1', cwdAt(root))).toEqual([[2, 21]])
+    expect(await longestExistingPaths([group], 'p-1', cwdAt(null))).toEqual([null])
+    const failing = { foregroundCwd: () => Promise.reject(new Error('older maru-pty')) }
+    expect(await longestExistingPaths([group], 'p-1', failing)).toEqual([null])
+  })
+
+  it('앞 줄의 글자까지 이은 것이 없으면 이음 자리에서 시작한 후보를 고른다', async () => {
+    const text = 'zzc769-299b/robot.svg'
+    expect(
+      await longestExistingPaths(
+        [{ text, starts: [0, 2], ends: [text.length] }],
+        'p-1',
+        cwdAt(root)
+      )
+    ).toEqual([[2, text.length]])
+  })
+
+  it('경로 줄이 길게 이어진 것을 이은 후보는 없는 디렉토리에서 끊어 빨리 끝낸다', async () => {
+    // `git ls-files` 처럼 `dN/f.ts` 줄이 이어진 꼴. 시작과 끝이 400 개씩이라 후보는 8 만 개쯤이다.
+    const pieces = Array.from({ length: 400 }, (_, i) => `d${i}/f.ts`)
+    const text = pieces.join('')
+    const joints = pieces.map((_, i) => pieces.slice(0, i).join('').length)
+    const start = performance.now()
+    expect(
+      await longestExistingPaths(
+        [{ text, starts: joints, ends: [...joints.slice(1), text.length] }],
+        'p-1',
+        cwdAt(root)
+      )
+    ).toEqual([null])
+    expect(performance.now() - start).toBeLessThan(1000)
   })
 })

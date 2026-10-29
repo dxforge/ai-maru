@@ -97,7 +97,9 @@ function activateLink(event: MouseEvent, text: string): void {
 // 링크는 글자가 곧 주소라 따로 보이지 않는다.
 const hoveredUrl = ref<string | null>(null)
 term.options.linkHandler = createLinkHandler(activateLink, (url) => (hoveredUrl.value = url))
-const textLinks = registerLinkProvider(term, metaKey, activateLink)
+const textLinks = registerLinkProvider(term, metaKey, activateLink, (paths) =>
+  window.maru.longestExistingPaths(paths, ptyId)
+)
 const selectAllKeys = menuKeys('selectAll')!
 // 메뉴는 자판 위치가 아니라 글자로 맞추므로(AZERTY 의 A 는 KeyQ 자리) 글자로 맞춘다. 라틴 글자가 없는 자판에서
 // ⌘ 를 쥐었을 때 `e.key` 가 무엇으로 오는지는 확인하지 않아, 글자가 라틴 글자가 아닐 때만 자판 위치(`KeyA`)로 맞춘다.
