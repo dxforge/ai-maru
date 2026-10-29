@@ -312,13 +312,19 @@ test('columns 에서 maru pane new --full --down 은 cell 폭을 그대로 두�
   await page.keyboard.type(`maru pane new --full --down bash -c 'read x'\n`)
   await expect(panes(page)).toHaveCount(3)
 
-  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
+  // 포커스된 pane 을 따라가는 스크롤이 아직 돌고 있으면 grid 도 함께 움직이므로, grid 와 새 pane 의 boundingBox 를 같은
+  // poll 안에서 잰다.
   await expect
     .poll(async () => {
+      const grid = (await page.locator('.panes.selected .grid').boundingBox())!
       const added = await box(page, 2)
-      return [added.x, added.width, added.y + added.height]
+      const [a, g] = [
+        [added.x, added.width, added.y + added.height],
+        [grid.x, grid.width, grid.y + grid.height]
+      ].map((edges) => JSON.stringify(edges))
+      return a === g ? 'same' : `${a} != ${g}`
     })
-    .toEqual([grid.x, grid.width, grid.y + grid.height])
+    .toBe('same')
   expect((await cellViews(page).first().boundingBox())!.width).toBe(width)
 })
 
