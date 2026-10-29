@@ -1,3 +1,4 @@
+import type { ProgramStatusRecord } from '../shared/program-status'
 import type { PtyCommand, PtyState, PtyStateEntry } from '../shared/pty-state'
 import type { StateHandlers } from './pty'
 
@@ -65,6 +66,9 @@ export function createPtyStates(deps: PtyStatesDeps) {
     state: stateOf,
     command(pty: string): PtyCommand | null {
       return stateOf(pty)?.command ?? null
+    },
+    records(pty: string): readonly ProgramStatusRecord[] {
+      return stateOf(pty)?.records ?? []
     }
   }
 

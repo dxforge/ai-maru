@@ -152,6 +152,10 @@
 //! 가장 가까운 조상 프로세스의 터미널 장치에 쓴다. Claude Code 의 Bash 도구 명령과 hook 은 제어 터미널 없이
 //! 돌기 때문이다. 사양에 어긋나는 보고는 터미널이 말없이 버리므로 `maru status` 가 쓰기 전에 거절한다.
 //!
+//! `--pty <id>` 를 주면 자기 터미널 대신 그 AI Maru pty 의 터미널 장치에 쓴다. 장치 이름은 `MARU_SOCKET` 이 있는
+//! 디렉토리의 `<id>.json` 의 `tty` 에서 읽으므로, `--pty` 는 `MARU_SOCKET` 이 있어야 한다. 앱은 사용자가 확인한 pane 의
+//! done 레코드를 이 옵션으로 idle 로 바꾼다.
+//!
 //! # claude monitor
 //!
 //! 앱 claude plugin 의 `monitors/monitors.json` 이 대화형 claude 마다 `maru claude monitor` 를 띄운다.
@@ -235,6 +239,10 @@ enum Command {
     /// to the terminal of the nearest ancestor process that has one. Nothing is printed on
     /// success.
     Status {
+        /// Write to the terminal of this AI Maru pty instead, e.g. `p-1a2b3c4d`. Needs
+        /// MARU_SOCKET.
+        #[arg(long, global = true)]
+        pty: Option<String>,
         #[command(subcommand)]
         command: StatusCommand,
     },
@@ -586,7 +594,14 @@ fn run(command: Command) -> Result<()> {
             params.insert("kill_ptys".into(), kill_ptys.into());
             call(&target()?, "app.restart", params)?;
         }
-        Command::Status { command } => write_tty(&status_report(command)?)?,
+        Command::Status { pty, command } => {
+            let report = status_report(command)?;
+            let terminal = match pty {
+                Some(pty) => pty_terminal(&pty)?,
+                None => open_terminal()?,
+            };
+            write_once(terminal, &report)?
+        }
         Command::Claude { command } => match command {
             ClaudeCommand::Hook => claude_hook()?,
             ClaudeCommand::Monitor => claude_monitor()?,
@@ -721,8 +736,7 @@ fn base64(bytes: &[u8]) -> String {
 }
 
 /// 시퀀스를 `write` 한 번으로 쓴다. 터미널을 함께 쓰는 프로그램의 출력 사이에 끼어도 시퀀스가 갈라지지 않게 하기 위해서다.
-fn write_tty(bytes: &[u8]) -> Result<()> {
-    let (mut tty, path) = open_terminal()?;
+fn write_once((mut tty, path): (File, String), bytes: &[u8]) -> Result<()> {
     let n = tty
         .write(bytes)
         .with_context(|| format!("cannot write to the terminal {path}"))?;
@@ -735,14 +749,7 @@ fn write_tty(bytes: &[u8]) -> Result<()> {
 /// 제어 터미널을 연다. 없으면 제어 터미널이 있는 가장 가까운 조상 프로세스의 터미널 장치를 연다. Claude Code 의 Bash
 /// 도구 명령과 hook 은 제어 터미널 없이 돌고, 그 조상인 claude 는 자기가 그리는 터미널을 제어 터미널로 갖기 때문이다.
 fn open_terminal() -> Result<(File, String)> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let open = |path: &str| {
-        std::fs::OpenOptions::new()
-            .write(true)
-            .custom_flags(nix::libc::O_NOCTTY)
-            .open(path)
-    };
-    let err = match open("/dev/tty") {
+    let err = match open_device("/dev/tty") {
         Ok(tty) => return Ok((tty, "/dev/tty".into())),
         Err(e) => e,
     };
@@ -751,9 +758,48 @@ fn open_terminal() -> Result<(File, String)> {
             "cannot open the controlling terminal /dev/tty ({err}), and no ancestor process has one"
         );
     };
-    let tty = open(&path).with_context(|| {
+    let tty = open_device(&path).with_context(|| {
         format!("cannot open {path}, the controlling terminal of an ancestor process")
     })?;
+    Ok((tty, path))
+}
+
+fn open_device(path: &str) -> std::io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(nix::libc::O_NOCTTY)
+        .open(path)
+}
+
+fn pty_terminal(pty: &str) -> Result<(File, String)> {
+    // id 로 경로를 만들므로 maru-pty 가 받는 id(1~64 자의 영숫자·`-`·`_`)만 받는다.
+    if !(1..=64).contains(&pty.len())
+        || !pty
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        bail!("--pty must be 1 to 64 letters, digits, `-` or `_`");
+    }
+    let socket = env_var("MARU_SOCKET")
+        .ok_or_else(|| anyhow!("--pty needs MARU_SOCKET to find the pty directory"))?;
+    let record = std::path::Path::new(&socket).with_file_name(format!("{pty}.json"));
+    let body = std::fs::read(&record)
+        .with_context(|| format!("no pty {pty}: cannot read {}", record.display()))?;
+    // maru-pty 는 장치 경로에서 `/dev/` 를 뗀 이름(macOS 의 `ttysNNN`, Linux 의 `pts/N`)을 쓴다. `/dev` 밖을
+    // 가리키는 이름은 받지 않는다.
+    let name = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|v| v["tty"].as_str().map(str::to_owned))
+        .filter(|name| name.split('/').all(|c| !matches!(c, "" | "." | "..")))
+        .ok_or_else(|| anyhow!("{} has no tty name", record.display()))?;
+    let path = format!("/dev/{name}");
+    let tty = open_device(&path)
+        .with_context(|| format!("cannot open {path}, the terminal of pty {pty}"))?;
+    // 기록이 깨져 터미널이 아닌 장치를 가리키면 거기에 쓰지 않는다.
+    if !tty.is_terminal() {
+        bail!("{path}, named by {}, is not a terminal", record.display());
+    }
     Ok((tty, path))
 }
 

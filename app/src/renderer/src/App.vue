@@ -29,6 +29,7 @@ import {
 import { secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
 import { createCanvas } from './canvas/store'
+import { createSeenTracker } from './pty/seen'
 import { createPtyStates, syncPtyStates } from './pty/states'
 import { syncJobs } from './workspace/jobs'
 import CanvasPanel from './components/CanvasPanel.vue'
@@ -175,6 +176,20 @@ function focusedTerminal(): Terminal | undefined {
   const c = workspaces.selected()
   return c && terminals.get(c.focused)
 }
+
+const seenTracker = createSeenTracker({ now: () => performance.now(), seen: window.maru.paneSeen })
+
+function viewedPty(): string | null {
+  const c = workspaces.selected()
+  if (!document.hasFocus() || !c || !terminals.get(c.focused)?.$el.contains(document.activeElement))
+    return null
+  return focusedPane(c).ptyId
+}
+
+// focusout 동안에는 `activeElement` 가 아직 다음 요소로 바뀌지 않았을 수 있어, 이벤트가 끝난 뒤에 본다.
+const updateViewed = (): void => void setTimeout(() => seenTracker.view(viewedPty()))
+for (const type of ['focusin', 'focusout']) document.addEventListener(type, updateViewed)
+for (const type of ['focus', 'blur']) window.addEventListener(type, updateViewed)
 
 // 보이지 않는 터미널에는 포커스를 줄 수 없어, 선택이 화면에 반영된 뒤에 준다.
 async function focusSelected(): Promise<void> {

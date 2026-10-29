@@ -46,6 +46,8 @@ OSC 7501 레코드는 pane 마다 여럿일 수 있다(루트와 하위). 사이
 
 `maru status` 는 앱 소켓을 쓰지 않고 터미널 장치(제어 터미널, 없으면 가장 가까운 조상 프로세스의 제어 터미널)에 OSC 7501 을 쓴다. 그래서 이 명령이 쓴 레코드도 터미널 안의 프로그램이 보낸 레코드처럼 maru-pty 가 해석하고 보관한다.
 
+사용자가 입력 focus 를 가진 pane 에 1초(`SEEN_MS`, `app/src/renderer/src/pty/seen.ts`) 이상 머문 뒤 떠나면, 앱은 그 pane 의 done 레코드를 모두 idle 로 바꾼다. 떠나는 것은 다른 pane 으로 옮기거나, 런처처럼 터미널이 아닌 요소가 키보드 focus 를 가져가거나, 앱 창이 focus 를 잃는 것이다. renderer 가 머문 시간을 재 main 에 `pane:seen` 으로 알리고, main 은 든 레코드 가운데 done 인 것마다 `maru status put idle --pty <id>` 를 실행한다(`app/src/main/seen.ts`). `--pty` 는 그 pty 의 터미널 장치에 OSC 7501 을 쓴다. 앱 메모리에서만 덮지 않는 것은, pty 가 앱 재시작에도 살아 있어 다시 뜬 앱에 maru-pty 가 done 을 다시 보내기 때문이다. OSC 7501 보고는 레코드를 통째로 바꾸므로 main 이 done 을 본 뒤 프로그램이 보낸 새 상태를 idle 로 덮을 수 있다. Claude Code 2.1.312 에서 Enter 부터 working 이 main 에 닿기까지 61~79ms 였다. 사람이 Enter 뒤 pane 을 옮기는 시간보다 짧다.
+
 `subscribe` 를 더하며 maru-pty 의 프로토콜 버전을 올리지 않았다. 올리면 앱을 다시 깔 때 남은 pty 가 모두 끝나기 때문이다. 그래서 `subscribe` 를 모르는 이전 maru-pty 의 pty 가 남을 수 있다. main 은 그 pty 를 `old` 로 renderer 에 알리고, renderer 는 그 pty 에 한해 attach 스트림의 `program_status` 를 레코드로 쓴다. 그 pty 의 cwd 는 되살린 값으로 보이고 제목은 비운다. main 은 그 pty 의 레코드를 모르므로 `maru pane list` 는 그 pty 의 STATE·APP·MESSAGE 를 비우고, 이름도 레코드가 없는 pane 처럼 짓는다. 이 경로는 이전 maru-pty 의 pty 가 모두 끝나면 지운다.
 
 ## 시간 초과한 pane 요청은 창이 취소한다
