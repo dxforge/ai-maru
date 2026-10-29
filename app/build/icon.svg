@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#363a4f"/>
-      <stop offset="100%" stop-color="#1e1e2e"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2b303b"/>
+      <stop offset="1" stop-color="#1b1e24"/>
     </linearGradient>
-    <filter id="glow">
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur stdDeviation="10" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
@@ -15,29 +15,30 @@
 
   <!-- macOS 아이콘 규격: 1024 캔버스 가운데 824 둥근 사각형, 둘레 100px 투명 -->
   <g clip-path="url(#squircle)">
+  <rect width="1024" height="1024" fill="url(#bg)"/>
   <g transform="translate(100 100) scale(0.8046875)">
 
-  <rect width="1024" height="1024" fill="#181825"/>
+  <!-- 양옆의 이웃 column 이다. 틀 밖에 두어 가장자리만 보인다. 아래쪽 path 는 헤더 띠다. -->
+  <g fill="#ffffff" fill-opacity="0.025" stroke="#ffffff" stroke-opacity="0.06" stroke-width="8">
+    <rect x="-470" y="150" width="580" height="724" rx="60"/>
+    <rect x="914" y="150" width="580" height="724" rx="60"/>
+  </g>
+  <g fill="#000000" fill-opacity="0.14">
+    <path d="M-470 700 H110 V814 A60 60 0 0 1 50 874 H-410 A60 60 0 0 1 -470 814 Z"/>
+    <path d="M914 700 H1494 V814 A60 60 0 0 1 1434 874 H974 A60 60 0 0 1 914 814 Z"/>
+  </g>
 
-  <rect width="1024" height="130" fill="url(#bg)"/>
-  <ellipse cx="512" cy="0" rx="600" ry="130" fill="white" opacity="0.05"/>
-  <circle cx="200" cy="65" r="20" fill="#f38ba8" opacity="0.8"/>
-  <circle cx="270" cy="65" r="20" fill="#a6e3a1" opacity="0.8"/>
-  <circle cx="340" cy="65" r="20" fill="#f9e2af" opacity="0.8"/>
+  <!-- 가운데 column 이 얼굴이다. 헤더 띠는 아래쪽에 둔다. 앱의 cell 헤더 기본 위치(layout.header = "bottom")가 아래쪽이기 때문이다. -->
+  <rect x="150" y="150" width="724" height="724" rx="60" fill="#ffffff" fill-opacity="0.025" stroke="#ffffff" stroke-opacity="0.06" stroke-width="8"/>
+  <path d="M150 700 H874 V814 A60 60 0 0 1 814 874 H210 A60 60 0 0 1 150 814 Z" fill="#000000" fill-opacity="0.28"/>
 
-  <circle cx="340" cy="400" r="60" fill="#89b4fa" filter="url(#glow)" opacity="0.9"/>
-  <circle cx="684" cy="400" r="60" fill="#89b4fa" filter="url(#glow)" opacity="0.9"/>
+  <!-- 눈 -->
+  <circle cx="360" cy="420" r="66" fill="#6fa8ff" filter="url(#glow)"/>
+  <circle cx="664" cy="420" r="66" fill="#6fa8ff" filter="url(#glow)"/>
 
-  <polyline
-    points="290,640 400,720 290,800"
-    fill="none"
-    stroke="#cdd6f4"
-    stroke-width="40"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    filter="url(#glow)"
-  />
-  <rect x="450" y="703" width="170" height="38" rx="10" fill="#cdd6f4" opacity="0.8" filter="url(#glow)"/>
+  <!-- 헤더 띠 안의 프롬프트와 커서 -->
+  <polyline points="380,731 454,787 380,843" fill="none" stroke="#e6e9ef" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  <rect x="492" y="775" width="118" height="26" rx="6" fill="#e6e9ef" opacity="0.85"/>
   </g>
   </g>
 </svg>
