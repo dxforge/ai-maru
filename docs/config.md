@@ -33,6 +33,7 @@ commands = ["claude", "codex"]
 | `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 cell 헤더를 pane·cell 의 아래에 둘지 위에 둘지. |
 | `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트와 런처를 창의 아래에 띄울지 위에 띄울지. |
 | `layout.column-cols` | `80` | 20–500 의 정수(열 수). columns 보기에서 pane 하나가 받는 터미널 열 수. |
+| `layout.column-step` | `20` | 1–480 의 정수(열 수). Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸는 열 수. |
 | `launcher.commands` | `["claude", "codex"]` | 비지 않은 문자열 배열. 런처(⌘P)가 띄울 명령. |
 
 pane 헤더와 cell 헤더도 터미널의 글꼴과 크기를 따른다.
@@ -47,7 +48,13 @@ Claude Code 의 입력창은 터미널 아래에 있어 시선이 아래에 머�
 
 columns 보기에서 cell 은 pane 하나가 이 열 수를 받는 폭으로 그려진다. 좌우로 나눈 cell 은 pane 수만큼 넓어진다. 터미널 열 수라서 글꼴 크기를 바꾸면 픽셀 폭도 바뀐다.
 
-Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-cols`·110·144 사이에서 옮긴다. 110 과 144 는 Claude Code 가 `/diff` 패널과 docked pane 을 그리기 시작하는 열 수다. 두 명령으로 폭을 바꾼 cell 은 `column-cols` 가 바뀌어도 그 폭을 지킨다. 바꾸지 않은 cell 은 저장하면 바로 새 폭이 된다. 두 명령으로 `column-cols` 와 같은 폭에 돌아온 cell 은 다시 `column-cols` 를 따른다. 바꾼 폭은 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다.
+Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-step` 만큼 넓히거나 좁힌다. 두 명령으로 폭을 바꾼 cell 은 `column-cols` 가 바뀌어도 그 폭을 지킨다. 바꾸지 않은 cell 은 저장하면 바로 새 폭이 된다. 두 명령으로 `column-cols` 와 같은 폭에 돌아온 cell 은 다시 `column-cols` 를 따른다. 바꾼 폭은 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다.
+
+### `column-step`
+
+Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸는 열 수다. 정수이고 기본값은 20 이다. 기본 설정에서 Widen Cell 을 누르면 80 → 100 → 120 … 으로 넓어진다.
+
+두 명령은 지금 폭에서 이 열 수를 더하거나 뺀다. 지금 폭이 `column-cols` 에서 이 열 수의 배수만큼 떨어져 있지 않아도(95 등) 그 폭에서 바꾼다(95 → 115, 95 → 75). 바꾼 폭이 20–500 밖이면 폭을 그대로 둔다(기본 설정에서 30 을 좁혀도 30). 그래서 20–500 안의 폭에서 넓히기나 좁히기로 폭이 바뀌었다면 반대 명령 한 번으로 이전 폭에 돌아온다. 480 보다 큰 값은 20–500 의 어느 폭에서 더하거나 빼도 범위 밖으로 나가 폭이 바뀌지 않으므로, 480 으로 맞춘다.
 
 ### `launcher`
 
@@ -90,7 +97,7 @@ theme = { light = "Catppuccin Latte", dark = "Catppuccin Mocha" }
 ### 범위를 벗어나거나 잘못 적은 값
 
 - 범위를 벗어난 숫자는 가까운 끝값으로 맞춘다(`font-size = 40` 이면 32, `column-cols = 10` 이면 20).
-- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `column-cols` 에 정수가 아닌 값(`100.5`)을 적어도 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적거나 `theme` 에 모르는 이름을 적어도 기본값을 쓴다. `launcher.commands` 가 배열이 아니거나 비었거나, 문자열이 아닌 항목이나 빈(공백뿐인) 문자열이 있어도 기본값을 쓴다.
+- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `column-cols`·`column-step` 에 정수가 아닌 값(`100.5`)을 적어도 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적거나 `theme` 에 모르는 이름을 적어도 기본값을 쓴다. `launcher.commands` 가 배열이 아니거나 비었거나, 문자열이 아닌 항목이나 빈(공백뿐인) 문자열이 있어도 기본값을 쓴다.
 - 모르는 키는 무시한다.
 
 ## 고치면 바로 적용된다

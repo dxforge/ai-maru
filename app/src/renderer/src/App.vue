@@ -146,8 +146,8 @@ function resetFont(): void {
 function stepWidth(by: 1 | -1): void {
   const c = workspaces.selected()
   if (!c || viewMode.value !== 'columns') return
-  const configured = config.layout.value.columnCols
-  const cols = stepPaneCols(paneColsOf(c), by, configured)
+  const { columnCols: configured, columnStep } = config.layout.value
+  const cols = stepPaneCols(paneColsOf(c), by, columnStep)
   workspaces.setPaneCols(c.key, cols === configured ? undefined : cols)
 }
 
