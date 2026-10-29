@@ -61,6 +61,14 @@ describe('createConfig', () => {
     expect(config.layout.value).toEqual({ ...before, columnCols: 100 })
   })
 
+  it('column-step 만 바뀌어도 layout 을 바꾼다', () => {
+    const { config } = setup('[layout]\nheader = "top"\n')
+    const before = config.layout.value
+    config.apply({ path: PATH, text: '[layout]\nheader = "top"\ncolumn-step = 10\n' })
+    expect(config.layout.value).not.toBe(before)
+    expect(config.layout.value).toEqual({ ...before, columnStep: 10 })
+  })
+
   it('같은 값이면 layout 을 바꾸지 않는다', () => {
     const { config } = setup('[layout]\nheader = "top"\n')
     const before = config.layout.value

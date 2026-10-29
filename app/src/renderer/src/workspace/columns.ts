@@ -1,15 +1,13 @@
+import { PANE_MAX_COLS, PANE_MIN } from '../../../shared/layout'
 import { EPSILON } from './layout'
 
-/**
- * Claude Code 는 `/diff` 패널과 mod 의 docked pane 을 110열부터, mod 가 스스로 연 pane 의 dock 은 144열부터
- * 그린다(2.1.308 의 문자열로 확인).
- */
-const CLAUDE_COLS_STOPS: readonly number[] = [110, 144]
-
-export function stepPaneCols(cols: number, by: 1 | -1, configured: number): number {
-  const stops = [...new Set([configured, ...CLAUDE_COLS_STOPS])].sort((a, b) => a - b)
-  const next = by === 1 ? stops.find((s) => s > cols) : stops.findLast((s) => s < cols)
-  return next ?? cols
+export function stepPaneCols(cols: number, by: 1 | -1, step: number): number {
+  const min = PANE_MIN.cols
+  const max = PANE_MAX_COLS
+  if (cols > max) return by === -1 ? max : cols
+  if (cols < min) return by === 1 ? min : cols
+  const next = cols + by * step
+  return next < min || next > max ? cols : next
 }
 
 export const SCROLLBAR_WIDTH = 8

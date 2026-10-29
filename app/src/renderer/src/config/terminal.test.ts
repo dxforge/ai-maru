@@ -27,7 +27,12 @@ describe('parseConfig', () => {
     expect(DEFAULT_LAUNCHER).toEqual({ commands: ['claude', 'codex'] })
     expect(DEFAULT_THEME).toEqual({ kind: 'one', theme: GHOSTTY })
     expect(DEFAULT_FONT).toEqual({ fontFamily: FAMILY, fontSize: 14, lineHeight: 1.2 })
-    expect(DEFAULT_LAYOUT).toEqual({ header: 'bottom', palette: 'bottom', columnCols: 80 })
+    expect(DEFAULT_LAYOUT).toEqual({
+      header: 'bottom',
+      palette: 'bottom',
+      columnCols: 80,
+      columnStep: 20
+    })
   })
 
   it('세 키를 읽는다', () => {
@@ -193,7 +198,7 @@ describe('parseConfig', () => {
   )
 
   it.each([20, 100, 144, 500])(
-    'layout.column-cols = %i 는 그대로 읽고 알리지 않는다 — 80·110·144 밖의 값과 범위 끝도',
+    'layout.column-cols = %i 는 그대로 읽고 알리지 않는다 — 범위 끝도',
     (value) => {
       const r = ok(`[layout]\ncolumn-cols = ${value}\n`)
       expect(r.layout.columnCols).toBe(value)
@@ -220,6 +225,34 @@ describe('parseConfig', () => {
       const r = ok(`[layout]\ncolumn-cols = ${value}\n`)
       expect(r.layout.columnCols).toBe(80)
       expect(r.warnings).toEqual(['layout.column-cols must be an integer, using 80.'])
+    }
+  )
+
+  it.each([1, 7, 100, 480])('layout.column-step = %i 는 그대로 읽고 알리지 않는다', (value) => {
+    const r = ok(`[layout]\ncolumn-step = ${value}\n`)
+    expect(r.layout.columnStep).toBe(value)
+    expect(r.warnings).toEqual([])
+  })
+
+  it.each([
+    [0, 1],
+    [-20, 1],
+    [481, 480],
+    [10000, 480]
+  ])('layout.column-step = %i 는 1–480 으로 맞추고 알린다', (value, clamped) => {
+    const r = ok(`[layout]\ncolumn-step = ${value}\n`)
+    expect(r.layout.columnStep).toBe(clamped)
+    expect(r.warnings).toEqual([
+      `layout.column-step = ${value} is outside 1–480, using ${clamped}.`
+    ])
+  })
+
+  it.each(['20.5', '"20"', 'true', 'inf'])(
+    'layout.column-step 이 정수가 아니면 20 을 쓴다: %s',
+    (value) => {
+      const r = ok(`[layout]\ncolumn-step = ${value}\n`)
+      expect(r.layout.columnStep).toBe(20)
+      expect(r.warnings).toEqual(['layout.column-step must be an integer, using 20.'])
     }
   )
 

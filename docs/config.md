@@ -33,6 +33,7 @@ commands = ["claude", "codex"]
 | `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 cell 헤더를 pane·cell 의 아래에 둘지 위에 둘지. |
 | `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트와 런처를 창의 아래에 띄울지 위에 띄울지. |
 | `layout.column-cols` | `80` | 20–500 의 정수(열 수). columns 보기에서 pane 하나가 받는 터미널 열 수. |
+| `layout.column-step` | `20` | 1–480 의 정수(열 수). Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸는 열 수. |
 | `launcher.commands` | `["claude", "codex"]` | 비지 않은 문자열 배열. 런처(⌘P)가 띄울 명령. |
 
 pane 헤더와 cell 헤더도 터미널의 글꼴과 크기를 따른다.
@@ -47,7 +48,13 @@ Claude Code 의 입력창은 터미널 아래에 있어 시선이 아래에 머�
 
 columns 보기에서 cell 은 pane 하나가 이 열 수를 받는 폭으로 그려진다. 좌우로 나눈 cell 은 pane 수만큼 넓어진다. 터미널 열 수라서 글꼴 크기를 바꾸면 픽셀 폭도 바뀐다.
 
-Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-cols`·110·144 사이에서 옮긴다. 110 과 144 는 Claude Code 가 `/diff` 패널과 docked pane 을 그리기 시작하는 열 수다. 두 명령으로 폭을 바꾼 cell 은 `column-cols` 가 바뀌어도 그 폭을 지킨다. 바꾸지 않은 cell 은 저장하면 바로 새 폭이 된다. 두 명령으로 `column-cols` 와 같은 폭에 돌아온 cell 은 다시 `column-cols` 를 따른다. 바꾼 폭은 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다.
+Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-step` 만큼 넓히거나 좁힌다. 두 명령으로 폭을 바꾼 cell 은 `column-cols` 가 바뀌어도 그 폭을 지킨다. 바꾸지 않은 cell 은 저장하면 바로 새 폭이 된다. 두 명령으로 `column-cols` 와 같은 폭에 돌아온 cell 은 다시 `column-cols` 를 따른다. 바꾼 폭은 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다.
+
+### `column-step`
+
+Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸는 열 수다. 정수, 기본 20. 기본 설정에서 Widen Cell 을 누르면 80 → 100 → 120 … 으로 넓어진다.
+
+두 명령은 지금 폭에서 이 열 수를 더하거나 뺀다. 지금 폭이 `column-cols` 에서 이 열 수의 배수만큼 떨어져 있지 않아도(95 등) 그 폭에서 바꾼다(95 → 115, 95 → 75). 바꾼 폭이 20–500 밖이면 폭을 그대로 둔다(기본 설정에서 30 을 좁혀도 30). 그래서 범위 안에서는 넓히기와 좁히기가 언제나 서로를 되돌린다. 480 보다 큰 값은 범위 안 어느 폭에서도 범위 밖으로 나가므로 480 으로 맞춘다.
 
 ### `launcher`
 

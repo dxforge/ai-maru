@@ -64,41 +64,36 @@ describe('paneCells', () => {
 })
 
 describe('stepPaneCols', () => {
-  it('넓히기는 지금 폭보다 큰 가장 작은 정류장으로 간다', () => {
-    expect(stepPaneCols(80, 1, 80)).toBe(110)
-    expect(stepPaneCols(110, 1, 80)).toBe(144)
-    expect(stepPaneCols(100, 1, 80)).toBe(110)
+  it('넓히기는 지금 폭에 간격을 더하고, 좁히기는 뺀다', () => {
+    expect(stepPaneCols(80, 1, 20)).toBe(100)
+    expect(stepPaneCols(100, 1, 20)).toBe(120)
+    expect(stepPaneCols(120, -1, 20)).toBe(100)
+    expect(stepPaneCols(100, -1, 20)).toBe(80)
+    expect(stepPaneCols(80, 1, 7)).toBe(87)
   })
 
-  it('좁히기는 지금 폭보다 작은 가장 큰 정류장으로 간다', () => {
-    expect(stepPaneCols(144, -1, 80)).toBe(110)
-    expect(stepPaneCols(110, -1, 80)).toBe(80)
-    expect(stepPaneCols(100, -1, 80)).toBe(80)
+  it('간격의 배수에서 벗어난 폭도 그 폭에서 간격만큼 바꾼다', () => {
+    expect(stepPaneCols(95, 1, 20)).toBe(115)
+    expect(stepPaneCols(115, 1, 20)).toBe(135)
+    expect(stepPaneCols(95, -1, 20)).toBe(75)
+    expect(stepPaneCols(75, -1, 20)).toBe(55)
   })
 
-  it('그런 정류장이 없으면 그대로다', () => {
-    expect(stepPaneCols(144, 1, 80)).toBe(144)
-    expect(stepPaneCols(300, 1, 80)).toBe(300)
-    expect(stepPaneCols(80, -1, 80)).toBe(80)
-    expect(stepPaneCols(50, -1, 80)).toBe(50)
-    expect(stepPaneCols(100, -1, 100)).toBe(100)
-    expect(stepPaneCols(200, 1, 200)).toBe(200)
+  it('다음 폭이 범위 밖이면 그대로 두어, 넓히기·좁히기가 서로를 되돌린다', () => {
+    expect(stepPaneCols(30, -1, 20)).toBe(30)
+    expect(stepPaneCols(490, 1, 20)).toBe(490)
+    expect(stepPaneCols(20, -1, 20)).toBe(20)
+    expect(stepPaneCols(500, 1, 20)).toBe(500)
+    expect(stepPaneCols(40, -1, 20)).toBe(20)
+    expect(stepPaneCols(480, 1, 20)).toBe(500)
+    expect(stepPaneCols(20, 1, 480)).toBe(500)
+    expect(stepPaneCols(21, 1, 480)).toBe(21)
   })
 
-  it('설정 폭이 110·144 와 함께 정류장이고, 80 은 설정 폭이 아니면 정류장이 아니다', () => {
-    expect(stepPaneCols(100, 1, 100)).toBe(110)
-    expect(stepPaneCols(110, -1, 100)).toBe(100)
-    expect(stepPaneCols(200, -1, 200)).toBe(144)
-    expect(stepPaneCols(144, -1, 200)).toBe(110)
-    expect(stepPaneCols(110, -1, 200)).toBe(110)
-    expect(stepPaneCols(144, 1, 200)).toBe(200)
-    expect(stepPaneCols(20, 1, 20)).toBe(110)
-    expect(stepPaneCols(50, 1, 80)).toBe(80)
-  })
-
-  it('설정 폭이 110 이나 144 와 같으면 정류장은 둘이다', () => {
-    expect(stepPaneCols(110, -1, 110)).toBe(110)
-    expect(stepPaneCols(110, 1, 144)).toBe(144)
-    expect(stepPaneCols(144, -1, 144)).toBe(110)
+  it('지금 폭이 범위 밖이면 범위 쪽으로 누를 때만 가까운 끝값으로 옮긴다', () => {
+    expect(stepPaneCols(600, -1, 20)).toBe(500)
+    expect(stepPaneCols(600, 1, 20)).toBe(600)
+    expect(stepPaneCols(10, 1, 20)).toBe(20)
+    expect(stepPaneCols(10, -1, 20)).toBe(10)
   })
 })

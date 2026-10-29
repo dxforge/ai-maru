@@ -7,3 +7,6 @@ export type Layout = { pane: number } | { split: SplitDirection; first: Layout; 
  * (docs/architecture.md 의 "pane 경계와 글자 칸 격자").
  */
 export const PANE_MIN = { cols: 20, rows: 5 } as const
+
+/** columns 보기에서 `layout.column-cols` 와 Widen·Narrow Cell 이 정하는 pane 열 수의 상한. 재시작으로 되살린 `paneCols` 는 이 상한을 거치지 않는다. */
+export const PANE_MAX_COLS = 500
