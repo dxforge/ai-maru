@@ -1121,6 +1121,7 @@ fn pane_new_without_a_command_sends_none() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(req["params"].get("command").is_none(), "{req}");
     assert!(req["params"].get("full").is_none(), "{req}");
+    assert!(req["params"].get("cell").is_none(), "{req}");
 }
 
 #[test]
@@ -1172,6 +1173,79 @@ fn pane_and_cell_new_fail_on_an_answer_without_a_pty() {
 }
 
 #[test]
+fn cell_new_prints_an_empty_cell_when_the_app_answers_without_one() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let out = maru_in(tmp.path(), &sock, &["cell", "new"]);
+    server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "PTY\tCELL\np-0000000c\t\n");
+}
+
+#[test]
+fn pane_new_sends_the_cell_to_open_the_pane_in_and_leaves_a_later_cell_to_the_command() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let out = maru_in(
+        tmp.path(),
+        &sock,
+        &[
+            "pane",
+            "new",
+            "--cell",
+            "c-0000000d",
+            "--down",
+            "x",
+            "--cell",
+            "y",
+        ],
+    );
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "p-0000000c\n");
+    assert_eq!(req["params"]["cell"], "c-0000000d");
+    assert_eq!(req["params"]["direction"], "down");
+    assert!(req["params"].get("full").is_none(), "{req}");
+    assert_eq!(req["params"]["command"], json!(["x", "--cell", "y"]));
+}
+
+#[test]
+fn pane_new_with_the_cell_and_full_sends_both() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let out = maru_in(
+        tmp.path(),
+        &sock,
+        &["pane", "new", "--full", "--cell", "c-0000000d"],
+    );
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(req["params"]["cell"], "c-0000000d");
+    assert_eq!(req["params"]["full"], true);
+}
+
+#[test]
+fn pane_new_shows_the_apps_reason_for_a_missing_cell() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        error(
+            req,
+            -32602,
+            "no cell c-0000000d",
+            json!({ "code": "invalid_params" }),
+        )
+    });
+    let out = maru_in(tmp.path(), &sock, &["pane", "new", "--cell", "c-0000000d"]);
+    server.join().unwrap();
+    assert_fails_with(&out, "no cell c-0000000d");
+    assert_eq!(stdout(&out), "");
+}
+
+#[test]
 fn app_restart_sends_kill_ptys_only_when_asked() {
     for (args, kill) in [
         (&["app", "restart"][..], false),
@@ -1206,11 +1280,15 @@ fn app_restart_shows_the_apps_reason() {
     assert_fails_with(&out, "Pass --kill-ptys to restart anyway.");
 }
 
+fn opened_cell() -> Value {
+    json!({ "pty": "p-0000000c", "cell": "c-0000000d" })
+}
+
 #[test]
-fn cell_new_sends_where_it_was_called_and_the_command_then_prints_the_pty() {
+fn cell_new_sends_where_it_was_called_and_the_command_then_prints_the_pty_and_the_cell() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, opened_cell()));
     let out = maru_in(
         tmp.path(),
         &sock,
@@ -1218,7 +1296,7 @@ fn cell_new_sends_where_it_was_called_and_the_command_then_prints_the_pty() {
     );
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "p-0000000c\n");
+    assert_eq!(stdout(&out), "PTY\tCELL\np-0000000c\tc-0000000d\n");
     assert_eq!(req["method"], "cell.new");
     assert_eq!(req["params"]["pty"], PTY);
     let cwd = std::fs::canonicalize(tmp.path()).unwrap();
@@ -1234,7 +1312,7 @@ fn cell_new_resolves_a_relative_cwd() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     std::fs::create_dir(tmp.path().join("sub")).unwrap();
-    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, opened_cell()));
     let out = maru_in(
         tmp.path(),
         &sock,
@@ -1254,7 +1332,7 @@ fn cell_new_sends_the_pty_to_place_the_cell_by() {
     for (flag, other) in [("--after", "before"), ("--before", "after")] {
         let tmp = tmpdir();
         let sock = sock_in(&tmp);
-        let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+        let server = serve_once(&sock, |req| result(req, opened_cell()));
         let out = maru_in(
             tmp.path(),
             &sock,
@@ -1291,7 +1369,7 @@ fn cell_new_refuses_after_and_before_together_without_calling_the_app() {
 fn cell_new_without_a_command_sends_none() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, opened_cell()));
     let out = maru_in(tmp.path(), &sock, &["cell", "new"]);
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
@@ -1454,13 +1532,13 @@ fn pane_list_prints_tab_separated_columns_with_a_header() {
         "/h/me/",
         json!([
             { "pty": "p-99ae10da", "state": "idle", "kind": null, "app": "claude-code",
-              "workspace": "ai-maru", "cell": "ai-maru main", "title": "Claude",
+              "workspace": "ai-maru", "cell": "c-1a2b3c4d", "title": "Claude",
               "dir": "/h/me/src/ai-maru", "message": "" },
             { "pty": "p-4c3d8f86", "state": "blocked", "kind": "permission", "app": "claude-code",
-              "workspace": "ai-maru", "cell": "ai-maru feat/65", "title": "Fix the build",
+              "workspace": "ai-maru", "cell": "c-5e6f7a8b", "title": "Fix the build",
               "dir": "/h/me", "message": "Bash:\tgit push\nline two\r" },
             { "pty": "p-0000000a", "state": "", "kind": null, "app": "", "workspace": "ai-maru",
-              "cell": "ai-maru feat/65", "title": "zsh", "dir": "/h/me/src", "message": "" },
+              "cell": "c-5e6f7a8b", "title": "zsh", "dir": "/h/me/src", "message": "" },
             { "pty": "p-00000001", "state": "working", "kind": null, "app": "cargo",
               "workspace": "w\tx", "cell": "c\nd", "title": "t\te", "dir": "/h/meme/x",
               "message": "m" },
@@ -1476,9 +1554,9 @@ fn pane_list_prints_tab_separated_columns_with_a_header() {
         stdout(&out),
         format!(
             "{PANE_LIST_HEADER}\
-             p-99ae10da\tidle\tclaude-code\tai-maru\tai-maru main\tClaude\t~/src/ai-maru\t\n\
-             p-4c3d8f86\tblocked(permission)\tclaude-code\tai-maru\tai-maru feat/65\tFix the build\t~\tBash: git push line two \n\
-             p-0000000a\t\t\tai-maru\tai-maru feat/65\tzsh\t~/src\t\n\
+             p-99ae10da\tidle\tclaude-code\tai-maru\tc-1a2b3c4d\tClaude\t~/src/ai-maru\t\n\
+             p-4c3d8f86\tblocked(permission)\tclaude-code\tai-maru\tc-5e6f7a8b\tFix the build\t~\tBash: git push line two \n\
+             p-0000000a\t\t\tai-maru\tc-5e6f7a8b\tzsh\t~/src\t\n\
              p-00000001\tworking\tcargo\tw x\tc d\tt e\t/h/meme/x\tm\n\
              p-00000002\tblocked\t\t\t\t\t\t\n\
              p-00000003\tdone\tcodex\tw\tc\tx\t/d\ta b [31mred\n"

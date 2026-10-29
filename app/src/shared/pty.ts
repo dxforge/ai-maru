@@ -29,11 +29,17 @@ export function exitMessage({ code, signal }: PtyExit): string {
   return signal !== null ? `[exited with signal ${signal}]` : `[exited with code ${code}]`
 }
 
-const PTY_ID = /^p-[0-9a-f]{8}$/
+function isRandomId(prefix: string, v: unknown): v is string {
+  return typeof v === 'string' && new RegExp(`^${prefix}-[0-9a-f]{8}$`).test(v)
+}
 
 /** 파일 경로를 만들기 전에 본다. */
 export function isPtyId(v: unknown): v is string {
-  return typeof v === 'string' && PTY_ID.test(v)
+  return isRandomId('p', v)
+}
+
+export function isCellId(v: unknown): v is string {
+  return isRandomId('c', v)
 }
 
 /**

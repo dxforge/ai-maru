@@ -76,7 +76,7 @@ describe('paneRows', () => {
         kind: null,
         app: 'claude-code',
         workspace: 'ai-maru',
-        cell: 'ai-maru main',
+        cell: 'c-2',
         title: 'Claude',
         dir: '/r/ai-maru',
         message: 'reading'
@@ -87,7 +87,7 @@ describe('paneRows', () => {
         kind: null,
         app: '',
         workspace: 'ai-maru',
-        cell: 'ai-maru main',
+        cell: 'c-2',
         title: 'zsh',
         dir: '/r/ai-maru',
         message: ''
@@ -98,7 +98,7 @@ describe('paneRows', () => {
         kind: null,
         app: 'codex',
         workspace: 'ai-maru',
-        cell: 'ai-maru feat/x',
+        cell: 'c-5',
         title: 'codex',
         dir: '/r/wt',
         message: ''
@@ -109,7 +109,7 @@ describe('paneRows', () => {
         kind: 'permission',
         app: 'claude-code',
         workspace: 'ai-maru',
-        cell: 'ai-maru feat/x',
+        cell: 'c-5',
         title: 'fix it',
         dir: '/r/wt/app',
         message: 'Bash'
@@ -120,7 +120,7 @@ describe('paneRows', () => {
         kind: null,
         app: 'claude-code',
         workspace: 'Shell',
-        cell: 'Shell',
+        cell: 'c-9',
         title: 'Claude',
         dir: '/tmp/notes',
         message: ''
@@ -151,7 +151,7 @@ describe('paneRows', () => {
   it('cwd 도 시작 디렉토리도 모르는 pane 의 dir 은 빈 문자열이고, 셸을 모르면 이름은 sh 다', () => {
     const rows = paneRows(one({ ptyId: 'p-a' }), () => undefined, undefined)
     expect(rows.map((r) => [r.workspace, r.cell, r.dir, r.title])).toEqual([
-      ['Shell', 'Shell', '', 'sh']
+      ['Shell', 'c-2', '', 'sh']
     ])
   })
 
@@ -197,7 +197,7 @@ describe('paneRows', () => {
     ])
   })
 
-  it('CELL 은 cell 의 focused pane 기준이고 DIR 은 pane 자신의 cwd 다', () => {
+  it('CELL 은 cell id 라 헤더 이름이 같은 cell 끼리도 갈리고, DIR 은 pane 자신의 cwd 다', () => {
     const workspaces = [
       {
         key: 1,
@@ -207,17 +207,19 @@ describe('paneRows', () => {
             2,
             [
               { key: 3, ptyId: 'p-a', cwd: '/r/wt-a', git: git('feat/a') },
-              { key: 4, ptyId: 'p-b', cwd: '/r/wt-b', git: git('feat/b') }
+              { key: 4, ptyId: 'p-b', cwd: '/r/wt-b', git: git('main') }
             ],
             4
-          )
+          ),
+          cell(5, [{ key: 6, ptyId: 'p-c', cwd: '/r/ai-maru', git: git('main') }])
         ]
       }
     ]
     const rows = paneRows(workspaces, () => undefined, SHELL)
     expect(rows.map((r) => [r.pty, r.workspace, r.cell, r.dir])).toEqual([
-      ['p-a', 'ai-maru', 'ai-maru feat/b', '/r/wt-a'],
-      ['p-b', 'ai-maru', 'ai-maru feat/b', '/r/wt-b']
+      ['p-a', 'ai-maru', 'c-2', '/r/wt-a'],
+      ['p-b', 'ai-maru', 'c-2', '/r/wt-b'],
+      ['p-c', 'ai-maru', 'c-5', '/r/ai-maru']
     ])
   })
 

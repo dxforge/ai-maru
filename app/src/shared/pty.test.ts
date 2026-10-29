@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { exitMessage, failedExit } from './pty'
+import { exitMessage, failedExit, isCellId, randomId } from './pty'
 
 describe('failedExit', () => {
   it('0·130 이 아닌 코드나 SIGINT 가 아닌 시그널은 실패이고, 0 과 종료 상태를 모르는 것은 실패가 아니다', () => {
@@ -20,5 +20,23 @@ describe('exitMessage', () => {
   it('시그널로 끝났으면 시그널 번호를, 아니면 종료 코드를 적는다', () => {
     expect(exitMessage({ code: 3, signal: null })).toBe('[exited with code 3]')
     expect(exitMessage({ code: null, signal: 9 })).toBe('[exited with signal 9]')
+  })
+})
+
+describe('isCellId', () => {
+  it('새 cell 이 받는 id 모양만 cell id 로 본다', () => {
+    expect(isCellId(randomId('c'))).toBe(true)
+    expect(isCellId('c-1a2b3c4d')).toBe(true)
+    for (const v of [
+      'c-1a2b3c4',
+      'c-1a2b3c4d5',
+      'p-1a2b3c4d',
+      'C-1a2b3c4d',
+      'c-1A2B3C4D',
+      'ai-maru main',
+      1
+    ]) {
+      expect(isCellId(v)).toBe(false)
+    }
   })
 })

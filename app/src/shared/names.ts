@@ -51,6 +51,6 @@ export function workspaceName(p: Named, home?: string): string {
   return p.git ? p.git.repo : dirLabel(p.cwd, home)
 }
 
-export function windowTitle(label: Label, separator = ' — '): string {
-  return label.branch ? `${label.name}${separator}${label.branch}` : label.name
+export function windowTitle(label: Label): string {
+  return label.branch ? `${label.name} — ${label.branch}` : label.name
 }

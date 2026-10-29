@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   activePane,
+  cellItems,
   clickMenu,
   expect,
   failingCommandPtyBin,
@@ -119,6 +120,79 @@ test('선택하지 않은 cell 의 pane 에서 부르면 그 cell 을 나누고,
   await expect(panes(page)).toHaveCount(1)
 })
 
+const MY_CELL = `C=$(maru pane list | awk -F'\\t' -v p="$MARU_PTY_ID" '$1 == p { print $5 }')`
+
+test('maru pane new --cell 은 --full 이 없어도 가리킨 cell 전체를 나눠 오른쪽 끝에, --down 이면 아래쪽 끝에 붙이고, 부른 쪽과 가리킨 cell 의 포커스와 선택은 그대로다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await page.keyboard.type(
+    `C=$(maru cell new bash -c 'maru pane new --down bash -c "read x" >/dev/null; read x' | awk 'NR == 2 { print $2 }')\n`
+  )
+  const target = cellViews(page).nth(1).locator('.pane')
+  await expect(target).toHaveCount(2)
+  await run(page, `maru pane new --cell $C bash -c 'read x'; echo right-$?`, 'right-0')
+  await expect(target).toHaveCount(3)
+  await run(page, `maru pane new --cell $C --full --down bash -c 'read x'; echo down-$?`, 'down-0')
+  await expect(target).toHaveCount(4)
+
+  await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
+  await expect(panes(page)).toHaveCount(1)
+  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
+  await run(page, 'echo still-$((1+1))', 'still-2')
+
+  await clickMenu(app, 'next-cell')
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
+  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
+  await expect
+    .poll(async () => {
+      const [right, bottom] = [await box(page, 2), await box(page, 3)]
+      return [right.x + right.width, right.y, bottom.x, bottom.width, bottom.y + bottom.height]
+    })
+    .toEqual([grid.x + grid.width, grid.y, grid.x, grid.width, grid.y + grid.height])
+  const [lower, right] = [await box(page, 1), await box(page, 2)]
+  expect(right.y + right.height).toBeCloseTo(lower.y + lower.height, 0)
+})
+
+test('maru pane new --cell 은 다른 workspace 의 cell 에도, job 에서 불러도 띄운다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  const saved = join(dataDir, 'cell-id')
+  await run(page, `${MY_CELL}; echo "$C" > '${saved}'; echo saved-$((1+1))`, 'saved-2')
+  await newWorkspace(launched, 2)
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+
+  await run(page, `maru pane new --cell $(cat '${saved}') bash -c 'read x'; echo code-$?`, 'code-0')
+  await expect(cellViews(page).nth(0).locator('.pane')).toHaveCount(2)
+  await page.keyboard.type(
+    `maru job new --name opener maru pane new --cell $(cat '${saved}') bash -c 'read x'\n`
+  )
+  await expect(cellViews(page).nth(0).locator('.pane')).toHaveCount(3)
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+  await expect(panes(page)).toHaveCount(1)
+})
+
+test('maru pane new --cell 은 없는 cell 이나 cell id 가 아닌 값이면 이유를 찍고 실패하며 pane 을 열지 않는다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  for (const [cell, reason] of [
+    ['c-00000000', 'no cell c-00000000'],
+    ["'ai-maru main'", 'must be a cell id'],
+    ['p-00000000', 'must be a cell id']
+  ]) {
+    await run(page, `clear; maru pane new --cell ${cell} true; echo "code-$?"`, 'code-1')
+    await expect(rows(page)).toContainText(reason)
+  }
+  await expect(panes(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(1)
+})
+
 test('pty 를 띄우지 못하면 나눈 pane 을 닫고 maru pane new 가 이유와 함께 실패한다', async ({
   launch,
   dataDir
@@ -127,6 +201,31 @@ test('pty 를 띄우지 못하면 나눈 pane 을 닫고 maru pane new 가 이�
   await page.keyboard.type('maru pane new true; echo code-$?\n')
   await expect(rows(page)).toContainText('boom-2')
   await expect(rows(page)).toContainText('code-1')
+  await expect(panes(page)).toHaveCount(1)
+
+  await page.keyboard.type(`clear; C=$(maru cell new | awk 'NR == 2 { print $2 }')\n`)
+  const target = cellViews(page).nth(1).locator('.pane')
+  await expect(target).toHaveCount(1)
+  await page.keyboard.type('maru pane new --cell $C true; echo cell-$?\n')
+  await expect(rows(page)).toContainText('boom-2')
+  await expect(rows(page)).toContainText('cell-1')
+  await expect(target).toHaveCount(1)
+})
+
+test('maru pane new --cell 은 가리킨 cell 에 나눌 자리가 없으면 부른 cell 에 자리가 있어도 no space 오류로 끝난다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  // 하한 두 개(글자 칸 46개)는 들어가고 세 개(글자 칸 69개)는 들어가지 않는 폭이다.
+  await resizeGridTo(app, page, 58)
+  await page.keyboard.type(
+    `C=$(maru cell new bash -c 'maru pane new bash -c "read x" >/dev/null; read x' | awk 'NR == 2 { print $2 }')\n`
+  )
+  const target = cellViews(page).nth(1).locator('.pane')
+  await expect(target).toHaveCount(2)
+  await run(page, `clear; maru pane new --cell $C bash -c 'read x'; echo code-$?`, 'code-1')
+  await expect(rows(page)).toContainText('no space for a new pane')
+  await expect(target).toHaveCount(2)
   await expect(panes(page)).toHaveCount(1)
 })
 
@@ -270,6 +369,12 @@ test('maru pane new 은 나눌 자리가 없으면 no space 오류로 끝나고 
   await run(page, `maru pane new bash -c 'read x'; echo code-$?`, 'no space for a new pane')
   await expect(rows(page)).toContainText('code-1')
   await run(page, `maru pane new --full bash -c 'read x'; echo full-$?`, 'full-1')
+  await run(
+    page,
+    `clear; ${MY_CELL}; maru pane new --cell $C bash -c 'read x'; echo cell-$?`,
+    'cell-1'
+  )
+  await expect(rows(page)).toContainText('no space for a new pane')
 
   await expect(panes(page)).toHaveCount(2)
 })

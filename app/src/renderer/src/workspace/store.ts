@@ -253,6 +253,10 @@ export function createWorkspaces(
     return pane
   }
 
+  function cellById(id: string): Cell | undefined {
+    return cells().find((c) => c.id === id)
+  }
+
   function paneByPty(id: string): Pane | undefined {
     for (const c of cells()) for (const p of c.panes) if (p.ptyId === id) return p
     return undefined
@@ -413,6 +417,7 @@ export function createWorkspaces(
     split,
     splitFrom,
     pane,
+    cellById,
     paneByPty,
     closePane,
     focusPane,

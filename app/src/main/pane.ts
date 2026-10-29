@@ -1,5 +1,5 @@
 import type { CellNewRequest, PaneNewRequest, PaneReply } from '../shared/pane'
-import { isPtyId } from '../shared/pty'
+import { isCellId, isPtyId } from '../shared/pty'
 import {
   CliError,
   InvalidParams,
@@ -79,7 +79,7 @@ export function createPanes(
   async function ask(channel: PaneChannel, arg: () => unknown): Promise<PaneReply> {
     const reply = await request(channel, arg)
     if (reply && 'error' in reply) {
-      if (reply.error === 'no_pane' || reply.error === 'bad_place')
+      if (reply.error === 'no_pane' || reply.error === 'no_cell' || reply.error === 'bad_place')
         throw new InvalidParams(reply.message)
       if (reply.error === 'no_space') throw new CliError(-32001, 'no_space', reply.message)
       throw new Error(reply.message)
@@ -102,7 +102,18 @@ export function createPanes(
       }
       const command = optionalCommand(params.command)
       const full = optionalBoolean(params.full, 'full')
-      const req: PaneNewRequest = { pty, cwd, direction, full, ...(command && { command }) }
+      const { cell } = params
+      if (cell !== undefined && !isCellId(cell)) {
+        throw new InvalidParams('params.cell must be a cell id, e.g. c-1a2b3c4d')
+      }
+      const req: PaneNewRequest = {
+        pty,
+        cwd,
+        direction,
+        full,
+        ...(command && { command }),
+        ...(cell !== undefined && { cell })
+      }
       return askPty('pane:new', () => req)
     },
     'pane.close': async ({ target }) => {
@@ -126,11 +137,14 @@ export function createPanes(
         if (!cell) throw new InvalidParams(`no cell for pty ${by}`)
         return { cell, before: key === 'before' }
       }
-      return askPty('cell:new', (): CellNewRequest => {
+      const reply = await ask('cell:new', (): CellNewRequest => {
         const cell = cellOf(pty)
         const place = target === undefined ? undefined : placeOf(target)
         return { cwd, ...(cell && { cell }), ...(command && { command }), ...(place && { place }) }
       })
+      if (!reply || !('pty' in reply)) throw new Error('the window answered without a pty')
+      if (!reply.cell) throw new Error('the window answered without a cell')
+      return { pty: reply.pty, cell: reply.cell }
     }
   }
 

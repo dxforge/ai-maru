@@ -233,14 +233,16 @@ async function closeWorkspace(): Promise<void> {
   void focusSelected()
 }
 
-// `maru pane new`·`maru cell new` 로 열어 pty 가 뜨기를 기다리는 pane → 답할 요청 id.
-const paneRequests = new Map<number, number>()
+// `maru pane new`·`maru cell new` 로 열어 pty 가 뜨기를 기다리는 pane → 답할 요청 id. `cell` 은 `cell.new` 의 답에 싣는
+// 새 cell 의 id 다. 명령이 곧바로 끝나면 답하기 전에 cell 이 닫힐 수 있으므로 열 때 적어 둔다.
+const paneRequests = new Map<number, { id: number; cell?: string }>()
 
 function answerPaneRequest(pane: number, reply: PaneReply): void {
-  const id = paneRequests.get(pane)
-  if (id === undefined) return
+  const request = paneRequests.get(pane)
+  if (!request) return
   paneRequests.delete(pane)
-  window.maru.paneReply(id, reply)
+  const { id, cell } = request
+  window.maru.paneReply(id, reply && 'pty' in reply && cell ? { ...reply, cell } : reply)
 }
 
 function removePane(pane: number, message = 'the pane was closed before its pty started'): void {
@@ -274,13 +276,24 @@ const noPane = (pty: string): PaneReply => ({
   message: `no pane for pty ${pty}`
 })
 
-window.maru.onPaneNew((id, { pty, cwd, direction, command, full }) => {
-  const from = workspaces.paneByPty(pty)
-  if (!from) return window.maru.paneReply(id, noPane(pty))
-  if (!roomFor(from.key, direction, full)) {
+// `cell` 로 가리키면 그 cell 의 아무 pane 에서 cell 전체를 나눈다. `full` 은 나눌 pane 의 cell 만 보기 때문이다.
+window.maru.onPaneNew((id, { pty, cwd, direction, command, full, cell }) => {
+  let from: number | undefined
+  if (cell === undefined) {
+    from = workspaces.paneByPty(pty)?.key
+    if (from === undefined) return window.maru.paneReply(id, noPane(pty))
+  } else {
+    from = workspaces.cellById(cell)?.focused
+    if (from === undefined) {
+      return window.maru.paneReply(id, { error: 'no_cell', message: `no cell ${cell}` })
+    }
+  }
+  const whole = full || cell !== undefined
+  if (!roomFor(from, direction, whole)) {
     return window.maru.paneReply(id, { error: 'no_space', message: 'no space for a new pane' })
   }
-  paneRequests.set(workspaces.splitFrom(from.key, direction, { startDir: cwd, command }, full), id)
+  const pane = workspaces.splitFrom(from, direction, { startDir: cwd, command }, whole)
+  paneRequests.set(pane, { id })
 })
 
 window.maru.onCellNew((id, { cell, cwd, command, place }) => {
@@ -288,7 +301,7 @@ window.maru.onCellNew((id, { cell, cwd, command, place }) => {
   if (typeof pane !== 'number') {
     return window.maru.paneReply(id, { error: 'bad_place', message: placeErrors[pane] })
   }
-  paneRequests.set(pane, id)
+  paneRequests.set(pane, { id, cell: workspaces.owner(pane)?.id })
 })
 
 const placeErrors: Record<PlaceError, string> = {
@@ -301,7 +314,7 @@ const placeErrors: Record<PlaceError, string> = {
 // (docs/architecture.md 의 "시간 초과한 pane 요청은 창이 취소한다").
 window.maru.onPaneCancel((id) => {
   for (const [pane, request] of paneRequests) {
-    if (request === id) return removePane(pane, 'the request timed out')
+    if (request.id === id) return removePane(pane, 'the request timed out')
   }
 })
 

@@ -61,8 +61,37 @@ describe('pane.new', () => {
     expect(sent.map((s) => (s.arg as { full: boolean }).full)).toEqual([true, false])
   })
 
+  it('cell 을 창에 넘기고, 없으면 넘기지 않는다', async () => {
+    const { handlers, sent, answer } = setup()
+    const done = handlers['pane.new'](
+      { cwd: '/', direction: 'right', cell: 'c-0000000b' },
+      A
+    ) as Promise<unknown>
+    expect(sent[0].arg).toEqual({
+      pty: A,
+      cwd: '/',
+      direction: 'right',
+      full: false,
+      cell: 'c-0000000b'
+    })
+    answer({ pty: B })
+    await expect(done).resolves.toEqual({ pty: B })
+  })
+
+  it('가리킨 cell 이 창에 없으면 invalid_params', async () => {
+    const { handlers, answer } = setup()
+    const done = handlers['pane.new']({ cwd: '/', direction: 'right', cell: 'c-0000000b' }, A)
+    answer({ error: 'no_cell', message: 'no cell c-0000000b' })
+    await expect(done).rejects.toBeInstanceOf(InvalidParams)
+    await expect(done).rejects.toThrow('no cell c-0000000b')
+  })
+
   it.each([
     [{ cwd: 'rel', direction: 'right' }],
+    [{ cwd: '/', direction: 'right', cell: 'ai-maru main' }],
+    [{ cwd: '/', direction: 'right', cell: A }],
+    [{ cwd: '/', direction: 'right', cell: '' }],
+    [{ cwd: '/', direction: 'right', cell: null }],
     [{ cwd: '/', direction: 'right', full: 'yes' }],
     [{ cwd: '/', direction: 'right', full: 1 }],
     [{ direction: 'right' }],
@@ -154,7 +183,7 @@ describe('창이 준비되기 전', () => {
     cells.set(B, 'c-0000000b')
     ready()
     expect(sent[0].arg).toEqual({ cell: 'c-0000000b', cwd: '/' })
-    answer({ pty: A })
+    answer({ pty: A, cell: 'c-0000000c' })
     await done
   })
 
@@ -211,7 +240,7 @@ describe('창이 준비되기 전', () => {
 })
 
 describe('cell.new', () => {
-  it('부른 pty 의 cell 과 함께 창에 넘기고, 창이 알려 준 새 pty 를 돌려준다', async () => {
+  it('부른 pty 의 cell 과 함께 창에 넘기고, 창이 알려 준 새 pty 와 cell 을 돌려준다', async () => {
     const { handlers, sent, answer } = setup()
     const done = handlers['cell.new']({ cwd: '/a b', command: ['x', ''] }, A)
     expect(sent).toEqual([
@@ -221,16 +250,23 @@ describe('cell.new', () => {
         arg: { cell: 'c-0000000a', cwd: '/a b', command: ['x', ''] }
       }
     ])
-    answer({ pty: B })
-    await expect(done).resolves.toEqual({ pty: B })
+    answer({ pty: B, cell: 'c-0000000c' })
+    await expect(done).resolves.toEqual({ pty: B, cell: 'c-0000000c' })
   })
 
   it('명령이 없거나 부른 pty 의 cell 을 모르면 창에도 넘기지 않는다', async () => {
     const { handlers, sent, answer } = setup()
     const done = handlers['cell.new']({ cwd: '/' }, B) as Promise<unknown>
     expect(sent[0].arg).toEqual({ cwd: '/' })
-    answer({ pty: A })
+    answer({ pty: A, cell: 'c-0000000c' })
     await done
+  })
+
+  it('창이 cell 없이 답하면 실패한다', async () => {
+    const { handlers, answer } = setup()
+    const done = handlers['cell.new']({ cwd: '/' }, A)
+    answer({ pty: B })
+    await expect(done).rejects.toThrow('without a cell')
   })
 
   it.each([
@@ -264,7 +300,7 @@ describe('cell.new', () => {
       cwd: '/',
       place: { cell: 'c-0000000b', before }
     })
-    answer({ pty: 'p-0000000c' })
+    answer({ pty: 'p-0000000c', cell: 'c-0000000c' })
     await done
   })
 
@@ -274,7 +310,7 @@ describe('cell.new', () => {
     cells.set(B, 'c-0000000b')
     ready()
     expect(sent[0].arg).toMatchObject({ place: { cell: 'c-0000000b', before: true } })
-    answer({ pty: 'p-0000000c' })
+    answer({ pty: 'p-0000000c', cell: 'c-0000000c' })
     await done
   })
 
