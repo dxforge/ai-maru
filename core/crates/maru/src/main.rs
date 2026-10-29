@@ -62,8 +62,9 @@
 //! job 은 들지 않는다. `state`·`kind`·`message` 는 사이드바가 보이는 program_status 레코드(루트와 하위
 //! 가운데 앱이 고른 것)의 값이다. `state` 는 레코드의 상태(`idle`·`working`·`done`·`blocked`·`error`)다.
 //! `kind` 는 `permission`·`question`·`auth` 나 null 이다. `app` 은 루트 레코드의 `app` 이다. 보일 레코드가
-//! 없는 pane 은 `state`·`app`·`message` 가 빈 문자열이고 `kind` 는 null 이다. `workspace`·`cell`·`title` 은
-//! 사이드바가 보이는 이름이다. `cell` 은 브랜치가 있으면 이름 뒤에 공백 하나를 두고 브랜치를 붙인다.
+//! 없는 pane 은 `state`·`app`·`message` 가 빈 문자열이고 `kind` 는 null 이다. `workspace`·`title` 은
+//! 사이드바가 보이는 이름이다. `cell` 은 cell 헤더가 보이는 이름이다. 그 cell 의 focus 된 pane 의 저장소
+//! 이름이나 폴더 이름이고, 브랜치가 있으면 이름 뒤에 공백 하나를 두고 브랜치를 붙인다.
 //! `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면 빈 문자열이다.
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
@@ -302,9 +303,10 @@ enum PaneCommand {
     /// DIR, MESSAGE. STATE, APP and MESSAGE come from the program status the pane's program
     /// reported, and are empty when it reported none. STATE is idle, working, done, blocked or
     /// error; a blocked state with a reason reads e.g. blocked(permission). APP is the program,
-    /// e.g. claude-code. WORKSPACE, CELL and TITLE are the names shown in the sidebar. DIR is
-    /// the pane's directory. Control characters in a value, such as tabs and newlines, become
-    /// spaces, and an unknown value is an empty column.
+    /// e.g. claude-code. WORKSPACE and TITLE are the names shown in the sidebar. CELL is the
+    /// name shown in the cell header: the repository and branch, or the folder, of the cell's
+    /// focused pane. DIR is the pane's directory. Control characters in a value, such as tabs
+    /// and newlines, become spaces, and an unknown value is an empty column.
     List,
 }
 

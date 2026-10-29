@@ -6,9 +6,7 @@ import type { PtyState } from './pty-state'
 import type { ScreenWorkspace } from './screen'
 
 /**
- * 사이드바가 쓰는 `shownRecord`·`commandView`·`paneName`·`workspaceName` 으로 pane 마다 한 줄을 짓는다. `maru pane list` 가
- * 사이드바와 같은 상태와 이름을 내야 하기 때문이다(`docs/architecture.md`). `home` 이 있으면 사이드바처럼 홈
- * 디렉토리 workspace 의 이름을 `~` 로 쓴다.
+ * `maru pane list` 가 화면과 같은 상태와 이름을 내도록 사이드바·pane 헤더·cell 헤더와 같은 함수로 줄을 짓는다(`docs/architecture.md`).
  */
 export function paneRows(
   workspaces: readonly ScreenWorkspace[],
