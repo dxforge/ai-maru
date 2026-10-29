@@ -65,6 +65,8 @@ const api = {
   },
   /** main 이 지금 든 pty 상태 전체. `onPtyState` 를 단 뒤에 부른다. */
   ptyStates: (): Promise<Record<string, PtyStateEntry>> => ipcRenderer.invoke('pty:states'),
+  /** 사용자가 이 pty 의 pane 을 확인하고 떠났다. main 이 그 pty 의 done 레코드를 idle 로 바꾼다. */
+  paneSeen: (pty: string): void => ipcRenderer.send('pane:seen', pty),
   /** main 이 job 표를 바꿀 때마다(듣는 포트가 바뀔 때 포함) 전체 목록으로 `cb` 를 부른다. */
   onJobs: (cb: (jobs: JobView[]) => void): void => {
     ipcRenderer.on('jobs:changed', (_event, jobs: JobView[]) => cb(jobs))

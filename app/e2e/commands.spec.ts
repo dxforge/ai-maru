@@ -13,6 +13,8 @@ import {
   test,
   cellGroups,
   cellItems,
+  windowLosesFocus,
+  windowRegainsFocus,
   writeConfig
 } from './app'
 
@@ -660,23 +662,6 @@ test('팔레트가 열린 동안 선택된 cell 의 셸이 끝나면 팔레트�
   await expect(palette(page)).toHaveCount(0)
   await typesIntoTerminal(page, 'survivor')
 })
-
-// e2e 의 창은 OS 포커스를 받지 않으므로, 창이 포커스를 잃고 되찾는 것은 `document.hasFocus` 와
-// focus 이벤트로 흉내 낸다. 창이 비활성화될 때 포커스된 요소는 `activeElement` 로 남은 채 blur 를 받는다.
-async function windowLosesFocus(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    document.hasFocus = () => false
-    document.activeElement?.dispatchEvent(new FocusEvent('blur'))
-    window.dispatchEvent(new FocusEvent('blur'))
-  })
-}
-
-async function windowRegainsFocus(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    delete (document as { hasFocus?: unknown }).hasFocus
-    window.dispatchEvent(new FocusEvent('focus'))
-  })
-}
 
 test('창이 포커스를 잃었다 돌아와도 팔레트는 입력을 지닌 채 키를 받는다', async ({ launch }) => {
   const launched = await launch()

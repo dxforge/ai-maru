@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { promisify } from 'node:util'
 import {
   app,
   BrowserWindow,
@@ -66,6 +68,7 @@ import {
 import type { HostEvent, KillRequest, OpenRequest, QuitRequest } from './pty-host'
 import { createPtyCells } from './pty-cells'
 import { createPtyStates } from './pty-state'
+import { createSeen } from './seen'
 import {
   readWindowExtras,
   readWindowState,
@@ -86,6 +89,8 @@ import {
 } from '../shared/screen'
 import { isPtyId, newPtyId, type PtyOpen } from '../shared/pty'
 import { GHOSTTY, isLight, parseWindowTheme, type WindowTheme } from '../shared/theme'
+
+const runFile = promisify(execFile)
 
 function ptyDir(): string {
   return runDir(app.getPath('userData'))
@@ -620,6 +625,13 @@ function start(): void {
     typeof cwd === 'string' ? gitHead(cwd) : null
   )
   ipcMain.handle('pty:states', () => ptyStates.entries())
+  const seen = createSeen({
+    records: ptyStates.records,
+    run: async (args) => {
+      await runFile(cli.bin, args, { env: { ...process.env, MARU_SOCKET: cli.socket } })
+    }
+  })
+  ipcMain.on('pane:seen', (_event, pty: unknown) => void (isPtyId(pty) && seen(pty)))
   ipcMain.handle('link:open', (_event, text: unknown, pty: unknown) => {
     if (typeof text !== 'string' || typeof pty !== 'string') {
       return { ok: false, reason: 'not a link' }

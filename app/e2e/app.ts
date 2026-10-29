@@ -531,6 +531,23 @@ export async function split(
   await activeTerminal(page)
 }
 
+// e2e 의 창은 OS 포커스를 받지 않으므로, 창이 포커스를 잃고 되찾는 것은 `document.hasFocus` 와
+// focus 이벤트로 흉내 낸다. 창이 비활성화될 때 포커스된 요소는 `activeElement` 로 남은 채 blur 를 받는다.
+export async function windowLosesFocus(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    document.hasFocus = () => false
+    document.activeElement?.dispatchEvent(new FocusEvent('blur'))
+    window.dispatchEvent(new FocusEvent('blur'))
+  })
+}
+
+export async function windowRegainsFocus(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    delete (document as { hasFocus?: unknown }).hasFocus
+    window.dispatchEvent(new FocusEvent('focus'))
+  })
+}
+
 export async function openPalette({ app, page }: Launched): Promise<void> {
   await clickMenu(app, 'command-palette')
   await expect(page.locator('.palette .query')).toBeFocused()

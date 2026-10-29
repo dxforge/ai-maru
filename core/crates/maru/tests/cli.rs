@@ -2001,3 +2001,159 @@ fn status_without_a_terminal_in_itself_or_any_ancestor_fails_and_says_why() {
         "{out}"
     );
 }
+
+const OTHER: &str = "p-other";
+
+/// CLI 를 자기 pty 에서 돌리고, 다른 pty 하나를 더 열어 그 기록을 `<pty 디렉토리>/p-other.json` 에 쓴다.
+/// `record` 는 다른 pty 의 장치 이름(`/dev/` 를 뗀 것)을 받아 기록을 돌려주고, `None` 이면 기록을 쓰지 않는다.
+/// 돌려주는 것은 (출력, 자기 tty 에 쓴 것, 다른 pty 에 쓴 것)이다.
+fn on_tty_with_other(
+    args: &[&str],
+    record: impl FnOnce(&str) -> Option<Value>,
+) -> (Output, Vec<u8>, Vec<u8>) {
+    let tmp = tmpdir();
+    let other = nix::pty::openpty(None, None).unwrap();
+    let path = nix::unistd::ttyname(&other.slave).unwrap();
+    let name = path.to_str().unwrap().strip_prefix("/dev/").unwrap();
+    if let Some(record) = record(name) {
+        std::fs::write(tmp.path().join(format!("{OTHER}.json")), record.to_string()).unwrap();
+    }
+    let mut master = std::fs::File::from(other.master);
+    let reader = std::thread::spawn(move || {
+        let mut got = Vec::new();
+        let mut buf = [0; 8192];
+        while let Ok(n @ 1..) = master.read(&mut buf) {
+            got.extend_from_slice(&buf[..n]);
+        }
+        got
+    });
+    let mut cmd = maru_cmd(Some(&sock_in(&tmp)), &[&["status"], args].concat());
+    cmd.stdin(Stdio::null());
+    let (out, mine) = run_on_tty(cmd);
+    // 이 slave 를 닫아야 다른 pty 의 master 읽기가 끝난다.
+    drop(other.slave);
+    (out, mine, reader.join().unwrap())
+}
+
+/// maru-pty 가 남기는 것과 같은 모양의 기록. `tty` 는 장치 이름이다.
+fn maru_pty_record(tty: &str) -> Option<Value> {
+    Some(json!({
+        "protocol_version": 1,
+        "id": OTHER,
+        "pid": 1,
+        "shell_pid": 1,
+        "tty": tty,
+        "created_at_ms": 0,
+    }))
+}
+
+#[test]
+fn status_with_pty_writes_to_that_ptys_terminal_only() {
+    for (args, body) in [
+        (
+            &["put", "idle", "--pty", OTHER, "--app", "claude-code"][..],
+            "state=idle:app=claude-code",
+        ),
+        (
+            &["--pty", OTHER, "put", "idle", "--id", "build"][..],
+            "state=idle:id=build",
+        ),
+        (&["clear", "--pty", OTHER][..], "state=clear"),
+    ] {
+        let (out, mine, other) = on_tty_with_other(args, maru_pty_record);
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+        assert!(out.stdout.is_empty() && out.stderr.is_empty(), "{args:?}");
+        assert!(
+            mine.is_empty(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&mine)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&other),
+            format!("\x1b]7501;{body}\x1b\\"),
+            "{args:?}"
+        );
+    }
+}
+
+/// (CLI 인자, 다른 pty 의 장치 이름을 받아 기록을 돌려주는 함수, 기대하는 오류)
+type PtyCase = (
+    &'static [&'static str],
+    fn(&str) -> Option<Value>,
+    &'static str,
+);
+
+const ID_64: &str = "a234567890123456789012345678901234567890123456789012345678901234";
+const ID_65: &str = "a2345678901234567890123456789012345678901234567890123456789012345";
+
+#[test]
+fn status_with_pty_fails_without_writing_when_it_cannot_find_the_terminal() {
+    assert_eq!((ID_64.len(), ID_65.len()), (64, 65));
+    let cases: [PtyCase; 11] = [
+        (&["put", "idle", "--pty", OTHER], |_| None, "no pty p-other"),
+        (
+            &["put", "idle", "--pty", OTHER],
+            |_| Some(json!({ "id": OTHER })),
+            "p-other.json has no tty name",
+        ),
+        (
+            &["put", "idle", "--pty", OTHER],
+            |_| maru_pty_record(""),
+            "p-other.json has no tty name",
+        ),
+        // 절대경로나 `..` 가 든 이름은 `/dev` 밖을 가리킬 수 있어 받지 않는다.
+        (
+            &["put", "idle", "--pty", OTHER],
+            |name| maru_pty_record(&format!("/dev/{name}")),
+            "p-other.json has no tty name",
+        ),
+        (
+            &["put", "idle", "--pty", OTHER],
+            |_| maru_pty_record("../tmp/x"),
+            "p-other.json has no tty name",
+        ),
+        (
+            &["put", "idle", "--pty", OTHER],
+            |_| maru_pty_record("ttys-none"),
+            "cannot open /dev/ttys-none, the terminal of pty p-other",
+        ),
+        (
+            &["put", "idle", "--pty", OTHER],
+            |_| maru_pty_record("null"),
+            "/dev/null, named by",
+        ),
+        (
+            &["put", "idle", "--pty", "../p-other"],
+            maru_pty_record,
+            "--pty must be 1 to 64 letters",
+        ),
+        (
+            &["put", "idle", "--pty", ""],
+            maru_pty_record,
+            "--pty must be 1 to 64 letters",
+        ),
+        (
+            &["put", "idle", "--pty", ID_65],
+            maru_pty_record,
+            "--pty must be 1 to 64 letters",
+        ),
+        // `--pty` 는 64 자 id 를 받아 그 기록을 찾는다.
+        (
+            &["put", "idle", "--pty", ID_64],
+            maru_pty_record,
+            "no pty a2345",
+        ),
+    ];
+    for (args, record, expected) in cases {
+        let (out, mine, other) = on_tty_with_other(args, record);
+        assert_fails_with(&out, expected);
+        assert!(mine.is_empty() && other.is_empty(), "{args:?}");
+    }
+}
+
+#[test]
+fn status_with_pty_needs_the_app_socket() {
+    let (out, got) = on_tty(&["put", "idle", "--pty", OTHER]);
+    assert_fails_with(&out, "--pty needs MARU_SOCKET");
+    assert!(got.is_empty());
+}
