@@ -95,26 +95,69 @@ export function isLight({ background }: TerminalTheme): boolean {
   return luminance(background) > 0.5
 }
 
+/** focus 안 된 pane 헤더·cell 헤더와 터미널 배경의 대비. 헤더 배경은 섞는 비율이 아니라 이 대비로 정한다. 같은 비율로 섞으면 테마의 밝기에 따라 대비가 달라지기 때문이다. */
+export const HEADER_CONTRAST = 1.1
+
+/** focus 된 pane 헤더·cell 헤더와 focus 안 된 헤더의 대비. */
+export const FOCUSED_HEADER_CONTRAST = 1.5
+
+/** `base` 를 `toward` 쪽으로 섞어 `base` 와의 대비가 `ratio` 가 되는 색. 끝까지 섞어도 닿지 못하면 null 이다. */
+function reachContrast(base: string, toward: string, ratio: number): string | null {
+  if (contrast(toward, base) < ratio) return null
+  let [lo, hi] = [0, 1]
+  for (let i = 0; i < 20; i++) {
+    const t = (lo + hi) / 2
+    if (contrast(mix(base, toward, t), base) < ratio) lo = t
+    else hi = t
+  }
+  return mix(base, toward, hi)
+}
+
+/** pane 경계선과 그 선이 지나는 면(터미널, focus 안 된 헤더, focus 된 헤더)의 대비. 기본 테마(`GHOSTTY`)의 `line` 이 이 세 면과 내는 가장 낮은 대비 1.112:1 에서 온 값이다. 그래서 기본 테마의 pane 경계선은 `line` 과 같은 색이다. */
+export const PANE_LINE_CONTRAST = 1.11
+
+function paneLineColor(line: string, fg: string, surfaces: string[]): string {
+  // 섞을수록 어떤 면과는 대비가 줄다가 늘어나므로, 이분 탐색 대신 8bit 한 단계씩 찾는다.
+  for (let i = 0; i <= 255; i++) {
+    const c = mix(line, fg, i / 255)
+    if (surfaces.every((s) => contrast(c, s) >= PANE_LINE_CONTRAST)) return c
+  }
+  return fg
+}
+
+function headerColor(bg: string, fg: string, light: boolean): string {
+  const [first, second] = light ? [fg, '#000000'] : ['#000000', fg]
+  return (
+    reachContrast(bg, first, HEADER_CONTRAST) ?? reachContrast(bg, second, HEADER_CONTRAST) ?? bg
+  )
+}
+
 export function uiColors(theme: TerminalTheme) {
   const { background: bg, foreground: fg, ansi } = theme
   const light = isLight(theme)
   const side = light ? mix(bg, fg, 0.035) : mix(bg, '#000000', 0.22)
   const raised = mix(bg, fg, 0.05)
-  const hdrFocus = mix(bg, fg, 0.1)
+  const hdr = headerColor(bg, fg, light)
+  // focus 된 헤더는 focus 안 된 헤더보다 밝은 쪽으로 섞는다. 밝은 테마는 글자색이 아니라 흰색 쪽으로 섞는다. 글자색 쪽으로 섞으면 focus 된 헤더가 `faint` 글자와 거의 같은 색이 되기 때문이다.
+  const away = light ? '#ffffff' : fg
+  const hdrFocus = reachContrast(hdr, away, FOCUSED_HEADER_CONTRAST) ?? away
   const status = (i: number): string =>
-    [side, bg, raised, hdrFocus].every((s) => contrast(ansi[i], s) >= MIN_CONTRAST)
+    [side, bg, raised, hdr, hdrFocus].every((s) => contrast(ansi[i], s) >= MIN_CONTRAST)
       ? ansi[i]
       : ansi[i + 8]
+  const line = mix(bg, fg, 0.13)
   return {
     ground: bg,
     fg,
     side,
     raised,
+    hdr,
     hdrFocus,
     // 어느 면 위에서나 쓰도록 글자색을 반투명하게 겹친다.
     hover: fg + '0f',
     selected: fg + '1f',
-    line: mix(bg, fg, 0.13),
+    line,
+    paneLine: paneLineColor(line, fg, [bg, hdr, hdrFocus]),
     muted: mix(fg, bg, 0.35),
     faint: mix(fg, bg, 0.55),
     dim: bg + '73',

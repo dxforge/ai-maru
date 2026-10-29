@@ -24,6 +24,7 @@ import {
   split,
   test,
   toggleView,
+  tokenRgb,
   cellGroups,
   cellItems,
   cellViews,
@@ -698,6 +699,38 @@ test('columns 에서 선택한 cell 의 테두리는 아래 변도 스크롤 영
   const card = (await cellViews(page).first().boundingBox())!
   expect(card.y + card.height + 1).toBeLessThanOrEqual(area.bottom)
   expect(card.x - 1).toBeGreaterThanOrEqual(area.left)
+})
+
+test('columns 에서 선택한 cell 만 accent 색 테두리를 두르고, 다른 cell 을 고르면 테두리가 옮겨 간다', async ({
+  launch,
+  dataDir
+}) => {
+  // 두 cell 이 함께 창 안에 보이도록 pane 폭을 줄인다.
+  writeConfig(dataDir, '[layout]\ncolumn-cols = 40\n')
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await toggleView(launched, 'columns')
+  const accent = await tokenRgb(page, '--accent')
+  // 카드 바로 왼쪽 1px 이 테두리다.
+  const border = async (i: number): Promise<number[]> => {
+    const card = (await cellViews(page).nth(i).boundingBox())!
+    const clip = {
+      x: Math.round(card.x) - 1,
+      y: Math.round(card.y + card.height / 2),
+      width: 1,
+      height: 1
+    }
+    return (await screenshotPixels(page, clip, 'css')).data.slice(0, 3)
+  }
+
+  await cellItems(page).nth(0).click()
+  await expect.poll(() => border(0)).toEqual(accent)
+  expect(await border(1)).not.toEqual(accent)
+
+  await cellItems(page).nth(1).click()
+  await expect.poll(() => border(1)).toEqual(accent)
+  expect(await border(0)).not.toEqual(accent)
 })
 
 test('columns 에서 포커스를 따라 스크롤해도 선택한 cell 의 옆 테두리는 스크롤 영역 안에 그려진다', async ({
