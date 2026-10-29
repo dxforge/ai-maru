@@ -686,8 +686,7 @@ let settled = false
 const SCROLL_MS = 300
 let scrollFrame = 0
 
-// cell 이 화면보다 넓을 수 있어, cell 이 아니라 포커스된 pane 이 보이게 한다. 보기를 바꾸면 화면 전체가 한 번에
-// 다시 그려지므로, 그때는 스크롤도 바로 맞춘다.
+// cell 이 화면보다 넓을 수 있어, cell 이 아니라 포커스된 pane 이 보이게 한다.
 function revealFocused(smooth: boolean): void {
   const area = terminalsArea.value
   const target = focusedTerminal()?.$el as HTMLElement | undefined
@@ -705,7 +704,7 @@ function revealFocused(smooth: boolean): void {
   let last = from
   const step = (now: number): void => {
     // 사용자가 그사이 스크롤했으면 그 자리를 뺏지 않는다.
-    if (Math.abs(area.scrollLeft - last) > 1) return
+    if (area.scrollLeft !== last) return
     const t = Math.min((now - start) / SCROLL_MS, 1)
     const ease = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
     area.scrollLeft = from + (to - from) * ease
@@ -716,6 +715,7 @@ function revealFocused(smooth: boolean): void {
 }
 // 포커스가 그대로여도 앞의 cell 이 닫히거나 폭이 바뀌면 pane 이 밀려나므로 배치도 지켜본다. views 는 pane 의 자리와
 // 상관없는 값(포커스 표시 등)이 바뀌어도 다시 계산되므로, 그때마다 스크롤하지 않게 자리만 떼어 문자열로 비교한다.
+// 보기를 바꾸면 화면 전체가 한 번에 다시 그려지므로, `viewMode` 가 바뀐 호출은 스크롤도 바로 맞춘다.
 const arrangement = computed(() =>
   JSON.stringify(views.value.map((v) => [v.c.key, v.width, v.panes.map((p) => [p.p.key, p.style])]))
 )
@@ -840,7 +840,8 @@ void window.maru.restoreScreen().then((s) => {
   } else {
     workspaces.open()
   }
-  // 되살린 cell 은 아직 그려지기 전이라 잰 것이 없다. 다 잰 flush 의 스크롤 watch 가 돈 뒤에 `settled` 를 켠다.
+  // 되살린 cell 은 아직 그려지기 전이라 잰 것이 없다. cell 을 다 잰 뒤 `flush: 'post'` 인 스크롤 watch 가 먼저
+  // 돌도록, `settled` 는 그다음 프레임에 켠다.
   const unwatch = watch(
     () => workspaces.cells().every((c) => panesSizes.has(c.key)),
     (all) => {

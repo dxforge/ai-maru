@@ -107,8 +107,8 @@ async function scrollsOf(page: Page, act: () => Promise<unknown>): Promise<Scrol
 }
 
 /**
- * 스크롤이 서로 다른 두 프레임 이상에서 시작과 끝 사이의 자리를 거쳐 움직였다. 내용이 줄어 브라우저가 scrollLeft 를 자르면
- * 한 프레임에도 시작과 끝 사이의 자리를 지나므로, 한 프레임만으로는 smooth 와 가르지 못한다.
+ * `expectSmooth` 는 스크롤이 서로 다른 두 프레임 이상에서 시작과 끝 사이의 자리를 지났는지 본다. 내용이 줄어
+ * 브라우저가 scrollLeft 를 자르면 한 프레임에도 시작과 끝 사이의 자리를 지나므로, 한 프레임만으로는 smooth 와 가르지 못한다.
  */
 function expectSmooth(scrolls: Scroll[]): void {
   const start = scrolls[0].left
@@ -454,7 +454,7 @@ test('columns 에서 pane 을 나누거나 닫거나 cell 을 더하거나 넓�
   await scrollsOf(page, () => cellItems(page).nth(3).click())
   await expectRevealed(page)
   expectSmooth(await scrollsOf(page, () => clickMenu(app, 'widen-cell')))
-  // 넓힌 pane 은 스크롤 영역보다 넓어 다 보이지 않는다.
+  // 넓힌 pane 은 스크롤 영역보다 넓어 다 보이지 않으므로, 다 보이는지 대신 멈춘 자리만 본다.
   await expectInstantPlace(page)
 })
 
