@@ -185,6 +185,18 @@ describe('paneRows', () => {
     expect(rows.map((r) => [r.state, r.message])).toEqual([['blocked', '']])
   })
 
+  it('홈 디렉토리 workspace 의 WORKSPACE 는 사이드바처럼 ~ 다', () => {
+    const workspaces = [
+      { key: 1, id: 'w-1', cells: [cell(2, [{ key: 3, ptyId: 'p-a', cwd: '/h/u' }])] },
+      { key: 4, id: 'w-4', cells: [cell(5, [{ key: 6, ptyId: 'p-b', cwd: '/h/u/notes' }])] }
+    ]
+    const rows = paneRows(workspaces, () => undefined, SHELL, '/h/u')
+    expect(rows.map((r) => [r.pty, r.workspace])).toEqual([
+      ['p-a', '~'],
+      ['p-b', 'notes']
+    ])
+  })
+
   it('CELL 은 cell 의 focused pane 기준이고 DIR 은 pane 자신의 cwd 다', () => {
     const workspaces = [
       {

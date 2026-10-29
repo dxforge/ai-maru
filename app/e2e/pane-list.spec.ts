@@ -52,6 +52,16 @@ test('레코드가 없는 pane 만 있어도 maru pane list 는 그 pane 을 빈
   expect([table[1][5]]).toEqual(await sidebarTitles(page))
 })
 
+test('홈 디렉토리 workspace 의 WORKSPACE 는 사이드바처럼 ~ 다', async ({ launch, dataDir }) => {
+  const home = join(dataDir, 'home')
+  mkdirSync(home)
+  const { page } = await launch({ HOME: home })
+  await ptyIdOf(page, `cd ~; printf '\\e]7;file://%s\\a' "$PWD"; `)
+  await expect(workspaceNames(page).nth(0)).toHaveText('~')
+  const [, cols] = await paneList(page, join(dataDir, 'panes.out'))
+  expect(cols[3]).toBe('~')
+})
+
 test('maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순서대로, 사이드바의 이름과 함께 TSV 로 찍는다', async ({
   launch,
   dataDir

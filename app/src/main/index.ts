@@ -354,7 +354,9 @@ const cliHandlers: Handlers = {
   'pane.list': () => {
     const screen = parseScreen(lastScreen)
     if (!screen) throw new Error('the window has not reported its layout yet')
-    return { panes: paneRows(screen.workspaces, ptyStates.state, process.env.SHELL) }
+    return {
+      panes: paneRows(screen.workspaces, ptyStates.state, process.env.SHELL, process.env.HOME)
+    }
   },
   'canvas.put': canvasPut(mainWindow),
   ...monitor.handlers,

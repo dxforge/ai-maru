@@ -6,17 +6,19 @@ import type { PtyState } from './pty-state'
 import type { ScreenWorkspace } from './screen'
 
 /**
- * 사이드바가 쓰는 `shownRecord`·`commandView`·`paneName` 으로 pane 마다 한 줄을 짓는다. `maru pane list` 가 사이드바와
- * 같은 상태와 이름을 내야 하기 때문이다(`docs/architecture.md`).
+ * 사이드바가 쓰는 `shownRecord`·`commandView`·`paneName`·`workspaceName` 으로 pane 마다 한 줄을 짓는다. `maru pane list` 가
+ * 사이드바와 같은 상태와 이름을 내야 하기 때문이다(`docs/architecture.md`). `home` 이 있으면 사이드바처럼 홈
+ * 디렉토리 workspace 의 이름을 `~` 로 쓴다.
  */
 export function paneRows(
   workspaces: readonly ScreenWorkspace[],
   state: (pty: string) => PtyState | undefined,
-  shell: string | undefined
+  shell: string | undefined,
+  home?: string
 ): PaneRow[] {
   const rows: PaneRow[] = []
   for (const w of workspaces) {
-    const workspace = workspaceName(w.cells[0].panes[0])
+    const workspace = workspaceName(w.cells[0].panes[0], home)
     for (const c of w.cells) {
       const cell = windowTitle(cellLabel(focusedPane(c)), ' ')
       for (const p of c.panes) {
