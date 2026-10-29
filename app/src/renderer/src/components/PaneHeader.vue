@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { dirName } from '../../../shared/names'
+import { paneName, type CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord } from '../../../shared/program-status'
 import { AGENT_ICONS, commandClass, commandIcon, STATE_LABELS } from '../icons'
 import StatusIcon from './StatusIcon.vue'
-import { commandTail, paneName, type CommandView } from '../workspace/display'
+import { commandTail } from '../workspace/display'
 import type { Pane } from '../workspace/store'
 
 // 제목은 여기서 읽어, 제목이 바뀌면 이 헤더만 다시 그린다.

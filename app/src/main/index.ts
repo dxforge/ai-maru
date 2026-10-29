@@ -74,7 +74,7 @@ import {
   windowBounds
 } from './window-state'
 import type { JobView } from '../shared/job'
-import { mateRows } from '../shared/mates'
+import { paneRows } from '../shared/pane-list'
 import type { CloseAnswer, PaneReply } from '../shared/pane'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import {
@@ -351,10 +351,10 @@ function confirmQuit(): void {
 
 const cliHandlers: Handlers = {
   ping: (_params, pty) => ({ pty }),
-  'mate.list': () => {
+  'pane.list': () => {
     const screen = parseScreen(lastScreen)
     if (!screen) throw new Error('the window has not reported its layout yet')
-    return { mates: mateRows(screen.workspaces, ptyStates.shown) }
+    return { panes: paneRows(screen.workspaces, ptyStates.state, process.env.SHELL) }
   },
   'canvas.put': canvasPut(mainWindow),
   ...monitor.handlers,

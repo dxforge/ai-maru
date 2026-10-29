@@ -11,7 +11,7 @@ import { isPtyId } from './pty'
 export const SCREEN_VERSION = 3
 
 /**
- * `cwd`·`title`·`git` 은 저장할 때 화면에 보이던 값이다. main 은 `maru mate list` 의 이름을 이 값으로 짓고, 다시 뜬
+ * `cwd`·`title`·`git` 은 저장할 때 화면에 보이던 값이다. main 은 `maru pane list` 의 이름을 이 값으로 짓고, 다시 뜬
  * 앱은 pty 의 상태가 오기 전까지 이 값을 보인다. `keep` 은 런처로 띄운 pane 에 붙는다. 앱은 그 pane 의 pty 를
  * `--keep` 으로 띄우고, 명령이 실패하면(`failedExit`) pane 을 남긴다.
  */

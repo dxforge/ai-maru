@@ -38,15 +38,15 @@ renderer 는 화면을 되살린 다음 tick 에 `pane:ready` 를 보낸다(`App
 
 구독을 여는 때는 셋이다. pane 의 pty 는 pty host 가 띄운 pty 에 붙은 뒤 main 에 `live` 를 보낼 때, job 의 pty 는 main 이 띄운 뒤, 재시작으로 남긴 pty 는 남은 pty 정리가 끝난 뒤다.
 
-renderer 는 상태를 main 에서만 받는다. 문서를 로드하면 `pty:states` 로 전체를 묻고, 그 뒤로 main 이 `pty:state` 로 보낸다(`app/src/renderer/src/pty/states.ts`). 화면에 보일 cwd 와 pane 이름은 `app/src/renderer/src/workspace/display.ts` 한 곳에서 고른다. xterm.js 는 화면만 그리고 OSC 7·제목을 읽지 않는다.
+renderer 는 상태를 main 에서만 받는다. 문서를 로드하면 `pty:states` 로 전체를 묻고, 그 뒤로 main 이 `pty:state` 로 보낸다(`app/src/renderer/src/pty/states.ts`). 화면에 보일 cwd 는 `app/src/renderer/src/workspace/display.ts` 가, pane 이름은 `app/src/shared/pane-name.ts` 가 고른다. xterm.js 는 화면만 그리고 OSC 7·제목을 읽지 않는다.
 
-`maru mate list` 는 main 이 renderer 에 묻지 않고 답한다. 레코드는 main 의 상태에서, workspace·cell 이름과 pane 의 cwd 는 renderer 가 마지막으로 보낸 화면(`lastScreen`)에서 읽는다. 그래서 화면 snapshot 은 pane 의 `git` 을 싣는다.
+`maru pane list` 는 main 이 renderer 에 묻지 않고 답한다. 레코드와 셸이 알린 명령은 main 의 상태에서, workspace·cell 이름과 pane 의 cwd·제목은 renderer 가 마지막으로 보낸 화면(`lastScreen`)에서 읽는다. 그래서 화면 snapshot 은 pane 의 `git` 을 싣는다. pane 이름은 사이드바와 같은 `paneName`(`app/src/shared/pane-name.ts`)으로 짓는다.
 
-OSC 7501 레코드는 pane 마다 여럿일 수 있다(루트와 하위). 사이드바·pane 헤더·cell 헤더와 `maru mate list` 가 보일 레코드 하나는 `shownRecord`(`app/src/shared/program-status.ts`)가 고른다. renderer 와 main 이 같은 함수를 써서 화면과 `maru mate list` 가 같은 상태를 보인다.
+OSC 7501 레코드는 pane 마다 여럿일 수 있다(루트와 하위). 사이드바·pane 헤더·cell 헤더와 `maru pane list` 가 보일 레코드 하나는 `shownRecord`(`app/src/shared/program-status.ts`)가 고른다. renderer 와 main 이 같은 함수를 써서 화면과 `maru pane list` 가 같은 상태를 보인다.
 
 `maru status` 는 앱 소켓을 쓰지 않고 터미널 장치(제어 터미널, 없으면 가장 가까운 조상 프로세스의 제어 터미널)에 OSC 7501 을 쓴다. 그래서 이 명령이 쓴 레코드도 터미널 안의 프로그램이 보낸 레코드처럼 maru-pty 가 해석하고 보관한다.
 
-`subscribe` 를 더하며 maru-pty 의 프로토콜 버전을 올리지 않았다. 올리면 앱을 다시 깔 때 남은 pty 가 모두 끝나기 때문이다. 그래서 `subscribe` 를 모르는 이전 maru-pty 의 pty 가 남을 수 있다. main 은 그 pty 를 `old` 로 renderer 에 알리고, renderer 는 그 pty 에 한해 attach 스트림의 `program_status` 를 레코드로 쓴다. 그 pty 의 cwd 는 되살린 값으로 보이고 제목은 비운다. main 은 그 pty 의 레코드를 모르므로 그 pty 는 `maru mate list` 에 나오지 않는다. 이 경로는 이전 maru-pty 의 pty 가 모두 끝나면 지운다.
+`subscribe` 를 더하며 maru-pty 의 프로토콜 버전을 올리지 않았다. 올리면 앱을 다시 깔 때 남은 pty 가 모두 끝나기 때문이다. 그래서 `subscribe` 를 모르는 이전 maru-pty 의 pty 가 남을 수 있다. main 은 그 pty 를 `old` 로 renderer 에 알리고, renderer 는 그 pty 에 한해 attach 스트림의 `program_status` 를 레코드로 쓴다. 그 pty 의 cwd 는 되살린 값으로 보이고 제목은 비운다. main 은 그 pty 의 레코드를 모르므로 `maru pane list` 는 그 pty 의 STATE·APP·MESSAGE 를 비우고, 이름도 레코드가 없는 pane 처럼 짓는다. 이 경로는 이전 maru-pty 의 pty 가 모두 끝나면 지운다.
 
 ## 시간 초과한 pane 요청은 창이 취소한다
 

@@ -1,4 +1,3 @@
-import { shownRecord, type ProgramStatusRecord } from '../shared/program-status'
 import type { PtyCommand, PtyState, PtyStateEntry } from '../shared/pty-state'
 import type { StateHandlers } from './pty'
 
@@ -63,11 +62,7 @@ export function createPtyStates(deps: PtyStatesDeps) {
     entries(): Record<string, PtyStateEntry> {
       return Object.fromEntries([...watches].flatMap(([id, w]) => (w.entry ? [[id, w.entry]] : [])))
     },
-    /** pane 의 상태로 보일 레코드. renderer 와 같은 `shownRecord` 로 골라야 `maru mate list` 가 사이드바와 같은 상태를 낸다(`docs/architecture.md`). */
-    shown(pty: string): ProgramStatusRecord | undefined {
-      const state = stateOf(pty)
-      return state && shownRecord(state.records)
-    },
+    state: stateOf,
     command(pty: string): PtyCommand | null {
       return stateOf(pty)?.command ?? null
     }
