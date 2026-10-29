@@ -4,6 +4,28 @@
       <stop offset="0" stop-color="#2b303b"/>
       <stop offset="1" stop-color="#1b1e24"/>
     </linearGradient>
+    <linearGradient id="sideFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.01"/>
+    </linearGradient>
+    <linearGradient id="sideStroke" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="0.15" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.03"/>
+    </linearGradient>
+    <linearGradient id="centerFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.015"/>
+    </linearGradient>
+    <linearGradient id="centerStroke" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="0.15" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.04"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
     <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur stdDeviation="10" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
@@ -18,19 +40,25 @@
   <rect width="1024" height="1024" fill="url(#bg)"/>
   <g transform="translate(100 100) scale(0.8046875)">
 
-  <!-- 양옆의 이웃 column 이다. 틀 밖에 두어 가장자리만 보인다. 아래쪽 path 는 헤더 띠다. -->
-  <g fill="#ffffff" fill-opacity="0.025" stroke="#ffffff" stroke-opacity="0.06" stroke-width="8">
-    <rect x="-470" y="150" width="580" height="724" rx="60"/>
-    <rect x="914" y="150" width="580" height="724" rx="60"/>
+  <!-- 양옆의 이웃 column 이다. 틀 밖에 두어 가장자리만 보인다. 아래쪽 path 는 헤더 띠다.
+       양옆 column 은 가운데 column 보다 어둡게 그린다. 가운데 column 이 얼굴이라 먼저 보여야 하기 때문이다. -->
+  <g fill="url(#sideFill)" stroke="url(#sideStroke)" stroke-width="8">
+    <rect x="-470" y="242" width="580" height="540" rx="60"/>
+    <rect x="914" y="242" width="580" height="540" rx="60"/>
   </g>
   <g fill="#000000" fill-opacity="0.14">
-    <path d="M-470 700 H110 V814 A60 60 0 0 1 50 874 H-410 A60 60 0 0 1 -470 814 Z"/>
-    <path d="M914 700 H1494 V814 A60 60 0 0 1 1434 874 H974 A60 60 0 0 1 914 814 Z"/>
+    <path d="M-470 608 H110 V722 A60 60 0 0 1 50 782 H-410 A60 60 0 0 1 -470 722 Z"/>
+    <path d="M914 608 H1494 V722 A60 60 0 0 1 1434 782 H974 A60 60 0 0 1 914 722 Z"/>
   </g>
 
   <!-- 가운데 column 이 얼굴이다. 헤더 띠는 아래쪽에 둔다. 앱의 cell 헤더 기본 위치(layout.header = "bottom")가 아래쪽이기 때문이다. -->
-  <rect x="150" y="150" width="724" height="724" rx="60" fill="#ffffff" fill-opacity="0.025" stroke="#ffffff" stroke-opacity="0.06" stroke-width="8"/>
+  <rect x="150" y="150" width="724" height="724" rx="60" fill="url(#centerFill)" stroke="url(#centerStroke)" stroke-width="8"/>
   <path d="M150 700 H874 V814 A60 60 0 0 1 814 874 H210 A60 60 0 0 1 150 814 Z" fill="#000000" fill-opacity="0.28"/>
+  </g>
+
+  <!-- 반사광은 눈과 프롬프트보다 먼저 그려 그 아래에 둔다. 위에 두면 눈과 프롬프트가 흐려지기 때문이다. -->
+  <rect x="100" y="100" width="824" height="824" fill="url(#sheen)"/>
+  <g transform="translate(100 100) scale(0.8046875)">
 
   <!-- 눈 -->
   <circle cx="360" cy="420" r="66" fill="#6fa8ff" filter="url(#glow)"/>
