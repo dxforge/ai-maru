@@ -2,17 +2,12 @@
 import { computed, ref, useTemplateRef, type DeepReadonly } from 'vue'
 import type { JobView } from '../../../shared/job'
 import { sidebarLabel, workspaceName, type SidebarLabel } from '../../../shared/names'
+import { paneName, type CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import { AGENT_ICONS, commandClass, commandIcon, ICONS, STATE_LABELS } from '../icons'
 import StatusIcon from './StatusIcon.vue'
 import { tildePath } from '../workspace/cwd'
-import {
-  commandLabel,
-  commandTail,
-  elapsed,
-  paneName,
-  type CommandView
-} from '../workspace/display'
+import { commandLabel, commandTail, elapsed } from '../workspace/display'
 import {
   dropAt,
   scrollStep,

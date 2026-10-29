@@ -205,7 +205,7 @@ export function createWorkspaces(
     if (!from) return
     const at = from.cells.findIndex((c) => c.key === key)
     if (to === 'new') {
-      // 새 workspace 를 만들지 않는 것은 `maru mate list` 의 workspace 열과 닫기 확인이 보는 workspace id 를 바꾸지 않기 위해서다.
+      // 새 workspace 를 만들지 않는 것은 닫기 확인이 보는 workspace id 를 바꾸지 않기 위해서다.
       if (from.cells.length === 1) return moveWorkspace(from.key, list.value.length)
       list.value.push(createWorkspace(detach(from, at)))
       return
@@ -371,7 +371,7 @@ export function createWorkspaces(
     else c.paneCols = cols
   }
 
-  // IPC 로 보내므로 JSON 으로 reactive proxy 를 벗긴다. `git` 은 main 이 `maru mate list` 의 이름을 짓는 데 쓴다.
+  // IPC 로 보내므로 JSON 으로 reactive proxy 를 벗긴다. `git` 은 main 이 `maru pane list` 의 이름을 짓는 데 쓴다.
   function snapshot(): WorkspacesScreen {
     const screen = { workspaces: list.value, selected: selectedKey.value }
     return JSON.parse(JSON.stringify(screen, (k, v) => (UNSAVED.has(k) ? undefined : v)))

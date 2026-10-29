@@ -25,13 +25,15 @@ export type CellNewRequest = Pick<PaneNewRequest, 'cwd' | 'command'> & {
 /** ⌘W·⇧⌘W 의 확인에 main 이 주는 답. `close` 면 닫는다. `asked` 는 main 이 확인 창을 띄웠거나, 다른 확인 창이 이미 떠 있었다는 뜻이다. */
 export type CloseAnswer = { close: boolean; asked: boolean }
 
-/** `mate.list` 의 한 줄이다. 각 값은 `maru` 의 모듈 doc(`core/crates/maru/src/main.rs`)이 정한다. */
-export type MateRow = {
+/** `pane.list` 의 한 줄이다. 각 값은 `maru` 의 모듈 doc(`core/crates/maru/src/main.rs`)이 정한다. */
+export type PaneRow = {
   pty: string
-  state: ProgramStatusState
+  state: ProgramStatusState | ''
   kind: ProgramStatusKind | null
+  app: string
   workspace: string
   cell: string
+  title: string
   dir: string
   message: string
 }

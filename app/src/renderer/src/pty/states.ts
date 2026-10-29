@@ -1,11 +1,11 @@
 import { shallowReactive } from 'vue'
+import { commandView, type CommandView } from '../../../shared/pane-name'
 import {
   shownRecord,
   type ProgramStatusRecord,
   type ProgramStatusState
 } from '../../../shared/program-status'
 import type { PtyState, PtyStateEntry } from '../../../shared/pty-state'
-import { commandView, type CommandView } from '../workspace/display'
 
 const NONE: readonly ProgramStatusRecord[] = []
 

@@ -49,22 +49,23 @@
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
 //! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `full`(bool, 선택) | `{"pty":<새 pty id>}` |
 //! | `pane.close` | `target`(pty id) | `null` |
+//! | `pane.list` | 없음 | `{"panes":[{"pty","state","kind","app","workspace","cell","title","dir","message"}…]}` |
 //! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택), `after`·`before`(pty id, 선택, 둘 중 하나만) | `{"pty":<새 pty id>}` |
 //! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"pty":<job 의 pty id>}` |
 //! | `job.list` | 없음 | `{"jobs":[{"pty","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
 //! | `job.read` | `target`(job 이름이나 pty id) | `{"text":<글자>}` |
 //! | `job.send` | `target`, `text`(문자열) | `null` |
 //! | `job.kill` | `target` | `null` |
-//! | `mate.list` | 없음 | `{"mates":[{"pty","state","kind","workspace","cell","dir","message"}…]}` |
 //! | `app.restart` | `kill_ptys`(bool, 선택) | `null` |
 //!
-//! `mate.list` 는 창의 모든 workspace·cell 에서, 루트 program_status 레코드의 `app` 이 `claude-code` 인
-//! pane 을 화면 순서(workspace → cell → pane)로 돌려준다. job 은 들지 않는다. `state`·`kind`·`message` 는
-//! 사이드바가 보이는 레코드(루트와 하위 가운데 앱이 고른 것)의 값이다. `state` 는 레코드의 상태
-//! (`idle`·`working`·`done`·`blocked`·`error`)다. `kind` 는 `permission`·`question`·`auth` 나 null 이다.
-//! `workspace`·`cell` 은 사이드바가 보이는 이름이다. `cell` 은 브랜치가 있으면 이름 뒤에 공백 하나를 두고
-//! 브랜치를 붙인다. `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면
-//! 빈 문자열이다. `message` 는 레코드의 `message` 이고, 비었으면 `title` 이다.
+//! `pane.list` 는 창의 모든 workspace·cell 의 pane 을 화면 순서(workspace → cell → pane)로 돌려준다.
+//! job 은 들지 않는다. `state`·`kind`·`message` 는 사이드바가 보이는 program_status 레코드(루트와 하위
+//! 가운데 앱이 고른 것)의 값이다. `state` 는 레코드의 상태(`idle`·`working`·`done`·`blocked`·`error`)다.
+//! `kind` 는 `permission`·`question`·`auth` 나 null 이다. `app` 은 루트 레코드의 `app` 이다. 보일 레코드가
+//! 없는 pane 은 `state`·`app`·`message` 가 빈 문자열이고 `kind` 는 null 이다. `workspace`·`title` 은
+//! 사이드바가 보이는 이름이다. `cell` 은 cell 헤더가 보이는 이름이다. 그 cell 의 focus 된 pane 의 저장소
+//! 이름이나 폴더 이름이고, 브랜치가 있으면 이름 뒤에 공백 하나를 두고 브랜치를 붙인다.
+//! `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면 빈 문자열이다.
 //!
 //! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
 //! `id` 가 없으면 앱이 새 id 를 만든다. id 는 형식 없는 문자열이다.
@@ -202,7 +203,7 @@ enum Command {
         #[command(subcommand)]
         command: InboxCommand,
     },
-    /// Open panes next to this terminal and close panes in this window.
+    /// Open panes next to this terminal, and list and close panes in this window.
     Pane {
         #[command(subcommand)]
         command: PaneCommand,
@@ -216,11 +217,6 @@ enum Command {
     Job {
         #[command(subcommand)]
         command: JobCommand,
-    },
-    /// See the Claude Code sessions running in this window's panes.
-    Mate {
-        #[command(subcommand)]
-        command: MateCommand,
     },
     /// Control the app.
     App {
@@ -301,6 +297,17 @@ enum PaneCommand {
         /// Pty id of the pane to close, e.g. p-1a2b3c4d.
         pty: String,
     },
+    /// List the panes in every workspace and cell, in screen order.
+    ///
+    /// Prints tab-separated columns with a header: PTY, STATE, APP, WORKSPACE, CELL, TITLE,
+    /// DIR, MESSAGE. STATE, APP and MESSAGE come from the program status the pane's program
+    /// reported, and are empty when it reported none. STATE is idle, working, done, blocked or
+    /// error; a blocked state with a reason reads e.g. blocked(permission). APP is the program,
+    /// e.g. claude-code. WORKSPACE and TITLE are the names shown in the sidebar. CELL is the
+    /// name shown in the cell header: the repository and branch, or the folder, of the cell's
+    /// focused pane. DIR is the pane's directory. Control characters in a value, such as tabs
+    /// and newlines, become spaces, and an unknown value is an empty column.
+    List,
 }
 
 #[derive(Subcommand)]
@@ -375,18 +382,6 @@ enum JobCommand {
         /// Job name or pty id.
         job: String,
     },
-}
-
-#[derive(Subcommand)]
-enum MateCommand {
-    /// List the panes running claude, in every workspace and cell, in screen order.
-    ///
-    /// Prints tab-separated columns with a header: PTY, STATE, WORKSPACE, CELL, DIR, MESSAGE.
-    /// STATE is idle, working, done, blocked or error; a blocked state with a reason reads
-    /// e.g. blocked(permission). WORKSPACE and CELL are the names shown in the sidebar. DIR
-    /// is the pane's directory. MESSAGE is what claude last reported. Control characters in a
-    /// value, such as tabs and newlines, become spaces, and an unknown value is an empty column.
-    List,
 }
 
 #[derive(Subcommand)]
@@ -529,6 +524,7 @@ fn run(command: Command) -> Result<()> {
             PaneCommand::Close { pty } => {
                 call(&target()?, "pane.close", target_params(pty))?;
             }
+            PaneCommand::List => pane_list()?,
         },
         Command::Cell {
             command:
@@ -568,9 +564,6 @@ fn run(command: Command) -> Result<()> {
                 call(&target()?, "job.kill", target_params(job))?;
             }
         },
-        Command::Mate {
-            command: MateCommand::List,
-        } => mate_list()?,
         Command::App {
             command: AppCommand::Restart { kill_ptys },
         } => {
@@ -1235,12 +1228,12 @@ fn job_row(job: &Value) -> Result<[String; 4]> {
     Ok([pty.to_owned(), name.to_owned(), state, command])
 }
 
-fn mate_list() -> Result<()> {
+fn pane_list() -> Result<()> {
     let home = env_var("HOME");
-    let Some(rows) = list_rows("mate.list", "mates", |m| mate_row(m, home.as_deref()))? else {
+    let Some(rows) = list_rows("pane.list", "panes", |p| pane_row(p, home.as_deref()))? else {
         return Ok(());
     };
-    let mut text = String::from("PTY\tSTATE\tWORKSPACE\tCELL\tDIR\tMESSAGE\n");
+    let mut text = String::from("PTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE\n");
     for row in rows {
         text.push_str(&row.join("\t"));
         text.push('\n');
@@ -1252,10 +1245,10 @@ fn mate_list() -> Result<()> {
     }
 }
 
-fn mate_row(mate: &Value, home: Option<&str>) -> Result<[String; 6]> {
-    let fail = || anyhow!("the app answered with a mate it cannot print: {mate}");
-    let text = |key: &str| mate[key].as_str().ok_or_else(fail);
-    let state = match (text("state")?, &mate["kind"]) {
+fn pane_row(pane: &Value, home: Option<&str>) -> Result<[String; 8]> {
+    let fail = || anyhow!("the app answered with a pane it cannot print: {pane}");
+    let text = |key: &str| pane[key].as_str().ok_or_else(fail);
+    let state = match (text("state")?, &pane["kind"]) {
         ("blocked", Value::String(kind)) => format!("blocked({kind})"),
         (state, Value::Null | Value::String(_)) => state.to_owned(),
         _ => return Err(fail()),
@@ -1263,8 +1256,10 @@ fn mate_row(mate: &Value, home: Option<&str>) -> Result<[String; 6]> {
     let row = [
         text("pty")?.to_owned(),
         state,
+        text("app")?.to_owned(),
         text("workspace")?.to_owned(),
         text("cell")?.to_owned(),
+        text("title")?.to_owned(),
         tilde(text("dir")?, home),
         text("message")?.to_owned(),
     ];

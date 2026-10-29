@@ -58,25 +58,8 @@ describe('createPtyStates', () => {
     t.last().on.state(s)
     expect(t.emitted).toEqual([['p-1', { state: s }]])
     expect(t.states.entries()).toEqual({ 'p-1': { state: s } })
-    expect(t.states.shown('p-1')).toEqual(root)
-    expect(t.states.shown('p-2')).toBeUndefined()
-  })
-
-  it('루트와 하위 가운데 사이드바와 같은 레코드를 고른다', () => {
-    const t = setup()
-    t.states.watch('p-1')
-    const root = {
-      id: '',
-      state: 'done',
-      kind: null,
-      progress: null,
-      app: 'claude-code',
-      title: '',
-      message: ''
-    } as const
-    const ask = { ...root, id: 'ask', state: 'blocked', kind: 'question', app: '' } as const
-    t.last().on.state(state({ records: [root, ask] }))
-    expect(t.states.shown('p-1')).toEqual({ ...ask, app: 'claude-code' })
+    expect(t.states.state('p-1')).toEqual(s)
+    expect(t.states.state('p-2')).toBeUndefined()
   })
 
   it('상태를 받은 구독이 끊기고 pty 가 살아 있으면 마지막 상태를 둔 채 다시 구독한다', async () => {
@@ -131,7 +114,7 @@ describe('createPtyStates', () => {
     t.last().on.old()
     expect(t.emitted).toEqual([['p-1', { old: true }]])
     expect(t.states.entries()).toEqual({ 'p-1': { old: true } })
-    expect(t.states.shown('p-1')).toBeUndefined()
+    expect(t.states.state('p-1')).toBeUndefined()
   })
 
   it('forget 은 구독을 닫고 상태를 지우며, 그 뒤에 온 것은 버린다', async () => {
