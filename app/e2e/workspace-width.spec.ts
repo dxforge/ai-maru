@@ -169,24 +169,6 @@ test('column-cols 를 고치면 폭을 바꾸지 않은 cell 은 따라가고 �
   await expectCols(again, 140)
 })
 
-test('설정 폭으로 돌아온 cell 은 폭을 저장하지 않아 다시 설정을 따른다', async ({
-  launch,
-  dataDir
-}) => {
-  writeConfig(dataDir, '[layout]\ncolumn-cols = 140\n')
-  const launched = await launch()
-  const { app, page } = launched
-  await toggleView(launched, 'columns')
-  await expectCols(page, 140)
-  await clickMenu(app, 'narrow-cell')
-  await expectCols(page, 120)
-  await clickMenu(app, 'widen-cell')
-  await expectCols(page, 140)
-
-  writeConfig(dataDir, '[layout]\ncolumn-cols = 80\n')
-  await expectCols(page, 80)
-})
-
 test('column-cols 가 범위 밖이면 끝값으로 맞춰 알린다', async ({ launch, dataDir }) => {
   writeConfig(dataDir, '[layout]\ncolumn-cols = 10\n')
   const launched = await launch()

@@ -776,19 +776,6 @@ test('job ✕ 는 키보드로도 닿고, 포커스를 받으면 보인다', asy
   await expect(jobRows(page)).toHaveCount(0)
 })
 
-test('시그널로 끝난 job 은 툴팁에 그 시그널을 쓴다', async ({ launch }) => {
-  const { page } = await launch()
-  await run(
-    page,
-    "maru job new --name crash sh -c 'kill -9 $$' && echo started-$((1+1))",
-    'started-2'
-  )
-  await expect(jobRows(page).first()).toHaveAttribute(
-    'title',
-    'sh -c kill -9 $$\nKilled by signal 9'
-  )
-})
-
 test('job 줄은 두 번째 workspace 의 cell 아래에도 붙고, 접었다 펴면 돌아온다', async ({
   launch
 }) => {

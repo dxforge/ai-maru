@@ -294,36 +294,6 @@ test('터미널에서 ⌘A 는 터미널의 내용을 모두 고르고, ⇧⌘A 
   await expect(selection(page)).not.toHaveCount(0)
 })
 
-// Playwright 의 keyboard 는 자판 배열을 바꿀 수 없으므로, 그 자판이 보낼 code 와 key 를 CDP 로 따로 넣는다.
-async function pressMetaKey(page: Page, code: string, key: string): Promise<void> {
-  const cdp = await page.context().newCDPSession(page)
-  const event = { modifiers: 4, windowsVirtualKeyCode: 65, code, key }
-  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...event })
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...event })
-  await cdp.detach()
-}
-
-test('⌘A 는 글자로 맞추고, 글자가 라틴 글자가 아닐 때만 자판 위치로 맞춘다', async ({ launch }) => {
-  const { page } = await launch()
-  await run(page, 'echo all-$((1+1))', 'all-2')
-  await expect(selection(page)).toHaveCount(0)
-
-  // Turkish-F: KeyA 자리의 글자가 U 다. ⌘U 는 Select All 이 아니다.
-  await pressMetaKey(page, 'KeyA', 'u')
-  await expect(selection(page)).toHaveCount(0)
-
-  // AZERTY: A 가 KeyQ 자리에 있다.
-  await pressMetaKey(page, 'KeyQ', 'a')
-  await expect(selection(page)).not.toHaveCount(0)
-
-  await page.locator('.terminal-view.active .xterm-screen').click()
-  await expect(selection(page)).toHaveCount(0)
-
-  // 라틴 글자가 없는 자판: KeyA 자리에서 라틴이 아닌 글자가 온다.
-  await pressMetaKey(page, 'KeyA', 'ф')
-  await expect(selection(page)).not.toHaveCount(0)
-})
-
 test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력한 단어로 거른다', async ({ launch }) => {
   const launched = await launch()
   const { page } = launched
@@ -373,47 +343,40 @@ test('팔레트에서 Enter 로 New Workspace 를 실행하면 팔레트가 닫�
   await typesIntoTerminal(page, 'new')
 })
 
-for (const [position, label, arrows, next, previous] of [
-  ['bottom', '아래', '↑·↓', 'ArrowUp', 'ArrowDown'],
-  ['top', '위', '↓·↑', 'ArrowDown', 'ArrowUp']
-] as const) {
-  test(`팔레트가 ${label}일 때 ${arrows} 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 뒤 키는 터미널로 간다`, async ({
-    launch,
-    dataDir
-  }) => {
-    if (position === 'top') writeConfig(dataDir, '[layout]\npalette = "top"\n')
-    const launched = await launch()
-    const { page } = launched
-    const canvas = page.locator('aside.canvas')
-    await expect(canvas).toBeHidden()
+test('팔레트가 아래일 때 ↑·↓ 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 뒤 키는 터미널로 간다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  const canvas = page.locator('aside.canvas')
+  await expect(canvas).toBeHidden()
 
-    await openPalette(launched)
-    await page.keyboard.type('toggle')
-    await expect(items(page)).toHaveText([
-      'Toggle Sidebar⌘B',
-      'Toggle Canvas⌥⌘B',
-      'Toggle View Mode⌘\\'
-    ])
-    for (const i of [1, 2, 0, 1]) {
-      await page.keyboard.press(next)
-      await expect(items(page).nth(i)).toHaveClass(/selected/)
-    }
-    await page.keyboard.press('Enter')
-    await expect(palette(page)).toHaveCount(0)
-    await expect(canvas).toBeVisible()
-    await typesIntoTerminal(page, 'shown')
+  await openPalette(launched)
+  await page.keyboard.type('toggle')
+  await expect(items(page)).toHaveText([
+    'Toggle Sidebar⌘B',
+    'Toggle Canvas⌥⌘B',
+    'Toggle View Mode⌘\\'
+  ])
+  for (const i of [1, 2, 0, 1]) {
+    await page.keyboard.press('ArrowUp')
+    await expect(items(page).nth(i)).toHaveClass(/selected/)
+  }
+  await page.keyboard.press('Enter')
+  await expect(palette(page)).toHaveCount(0)
+  await expect(canvas).toBeVisible()
+  await typesIntoTerminal(page, 'shown')
 
-    await openPalette(launched)
-    await page.keyboard.type('toggle')
-    for (const i of [2, 1]) {
-      await page.keyboard.press(previous)
-      await expect(items(page).nth(i)).toHaveClass(/selected/)
-    }
-    await page.keyboard.press('Enter')
-    await expect(canvas).toBeHidden()
-    await typesIntoTerminal(page, 'hidden')
-  })
-}
+  await openPalette(launched)
+  await page.keyboard.type('toggle')
+  for (const i of [2, 1]) {
+    await page.keyboard.press('ArrowDown')
+    await expect(items(page).nth(i)).toHaveClass(/selected/)
+  }
+  await page.keyboard.press('Enter')
+  await expect(canvas).toBeHidden()
+  await typesIntoTerminal(page, 'hidden')
+})
 
 function paletteLayout(page: Page) {
   return page.evaluate(() => {

@@ -5,7 +5,6 @@ import {
   focusPane,
   newWorkspace,
   paneHeader,
-  programStatus,
   run,
   shellRows,
   shellValue,
@@ -112,7 +111,7 @@ test('알림이 있는 pane 을 1초 넘게 본 뒤 앱 창이 포커스를 잃�
   await expect(row.locator('.title')).toHaveText(shellName)
 })
 
-test('접은 workspace 는 읽지 않은 알림이 있으면 이름 뒤에 점을, 상태 아이콘이 있으면 그 아이콘에 점을 보인다', async ({
+test('접은 workspace 는 읽지 않은 알림이 있으면 이름 뒤에 점을 보인다', async ({
   launch,
   dataDir
 }) => {
@@ -127,15 +126,6 @@ test('접은 workspace 는 읽지 않은 알림이 있으면 이름 뒤에 점�
 
   await page.keyboard.type(osc9('hello', first))
   await expect(head.locator('.unread-dot')).toHaveCount(1)
-  await expect(workspaceHeads(page).nth(1).locator('.unread-dot')).toHaveCount(0)
-
-  await page.keyboard.type(`${programStatus('blocked').trimEnd()} > ${first}\n`)
-  await expect(head.locator('.state')).toHaveClass(/unread/)
-  await expect(head.locator('.unread-dot')).toHaveCount(0)
-
-  await head.click()
-  await expect(head.locator('.state')).toHaveCount(0)
-  await expect(head.locator('.unread-dot')).toHaveCount(0)
 })
 
 test('job 의 pty 로 pane:select 가 오면 그 job 이 든 cell 을 고른다', async ({

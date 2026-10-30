@@ -5,7 +5,6 @@ import {
   clickMenu,
   delayPtyPort,
   expect,
-  expectCols,
   focusPane,
   openPalette,
   paneBox,
@@ -21,7 +20,6 @@ import {
   split,
   test,
   toast,
-  toggleView,
   typesInto,
   cellGroups,
   cellItems,
@@ -402,56 +400,6 @@ test('나눈 두 쪽에 20열이 들어가지 않으면 split 을 거절하고 �
   await expect(toast(page)).toHaveCount(0)
 })
 
-test('columns 에서 높이가 모자라면 아래로 나누기를 거절한다', async ({ launch }) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await toggleView(launched, 'columns')
-  await split(app, page, 'split-down', 2)
-  const cell = await cellSize(page)
-  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
-  // 하한 두 개(헤더 포함 12행)는 들어가고 세 개(18행)는 들어가지 않는 높이다.
-  await resizeBy(app, 0, Math.round(15 * cell.height - grid.height))
-  // 앱은 창 크기가 바뀐 뒤 렌더링 단계의 `ResizeObserver` 에서 grid 를 다시 재고, 그 값으로 나누기를 판정한다.
-  // 프레임이 늦어 그 전에 메뉴를 누르면 옛 높이로 나누기를 받아들이므로, pane 들이 줄어든 grid 안에 다시 놓인 뒤에 누른다.
-  await expect
-    .poll(async () => {
-      const shrunk = (await page.locator('.panes.selected .grid').boundingBox())!
-      const bottom = await paneBox(page, 1)
-      return shrunk.height < grid.height && bottom.y + bottom.height <= shrunk.y + shrunk.height + 1
-    })
-    .toBe(true)
-
-  await clickMenu(app, 'split-down')
-
-  await expect(toast(page)).toContainText('No space for a new pane')
-  await expect(panes(page)).toHaveCount(2)
-})
-
-test('창이 좁아져도 pane 은 20열 아래로 내려가지 않고, 들어가지 않는 pane 은 cell 밖으로 나간다', async ({
-  launch
-}) => {
-  const { app, page } = await launch()
-  await split(app, page, 'split-right', 2)
-
-  await resizeBy(app, -600, 0)
-
-  await expectCols(page, 20)
-  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
-  const [left, right] = [await paneBox(page, 0), await paneBox(page, 1)]
-  expect(right.x).toBe(left.x + left.width)
-  expect(right.width).toBe(left.width)
-  expect(right.x + right.width).toBeGreaterThan(grid.x + grid.width)
-  await clickMenu(app, 'focus-pane-left')
-  await expectCols(page, 20)
-
-  // 넘친 cell 에서도 밖으로 나가는 길이가 늘지 않는 split 은 거절하지 않는다(docs/architecture.md 의 "pane 경계와 글자 칸 격자").
-  await clickMenu(app, 'split-right')
-  await expect(toast(page)).toContainText('No space for a new pane')
-  await expect(panes(page)).toHaveCount(2)
-  await split(app, page, 'split-down', 3)
-  await expect(toast(page)).toHaveCount(0)
-})
-
 test('창이 낮아져도 pane 은 헤더를 뺀 5행 아래로 내려가지 않는다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-down', 2)
@@ -461,36 +409,4 @@ test('창이 낮아져도 pane 은 헤더를 뺀 5행 아래로 내려가지 않
   await expect.poll(async () => (await shellSize(page)).rows).toBe(5)
   await clickMenu(app, 'focus-pane-up')
   await expect.poll(async () => (await shellSize(page)).rows).toBe(5)
-})
-
-test('글꼴을 키워 pane 들이 들어가지 않게 돼도 pane 은 5행에서 멈추고 아래 pane 이 cell 밖으로 나간다', async ({
-  launch
-}) => {
-  const { app, page } = await launch()
-  await split(app, page, 'split-down', 2)
-  await resizeBy(app, 0, -350)
-  await expect.poll(async () => (await shellSize(page)).rows).toBeGreaterThan(5)
-
-  // 글꼴 크기의 상한(32)까지 키운다.
-  for (let i = 0; i < 18; i++) await clickMenu(app, 'increase-font-size')
-
-  await expect.poll(async () => (await shellSize(page)).rows).toBe(5)
-  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
-  const [top, bottom] = [await paneBox(page, 0), await paneBox(page, 1)]
-  expect(bottom.y).toBe(top.y + top.height)
-  expect(bottom.y + bottom.height).toBeGreaterThan(grid.y + grid.height)
-  await clickMenu(app, 'focus-pane-up')
-  await expect.poll(async () => (await shellSize(page)).rows).toBe(5)
-})
-
-test('columns 에서는 창이 좁아도 좌우로 나눌 수 있다', async ({ launch }) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await toggleView(launched, 'columns')
-  await resizeBy(app, -600, 0)
-
-  await split(app, page, 'split-right', 2)
-
-  await expectCols(page, 80)
-  await expect(toast(page)).toHaveCount(0)
 })

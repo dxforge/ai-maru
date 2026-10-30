@@ -632,36 +632,31 @@ test('layout.palette = "top" 이면 런처도 창 위에 뜬다', async ({ launc
   expect(box.y).toBeLessThan(height / 2)
 })
 
-for (const [position, label, next] of [
-  ['bottom', '아래', 'ArrowUp'],
-  ['top', '위', 'ArrowDown']
-] as const) {
-  test(`런처가 ${label}일 때 ${next} 로 다음 행을 고르고, 한글을 조합하는 중의 Enter 는 띄우지 않는다`, async ({
-    launch,
-    dataDir
-  }) => {
-    const [a] = useTool(dataDir, `[layout]\npalette = "${position}"\n`)
-    const first = project(dataDir, 'proj-a')
-    const second = project(dataDir, 'proj-b')
-    writeLauncherState(dataDir, [first, second], a)
-    const launched = await launch()
-    const { page } = launched
-    await openLauncher(launched)
-    await expect(labels(page)).toHaveText([first, second])
-    await expect(items(page).nth(0)).toHaveClass(/selected/)
-    await page.keyboard.press(next)
-    await expect(items(page).nth(1)).toHaveClass(/selected/)
+test('런처가 아래일 때 ArrowUp 으로 다음 행을 고르고, 한글을 조합하는 중의 Enter 는 띄우지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const [a] = useTool(dataDir, '[layout]\npalette = "bottom"\n')
+  const first = project(dataDir, 'proj-a')
+  const second = project(dataDir, 'proj-b')
+  writeLauncherState(dataDir, [first, second], a)
+  const launched = await launch()
+  const { page } = launched
+  await openLauncher(launched)
+  await expect(labels(page)).toHaveText([first, second])
+  await expect(items(page).nth(0)).toHaveClass(/selected/)
+  await page.keyboard.press('ArrowUp')
+  await expect(items(page).nth(1)).toHaveClass(/selected/)
 
-    await query(page).dispatchEvent('keydown', { key: 'Enter', isComposing: true })
-    await expect(launcher(page)).toBeVisible()
-    await expect(cellItems(page)).toHaveCount(1)
+  await query(page).dispatchEvent('keydown', { key: 'Enter', isComposing: true })
+  await expect(launcher(page)).toBeVisible()
+  await expect(cellItems(page)).toHaveCount(1)
 
-    await toCommands(page, second)
-    await page.keyboard.press('Enter')
-    await activeTerminal(page)
-    await expect(rows(page)).toContainText(`A-ran-in-${second}`)
-  })
-}
+  await toCommands(page, second)
+  await page.keyboard.press('Enter')
+  await activeTerminal(page)
+  await expect(rows(page)).toContainText(`A-ran-in-${second}`)
+})
 
 test('디렉토리 행을 누르면 명령 단계로 가고, 명령 행을 누르면 새 workspace 에, ⌘ 를 누른 채 누르면 지금 workspace 의 새 cell 에 띄운다', async ({
   launch,

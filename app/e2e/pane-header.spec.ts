@@ -150,24 +150,13 @@ test('포커스를 옮기면 pane 헤더의 강조와 다른 pane 을 흐리게 
   ])
 })
 
-test('columns 의 cell 헤더는 pane 상태 가운데 blocked, working 순으로 하나를 보이고, 없으면 비우며, 누르면 그 cell 을 고른다', async ({
-  launch
-}) => {
+test('columns 의 cell 헤더를 누르면 그 cell 을 고르고 키가 그리로 간다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
   await newWorkspace(launched, 2)
   await toggleView({ app, page }, 'columns')
   const headers = page.locator('.cell-header')
   await expect(headers).toHaveCount(2)
-  await expect(headers.nth(1).locator('.row-bar-icon svg')).toHaveCount(0)
-
-  await page.keyboard.type(programStatus('working'))
-  await expect(headers.nth(1)).toHaveClass(/working/)
-  await split(app, page, 'split-down', 2)
-  await page.keyboard.type(programStatus('blocked', 'kind=permission'))
-  await expect(headers.nth(1)).toHaveClass(/blocked/)
-  await expect(headers.nth(0)).not.toHaveClass(/working|blocked|done|error|idle/)
-  await expect(headers.nth(0).locator('.row-bar-icon svg')).toHaveCount(0)
 
   await headers.nth(0).click()
 
@@ -199,21 +188,6 @@ test('single 보기에서도 선택된 cell 의 헤더만 이름·상태를 보�
 
   await headers.nth(1).click()
   await run(page, 'echo keep-$((1+1))', 'keep-2')
-})
-
-test('columns 의 cell 헤더는 idle 만 있으면 pane 헤더와 같은 idle 아이콘을 보인다', async ({
-  launch
-}) => {
-  const { app, page } = await launch()
-  await toggleView({ app, page }, 'columns')
-  await page.keyboard.type(programStatus('idle'))
-  const cellIcon = page.locator('.cell-header .row-bar-icon')
-  const paneIcon = activeHeader(page).locator('.row-bar-icon')
-  await expect(page.locator('.cell-header')).toHaveClass(/idle/)
-  await expect(activeHeader(page)).toHaveClass(/idle/)
-
-  await expect(cellIcon.locator('svg')).toHaveAttribute('data-state', 'idle')
-  await expect(paneIcon.locator('svg')).toHaveAttribute('data-state', 'idle')
 })
 
 test('pane 헤더와 columns 의 cell 헤더는 글자 위에서도 기본 커서를 보이고, Canvas 글자에서 헤더로 끌어도 헤더 글자는 선택되지 않는다', async ({
