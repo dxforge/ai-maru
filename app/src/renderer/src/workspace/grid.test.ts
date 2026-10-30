@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { canSplit, NO_MIN, overflow, required, snapRects, type Box, type Size } from './grid'
-import { splitPane, splitRoot, type Layout } from './layout'
+import { panes, splitPane, splitRoot, type Layout } from './layout'
 
 const cell = { width: 8, height: 18 }
+const twoRight: Layout = { split: 'right', first: { pane: 1 }, second: { pane: 2 } }
+const twoThree: Layout = { split: 'right', first: { pane: 2 }, second: { pane: 3 } }
 
 describe('snapRects', () => {
   it('pane 하나는 cell 을 그대로 채운다', () => {
@@ -87,6 +89,17 @@ describe('snapRects', () => {
     ])
   })
 
+  it('나누어떨어지지 않는 글자 칸은 나눔 트리 모양과 상관없이 같은 pane 이 받는다', () => {
+    const nested: Layout = { split: 'right', first: { pane: 1 }, second: twoThree }
+    const grouped: Layout = { split: 'right', first: twoRight, second: { pane: 3 } }
+    const widths = (layout: Layout) =>
+      [...snapRects(layout, { width: 10 * 8, height: 700 }, cell).values()]
+        .sort((a, b) => a.left - b.left)
+        .map((b) => b.width / 8)
+    expect(widths(nested)).toEqual([3, 4, 3])
+    expect(widths(grouped)).toEqual([3, 4, 3])
+  })
+
   it('columns 는 늘어선 pane 마다 같은 글자 칸 수를 준다', () => {
     const layout: Layout = {
       split: 'right',
@@ -133,8 +146,6 @@ describe('snapRects', () => {
 
   describe('하한', () => {
     const min = { width: 23 * 8, height: 6 * 18 }
-    const twoRight: Layout = { split: 'right', first: { pane: 1 }, second: { pane: 2 } }
-    const twoThree: Layout = { split: 'right', first: { pane: 2 }, second: { pane: 3 } }
     const threeRight: Layout = { split: 'right', first: { pane: 1 }, second: twoThree }
     const twoDown: Layout = { split: 'down', first: { pane: 1 }, second: { pane: 2 } }
 
@@ -181,6 +192,105 @@ describe('snapRects', () => {
           [8, 6]
         ]
       )
+    })
+
+    it('같은 방향으로 늘어선 pane 들은 나눔 트리 모양과 상관없이 하한이 큰 항목을 뺀 나머지 길이를 고르게 받는다', () => {
+      const block: Layout = {
+        split: 'down',
+        first: { pane: 3 },
+        second: { split: 'right', first: { pane: 4 }, second: { pane: 5 } }
+      }
+      const nested: Layout = {
+        split: 'right',
+        first: { pane: 1 },
+        second: { split: 'right', first: { pane: 2 }, second: block }
+      }
+      const grouped: Layout = { split: 'right', first: twoRight, second: block }
+      const columns = (layout: Layout) => {
+        const boxes = snapRects(layout, { width: 100 * 8, height: 700 }, cell, 'even', min)
+        return [1, 2, 3].map((p) => [boxes.get(p)!.left / 8, boxes.get(p)!.width / 8])
+      }
+      const expected = [
+        [0, 27],
+        [27, 27],
+        [54, 46]
+      ]
+      expect(columns(nested)).toEqual(expected)
+      expect(columns(grouped)).toEqual(expected)
+
+      const stack: Layout = {
+        split: 'down',
+        first: { pane: 1 },
+        second: {
+          split: 'down',
+          first: { pane: 2 },
+          second: {
+            split: 'right',
+            first: { pane: 3 },
+            second: { split: 'down', first: { pane: 4 }, second: { pane: 5 } }
+          }
+        }
+      }
+      const rows = snapRects(stack, { width: 800, height: 30 * 18 }, cell, 'even', min)
+      expect([1, 2, 3].map((p) => [rows.get(p)!.top / 18, rows.get(p)!.height / 18])).toEqual([
+        [0, 9],
+        [9, 9],
+        [18, 12]
+      ])
+    })
+
+    it('하한을 받은 항목이 줄 가운데나 끝에 있어도 경계는 글자 칸 배수에 있고, 남는 px 는 마지막 항목이 갖는다', () => {
+      const unit = { width: 8.5, height: 18 }
+      const wide = { width: 23 * 8.5, height: 6 * 18 }
+      const block: Layout = {
+        split: 'down',
+        first: { pane: 3 },
+        second: { split: 'right', first: { pane: 4 }, second: { pane: 5 } }
+      }
+      const size = { width: 100 * 8.5 + 3, height: 700 }
+      const spans = (layout: Layout, order: number[]) => {
+        const boxes = snapRects(layout, size, unit, 'even', wide)
+        return order.map((p) => [boxes.get(p)!.left, boxes.get(p)!.width])
+      }
+      const middle: Layout = {
+        split: 'right',
+        first: { pane: 1 },
+        second: { split: 'right', first: block, second: { pane: 2 } }
+      }
+      expect(spans(middle, [1, 3, 2])).toEqual([
+        [0, 27 * 8.5],
+        [27 * 8.5, 46 * 8.5],
+        [73 * 8.5, 27 * 8.5 + 3]
+      ])
+      const last: Layout = { split: 'right', first: twoRight, second: block }
+      expect(spans(last, [1, 2, 3])).toEqual([
+        [0, 27 * 8.5],
+        [27 * 8.5, 27 * 8.5],
+        [54 * 8.5, 46 * 8.5 + 3]
+      ])
+    })
+
+    it('하한이 큰 항목에 하한을 준 뒤 남은 몫이 다른 항목의 하한보다 작아지면 그 항목에도 하한을 준다', () => {
+      // 하한은 10 칸이고, 항목은 하한 2·6·1·1 개의 폭이 필요하다. 처음 고른 몫 25 는 두 번째 항목(60)에만 모자란다.
+      // 두 번째에 60 을 주고 남은 40 칸의 고른 몫 13.3 은 첫 번째 항목(20)에도 모자라므로 첫 번째도 20 을 받는다.
+      // 남은 20 칸은 나머지 두 항목이 10 씩 받는다.
+      const narrow = { width: 10 * 8, height: 6 * 18 }
+      let next = 1
+      const row = (n: number): Layout =>
+        n === 1 ? { pane: next++ } : { split: 'right', first: row(1), second: row(n - 1) }
+      const block = (n: number): Layout => ({
+        split: 'down',
+        first: { pane: next++ },
+        second: row(n)
+      })
+      const items = [block(2), block(6), { pane: next++ }, { pane: next++ }]
+      const layout = items.reduceRight((rest, item): Layout => ({
+        split: 'right',
+        first: item,
+        second: rest
+      }))
+      const boxes = snapRects(layout, { width: 100 * 8, height: 700 }, cell, 'even', narrow)
+      expect(items.map((item) => boxes.get(panes(item)[0])!.width / 8)).toEqual([20, 60, 10, 10])
     })
 
     it('양쪽에 하한을 줄 자리가 없으면 각자 하한을 받고 뒤쪽이 cell 밖으로 나간다', () => {
