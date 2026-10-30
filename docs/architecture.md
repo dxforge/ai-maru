@@ -84,7 +84,7 @@ pane 헤더는 터미널 한 행이다. 높이는 `--row` 이고 터미널과 �
 
 경계선은 자리를 차지하지 않는다. 1px 라도 자리를 차지하면 그 뒤 pane 이 격자에서 밀리기 때문이다. 좌우 pane 의 경계선은 오른쪽 pane 의 터미널 왼쪽 여백 위에 겹쳐 그리고, 위아래 pane 은 헤더가 아래면 위 pane 의 헤더가, 위면 아래 pane 의 헤더가 경계가 된다.
 
-pane 은 터미널 20열 × 5행(`PANE_MIN`(`app/src/shared/layout.ts`)) 아래로 내려가지 않는다. 열은 왼쪽 여백·스크롤바를 뺀 터미널 열, 행은 헤더를 뺀 터미널 행이다. `snapRects`(`grid.ts`)는 나눈 두 쪽에 각각 그 쪽 pane 들이 필요한 크기(`required`)를 준다. 창·사이드바·글꼴 크기가 바뀌어 cell 이 그 크기보다 작아지면 뒤쪽 pane 이 cell 끝 밖으로 나가 잘린다. cell 안에서 스크롤하지 않는다. 나눠서 밖으로 나가는 길이가 늘어나는 split 은 `canSplit` 이 거절한다. 단축키·메뉴는 토스트를 띄우고, `maru pane new` 는 `no_space` 오류를 받는다. columns 보기의 좌우 split 은 cell 이 그만큼 넓어지므로 거절하지 않는다.
+pane 은 터미널 20열 × 5행(`PANE_MIN`(`app/src/shared/layout.ts`)) 아래로 내려가지 않는다. 열은 왼쪽 여백·스크롤바를 뺀 터미널 열, 행은 헤더를 뺀 터미널 행이다. `snapRects`(`grid.ts`)는 같은 방향으로 늘어선 항목(pane 하나, 또는 다른 방향으로 나눈 부분 하나)을 한 번에 나눈다. 고르게 나눈 몫보다 필요한 크기(`required`)가 큰 항목은 그 크기를 먼저 받고, 나머지 항목은 남은 길이를 고르게 나눠 받는다. columns 보기의 좌우 폭은 고르게 나누지 않고 `columnCount` 비율로 나눈다. 창·사이드바·글꼴 크기가 바뀌어 cell 이 pane 들이 필요한 크기보다 작아지면 뒤쪽 pane 이 cell 끝 밖으로 나가 잘린다. cell 안에서 스크롤하지 않는다. 나눠서 밖으로 나가는 길이가 늘어나는 split 은 `canSplit` 이 거절한다. 단축키·메뉴는 토스트를 띄우고, `maru pane new` 는 `no_space` 오류를 받는다. columns 보기의 좌우 split 은 cell 이 그만큼 넓어지므로 거절하지 않는다.
 
 ## 글자 폭
 

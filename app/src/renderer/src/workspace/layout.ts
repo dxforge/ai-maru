@@ -6,8 +6,8 @@ export type FocusDirection = 'left' | 'right' | 'up' | 'down'
 export type Rect = { x: number; y: number; w: number; h: number }
 
 /**
- * 좌우로 나눈 폭을 `even` 은 양쪽의 `lineCount` 비율로, `columns` 는 양쪽의 `columnCount` 비율로 나눈다. 위아래로 나눈
- * 높이는 두 값 모두 `lineCount` 비율로 나눈다.
+ * 좌우로 나눈 폭을 `even` 은 그 방향으로 늘어선 항목(pane 하나, 또는 다른 방향으로 나눈 부분 하나) 수(`line` 의 길이)
+ * 비율로, `columns` 는 `columnCount` 비율로 나눈다. 위아래로 나눈 높이는 두 값 모두 늘어선 항목 수 비율로 나눈다.
  */
 export type Widths = 'even' | 'columns'
 
@@ -56,19 +56,19 @@ export function columnCount(layout: Layout): number {
   return layout.split === 'right' ? a + b : Math.max(a, b)
 }
 
-function lineCount(layout: Layout, split: SplitDirection): number {
-  if ('pane' in layout || layout.split !== split) return 1
-  return lineCount(layout.first, split) + lineCount(layout.second, split)
+export function line(layout: Layout, split: SplitDirection): Layout[] {
+  if ('pane' in layout || layout.split !== split) return [layout]
+  return [...line(layout.first, split), ...line(layout.second, split)]
 }
 
-export function share(layout: Extract<Layout, { split: SplitDirection }>, widths: Widths): number {
+export function weight(part: Layout, split: SplitDirection, widths: Widths): number {
+  return split === 'right' && widths === 'columns' ? columnCount(part) : line(part, split).length
+}
+
+function share(layout: Extract<Layout, { split: SplitDirection }>, widths: Widths): number {
   const { split } = layout
-  const count =
-    split === 'right' && widths === 'columns'
-      ? columnCount
-      : (part: Layout): number => lineCount(part, split)
-  const first = count(layout.first)
-  return first / (first + count(layout.second))
+  const first = weight(layout.first, split, widths)
+  return first / (first + weight(layout.second, split, widths))
 }
 
 export function rects(

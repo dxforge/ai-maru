@@ -1,4 +1,4 @@
-import { EPSILON, share, type Layout, type Widths } from './layout'
+import { EPSILON, line, weight, type Layout, type Widths } from './layout'
 
 export type Size = { width: number; height: number }
 export type Box = { left: number; top: number; width: number; height: number }
@@ -37,7 +37,7 @@ export function snapRects(
   return boxes
 }
 
-// `box` 는 `required(layout)` 이상이므로 나눈 두 쪽도 각자 필요한 `unit` 수를 받는다.
+// `box` 는 `required(layout)` 이상이므로 `line` 이 펼친 항목마다 필요한 `unit` 수를 받는다.
 function place(
   layout: Layout,
   box: Box,
@@ -47,19 +47,49 @@ function place(
   boxes: Map<number, Box>
 ): void {
   if ('pane' in layout) return void boxes.set(layout.pane, box)
+  const { split } = layout
   const [along, length] =
-    layout.split === 'right' ? (['left', 'width'] as const) : (['top', 'height'] as const)
+    split === 'right' ? (['left', 'width'] as const) : (['top', 'height'] as const)
   const step = unit[length] > 0 ? unit[length] : 1
   const total = box[length]
   const steps = Math.floor(total / step + EPSILON)
-  const need = (part: Layout): number => Math.ceil(required(part, min)[length] / step - EPSILON)
-  const n = Math.min(
-    Math.max(Math.round(share(layout, widths) * steps), need(layout.first)),
-    steps - need(layout.second)
-  )
-  place(layout.first, { ...box, [length]: n * step }, unit, widths, min, boxes)
-  const second = { ...box, [along]: box[along] + n * step, [length]: total - n * step }
-  place(layout.second, second, unit, widths, min, boxes)
+  const items = line(layout, split).map((part) => ({
+    part,
+    weight: weight(part, split, widths),
+    need: Math.ceil(required(part, min)[length] / step - EPSILON),
+    fixed: false
+  }))
+  let rest = steps
+  let restWeight = items.reduce((sum, item) => sum + item.weight, 0)
+  for (let changed = true; changed;) {
+    changed = false
+    for (const item of items) {
+      if (item.fixed || item.need <= (rest * item.weight) / restWeight + EPSILON) continue
+      item.fixed = true
+      rest -= item.need
+      restWeight -= item.weight
+      changed = true
+    }
+  }
+  let fixedSteps = 0
+  let freeWeight = 0
+  let start = 0
+  items.forEach((item, i) => {
+    if (item.fixed) fixedSteps += item.need
+    else freeWeight += item.weight
+    const end = fixedSteps + (restWeight > 0 ? Math.round((rest * freeWeight) / restWeight) : 0)
+    // 마지막 항목은 글자 칸에 맞지 않고 남는 px 까지 갖는다.
+    const size = i === items.length - 1 ? total - start * step : (end - start) * step
+    place(
+      item.part,
+      { ...box, [along]: box[along] + start * step, [length]: size },
+      unit,
+      widths,
+      min,
+      boxes
+    )
+    start = end
+  })
 }
 
 /** `layout` 을 `size` 에 놓을 때 cell 끝 밖으로 나가는 길이(px). `snapRects` 는 `required` 만큼만 넘친다. */
