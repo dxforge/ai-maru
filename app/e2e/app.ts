@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { createConnection, type AddressInfo, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
-import { extname, join, normalize } from 'node:path'
+import { basename, extname, join, normalize } from 'node:path'
 import {
   test as base,
   expect,
@@ -23,7 +23,7 @@ import {
   type Page
 } from '@playwright/test'
 import { encodeFrame, TAG_TEXT } from '../src/main/frame'
-import { appSocketPath, killPtys, runDir } from '../src/main/pty'
+import { appSocketPath, foreground, killPtys, runDir } from '../src/main/pty'
 import { gitEnv } from '../src/main/test-repo-env'
 import type { CanvasMarkdown } from '../src/shared/canvas'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
@@ -264,6 +264,17 @@ export function sockets(dataDir: string): string[] {
     .filter((n) => n.endsWith('.sock'))
     .map((n) => join(ptyDir(dataDir), n))
     .filter((p) => p !== appSocketPath(ptyDir(dataDir)))
+}
+
+export function foregroundNames(dataDir: string): Promise<(string | null)[]> {
+  return Promise.all(
+    sockets(dataDir).map((s) =>
+      foreground(ptyDir(dataDir), basename(s, '.sock')).then(
+        (f) => f.name,
+        () => null
+      )
+    )
+  )
 }
 
 function request(v: object): Buffer {

@@ -1,6 +1,4 @@
-import { basename } from 'node:path'
 import type { Page } from '@playwright/test'
-import { foreground } from '../src/main/pty'
 import {
   activeHeader,
   cellItems,
@@ -8,9 +6,9 @@ import {
   closeWindow,
   dialogCalls,
   expect,
+  foregroundNames,
   newWorkspace,
   panes,
-  ptyDir,
   restartWith,
   run,
   sockets,
@@ -19,18 +17,6 @@ import {
   test,
   zshHome
 } from './app'
-
-/** 확인 창은 `foreground` 의 답으로 실행 중인지 가리므로, 프로그램이 뜬 것을 이 값으로 기다린다. */
-function foregroundNames(dataDir: string): Promise<(string | null)[]> {
-  return Promise.all(
-    sockets(dataDir).map((s) =>
-      foreground(ptyDir(dataDir), basename(s, '.sock')).then(
-        (f) => f.name,
-        () => null
-      )
-    )
-  )
-}
 
 async function startCat(page: Page, dataDir: string): Promise<void> {
   await page.keyboard.type('cat\n')

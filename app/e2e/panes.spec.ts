@@ -432,6 +432,15 @@ test('columns 에서 높이가 모자라면 아래로 나누기를 거절한다'
   const grid = (await page.locator('.panes.selected .grid').boundingBox())!
   // 하한 두 개(헤더 포함 12행)는 들어가고 세 개(18행)는 들어가지 않는 높이다.
   await resizeBy(app, 0, Math.round(15 * cell.height - grid.height))
+  // 앱은 창 크기가 바뀐 뒤 렌더링 단계의 `ResizeObserver` 에서 grid 를 다시 재고, 그 값으로 나누기를 판정한다.
+  // 프레임이 늦어 그 전에 메뉴를 누르면 옛 높이로 나누기를 받아들이므로, pane 들이 줄어든 grid 안에 다시 놓인 뒤에 누른다.
+  await expect
+    .poll(async () => {
+      const shrunk = (await page.locator('.panes.selected .grid').boundingBox())!
+      const bottom = await paneBox(page, 1)
+      return shrunk.height < grid.height && bottom.y + bottom.height <= shrunk.y + shrunk.height + 1
+    })
+    .toBe(true)
 
   await clickMenu(app, 'split-down')
 

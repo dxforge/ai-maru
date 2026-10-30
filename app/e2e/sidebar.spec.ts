@@ -9,6 +9,7 @@ import {
   dragHandle,
   grabHandle,
   expect,
+  foregroundNames,
   git,
   newWorkspace,
   paneRows,
@@ -950,6 +951,9 @@ test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리
   await expect(row).toHaveAttribute('title', 'sleep 30\nRunning for <1m\n~')
   await expect(row).toHaveAttribute('aria-label', 'Running: sleep 30')
 
+  // 셸은 명령을 tty 의 foreground 로 넘기기 전에 preexec 에서 제목을 바꾼다. 그 사이의 Ctrl-Z·Ctrl-C 는 명령이 아니라
+  // 셸이 받으므로, 명령이 foreground 에 들어선 뒤에 보낸다. `fg` 도 preexec 뒤에 job 을 foreground 로 넘긴다.
+  await expect.poll(() => foregroundNames(dataDir)).toContain('sleep')
   await page.keyboard.press('Control+Z')
   await expect(row.locator('.title')).toHaveText('zsh')
   await expect(row).not.toHaveClass(/command-/)
@@ -957,6 +961,7 @@ test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리
   await expect(row.locator('.title')).toHaveText('sleep 30')
   await expect(row).toHaveClass(/command-running/)
 
+  await expect.poll(() => foregroundNames(dataDir)).toContain('sleep')
   await page.keyboard.press('Control+C')
   await expect(row.locator('.title')).toHaveText('zsh')
   await expect(row).not.toHaveClass(/command-/)
