@@ -1112,7 +1112,7 @@ void window.maru.restoreScreen().then((s) => {
   box-shadow: 0 0 0 1px var(--accent);
 }
 
-/* cell 헤더와 pane 헤더 사이의 경계선은 pane 헤더가 그린다. */
+/* cell 헤더와 pane 헤더 사이의 경계선은 맞닿은 pane 헤더가 그린다. cell 헤더에도 선을 그리면 2px 로 겹친다. */
 .header-bottom .cell-header {
   order: 1;
 }

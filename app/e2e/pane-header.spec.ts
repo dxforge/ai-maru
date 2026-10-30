@@ -489,7 +489,7 @@ for (const header of ['bottom', 'top'] as const) {
         : (await headerEdges(page, paneHeader(page, 2))).top
     expect(boundary).toEqual(paneLine)
 
-    // 왼쪽 pane 과 오른쪽 위 pane 사이의 경계다. 터미널 본문 높이의 가운데에서 잰다.
+    // 왼쪽 pane 과 오른쪽 위 pane 사이의 경계다.
     const right = await paneBox(page, 1)
     const clip = {
       x: Math.round(right.x),

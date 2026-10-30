@@ -51,7 +51,7 @@ describe('themeNamed', () => {
     }
   })
 
-  // 색을 채널마다 8bit 로 반올림하므로, 어두운 색에서는 한 단계 차이로 대비가 목표에서 2% 가까이 어긋난다.
+  // 색을 채널마다 8bit 로 반올림하므로 대비가 목표에서 조금 어긋난다. 테마 861개에서 가장 크게 어긋난 값은 1.5% 다.
   const near = (actual: number, target: number): boolean => Math.abs(actual / target - 1) < 0.02
 
   it('모든 테마에서 pane 헤더 배경은 터미널 배경과 같은 대비로 구별된다', () => {

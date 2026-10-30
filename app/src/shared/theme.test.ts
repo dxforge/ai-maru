@@ -12,7 +12,6 @@ import {
   xtermTheme
 } from './theme'
 
-/** 검정과의 대비가 클수록 밝은 색이다. */
 const brightness = (c: string): number => contrast(c, '#000000')
 
 describe('isLight', () => {

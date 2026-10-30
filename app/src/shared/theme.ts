@@ -113,7 +113,7 @@ function reachContrast(base: string, toward: string, ratio: number): string | nu
   return mix(base, toward, hi)
 }
 
-/** pane 경계선과 그 선이 지나는 면(터미널, focus 안 된 헤더, focus 된 헤더)의 대비. 기본 테마(`GHOSTTY`)의 `line` 이 이 세 면과 내는 가장 낮은 대비 1.112:1 에서 온 값이다. 그래서 기본 테마의 pane 경계선은 `line` 과 같은 색이다. */
+/** pane 경계선이 그 선이 지나는 면(터미널, focus 안 된 헤더, focus 된 헤더)과 내야 하는 가장 낮은 대비. 기본 테마(`GHOSTTY`)의 `line` 이 이 세 면과 내는 가장 낮은 대비 1.112:1 에서 온 값이다. 그래서 기본 테마의 pane 경계선은 `line` 과 같은 색이다. */
 export const PANE_LINE_CONTRAST = 1.11
 
 function paneLineColor(line: string, fg: string, surfaces: string[]): string {
