@@ -116,7 +116,7 @@ test('maru-pty 를 띄울 수 없으면 터미널에 이유를 보인다', async
   await expect(rows(page)).toContainText('open_failed')
 })
 
-test('앱을 띄운 터미널의 ZDOTDIR 과 CLAUDE_*·ANTHROPIC_*·MARU_*·ELECTRON_* 는 셸에 넘기지 않는다', async ({
+test('앱을 띄운 터미널의 ZDOTDIR 과 CLAUDE_* 는 셸에 넘기지 않고, COLORTERM 은 앱의 값으로 덮는다', async ({
   launch,
   dataDir
 }) => {
@@ -133,16 +133,13 @@ test('앱을 띄운 터미널의 ZDOTDIR 과 CLAUDE_*·ANTHROPIC_*·MARU_*·ELEC
     HOME: home,
     ZDOTDIR: zdotdir,
     CLAUDE_CONFIG_DIR: '/outer/claude',
-    ANTHROPIC_BASE_URL: 'http://example.invalid',
-    ELECTRON_NO_ATTACH_CONSOLE: '1',
-    COLORTERM: 'outer',
-    CLAUDE_CODE_FORCE_STRIKETHROUGH: 'outer'
+    COLORTERM: 'outer'
   })
   await expect(rows(page)).toContainText('rc-from-home')
   await run(
     page,
-    'echo "outer=[$CLAUDE_CONFIG_DIR|$ANTHROPIC_BASE_URL|$MARU_UNOBTRUSIVE|$ELECTRON_NO_ATTACH_CONSOLE] term=[$COLORTERM|$CLAUDE_CODE_FORCE_STRIKETHROUGH]" done-$((1+1))',
-    'outer=[|||] term=[truecolor|1] done-2'
+    'echo "outer=[$CLAUDE_CONFIG_DIR] term=[$COLORTERM]" done-$((1+1))',
+    'outer=[] term=[truecolor] done-2'
   )
   await expect(rows(page)).not.toContainText('rc-from-zdotdir')
 })

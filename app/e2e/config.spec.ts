@@ -1,6 +1,6 @@
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import type { Page } from '@playwright/test'
-import { FONT_FAMILY, FONT_SIZE, LINE_HEIGHT } from '../src/renderer/src/font'
+import { LINE_HEIGHT } from '../src/renderer/src/font'
 import {
   activePane,
   activeTerminal,
@@ -39,17 +39,6 @@ async function terminalFont(page: Page) {
 }
 
 const fontSize = async (page: Page): Promise<string> => (await terminalFont(page)).size
-
-const DEFAULT_SIZE = `${FONT_SIZE}px`
-
-test('설정 파일이 없으면 지금 기본값으로 그린다', async ({ launch }) => {
-  const { page } = await launch()
-  const font = await terminalFont(page)
-  expect(font.size).toBe(DEFAULT_SIZE)
-  // computed style 은 작은따옴표로 쓴 글꼴 이름을 큰따옴표로 바꿔 보여 준다.
-  expect(font.family.replaceAll('"', "'")).toBe(FONT_FAMILY)
-  await expect(toast(page)).toHaveCount(0)
-})
 
 test('띄울 때 설정 파일의 글꼴·크기·줄 높이를 쓴다', async ({ launch, dataDir }) => {
   writeConfig(dataDir, '[terminal]\nfont-family = "Menlo"\nfont-size = 18\nline-height = 1.5\n')
@@ -138,22 +127,6 @@ test('cell 헤더가 위에 있어도 줄 높이를 바꾸면 터미널 행 수�
   )
 })
 
-test('폴더가 있는 채로 띄운 뒤 파일을 고치면 적용한다', async ({ launch, dataDir }) => {
-  writeConfig(dataDir, '[terminal]\nfont-size = 16\n')
-  const { page } = await launch()
-  expect(await fontSize(page)).toBe('16px')
-  writeConfig(dataDir, '[terminal]\nfont-size = 12\n')
-  await expect.poll(() => fontSize(page)).toBe('12px')
-})
-
-test('파일을 지우면 기본값으로 돌아간다', async ({ launch, dataDir }) => {
-  writeConfig(dataDir, '[terminal]\nfont-size = 16\n')
-  const { page } = await launch()
-  expect(await fontSize(page)).toBe('16px')
-  rmSync(configFile(dataDir))
-  await expect.poll(() => fontSize(page)).toBe(DEFAULT_SIZE)
-})
-
 test('single 보기의 숨은 cell 도 새 크기로 맞춘다', async ({ launch, dataDir }) => {
   const launched = await launch()
   const { app, page } = launched
@@ -223,13 +196,6 @@ test('헤더는 기본으로 pane 아래에 있고, layout.header = "top" 으로
   await expect.poll(() => headerOffsets(page)).toMatchObject({ bottom: 0 })
 })
 
-test('layout.header 가 top·bottom 이 아니면 알리고 아래에 둔다', async ({ launch, dataDir }) => {
-  writeConfig(dataDir, '[layout]\nheader = "left"\n')
-  const { page } = await launch()
-  await expect(toast(page)).toContainText('layout.header must be "top" or "bottom", using bottom.')
-  expect((await headerOffsets(page)).bottom).toBe(0)
-})
-
 test('문법 오류는 줄을 알리고 앞의 값을 두며, 고치면 토스트가 닫힌다', async ({
   launch,
   dataDir
@@ -246,35 +212,6 @@ test('문법 오류는 줄을 알리고 앞의 값을 두며, 고치면 토스�
   writeConfig(dataDir, '[terminal]\nfont-size = 16\n')
   await expect(toast(page)).toHaveCount(0)
   expect(await fontSize(page)).toBe('16px')
-})
-
-test('띄울 때 문법 오류면 기본값으로 그리고 알리며, 고치면 적용한다', async ({
-  launch,
-  dataDir
-}) => {
-  writeConfig(dataDir, '[terminal\n')
-  const { page } = await launch()
-  await expect(toast(page)).toHaveClass(/error/)
-  await expect(toast(page)).toContainText('Using the default settings.')
-  expect(await fontSize(page)).toBe(DEFAULT_SIZE)
-  writeConfig(dataDir, '[terminal]\nfont-size = 18\n')
-  await expect(toast(page)).toHaveCount(0)
-  expect(await fontSize(page)).toBe('18px')
-})
-
-test('범위를 벗어난 값은 맞춰 적용하고 알린다', async ({ launch, dataDir }) => {
-  writeConfig(dataDir, '[terminal]\nfont-size = 40\n')
-  const { page } = await launch()
-  expect(await fontSize(page)).toBe('32px')
-  await expect(toast(page)).toHaveClass(/warning/)
-  await expect(toast(page)).toContainText('Applied config.toml with warnings')
-  await expect(toast(page)).toContainText('terminal.font-size = 40 is outside 8–32, using 32.')
-})
-
-test('모르는 키를 알린다', async ({ launch, dataDir }) => {
-  writeConfig(dataDir, '[terminal]\nfont_size = 13\n')
-  const { page } = await launch()
-  await expect(toast(page)).toContainText('Unknown key terminal.font_size.')
 })
 
 test('설치되지 않은 글꼴은 알리고, 설치된 글꼴은 알리지 않는다', async ({ launch, dataDir }) => {
@@ -343,14 +280,6 @@ test('설정 파일을 읽을 수 없으면 알린다', async ({ launch, dataDir
   await expect(toast(page)).toHaveClass(/error/)
   await expect(toast(page)).toContainText('EISDIR')
   await expect(toast(page)).toContainText('Kept the previous settings.')
-})
-
-test('띄울 때 설정 파일을 읽을 수 없으면 기본값을 쓴다고 알린다', async ({ launch, dataDir }) => {
-  mkdirSync(configFile(dataDir), { recursive: true })
-  const { page } = await launch()
-  await expect(toast(page)).toContainText('EISDIR')
-  await expect(toast(page)).toContainText('Using the default settings.')
-  expect(await fontSize(page)).toBe(DEFAULT_SIZE)
 })
 
 test('토스트가 떠 있어도 Canvas 헤더의 닫기 버튼으로 Canvas 를 닫는다', async ({

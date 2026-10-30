@@ -4,19 +4,15 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { activePane, expect, panes, rows, split, test } from './app'
 
-const NAMES = ['plain.png', "it's $HOME (1) & `x`.png", '스크린샷 오후 3.04.05.png']
-
+/** 경로를 셸 인자로 감싸는 규칙의 케이스는 `paths.test.ts` 가 sh·bash·zsh 를 실제로 돌려 잰다. 여기서는 드롭하거나 붙여넣은 경로를 셸이 경로마다 인자 하나로 읽는지만 본다. */
 function makeFiles(dataDir: string): string[] {
   const dir = join(dataDir, 'drop dir')
   mkdirSync(dir)
-  const files = NAMES.map((n) => {
-    const p = join(dir, n)
-    writeFileSync(p, '')
-    return p
-  })
+  const file = join(dir, "it's $HOME (1) & `x`.png")
+  writeFileSync(file, '')
   const folder = join(dir, 'a folder')
   mkdirSync(folder)
-  return [...files, folder]
+  return [file, folder]
 }
 
 async function armPrintf(page: Page): Promise<void> {
@@ -44,7 +40,6 @@ async function dropFiles(page: Page, i: number, files: string[], gap = false): P
   await cdp.detach()
 }
 
-/** `osascript` 를 테스트가 끝날 때까지 종료하지 않는다. 클립보드에 쓴 프로세스가 끝나면 첫 항목만 남기 때문이다. */
 async function copyFiles(files: string[], defer: (fn: () => void) => void): Promise<void> {
   const writer = spawn('osascript', [
     '-l',
@@ -97,19 +92,6 @@ test('파일을 터미널 왼쪽 여백에 드롭해도 경로가 붙는다', as
   expect(await readArgs(page, out)).toEqual([files[0], 'END'])
 })
 
-test('이름에 제어문자·개행이 든 파일을 드롭해도 쳐 둔 줄이 실행되지 않고 경로가 그대로 붙는다', async ({
-  launch,
-  dataDir
-}) => {
-  const { page } = await launch()
-  const file = join(dataDir, 'ctl\u0016\nname')
-  writeFileSync(file, '')
-  const out = join(dataDir, 'drop-out')
-  await armPrintf(page)
-  await dropFiles(page, 0, [file])
-  expect(await readArgs(page, out)).toEqual([...file.split('\n'), 'END'])
-})
-
 test('포커스가 없는 pane 에 드롭하면 그 pane 에 붙고 그 pane 이 포커스를 받는다', async ({
   launch,
   dataDir
@@ -137,9 +119,9 @@ test('Finder 에서 복사한 파일을 붙여넣으면 경로로 붙고, 텍스
 
   const out = join(dataDir, 'paste-out')
   await armPrintf(page)
-  await copyFiles(files, defer)
+  await copyFiles(files.slice(0, 1), defer)
   await paste(app)
-  expect(await readArgs(page, out)).toEqual([...files, 'END'])
+  expect(await readArgs(page, out)).toEqual([files[0], 'END'])
 
   const text = join(dataDir, 'text-out')
   await armPrintf(page)

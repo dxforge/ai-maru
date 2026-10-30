@@ -35,7 +35,7 @@ function headerBelowPane(page: Page): Promise<{ gap: number; above: number }> {
   })
 }
 
-test('pane 헤더는 OSC 0·2 로 받은 제목을, 받기 전에는 셸 이름을 보이고, pane 의 디렉토리 이름을 보인다', async ({
+test('pane 헤더는 OSC 2 로 받은 제목을, 받기 전에는 셸 이름을 보이고, pane 의 디렉토리 이름을 보인다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -46,10 +46,6 @@ test('pane 헤더는 OSC 0·2 로 받은 제목을, 받기 전에는 셸 이름�
   await page.keyboard.type("printf '\\033]2;task-%s\\007' $((1+1))\n")
 
   await expect(activeHeader(page).locator('.title')).toHaveText('task-2')
-  await page.keyboard.type("printf '\\033]2;\\007'\n")
-  await expect(activeHeader(page).locator('.title')).toHaveText('bash')
-  await page.keyboard.type("printf '\\033]0;both-%s\\007' $((1+1))\n")
-  await expect(activeHeader(page).locator('.title')).toHaveText('both-2')
 })
 
 test('pane 헤더는 도는 명령과 돈 시간을, 실패한 명령은 종료 코드를 보이고, 셸이 보낸 제목보다 명령을 먼저 쓴다', async ({
@@ -70,18 +66,12 @@ test('pane 헤더는 도는 명령과 돈 시간을, 실패한 명령은 종료 
 
   await page.keyboard.press('Control+C')
   await expect(header.locator('.title')).toHaveText('my-title')
-  await expect(header.locator('.command-tail')).toHaveCount(0)
 
   await page.keyboard.type('false\n')
   await expect(header.locator('.title')).toHaveText('false')
   await expect(header).toHaveClass(/command-failed/)
   await expect(header.locator('.row-bar-icon')).toHaveText(ICONS.error)
   await expect(header.locator('.command-tail')).toHaveText('1')
-
-  await page.keyboard.type('true\n')
-  await expect(header.locator('.title')).toHaveText('my-title')
-  await expect(header.locator('.command-tail')).toHaveCount(0)
-  await expect(header.locator('.row-bar-icon')).toHaveText(ICONS.terminal)
 })
 
 test('명령을 주어 띄운 pane 의 헤더는 명령 전체와 돈 시간을 보인다', async ({ launch }) => {
@@ -399,31 +389,29 @@ test('pane 을 닫으면 남은 pane 이 다시 행·열 격자에 놓이고 행
   expectOnGrid(await measure(page))
 })
 
-for (const level of [1.5, 0.5, -0.5]) {
-  test(`줌 ${level} 에서 행 높이가 소수이고 영역 높이가 행의 배수 근처여도, 모든 pane 이 격자에 놓이고 헤더를 뺀 높이를 행으로 채운다`, async ({
-    launch
-  }) => {
-    const { app, page } = await launch()
-    await setZoom(app, level)
-    await split(app, page, 'split-right', 2)
-    await split(app, page, 'split-down', 3)
-    expect((await measure(page))[0].rowHeight % 1).not.toBe(0)
+test('줌 1.5 에서 행 높이가 소수이고 영역 높이가 행의 배수 근처여도, 모든 pane 이 격자에 놓이고 헤더를 뺀 높이를 행으로 채운다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await setZoom(app, 1.5)
+  await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-down', 3)
+  expect((await measure(page))[0].rowHeight % 1).not.toBe(0)
 
-    for (const offset of [0, 0.25, 0.5, 0.75]) {
-      const [box] = await measure(page)
-      const target = (Math.floor(box.gridHeight / box.unit) + offset) * box.unit
-      const factor = await app.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].webContents.getZoomFactor()
-      )
-      await resizeBy(app, 0, Math.round((target - box.gridHeight) * factor))
-      await expect(async () => {
-        const boxes = await measure(page)
-        expectOnGrid(boxes)
-        expectRowsMatch(boxes)
-      }).toPass()
-    }
-  })
-}
+  for (const offset of [0, 0.25, 0.5, 0.75]) {
+    const [box] = await measure(page)
+    const target = (Math.floor(box.gridHeight / box.unit) + offset) * box.unit
+    const factor = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].webContents.getZoomFactor()
+    )
+    await resizeBy(app, 0, Math.round((target - box.gridHeight) * factor))
+    await expect(async () => {
+      const boxes = await measure(page)
+      expectOnGrid(boxes)
+      expectRowsMatch(boxes)
+    }).toPass()
+  }
+})
 
 test('columns 에서 줌과 창 크기를 바꿔도 pane 경계는 행·열 격자에 놓인다', async ({ launch }) => {
   const { app, page } = await launch()

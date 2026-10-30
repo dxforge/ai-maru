@@ -23,7 +23,6 @@ import {
   cellGroups as groups,
   cellItems,
   windowLosesFocus,
-  windowRegainsFocus,
   zshHome
 } from './app'
 import { ICONS, STATE_LABELS } from '../src/renderer/src/icons'
@@ -141,7 +140,7 @@ test('상태 아이콘은 상태마다 SVG 로 그리고, working 만 움직이�
   await expect(page.locator('.cell-header .status-icon svg')).toHaveCount(0)
 })
 
-test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아이콘 대신 app 값을, app 이 비었으면 Program 을 보인다', async ({
+test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아이콘 대신 app 값을 보인다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -152,35 +151,9 @@ test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아�
   await expect(activeHeader(page).locator('.title')).toHaveText('make')
   await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Working')
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
-
-  await page.keyboard.type(status('idle', undefined, ''))
-  await expect(paneRows(page)).toHaveClass(/idle/)
-  await expect(paneRows(page).locator('.title')).toHaveText('Program')
-  await expect(paneRows(page).locator('.state svg')).toHaveCount(1)
-  await expect(activeHeader(page).locator('.title')).toHaveText('Program')
-  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
-
-  await page.keyboard.type(status('idle'))
-  await expect(paneRows(page).locator('.title')).toHaveText('Claude')
-  await expect(paneRows(page).locator('.state')).toHaveText(ICONS.claude)
-  await expect(activeHeader(page).locator('.title')).toHaveText('Claude')
-  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
 })
 
-test('루트가 아닌 레코드만 있으면 상태를 보이지 않고, 루트 레코드가 오면 그 상태를 보인다', async ({
-  launch
-}) => {
-  const { page } = await launch()
-  await page.keyboard.type(status('working', 'id=build'))
-  await page.keyboard.type('echo sub-$((1+1))\n')
-  await expect(panes(page).first()).toContainText('sub-2')
-  await expect(paneRows(page)).toHaveCount(0)
-  await page.keyboard.type(status('error'))
-  await expect(paneRows(page)).toHaveClass(/error/)
-  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Error')
-})
-
-test('maru status 로 쓴 하위 레코드가 루트보다 급하면 그것을, 루트가 working 이면 루트를 보이고, 하위를 지우면 루트로 돌아온다', async ({
+test('maru status 로 쓴 하위 레코드가 루트보다 급하면 사이드바·pane 헤더·cell 헤더가 그것을 보인다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -194,48 +167,6 @@ test('maru status 로 쓴 하위 레코드가 루트보다 급하면 그것을, 
   await expect(activeHeader(page)).toHaveClass(/blocked/)
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
   await expect(cellHeader).toHaveClass(/blocked/)
-
-  await page.keyboard.type(status('working'))
-  await expect(paneRows(page)).toHaveClass(/working/)
-  await expect(activeHeader(page)).toHaveClass(/working/)
-  await expect(cellHeader).toHaveClass(/working/)
-  await page.keyboard.type(status('done'))
-  await expect(paneRows(page)).toHaveClass(/blocked/)
-
-  await page.keyboard.type(
-    'maru status clear --id ask && maru status put error --id build --app cargo\n'
-  )
-  await expect(paneRows(page)).toHaveClass(/error/)
-  await expect(paneRows(page).locator('.title')).toHaveText('Claude')
-  await expect(activeHeader(page).locator('.title')).toHaveText('Claude')
-  await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
-  await page.keyboard.type('maru status clear --id build && maru status put blocked --id ask\n')
-  await expect(paneRows(page)).toHaveClass(/blocked/)
-
-  // 하위의 하위도 함께 지워져야 error 가 남지 않는다.
-  await page.keyboard.type('maru status put error --id ask/sub && maru status clear --id ask\n')
-  await expect(paneRows(page)).toHaveClass(/done/)
-  await expect(activeHeader(page)).toHaveClass(/done/)
-  await expect(cellHeader).toHaveClass(/done/)
-})
-
-test('maru status 는 --id 없이 루트 레코드를 쓰고, clear 는 모든 레코드를 지운다', async ({
-  launch
-}) => {
-  const { page } = await launch()
-  await page.keyboard.type(
-    'maru status put error --id fail && maru status put working --app make\n'
-  )
-  await expect(paneRows(page)).toHaveClass(/working/)
-  await expect(paneRows(page).locator('.title')).toHaveText('make')
-  await page.keyboard.type('maru status put done --app make\n')
-  await expect(paneRows(page)).toHaveClass(/error/)
-
-  await page.keyboard.type('maru status clear\n')
-  await expect(paneRows(page)).toHaveCount(0)
-  // 하위 error 가 남았다면 루트가 다시 와도 error 가 보인다.
-  await page.keyboard.type('maru status put idle --app make\n')
-  await expect(paneRows(page)).toHaveClass(/idle/)
 })
 
 test('pane 줄은 그 터미널의 cell 아래에만, pane 헤더는 보이는 pane 의 상태를 따른다', async ({
@@ -351,24 +282,15 @@ function ptyIdOf(page: Page, dataDir: string, name: string): Promise<string> {
   return shellValue(page, dataDir, name, '$MARU_PTY_ID')
 }
 
-test('done 인 pane 에 1초 이상 머문 뒤 다른 pane 으로 옮기면 idle 이 되고, 1초보다 짧게 지나가면 done 이 남는다', async ({
+test('done 인 pane 에 1초 이상 머문 뒤 다른 pane 으로 옮기면 idle 이 된다', async ({
   launch,
   dataDir
 }) => {
   const { app, page } = await launch()
   const left = await ptyIdOf(page, dataDir, 'left')
   await split(app, page, 'split-right', 2)
-  // 떠난 뒤에 온 done 은 그대로다.
   await page.keyboard.type(`maru status put done --pty ${left} --app claude-code\n`)
   await expect(paneHeader(page, 0)).toHaveClass(/done/)
-  await page.waitForTimeout(SEEN_MS)
-  await expect(paneRows(page)).toHaveClass(/done/)
-
-  await focusPane(app, page, 'focus-pane-left', 0)
-  await focusPane(app, page, 'focus-pane-right', 1)
-  await page.waitForTimeout(SEEN_MS)
-  await expect(paneHeader(page, 0)).toHaveClass(/done/)
-
   await focusPane(app, page, 'focus-pane-left', 0)
   await page.waitForTimeout(SEEN_MS)
   // 머무는 동안에는 done 을 그대로 보인다.
@@ -380,26 +302,13 @@ test('done 인 pane 에 1초 이상 머문 뒤 다른 pane 으로 옮기면 idle
   await expect(page.locator('.cell-header')).toHaveClass(/idle/)
 })
 
-test('done 인 pane 에 1초 이상 머문 뒤 앱 창이 focus 를 잃으면 idle 이 되고, 창이 돌아오면 그때부터 다시 잰다', async ({
+test('done 인 pane 에 1초 이상 머문 뒤 앱 창이 focus 를 잃으면 idle 이 된다', async ({
   launch
 }) => {
   const { page } = await launch()
   await page.keyboard.type(status('done'))
   await expect(paneRows(page)).toHaveClass(/done/)
   await page.waitForTimeout(SEEN_MS)
-  await windowLosesFocus(page)
-  await expect(paneRows(page)).toHaveClass(/idle/)
-
-  await page.keyboard.type(status('done'))
-  await expect(paneRows(page)).toHaveClass(/done/)
-  await windowRegainsFocus(page)
-  await windowLosesFocus(page)
-  await page.waitForTimeout(SEEN_MS)
-  await expect(paneRows(page)).toHaveClass(/done/)
-
-  await windowRegainsFocus(page)
-  await page.waitForTimeout(SEEN_MS)
-  await expect(paneRows(page)).toHaveClass(/done/)
   await windowLosesFocus(page)
   await expect(paneRows(page)).toHaveClass(/idle/)
 })

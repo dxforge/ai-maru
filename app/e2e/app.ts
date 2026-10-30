@@ -28,7 +28,7 @@ import { gitEnv } from '../src/main/test-repo-env'
 import type { CanvasMarkdown } from '../src/shared/canvas'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import type { PtyOpen } from '../src/shared/pty'
-import { clampCanvasWidth, clampSidebarWidth, STATE_VERSIONS } from '../src/shared/screen'
+import { clampSidebarWidth, STATE_VERSIONS } from '../src/shared/screen'
 import { GHOSTTY } from '../src/shared/theme'
 
 export { expect }
@@ -327,7 +327,7 @@ export function resizeFromOutside(sock: Socket, cols: number, rows: number): voi
 // xterm 이 그리는 canvas 가운데 render layer 가 아닌 것이 WebGL renderer 의 것이다.
 export const WEBGL_CANVAS = '.xterm-screen > canvas:not([class*="-layer"])'
 
-export const GROUND = [1, 3, 5].map((i) => parseInt(GHOSTTY.background.slice(i, i + 2), 16))
+const GROUND = [1, 3, 5].map((i) => parseInt(GHOSTTY.background.slice(i, i + 2), 16))
 
 export function isInk(data: number[], i: number): boolean {
   return (
@@ -696,7 +696,6 @@ export async function sidebarWidth(page: Page): Promise<number> {
 
 export const SIDEBAR_MIN_WIDTH = clampSidebarWidth(0)
 export const SIDEBAR_MAX_WIDTH = clampSidebarWidth(Infinity)
-export const CANVAS_MIN_WIDTH = clampCanvasWidth(0)
 
 /** 사이드바를 접고, `.side` 의 width transition 이 끝나 그린 폭이 접은 폭(inline style 의 width)과 같아질 때까지 기다린다. */
 export async function collapseSidebar(app: ElectronApplication, page: Page): Promise<void> {

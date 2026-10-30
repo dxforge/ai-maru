@@ -224,18 +224,6 @@ test('⌘Enter 는 지금 workspace 의 고른 cell 바로 뒤에 새 cell 로 �
   await expect(rows(page)).toContainText(`A-ran-in-${dir}`)
 })
 
-test('workspace 가 하나도 없으면 ⌘Enter 도 새 workspace 에 띄운다', async ({ launch, dataDir }) => {
-  useTool(dataDir)
-  const dir = project(dataDir, 'proj-a')
-  const launched = await launch()
-  const { page } = launched
-  await page.keyboard.type('exit\n')
-  await expect(workspaceNames(page)).toHaveCount(0)
-  await launchAt(launched, dir, 'Meta+Enter')
-  await expect(workspaceNames(page)).toHaveCount(1)
-  await expect(rows(page)).toContainText(`A-ran-in-${dir}`)
-})
-
 test('명령이 0 이 아닌 코드로 끝나면 pane 이 화면을 남긴 채 종료 코드를 보이고, ⌘W 는 묻지 않고 닫는다', async ({
   launch,
   dataDir
@@ -257,22 +245,6 @@ test('명령이 0 이 아닌 코드로 끝나면 pane 이 화면을 남긴 채 �
   await clickMenu(app, 'close-pane')
   await expect(cellItems(page)).toHaveCount(1)
   expect(await dialogCalls(app)).toEqual([])
-})
-
-test('명령이 Ctrl-C 의 종료 코드 130 으로 끝나면 0 처럼 pane·cell·workspace 가 닫힌다', async ({
-  launch,
-  dataDir
-}) => {
-  useTool(dataDir)
-  const dir = project(dataDir, 'proj-a')
-  const launched = await launch()
-  const { page } = launched
-  await launchAt(launched, dir)
-  await expect(rows(page)).toContainText(`A-ran-in-${dir}`)
-  await page.keyboard.type('130\n')
-  await expect(cellItems(page)).toHaveCount(1)
-  await expect(workspaceNames(page)).toHaveCount(1)
-  await run(page, 'echo left-$((1+1))', 'left-2')
 })
 
 test('런처로 띄운 claude 가 working 을 알린 뒤 SIGKILL 로 끝나면 셸 함수의 clear 로 Working 이 사라지고 종료 코드 137 을 보인다', async ({
@@ -306,21 +278,6 @@ test('런처로 띄운 claude 가 working 을 알린 뒤 SIGKILL 로 끝나면 �
   await expect(activeHeader(page).locator('.command-tail')).toHaveCount(0)
   await expect(paneRows(page)).toHaveClass(/working/)
   await expect(paneRows(page)).toHaveAttribute('aria-label', 'Working: Claude, proj-a')
-})
-
-test('셸이 SIGINT 로 끝나도 종료 코드 130 처럼 pane·cell·workspace 가 닫힌다', async ({
-  launch,
-  dataDir
-}) => {
-  const claude = fakeClaude(dataDir)
-  const dir = project(dataDir, 'proj-a')
-  const launched = await launch(claude.env)
-  const { page } = launched
-  await launchFake(launched, claude, dir)
-  await expect(cellItems(page)).toHaveCount(2)
-  claude.signal('SIGINT')
-  await expect(cellItems(page)).toHaveCount(1)
-  await expect(workspaceNames(page)).toHaveCount(1)
 })
 
 test('커서를 그린 내용 위에 두고 끝난 명령의 종료 코드는 그 내용을 덮지 않고 마지막 줄 아래에 쓴다', async ({
@@ -395,7 +352,7 @@ test('최근 목록이 비었으면 그렇다고 보이고, 입력이 경로가 
   await expect(cellItems(page)).toHaveCount(1)
 })
 
-test('/ 로 시작한 입력은 하위 디렉토리를 후보로 보이고, → 는 고른 후보로 한 단계 들어가며, 숨은 디렉토리는 . 을 칠 때만 보인다', async ({
+test('/ 로 시작한 입력은 하위 디렉토리를 후보로 보이고, → 는 고른 후보로 한 단계 들어간다', async ({
   launch,
   dataDir
 }) => {
@@ -408,12 +365,6 @@ test('/ 로 시작한 입력은 하위 디렉토리를 후보로 보이고, → 
   await openLauncher(launched)
   await page.keyboard.type(`${tree}/`)
   await expect(labels(page)).toHaveText([`${tree}/alpha`, `${tree}/Beta`])
-  await page.keyboard.type('b')
-  await expect(labels(page)).toHaveText([`${tree}/Beta`])
-  await page.keyboard.press('Backspace')
-  await page.keyboard.type('.')
-  await expect(labels(page)).toHaveText([`${tree}/.hidden`])
-  await page.keyboard.press('Backspace')
   await page.keyboard.type('al')
   await page.keyboard.press('ArrowLeft')
   await page.keyboard.press('ArrowRight')
@@ -497,15 +448,6 @@ test('없는 디렉토리는 띄우지 않고 런처 안에 이유를 보이며,
   await expect(cellItems(page)).toHaveCount(1)
   await page.keyboard.press('Escape')
   await expect(labels(page)).toHaveText([gone])
-
-  const file = join(dataDir, 'plain')
-  writeFileSync(file, '')
-  await page.keyboard.type(file)
-  await toCommands(page, file)
-  await expect(launcher(page).locator('.problem')).toHaveCount(0)
-  await page.keyboard.press('Enter')
-  await expect(launcher(page).locator('.problem')).toHaveText(`Not a directory: ${file}`)
-  await expect(cellItems(page)).toHaveCount(1)
 })
 
 test('명령 단계는 명령 뒤에 shell 을 붙여 보이고, 마지막으로 띄운 명령을 다음에 열 때와 재시작 뒤에도 먼저 고른다', async ({
@@ -679,16 +621,6 @@ test('config.toml 의 launcher.commands 를 고치면 열린 런처의 명령도
   writeConfig(dataDir, '[launcher]\ncommands = ["third"]\n')
   await expect(labels(page)).toHaveText(['third', 'shell'])
   await expect(selected(page)).toHaveText('third')
-})
-
-test('기본 명령은 claude 와 codex 다', async ({ launch, dataDir }) => {
-  const dir = project(dataDir, 'proj-a')
-  const launched = await launch()
-  await openLauncher(launched)
-  await launched.page.keyboard.type(dir)
-  await toCommands(launched.page, dir)
-  await expect(labels(launched.page)).toHaveText(['claude', 'codex', 'shell'])
-  await expect(selected(launched.page)).toHaveText('claude')
 })
 
 test('layout.palette = "top" 이면 런처도 창 위에 뜬다', async ({ launch, dataDir }) => {

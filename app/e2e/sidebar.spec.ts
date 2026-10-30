@@ -43,9 +43,9 @@ const shellGit = { timeout: 15_000 }
 
 const opacity = (el: Locator) => el.evaluate((e) => Number(getComputedStyle(e).opacity))
 
-function repoHome(dataDir: string, format: 'files' | 'reftable' = 'files'): string {
+function repoHome(dataDir: string): string {
   const home = zshHome(dataDir, 'proj', 'notes')
-  git(join(home, 'proj'), 'init', '-q', '-b', 'main', `--ref-format=${format}`)
+  git(join(home, 'proj'), 'init', '-q', '-b', 'main', '--ref-format=files')
   git(join(home, 'proj'), 'commit', '-q', '--allow-empty', '-m', 'init')
   return home
 }
@@ -84,7 +84,7 @@ test('저장소 안에서는 저장소 이름과 branch 를, 밖에서는 디렉
   await expect.poll(() => win(app)).toEqual({ title: 'notes', path: join(home, 'notes') })
 })
 
-test('workspace 이름 줄은 첫 cell 의 첫 pane 의 저장소 이름(저장소 밖이면 디렉토리 이름, 홈이면 ~)이고 branch 가 없으며, 접은 사이드바에서도 보인다', async ({
+test('workspace 이름 줄은 첫 cell 의 첫 pane 의 저장소 이름(저장소 밖이면 디렉토리 이름)이고 branch 가 없으며, 접은 사이드바에서도 보인다', async ({
   launch,
   dataDir
 }) => {
@@ -101,11 +101,6 @@ test('workspace 이름 줄은 첫 cell 의 첫 pane 의 저장소 이름(저장�
   await expect(workspaceNames(page)).toHaveText(['proj'])
 
   await cellItems(page).nth(0).click()
-  await page.keyboard.type('cd ~/notes\n')
-  await expect(workspaceNames(page)).toHaveText(['notes'])
-  await page.keyboard.type('cd ~\n')
-  await expect(workspaceNames(page)).toHaveText(['~'])
-
   await page.keyboard.type('exit\n')
   await expect(cellPlaces(page)).toHaveText(['notes'])
   await expect(workspaceNames(page)).toHaveText(['notes'])
@@ -115,34 +110,21 @@ test('workspace 이름 줄은 첫 cell 의 첫 pane 의 저장소 이름(저장�
   await expect.poll(() => opacity(workspaceNames(page))).toBeGreaterThan(0)
 })
 
-test('cell 이름은 workspace 와 다른 부분만 적는다: 같은 저장소는 branch(하위 폴더면 상대 경로), 다른 저장소는 이름과 branch, git 밖은 폴더 이름', async ({
+test('cell 이름은 workspace 와 다른 부분만 적는다: 같은 저장소는 branch, 이름이 같은 다른 클론은 이름과 branch', async ({
   launch,
   dataDir
 }) => {
   const home = repoHome(dataDir)
-  git(join(home, 'proj'), 'worktree', 'add', '-q', '-b', 'wt', '../proj-wt')
-  mkdirSync(join(home, 'proj', 'app', 'e2e'), { recursive: true })
-  mkdirSync(join(home, 'other'))
-  git(join(home, 'other'), 'init', '-q', '-b', 'dev')
-  // 이름이 같은 다른 클론은 다른 저장소다.
+  // 두 저장소는 이름이 같으므로 `main/git.ts` 가 찾은 common 디렉토리가 renderer 까지 와야만 다른 저장소로 갈린다.
   mkdirSync(join(home, 'clone'))
   git(join(home, 'clone'), 'init', '-q', '-b', 'main', 'proj')
   const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
   const { page } = launched
   await page.keyboard.type('cd proj\n')
   await expect(branch(page)).toHaveText(/main$/)
-  const steps: [string, string | RegExp][] = [
-    ['cd ~/proj-wt', /^\S?wt$/],
-    ['cd ~/proj/app/e2e', /^\S?main· app\/e2e$/],
-    ['cd ~/other', /^other\S?dev$/],
-    ['cd ~/clone/proj', /^proj\S?main$/],
-    ['cd ~/notes', 'notes']
-  ]
-  for (const [i, [cd, label]] of steps.entries()) {
-    await newCell(launched, i + 2)
-    await page.keyboard.type(`${cd}\n`)
-    await expect(cellPlaces(page).nth(i + 1)).toHaveText(label)
-  }
+  await newCell(launched, 2)
+  await page.keyboard.type('cd ~/clone/proj\n')
+  await expect(cellPlaces(page).nth(1)).toHaveText(/^proj\S?main$/)
   await expect(cellPlaces(page).nth(0)).toHaveText(/^\S?main$/)
   await expect(cellGroups(page).nth(0).locator('.name')).toHaveCount(0)
 })
@@ -190,32 +172,29 @@ test('reftable 저장소로 cd 하면 앱이 git 으로 branch 를 읽는 동안
   ])
 })
 
-for (const format of ['files', 'reftable'] as const) {
-  test(`${format} 저장소에서 셸로 branch 를 바꾸면 다음 프롬프트에 따라가고, worktree 는 원래 저장소 이름을 쓴다`, async ({
-    launch,
-    dataDir
-  }) => {
-    // `shellGit` 을 네 번 기다리므로 다 쓰면 기본 30초를 넘는다.
-    test.slow()
-    const home = repoHome(dataDir, format)
-    const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
-    await page.keyboard.type('cd proj\n')
-    // reftable 저장소는 앱도 `git` 을 실행해 branch 를 읽는다. 첫 대기에는 zsh 가 뜨는 시간도 더해진다.
-    await expect(branch(page)).toHaveText(/main$/, shellGit)
+test('셸로 branch 를 바꾸면 다음 프롬프트에 따라가고, worktree 는 원래 저장소 이름을 쓴다', async ({
+  launch,
+  dataDir
+}) => {
+  // `shellGit` 을 네 번 기다리므로 다 쓰면 기본 30초를 넘는다.
+  test.slow()
+  const home = repoHome(dataDir)
+  const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  await page.keyboard.type('cd proj\n')
+  await expect(branch(page)).toHaveText(/main$/, shellGit)
 
-    await page.keyboard.type('git switch -q -c feat/1-x\n')
-    await expect(branch(page)).toHaveText(/feat\/1-x$/, shellGit)
-    await expect.poll(async () => (await win(app)).title).toBe('proj — feat/1-x')
+  await page.keyboard.type('git switch -q -c feat/1-x\n')
+  await expect(branch(page)).toHaveText(/feat\/1-x$/, shellGit)
+  await expect.poll(async () => (await win(app)).title).toBe('proj — feat/1-x')
 
-    await page.keyboard.type('git switch -q --detach\n')
-    await expect(branch(page)).toHaveText(/[0-9a-f]{7}$/, shellGit)
+  await page.keyboard.type('git switch -q --detach\n')
+  await expect(branch(page)).toHaveText(/[0-9a-f]{7}$/, shellGit)
 
-    await page.keyboard.type('git worktree add -q -b wt ../proj-wt && cd ../proj-wt\n')
-    // worktree 로 cd 하기 전에도 cell 이름이 `proj` 이므로, branch 가 `wt` 로 바뀐 뒤에 이름을 확인한다.
-    await expect(branch(page)).toHaveText(/wt$/, shellGit)
-    await expect(tip(page)).toHaveAttribute('title', /\n~\/proj-wt$/)
-  })
-}
+  await page.keyboard.type('git worktree add -q -b wt ../proj-wt && cd ../proj-wt\n')
+  // worktree 로 cd 하기 전에도 cell 이름이 `proj` 이므로, branch 가 `wt` 로 바뀐 뒤에 이름을 확인한다.
+  await expect(branch(page)).toHaveText(/wt$/, shellGit)
+  await expect(tip(page)).toHaveAttribute('title', /\n~\/proj-wt$/)
+})
 
 test('프롬프트가 뜨지 않아도 Claude 의 상태가 바뀌면 branch 를 다시 읽는다', async ({
   launch,

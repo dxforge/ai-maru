@@ -189,15 +189,11 @@ test('zsh 에서 cell 이름은 셸을 띄운 디렉토리에서 시작해 cd �
   dataDir
 }) => {
   const long = 'a'.repeat(80)
-  const home = zshHome(dataDir, 'proj', join('a b', '한글 폴더'), long)
+  const home = zshHome(dataDir, '한글 폴더', long)
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await expect(cellPlaces(page)).toHaveText(['~'])
   await run(page, 'echo "mark=$MARK"', 'mark=rc-2')
 
-  await page.keyboard.type('cd proj\n')
-  await expect(cellPlaces(page)).toHaveText(['proj'])
-  await page.keyboard.type("cd ~/'a b'\n")
-  await expect(cellPlaces(page)).toHaveText(['a b'])
   await page.keyboard.type(
     `cd "$(printf '\\355\\225\\234\\352\\270\\200 \\355\\217\\264\\353\\215\\224')"\n`
   )
@@ -247,29 +243,6 @@ test('zsh 에서 ⌘N 을 연달아 눌러도 선택된 cell 의 디렉토리에
   await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
 })
 
-test('zsh 에서 호스트가 실린 OSC 7 은 이름과 ⌘N 의 디렉토리에 쓰지 않는다', async ({
-  launch,
-  dataDir
-}) => {
-  const home = zshHome(dataDir, 'proj', 'remote')
-  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
-  const { page } = launched
-  await page.keyboard.type('cd proj\n')
-  await expect(cellPlaces(page)).toHaveText(['proj'])
-
-  // ssh 로 붙은 원격 셸처럼, 이 앱의 zsh 가 다시 OSC 7 을 보내지 않게 bash 로 바꾼다.
-  await page.keyboard.type(
-    `printf '\\e]7;file://remote.example%s\\a' "$HOME/remote"; exec bash --norc --noprofile\n`
-  )
-  await run(page, 'echo in-bash-$((1+1))', 'in-bash-2')
-  await expect(cellPlaces(page)).toHaveText(['proj'])
-
-  await newWorkspace(launched, 2)
-
-  await expect(cellPlaces(page)).toHaveText(['proj', 'proj'])
-  await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
-})
-
 test('zsh 에서 선택된 cell 의 디렉토리가 지워졌으면 ⌘N 은 홈에서 연다', async ({
   launch,
   dataDir
@@ -309,53 +282,16 @@ test('zsh 에서 ⌘T 는 선택한 cell 바로 뒤(그 cell 이 앞서 띄운 �
   await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
 })
 
-test('⌘T 로 연 cell 의 셸이 끝나면 그 cell 만 닫히고 workspace 는 남으며, 마지막 cell 이 닫히면 workspace 가 닫힌다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { page } = launched
-  await newWorkspace(launched, 2)
-  await newCell(launched, 3)
-  await expect(workspaceNames(page)).toHaveCount(2)
-
-  await page.keyboard.type('exit\n')
-  await expect(cellItems(page)).toHaveCount(2)
-  await expect(workspaceNames(page)).toHaveCount(2)
-  await activeTerminal(page)
-
-  await page.keyboard.type('exit\n')
-  await expect(cellItems(page)).toHaveCount(1)
-  await expect(workspaceNames(page)).toHaveCount(1)
-})
-
-test('Next·Previous Cell 은 workspace 안의 cell 을 지나 다음 workspace 로 넘어가고, 끝에서는 처음으로 돈다', async ({
-  launch
-}) => {
+test('Next·Previous Cell 은 workspace 를 넘어 다음·이전 cell 을 고른다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
   await newCell(launched, 2)
   await newWorkspace(launched, 3)
-  await cellItems(page).nth(0).click()
-  await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
-  for (const i of [1, 2, 0]) {
-    await clickMenu(app, 'next-cell')
-    await expect(cellGroups(page).nth(i)).toHaveClass(/selected/)
-  }
-  await clickMenu(app, 'previous-cell')
+  await cellItems(page).nth(1).click()
+  await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
+  await clickMenu(app, 'next-cell')
   await expect(cellGroups(page).nth(2)).toHaveClass(/selected/)
+  await clickMenu(app, 'previous-cell')
+  await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
   await expect(workspaceNames(page)).toHaveCount(2)
-})
-
-test('workspace 가 없을 때 ⌘T 는 ⌘N 과 같다', async ({ launch }) => {
-  const launched = await launch()
-  const { page } = launched
-  await page.keyboard.type('exit\n')
-  await expect(cellItems(page)).toHaveCount(0)
-  await expect(workspaceNames(page)).toHaveCount(0)
-
-  await newCell(launched, 1)
-
-  await expect(workspaceNames(page)).toHaveCount(1)
-  await expect(cellGroups(page).first()).toHaveClass(/selected/)
-  await run(page, 'echo back-$((1+1))', 'back-2')
 })

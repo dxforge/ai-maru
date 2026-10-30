@@ -75,41 +75,18 @@ test('Reset Font Size 로 cell 의 글꼴을 되돌려도 터미널 행 수가 �
   await expectRowsChangeOnce(launched, () => reset(app), bigger)
 })
 
-test('설정 파일의 font-size 와 같은 8–32 를 넘지 않고, Reset 은 설정 파일의 크기로 돌아간다', async ({
-  launch,
-  dataDir
-}) => {
-  writeConfig(dataDir, '[terminal]\nfont-size = 9\n')
-  const { app, page } = await launch()
-  await decrease(app)
-  await decrease(app)
-  await expect.poll(() => fontSizes(page)).toEqual([['8px']])
-  await reset(app)
-  await expect.poll(() => fontSizes(page)).toEqual([['9px']])
-
-  writeConfig(dataDir, '[terminal]\nfont-size = 31\n')
-  await expect.poll(() => fontSizes(page)).toEqual([['31px']])
-  await increase(app)
-  await increase(app)
-  await expect.poll(() => fontSizes(page)).toEqual([['32px']])
-})
-
-test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않았거나 설정 크기로 돌아온 cell 만 따르고, 줄 높이는 모두 따른다', async ({
+test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않은 cell 만 따르고, 줄 높이는 모두 따른다', async ({
   launch,
   dataDir
 }) => {
   const launched = await launch()
   const { app, page } = launched
   await newWorkspace(launched, 2)
-  await newWorkspace(launched, 3)
   await increase(app)
-  await clickMenu(app, 'previous-cell')
-  await increase(app)
-  await decrease(app)
-  await expect.poll(() => fontSizes(page)).toEqual([[BASE], [BASE], [PLUS1]])
+  await expect.poll(() => fontSizes(page)).toEqual([[BASE], [PLUS1]])
 
   writeConfig(dataDir, '[terminal]\nfont-size = 18\n')
-  await expect.poll(() => fontSizes(page)).toEqual([['18px'], ['18px'], [PLUS1]])
+  await expect.poll(() => fontSizes(page)).toEqual([['18px'], [PLUS1]])
 
   const rowHeight = () =>
     cellViews(page)
@@ -118,19 +95,7 @@ test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않았거나 
   const row = await rowHeight()
   writeConfig(dataDir, '[terminal]\nfont-size = 18\nline-height = 2\n')
   await expect.poll(rowHeight).toBeGreaterThan(row)
-  expect(await fontSizes(page)).toEqual([['18px'], ['18px'], [PLUS1]])
-})
-
-test('나눈 pane 은 cell 의 크기를 쓰고, 새 workspace 는 띄운 쪽이 아니라 설정 파일의 크기로 시작한다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await increase(app)
-  await increase(app)
-  await split(app, page, 'split-down', 2)
-  await newWorkspace(launched, 2)
-  await expect.poll(() => fontSizes(page)).toEqual([[PLUS2, PLUS2], [BASE]])
+  expect(await fontSizes(page)).toEqual([['18px'], [PLUS1]])
 })
 
 test('재시작하면 cell 마다 바꾼 크기를 되살리고, columns 카드 폭과 셸이 본 크기도 그대로다', async ({

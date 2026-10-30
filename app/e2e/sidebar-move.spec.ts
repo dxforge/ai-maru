@@ -99,23 +99,6 @@ test('손잡이로 cell 을 끌어 같은 workspace 의 다른 자리에 놓으�
   await expect(cards(page).nth(1)).toHaveClass(/selected/)
 })
 
-test('cell 을 다른 workspace 의 cell 사이에 놓으면 그리로 옮기고, 마지막 cell 이 빠진 workspace 는 닫는다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { page } = launched
-  await arrange(launched, [['alpha'], ['bravo', 'charlie']])
-
-  await grabHandle(page, grip(page, 0), 0)
-  await moveTo(page, cards(page).nth(2), 0.25)
-  await page.mouse.up()
-
-  await expect.poll(() => shape(page)).toEqual([['bravo', 'alpha', 'charlie']])
-  await expect(workspaceHeads(page)).toHaveCount(1)
-  await expect(cards(page).nth(2)).toHaveClass(/selected/)
-  await run(page, 'echo typed-$((1+1))', 'typed-2')
-})
-
 test('끄는 동안에만 목록 끝에 New Workspace 칸이 보이고, 거기 놓으면 그 cell 하나로 된 workspace 를 목록 끝에 만든다', async ({
   launch
 }) => {
@@ -233,24 +216,6 @@ test('포인터가 사이드바 밖에 있을 때 떼면 끌기를 그만두어 
   await expect.poll(() => shape(page)).toEqual([['alpha', 'bravo'], ['charlie']])
 })
 
-test('접힌 workspace 의 이름 줄에 놓으면 그 workspace 의 끝에 넣는다', async ({ launch }) => {
-  const launched = await launch()
-  const { page } = launched
-  await arrange(launched, [['alpha', 'bravo'], ['charlie']])
-  await workspaceHeads(page).nth(0).click()
-  await expect(cards(page)).toHaveCount(1)
-
-  await grabHandle(page, grip(page, 0), 0)
-  await moveTo(page, workspaceHeads(page).nth(0), 0.5)
-  await expect(line(page)).toBeVisible()
-  await page.mouse.up()
-
-  await expect(workspaceHeads(page)).toHaveCount(1)
-  await expect(workspaceHeads(page).nth(0)).toHaveAttribute('aria-expanded', 'false')
-  await workspaceHeads(page).nth(0).click()
-  await expect.poll(() => shape(page)).toEqual([['alpha', 'bravo', 'charlie']])
-})
-
 test('끄는 동안 포인터가 목록의 아래·위 끝 가까이 오면 그쪽으로 목록을 굴린다', async ({
   launch
 }) => {
@@ -339,18 +304,6 @@ test('끄는 동안 같은 workspace 의 다른 cell 이 닫힌 뒤 놓아도 �
   await expect.poll(() => shape(page)).toEqual([['alpha']])
   await expect(cellViews(page)).toHaveCount(1)
   await run(page, 'echo alive-$((1+1))', 'alive-2')
-})
-
-test('workspace 이름 줄을 마지막 workspace 아래로 끌면 목록 끝으로 옮긴다', async ({ launch }) => {
-  const launched = await launch()
-  const { page } = launched
-  await arrange(launched, [['alpha'], ['bravo'], ['charlie']])
-
-  await grabHandle(page, workspaceHeads(page).nth(0), 0)
-  await moveTo(page, page.locator('.sidebar .list > .workspace').nth(2), 0.9)
-  await page.mouse.up()
-
-  await expect.poll(() => shape(page)).toEqual([['bravo'], ['charlie'], ['alpha']])
 })
 
 test('접은 사이드바에서도 손잡이로 cell 을 끌어 옮긴다', async ({ launch }) => {

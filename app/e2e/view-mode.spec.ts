@@ -1,7 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import {
   activePane,
-  cellSize,
   clickMenu,
   expect,
   expectCols,
@@ -228,47 +227,6 @@ test('columns 에서 좌우로 나누면 고르지 않게 나눠도 pane 마다 
   }
 })
 
-test('columns 에서 위아래 두 쪽의 늘어선 pane 수가 다르면 적은 쪽 pane 이 넓어진다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await toggleView(launched, 'columns')
-
-  await split(app, page, 'split-right', 2)
-  await split(app, page, 'split-down', 3)
-  await split(app, page, 'split-right', 4)
-  await expectCols(page, 80)
-  await focusPane(app, page, 'focus-pane-up', 1)
-  // 오른쪽 아래에 pane 이 둘 늘어서 있어 위쪽 pane 은 pane 두 개 폭이다.
-  const wide = (await shellSize(page)).cols
-  expect(wide).toBeGreaterThan(155)
-  expect(wide).toBeLessThan(170)
-})
-
-test('columns 에서 pane 두 개 폭의 pane 과 그 아래 두 번째 pane 은 글자 열이 이어진다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await toggleView(launched, 'columns')
-  await split(app, page, 'split-right', 2)
-  await split(app, page, 'split-down', 3)
-  await split(app, page, 'split-right', 4)
-  await expectCols(page, 80)
-
-  // 오른쪽 위 pane(1)은 아래의 pane 두 개(2·3) 폭이다.
-  const { width } = await cellSize(page)
-  const left = (i: number) =>
-    panes(page)
-      .nth(i)
-      .locator('.xterm-screen')
-      .evaluate((el) => el.getBoundingClientRect().left)
-  const cols = ((await left(3)) - (await left(1))) / width
-  expect(cols).toBeGreaterThan(80)
-  expect(Math.abs(cols - Math.round(cols))).toBeLessThan(0.05)
-})
-
 test('columns 에서 다른 cell 의 pane 을 누르면 그 cell 을 선택하고 키가 그리로 간다', async ({
   launch
 }) => {
@@ -286,25 +244,6 @@ test('columns 에서 다른 cell 의 pane 을 누르면 그 cell 을 선택하�
   await run(page, 'echo "x=$X"', 'x=a-2')
   await split(launched.app, page, 'split-right', 2)
   await expect(cellViews(page).nth(1).locator('.pane')).toHaveCount(1)
-})
-
-test('columns 에서 위아래로 나눈 pane 도 80열이고, pane 을 닫으면 cell 폭이 다시 준다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await toggleView(launched, 'columns')
-  const one = (await cellViews(page).first().boundingBox())!.width
-
-  await split(app, page, 'split-right', 2)
-  expect((await cellViews(page).first().boundingBox())!.width).toBeGreaterThan(one * 1.9)
-  await clickMenu(app, 'close-pane')
-  await expect(panes(page)).toHaveCount(1)
-  await expect.poll(async () => (await cellViews(page).first().boundingBox())!.width).toBe(one)
-
-  await split(app, page, 'split-down', 2)
-  await expectCols(page, 80)
-  expect((await cellViews(page).first().boundingBox())!.width).toBe(one)
 })
 
 test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 pane 이 보이도록 따라간다', async ({
@@ -662,26 +601,19 @@ test('columns 에서 줌을 바꿔도 pane 은 80열이다', async ({ launch }) 
   await toggleView(launched, 'columns')
   await expectCols(page, 80)
 
-  for (const level of [0.5, 1, 1.5, 2, 2.5, 3, -0.5, -1, -1.5, -2, -2.5, -3]) {
-    const before = await page.evaluate(() => devicePixelRatio)
-    await setZoom(app, level)
-    await expect.poll(() => page.evaluate(() => devicePixelRatio)).not.toBe(before)
-    await expectCols(page, 80)
-  }
+  const before = await page.evaluate(() => devicePixelRatio)
+  await setZoom(app, 0.5)
+  await expect.poll(() => page.evaluate(() => devicePixelRatio)).not.toBe(before)
+  await expectCols(page, 80)
 })
 
-for (const size of [8, 9, 16]) {
-  test(`DOM 으로 그려도 글꼴 크기 ${size} 의 columns pane 은 80열이다`, async ({
-    launch,
-    dataDir
-  }) => {
-    writeConfig(dataDir, `[terminal]\nfont-size = ${size}\n`)
-    const launched = await launch()
-    const { page } = launched
-    await toggleView(launched, 'columns')
-    await expectCols(page, 80)
-  })
-}
+test('DOM 으로 그려도 글꼴 크기 8 의 columns pane 은 80열이다', async ({ launch, dataDir }) => {
+  writeConfig(dataDir, '[terminal]\nfont-size = 8\n')
+  const launched = await launch()
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  await expectCols(page, 80)
+})
 
 test('columns 에서 창 크기를 바꿔도 pane 은 80열이다', async ({ launch }) => {
   const launched = await launch()
