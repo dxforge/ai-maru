@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { killPty, killPtys } from '../src/main/pty'
+import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import { STATE_VERSIONS } from '../src/shared/screen'
 import {
   canvasWidth,
@@ -421,7 +422,11 @@ test('재시작한 뒤 End everything 으로 끄면 되살린 pty 도 끈다', a
 })
 
 function otherProtocolBin(dataDir: string): Record<string, string> {
-  const bin = wrapPtyBin(dataDir, 'v2', '[ "$1" = --protocol-version ] && { echo 2; exit 0; }')
+  const bin = wrapPtyBin(
+    dataDir,
+    'other-protocol',
+    `[ "$1" = --protocol-version ] && { echo ${PROTOCOL_VERSION + 1}; exit 0; }`
+  )
   return { MARU_PTY_BIN: bin }
 }
 
@@ -443,7 +448,9 @@ test('pty 프로토콜이 다르면 레이아웃만 되살릴지 묻고, 취소�
   await expect.poll(() => dialogCalls(app)).toHaveLength(1)
   expect((await dialogCalls(app))[0]).toMatchObject({
     message: 'Restart with layout only?',
-    detail: expect.stringContaining('The installed app uses pty protocol version 2'),
+    detail: expect.stringContaining(
+      `The installed app uses pty protocol version ${PROTOCOL_VERSION + 1}`
+    ),
     buttons: ['Restart with layout only', 'Cancel']
   })
   expect((await dialogCalls(app))[0].detail).toContain('This will end 1 terminal.')

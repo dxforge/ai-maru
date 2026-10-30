@@ -603,7 +603,7 @@ describe('readRecord', () => {
   it('pty 레코드를 읽고, 없거나 깨졌으면 null 이다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-rec-'))
     const rec = {
-      protocol_version: 1,
+      protocol_version: PROTOCOL_VERSION,
       id: 'p-0000000a',
       pid: 1,
       shell_pid: 42,

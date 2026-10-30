@@ -4,7 +4,7 @@
  * 새 셸을 띄운다. 그래서 이전 빌드의 `maru-pty` 에 붙으려고 버전 올리기를 미루지 않는다. `maru-pty` 의 같은 값은
  * `core/crates/maru-pty/src/lib.rs` 에 있다.
  */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 
 export const TAG_TEXT = 1
 export const TAG_BINARY = 2

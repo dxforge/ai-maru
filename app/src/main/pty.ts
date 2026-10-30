@@ -269,7 +269,7 @@ export async function foreground(
   timeoutMs = FOREGROUND_REPLY_MS
 ): Promise<Foreground> {
   const r = await askWithin(dir, id, { type: 'foreground' }, timeoutMs)
-  // `foreground` 를 더하며 `PROTOCOL_VERSION` 을 올리지 않았으므로, 앱을 새로 깔아도 이 요청을 모르는 이전 maru-pty 의 pty 가 남아 있을 수 있다.
+  // 버전 1 의 maru-pty 가운데 `foreground` 를 모르는 것을 위한 분기다. 버전 1 의 maru-pty 는 버전 2 의 요청을 `protocol_mismatch` 로 거절하므로 지금은 닿지 않는다.
   if (r.code === 'unknown_request') {
     throw new Error(`pty ${id} runs an older maru-pty that does not answer foreground requests`)
   }
@@ -305,7 +305,7 @@ export function subscribeState(dir: string, id: string, on: StateHandlers): () =
     id,
     { type: 'subscribe' },
     (msg) => {
-      // `subscribe` 를 더하며 `PROTOCOL_VERSION` 을 올리지 않았으므로, 앱을 새로 깔아도 이 요청을 모르는 이전 maru-pty 의 pty 가 남아 있을 수 있다.
+      // 버전 1 의 maru-pty 가운데 `subscribe` 를 모르는 것을 위한 분기다. 버전 1 의 maru-pty 는 버전 2 의 요청을 `protocol_mismatch` 로 거절하므로 지금은 닿지 않는다.
       if (msg?.code === 'unknown_request') {
         req.close()
         return on.old()
