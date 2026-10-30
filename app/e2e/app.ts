@@ -321,17 +321,6 @@ export async function cellSize(page: Page): Promise<{ width: number; height: num
   })
 }
 
-export function tokenRgb(page: Page, name: string): Promise<number[]> {
-  return page.evaluate((name) => {
-    const probe = document.createElement('div')
-    probe.style.color = `var(${name})`
-    document.body.append(probe)
-    const color = getComputedStyle(probe).color
-    probe.remove()
-    return color.match(/\d+/g)!.slice(0, 3).map(Number)
-  }, name)
-}
-
 export type Box = { x: number; y: number; width: number; height: number }
 
 export type Pixels = { width: number; height: number; data: number[] }

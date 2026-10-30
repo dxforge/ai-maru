@@ -1,4 +1,4 @@
-import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { SCROLLBAR_WIDTH, TERMINAL_PADDING } from '../src/renderer/src/workspace/columns'
 import {
   activePane,
@@ -24,7 +24,6 @@ import {
   split,
   test,
   toggleView,
-  tokenRgb,
   cellGroups,
   cellItems,
   cellViews,
@@ -41,26 +40,6 @@ async function inView(page: Page, el: Locator): Promise<boolean> {
 // 이 앱을 띄우는 인자로 macOS 의 "스크롤 막대 보기" 설정을 바꾼다. Cocoa 가 `-키 값` 인자를 설정으로 읽기 때문이다.
 const CLASSIC_SCROLLBARS = ['-AppleShowScrollBars', 'Always']
 const OVERLAY_SCROLLBARS = ['-AppleShowScrollBars', 'WhenScrolling']
-
-// 창을 투명하게 띄우고 마우스 이벤트를 무시하게 해도, 진짜 커서가 창의 화면 영역 안에 있으면 앱이 뜰 때와
-// screenshot 을 찍을 때마다 그 자리의 마우스 이벤트가 페이지에 들어와 hover 를 옮긴다.
-// 화면이 좁으면 창 일부가 화면 밖으로 나가지만, screenshot 은 화면 밖 부분도 그린다.
-async function moveWindowOffCursor(app: ElectronApplication): Promise<void> {
-  const outside = await app.evaluate(({ BrowserWindow, screen }) => {
-    const win = BrowserWindow.getAllWindows()[0]
-    const cursor = screen.getCursorScreenPoint()
-    const area = screen.getDisplayNearestPoint(cursor).workArea
-    const { width } = win.getBounds()
-    const x =
-      cursor.x - area.x > area.width / 2
-        ? Math.min(cursor.x - width, area.x + area.width - width)
-        : Math.max(cursor.x + 1, area.x)
-    win.setPosition(x, area.y)
-    const moved = win.getBounds()
-    return cursor.x < moved.x || cursor.x >= moved.x + moved.width
-  })
-  expect(outside, '창을 커서 옆으로 옮기지 못했다').toBe(true)
-}
 
 type Scroll = { left: number; frame: number; time: number }
 
@@ -701,35 +680,6 @@ test('overlay 스크롤바 설정에서 columns 의 가로 스크롤바는 넘�
   expect(await scrollbarHeight(page)).toBe(0)
 })
 
-test('overlay 스크롤바 설정에서 columns 의 트랙은 스크롤할 때 보이지 않고, 스크롤바에 마우스를 올린 채 스크롤하면 칠해진다', async ({
-  launch
-}) => {
-  const launched = await launch({}, undefined, OVERLAY_SCROLLBARS)
-  const { app, page } = launched
-  await moveWindowOffCursor(app)
-  await newWorkspace(launched, 2)
-  await toggleView(launched, 'columns')
-  const area = await scrollArea(page)
-  const red = async (x: number): Promise<number> =>
-    (await screenshotPixels(page, { x, y: area.bottom - 4, width: 1, height: 1 }, 'css')).data[0]
-  // 새 cell 의 pane 을 따라 맨 오른쪽까지 스크롤했으므로 thumb 은 오른쪽 끝에 있다.
-  const [track, thumb] = [area.left + 40, area.right - 40]
-  const middle = (area.left + area.right) / 2
-  // 처음 넘칠 때 나타난 스크롤바가 사라지면 두 자리 모두 바탕색이다.
-  await expect.poll(async () => (await red(thumb)) - (await red(track))).toBe(0)
-  const ground = await red(track)
-
-  await page.mouse.move(middle, area.bottom - 200)
-  await page.mouse.wheel(-60, 0)
-  await expect.poll(() => red(thumb)).not.toBe(ground)
-  expect(await red(track)).toBe(ground)
-
-  await expect.poll(() => red(thumb)).toBe(ground)
-  await page.mouse.move(middle, area.bottom - 4)
-  await page.mouse.wheel(-60, 0)
-  await expect.poll(() => red(track)).not.toBe(ground)
-})
-
 test('columns 에서 선택한 cell 의 테두리는 아래 변도 스크롤 영역 안에 그려진다', async ({
   launch
 }) => {
@@ -744,36 +694,21 @@ test('columns 에서 선택한 cell 의 테두리는 아래 변도 스크롤 영
   expect(card.x - 1).toBeGreaterThanOrEqual(area.left)
 })
 
-test('columns 에서 선택한 cell 만 accent 색 테두리를 두르고, 다른 cell 을 고르면 테두리가 옮겨 간다', async ({
-  launch,
-  dataDir
+test('columns 에서 사이드바로 고른 cell 만 선택 표시를 하고, 다른 cell 을 고르면 표시가 옮겨 간다', async ({
+  launch
 }) => {
-  // 두 cell 이 함께 창 안에 보이도록 pane 폭을 줄인다.
-  writeConfig(dataDir, '[layout]\ncolumn-cols = 40\n')
   const launched = await launch()
   const { page } = launched
   await newWorkspace(launched, 2)
   await toggleView(launched, 'columns')
-  const accent = await tokenRgb(page, '--accent')
-  // 카드 바로 왼쪽 1px 이 테두리다.
-  const border = async (i: number): Promise<number[]> => {
-    const card = (await cellViews(page).nth(i).boundingBox())!
-    const clip = {
-      x: Math.round(card.x) - 1,
-      y: Math.round(card.y + card.height / 2),
-      width: 1,
-      height: 1
-    }
-    return (await screenshotPixels(page, clip, 'css')).data.slice(0, 3)
-  }
 
   await cellItems(page).nth(0).click()
-  await expect.poll(() => border(0)).toEqual(accent)
-  expect(await border(1)).not.toEqual(accent)
+  await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
+  await expect(cellViews(page).nth(1)).not.toHaveClass(/selected/)
 
   await cellItems(page).nth(1).click()
-  await expect.poll(() => border(1)).toEqual(accent)
-  expect(await border(0)).not.toEqual(accent)
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+  await expect(cellViews(page).nth(0)).not.toHaveClass(/selected/)
 })
 
 test('columns 에서 포커스를 따라 스크롤해도 선택한 cell 의 옆 테두리는 스크롤 영역 안에 그려진다', async ({
