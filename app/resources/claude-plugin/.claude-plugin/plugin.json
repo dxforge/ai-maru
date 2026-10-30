@@ -1,4 +1,4 @@
 {
-  "name": "ai-maru",
-  "description": "Reports the state of claude to the AI Maru terminal it runs in."
+  "name": "maru",
+  "description": "Reports the state of claude to the AI Maru terminal it runs in, and lets claude show documents in its Canvas panel."
 }

@@ -364,6 +364,43 @@ test('파일을 인자로 주면 셸의 현재 디렉토리 기준으로 읽어 
   await expect(rows(page)).toContainText('code-0')
 })
 
+const mcpLine = (msg: object) => `'${JSON.stringify({ jsonrpc: '2.0', ...msg })}'`
+
+test('maru mcp 에 canvas_put 을 부르면 패널에 렌더되고 문서 id 를 답한다', async ({ launch }) => {
+  const { page } = await launch()
+  const init = mcpLine({ id: 0, method: 'initialize', params: { protocolVersion: '2025-11-25' } })
+  const put = mcpLine({
+    id: 1,
+    method: 'tools/call',
+    params: { name: 'canvas_put', arguments: { text: '# From MCP', id: 'mcp-doc' } }
+  })
+  await page.keyboard.type(`printf '%s\\n' ${init} ${put} | maru mcp; echo code-$?\n`)
+  await expect(titles(page)).toHaveText(['From MCP'])
+  await expect(markdown(page).locator('h1')).toHaveText('From MCP')
+  await expect(rows(page)).toContainText('"text":"mcp-doc"')
+  await expect(rows(page)).toContainText('code-0')
+})
+
+test('maru mcp 의 canvas_put 은 file 을 셸의 현재 디렉토리 기준으로 읽는다', async ({
+  launch,
+  dataDir
+}) => {
+  const { page } = await launch()
+  const put = mcpLine({
+    id: 2,
+    method: 'tools/call',
+    params: { name: 'canvas_put', arguments: { file: 'mcp.md' } }
+  })
+  await page.keyboard.type(
+    `cd '${dataDir}' && printf '# From MCP file' > mcp.md && printf '%s\\n' ${put} | maru mcp; echo code-$?\n`
+  )
+  await expect(titles(page)).toHaveText(['From MCP file'])
+  await expect(rows(page)).toContainText(
+    /"id":2,"jsonrpc":"2.0","result":\{"content":\[\{"text":"[0-9a-f-]{36}"/
+  )
+  await expect(rows(page)).toContainText('code-0')
+})
+
 test('16 MiB 를 넘는 입력은 앱에 보내지 않고 실패한다', async ({ launch }) => {
   const { page } = await launch()
   await page.keyboard.type('yes | maru canvas put; echo code-$?\n')

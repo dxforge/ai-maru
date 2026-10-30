@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "maru": { "command": "${MARU_CLI}", "args": ["mcp"] }
+  }
+}

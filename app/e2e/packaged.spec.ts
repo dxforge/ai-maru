@@ -55,14 +55,15 @@ test('설치본의 터미널에서 maru 는 번들 안의 CLI 다', async ({ lau
   await expect(rows(page)).toContainText('cli-2')
 })
 
-test('설치본의 터미널에서 MARU_CLI·MARU_CLAUDE_PLUGIN 은 번들 안을 가리킨다', async ({
+test('설치본의 터미널에서 MARU_CLI·MARU_CLAUDE_PLUGIN 은 번들 안을 가리키고, plugin 에 MCP 서버 설정이 있다', async ({
   launch
 }) => {
   const { page } = await launch({}, executable())
   const bin = join(installed, 'Contents/Resources/bin/maru')
   const hooks = join(installed, 'Contents/Resources/claude-plugin/hooks/hooks.json')
+  // plugin 의 MCP 서버 설정은 이름이 `.` 로 시작해도 설치본에 실려야 한다.
   await page.keyboard.type(
-    `test "$MARU_CLI" -ef '${bin}' && test "$MARU_CLAUDE_PLUGIN/hooks/hooks.json" -ef '${hooks}' && echo plugin-$((1+1)) || echo plugin-other\n`
+    `test "$MARU_CLI" -ef '${bin}' && test "$MARU_CLAUDE_PLUGIN/hooks/hooks.json" -ef '${hooks}' && test -f "$MARU_CLAUDE_PLUGIN/.mcp.json" && echo plugin-$((1+1)) || echo plugin-other\n`
   )
   await expect(rows(page)).toContainText('plugin-2')
 })
