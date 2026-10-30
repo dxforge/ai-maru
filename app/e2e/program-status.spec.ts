@@ -431,8 +431,23 @@ test('사이드바·pane 헤더·cell 헤더의 상태 원은 셸의 터미널 �
   const [sidebarBlocked] = await inkExtents(page, paneRows(page), ['.state'])
   await sameHeight(paneRows(page).locator('.state'), sidebarBlocked.height, sidebarShell.height)
 
-  const [headerShell] = await inkExtents(page, paneHeader(page, 0), ['.row-bar-icon'])
-  const [headerBlocked] = await inkExtents(page, paneHeader(page, 1), ['.row-bar-icon'])
+  // pane 헤더는 터미널 반대쪽 가장자리 1px 에 pane 경계선을 그린다. 그 선이 잉크로 잡히지 않게 헤더 위치와 상관없이 위아래 1px 을 뺀다.
+  const withoutLine = async (header: Locator): Promise<Box> => {
+    const box = (await header.boundingBox())!
+    return { ...box, y: box.y + 1, height: box.height - 2 }
+  }
+  const [headerShell] = await inkExtents(
+    page,
+    paneHeader(page, 0),
+    ['.row-bar-icon'],
+    await withoutLine(paneHeader(page, 0))
+  )
+  const [headerBlocked] = await inkExtents(
+    page,
+    paneHeader(page, 1),
+    ['.row-bar-icon'],
+    await withoutLine(paneHeader(page, 1))
+  )
   const [cellBlocked] = await inkExtents(page, page.locator('.cell-header'), ['.row-bar-icon'])
   const headerIcon = paneHeader(page, 1).locator('.row-bar-icon')
   await sameHeight(headerIcon, headerBlocked.height, headerShell.height)

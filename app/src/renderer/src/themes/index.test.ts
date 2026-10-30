@@ -1,7 +1,15 @@
 import { readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { contrast, GHOSTTY, uiColors } from '../../../shared/theme'
+import {
+  contrast,
+  FOCUSED_HEADER_CONTRAST,
+  GHOSTTY,
+  HEADER_CONTRAST,
+  isLight,
+  PANE_LINE_CONTRAST,
+  uiColors
+} from '../../../shared/theme'
 import { activeTheme, DEFAULT_THEME, sameThemeChoice, themeNamed, themeNames, windowTheme } from '.'
 
 const MIN_CONTRAST = 3
@@ -31,7 +39,7 @@ describe('themeNamed', () => {
     for (const name of themeNames()) {
       const theme = themeNamed(name)!
       const ui = uiColors(theme)
-      const surfaces = [ui.side, ui.ground, ui.raised, ui.hdrFocus]
+      const surfaces = [ui.side, ui.ground, ui.raised, ui.hdr, ui.hdrFocus]
       for (const [key, i] of [
         ['working', 4],
         ['waiting', 3],
@@ -40,6 +48,34 @@ describe('themeNamed', () => {
         const normal = surfaces.every((s) => contrast(theme.ansi[i], s) >= MIN_CONTRAST)
         expect(ui[key], `${name} ${key}`).toBe(theme.ansi[normal ? i : i + 8])
       }
+    }
+  })
+
+  // 색을 채널마다 8bit 로 반올림하므로 대비가 목표에서 조금 어긋난다. 테마 861개에서 가장 크게 어긋난 값은 1.5% 다.
+  const near = (actual: number, target: number): boolean => Math.abs(actual / target - 1) < 0.02
+
+  it('모든 테마에서 pane 헤더 배경은 터미널 배경과 같은 대비로 구별된다', () => {
+    for (const name of themeNames()) {
+      const ui = uiColors(themeNamed(name)!)
+      expect(near(contrast(ui.hdr, ui.ground), HEADER_CONTRAST), name).toBe(true)
+    }
+  })
+
+  it('모든 테마에서 focus 된 pane 헤더는 focus 안 된 pane 헤더와 같은 대비로 구별되고, 밝은 테마는 흰색에서 멈춘다', () => {
+    for (const name of themeNames()) {
+      const theme = themeNamed(name)!
+      const ui = uiColors(theme)
+      const away = isLight(theme) ? '#ffffff' : theme.foreground
+      const target = Math.min(FOCUSED_HEADER_CONTRAST, contrast(away, ui.hdr))
+      expect(near(contrast(ui.hdrFocus, ui.hdr), target), name).toBe(true)
+    }
+  })
+
+  it('모든 테마에서 pane 경계선은 터미널·focus 안 된 pane 헤더·focus 된 pane 헤더와 구별된다', () => {
+    for (const name of themeNames()) {
+      const ui = uiColors(themeNamed(name)!)
+      for (const surface of [ui.ground, ui.hdr, ui.hdrFocus])
+        expect(contrast(ui.paneLine, surface), name).toBeGreaterThanOrEqual(PANE_LINE_CONTRAST)
     }
   })
 })

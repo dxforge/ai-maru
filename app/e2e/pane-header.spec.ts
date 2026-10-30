@@ -1,5 +1,5 @@
 import { basename } from 'node:path'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import {
   activeHeader,
   canvasPanel,
@@ -8,6 +8,7 @@ import {
   focusPane,
   isInk,
   newWorkspace,
+  paneBox,
   paneHeader,
   panes,
   programStatus,
@@ -20,6 +21,7 @@ import {
   split,
   test,
   toggleView,
+  tokenRgb,
   typesInto,
   cellGroups,
   cellPlaces,
@@ -422,6 +424,80 @@ for (const header of ['bottom', 'top'] as const) {
     )
     expect(lines).toEqual(['none', '""', '""'])
     await expect(async () => expectRowsMatch(await measure(page))).toPass()
+  })
+}
+
+/** 헤더의 맨 위·맨 아래 픽셀 행의 색. 글자가 없는 왼쪽 여백에서 1px 폭으로 자른다. */
+async function headerEdges(
+  page: Page,
+  header: Locator
+): Promise<{ top: number[]; bottom: number[] }> {
+  const box = (await header.boundingBox())!
+  const clip = {
+    x: Math.round(box.x) + 1,
+    y: Math.ceil(box.y),
+    width: 1,
+    height: Math.floor(box.height)
+  }
+  const { height, data } = await screenshotPixels(page, clip, 'css')
+  return { top: data.slice(0, 3), bottom: data.slice((height - 1) * 4, (height - 1) * 4 + 3) }
+}
+
+for (const header of ['bottom', 'top'] as const) {
+  test(`헤더가 ${header === 'bottom' ? '아래' : '위'}일 때 pane 헤더는 터미널 반대쪽 가장자리에 경계선을 긋고, cell 헤더는 pane 헤더와 맞닿은 쪽에 선을 긋지 않는다`, async ({
+    launch,
+    dataDir
+  }) => {
+    if (header === 'top') writeConfig(dataDir, '[layout]\nheader = "top"\n')
+    const { app, page } = await launch()
+    await split(app, page, 'split-down', 2)
+    const [line, hdr, hdrFocus] = await Promise.all(
+      ['--pane-line', '--hdr', '--hdr-focus'].map((t) => tokenRgb(page, t))
+    )
+    expect(line).not.toEqual(hdr)
+
+    // 아래 pane 에 focus 가 있으므로 위 pane 의 헤더는 focus 안 된 색이다.
+    const upper = await headerEdges(page, paneHeader(page, 0))
+    const [far, near] = header === 'bottom' ? [upper.bottom, upper.top] : [upper.top, upper.bottom]
+    expect(far).toEqual(line)
+    expect(near).toEqual(hdr)
+
+    const cell = await headerEdges(page, page.locator('.panes.selected .cell-header'))
+    expect(header === 'bottom' ? cell.top : cell.bottom).toEqual(hdrFocus)
+  })
+}
+
+for (const header of ['bottom', 'top'] as const) {
+  test(`헤더가 ${header === 'bottom' ? '아래' : '위'}일 때 구분선이 focus 된 헤더와 같은 색에 가까운 테마에서는 위아래·좌우 pane 경계선을 pane 경계선 색으로 긋는다`, async ({
+    launch,
+    dataDir
+  }) => {
+    // Catppuccin Mocha 의 구분선은 focus 된 헤더와 거의 같은 색이라 pane 경계선 색과 다르다.
+    writeConfig(dataDir, `[terminal]\ntheme = "Catppuccin Mocha"\n[layout]\nheader = "${header}"\n`)
+    const { app, page } = await launch()
+    await split(app, page, 'split-right', 2)
+    await split(app, page, 'split-down', 3)
+    const [paneLine, line] = await Promise.all(
+      ['--pane-line', '--line'].map((t) => tokenRgb(page, t))
+    )
+    expect(paneLine).not.toEqual(line)
+
+    // 오른쪽 위 pane 과 focus 된 오른쪽 아래 pane 사이의 경계다.
+    const boundary =
+      header === 'bottom'
+        ? (await headerEdges(page, paneHeader(page, 1))).bottom
+        : (await headerEdges(page, paneHeader(page, 2))).top
+    expect(boundary).toEqual(paneLine)
+
+    // 왼쪽 pane 과 오른쪽 위 pane 사이의 경계다.
+    const right = await paneBox(page, 1)
+    const clip = {
+      x: Math.round(right.x),
+      y: Math.round(right.y + right.height / 2),
+      width: 1,
+      height: 1
+    }
+    expect((await screenshotPixels(page, clip, 'css')).data.slice(0, 3)).toEqual(paneLine)
   })
 }
 

@@ -1109,16 +1109,12 @@ void window.maru.restoreScreen().then((s) => {
 }
 
 .columns .panes.selected {
-  box-shadow: 0 0 0 1px var(--muted);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
-.cell-header {
-  box-shadow: inset 0 -1px 0 var(--line);
-}
-
+/* cell 헤더와 pane 헤더 사이의 경계선은 맞닿은 pane 헤더가 그린다. cell 헤더에도 선을 그리면 2px 로 겹친다. */
 .header-bottom .cell-header {
   order: 1;
-  box-shadow: inset 0 1px 0 var(--line);
 }
 
 .cell-header .name {
@@ -1146,15 +1142,17 @@ void window.maru.restoreScreen().then((s) => {
   left: 0;
   z-index: 3;
   width: 1px;
-  background: var(--line);
+  background: var(--pane-line);
 }
 
+/* 위아래 pane 의 경계선. 헤더의 터미널 반대쪽 가장자리에 자리를 차지하지 않게 겹친다 — docs/architecture.md 의 "pane 경계와 글자 칸 격자". */
 .pane-header {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   z-index: 2;
+  box-shadow: inset 0 1px 0 var(--pane-line);
 }
 
 /* 터미널은 받은 열·행 수만큼만 그리므로, 본문 오른쪽과 아래에 한 글자 칸 미만의 빈 자리가 남을 수 있다. */
@@ -1169,6 +1167,7 @@ void window.maru.restoreScreen().then((s) => {
 .header-bottom .pane-header {
   top: auto;
   bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--pane-line);
 }
 
 .header-bottom .body {

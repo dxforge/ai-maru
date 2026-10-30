@@ -2,13 +2,17 @@ import { describe, expect, it } from 'vitest'
 import {
   contrast,
   GHOSTTY,
+  HEADER_CONTRAST,
   isLight,
   mix,
   hexColor,
+  PANE_LINE_CONTRAST,
   parseWindowTheme,
   uiColors,
   xtermTheme
 } from './theme'
+
+const brightness = (c: string): number => contrast(c, '#000000')
 
 describe('isLight', () => {
   it('배경의 밝기로 가른다', () => {
@@ -26,6 +30,19 @@ describe('mix', () => {
 })
 
 describe('uiColors', () => {
+  it('어두운 테마의 pane 헤더는 터미널보다 어둡고, 밝은 테마의 pane 헤더는 글자색 쪽이다', () => {
+    const dark = uiColors(GHOSTTY)
+    expect(brightness(dark.hdr)).toBeLessThan(brightness(dark.ground))
+    const light = uiColors({ background: '#eff1f5', foreground: '#4c4f69', ansi: GHOSTTY.ansi })
+    expect(contrast(light.hdr, light.fg)).toBeLessThan(contrast(light.ground, light.fg))
+  })
+
+  it('배경이 검정이면 pane 헤더를 글자색 쪽으로 섞어 같은 대비를 낸다', () => {
+    const ui = uiColors({ ...GHOSTTY, background: '#000000' })
+    expect(brightness(ui.hdr)).toBeGreaterThan(brightness(ui.ground))
+    expect(contrast(ui.hdr, ui.ground)).toBeCloseTo(HEADER_CONTRAST, 2)
+  })
+
   it('상태 색은 사이드바·pane·pane 헤더 위에서 모두 3:1 이 넘으면 ANSI 색을 그대로 쓴다', () => {
     const ui = uiColors(GHOSTTY)
     expect([ui.waiting, ui.working]).toEqual([GHOSTTY.ansi[3], GHOSTTY.ansi[4]])
@@ -49,6 +66,29 @@ describe('uiColors', () => {
   it('포커스된 pane 헤더는 다른 pane 헤더보다 글자색에 가깝다', () => {
     const ui = uiColors(GHOSTTY)
     expect(contrast(ui.hdrFocus, ui.fg)).toBeLessThan(contrast(ui.raised, ui.fg))
+  })
+
+  it('밝은 테마의 focus 된 pane 헤더는 focus 안 된 pane 헤더보다 밝아, 흐린 글자와 멀어진다', () => {
+    const ui = uiColors({ background: '#eff1f5', foreground: '#4c4f69', ansi: GHOSTTY.ansi })
+    expect(brightness(ui.hdrFocus)).toBeGreaterThan(brightness(ui.hdr))
+    expect(contrast(ui.faint, ui.hdrFocus)).toBeGreaterThan(contrast(ui.faint, ui.hdr))
+  })
+
+  it('배경이 흰색인 밝은 테마의 focus 된 pane 헤더는 흰색에서 멈춘다', () => {
+    const ui = uiColors({ background: '#ffffff', foreground: '#1f2328', ansi: GHOSTTY.ansi })
+    expect(ui.hdrFocus).toBe('#ffffff')
+  })
+
+  it('구분선이 터미널·두 헤더와 이미 구별되면 pane 경계선은 구분선과 같은 색이다', () => {
+    const ui = uiColors(GHOSTTY)
+    expect(ui.paneLine).toBe(ui.line)
+  })
+
+  it('구분선이 focus 된 pane 헤더와 같은 색에 가까우면 pane 경계선을 글자색 쪽으로 더 섞는다', () => {
+    const ui = uiColors({ background: '#1e1e2e', foreground: '#cdd6f4', ansi: GHOSTTY.ansi })
+    expect(contrast(ui.line, ui.hdrFocus)).toBeLessThan(PANE_LINE_CONTRAST)
+    expect(contrast(ui.paneLine, ui.hdrFocus)).toBeGreaterThanOrEqual(PANE_LINE_CONTRAST)
+    expect(contrast(ui.paneLine, ui.fg)).toBeLessThan(contrast(ui.line, ui.fg))
   })
 
   it('어두운 테마의 사이드바는 배경보다 어둡고, 밝은 테마의 사이드바는 배경보다 글자색 쪽이다', () => {
