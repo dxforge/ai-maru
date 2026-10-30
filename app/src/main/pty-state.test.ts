@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PtyState, PtyStateEntry } from '../shared/pty-state'
+import type { PtyNotification, PtyState, PtyStateEntry } from '../shared/pty-state'
 import type { StateHandlers } from './pty'
 import { createPtyStates } from './pty-state'
 
@@ -18,6 +18,7 @@ function state(over: Partial<PtyState> = {}): PtyState {
 function setup(live = true) {
   const subs: { id: string; on: StateHandlers; closed: boolean }[] = []
   const emitted: [string, PtyStateEntry | null][] = []
+  const notified: [string, PtyNotification][] = []
   let alive = live
   const isLive = vi.fn(async () => alive)
   const states = createPtyStates({
@@ -27,12 +28,14 @@ function setup(live = true) {
       return () => void (sub.closed = true)
     },
     isLive,
-    emit: (pty, entry) => void emitted.push([pty, entry])
+    emit: (pty, entry) => void emitted.push([pty, entry]),
+    notified: (pty, n) => void notified.push([pty, n])
   })
   return {
     states,
     subs,
     emitted,
+    notified,
     isLive,
     last: () => subs[subs.length - 1],
     die: () => void (alive = false)
@@ -130,6 +133,90 @@ describe('createPtyStates', () => {
     await Promise.resolve()
     expect(t.emitted).toHaveLength(2)
     expect(t.subs).toHaveLength(1)
+    expect(t.states.entries()).toEqual({})
+  })
+
+  const first = { title: 'Tests', body: '3 failed' }
+  const second = { title: '', body: 'done' }
+
+  it('알림을 받을 때마다 알리고, 마지막 알림을 상태와 함께 들며 다음 상태에도 남긴다', () => {
+    const t = setup()
+    t.states.watch('p-1')
+    t.last().on.state(state())
+    t.last().on.notification(first)
+    t.last().on.notification(second)
+    expect(t.notified).toEqual([
+      ['p-1', first],
+      ['p-1', second]
+    ])
+    expect(t.emitted.at(-1)).toEqual(['p-1', { state: state(), notification: second }])
+    t.last().on.state(state({ title: 'next' }))
+    expect(t.states.entries()).toEqual({
+      'p-1': { state: state({ title: 'next' }), notification: second }
+    })
+  })
+
+  it('seen 은 읽지 않은 알림을 지워 알리고, 알림이 없으면 알리지 않는다', () => {
+    const t = setup()
+    t.states.watch('p-1')
+    t.last().on.state(state())
+    t.last().on.notification(first)
+    t.states.seen('p-1')
+    expect(t.emitted.at(-1)).toEqual(['p-1', { state: state() }])
+    const count = t.emitted.length
+    t.states.seen('p-1')
+    t.states.seen('p-2')
+    expect(t.emitted).toHaveLength(count)
+    t.last().on.state(state({ title: 'next' }))
+    expect(t.states.entries()).toEqual({ 'p-1': { state: state({ title: 'next' }) } })
+  })
+
+  it('다시 구독해도 읽지 않은 알림은 남는다', async () => {
+    const t = setup()
+    t.states.watch('p-1')
+    t.last().on.state(state())
+    t.last().on.notification(first)
+    t.last().on.closed()
+    await vi.waitFor(() => expect(t.subs).toHaveLength(2))
+    t.last().on.state(state({ title: 'again' }))
+    expect(t.states.entries()).toEqual({
+      'p-1': { state: state({ title: 'again' }), notification: first }
+    })
+  })
+
+  it('상태보다 먼저 온 알림은 들기만 하고 상태가 오면 함께 알린다', () => {
+    const t = setup()
+    t.states.watch('p-1')
+    t.last().on.notification(first)
+    expect(t.emitted).toEqual([])
+    expect(t.notified).toEqual([['p-1', first]])
+    t.last().on.state(state())
+    expect(t.emitted).toEqual([['p-1', { state: state(), notification: first }]])
+  })
+
+  it('다시 구독하려고 살아 있는지 묻는 동안 본 알림은 새 구독으로 옮기지 않는다', async () => {
+    const t = setup()
+    let answer!: (v: boolean) => void
+    t.isLive.mockImplementationOnce(() => new Promise((r) => (answer = r)))
+    t.states.watch('p-1')
+    t.last().on.state(state())
+    t.last().on.notification(first)
+    t.last().on.closed()
+    t.states.seen('p-1')
+    answer(true)
+    await vi.waitFor(() => expect(t.subs).toHaveLength(2))
+    t.last().on.state(state({ title: 'again' }))
+    expect(t.states.entries()).toEqual({ 'p-1': { state: state({ title: 'again' }) } })
+  })
+
+  it('forget 한 구독의 알림은 버린다', () => {
+    const t = setup()
+    t.states.watch('p-1')
+    const sub = t.last()
+    sub.on.state(state())
+    t.states.forget('p-1')
+    sub.on.notification(first)
+    expect(t.notified).toEqual([])
     expect(t.states.entries()).toEqual({})
   })
 

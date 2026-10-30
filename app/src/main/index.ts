@@ -8,6 +8,7 @@ import {
   dialog,
   ipcMain,
   MessageChannelMain,
+  Notification,
   nativeTheme,
   powerMonitor,
   screen,
@@ -28,6 +29,7 @@ import {
 } from './close-confirm'
 import { AfterReply, CliError, listenCli, optionalBoolean, type Handlers } from './cli-server'
 import { configDir, configFile, readConfigFile, watchConfig } from './config-file'
+import { createDesktopNotifications, type DesktopNotice } from './desktop-notification'
 import { gitHead } from './git'
 import { createInbox } from './inbox'
 import { mcpHandlers } from './mcp'
@@ -77,7 +79,7 @@ import {
   saveWindowStateOnClose,
   windowBounds
 } from './window-state'
-import type { JobView } from '../shared/job'
+import { jobName, type JobView } from '../shared/job'
 import { isPathCandidates } from '../shared/link'
 import { paneRows } from '../shared/pane-list'
 import type { CloseAnswer, PaneReply } from '../shared/pane'
@@ -151,11 +153,65 @@ function mainWindow(): BrowserWindow | undefined {
 
 const ptyCells = createPtyCells()
 
+function ptyLabel(pty: string): string | undefined {
+  const screen = parseScreen(lastScreen)
+  const row =
+    screen &&
+    paneRows(screen.workspaces, ptyStates.state, process.env.SHELL, process.env.HOME).find(
+      (r) => r.pty === pty
+    )
+  if (row) return row.title
+  const job = jobs?.get(pty)
+  return job && jobName(job)
+}
+
+function bringToFront(win: BrowserWindow | undefined): void {
+  if (win?.isMinimized()) win.restore()
+  win?.focus()
+}
+
+// macOS 에서는 띄운 알림 객체가 GC 되면 눌러도 click 이 오지 않으므로 객체를 쥐고 있는다. macOS 는 알림 센터로 넘어간 알림의
+// close 를 알리지 않을 수 있어서 pty 마다 마지막 알림만 쥔다. 그래서 같은 pty 의 앞 알림을 누르면 아무 일도 없고, 뒤 알림을 누르면
+// 그 pane 을 연다.
+const shownNotifications = new Map<string, Notification>()
+
+function showNotification(pty: string, notice: DesktopNotice, clicked: () => void): void {
+  // e2e 의 창(`unobtrusive`)은 OS 포커스를 받지 않아, 포커스 조건만 보면 테스트가 사용자의 화면에 알림을 띄우므로 e2e 에서는
+  // 띄우지 않는다.
+  if (unobtrusive || !Notification.isSupported()) return
+  const n = new Notification(notice)
+  shownNotifications.set(pty, n)
+  const drop = (): void => {
+    if (shownNotifications.get(pty) === n) shownNotifications.delete(pty)
+  }
+  n.on('close', drop)
+  n.on('failed', drop)
+  n.on('click', () => {
+    drop()
+    clicked()
+  })
+  n.show()
+}
+
+const desktopNotifications = createDesktopNotifications({
+  now: Date.now,
+  focused: () => BrowserWindow.getFocusedWindow() !== null,
+  label: ptyLabel,
+  show: showNotification,
+  open: (pty) => {
+    const win = mainWindow()
+    if (!win || win.isDestroyed()) return
+    bringToFront(win)
+    win.webContents.send('pane:select', pty)
+  }
+})
+
 // main 은 renderer 가 붙어 있든 아니든 pty 마다 상태 구독을 열어 마지막 상태를 든다(docs/architecture.md 의 "pty 상태는 main 이 구독해 든다").
 const ptyStates = createPtyStates({
   subscribe: (id, on) => subscribeState(ptyDir(), id, on),
   isLive: (id) => ptyLive(ptyDir(), id),
-  emit: (pty, entry) => sendToWindows('pty:state', pty, entry)
+  emit: (pty, entry) => sendToWindows('pty:state', pty, entry),
+  notified: desktopNotifications
 })
 
 const panes = createPanes(
@@ -473,9 +529,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', () => {
     if (unobtrusive) return
-    const win = mainWindow()
-    if (win?.isMinimized()) win.restore()
-    win?.focus()
+    bringToFront(mainWindow())
   })
   app.whenReady().then(start)
 }
@@ -636,7 +690,11 @@ function start(): void {
       await runFile(cli.bin, args, { env: { ...process.env, MARU_SOCKET: cli.socket } })
     }
   })
-  ipcMain.on('pane:seen', (_event, pty: unknown) => void (isPtyId(pty) && seen(pty)))
+  ipcMain.on('pane:seen', (_event, pty: unknown) => {
+    if (!isPtyId(pty)) return
+    ptyStates.seen(pty)
+    void seen(pty)
+  })
   const linkOpener: LinkOpener = {
     openExternal: (url) => shell.openExternal(url),
     openPath: (path) => shell.openPath(path),

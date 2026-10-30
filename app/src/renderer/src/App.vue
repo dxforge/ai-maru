@@ -661,6 +661,15 @@ const urgent = computed(() => {
   return map
 })
 
+const unread = computed(
+  () =>
+    new Set(
+      workspaces.list.value
+        .filter((w) => w.cells.some((c) => c.panes.some((p) => ptyStates.notification(p.ptyId))))
+        .map((w) => w.key)
+    )
+)
+
 // 터미널 아래에 남는 한 행 미만의 자리는 xterm 요소 밖이라, 눌러도 xterm 이 포커스를 주지 않는다.
 function focusFromBody(e: MouseEvent, pane: number): void {
   if ((e.target as Element).closest('.xterm')) return
@@ -679,6 +688,19 @@ function selectPane(cell: number, pane: number): void {
   workspaces.focusPane(pane)
   selectCell(cell)
 }
+
+// 데스크톱 알림을 누르면 그 pane 을 선택한다. job 은 pane 이 없으므로 job 이 든 cell 을 선택한다. 접은 workspace 는 편다.
+window.maru.onPaneSelect((pty) => {
+  const pane = workspaces.paneByPty(pty)
+  const cell = pane
+    ? workspaces.owner(pane.key)
+    : workspaces.cellById(jobs.value.find((j) => j.pty === pty)?.cell ?? '')
+  if (!cell) return
+  const w = workspaces.workspaceOf(cell.key)
+  if (w) folded.delete(w.key)
+  if (pane) selectPane(cell.key, pane.key)
+  else selectCell(cell.key)
+})
 
 // 순서가 바뀌면 Vue 가 터미널의 DOM 을 옮기고, 옮겨진 터미널은 포커스를 잃는다.
 function moveCell(cell: number, to: { workspace: number; index: number } | 'new'): void {
@@ -897,7 +919,9 @@ void window.maru.restoreScreen().then((s) => {
         :selected-key="workspaces.selectedKey.value"
         :shown="ptyStates.shown"
         :command="ptyStates.command"
+        :notification="ptyStates.notification"
         :urgent="urgent"
+        :unread="unread"
         :folded="folded"
         :jobs="jobs"
         :now="now"
@@ -950,6 +974,7 @@ void window.maru.restoreScreen().then((s) => {
             <PaneHeader
               :status="ptyStates.shown(p.ptyId)"
               :command="ptyStates.command(p.ptyId)"
+              :notification="ptyStates.notification(p.ptyId)"
               :pane="p"
               :focused="active"
               :now="ptyStates.command(p.ptyId)?.running ? now : 0"

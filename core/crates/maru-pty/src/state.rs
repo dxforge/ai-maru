@@ -1,14 +1,15 @@
-//! pane 상태(셸 cwd·제목·foreground cwd·명령·OSC 7501 레코드)와 그것을 받는 `subscribe` 연결.
+//! pane 상태(셸 cwd·제목·foreground cwd·명령·OSC 7501 레코드)와 프로그램이 보낸 알림, 그것을 받는 `subscribe` 연결.
 //! 메시지 모양은 모듈 doc(`lib.rs`)의 `subscribe` 에 있다.
 
 use crate::frame::{TAG_TEXT, write_frame};
 use crate::program_status::Records;
 use crate::pty::Pty;
-use crate::vt::{CommandEvent, CwdEvent, command_text, osc7_path};
+use crate::vt::{CommandEvent, CwdEvent, Notification, command_text, osc7_path};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+use tokio::sync::broadcast::error::RecvError;
 
 /// 셸의 명령 실행 상태. `text`·`started_at` 은 명령이 끝난 뒤에도 남는다 — 실패한 명령을 보이는 데 쓴다.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -144,15 +145,22 @@ pub fn same_dir_as(foreground: &Path, keep: Option<&str>) -> String {
     foreground.to_string_lossy().into_owned()
 }
 
+pub fn notification_message(n: &Notification) -> String {
+    serde_json::json!({ "type": "notification", "title": n.title, "body": n.body }).to_string()
+}
+
 /// 상태는 매번 전체라 watch 채널로 마지막 것 하나만 보낸다 — 느린 구독자도 큐가 자라지 않는다. 채널이 닫혀도
 /// 아직 보내지 않은 상태는 보낸 뒤 끝난다.
 pub async fn run(stream: UnixStream, pty: Arc<Pty>) {
     let (mut rd, mut wr) = stream.into_split();
     let mut rx = pty.subscribe_state();
+    let mut notifications = pty.subscribe_notifications();
     // 클라이언트가 보내는 것은 읽어 버린다. 끊긴 것을 알려고 읽는다.
     let mut probe = [0u8; 256];
     loop {
         tokio::select! {
+            // 처음 상태를 그때 와 있는 알림보다 먼저 보낸다.
+            biased;
             changed = rx.changed() => {
                 if changed.is_err() {
                     break;
@@ -161,6 +169,16 @@ pub async fn run(stream: UnixStream, pty: Arc<Pty>) {
                 if write_frame(&mut wr, TAG_TEXT, m.as_bytes()).await.is_err() {
                     break;
                 }
+            },
+            n = notifications.recv() => match n {
+                Ok(m) => {
+                    if write_frame(&mut wr, TAG_TEXT, m.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+                Err(RecvError::Lagged(_)) => {}
+                // 보내는 쪽은 이 연결이 쥔 `Pty` 가 들고 있어 닫히지 않는다.
+                Err(RecvError::Closed) => break,
             },
             n = rd.read(&mut probe) => {
                 if matches!(n, Ok(0) | Err(_)) {
@@ -214,6 +232,19 @@ mod tests {
                 "type": "state", "cwd": null, "cwd_reports": 0, "title": null,
                 "foreground_cwd": null, "command": null, "records": [],
             })
+        );
+    }
+
+    #[test]
+    fn a_notification_message_carries_the_title_and_body() {
+        let m: serde_json::Value = serde_json::from_str(&notification_message(&Notification {
+            title: String::new(),
+            body: "build \"done\"".into(),
+        }))
+        .unwrap();
+        assert_eq!(
+            m,
+            serde_json::json!({ "type": "notification", "title": "", "body": "build \"done\"" })
         );
     }
 

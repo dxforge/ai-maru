@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PtyState } from '../../../shared/pty-state'
-import { commandLabel, commandTail, elapsed, paneCwd, paneTitle } from './display'
+import { commandLabel, commandTail, elapsed, notificationText, paneCwd, paneTitle } from './display'
 
 const state = (over: Partial<PtyState>): PtyState => ({
   cwd: null,
@@ -46,6 +46,14 @@ describe('commandTail·commandLabel', () => {
     expect(commandTail({ running: false, text: 'a', exitCode: 2 }, 5)).toBe('2')
     expect(commandLabel(running)).toBe('Running')
     expect(commandLabel({ running: false, text: 'a', exitCode: 1 })).toBe('Exited with code 1')
+  })
+})
+
+describe('notificationText', () => {
+  it('제목과 본문을 `: ` 로 잇고, 한쪽이 비면 다른 쪽만 쓴다', () => {
+    expect(notificationText({ title: 'Tests', body: '3 failed' })).toBe('Tests: 3 failed')
+    expect(notificationText({ title: '', body: 'done' })).toBe('done')
+    expect(notificationText({ title: 'only', body: '' })).toBe('only')
   })
 })
 

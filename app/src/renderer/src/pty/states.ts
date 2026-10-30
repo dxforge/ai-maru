@@ -5,7 +5,7 @@ import {
   type ProgramStatusRecord,
   type ProgramStatusState
 } from '../../../shared/program-status'
-import type { PtyState, PtyStateEntry } from '../../../shared/pty-state'
+import type { PtyNotification, PtyState, PtyStateEntry } from '../../../shared/pty-state'
 
 const NONE: readonly ProgramStatusRecord[] = []
 
@@ -53,6 +53,11 @@ export function createPtyStates() {
     rootState: (pty: string): ProgramStatusState | undefined =>
       records(pty).find((r) => r.id === '')?.state,
     command,
+    /** 사용자가 아직 보지 않은 마지막 알림 */
+    notification: (pty?: string): PtyNotification | undefined => {
+      const e = pty === undefined ? undefined : entries.get(pty)
+      return e && 'notification' in e ? e.notification : undefined
+    },
     isOld: (pty: string): boolean => {
       const e = entries.get(pty)
       return e !== undefined && 'old' in e

@@ -48,6 +48,17 @@ describe('createPtyStates', () => {
     expect([s.command('p-2'), s.command(undefined)]).toEqual([undefined, undefined])
   })
 
+  it('main 이 보낸 읽지 않은 알림을 돌려주고, 지운 항목에는 없다', () => {
+    const s = createPtyStates()
+    const n = { title: 'Tests', body: '3 failed' }
+    s.apply('p-1', { state: state(), notification: n })
+    expect(s.notification('p-1')).toEqual(n)
+    s.apply('p-1', { state: state() })
+    expect(s.notification('p-1')).toBeUndefined()
+    s.apply('p-2', { old: true })
+    expect([s.notification('p-2'), s.notification(undefined)]).toEqual([undefined, undefined])
+  })
+
   it('attach 스트림의 레코드는 이전 maru-pty 의 pty 에서만 쓴다', () => {
     const s = createPtyStates()
     s.setLegacyRecords('p-1', [rec('working')])

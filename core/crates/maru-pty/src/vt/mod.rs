@@ -74,6 +74,14 @@ pub enum CommandEvent {
     End(Option<i32>),
 }
 
+/// 프로그램이 OSC 9 나 OSC 777 `notify` 로 보낸 데스크톱 알림. 두 값은 `line_text` 로 다듬었고 둘 다 비지는 않는다.
+/// OSC 9 는 제목을 싣지 않아 `title` 이 비어 있다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notification {
+    pub title: String,
+    pub body: String,
+}
+
 /// ghostty 콜백이 `write` 동안 쌓은 것. 콜백은 screen 락 안에서 동기로 불리므로 여기에 넣기만
 /// 하고, 처리는 `take_events` 로 꺼낸 쪽이 한다.
 #[derive(Debug, Default)]
@@ -82,6 +90,7 @@ pub struct VtEvents {
     pub pty_replies: Vec<Vec<u8>>,
     pub cwd: Vec<CwdEvent>,
     pub commands: Vec<CommandEvent>,
+    pub notifications: Vec<Notification>,
     /// OSC 0/2 나 RIS 로 제목이 바뀌었을 수 있다. 값은 `VtTerminal::title` 로 읽는다.
     pub title_changed: bool,
 }
@@ -207,10 +216,33 @@ unsafe extern "C" fn on_semantic_prompt(
     events.commands.push(command);
 }
 
-/// libghostty-vt 는 `cmdline_url` 의 `%XX` 를 푼 바이트를 UTF-8 인지도, 제어 문자가 섞였는지도 보지 않고 넘긴다.
-/// 이 텍스트는 사이드바·헤더·확인 창에 한 줄로 쓰이므로 제어 문자(C0·DEL·C1)는 지운다. 줄바꿈·탭은 공백으로
-/// 바꾼다 — 지우면 여러 줄로 친 명령의 앞뒤 줄이 붙는다.
-pub fn command_text(bytes: &[u8]) -> Option<String> {
+unsafe extern "C" fn on_desktop_notification(
+    _terminal: ffi::GhosttyTerminal,
+    userdata: *mut c_void,
+    notification: *const ffi::GhosttyTerminalDesktopNotification,
+) {
+    // SAFETY: userdata 는 `on_write_pty` 와 같다. notification 과 그 문자열은 호출 동안 유효하다.
+    let events = unsafe { &mut *(userdata as *mut VtEvents) };
+    let n = unsafe { &*notification };
+    if n.size < size_of::<ffi::GhosttyTerminalDesktopNotification>() {
+        return;
+    }
+    // SAFETY: 라이브러리가 만든 빈 문자열도 NULL 이 아닌 포인터를 가진다(`types.h`).
+    let text =
+        |s: ffi::GhosttyString| line_text(unsafe { std::slice::from_raw_parts(s.ptr, s.len) });
+    let (title, body) = (text(n.title), text(n.body));
+    if title.is_empty() && body.is_empty() {
+        return;
+    }
+    events.notifications.push(Notification { title, body });
+}
+
+/// 프로그램이 보낸 텍스트를 한 줄로 다듬는다. libghostty-vt 는 `cmdline_url` 의 `%XX` 를 푼 바이트와 OSC 9·777 알림의 텍스트를
+/// UTF-8 인지 보지 않고 넘긴다. `cmdline_url` 에는 제어 문자도 섞일 수 있고, 알림 텍스트에는 ghostty 파서가 C0 를 버린 뒤에도
+/// C1·DEL 이 남는다. 이 텍스트는 사이드바·헤더·확인 창·데스크톱 알림에 한 줄로 쓰이므로 제어 문자(C0·DEL·C1)는 지운다.
+/// 줄바꿈·탭은 공백으로 바꾼다. 지우면 여러 줄로 친 명령의 앞뒤 줄이 붙기 때문이다. UTF-8 이 아닌 바이트는 U+FFFD 로
+/// 바꾸고 앞뒤 공백을 뗀다.
+pub fn line_text(bytes: &[u8]) -> String {
     let text: String = String::from_utf8_lossy(bytes)
         .chars()
         .filter_map(|c| match c {
@@ -219,8 +251,11 @@ pub fn command_text(bytes: &[u8]) -> Option<String> {
             c => Some(c),
         })
         .collect();
-    let text = text.trim();
-    (!text.is_empty()).then(|| text.to_owned())
+    text.trim().to_owned()
+}
+
+pub fn command_text(bytes: &[u8]) -> Option<String> {
+    Some(line_text(bytes)).filter(|t| !t.is_empty())
 }
 
 unsafe extern "C" fn on_title_changed(_terminal: ffi::GhosttyTerminal, userdata: *mut c_void) {
@@ -304,6 +339,11 @@ impl VtTerminal {
                 on_semantic_prompt as ffi::GhosttyTerminalSemanticPromptFn as *const c_void,
             ),
             (
+                ffi::GHOSTTY_TERMINAL_OPT_DESKTOP_NOTIFICATION,
+                on_desktop_notification as ffi::GhosttyTerminalDesktopNotificationFn
+                    as *const c_void,
+            ),
+            (
                 ffi::GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES,
                 &SCROLLBACK_MAX_BYTES as *const usize as *const c_void,
             ),
@@ -312,7 +352,7 @@ impl VtTerminal {
                 &CONTINUATION_MAX_BYTES as *const usize as *const c_void,
             ),
         ] {
-            // SAFETY: 앞 일곱의 입력은 포인터 값 그대로(userdata 와 콜백 함수)이고 뒤 둘은 `size_t*`
+            // SAFETY: 앞 여덟의 입력은 포인터 값 그대로(userdata 와 콜백 함수)이고 뒤 둘은 `size_t*`
             // 로 호출 동안만 읽힌다. userdata 가 가리키는 Box 는 `t` 와 같이 살고 터미널이 먼저
             // 해제된다.
             let rc = unsafe { ffi::ghostty_terminal_set(t.raw, opt, value) };
@@ -1001,6 +1041,53 @@ mod tests {
                 CommandEvent::Start(Some("echo a;\\ echo b".into())),
                 CommandEvent::Start(None),
             ]
+        );
+    }
+
+    fn notifications(bytes: &[u8]) -> Vec<(String, String)> {
+        let mut t = term();
+        t.write(bytes);
+        t.take_events()
+            .notifications
+            .into_iter()
+            .map(|n| (n.title, n.body))
+            .collect()
+    }
+
+    fn pair(title: &str, body: &str) -> (String, String) {
+        (title.into(), body.into())
+    }
+
+    #[test]
+    fn osc_777_and_osc_9_notifications_are_queued_in_order() {
+        assert_eq!(
+            notifications(b"\x1b]777;notify;Tests;3 failed; see log\x1b\\\x1b]9;build done\x07"),
+            vec![pair("Tests", "3 failed; see log"), pair("", "build done")]
+        );
+    }
+
+    #[test]
+    fn progress_reports_and_other_osc_777_extensions_are_not_notifications() {
+        assert_eq!(
+            notifications(b"\x1b]9;4;1;50\x07\x1b]9;4;0\x07\x1b]777;preexec;x\x07\x1b]99;;hi\x07"),
+            vec![]
+        );
+    }
+
+    // ghostty 의 파서는 OSC 안의 C0(탭·줄바꿈 포함)을 넘기지 않으므로 C1·DEL·UTF-8 이 아닌 바이트만 여기서 다듬는다.
+    #[test]
+    fn notification_text_is_trimmed_to_one_line_and_empty_ones_are_dropped() {
+        assert_eq!(
+            notifications(b"\x1b]777;notify; a\tb ;line1\nline2\x01\x7f\xc2\x9bx \xff\x07"),
+            vec![pair("ab", "line1line2x \u{fffd}")]
+        );
+        assert_eq!(
+            notifications(b"\x1b]777;notify; ;\t\x07\x1b]9; \x07"),
+            vec![]
+        );
+        assert_eq!(
+            notifications(b"\x1b]777;notify;only title;\x07"),
+            vec![pair("only title", "")]
         );
     }
 

@@ -426,11 +426,12 @@ describe('subscribeState', () => {
   }
 
   function handlers() {
-    const got = { states: [] as unknown[], old: 0, closed: 0 }
+    const got = { states: [] as unknown[], notifications: [] as unknown[], old: 0, closed: 0 }
     return {
       got,
       on: {
         state: (s: unknown) => void got.states.push(s),
+        notification: (n: unknown) => void got.notifications.push(n),
         old: () => void got.old++,
         closed: () => void got.closed++
       }
@@ -460,6 +461,28 @@ describe('subscribeState', () => {
         expect.objectContaining({ title: 't' })
       ])
       expect(got.old).toBe(0)
+    } finally {
+      s.close()
+    }
+  })
+
+  it('알림은 상태와 따로 넘기고, 모양이 틀린 알림은 버린다', async () => {
+    const s = await framePty((_req, sock) => {
+      send(sock, wire)
+      send(sock, { type: 'notification', title: 'Tests', body: '3 failed' })
+      send(sock, { type: 'notification', title: null, body: 'x' })
+      send(sock, { type: 'notification', title: '', body: 'done' })
+      sock.end()
+    })
+    const { got, on } = handlers()
+    try {
+      subscribeState(s.dir, s.id, on)
+      await vi.waitFor(() => expect(got.closed).toBe(1))
+      expect(got.states).toHaveLength(1)
+      expect(got.notifications).toEqual([
+        { title: 'Tests', body: '3 failed' },
+        { title: '', body: 'done' }
+      ])
     } finally {
       s.close()
     }

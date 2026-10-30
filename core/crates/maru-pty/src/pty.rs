@@ -1,7 +1,7 @@
 use crate::master::{self, Master};
 use crate::procinfo;
 use crate::program_status::Records;
-use crate::state::{PaneState, same_dir_as};
+use crate::state::{PaneState, notification_message, same_dir_as};
 use crate::vt::{VtEvents, VtFormat, VtTerminal};
 use anyhow::Result;
 use nix::sys::signal::{Signal, killpg};
@@ -14,13 +14,16 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
-use tokio::sync::{Notify, watch};
+use tokio::sync::{Notify, broadcast, watch};
 
 const READ_CHUNK: usize = 8192;
 const OUTPUT_BACKLOG: usize = 4 * 1024 * 1024;
 /// 셸이 나간 뒤 남은 출력이 다 전달되길 기다리되, EOF 에 종료를 묶지 않으려는 상한.
 const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(500);
 const FOREGROUND_POLL: Duration = Duration::from_secs(1);
+/// 구독 연결 하나가 쓰지 못하고 들고 있을 알림 수. 넘으면 오래된 것부터 버리고 마지막 알림은 남는다. 앱은 pty 마다
+/// 마지막 알림 하나만 들고 데스크톱 알림을 1초에 하나만 띄우므로, 앞의 알림을 버려도 앱이 보이는 것은 같다.
+const NOTIFICATION_BACKLOG: usize = 16;
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Exit {
@@ -167,6 +170,8 @@ struct Screen {
     outputs: Vec<Weak<Output>>,
     /// 상태 구독자에게 보낼 마지막 상태. 이 프로세스가 끝날 때 비워 구독 연결을 닫게 한다.
     state_tx: Option<watch::Sender<Arc<str>>>,
+    /// 상태와 달리 한 번 일어난 일이라 마지막 것만 남기지 않고 모두 보낸다.
+    notification_tx: broadcast::Sender<Arc<str>>,
 }
 
 impl Screen {
@@ -268,6 +273,7 @@ impl Pty {
             },
             outputs: Vec::new(),
             state_tx: None,
+            notification_tx: broadcast::channel(NOTIFICATION_BACKLOG).0,
         };
         screen.state_tx = Some(watch::channel(screen.state_message()).0);
         let screen = Arc::new(Mutex::new(screen));
@@ -311,6 +317,10 @@ impl Pty {
                 // 같은 청크의 출력을 보고 다음 일을 시작한 클라이언트에 상태가 늦게 닿는 일을 줄인다.
                 if screen.apply_events(&events) {
                     screen.publish_state();
+                }
+                for n in &events.notifications {
+                    // 구독자가 없으면 실패한다. 알림은 들고 있지 않으므로 버린다.
+                    let _ = screen.notification_tx.send(notification_message(n).into());
                 }
                 // 셸이 `cd` 한 뒤 보낸 OSC 7 이면 다음 1초를 기다리지 않고 잰다. 그동안 화면 cwd 가 옛 foreground
                 // cwd 로 남지 않게 하려는 것이다.
@@ -473,6 +483,11 @@ impl Pty {
         let mut rx = tx.subscribe();
         rx.mark_changed();
         rx
+    }
+
+    /// 이 뒤에 프로그램이 보내는 알림을 받는다. 그 전의 알림은 오지 않는다.
+    pub fn subscribe_notifications(&self) -> broadcast::Receiver<Arc<str>> {
+        self.screen.lock().unwrap().notification_tx.subscribe()
     }
 
     /// 구독 연결이 남은 상태를 보낸 뒤 닫히게 한다. 이 프로세스가 끝날 때 부른다.

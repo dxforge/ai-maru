@@ -1482,6 +1482,63 @@ fn osc_7_0_2_and_7501_reach_every_subscriber() {
     s1.state_until(|v| v["title"] == "both");
 }
 
+fn notifications(texts: &[Value]) -> Vec<&Value> {
+    texts
+        .iter()
+        .filter(|v| v["type"] == "notification")
+        .collect()
+}
+
+#[test]
+fn osc_9_and_777_notifications_reach_every_subscriber_in_order() {
+    let p = start();
+    let (mut s1, _) = p.subscribe();
+    let (mut s2, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input(concat!(
+        "printf '\\033]777;notify;Tests;3 failed; see log\\033\\\\'; ",
+        "printf '\\033]9;4;1;50\\007'; ",
+        "printf '\\033]9;build \\001done\\007'; ",
+        "printf '\\033]777;notify; ;\\007'; ",
+        "echo done-$((1))\n"
+    ));
+    a.output_until("done-1");
+    for s in [&mut s1, &mut s2] {
+        let texts = s.texts_for(Duration::from_millis(500));
+        assert_eq!(
+            notifications(&texts),
+            vec![
+                &json!({ "type": "notification", "title": "Tests", "body": "3 failed; see log" }),
+                &json!({ "type": "notification", "title": "", "body": "build done" }),
+            ],
+            "{texts:?}"
+        );
+    }
+}
+
+#[test]
+fn a_subscriber_gets_only_the_notifications_sent_after_it_subscribed() {
+    let p = start();
+    let (mut early, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input("printf '\\033]9;first\\007'; echo done-$((1))\n");
+    a.output_until("done-1");
+    assert_eq!(
+        notifications(&early.texts_for(Duration::from_millis(500))).len(),
+        1
+    );
+
+    let (mut late, _) = p.subscribe();
+    a.input("printf '\\033]9;second\\007'; echo done-$((2))\n");
+    a.output_until("done-2");
+    let texts = late.texts_for(Duration::from_millis(500));
+    assert_eq!(
+        notifications(&texts),
+        vec![&json!({ "type": "notification", "title": "", "body": "second" })],
+        "{texts:?}"
+    );
+}
+
 #[test]
 fn a_repeated_osc_7_is_counted_and_a_rejected_one_keeps_the_last_path() {
     let p = start();

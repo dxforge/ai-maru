@@ -9,7 +9,12 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
 import { isPtyId, type PtyExit } from '../shared/pty'
-import { parsePtyState, type PtyState } from '../shared/pty-state'
+import {
+  parsePtyNotification,
+  parsePtyState,
+  type PtyNotification,
+  type PtyState
+} from '../shared/pty-state'
 import { appHome } from './config-file'
 import { encodeFrame, FrameDecoder } from './frame'
 
@@ -286,6 +291,8 @@ export async function foregroundCwd(
 
 export type StateHandlers = {
   state(state: PtyState): void
+  /** 프로그램이 보낸 알림. 구독한 뒤에 온 것만 온다. */
+  notification(notification: PtyNotification): void
   /** pty 가 `subscribe` 를 모르는 이전 maru-pty 다. 그 뒤 연결이 닫혀도 `closed` 는 부르지 않는다. */
   old(): void
   /** 연결이 닫혔다. 닿지 못했을 때도 부른다. 돌려준 함수로 닫았으면 부르지 않는다. */
@@ -304,7 +311,9 @@ export function subscribeState(dir: string, id: string, on: StateHandlers): () =
         return on.old()
       }
       const state = parsePtyState(msg)
-      if (state) on.state(state)
+      if (state) return on.state(state)
+      const notification = parsePtyNotification(msg)
+      if (notification) on.notification(notification)
     },
     on.closed
   )
