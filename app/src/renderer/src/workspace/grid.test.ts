@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canSplit, NO_MIN, overflow, required, snapRects, type Size } from './grid'
+import { canSplit, NO_MIN, overflow, required, snapRects, type Box, type Size } from './grid'
 import { splitPane, splitRoot, type Layout } from './layout'
 
 const cell = { width: 8, height: 18 }
@@ -56,6 +56,37 @@ describe('snapRects', () => {
     expect(boxes.get(2)).toEqual({ left: 401, top: 0, width: 400, height: 600 })
   })
 
+  it('같은 방향으로 늘어선 pane 마다 같은 글자 칸 수를 준다', () => {
+    const down: Layout = {
+      split: 'down',
+      first: { split: 'down', first: { pane: 1 }, second: { pane: 2 } },
+      second: { pane: 3 }
+    }
+    const right: Layout = {
+      split: 'right',
+      first: { pane: 1 },
+      second: { split: 'right', first: { pane: 2 }, second: { pane: 3 } }
+    }
+    const rows = (boxes: Map<number, Box>) =>
+      [...boxes.values()].map((b) => [b.top / 18, b.height / 18])
+    const thirds = [
+      [0, 10],
+      [10, 10],
+      [20, 10]
+    ]
+    expect(rows(snapRects(down, { width: 800, height: 30 * 18 }, cell))).toEqual(thirds)
+    const column = { width: 82 * 9, height: 18 }
+    expect(rows(snapRects(down, { width: 82 * 9, height: 30 * 18 }, column, 'columns'))).toEqual(
+      thirds
+    )
+    const side = snapRects(right, { width: 60 * 8, height: 700 }, cell)
+    expect([...side.values()].map((b) => [b.left / 8, b.width / 8])).toEqual([
+      [0, 20],
+      [20, 20],
+      [40, 20]
+    ])
+  })
+
   it('columns 는 늘어선 pane 마다 같은 글자 칸 수를 준다', () => {
     const layout: Layout = {
       split: 'right',
@@ -106,14 +137,9 @@ describe('snapRects', () => {
     const twoThree: Layout = { split: 'right', first: { pane: 2 }, second: { pane: 3 } }
     const threeRight: Layout = { split: 'right', first: { pane: 1 }, second: twoThree }
     const twoDown: Layout = { split: 'down', first: { pane: 1 }, second: { pane: 2 } }
-    const threeDown: Layout = {
-      split: 'down',
-      first: { pane: 1 },
-      second: { split: 'down', first: { pane: 2 }, second: { pane: 3 } }
-    }
 
     it('pane 하나는 cell 이 하한보다 작아도 하한 크기다', () => {
-      expect(snapRects({ pane: 1 }, { width: 100, height: 50 }, cell, 'half', min).get(1)).toEqual({
+      expect(snapRects({ pane: 1 }, { width: 100, height: 50 }, cell, 'even', min).get(1)).toEqual({
         left: 0,
         top: 0,
         width: 23 * 8,
@@ -121,36 +147,57 @@ describe('snapRects', () => {
       })
     })
 
-    it('반으로 나누면 한쪽이 하한 아래가 될 때 그쪽에 하한을 주고 나머지를 다른 쪽이 갖는다', () => {
-      const boxes = snapRects(threeRight, { width: 70 * 8, height: 700 }, cell, 'half', min)
-      expect([...boxes.values()].map((b) => [b.left / 8, b.width / 8])).toEqual([
-        [0, 24],
-        [24, 23],
-        [47, 23]
+    it('고르게 나누면 한쪽이 하한 아래가 될 때 그쪽에 하한을 주고 나머지를 다른 쪽이 갖는다', () => {
+      // 1 | (2 위, 3 | 4 아래) — 좌우로 늘어선 것은 1 과 오른쪽 부분 둘이지만, 오른쪽 부분은 하한 둘의 폭이 필요하다.
+      const right: Layout = {
+        split: 'right',
+        first: { pane: 1 },
+        second: {
+          split: 'down',
+          first: { pane: 2 },
+          second: { split: 'right', first: { pane: 3 }, second: { pane: 4 } }
+        }
+      }
+      const boxes = snapRects(right, { width: 80 * 8, height: 700 }, cell, 'even', min)
+      expect([1, 2, 3].map((p) => [boxes.get(p)!.left / 8, boxes.get(p)!.width / 8])).toEqual([
+        [0, 34],
+        [34, 46],
+        [34, 23]
       ])
-      const stacked = snapRects(threeDown, { width: 800, height: 20 * 18 }, cell, 'half', min)
-      expect([...stacked.values()].map((b) => [b.top / 18, b.height / 18])).toEqual([
-        [0, 8],
-        [8, 6],
-        [14, 6]
-      ])
+      const down: Layout = {
+        split: 'down',
+        first: { pane: 1 },
+        second: {
+          split: 'right',
+          first: { pane: 2 },
+          second: { split: 'down', first: { pane: 3 }, second: { pane: 4 } }
+        }
+      }
+      const stacked = snapRects(down, { width: 800, height: 20 * 18 }, cell, 'even', min)
+      expect([1, 2, 3].map((p) => [stacked.get(p)!.top / 18, stacked.get(p)!.height / 18])).toEqual(
+        [
+          [0, 8],
+          [8, 12],
+          [8, 6]
+        ]
+      )
     })
 
     it('양쪽에 하한을 줄 자리가 없으면 각자 하한을 받고 뒤쪽이 cell 밖으로 나간다', () => {
-      const boxes = snapRects(threeRight, { width: 40 * 8, height: 700 }, cell, 'half', min)
+      const boxes = snapRects(threeRight, { width: 40 * 8, height: 700 }, cell, 'even', min)
       expect([...boxes.values()].map((b) => [b.left / 8, b.width / 8])).toEqual([
         [0, 23],
         [23, 23],
         [46, 23]
       ])
-      const stacked = snapRects(twoDown, { width: 800, height: 5 * 18 }, cell, 'half', min)
+      const stacked = snapRects(twoDown, { width: 800, height: 5 * 18 }, cell, 'even', min)
       expect(stacked.get(1)).toEqual({ left: 0, top: 0, width: 800, height: 6 * 18 })
       expect(stacked.get(2)).toEqual({ left: 0, top: 6 * 18, width: 800, height: 6 * 18 })
     })
 
     it('자리가 넉넉하면 하한이 경계를 바꾸지 않는다', () => {
       const size = { width: 1003, height: 700 }
-      expect(snapRects(twoRight, size, cell, 'half', min)).toEqual(snapRects(twoRight, size, cell))
+      expect(snapRects(twoRight, size, cell, 'even', min)).toEqual(snapRects(twoRight, size, cell))
     })
 
     describe('required', () => {

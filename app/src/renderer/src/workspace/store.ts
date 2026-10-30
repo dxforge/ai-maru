@@ -280,7 +280,7 @@ export function createWorkspaces(
     if (c) c.focused = pane
   }
 
-  function moveFocus(direction: FocusDirection, widths: Widths = 'half'): void {
+  function moveFocus(direction: FocusDirection, widths: Widths = 'even'): void {
     const c = selected()
     const to = c && neighbor(c.layout, c.focused, direction, widths)
     if (to !== undefined) c!.focused = to

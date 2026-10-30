@@ -394,7 +394,7 @@ function resizeCanvas(e: PointerEvent): void {
 }
 
 const viewMode = ref<'single' | 'columns'>(prefs.viewMode ?? 'columns')
-const widths = computed<Widths>(() => (viewMode.value === 'columns' ? 'columns' : 'half'))
+const widths = computed<Widths>(() => (viewMode.value === 'columns' ? 'columns' : 'even'))
 // 글자 칸 크기는 글꼴이 정하므로 글꼴마다 마지막으로 잰 값 하나로 셈한다. 그래서 새로 연 cell 도 같은 글꼴의 터미널이
 // 잰 값으로 바로 그린다.
 const cells = reactive(new Map<string, Size>())
@@ -535,7 +535,7 @@ function unitOf(cell: Size, cols: ColumnCols): Size {
 }
 
 function placements(layout: Layout, size: Size | undefined, cell: Size, cols: ColumnCols) {
-  const widths: Widths = cols === undefined ? 'half' : 'columns'
+  const widths: Widths = cols === undefined ? 'even' : 'columns'
   // 영역을 재기 전의 첫 렌더는 비율로 그린다. 터미널은 열·행 수를 받을 때까지 pty 에 붙지 않는다.
   if (!size)
     return new Map(

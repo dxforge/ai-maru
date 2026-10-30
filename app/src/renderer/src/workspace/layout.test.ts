@@ -7,7 +7,8 @@ import {
   removePane,
   splitPane,
   splitRoot,
-  type Layout
+  type Layout,
+  type Widths
 } from './layout'
 
 function threePanes(): Layout {
@@ -61,7 +62,21 @@ describe('removePane', () => {
 })
 
 describe('rects', () => {
-  it('나눈 pane 은 반씩 차지한다', () => {
+  const thirds = (layout: Layout, widths: Widths, axis: 'x' | 'y') => {
+    const [at, length] = axis === 'x' ? (['x', 'w'] as const) : (['y', 'h'] as const)
+    return [...rects(layout, widths)].map(([pane, r]) => [
+      pane,
+      Math.round(r[at] * 3 * 1e6) / 1e6,
+      Math.round(r[length] * 3 * 1e6) / 1e6
+    ])
+  }
+  const evenly = [
+    [1, 0, 1],
+    [2, 1, 1],
+    [3, 2, 1]
+  ]
+
+  it('격자가 아니면 같은 방향으로 늘어선 pane 끼리 고르게 나눈다', () => {
     expect(rects(threePanes())).toEqual(
       new Map([
         [1, { x: 0, y: 0, w: 0.5, h: 1 }],
@@ -72,24 +87,74 @@ describe('rects', () => {
     expect(panes(threePanes())).toEqual([1, 2, 3])
   })
 
-  it('columns 는 좌우로 나눈 폭을 양쪽의 늘어선 pane 수 비율로 나눈다', () => {
-    const widths = (layout: Layout) =>
-      [...rects(layout, 'columns')].map(([pane, r]) => [
-        pane,
-        Math.round(r.x * 3),
-        Math.round(r.w * 3)
+  it('아래로 나누면 위아래로 늘어선 pane 들의 높이가 같다', () => {
+    const full = splitRoot(splitRoot({ pane: 1 }, 2, 'down'), 3, 'down')
+    const below = splitPane(splitPane({ pane: 1 }, 1, 2, 'down'), 2, 3, 'down')
+    const above = splitPane(splitPane({ pane: 1 }, 1, 2, 'down'), 1, 3, 'down')
+    for (const widths of ['even', 'columns'] as const) {
+      expect(thirds(full, widths, 'y')).toEqual(evenly)
+      expect(thirds(below, widths, 'y')).toEqual(evenly)
+      expect(thirds(above, widths, 'y')).toEqual([
+        [1, 0, 1],
+        [3, 1, 1],
+        [2, 2, 1]
       ])
+    }
+  })
+
+  it('single 에서 오른쪽으로 나누면 좌우로 늘어선 pane 들의 폭이 같다', () => {
+    const full = splitRoot(splitRoot({ pane: 1 }, 2, 'right'), 3, 'right')
+    const after = splitPane(splitPane({ pane: 1 }, 1, 2, 'right'), 2, 3, 'right')
+    expect(thirds(full, 'even', 'x')).toEqual(evenly)
+    expect(thirds(after, 'even', 'x')).toEqual(evenly)
+  })
+
+  it('다른 방향으로 나눈 부분은 늘어선 pane 하나로 센다', () => {
+    const layout: Layout = {
+      split: 'down',
+      first: { pane: 1 },
+      second: {
+        split: 'right',
+        first: { pane: 2 },
+        second: { split: 'down', first: { pane: 3 }, second: { pane: 4 } }
+      }
+    }
+    expect(rects(layout, 'even')).toEqual(
+      new Map([
+        [1, { x: 0, y: 0, w: 1, h: 0.5 }],
+        [2, { x: 0, y: 0.5, w: 0.5, h: 0.5 }],
+        [3, { x: 0.5, y: 0.5, w: 0.5, h: 0.25 }],
+        [4, { x: 0.5, y: 0.75, w: 0.5, h: 0.25 }]
+      ])
+    )
+  })
+
+  it('pane 을 닫으면 남은 pane 들의 크기를 같은 규칙으로 맞춘다', () => {
+    const four = splitRoot(splitRoot(splitRoot({ pane: 1 }, 2, 'down'), 3, 'down'), 4, 'down')
+    const { layout } = removePane(four, 2)!
+    expect(thirds(layout, 'even', 'y')).toEqual([
+      [1, 0, 1],
+      [3, 1, 1],
+      [4, 2, 1]
+    ])
+    const right = splitPane(
+      splitPane(splitPane({ pane: 1 }, 1, 2, 'right'), 2, 3, 'right'),
+      3,
+      4,
+      'right'
+    )
+    expect(thirds(removePane(right, 3)!.layout, 'even', 'x')).toEqual([
+      [1, 0, 1],
+      [2, 1, 1],
+      [4, 2, 1]
+    ])
+  })
+
+  it('columns 는 좌우로 나눈 폭을 양쪽의 늘어선 pane 수 비율로 나눈다', () => {
     const right = splitPane(splitPane({ pane: 1 }, 1, 2, 'right'), 2, 3, 'right')
-    expect(widths(right)).toEqual([
-      [1, 0, 1],
-      [2, 1, 1],
-      [3, 2, 1]
-    ])
-    expect(widths(splitRoot(splitPane({ pane: 1 }, 1, 2, 'right'), 3, 'right'))).toEqual([
-      [1, 0, 1],
-      [2, 1, 1],
-      [3, 2, 1]
-    ])
+    expect(thirds(right, 'columns', 'x')).toEqual(evenly)
+    const full = splitRoot(splitPane({ pane: 1 }, 1, 2, 'right'), 3, 'right')
+    expect(thirds(full, 'columns', 'x')).toEqual(evenly)
   })
 
   it('columns 에서 위아래 두 쪽의 늘어선 pane 수가 다르면 적은 쪽 pane 이 넓어진다', () => {
@@ -141,19 +206,24 @@ describe('neighbor', () => {
     expect(neighbor(layout, 4, 'up')).toBe(1)
   })
 
-  it('columns 에서는 늘어선 pane 수 비율로 그린 자리에서 이웃을 찾는다', () => {
-    // 위 1 | 2, 아래 3 | 4 | 5 — columns 에서 2 는 아래 4·5 위에 걸치고, 5 와 더 길게 맞닿는다.
+  it('그린 자리에서 이웃을 찾으므로 columns 와 single 에서 이웃이 다를 수 있다', () => {
+    // 위 1 | 2 | 3 | 4, 아래 5 | (6 위, 7 | 8 아래). single 에서 아래 5 는 폭의 반이라 2 아래를 덮는다. columns 에서
+    // 아래는 column 4 개 가운데 5 가 4/3 개, 나머지가 8/3 개를 받으므로 2 는 6 과 더 길게 맞닿는다.
+    const row = (...ps: number[]): Layout =>
+      ps.length === 1
+        ? { pane: ps[0] }
+        : { split: 'right', first: { pane: ps[0] }, second: row(...ps.slice(1)) }
     const layout: Layout = {
       split: 'down',
-      first: { split: 'right', first: { pane: 1 }, second: { pane: 2 } },
+      first: row(1, 2, 3, 4),
       second: {
         split: 'right',
-        first: { pane: 3 },
-        second: { split: 'right', first: { pane: 4 }, second: { pane: 5 } }
+        first: { pane: 5 },
+        second: { split: 'down', first: { pane: 6 }, second: row(7, 8) }
       }
     }
-    expect(neighbor(layout, 2, 'down')).toBe(4)
-    expect(neighbor(layout, 2, 'down', 'columns')).toBe(5)
+    expect(neighbor(layout, 2, 'down')).toBe(5)
+    expect(neighbor(layout, 2, 'down', 'columns')).toBe(6)
   })
 
   it('그 방향에 pane 이 없거나 모서리만 닿으면 undefined 다', () => {

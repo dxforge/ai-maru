@@ -5,8 +5,11 @@ export type FocusDirection = 'left' | 'right' | 'up' | 'down'
 
 export type Rect = { x: number; y: number; w: number; h: number }
 
-/** 좌우로 나눈 폭을 반씩(`half`) 또는 양쪽의 `columnCount` 비율로(`columns`) 나눈다. */
-export type Widths = 'half' | 'columns'
+/**
+ * 좌우로 나눈 폭을 `even` 은 양쪽의 `lineCount` 비율로, `columns` 는 양쪽의 `columnCount` 비율로 나눈다. 위아래로 나눈
+ * 높이는 두 값 모두 `lineCount` 비율로 나눈다.
+ */
+export type Widths = 'even' | 'columns'
 
 export function splitPane(
   layout: Layout,
@@ -53,27 +56,31 @@ export function columnCount(layout: Layout): number {
   return layout.split === 'right' ? a + b : Math.max(a, b)
 }
 
+function lineCount(layout: Layout, split: SplitDirection): number {
+  if ('pane' in layout || layout.split !== split) return 1
+  return lineCount(layout.first, split) + lineCount(layout.second, split)
+}
+
 export function share(layout: Extract<Layout, { split: SplitDirection }>, widths: Widths): number {
-  if (layout.split !== 'right' || widths !== 'columns') return 0.5
-  const first = columnCount(layout.first)
-  return first / (first + columnCount(layout.second))
+  const { split } = layout
+  const count =
+    split === 'right' && widths === 'columns'
+      ? columnCount
+      : (part: Layout): number => lineCount(part, split)
+  const first = count(layout.first)
+  return first / (first + count(layout.second))
 }
 
 export function rects(
   layout: Layout,
-  widths: Widths = 'half',
+  widths: Widths = 'even',
   at: Rect = { x: 0, y: 0, w: 1, h: 1 }
 ): Map<number, Rect> {
   if ('pane' in layout) return new Map([[layout.pane, at]])
-  let a: Rect, b: Rect
-  if (layout.split === 'right') {
-    const w = at.w * share(layout, widths)
-    a = { ...at, w }
-    b = { ...at, x: at.x + w, w: at.w - w }
-  } else {
-    a = { ...at, h: at.h / 2 }
-    b = { ...at, y: at.y + at.h / 2, h: at.h / 2 }
-  }
+  const [along, length] = layout.split === 'right' ? (['x', 'w'] as const) : (['y', 'h'] as const)
+  const n = at[length] * share(layout, widths)
+  const a = { ...at, [length]: n }
+  const b = { ...at, [along]: at[along] + n, [length]: at[length] - n }
   return new Map([...rects(layout.first, widths, a), ...rects(layout.second, widths, b)])
 }
 
@@ -83,7 +90,7 @@ export function neighbor(
   layout: Layout,
   from: number,
   dir: FocusDirection,
-  widths: Widths = 'half'
+  widths: Widths = 'even'
 ): number | undefined {
   const all = rects(layout, widths)
   const cur = all.get(from)

@@ -1,6 +1,8 @@
+import type { Page } from '@playwright/test'
 import {
   activeTerminal,
   cellSize,
+  cellViews,
   clickMenu,
   delayPtyPort,
   expect,
@@ -67,6 +69,77 @@ test('⇧⌘D 는 아래로 나눈다', async ({ launch }) => {
   expect(half.cols).toBe(full.cols)
   expect(half.rows).toBeLessThan(full.rows / 2 + 1)
   expect(half.rows).toBeGreaterThan(full.rows / 2 - 3)
+})
+
+/**
+ * 선택한 cell 에 한 줄로 늘어선 pane 들이 `length` 를 고르게 나눠 갖는지. `snapRects` 가 경계를 `unit`(글자 칸 크기나
+ * columns 보기의 pane 폭)의 배수에 두고 cell 끝의 자투리를 마지막 pane 에 주므로, pane 끼리의 크기 차이는 `unit` 하나에
+ * 자투리를 더한 값까지다.
+ */
+async function expectEven(page: Page, length: 'width' | 'height', unit: number): Promise<void> {
+  await expect
+    .poll(async () => {
+      const sizes = await panes(page).evaluateAll(
+        (ps, l) => ps.map((p) => p.getBoundingClientRect()[l]),
+        length
+      )
+      const total = sizes.reduce((a, b) => a + b, 0)
+      const rest = total - Math.floor(total / unit + 1e-6) * unit
+      const spread = Math.max(...sizes) - Math.min(...sizes)
+      return spread <= unit + rest + 0.5 ? 'even' : sizes.join(', ')
+    })
+    .toBe('even')
+}
+
+test('single 에서 maru pane new --full --down 으로 늘어선 pane 들의 높이가 같고, 하나를 닫으면 남은 pane 들의 높이가 같다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  for (const [name, count] of [
+    ['A', 2],
+    ['B', 3],
+    ['C', 4]
+  ] as const) {
+    await page.keyboard.type(`${name}=$(maru pane new --full --down bash -c 'read x')\n`)
+    await expect(panes(page)).toHaveCount(count)
+  }
+  const row = (await cellSize(page)).height
+  await expectEven(page, 'height', row)
+
+  await run(page, 'maru pane close "$A"; echo closed-$?', 'closed-0')
+  await expect(panes(page)).toHaveCount(3)
+  await expectEven(page, 'height', row)
+})
+
+test('single 에서 ⌘D 로 새 pane 을 다시 나누면 좌우로 늘어선 세 pane 의 폭이 같다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-right', 3)
+  await expectEven(page, 'width', (await cellSize(page)).width)
+})
+
+test('single 에서 ⇧⌘D 로 새 pane 을 다시 나누면 위아래로 늘어선 세 pane 의 높이가 같다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-down', 2)
+  await split(app, page, 'split-down', 3)
+  await expectEven(page, 'height', (await cellSize(page)).height)
+})
+
+test('columns 에서 ⇧⌘D 로 새 pane 을 다시 나누면 세 pane 의 높이가 같고 cell 폭은 그대로다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  const width = (await cellViews(page).first().boundingBox())!.width
+  await split(app, page, 'split-down', 2)
+  await split(app, page, 'split-down', 3)
+  await expectEven(page, 'height', (await cellSize(page)).height)
+  expect((await cellViews(page).first().boundingBox())!.width).toBe(width)
 })
 
 test('⌘⌥방향키는 그 방향의 pane 으로 포커스를 옮기고, 그 방향에 pane 이 없으면 그대로 둔다', async ({
