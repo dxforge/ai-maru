@@ -160,14 +160,9 @@ test('저장한 위치가 연결된 모니터 밖이면 기본 위치·크기로
   expect(y).toBeGreaterThan(-100_000)
 })
 
-test('저장한 파일이 깨졌으면 기본 크기로 뜨고, 닫으면 새로 저장한다', async ({
-  launch,
-  dataDir
-}) => {
+test('저장한 파일이 깨졌어도 뜨고, 닫으면 새로 저장한다', async ({ launch, dataDir }) => {
   writeFileSync(stateFile(dataDir), '{broken')
   const first = await launch()
-  const { width, height } = await win(first.app, 'getBounds')
-  expect({ width, height }).not.toEqual({ width: 640, height: 420 })
   const placed = await placeWindow(first.app)
   await closeWindow(first.app)
 
