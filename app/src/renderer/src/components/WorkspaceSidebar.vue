@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, type DeepReadonly } from 'vue'
-import type { JobView } from '../../../shared/job'
+import { jobName, type JobView } from '../../../shared/job'
 import { sidebarLabel, workspaceName, type SidebarLabel } from '../../../shared/names'
 import { paneName, type CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
+import type { PtyNotification } from '../../../shared/pty-state'
 import { AGENT_ICONS, commandClass, commandIcon, ICONS, STATE_LABELS } from '../icons'
 import StatusIcon from './StatusIcon.vue'
 import { tildePath } from '../workspace/cwd'
-import { commandLabel, commandTail, elapsed } from '../workspace/display'
+import { commandLabel, commandTail, elapsed, notificationText } from '../workspace/display'
 import {
   dropAt,
   scrollStep,
@@ -25,7 +26,9 @@ const {
   selectedKey,
   shown,
   command,
+  notification,
   urgent,
+  unread,
   folded,
   collapsed,
   jobs = [],
@@ -37,7 +40,10 @@ const {
   selectedKey: number | null
   shown: (pty?: string) => ProgramStatusRecord | undefined
   command: (pty?: string) => CommandView | undefined
+  notification: (pty?: string) => PtyNotification | undefined
   urgent: ReadonlyMap<number, ProgramStatusState>
+  /** 읽지 않은 알림이 있는 pane 을 든 workspace 의 key */
+  unread: ReadonlySet<number>
   folded: ReadonlySet<number>
   collapsed: boolean
   jobs?: readonly JobView[]
@@ -61,6 +67,8 @@ type Row = {
   command?: CommandView
   commandTail: boolean
   focused: boolean
+  notice?: PtyNotification
+  name: string
   text: string
   place?: SidebarLabel
   path?: string
@@ -86,10 +94,12 @@ function paneRow(p: DeepReadonly<Pane>, focused: boolean, base: DeepReadonly<Pan
   const cmd = command(p.ptyId)
   const tail = !!cmd && !p.command?.length
   const place = p.cwd && !tail ? sidebarLabel(p, base, home) : undefined
-  const text = paneName(p, r, shell, cmd)
+  const name = paneName(p, r, shell, cmd)
+  const notice = notification(p.ptyId)
   const where = place && [place.name, place.branch, place.sub].filter(Boolean).join(' ')
-  const name = where ? `${text}, ${where}` : text
+  const named = where ? `${name}, ${where}` : name
   const label = s ? STATE_LABELS[s] : cmd && commandLabel(cmd)
+  const aria = label ? `${label}: ${named}` : named
   return {
     pane: p.key,
     state: s,
@@ -97,10 +107,12 @@ function paneRow(p: DeepReadonly<Pane>, focused: boolean, base: DeepReadonly<Pan
     command: cmd,
     commandTail: tail,
     focused,
-    text,
+    notice,
+    name,
+    text: notice ? notice.title || notice.body : name,
     place,
     path: p.cwd && tildePath(p.cwd, home),
-    aria: label ? `${label}: ${name}` : name
+    aria: notice ? `${aria}. Notification: ${notificationText(notice)}` : aria
   }
 }
 
@@ -112,7 +124,7 @@ function jobRow(j: JobView): JobRow {
   const command = j.command.join(' ')
   return {
     pty: j.pty,
-    text: j.name ?? command,
+    text: jobName(j),
     tip: j.exit ? `${command}\n${exitText(j.exit)}` : command,
     ports: j.ports.map((p) => `:${p}`).join(' '),
     started: j.started,
@@ -151,6 +163,7 @@ const groups = computed(() =>
       name: workspaceName(base, home),
       folded: f,
       state: f ? urgent.get(w.key) : undefined,
+      notified: f && unread.has(w.key),
       cells: f ? [] : w.cells.map((c) => cellGroup(c, base))
     }
   })
@@ -167,7 +180,8 @@ function paneTip(r: Row): string {
   const c = r.command
   const time = c?.running && commandTail(c, now)
   const detail = c && (time ? `${commandLabel(c)} for ${time}` : commandLabel(c))
-  return [r.text, detail, r.path].filter(Boolean).join('\n')
+  const head = r.notice ? `${r.name} — ${notificationText(r.notice)}` : r.name
+  return [head, detail, r.path].filter(Boolean).join('\n')
 }
 
 const nav = useTemplateRef<HTMLElement>('nav')
@@ -283,7 +297,7 @@ const workspaceDragged = (workspace: number): boolean =>
     <div class="titlebar" />
     <div ref="list" class="list">
       <div
-        v-for="({ w, name, folded: wf, state, cells }, wi) in groups"
+        v-for="({ w, name, folded: wf, state, notified, cells }, wi) in groups"
         :key="w.key"
         class="workspace"
         :class="{ dragging: workspaceDragged(w.key) }"
@@ -299,10 +313,15 @@ const workspaceDragged = (workspace: number): boolean =>
           @pointerdown="grabWorkspace($event, w.key, wi)"
           @click="emit('fold', w.key)"
         >
-          <span v-if="state" class="state status-icon" :class="state" :title="STATE_LABELS[state]"
+          <span
+            v-if="state"
+            class="state status-icon"
+            :class="[state, { unread: notified }]"
+            :title="STATE_LABELS[state]"
             ><StatusIcon :state="state"
           /></span>
           <span class="workspace-name">{{ name }}</span>
+          <span v-if="notified && !state" class="unread-dot" />
           <span class="chevron nerd-icon">{{ wf ? ICONS.collapsed : ICONS.expanded }}</span>
         </button>
         <div
@@ -329,7 +348,7 @@ const workspaceDragged = (workspace: number): boolean =>
           >
             <span
               class="state status-icon"
-              :class="{ 'nerd-icon': !r.state || r.agent }"
+              :class="{ 'nerd-icon': !r.state || r.agent, unread: r.notice }"
               :title="r.state && STATE_LABELS[r.state]"
               ><template v-if="r.agent">{{ r.agent }}</template
               ><StatusIcon v-else-if="r.state" :state="r.state" /><template v-else>{{
@@ -457,6 +476,14 @@ const workspaceDragged = (workspace: number): boolean =>
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* 상태 아이콘이 없는 접은 workspace 는 이름 뒤에 점(`.unread-dot`, `style.css`)을 붙여 위로 올린다. 이름은 길면 말줄임으로
+   잘리므로 점을 이름 위에 겹치지 않는다. */
+.unread-dot {
+  flex: none;
+  margin-left: -6px;
+  transform: translateY(-5px);
 }
 
 /* workspace 사이에는 선을 긋고 선 위아래를 같은 폭으로 띄운다. 접은 workspace 와 펼친 workspace 의 간격이 같도록 마지막

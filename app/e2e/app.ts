@@ -455,6 +455,18 @@ export async function settled<T>(read: () => Promise<T>): Promise<T> {
   return JSON.parse(seen.at(-1)!)
 }
 
+/** 지금 focus 를 가진 pane 의 셸에서 `expr`(`$MARU_PTY_ID`·`$(tty)` 등)의 값을 읽는다. */
+export async function shellValue(
+  page: Page,
+  dataDir: string,
+  name: string,
+  expr: string
+): Promise<string> {
+  const file = join(dataDir, `${name}.value`)
+  await run(page, `echo ${expr} > '${file}'; echo saved-${name}-$((1+1))`, `saved-${name}-2`)
+  return readFileSync(file, 'utf8').trim()
+}
+
 export async function typesInto(page: Page, i: number, marker: string): Promise<void> {
   await expect(panes(page).nth(i).locator('.terminal-view')).toHaveClass(/active/)
   await run(page, `echo ${marker}-$((1+1))`, `${marker}-2`)

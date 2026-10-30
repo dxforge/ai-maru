@@ -13,3 +13,7 @@ export type JobView = {
   exit?: PtyExit
   ports: number[]
 }
+
+export function jobName(j: { name?: string; command: readonly string[] }): string {
+  return j.name ?? j.command.join(' ')
+}

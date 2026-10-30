@@ -1,5 +1,5 @@
 import type { CommandView } from '../../../shared/pane-name'
-import type { PtyState } from '../../../shared/pty-state'
+import type { PtyNotification, PtyState } from '../../../shared/pty-state'
 
 export type CwdSources = {
   state?: PtyState
@@ -31,6 +31,10 @@ export function paneTitle(s: {
 }): string | undefined {
   if (s.old) return undefined
   return s.state ? (s.state.title ?? undefined) : s.restoredTitle
+}
+
+export function notificationText(n: PtyNotification): string {
+  return n.title && n.body ? `${n.title}: ${n.body}` : n.title || n.body
 }
 
 export function commandLabel(c: CommandView): string {

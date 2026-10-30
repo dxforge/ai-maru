@@ -26,10 +26,16 @@ export type PtyState = {
 }
 
 /**
- * main 이 pty 마다 든 것. `old` 는 상태 구독을 모르는 이전 maru-pty 의 pty 다 — 그 pty 의 상태는 오지 않는다.
- * 이 표시는 이전 maru-pty 의 pty 가 모두 끝나면 지울 잠정 경로다.
+ * 프로그램이 OSC 9 나 OSC 777 로 보낸 데스크톱 알림. maru-pty 가 한 줄로 다듬어 보내고, 둘 다 비지는 않는다. OSC 9 는
+ * 제목을 싣지 않아 `title` 이 비어 있다.
  */
-export type PtyStateEntry = { state: PtyState } | { old: true }
+export type PtyNotification = { title: string; body: string }
+
+/**
+ * main 이 pty 마다 든 것. `old` 는 상태 구독을 모르는 이전 maru-pty 의 pty 다 — 그 pty 의 상태는 오지 않는다.
+ * 이 표시는 이전 maru-pty 의 pty 가 모두 끝나면 지울 잠정 경로다. `notification` 은 사용자가 아직 보지 않은 마지막 알림이다.
+ */
+export type PtyStateEntry = { state: PtyState; notification?: PtyNotification } | { old: true }
 
 const stringOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null)
 const numberOrNull = (v: unknown): number | null => (typeof v === 'number' ? v : null)
@@ -44,6 +50,14 @@ function parseCommand(v: unknown): PtyCommand | null {
     exitCode: numberOrNull(c.exit_code),
     startedAt: numberOrNull(c.started_at)
   }
+}
+
+export function parsePtyNotification(v: unknown): PtyNotification | null {
+  if (typeof v !== 'object' || v === null) return null
+  const m = v as Record<string, unknown>
+  if (m.type !== 'notification' || typeof m.title !== 'string' || typeof m.body !== 'string')
+    return null
+  return { title: m.title, body: m.body }
 }
 
 export function parsePtyState(v: unknown): PtyState | null {

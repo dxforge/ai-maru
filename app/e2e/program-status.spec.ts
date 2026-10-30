@@ -18,6 +18,7 @@ import {
   run,
   screenshotPixels,
   shellRows,
+  shellValue,
   split,
   test,
   typesInto,
@@ -455,10 +456,8 @@ test('사이드바·pane 헤더·cell 헤더의 상태 원은 셸의 터미널 �
 })
 
 /** 지금 focus 를 가진 pane 의 pty id. */
-async function ptyIdOf(page: Page, dataDir: string, name: string): Promise<string> {
-  const file = join(dataDir, `${name}.pty`)
-  await run(page, `echo $MARU_PTY_ID > '${file}'; echo saved-${name}-$((1+1))`, `saved-${name}-2`)
-  return readFileSync(file, 'utf8').trim()
+function ptyIdOf(page: Page, dataDir: string, name: string): Promise<string> {
+  return shellValue(page, dataDir, name, '$MARU_PTY_ID')
 }
 
 test('done 인 pane 에 1초 이상 머문 뒤 다른 pane 으로 옮기면 idle 이 되고, 1초보다 짧게 지나가면 done 이 남는다', async ({
