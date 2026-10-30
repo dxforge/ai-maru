@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, type DeepReadonly } from 'vue'
-import { jobName, type JobView } from '../../../shared/job'
-import { sidebarLabel, workspaceName, type SidebarLabel } from '../../../shared/names'
-import { paneName, type CommandView } from '../../../shared/pane-name'
+import type { JobView } from '../../../shared/job'
+import { workspaceName } from '../../../shared/names'
+import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { AGENT_ICONS, commandClass, commandIcon, ICONS, STATE_LABELS } from '../icons'
+import { commandClass, ICONS, STATE_LABELS } from '../icons'
 import StatusIcon from './StatusIcon.vue'
-import { tildePath } from '../workspace/cwd'
 import { commandLabel, commandTail, elapsed, notificationText } from '../workspace/display'
 import {
   dropAt,
@@ -19,6 +18,14 @@ import {
   type SidebarSpans,
   type Span
 } from '../workspace/sidebarDrag'
+import {
+  jobRow,
+  paneRow,
+  workspaceMarks,
+  type JobRow,
+  type Row,
+  type RowSource
+} from '../workspace/sidebarRows'
 import { focusedPane, type Cell, type Pane, type Workspace } from '../workspace/store'
 
 const {
@@ -60,78 +67,6 @@ const emit = defineEmits<{
   moveWorkspace: [workspace: number, index: number]
 }>()
 
-type Row = {
-  pane: number
-  state?: ProgramStatusState
-  agent?: string
-  command?: CommandView
-  commandTail: boolean
-  focused: boolean
-  notice?: PtyNotification
-  name: string
-  text: string
-  place?: SidebarLabel
-  path?: string
-  aria: string
-}
-
-type JobRow = {
-  pty: string
-  text: string
-  tip: string
-  ports: string
-  started?: number
-  exited: boolean
-}
-
-// pane 줄의 오른쪽 끝에 그 pane 의 위치를 붙인다. agent 아이콘은 쉬는(idle) 동안만 앞 칸의 상태 아이콘 자리에 둔다.
-// agent 아이콘을 오른쪽 끝에 두지 않아야 agent 가 뜨고 끝나도 위치가 움직이지 않기 때문이다. 셸 pane 에서는 명령이 도는 동안과
-// 실패한 명령이 남아 있는 동안만 오른쪽 끝에 위치 대신 돈 시간이나 종료 코드를 쓴다. 명령 pane 은 늘 도는 중이라 같은 규칙을 따르면
-// 위치를 한 번도 보이지 못하므로, 오른쪽 끝에 늘 위치를 쓴다.
-function paneRow(p: DeepReadonly<Pane>, focused: boolean, base: DeepReadonly<Pane>): Row {
-  const r = shown(p.ptyId)
-  const s = r?.state
-  const cmd = command(p.ptyId)
-  const tail = !!cmd && !p.command?.length
-  const place = p.cwd && !tail ? sidebarLabel(p, base, home) : undefined
-  const name = paneName(p, r, shell, cmd)
-  const notice = notification(p.ptyId)
-  const where = place && [place.name, place.branch, place.sub].filter(Boolean).join(' ')
-  const named = where ? `${name}, ${where}` : name
-  const label = s ? STATE_LABELS[s] : cmd && commandLabel(cmd)
-  const aria = label ? `${label}: ${named}` : named
-  return {
-    pane: p.key,
-    state: s,
-    agent: s === 'idle' && r ? AGENT_ICONS.get(r.app) : undefined,
-    command: cmd,
-    commandTail: tail,
-    focused,
-    notice,
-    name,
-    text: notice ? notice.title || notice.body : name,
-    place,
-    path: p.cwd && tildePath(p.cwd, home),
-    aria: notice ? `${aria}. Notification: ${notificationText(notice)}` : aria
-  }
-}
-
-function exitText(e: NonNullable<JobView['exit']>): string {
-  return e.signal !== null ? `Killed by signal ${e.signal}` : `Exited with code ${e.code}`
-}
-
-function jobRow(j: JobView): JobRow {
-  const command = j.command.join(' ')
-  return {
-    pty: j.pty,
-    text: jobName(j),
-    tip: j.exit ? `${command}\n${exitText(j.exit)}` : command,
-    ports: j.ports.map((p) => `:${p}`).join(' '),
-    started: j.started,
-    exited: !!j.exit
-  }
-}
-
 // `groups` 밖에 둔다. `groups` 안에 두면 job 표가 바뀔 때마다 job 과 상관없는 pane 줄까지 다시 만들기 때문이다.
 const jobsByCell = computed(() => {
   const map = new Map<string, JobRow[]>()
@@ -144,30 +79,30 @@ const jobsByCell = computed(() => {
   return map
 })
 
-function cellGroup(c: DeepReadonly<Cell>, base: DeepReadonly<Pane>) {
+function cellGroup(src: RowSource, c: DeepReadonly<Cell>, base: DeepReadonly<Pane>) {
   const selected = c.key === selectedKey
   const current = focusedPane(c)
   return {
     c,
     selected,
-    rows: c.panes.map((p) => paneRow(p, selected && p === current, base))
+    rows: c.panes.map((p) => paneRow(src, p, selected && p === current, base))
   }
 }
 
-const groups = computed(() =>
-  workspaces.map((w) => {
+const groups = computed(() => {
+  const src: RowSource = { shown, command, notification, home, shell }
+  return workspaces.map((w) => {
     const base = w.cells[0].panes[0]
     const f = folded.has(w.key)
     return {
       w,
       name: workspaceName(base, home),
       folded: f,
-      state: f ? urgent.get(w.key) : undefined,
-      notified: f && unread.has(w.key),
-      cells: f ? [] : w.cells.map((c) => cellGroup(c, base))
+      ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
+      cells: f ? [] : w.cells.map((c) => cellGroup(src, c, base))
     }
   })
-)
+})
 
 // `groups` 밖에서 센다. `groups` 안에서 세면 `now` 가 바뀔 때마다 모든 cell 의 줄을 다시 만들기 때문이다.
 function jobTime(j: JobRow): string {
@@ -297,7 +232,7 @@ const workspaceDragged = (workspace: number): boolean =>
     <div class="titlebar" />
     <div ref="list" class="list">
       <div
-        v-for="({ w, name, folded: wf, state, notified, cells }, wi) in groups"
+        v-for="({ w, name, folded: wf, state, notified, dot, cells }, wi) in groups"
         :key="w.key"
         class="workspace"
         :class="{ dragging: workspaceDragged(w.key) }"
@@ -321,7 +256,7 @@ const workspaceDragged = (workspace: number): boolean =>
             ><StatusIcon :state="state"
           /></span>
           <span class="workspace-name">{{ name }}</span>
-          <span v-if="notified && !state" class="unread-dot" />
+          <span v-if="dot" class="unread-dot" />
           <span class="chevron nerd-icon">{{ wf ? ICONS.collapsed : ICONS.expanded }}</span>
         </button>
         <div
@@ -348,11 +283,10 @@ const workspaceDragged = (workspace: number): boolean =>
           >
             <span
               class="state status-icon"
-              :class="{ 'nerd-icon': !r.state || r.agent, unread: r.notice }"
+              :class="{ 'nerd-icon': !('state' in r.icon), unread: r.notice }"
               :title="r.state && STATE_LABELS[r.state]"
-              ><template v-if="r.agent">{{ r.agent }}</template
-              ><StatusIcon v-else-if="r.state" :state="r.state" /><template v-else>{{
-                commandIcon(r.command)
+              ><StatusIcon v-if="'state' in r.icon" :state="r.icon.state" /><template v-else>{{
+                'agent' in r.icon ? r.icon.agent : r.icon.glyph
               }}</template></span
             >
             <span class="title">{{ r.text }}</span>

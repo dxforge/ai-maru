@@ -166,6 +166,19 @@ export function matchesKeys(e: KeyEventLike, k: Keys): boolean {
   )
 }
 
+const selectAllKeys = menuKeys('selectAll')!
+
+// 메뉴는 자판 위치가 아니라 글자로 맞추므로(AZERTY 의 A 는 KeyQ 자리) 글자로 맞춘다. 라틴 글자가 없는 자판에서
+// ⌘ 를 쥐었을 때 `e.key` 가 무엇으로 오는지는 확인하지 않아, 글자가 라틴 글자가 아닐 때만 자판 위치(`KeyA`)로 맞춘다.
+export function isSelectAll(
+  e: KeyEventLike & { key: string },
+  keys: Keys = selectAllKeys
+): boolean {
+  if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false
+  if (/^[a-z]$/i.test(e.key)) return e.key.toUpperCase() === keys.key
+  return matchesKeys(e, keys)
+}
+
 // 메뉴 항목 하나에는 accelerator 를 하나만 걸 수 있으므로, 메뉴에 걸지 못한 키는 창이 keydown 으로 받는다.
 export function secondaryCommand(e: KeyEventLike): CommandId | undefined {
   for (const s of shortcuts)

@@ -21,7 +21,7 @@ import { attach as attachTerminal, type Attachment } from '../pty/attach'
 import { openPty, type PtyConnection } from '../pty/connection'
 import type { ProgramStatusRecord } from '../../../shared/program-status'
 import { exitMessage, failedExit } from '../../../shared/pty'
-import { matchesKeys, menuKeys, terminalInput } from '../../../shared/shortcuts'
+import { isSelectAll, terminalInput } from '../../../shared/shortcuts'
 import { sameFont, type TerminalFont } from '../config/terminal'
 import { alignComposition } from '../terminal/composition'
 import { createLinkHandler, registerLinkProvider } from '../terminal/links'
@@ -102,14 +102,6 @@ term.options.linkHandler = createLinkHandler(activateLink, (url) => (hoveredUrl.
 const textLinks = registerLinkProvider(term, metaKey, activateLink, (paths) =>
   window.maru.longestExistingPaths(paths, ptyId)
 )
-const selectAllKeys = menuKeys('selectAll')!
-// 메뉴는 자판 위치가 아니라 글자로 맞추므로(AZERTY 의 A 는 KeyQ 자리) 글자로 맞춘다. 라틴 글자가 없는 자판에서
-// ⌘ 를 쥐었을 때 `e.key` 가 무엇으로 오는지는 확인하지 않아, 글자가 라틴 글자가 아닐 때만 자판 위치(`KeyA`)로 맞춘다.
-function isSelectAll(e: KeyboardEvent): boolean {
-  if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false
-  if (/^[a-z]$/i.test(e.key)) return e.key.toUpperCase() === selectAllKeys.key
-  return matchesKeys(e, selectAllKeys)
-}
 const MODIFIERS = new Set(['Meta', 'Shift', 'Alt', 'Control'])
 // xterm 은 조합한 글자를 compositionend 다음 setTimeout(0) 에 보내고, 아래 handler 가 false 를 내면
 // 조합을 먼저 끝내지도 않는다. 그 사이에 보낸 키는 조합한 글자보다 앞서 가므로, 조합한 글자가 간 뒤로 미룬다.

@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { canSplit, NO_MIN, overflow, required, snapRects, type Box, type Size } from './grid'
+import {
+  areaOf,
+  canSplit,
+  columnsWidthOf,
+  NO_MIN,
+  overflow,
+  paneMin,
+  required,
+  roomForSplit,
+  snapRects,
+  type Box,
+  type Size
+} from './grid'
 import { panes, splitPane, splitRoot, type Layout } from './layout'
 
 const cell = { width: 8, height: 18 }
@@ -379,5 +391,86 @@ describe('snapRects', () => {
         expect(canSplit({ pane: 1 }, size(1, 1), next, size(1, 1), NO_MIN)).toBe(true)
       })
     })
+  })
+})
+
+describe('paneMin', () => {
+  it('single 에서는 터미널 20열과 여백·스크롤바가 들어가는 글자 칸 폭, 헤더를 더한 6행 높이다', () => {
+    // 20열 + 여백 4px·스크롤바 8px(1.5칸)을 글자 칸 수로 올리면 22칸이다.
+    expect(paneMin(cell, undefined)).toEqual({ width: 22 * 8, height: 6 * 18 })
+  })
+
+  it('columns 에서는 pane 하나의 폭이 폭의 하한이다', () => {
+    expect(paneMin(cell, 80)).toEqual({ width: 82 * 8, height: 6 * 18 })
+  })
+
+  it('글자 칸 크기를 모르면 0 이다', () => {
+    expect(paneMin({ width: 0, height: 0 }, undefined)).toEqual(NO_MIN)
+    expect(paneMin({ width: 0, height: 0 }, 80)).toEqual(NO_MIN)
+  })
+})
+
+describe('columnsWidthOf·areaOf', () => {
+  const layout: Layout = {
+    split: 'right',
+    first: { pane: 1 },
+    second: { split: 'down', first: { pane: 2 }, second: { pane: 3 } }
+  }
+  const measured = { width: 300, height: 500 }
+
+  it('columns 에서 cell 폭은 열의 수만큼의 pane 폭이고, 높이는 잰 값이다', () => {
+    expect(columnsWidthOf(layout, 80, cell)).toBe(2 * 82 * 8)
+    expect(areaOf(layout, 80, cell, measured)).toEqual({ width: 2 * 82 * 8, height: 500 })
+  })
+
+  it('single 에서는 잰 크기 그대로다', () => {
+    expect(columnsWidthOf(layout, undefined, cell)).toBeUndefined()
+    expect(areaOf(layout, undefined, cell, measured)).toEqual(measured)
+  })
+})
+
+describe('roomForSplit', () => {
+  const twoDown: Layout = { split: 'down', first: { pane: 1 }, second: { pane: 2 } }
+  const room = (
+    layout: Layout,
+    from: number,
+    direction: 'right' | 'down',
+    measured: Size | undefined,
+    cols?: number,
+    full = false
+  ) => roomForSplit({ layout, cell, measured, cols }, { from, direction, full })
+
+  it('single 에서 나눈 pane 들에 20열이 들어가지 않으면 나누지 않는다', () => {
+    const height = 700
+    expect(room(twoRight, 2, 'right', { width: 66 * 8, height })).toBe(true)
+    expect(room(twoRight, 2, 'right', { width: 66 * 8 - 1, height })).toBe(false)
+  })
+
+  it('높이에 헤더를 뺀 5행이 들어가지 않으면 아래로 나누지 않는다', () => {
+    expect(room(twoDown, 2, 'down', { width: 2000, height: 18 * 18 }, 80)).toBe(true)
+    expect(room(twoDown, 2, 'down', { width: 2000, height: 18 * 18 - 1 }, 80)).toBe(false)
+  })
+
+  it('columns 에서는 cell 이 pane 폭만큼 넓어지므로 창이 좁아도 좌우로 나눈다', () => {
+    const narrow = { width: 100, height: 700 }
+    expect(room({ pane: 1 }, 1, 'right', narrow, 80)).toBe(true)
+    expect(room({ pane: 1 }, 1, 'right', narrow)).toBe(false)
+  })
+
+  it('이미 cell 밖으로 나간 cell 에서도 넘침이 늘지 않는 split 은 된다', () => {
+    const overflowed = { width: 200, height: 700 }
+    expect(room(twoRight, 2, 'right', overflowed)).toBe(false)
+    expect(room(twoRight, 2, 'down', overflowed)).toBe(true)
+  })
+
+  it('`full` 이면 pane 하나가 아니라 cell 전체를 나눈다', () => {
+    const layout: Layout = { split: 'down', first: { pane: 1 }, second: twoThree }
+    const area = { width: 44 * 8, height: 700 }
+    expect(room(layout, 1, 'right', area)).toBe(true)
+    expect(room(layout, 1, 'right', area, undefined, true)).toBe(false)
+  })
+
+  it('pane 영역을 아직 재지 않았으면 나눈다', () => {
+    expect(room(twoRight, 2, 'right', undefined)).toBe(true)
   })
 })

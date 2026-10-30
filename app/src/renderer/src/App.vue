@@ -15,11 +15,7 @@ import { PANE_MIN } from '../../shared/layout'
 import { cellLabel, windowTitle } from '../../shared/names'
 import type { JobView } from '../../shared/job'
 import type { PaneReply } from '../../shared/pane'
-import {
-  URGENCY,
-  type ProgramStatusRecord,
-  type ProgramStatusState
-} from '../../shared/program-status'
+import type { ProgramStatusRecord } from '../../shared/program-status'
 import { clampCanvasWidth, clampSidebarWidth, type ScreenState } from '../../shared/screen'
 import { secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
@@ -46,22 +42,24 @@ import { createToasts } from './toast/store'
 import {
   columnWidth,
   fitCols,
-  paneCells,
-  stepPaneCols,
+  paneColsOf,
+  stepPaneColsOverride,
   TERMINAL_PADDING
 } from './workspace/columns'
 import { tildePath } from './workspace/cwd'
-import { canSplit, snapRects, type Box, type Size } from './workspace/grid'
 import {
-  columnCount,
-  EPSILON,
-  rects,
-  splitPane,
-  splitRoot,
-  type Layout,
-  type SplitDirection,
-  type Widths
-} from './workspace/layout'
+  areaOf,
+  columnsWidthOf,
+  paneMin,
+  roomForSplit,
+  snapRects,
+  type Box,
+  type ColumnCols,
+  type Size
+} from './workspace/grid'
+import { EPSILON, rects, type Layout, type SplitDirection, type Widths } from './workspace/layout'
+import { arrangementKey, easeInOut, smoothReveal } from './workspace/reveal'
+import { unreadWorkspaces, urgentStates } from './workspace/status'
 import {
   createWorkspaces,
   focusedPane,
@@ -143,9 +141,7 @@ function resetFont(): void {
 function stepWidth(by: 1 | -1): void {
   const c = workspaces.selected()
   if (!c || viewMode.value !== 'columns') return
-  const { columnCols: configured, columnStep } = config.layout.value
-  const cols = stepPaneCols(paneColsOf(c), by, columnStep)
-  workspaces.setPaneCols(c.key, cols === configured ? undefined : cols)
+  workspaces.setPaneCols(c.key, stepPaneColsOverride(c.paneCols, by, config.layout.value))
 }
 
 function startDir(): string | undefined {
@@ -411,10 +407,6 @@ function fontOf(c: Pick<Cell, 'fontSize'>): TerminalFont {
   return c.fontSize === undefined ? font : { ...font, fontSize: c.fontSize }
 }
 
-function paneColsOf(c: Pick<Cell, 'paneCols'>): number {
-  return c.paneCols ?? config.layout.value.columnCols
-}
-
 function gridVars(cell: Size, font: TerminalFont) {
   return {
     '--row': `${rowOf(cell)}px`,
@@ -517,9 +509,6 @@ function placement(b: Box, unit: string, size?: TerminalSize) {
   }
 }
 
-/** columns 보기에서는 cell 의 pane 열 수(`paneColsOf`), single 보기에서는 없다. */
-type ColumnCols = number | undefined
-
 /**
  * pane 상자 `b` 에 놓을 터미널의 열·행 수. 행 수는 헤더 한 행을 뺀 높이로 센다. columns 보기에서 pane 하나 폭인 pane 은
  * 그 폭을 `cols` 로 만들었으므로 `cols` 열이고, pane 여럿의 폭에 걸친 pane 만 그 폭에 들어가는 만큼 더 많은 열을 받는다.
@@ -552,44 +541,20 @@ function placements(layout: Layout, size: Size | undefined, cell: Size, cols: Co
   )
 }
 
-// columns 보기에서는 pane 하나의 폭을 폭의 하한으로 둔다. `layout.column-cols` 와 ⇧⌘. / ⇧⌘, 로 바꾼 값은
-// `PANE_MIN.cols` 이상이므로 이 하한이 `PANE_MIN` 도 지킨다.
-function paneMin(cell: Size, cols: ColumnCols): Size {
-  return {
-    width:
-      cols === undefined
-        ? paneCells(PANE_MIN.cols, cell.width) * cell.width
-        : columnWidth(cols, cell.width),
-    height: (PANE_MIN.rows + 1) * cell.height
-  }
-}
-
 function columnColsOf(c: Pick<Cell, 'paneCols'>): ColumnCols {
-  return viewMode.value === 'columns' ? paneColsOf(c) : undefined
-}
-
-function columnsWidthOf(layout: Layout, cols: ColumnCols, cell: Size): number | undefined {
-  if (cols === undefined) return undefined
-  return columnCount(layout) * columnWidth(cols, cell.width)
-}
-
-function areaOf(layout: Layout, cols: ColumnCols, cell: Size, measured: Size): Size {
-  return {
-    width: columnsWidthOf(layout, cols, cell) ?? measured.width,
-    height: measured.height
-  }
+  return viewMode.value === 'columns'
+    ? paneColsOf(c.paneCols, config.layout.value.columnCols)
+    : undefined
 }
 
 function roomFor(from: number, direction: SplitDirection, full: boolean): boolean {
   const c = workspaces.owner(from)
   if (!c) return true
   const cell = cellOf(fontOf(c))
-  const measured = gridOf(c.key, cell)
-  if (!measured) return true
-  const next = full ? splitRoot(c.layout, -1, direction) : splitPane(c.layout, from, -1, direction)
-  const cols = columnColsOf(c)
-  const area = (layout: Layout): Size => areaOf(layout, cols, cell, measured)
-  return canSplit(c.layout, area(c.layout), next, area(next), paneMin(cell, cols))
+  return roomForSplit(
+    { layout: c.layout, cell, measured: gridOf(c.key, cell), cols: columnColsOf(c) },
+    { from, direction, full }
+  )
 }
 
 function splitSelected(direction: SplitDirection): void {
@@ -640,31 +605,8 @@ const labels = computed(
   () => new Map(workspaces.cells().map((c) => [c.key, cellLabel(focusedPane(c))]))
 )
 
-// workspace 와 cell 의 key 는 겹치지 않으므로 한 표에 둔다. workspace 의 값은 그 cell 들 가운데 가장 급한 것이다.
-const urgent = computed(() => {
-  const map = new Map<number, ProgramStatusState>()
-  for (const w of workspaces.list.value) {
-    const all = new Set<string | undefined>()
-    for (const c of w.cells) {
-      const states = new Set(c.panes.map((p) => ptyStates.state(p.ptyId)))
-      const state = URGENCY.find((s) => states.has(s))
-      if (state) map.set(c.key, state)
-      all.add(state)
-    }
-    const state = URGENCY.find((s) => all.has(s))
-    if (state) map.set(w.key, state)
-  }
-  return map
-})
-
-const unread = computed(
-  () =>
-    new Set(
-      workspaces.list.value
-        .filter((w) => w.cells.some((c) => c.panes.some((p) => ptyStates.notification(p.ptyId))))
-        .map((w) => w.key)
-    )
-)
+const urgent = computed(() => urgentStates(workspaces.list.value, ptyStates.state))
+const unread = computed(() => unreadWorkspaces(workspaces.list.value, ptyStates.notification))
 
 // 터미널 아래에 남는 한 행 미만의 자리는 xterm 요소 밖이라, 눌러도 xterm 이 포커스를 주지 않는다.
 function focusFromBody(e: MouseEvent, pane: number): void {
@@ -687,15 +629,11 @@ function selectPane(cell: number, pane: number): void {
 
 // 데스크톱 알림을 누르면 그 pane 을 선택한다. job 은 pane 이 없으므로 job 이 든 cell 을 선택한다. 접은 workspace 는 편다.
 window.maru.onPaneSelect((pty) => {
-  const pane = workspaces.paneByPty(pty)
-  const cell = pane
-    ? workspaces.owner(pane.key)
-    : workspaces.cellById(jobs.value.find((j) => j.pty === pty)?.cell ?? '')
-  if (!cell) return
-  const w = workspaces.workspaceOf(cell.key)
-  if (w) folded.delete(w.key)
-  if (pane) selectPane(cell.key, pane.key)
-  else selectCell(cell.key)
+  const at = workspaces.locate(pty, jobs.value.find((j) => j.pty === pty)?.cell)
+  if (!at) return
+  folded.delete(at.workspace)
+  if (at.pane !== undefined) selectPane(at.cell, at.pane)
+  else selectCell(at.cell)
 })
 
 // 순서가 바뀌면 Vue 가 터미널의 DOM 을 옮기고, 옮겨진 터미널은 포커스를 잃는다.
@@ -734,7 +672,7 @@ function revealFocused(smooth: boolean): void {
   // 멈출 자리는 브라우저가 셈하게 한다. 같은 task 안에서 되돌리므로 그 자리가 그려지지는 않는다.
   target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
   const to = area.scrollLeft
-  if (!smooth || !settled || reducedMotion.matches || to === from) return
+  if (!smoothReveal({ smooth, settled, reducedMotion: reducedMotion.matches, from, to })) return
   area.scrollLeft = from
   // Chromium 의 smooth `scrollIntoView` 는 새로 부를 때마다 지금 자리에서 다시 가속해, 포커스를 빠르게 이어 옮기면
   // 뒤처진다. 그래서 늘 `SCROLL_MS` 안에 끝나게 직접 움직인다.
@@ -744,19 +682,15 @@ function revealFocused(smooth: boolean): void {
     // 사용자가 그사이 스크롤했으면 그 자리를 뺏지 않는다.
     if (area.scrollLeft !== last) return
     const t = Math.min((now - start) / SCROLL_MS, 1)
-    const ease = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
-    area.scrollLeft = from + (to - from) * ease
+    area.scrollLeft = from + (to - from) * easeInOut(t)
     last = area.scrollLeft
     if (t < 1) scrollFrame = requestAnimationFrame(step)
   }
   scrollFrame = requestAnimationFrame(step)
 }
-// 포커스가 그대로여도 앞의 cell 이 닫히거나 폭이 바뀌면 pane 이 밀려나므로 배치도 지켜본다. views 는 pane 의 자리와
-// 상관없는 값(포커스 표시 등)이 바뀌어도 다시 계산되므로, 그때마다 스크롤하지 않게 자리만 떼어 문자열로 비교한다.
+// 포커스가 그대로여도 앞의 cell 이 닫히거나 폭이 바뀌면 pane 이 밀려나므로 배치도 지켜본다.
 // 보기를 바꾸면 화면 전체가 한 번에 다시 그려지므로, `viewMode` 가 바뀐 호출은 스크롤도 바로 맞춘다.
-const arrangement = computed(() =>
-  JSON.stringify(views.value.map((v) => [v.c.key, v.width, v.panes.map((p) => [p.p.key, p.style])]))
-)
+const arrangement = computed(() => arrangementKey(views.value))
 watch(
   [viewMode, () => workspaces.selected()?.focused, arrangement],
   ([mode], [prevMode]) => revealFocused(mode === prevMode),

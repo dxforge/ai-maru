@@ -880,6 +880,34 @@ describe('panes', () => {
     expect(ws.cellById('c-00000000')).toBeUndefined()
   })
 
+  describe('locate', () => {
+    it('pane 의 pty 면 그 pane 과 cell·workspace 를 찾는다', () => {
+      const ws = opened(2)
+      ws.split('right')
+      const [w] = ws.list.value
+      const c = w.cells[0]
+      const p = c.panes[0]
+      expect(ws.locate(p.ptyId)).toEqual({ workspace: w.key, cell: c.key, pane: p.key })
+    })
+
+    it('pane 의 pty 가 아니면 job 이 든 cell 을 찾고 pane 은 없다', () => {
+      const ws = opened(2)
+      const [w] = ws.list.value
+      const c = w.cells[0]
+      expect(ws.locate('p-00000000', c.id)).toEqual({
+        workspace: w.key,
+        cell: c.key,
+        pane: undefined
+      })
+    })
+
+    it('pane 도 job 의 cell 도 없으면 찾지 못한다', () => {
+      const ws = opened(1)
+      expect(ws.locate('p-00000000')).toBeUndefined()
+      expect(ws.locate('p-00000000', 'c-00000000')).toBeUndefined()
+    })
+  })
+
   it('선택된 cell 이 없으면 split·moveFocus 는 아무것도 바꾸지 않는다', () => {
     const ws = createWorkspaces()
     ws.split('right')
