@@ -1,4 +1,15 @@
-import { EPSILON, line, weight, type Layout, type Widths } from './layout'
+import { PANE_MIN, type SplitDirection } from '../../../shared/layout'
+import { columnWidth, paneCells } from './columns'
+import {
+  columnCount,
+  EPSILON,
+  line,
+  splitPane,
+  splitRoot,
+  weight,
+  type Layout,
+  type Widths
+} from './layout'
 
 export type Size = { width: number; height: number }
 export type Box = { left: number; top: number; width: number; height: number }
@@ -115,4 +126,50 @@ export function canSplit(
 ): boolean {
   const [before, after] = [overflow(layout, size, min), overflow(next, nextSize, min)]
   return after.width <= before.width + EPSILON && after.height <= before.height + EPSILON
+}
+
+/** columns 보기에서는 cell 의 pane 열 수, single 보기에서는 없다. */
+export type ColumnCols = number | undefined
+
+// columns 보기에서는 pane 하나의 폭을 폭의 하한으로 둔다. `layout.column-cols` 와 ⇧⌘. / ⇧⌘, 로 바꾼 값은
+// `PANE_MIN.cols` 이상이므로 이 하한이 `PANE_MIN` 도 지킨다.
+export function paneMin(cell: Size, cols: ColumnCols): Size {
+  return {
+    width:
+      cols === undefined
+        ? paneCells(PANE_MIN.cols, cell.width) * cell.width
+        : columnWidth(cols, cell.width),
+    height: (PANE_MIN.rows + 1) * cell.height
+  }
+}
+
+export function columnsWidthOf(layout: Layout, cols: ColumnCols, cell: Size): number | undefined {
+  if (cols === undefined) return undefined
+  return columnCount(layout) * columnWidth(cols, cell.width)
+}
+
+export function areaOf(layout: Layout, cols: ColumnCols, cell: Size, measured: Size): Size {
+  return {
+    width: columnsWidthOf(layout, cols, cell) ?? measured.width,
+    height: measured.height
+  }
+}
+
+/**
+ * cell 의 pane `from` 을, `full` 이면 cell 전체를 `direction` 으로 나눌 자리가 있는지. `cell` 은 글자 칸 크기이고
+ * `measured` 는 잰 pane 영역이다. 아직 재지 않았으면 나눌 수 있다.
+ */
+export function roomForSplit(
+  {
+    layout,
+    cell,
+    measured,
+    cols
+  }: { layout: Layout; cell: Size; measured: Size | undefined; cols: ColumnCols },
+  { from, direction, full }: { from: number; direction: SplitDirection; full: boolean }
+): boolean {
+  if (!measured) return true
+  const next = full ? splitRoot(layout, -1, direction) : splitPane(layout, from, -1, direction)
+  const area = (l: Layout): Size => areaOf(l, cols, cell, measured)
+  return canSplit(layout, area(layout), next, area(next), paneMin(cell, cols))
 }

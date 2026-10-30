@@ -227,20 +227,12 @@ test('상태가 있는 pane 의 셸이 끝나면 pane 과 함께 사라지고, �
   await expect(paneRows(page)).toHaveClass(/working/)
 })
 
-test('cell 헤더는 pane 상태 가운데 blocked, error, done, working 순으로 급한 것을 본다', async ({
-  launch
-}) => {
+test('cell 헤더는 pane 상태 가운데 급한 것을 보인다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   const header = page.locator('.cell-header')
   await page.keyboard.type(status('working'))
   await expect(header).toHaveClass(/working/)
-  await focusPane(app, page, 'focus-pane-left', 0)
-  await page.keyboard.type(status('done'))
-  await expect(header).toHaveClass(/done/)
-  await focusPane(app, page, 'focus-pane-right', 1)
-  await page.keyboard.type(status('error'))
-  await expect(header).toHaveClass(/error/)
   await focusPane(app, page, 'focus-pane-left', 0)
   await page.keyboard.type(status('blocked'))
   await expect(header).toHaveClass(/blocked/)

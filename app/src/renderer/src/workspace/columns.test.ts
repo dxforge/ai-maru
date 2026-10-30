@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { columnWidth, fitCols, paneCells, stepPaneCols } from './columns'
+import {
+  columnWidth,
+  fitCols,
+  paneCells,
+  paneColsOf,
+  stepPaneCols,
+  stepPaneColsOverride
+} from './columns'
 
 const CELL_WIDTHS = [7.82666, 7.8, 7.5, 8, 8.4296875, 9, 10.83]
 
@@ -60,6 +67,32 @@ describe('paneCells', () => {
 
   it('글자 칸 폭을 모르면 0 이다', () => {
     expect(paneCells(20, 0)).toBe(0)
+  })
+})
+
+describe('paneColsOf', () => {
+  it('바꾼 값이 있으면 그 값, 없으면 설정값이다', () => {
+    expect(paneColsOf(120, 80)).toBe(120)
+    expect(paneColsOf(undefined, 80)).toBe(80)
+  })
+})
+
+describe('stepPaneColsOverride', () => {
+  const layout = { columnCols: 80, columnStep: 20 }
+
+  it('바꾼 적 없는 cell 은 설정값에서 시작한다', () => {
+    expect(stepPaneColsOverride(undefined, 1, layout)).toBe(100)
+    expect(stepPaneColsOverride(undefined, -1, layout)).toBe(60)
+  })
+
+  it('설정값으로 돌아오면 지운다', () => {
+    expect(stepPaneColsOverride(100, -1, layout)).toBeUndefined()
+    expect(stepPaneColsOverride(60, 1, layout)).toBeUndefined()
+  })
+
+  it('끝에서 더 가지 못해 그대로인 값은 남긴다', () => {
+    expect(stepPaneColsOverride(500, 1, layout)).toBe(500)
+    expect(stepPaneColsOverride(20, -1, layout)).toBe(20)
   })
 })
 

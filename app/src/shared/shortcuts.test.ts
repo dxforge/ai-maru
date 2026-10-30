@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   commandKeys,
   formatKeys,
+  isSelectAll,
   keyCode,
   matchesKeys,
   shortcuts,
@@ -92,6 +93,36 @@ describe('formatKeys', () => {
     expect(formatKeys({ key: 'Down', meta: true })).toBe('⌘↓')
     expect(formatKeys({ key: 'Enter', ctrl: true, meta: true })).toBe('⌃⌘↩')
     expect(formatKeys({ key: 'Plus', meta: true })).toBe('⌘+')
+  })
+})
+
+describe('isSelectAll', () => {
+  const meta = (code: string, key: string, mods: Partial<KeyEventLike> = {}) => ({
+    ...press(code, { metaKey: true, ...mods }),
+    key
+  })
+
+  it('⌘A 는 모두 고르기다', () => {
+    expect(isSelectAll(meta('KeyA', 'a'))).toBe(true)
+    expect(isSelectAll(meta('KeyA', 'A'))).toBe(true)
+  })
+
+  it('⌘ 말고 다른 modifier 가 붙거나 ⌘ 가 없으면 아니다', () => {
+    expect(isSelectAll(meta('KeyA', 'A', { shiftKey: true }))).toBe(false)
+    expect(isSelectAll(meta('KeyA', 'a', { ctrlKey: true }))).toBe(false)
+    expect(isSelectAll(meta('KeyA', 'å', { altKey: true }))).toBe(false)
+    expect(isSelectAll({ ...press('KeyA'), key: 'a' })).toBe(false)
+  })
+
+  it('라틴 글자는 자판 위치가 아니라 글자로 맞춘다', () => {
+    // AZERTY 는 A 가 KeyQ 자리에, Turkish-F 는 KeyA 자리에 U 가 있다.
+    expect(isSelectAll(meta('KeyQ', 'a'))).toBe(true)
+    expect(isSelectAll(meta('KeyA', 'u'))).toBe(false)
+  })
+
+  it('글자가 라틴 글자가 아니면 자판 위치로 맞춘다', () => {
+    expect(isSelectAll(meta('KeyA', 'ф'))).toBe(true)
+    expect(isSelectAll(meta('KeyQ', 'й'))).toBe(false)
   })
 })
 

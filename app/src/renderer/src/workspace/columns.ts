@@ -10,6 +10,20 @@ export function stepPaneCols(cols: number, by: 1 | -1, step: number): number {
   return next < min || next > max ? cols : next
 }
 
+export function paneColsOf(paneCols: number | undefined, columnCols: number): number {
+  return paneCols ?? columnCols
+}
+
+/** Widen·Narrow Cell 로 바꾼 cell 의 `paneCols`. 설정값과 같아지면 지워, 그 뒤로는 설정을 따르게 한다. */
+export function stepPaneColsOverride(
+  paneCols: number | undefined,
+  by: 1 | -1,
+  layout: { columnCols: number; columnStep: number }
+): number | undefined {
+  const cols = stepPaneCols(paneColsOf(paneCols, layout.columnCols), by, layout.columnStep)
+  return cols === layout.columnCols ? undefined : cols
+}
+
 export const SCROLLBAR_WIDTH = 8
 
 /** 터미널 왼쪽 여백(px). `App.vue` 가 `--pad` 로 넘기고, `TerminalView.vue` 가 그 값을 `.xterm` 의 `padding-left` 로 둔다. */

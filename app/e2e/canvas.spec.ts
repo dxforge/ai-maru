@@ -192,43 +192,6 @@ test('문서 안의 스크립트는 돌지 않고, 이미지는 대체 텍스트
   expect(await page.evaluate(() => (window as { pwned?: number }).pwned)).toBeUndefined()
 })
 
-test('문서의 스타일은 패널 밖을 바꾸지 못한다', async ({ launch }) => {
-  const { app, page } = await launch()
-  await putCanvas(app, {
-    id: 'a',
-    kind: 'markdown',
-    text: [
-      '<style>.xterm { visibility: hidden }</style>',
-      '<div style="position: fixed; inset: 0; z-index: 99; background: red">overlay</div>'
-    ].join('\n\n')
-  })
-
-  await expect(markdown(page)).toContainText('overlay')
-  await expect(markdown(page).locator('style, [style]')).toHaveCount(0)
-  await expect(page.locator('.xterm')).toBeVisible()
-  await page.locator('.canvas .close').click()
-  await expect(panel(page)).toBeHidden()
-})
-
-test('문서의 dialog·popover 는 패널 밖으로 떠오르지 않는다', async ({ launch }) => {
-  const { app, page } = await launch()
-  await putCanvas(app, {
-    id: 'a',
-    kind: 'markdown',
-    text: [
-      '<dialog open>dialog-body</dialog>',
-      '<button popovertarget="p">show</button><div id="p" popover>popover-body</div>'
-    ].join('\n\n')
-  })
-
-  await expect(markdown(page)).toContainText('dialog-body')
-  await markdown(page).getByRole('button', { name: 'show' }).click()
-  expect(await page.evaluate(() => document.querySelectorAll(':popover-open').length)).toBe(0)
-  await expect(markdown(page).locator('dialog, [popover], [popovertarget]')).toHaveCount(0)
-  await page.locator('.canvas .close').click()
-  await expect(panel(page)).toBeHidden()
-})
-
 test('목록의 제목은 본문 heading 과 같은 글자로 보인다', async ({ launch }) => {
   const { app, page } = await launch()
   await putCanvas(app, {

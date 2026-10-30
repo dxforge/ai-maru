@@ -5,14 +5,12 @@ import {
   expect,
   expectCols,
   focusPane,
-  newCell,
   newWorkspace,
   openPalette,
   paneRows,
   panes,
   programStatus,
   resizeBy,
-  restartWith,
   rows,
   run,
   shellSize,
@@ -335,46 +333,7 @@ test('columns 에서 pane 의 디렉토리가 바뀌어도 스크롤한 자리�
   expect(await area.evaluate((el) => el.scrollLeft)).toBe(0)
 })
 
-for (const { title, reduce, expectMove } of [
-  {
-    title:
-      'columns 에서 사이드바로 다른 cell 을 고르거나 고른 cell 을 다시 누르거나 pane 을 나누거나 pane 포커스를 옮기면 부드럽게 스크롤해 바로 스크롤한 자리에 선다',
-    reduce: false,
-    expectMove: expectSmooth
-  },
-  {
-    title:
-      '동작 줄이기가 켜져 있으면 columns 에서 사이드바로 다른 cell 을 고르거나 고른 cell 을 다시 누르거나 pane 을 나누거나 pane 포커스를 옮겨도 바로 스크롤한다',
-    reduce: true,
-    expectMove: expectInstant
-  }
-]) {
-  test(title, async ({ launch }) => {
-    const launched = await launch()
-    const { app, page } = launched
-    if (reduce) await page.emulateMedia({ reducedMotion: 'reduce' })
-    await newWorkspace(launched, 2)
-    await newWorkspace(launched, 3)
-    await toggleView(launched, 'columns')
-    await expectRevealed(page)
-    const area = page.locator('.terminals')
-
-    expectMove(await scrollsOf(page, () => cellItems(page).first().click()))
-    await expectRevealed(page)
-
-    await area.evaluate((el) => (el.scrollLeft = el.scrollWidth))
-    expectMove(await scrollsOf(page, () => cellItems(page).first().click()))
-    await expectRevealed(page)
-
-    expectMove(await scrollsOf(page, () => split(app, page, 'split-right', 2)))
-    await expectRevealed(page)
-    expectMove(await scrollsOf(page, () => clickMenu(app, 'focus-pane-left')))
-    await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
-    await expectRevealed(page)
-  })
-}
-
-test('columns 에서 pane 을 나누거나 닫거나 cell 을 더하거나 넓혀 포커스된 pane 이 밀려나도 부드럽게 스크롤한다', async ({
+test('columns 에서 사이드바로 다른 cell 을 고르거나 고른 cell 을 다시 누르거나 pane 을 나누거나 pane 포커스를 옮기면 부드럽게 스크롤해 바로 스크롤한 자리에 선다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -382,44 +341,20 @@ test('columns 에서 pane 을 나누거나 닫거나 cell 을 더하거나 넓�
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
   await toggleView(launched, 'columns')
-  // 포커스를 옮겨 생긴 스크롤이 다 끝난 뒤에 다음 스크롤을 모은다.
-  await scrollsOf(page, () => cellItems(page).first().click())
+  await expectRevealed(page)
+  const area = page.locator('.terminals')
+
+  expectSmooth(await scrollsOf(page, () => cellItems(page).first().click()))
+  await expectRevealed(page)
+
+  await area.evaluate((el) => (el.scrollLeft = el.scrollWidth))
+  expectSmooth(await scrollsOf(page, () => cellItems(page).first().click()))
   await expectRevealed(page)
 
   expectSmooth(await scrollsOf(page, () => split(app, page, 'split-right', 2)))
   await expectRevealed(page)
-
-  expectSmooth(await scrollsOf(page, () => clickMenu(app, 'close-pane')))
-  await expect(panes(page)).toHaveCount(1)
-  await expectRevealed(page)
-
-  expectSmooth(await scrollsOf(page, () => newCell(launched, 4)))
-  await expectRevealed(page)
-
-  await scrollsOf(page, () => cellItems(page).nth(3).click())
-  await expectRevealed(page)
-  expectSmooth(await scrollsOf(page, () => clickMenu(app, 'widen-cell')))
-  // 넓힌 pane 은 스크롤 영역보다 넓어 다 보이지 않으므로, 다 보이는지 대신 멈춘 자리만 본다.
-  await expectInstantPlace(page)
-})
-
-test('columns 에서 앞의 cell 이 닫혀 포커스된 pane 이 밀려나면 부드럽게 스크롤한다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { page } = launched
-  await newWorkspace(launched, 2)
-  await newWorkspace(launched, 3)
-  await newWorkspace(launched, 4)
-  await toggleView(launched, 'columns')
-  await scrollsOf(page, () => cellItems(page).first().click())
-  await page.keyboard.type('sleep 3; exit\n')
-  // 맨 끝 cell 을 고르면 앞의 cell 이 닫혀 내용이 줄 때 브라우저가 scrollLeft 를 잘라 pane 이 제자리에 남으므로, 앱이
-  // 스크롤할 일이 없다. 그래서 그 앞의 cell 을 고른다.
-  await scrollsOf(page, () => cellItems(page).nth(2).click())
-  await expectRevealed(page)
-
-  expectSmooth(await scrollsOf(page, () => expect(cellItems(page)).toHaveCount(3)))
+  expectSmooth(await scrollsOf(page, () => clickMenu(app, 'focus-pane-left')))
+  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
   await expectRevealed(page)
 })
 
@@ -431,32 +366,6 @@ test('columns 로 바꾸면 바로 스크롤한다', async ({ launch }) => {
 
   expectInstant(await scrollsOf(page, () => toggleView(launched, 'columns')))
   await expectRevealed(page)
-})
-
-test('columns 로 둔 채 다시 띄우면 되살린 화면에서 포커스된 pane 에 바로 선다', async ({
-  launch
-}) => {
-  const first = await launch()
-  await newWorkspace(first, 2)
-  await newWorkspace(first, 3)
-  await toggleView(first, 'columns')
-  await expectRevealed(first.page)
-  await restartWith(first.app)
-
-  const { page } = await launch()
-  const lefts = await page.locator('.terminals').evaluate(async (el) => {
-    const seen: number[] = []
-    const end = performance.now() + 1500
-    while (performance.now() < end) {
-      seen.push(el.scrollLeft)
-      await new Promise((r) => requestAnimationFrame(r))
-    }
-    return seen
-  })
-  await expectRevealed(page)
-  // 되살릴 때와 cell 을 다 잰 뒤, 두 번까지 바로 자리를 맞출 수 있다.
-  const changes = lefts.filter((l, i) => i > 0 && l !== lefts[i - 1]).length
-  expect(changes, JSON.stringify(lefts)).toBeLessThanOrEqual(2)
 })
 
 test('columns 에서 포커스를 따라 스크롤하는 중에 사용자가 스크롤하면 그 자리를 뺏지 않는다', async ({

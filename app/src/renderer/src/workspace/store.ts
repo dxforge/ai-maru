@@ -286,6 +286,20 @@ export function createWorkspaces(
     return undefined
   }
 
+  /**
+   * pty `pty` 가 있는 자리. pane 의 pty 가 아니면 `jobCell`(그 pty 로 도는 job 이 든 cell 의 id)의 cell 이고, 이때
+   * `pane` 은 없다.
+   */
+  function locate(
+    pty: string,
+    jobCell?: string
+  ): { workspace: number; cell: number; pane?: number } | undefined {
+    const pane = paneByPty(pty)
+    const c = pane ? owner(pane.key) : jobCell === undefined ? undefined : cellById(jobCell)
+    const w = c && workspaceOf(c.key)
+    return w && { workspace: w.key, cell: c.key, pane: pane?.key }
+  }
+
   function closePane(pane: number): void {
     lastRead.delete(pane)
     seen.delete(pane)
@@ -461,6 +475,7 @@ export function createWorkspaces(
     pane,
     cellById,
     paneByPty,
+    locate,
     closePane,
     focusPane,
     moveFocus,
