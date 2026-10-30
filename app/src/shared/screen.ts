@@ -258,8 +258,8 @@ export function clampCanvasWidth(width: number): number {
 
 /**
  * 필드마다 따로 읽어 틀린 필드만 버린다. `parseScreen` 이 `ScreenState` 를, `parseViewPart`(`main/state.ts`)가
- * `state.json` 의 `view` 를 넘긴다. 그래서 `viewMode`·`sidebar`·`canvas`·`folded` 의 이름을 바꾸면 `ScreenState` 의
- * 것도 같이 바꾸고 `view` 의 버전을 올린다.
+ * `state.json` 의 `view` 를 넘긴다. 그래서 `viewMode`·`sidebar`·`canvas` 의 이름을 바꾸면 `ScreenState` 의 것도
+ * 같이 바꾸고 `view` 의 버전을 올린다.
  */
 export function parseViewPrefs(v: unknown): ViewPrefs {
   if (!isObj(v)) return {}

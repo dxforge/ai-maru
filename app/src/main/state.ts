@@ -169,7 +169,6 @@ function dropped(state: StateFile, outcome: Outcome): StateFile {
   }
 }
 
-/** 쓰기는 모두 동기라 겹치지 않는다. */
 export function createStateStore(o: {
   path: string
   debounceMs: number

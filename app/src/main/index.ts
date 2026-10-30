@@ -229,7 +229,7 @@ const panes = createPanes(
 )
 
 const devServer = Boolean(process.env.ELECTRON_RENDERER_URL)
-// renderer 가 보낸 마지막 화면. 닫기 확인·`maru pane list` 때만 읽으므로, 받은 값을 그대로 두었다가 읽을 때 `parseScreen` 으로 검사한다.
+// renderer 가 보낸 마지막 화면. 자주 오고 읽는 일은 드물므로, 받은 값을 그대로 두었다가 읽을 때 `parseScreen` 으로 검사한다.
 let lastScreen: unknown = null
 let restarting = false
 let store: StateStore | null = null
@@ -600,7 +600,7 @@ function start(): void {
     if (p.mode !== 'full') store?.discard(p.mode === 'empty' ? 'end' : 'layout')
     return p
   })()
-  // 새 pty 는 앞의 앱이 남긴 pty 의 정리가 끝난 뒤에 띄운다.
+  // `killPtys` 는 `keep` 에 없는 pty 를 모두 끄므로, 새 pty 는 이 정리가 끝난 뒤에 띄운다.
   const leftovers = plan.then(async (p) => {
     const keep = new Set(p.mode === 'full' && sessions ? sessionPtys(sessions) : [])
     await killPtys(ptyDir(), undefined, keep)

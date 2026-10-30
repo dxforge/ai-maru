@@ -86,7 +86,7 @@ export const test = base.extend<Fixtures>({
       return launched
     })
     for (const app of apps) {
-      // 끄기 확인 창에 막히지 않게 End everything 으로 답해, pty 를 끄고 다음 실행에 남기지 않는다.
+      // 테스트가 다른 답으로 바꿔 두었을 수 있어, pty 를 끄는 End everything 으로 다시 답하게 한다.
       await stubDialog(app, END_EVERYTHING).catch(() => {})
       await app.close().catch(() => {})
     }
