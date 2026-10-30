@@ -40,6 +40,7 @@ async function dropFiles(page: Page, i: number, files: string[], gap = false): P
   await cdp.detach()
 }
 
+/** `osascript` 를 테스트가 끝날 때까지 종료하지 않는다. 클립보드에 쓴 프로세스가 끝나면 첫 항목만 남기 때문이다. */
 async function copyFiles(files: string[], defer: (fn: () => void) => void): Promise<void> {
   const writer = spawn('osascript', [
     '-l',
@@ -119,9 +120,9 @@ test('Finder 에서 복사한 파일을 붙여넣으면 경로로 붙고, 텍스
 
   const out = join(dataDir, 'paste-out')
   await armPrintf(page)
-  await copyFiles(files.slice(0, 1), defer)
+  await copyFiles(files, defer)
   await paste(app)
-  expect(await readArgs(page, out)).toEqual([files[0], 'END'])
+  expect(await readArgs(page, out)).toEqual([...files, 'END'])
 
   const text = join(dataDir, 'text-out')
   await armPrintf(page)
