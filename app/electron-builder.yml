@@ -21,6 +21,12 @@ extraResources:
     to: bin/claude
   - from: resources/zsh/.zshenv
     to: zsh/.zshenv
+  - from: resources/zsh/.zprofile
+    to: zsh/.zprofile
+  - from: resources/zsh/.zshrc
+    to: zsh/.zshrc
+  - from: resources/zsh/.zlogin
+    to: zsh/.zlogin
   - from: resources/claude-plugin
     to: claude-plugin
   # 재시작 전 앱이 설치된 번들의 상태 파일 형식 버전을 읽는다(src/main/restart.ts).

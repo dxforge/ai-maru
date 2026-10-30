@@ -107,6 +107,45 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv', () => {
     })
     expect(loginShell(h, 'print $MARK')).toBe('cfg\n')
   })
+
+  describe('앱 안(MARU_CLI 있음)에서', () => {
+    const app = appEnv('/opt/maru')
+    const run = (h: string, command: string) => shellWith(h, app, command)
+
+    it('사용자의 ~/.zprofile·~/.zshrc·~/.zlogin 을 그 순서로 읽고, 끝나면 ZDOTDIR 이 없다', () => {
+      const h = home({ '.zprofile': 'O=p', '.zshrc': 'O+=r', '.zlogin': 'O+=l' })
+      expect(run(h, 'print $O ${ZDOTDIR-unset}')).toBe('prl unset\n')
+    })
+
+    it('사용자 시작 파일 안의 $0 는 zsh 가 직접 읽을 때처럼 셸 이름이고, 끝나면 function_argzero 가 켜져 있다', () => {
+      const h = home({ '.zprofile': 'print $0', '.zshrc': 'print $0', '.zlogin': 'print $0' })
+      expect(run(h, '[[ -o function_argzero ]] && print on')).toBe(`${ZSH}\n${ZSH}\n${ZSH}\non\n`)
+    })
+
+    it.skipIf(!existsSync('/etc/zshrc'))(
+      '/etc/zshrc 가 정한 HISTFILE 은 사용자 자리를 가리킨다',
+      () => {
+        const h = home({ '.zshrc': '' })
+        expect(run(h, 'print -r -- $HISTFILE')).toBe(`${h}/.zsh_history\n`)
+      }
+    )
+
+    it('사용자 시작 파일은 사용자 ZDOTDIR 아래에서 돈다', () => {
+      const h = home({ '.zshrc': 'print -r -- ${ZDOTDIR-unset}' })
+      expect(run(h, 'true')).toBe('unset\n')
+    })
+
+    it('~/.zshenv 가 정한 ZDOTDIR 에서 나머지 시작 파일을 읽고, 그 값을 export 한 채 남긴다', () => {
+      const h = home({
+        '.zshenv': 'export ZDOTDIR=$HOME/cfg',
+        'cfg/.zshrc': 'MARK=cfg',
+        '.zshrc': 'MARK=home'
+      })
+      expect(run(h, 'print $MARK ${ZDOTDIR#$HOME/}; zsh -fc "print \\$ZDOTDIR"')).toBe(
+        `cfg cfg\n${h}/cfg\n`
+      )
+    })
+  })
 })
 
 describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 PATH', () => {
@@ -192,7 +231,6 @@ function fakes(dir: string): { log: string; env: Record<string, string> } {
   mkdirSync(real, { recursive: true })
   writeFileSync(join(real, 'claude'), `#!/bin/sh\necho "claude $*" >> '${log}'\n`, { mode: 0o755 })
   writeFileSync(join(bin, 'maru'), '#!/bin/sh\n', { mode: 0o755 })
-  // 앱 `shellEnv` 처럼 maru 와 shim 디렉토리를 앞에 둔다. `-c` 로 받은 명령 앞에서는 `_maru_path` 가 돌지 않는다.
   const env = { ...appEnv(bin), PATH: `${bin}:${shimDir}:${real}:/usr/bin:/bin` }
   return { log, env }
 }
@@ -388,6 +426,14 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 와 claude shim', () => {
     const h = home({ '.zshrc': '' })
     const { log, env } = fakes(h)
     shellWith(h, env, command)
+    expect(readFileSync(log, 'utf8')).toBe(`claude --plugin-dir ${plugin} x\n`)
+  })
+
+  it('런처처럼 -c 로 받은 claude 도, 사용자 ~/.zshrc 가 진짜 claude 디렉토리를 PATH 앞에 붙이면 shim 을 거친다', () => {
+    const h = home({ '.zshrc': 'path=($HOME/real $path)' })
+    const { log, env } = fakes(h)
+    const r = spawnZsh(['-c', '"$@"', 'zsh', 'claude', 'x'], h, h, env)
+    expect(r.status).toBe(0)
     expect(readFileSync(log, 'utf8')).toBe(`claude --plugin-dir ${plugin} x\n`)
   })
 
