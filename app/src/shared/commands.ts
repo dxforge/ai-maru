@@ -4,6 +4,8 @@ export type CommandId =
   | 'launcher'
   | 'next-cell'
   | 'previous-cell'
+  | 'next-pane'
+  | 'previous-pane'
   | 'split-right'
   | 'split-down'
   | 'close-pane'
@@ -42,6 +44,8 @@ export const commands: readonly Command[] = [
   { id: 'command-palette', title: 'Command Palette…', menu: 'view', palette: false },
   { id: 'next-cell', title: 'Next Cell', menu: 'view' },
   { id: 'previous-cell', title: 'Previous Cell', menu: 'view' },
+  { id: 'next-pane', title: 'Next Pane', menu: 'view' },
+  { id: 'previous-pane', title: 'Previous Pane', menu: 'view' },
   { id: 'toggle-sidebar', title: 'Toggle Sidebar', menu: 'view' },
   { id: 'toggle-canvas', title: 'Toggle Canvas', menu: 'view' },
   { id: 'toggle-view-mode', title: 'Toggle View Mode', menu: 'view' },

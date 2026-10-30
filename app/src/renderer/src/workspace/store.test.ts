@@ -866,6 +866,73 @@ describe('panes', () => {
   it('cell 이 없으면 step 은 아무것도 주지 않는다', () => {
     expect(createWorkspaces().step(1)).toBeUndefined()
   })
+
+  it('stepPane 은 선택된 cell 안에서 읽는 순서로 포커스를 옮기고 선택은 그대로 둔다', () => {
+    const ws = opened(2)
+    const cell = keys(ws)[1]
+    const p1 = selected(ws).focused
+    ws.split('right')
+    const p2 = selected(ws).focused
+    ws.focusPane(p1)
+    ws.split('down')
+    const p3 = selected(ws).focused
+    ws.focusPane(p1)
+    expect(ws.stepPane(1)).toBe(cell)
+    expect(selected(ws).focused).toBe(p2)
+    expect(ws.stepPane(1)).toBe(cell)
+    expect(selected(ws).focused).toBe(p3)
+    expect(ws.stepPane(-1)).toBe(cell)
+    expect(selected(ws).focused).toBe(p2)
+    expect(ws.selectedKey.value).toBe(cell)
+  })
+
+  it('stepPane 은 cell 의 끝을 넘으면 다음 cell 의 첫 pane, 이전 cell 의 마지막 pane 으로 가고 끝에서는 반대쪽 끝으로 돈다', () => {
+    const ws = createWorkspaces()
+    ws.open()
+    ws.openCell()
+    ws.split('right')
+    ws.open()
+    ws.split('down')
+    const [a, b, c] = ws.cells()
+    const [b1, b2] = b.panes.map((p) => p.key)
+    const [c1, c2] = c.panes.map((p) => p.key)
+    const a1 = a.panes[0].key
+    expect(ws.list.value).toHaveLength(2)
+
+    expect(ws.stepPane(1)).toBe(a.key)
+    expect(a.focused).toBe(a1)
+    ws.select(a.key)
+    ws.select(ws.stepPane(1)!)
+    expect([ws.selectedKey.value, selected(ws).focused]).toEqual([b.key, b1])
+    ws.select(ws.stepPane(1)!)
+    expect([ws.selectedKey.value, selected(ws).focused]).toEqual([b.key, b2])
+    ws.select(ws.stepPane(1)!)
+    expect([ws.selectedKey.value, selected(ws).focused]).toEqual([c.key, c1])
+    ws.select(ws.stepPane(-1)!)
+    expect([ws.selectedKey.value, selected(ws).focused]).toEqual([b.key, b2])
+    ws.select(a.key)
+    ws.select(ws.stepPane(-1)!)
+    expect([ws.selectedKey.value, selected(ws).focused]).toEqual([c.key, c2])
+  })
+
+  it('cell 이 하나면 stepPane 은 그 cell 안에서 끝에서 반대쪽 끝으로 돈다', () => {
+    const ws = opened(1)
+    const a = selected(ws).focused
+    ws.split('right')
+    const b = selected(ws).focused
+    expect(ws.stepPane(1)).toBe(keys(ws)[0])
+    expect(selected(ws).focused).toBe(a)
+    expect(ws.stepPane(-1)).toBe(keys(ws)[0])
+    expect(selected(ws).focused).toBe(b)
+  })
+
+  it('pane 이 하나인 cell 하나뿐이면 stepPane 은 포커스를 그대로 두고, cell 이 없으면 아무것도 주지 않는다', () => {
+    const ws = opened(1)
+    const a = selected(ws).focused
+    expect(ws.stepPane(1)).toBe(keys(ws)[0])
+    expect(selected(ws).focused).toBe(a)
+    expect(createWorkspaces().stepPane(1)).toBeUndefined()
+  })
 })
 
 describe('openCellFrom', () => {

@@ -86,6 +86,16 @@ export function rects(
 
 export const EPSILON = 1e-9
 
+/**
+ * `rects` 에 `Widths` 를 넘기지 않는다. `Widths` 는 좌우로 나눈 폭의 비율만 바꾸고, pane 의 위아래·좌우 순서는 바꾸지
+ * 않기 때문이다.
+ */
+export function readingOrder(layout: Layout): number[] {
+  return [...rects(layout)]
+    .sort(([, a], [, b]) => (Math.abs(a.y - b.y) > EPSILON ? a.y - b.y : a.x - b.x))
+    .map(([pane]) => pane)
+}
+
 export function neighbor(
   layout: Layout,
   from: number,

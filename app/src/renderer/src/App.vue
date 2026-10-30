@@ -209,6 +209,11 @@ function stepCell(by: 1 | -1): void {
   if (key !== undefined) selectCell(key)
 }
 
+function stepPane(by: 1 | -1): void {
+  const key = workspaces.stepPane(by)
+  if (key !== undefined) selectCell(key)
+}
+
 let closingPane = false
 let pendingCloses = 0
 
@@ -779,6 +784,8 @@ const handlers: Record<CommandId, () => void> = {
   'close-workspace': () => void closeWorkspace(),
   'next-cell': () => stepCell(1),
   'previous-cell': () => stepCell(-1),
+  'next-pane': () => stepPane(1),
+  'previous-pane': () => stepPane(-1),
   'focus-pane-left': () => workspaces.moveFocus('left', widths.value),
   'focus-pane-right': () => workspaces.moveFocus('right', widths.value),
   'focus-pane-up': () => workspaces.moveFocus('up', widths.value),

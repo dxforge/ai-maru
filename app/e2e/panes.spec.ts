@@ -24,6 +24,7 @@ import {
   toast,
   toggleView,
   typesInto,
+  cellGroups,
   cellItems,
   cellPlaces,
   paneRowPlaces,
@@ -178,6 +179,39 @@ test('터미널에서 ⇧⌘방향키도 그 방향의 pane 으로 포커스를 
   await typesInto(page, 1, 'right')
   await page.keyboard.press('Shift+Meta+ArrowDown')
   await typesInto(page, 2, 'down')
+})
+
+test('Next·Previous Pane 은 cell 안의 pane 을 읽는 순서로 돈 뒤 다른 workspace 의 cell 로 넘어가고, 끝에서는 처음으로 돈다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  // 첫 cell 을 ((0 위, 3 아래) | 2) 위, 1 아래로 나눈다. 읽는 순서는 0·2·3·1 이다.
+  await split(app, page, 'split-down', 2)
+  await focusPane(app, page, 'focus-pane-up', 0)
+  await split(app, page, 'split-right', 3)
+  await focusPane(app, page, 'focus-pane-left', 0)
+  await split(app, page, 'split-down', 4)
+  await pressNew(app)
+  await expect(cellItems(page)).toHaveCount(2)
+  await activeTerminal(page)
+
+  for (const [n, [id, cell, pane]] of (
+    [
+      ['next-pane', 0, 0],
+      ['next-pane', 0, 2],
+      ['next-pane', 0, 3],
+      ['next-pane', 0, 1],
+      ['next-pane', 1, 0],
+      ['next-pane', 0, 0],
+      ['previous-pane', 1, 0],
+      ['previous-pane', 0, 1],
+      ['previous-pane', 0, 3]
+    ] as const
+  ).entries()) {
+    await clickMenu(app, id)
+    await expect(cellGroups(page).nth(cell)).toHaveClass(/selected/)
+    await typesInto(page, pane, `step${n}`)
+  }
 })
 
 test('pane 이 하나면 ⇧⌘방향키는 포커스를 그대로 두고 셸에 아무것도 보내지 않는다', async ({

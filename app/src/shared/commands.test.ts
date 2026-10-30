@@ -15,6 +15,8 @@ describe('filterCommands', () => {
       'Close Workspace',
       'Next Cell',
       'Previous Cell',
+      'Next Pane',
+      'Previous Pane',
       'Toggle Sidebar',
       'Toggle Canvas',
       'Toggle View Mode',
