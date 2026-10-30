@@ -22,7 +22,7 @@ export function snapRects(
   layout: Layout,
   size: Size,
   unit: Size,
-  widths: Widths = 'half',
+  widths: Widths = 'even',
   min: Size = NO_MIN
 ): Map<number, Box> {
   const need = required(layout, min)
