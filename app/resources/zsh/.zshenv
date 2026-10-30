@@ -165,7 +165,7 @@ _maru_osc133_precmd() {
 # 로그인 셸은 이 파일 뒤에 /etc/zprofile 을 읽는다. 거기서 path_helper 가 /etc/paths 의 디렉토리를 앞에 두므로,
 # 앱이 PATH 맨 앞에 붙인 maru 디렉토리와 claude shim 디렉토리(plugin 옆 `bin`)가 뒤로 밀린다. 사용자 시작 파일도
 # 진짜 claude 가 든 디렉토리를 앞에 붙일 수 있다. 시작 파일을 다 읽은 뒤 한 번 다시 앞에 붙이고 빠진다 — 그 뒤 사용자가
-# 바꾼 PATH 는 둔다. 앱의 .zlogin 이 부르고, 그 파일까지 오지 못했으면 첫 프롬프트의 precmd 가 부른다.
+# 바꾼 PATH 는 둔다. 앱의 .zlogin 이 부르고, 그 파일을 읽지 않는 셸(로그인 셸이 아니거나 CLAUDECODE 안)에서는 첫 프롬프트의 precmd 가 부른다.
 _maru_path() {
   emulate -L zsh
   add-zsh-hook -d precmd _maru_path
@@ -180,26 +180,18 @@ _maru_path() {
 }
 add-zsh-hook precmd _maru_path
 
-# 런처는 명령을 `-c` 로 돌려 프롬프트가 없으므로 precmd 로는 늦다. 로그인 셸은 마지막에 .zlogin 을 읽으므로,
+# 런처는 명령을 `-c` 로 돌려 프롬프트가 뜨지 않으므로 precmd 가 불리지 않는다. 로그인 셸은 마지막에 .zlogin 을 읽으므로,
 # ZDOTDIR 을 앱 디렉토리로 두어 앱의 .zprofile·.zshrc·.zlogin 을 거치게 한다. 그 파일들은 사용자 파일을 사용자
 # ZDOTDIR 로 되돌린 채 읽는다.
-# zsh 가 직접 읽을 때처럼 사용자 파일 안의 $0 가 셸 이름이 되게, source 하는 동안 function_argzero 를 끈다.
 _maru_rc_user() {
-  [[ -o function_argzero ]] && typeset -gi _maru_argzero=1
-  unsetopt function_argzero
   unset ZDOTDIR
   (( _maru_user_zdotdir_set )) || return 0
   typeset -g ZDOTDIR=$_maru_user_zdotdir
   (( _maru_user_zdotdir_exported )) && export ZDOTDIR
   return 0
 }
-_maru_rc_argzero() {
-  (( _maru_argzero )) && setopt function_argzero
-  typeset -gi _maru_argzero=0
-}
 # 앱 디렉토리 값은 export 하지 않는다. export 하면 자식 프로세스에 앱의 ZDOTDIR 이 새기 때문이다.
 _maru_rc_app() {
-  _maru_rc_argzero
   typeset -gi _maru_user_zdotdir_set=${+ZDOTDIR} _maru_user_zdotdir_exported=0
   typeset -g _maru_user_zdotdir=${ZDOTDIR-}
   [[ ${(t)ZDOTDIR} == *export* ]] && _maru_user_zdotdir_exported=1

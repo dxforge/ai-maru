@@ -1423,7 +1423,7 @@ fn help_is_in_english_and_describes_every_option_but_the_size() {
     }
 }
 
-// `app` 을 붙이면 보낸 프로그램이 끝날 때 지워지므로, 그 규칙을 재지 않는 테스트는 `app` 없이 보낸다.
+// `app` 을 붙이면 foreground 리더가 바뀔 때 지워지므로, 그 규칙을 재지 않는 테스트는 `app` 없이 보낸다.
 const OSC_WORKING: &str = r"printf '\033]7501;state=working:msg=aGk=\033\\'";
 const OSC_WORKING_APP: &str = r"printf '\033]7501;state=working:app=x:msg=aGk=\033\\'";
 const OSC_ASK: &str = r"printf '\033]7501;state=blocked:id=ask:kind=question\033\\'";

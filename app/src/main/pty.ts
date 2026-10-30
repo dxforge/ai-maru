@@ -383,7 +383,7 @@ export type ShellSetup = { cli: CliAccess; zdotdir: string; claudePlugin: string
 /** 계약은 core/crates/maru 의 모듈 doc 에 있다. */
 export function shellEnv(env: NodeJS.ProcessEnv, id: string, setup: ShellSetup): NodeJS.ProcessEnv {
   const base = ptyEnv(env)
-  // claude shim 은 plugin 옆 `bin` 에 있다. 설치본에서는 maru 와 같은 디렉토리다. `.zshenv` 의 `_maru_path` 도 이렇게 찾는다.
+  // 설치본에서는 claude shim 이 maru 와 같은 디렉토리라 한 번만 붙인다. `.zshenv` 의 `_maru_path` 도 같은 자리(plugin 옆 `bin`)에서 shim 을 찾는다.
   const dirs = new Set([dirname(setup.cli.bin), join(dirname(setup.claudePlugin), 'bin')])
   return {
     ...base,

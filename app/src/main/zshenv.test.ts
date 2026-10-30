@@ -117,9 +117,12 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv', () => {
       expect(run(h, 'print $O ${ZDOTDIR-unset}')).toBe('prl unset\n')
     })
 
-    it('사용자 시작 파일 안의 $0 는 zsh 가 직접 읽을 때처럼 셸 이름이고, 끝나면 function_argzero 가 켜져 있다', () => {
-      const h = home({ '.zprofile': 'print $0', '.zshrc': 'print $0', '.zlogin': 'print $0' })
-      expect(run(h, '[[ -o function_argzero ]] && print on')).toBe(`${ZSH}\n${ZSH}\n${ZSH}\non\n`)
+    it('사용자 ~/.zshrc 가 source 한 파일은 ${0:A:h} 로 자기 디렉토리를 찾고, 함수 안의 $0 는 함수 이름이다', () => {
+      const h = home({
+        'plug/p.zsh': 'print -r -- ${0:A:h}; f() { print $0 }; f',
+        '.zshrc': 'source $HOME/plug/p.zsh'
+      })
+      expect(run(h, 'true')).toBe(`${realpathSync(h)}/plug\nf\n`)
     })
 
     it.skipIf(!existsSync('/etc/zshrc'))(

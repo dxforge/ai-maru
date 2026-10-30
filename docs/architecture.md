@@ -76,7 +76,7 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 ## claude 는 PATH 의 shim 이 plugin 을 싣는다
 
-앱은 터미널 PATH 앞에 claude shim(`app/resources/bin/claude`)이 든 디렉토리를 둔다. 셸 함수가 아니라 PATH 의 실행 파일이라, 스크립트·`exec`·`command claude`·새로 연 셸에서 띄운 claude 도 거친다. shim 은 PATH 에서 shim 이 아닌 첫 claude 를 찾아 `--plugin-dir` 을 붙여 exec 한다. 자식으로 띄우지 않는 것은 foreground 리더가 claude 여야 표시 cwd 와 닫기 확인 창의 이름이 claude 를 따르기 때문이다.
+앱은 터미널 PATH 앞에 claude shim(`app/resources/bin/claude`)이 든 디렉토리를 둔다. shim 은 PATH 의 실행 파일이라, 스크립트·`exec`·`command claude`·새로 연 셸에서 띄운 claude 도 거친다. shim 은 PATH 에서 shim 이 아닌 첫 claude 를 찾아 `--plugin-dir` 을 붙여 exec 한다. 자식으로 띄우지 않는 것은 foreground 리더가 claude 여야 표시 cwd 와 닫기 확인 창의 이름이 claude 를 따르기 때문이다.
 
 ## MCP 도구는 `maru mcp` 가 앱에 중계한다
 
