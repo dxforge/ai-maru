@@ -73,17 +73,23 @@ const FRAME_MS = 16
  * 전체 e2e 를 돌리면 프레임 사이가 300ms 가까이 벌어질 때가 있어, 앱의 300ms 스크롤이 프레임 한두 개 만에 끝난다.
  * 그래서 모으는 동안 페이지의 `requestAnimationFrame`·`cancelAnimationFrame`·`performance.now` 를 바꿔, 한 프레임에
  * 페이지 시각이 `FRAME_MS` 넘게 나아가지 않게 한다. 페이지 시각은 실제 시각을 앞지르지 않는다. 앞지르면 되돌린 뒤
- * `performance.now` 가 뒤로 가기 때문이다.
+ * `performance.now` 가 뒤로 가기 때문이다. `frameMs` 를 `Infinity` 로 주면 페이지 시각은 프레임마다 그 프레임이 시작한 때의 실제 시각이 된다.
  */
-async function scrollsOf(page: Page, act: () => Promise<unknown>): Promise<Scroll[]> {
+async function scrollsOf(
+  page: Page,
+  act: () => Promise<unknown>,
+  frameMs = FRAME_MS
+): Promise<Scroll[]> {
   const area = page.locator('.terminals')
   await area.evaluate((el, frameMs) => {
     const realFrame = window.requestAnimationFrame.bind(window)
     const realCancel = window.cancelAnimationFrame.bind(window)
     const realNow = performance.now.bind(performance)
     const queued = new Map<number, FrameRequestCallback>()
-    // 바꾸기 전에 받은 진짜 handle 과 겹치지 않게 크게 시작한다. 모르는 handle 은 진짜 `cancelAnimationFrame` 에 넘긴다.
-    let id = 1e9
+    // `cancelAnimationFrame` 이 바꾸기 전에 앱이 받은 진짜 handle 을 가려 진짜 쪽에 넘길 수 있게, 번호를 진짜 handle 과 겹치지 않는 큰 수에서 시작한다.
+    // 번호는 `window` 에 두어 `scrollsOf` 를 다시 불러도 이어 매긴다. 다시 매기면 앞 호출에서 앱이 받아 둔 handle 로 뒤 호출의 다른 콜백을 지우기 때문이다.
+    const ids = window as unknown as { scrollsFrameId?: number }
+    ids.scrollsFrameId ??= 1e9
     let now = realNow()
     let frame = 0
     const scrolls: Scroll[] = [{ left: el.scrollLeft, frame, time: now }]
@@ -91,7 +97,8 @@ async function scrollsOf(page: Page, act: () => Promise<unknown>): Promise<Scrol
     // 끝내는 조건의 프레임 수는 `act` 가 돌아온 뒤부터 센다. 그 전부터 세면 `act` 도중에 모으기가 끝나 그 뒤의 스크롤을 놓치기 때문이다.
     let acted = -1
     window.requestAnimationFrame = (callback) => {
-      queued.set(++id, callback)
+      const id = ++ids.scrollsFrameId!
+      queued.set(id, callback)
       return id
     }
     window.cancelAnimationFrame = (handle) => {
@@ -130,7 +137,7 @@ async function scrollsOf(page: Page, act: () => Promise<unknown>): Promise<Scrol
       acted = frame
       return finished.then(() => scrolls)
     }
-  }, FRAME_MS)
+  }, frameMs)
   await act()
   return area.evaluate(() =>
     (window as unknown as { scrollsAfterAct: () => Promise<Scroll[]> }).scrollsAfterAct()
@@ -578,16 +585,22 @@ test('columns 에서 포커스를 빠르게 이어 옮겨도 마지막으로 옮
   await scrollsOf(page, () => cellItems(page).first().click())
   await expectRevealed(page)
 
+  // 700ms 상한은 실제 시각으로 잰다. 페이지 시각을 한 프레임에 `FRAME_MS` 까지만 나아가게 하면, 부하로 프레임이
+  // 늦을 때 페이지 시각이 덜 흘러 700ms 를 넘긴 회귀도 통과하기 때문이다.
   let pressed = 0
-  const scrolls = await scrollsOf(page, async () => {
-    for (let n = 0; n < 7; n++) await clickMenu(app, 'next-cell')
-    // `scrolls` 의 `time` 과 같은 시계로 재도록, `scrollsOf` 가 바꾼 페이지 시각을 읽는다.
-    pressed = await page.evaluate(() => performance.now())
-  })
+  const scrolls = await scrollsOf(
+    page,
+    async () => {
+      for (let n = 0; n < 7; n++) await clickMenu(app, 'next-cell')
+      // `scrollsOf` 가 바꾼 `performance.now` 는 마지막 프레임의 시각을 돌려주므로, 바꾸지 않은 쪽을 부른다.
+      pressed = await page.evaluate(() => Performance.prototype.now.call(performance))
+    },
+    Infinity
+  )
   await expect(cellGroups(page).nth(7)).toHaveClass(/selected/)
   await expectRevealed(page)
-  // 앱은 포커스를 옮길 때마다 300ms 안에 끝나는 스크롤을 새로 시작한다. 700ms 에서 300ms 를 뺀 나머지는 IPC 가
-  // 늦어질 몫으로 둔 여유다.
+  // 앱은 포커스를 옮길 때마다 300ms 안에 끝나는 스크롤을 새로 시작한다. 700ms 에서 300ms 를 뺀 나머지는 프레임과
+  // IPC 가 늦어질 몫으로 둔 여유다.
   expect(scrolls.at(-1)!.time - pressed).toBeLessThan(700)
 })
 
