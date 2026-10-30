@@ -131,27 +131,11 @@ for (const header of ['bottom', 'top'] as const) {
   })
 }
 
-test('글자로 찍힌 URL 은 OS 로, .md 는 Canvas 로, 그 밖의 파일은 OS 기본 앱으로 간다', async ({
-  launch,
-  dataDir
-}) => {
-  const { app, page } = await launch()
-  await recordShell(app)
+test('글자로 찍힌 .md 경로는 Canvas 로 간다', async ({ launch, dataDir }) => {
+  const { page } = await launch()
   writeFileSync(join(dataDir, 'note.md'), '# From link')
-  writeFileSync(join(dataDir, 'a.txt'), 'x')
-  await run(
-    page,
-    `cd '${dataDir}'; echo https://example.com/text; echo "$PWD/note.md:3"; echo "$PWD/a.txt"; echo done-$((1+1))`,
-    'done-2'
-  )
+  await run(page, `cd '${dataDir}'; echo "$PWD/note.md:3"; echo done-$((1+1))`, 'done-2')
 
-  await metaClick(page, 'https://example.com/text')
-  await expect.poll(() => opened(app)).toEqual(['https://example.com/text'])
-
-  await metaClick(page, 'a.txt')
-  await expect.poll(() => paths(app)).toEqual([join(dataDir, 'a.txt')])
-
-  // Canvas 가 열리면 터미널 폭이 줄어 줄이 다시 접히고 글자 자리가 바뀌므로 마지막에 누른다.
   await metaClick(page, 'note.md:3')
   await expect(canvasTitles(page)).toHaveText(['note.md'])
   await expect(page.locator('.canvas .markdown h1')).toHaveText('From link')

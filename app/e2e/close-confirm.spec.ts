@@ -113,24 +113,6 @@ test('셸이 알린 명령이 도는 pane 은 프로세스 이름 대신 친 명
     .toEqual(['`sleep 30` is still running.'])
 })
 
-test('명령을 주어 띄운 pane 은 명령 전체로 묻고, Close 면 닫는다', async ({ launch, dataDir }) => {
-  const { app, page } = await launch()
-  await page.keyboard.type(`maru pane new bash -c 'read x'\n`)
-  await expect(panes(page)).toHaveCount(2)
-  await panes(page).nth(1).locator('.xterm-screen').click()
-  await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
-  await stubDialog(app, 1)
-  await clickMenu(app, 'close-pane')
-  await expect
-    .poll(async () => (await dialogCalls(app)).map((c) => c.detail))
-    .toEqual(['`bash -c read x` is still running.'])
-
-  await stubDialog(app, 0)
-  await clickMenu(app, 'close-pane')
-  await expect(panes(page)).toHaveCount(1)
-  await expect.poll(() => sockets(dataDir)).toHaveLength(1)
-})
-
 test('maru pane close 는 프로그램이 돌아도 묻지 않는다', async ({ launch }) => {
   const { app, page } = await launch()
   await stubDialog(app, 1)

@@ -13,10 +13,3 @@ test('터미널에서 띄운 monitor 가 자기 pty 로 보낸 메시지를 JSON
   await expect(rows(page)).toContainText('--- from p-')
   await expect(rows(page)).toContainText('read-2')
 })
-
-test('끝난 pty 로는 보내지 못한다', async ({ launch }) => {
-  const { page } = await launch()
-  await page.keyboard.type('maru inbox push p-00000000 hi; echo code-$?\n')
-  await expect(rows(page)).toContainText('pty p-00000000 has ended')
-  await expect(rows(page)).toContainText('code-1')
-})

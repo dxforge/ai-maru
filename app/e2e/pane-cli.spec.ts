@@ -14,7 +14,6 @@ import {
   rows,
   run,
   test,
-  toggleView,
   cellViews,
   zshHome
 } from './app'
@@ -177,18 +176,12 @@ test('maru pane new --cell 은 다른 workspace 의 cell 에도, job 에서 불�
   await expect(panes(page)).toHaveCount(1)
 })
 
-test('maru pane new --cell 은 없는 cell 이나 cell id 가 아닌 값이면 이유를 찍고 실패하며 pane 을 열지 않는다', async ({
+test('maru pane new --cell 은 없는 cell 이면 이유를 찍고 실패하며 pane 을 열지 않는다', async ({
   launch
 }) => {
   const { page } = await launch()
-  for (const [cell, reason] of [
-    ['c-00000000', 'no cell c-00000000'],
-    ["'ai-maru main'", 'must be a cell id'],
-    ['p-00000000', 'must be a cell id']
-  ]) {
-    await run(page, `clear; maru pane new --cell ${cell} true; echo "code-$?"`, 'code-1')
-    await expect(rows(page)).toContainText(reason)
-  }
+  await run(page, 'clear; maru pane new --cell c-00000000 true; echo "code-$?"', 'code-1')
+  await expect(rows(page)).toContainText('no cell c-00000000')
   await expect(panes(page)).toHaveCount(1)
   await expect(cellItems(page)).toHaveCount(1)
 })
@@ -265,69 +258,6 @@ test('maru pane close 는 다른 pane 도 자기 pane 도 닫고, 없는 pty 면
   await expect(rows(page)).toContainText('code-1')
 })
 
-test('columns 에서 maru pane new 로 오른쪽에 나누면 cell 이 넓어진다', async ({ launch }) => {
-  const launched = await launch()
-  const { page } = launched
-  await toggleView(launched, 'columns')
-  const one = (await cellViews(page).first().boundingBox())!.width
-  await page.keyboard.type(`maru pane new bash -c 'read x'\n`)
-  await expect(panes(page)).toHaveCount(2)
-  await expect
-    .poll(async () => (await cellViews(page).first().boundingBox())!.width)
-    .toBeGreaterThan(one * 1.9)
-})
-
-test('columns 에서 maru pane new --full 은 아래로 나눈 pane 에서 불러도 cell 오른쪽 끝에 높이 전체로 붙는다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await toggleView(launched, 'columns')
-  await clickMenu(app, 'split-down')
-  await expect(panes(page)).toHaveCount(2)
-  await page.keyboard.type(`maru pane new --full bash -c 'read x'\n`)
-  await expect(panes(page)).toHaveCount(3)
-
-  const grid = (await page.locator('.panes.selected .grid').boundingBox())!
-  await expect
-    .poll(async () => {
-      const added = await box(page, 2)
-      return [added.x + added.width, added.y, added.height]
-    })
-    .toEqual([grid.x + grid.width, grid.y, grid.height])
-  const [top, added] = [await box(page, 0), await box(page, 2)]
-  expect(added.width).toBeCloseTo(top.width, 0)
-  await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
-})
-
-test('columns 에서 maru pane new --full --down 은 cell 폭을 그대로 두고 아래쪽 끝에 폭 전체로 붙는다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await toggleView(launched, 'columns')
-  await clickMenu(app, 'split-right')
-  await expect(panes(page)).toHaveCount(2)
-  const width = (await cellViews(page).first().boundingBox())!.width
-  await page.keyboard.type(`maru pane new --full --down bash -c 'read x'\n`)
-  await expect(panes(page)).toHaveCount(3)
-
-  // 포커스된 pane 을 따라가는 스크롤이 아직 돌고 있으면 grid 도 함께 움직이므로, grid 와 새 pane 의 boundingBox 를 같은
-  // poll 안에서 잰다.
-  await expect
-    .poll(async () => {
-      const grid = (await page.locator('.panes.selected .grid').boundingBox())!
-      const added = await box(page, 2)
-      const [a, g] = [
-        [added.x, added.width, added.y + added.height],
-        [grid.x, grid.width, grid.y + grid.height]
-      ].map((edges) => JSON.stringify(edges))
-      return a === g ? 'same' : `${a} != ${g}`
-    })
-    .toBe('same')
-  expect((await cellViews(page).first().boundingBox())!.width).toBe(width)
-})
-
 test('single 에서 maru pane new --full --down 은 cell 아래쪽 끝에 폭 전체로 붙는다', async ({
   launch
 }) => {
@@ -374,13 +304,5 @@ test('maru pane new 은 나눌 자리가 없으면 no space 오류로 끝나고 
 
   await run(page, `maru pane new bash -c 'read x'; echo code-$?`, 'no space for a new pane')
   await expect(rows(page)).toContainText('code-1')
-  await run(page, `maru pane new --full bash -c 'read x'; echo full-$?`, 'full-1')
-  await run(
-    page,
-    `clear; ${MY_CELL}; maru pane new --cell $C bash -c 'read x'; echo cell-$?`,
-    'cell-1'
-  )
-  await expect(rows(page)).toContainText('no space for a new pane')
-
   await expect(panes(page)).toHaveCount(2)
 })

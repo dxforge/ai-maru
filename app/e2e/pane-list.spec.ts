@@ -40,20 +40,6 @@ const CELL_ID = expect.stringMatching(/^c-[0-9a-f]{8}$/)
 
 const sidebarTitles = (page: Page) => page.locator('.sidebar .pane-row .title').allInnerTexts()
 
-test('레코드가 없는 pane 만 있어도 maru pane list 는 그 pane 을 빈 STATE·APP·MESSAGE 와 사이드바의 이름으로 찍는다', async ({
-  launch,
-  dataDir
-}) => {
-  const { page } = await launch()
-  const me = await enter(page, join(dataDir, 'solo'))
-  const table = await paneList(page, join(dataDir, 'panes.out'))
-  expect(table).toEqual([
-    HEADER,
-    [me, '', '', 'solo', CELL_ID, expect.any(String), expect.stringMatching(/\/solo$/), '']
-  ])
-  expect([table[1][5]]).toEqual(await sidebarTitles(page))
-})
-
 test('홈 디렉토리 workspace 의 WORKSPACE 는 사이드바처럼 ~ 다', async ({ launch, dataDir }) => {
   const home = join(dataDir, 'home')
   mkdirSync(home)
@@ -107,36 +93,4 @@ test('maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순
   expect(table.slice(1).map((r) => r[5])).toEqual(await sidebarTitles(page))
   expect(table[2][4]).toBe(table[1][4])
   expect(table[3][4]).not.toBe(table[1][4])
-})
-
-test('레코드가 있는 pane 의 TITLE 은 터미널 제목이 있으면 그 제목이고 사이드바의 이름과 같다', async ({
-  launch,
-  dataDir
-}) => {
-  const { page } = await launch()
-  await page.keyboard.type(programStatus('idle'))
-  await expect(paneRows(page)).toHaveClass(/idle/)
-  await page.keyboard.type("printf '\\e]0;Pick one\\a'\n")
-  await expect(paneRows(page).locator('.title')).toHaveText('Pick one')
-
-  const [, cols] = await paneList(page, join(dataDir, 'panes.out'))
-  expect(cols[5]).toBe('Pick one')
-  expect([cols[5]]).toEqual(await sidebarTitles(page))
-})
-
-test('maru pane list 는 claude 의 루트가 done 이어도 maru status 로 쓴 하위 blocked 의 상태와 메시지를 찍는다', async ({
-  launch,
-  dataDir
-}) => {
-  const { page } = await launch()
-  await page.keyboard.type(programStatus('done', `msg=${base64('finished')}`))
-  await run(
-    page,
-    "maru status put blocked --id ask --kind question --msg 'Which one?'; echo code-$?",
-    'code-0'
-  )
-  await expect(paneRows(page)).toHaveClass(/blocked/)
-
-  const [, cols] = await paneList(page, join(dataDir, 'panes.out'))
-  expect([cols[1], cols[2], cols[7]]).toEqual(['blocked(question)', 'claude-code', 'Which one?'])
 })

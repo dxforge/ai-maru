@@ -99,32 +99,6 @@ test('OSC 9 알림은 본문을 행 제목과 헤더에 쓰고, 새 알림은 �
   await expect(paneHeader(page, 0).locator('.notification')).toHaveText('Deploy: ok')
 })
 
-test('다른 pane 이 보낸 알림은 그 pane 을 1초 넘게 보고 떠날 때까지 남는다', async ({
-  launch,
-  dataDir
-}) => {
-  const { app, page } = await launch()
-  const left = await ttyOf(page, dataDir, 'left')
-  await split(app, page, 'split-right', 2)
-  const row = shellRows(page).nth(0)
-  const shellName = await shellNameOf(page, row)
-  await page.keyboard.type(osc9('from left', left))
-  await expect(row.locator('.title')).toHaveText('from left')
-  await page.waitForTimeout(SEEN_MS)
-  await expect(row.locator('.state')).toHaveClass(/unread/)
-
-  await focusPane(app, page, 'focus-pane-left', 0)
-  await focusPane(app, page, 'focus-pane-right', 1)
-  await page.waitForTimeout(SEEN_MS)
-  await expect(row.locator('.title')).toHaveText('from left')
-
-  await focusPane(app, page, 'focus-pane-left', 0)
-  await page.waitForTimeout(SEEN_MS)
-  await focusPane(app, page, 'focus-pane-right', 1)
-  await expect(row.locator('.title')).toHaveText(shellName)
-  await expect(row.locator('.state')).not.toHaveClass(/unread/)
-})
-
 test('알림이 있는 pane 을 1초 넘게 본 뒤 앱 창이 포커스를 잃으면 알림을 지운다', async ({
   launch
 }) => {

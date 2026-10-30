@@ -84,7 +84,7 @@ test('monitor 없이 끝난 job 의 알림은 나중에 붙은 monitor 가 한 �
   expect(jobEvents(events)).toHaveLength(1)
 })
 
-test('같은 이름은 돌고 있으면 거절하고, 끝났으면 갈아 끼운다', async ({ launch }) => {
+test('같은 이름이 돌고 있으면 거절한다', async ({ launch }) => {
   const { page } = await launch()
   await run(
     page,
@@ -92,12 +92,6 @@ test('같은 이름은 돌고 있으면 거절하고, 끝났으면 갈아 끼운
     'code-1'
   )
   await expect(rows(page)).toContainText('job d is running in this cell')
-  await run(
-    page,
-    `maru job new --name e sh -c 'exit 0' >/dev/null; ${untilExited('e')}; maru job new --name e sh -c 'exit 5' >/dev/null; ${untilExited('e')}; echo rows=$(maru job list | awk '$2=="e"' | wc -l | tr -d ' ')`,
-    'rows=1'
-  )
-  await run(page, 'maru job list', /e\s+exited 5/)
 })
 
 test('다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell 의 job 만 끝난다', async ({

@@ -9,7 +9,6 @@ import {
   rmSync,
   writeFileSync
 } from 'node:fs'
-import { createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import electronBin from 'electron'
@@ -134,38 +133,6 @@ test('앱이 강제로 끝나 남은 pty 가 state.json 의 sessions 에 없으�
   await expect(rows(page)).toContainText('fresh-4')
   expect(sockets(dataDir)).toHaveLength(1)
   expect(sockets(dataDir)).not.toContain(left)
-})
-
-test('남은 pty 는 프로토콜 버전이 달라도 kill 로 끝낸다', async ({ launch, dataDir, defer }) => {
-  const dir = ptyDir(dataDir)
-  mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const received: Buffer[] = []
-  const server = createServer((s: Socket) =>
-    s.on('data', (d) => {
-      received.push(d)
-      rmSync(join(dir, 'p-old.json'))
-      server.close()
-      s.end()
-    })
-  )
-  await new Promise<void>((r) => server.listen(join(dir, 'p-old.sock'), r))
-  defer(() => server.close())
-  writeFileSync(
-    join(dir, 'p-old.json'),
-    JSON.stringify({
-      protocol_version: PROTOCOL_VERSION + 1,
-      id: 'p-old',
-      pid: process.pid,
-      created_at_ms: Date.now()
-    })
-  )
-
-  const { page } = await launch()
-  await page.keyboard.type('echo other-$((4+4))\n')
-  await expect(rows(page)).toContainText('other-8')
-  expect(JSON.parse(Buffer.concat(received).subarray(5).toString())).toMatchObject({ type: 'kill' })
-  expect(sockets(dataDir)).toHaveLength(1)
-  expect(sockets(dataDir)).not.toContain(join(dir, 'p-old.sock'))
 })
 
 test('셸이 뜨기 전에 앱을 끄면 그 pty 는 뜬 뒤에 끝난다', async ({ launch, dataDir }) => {

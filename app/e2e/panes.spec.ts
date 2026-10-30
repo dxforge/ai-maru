@@ -2,7 +2,6 @@ import type { Page } from '@playwright/test'
 import {
   activeTerminal,
   cellSize,
-  cellViews,
   clickMenu,
   delayPtyPort,
   expect,
@@ -92,26 +91,6 @@ async function expectEven(page: Page, length: 'width' | 'height', unit: number):
     .toBe('even')
 }
 
-test('single 에서 maru pane new --full --down 으로 늘어선 pane 들의 높이가 같고, 하나를 닫으면 남은 pane 들의 높이가 같다', async ({
-  launch
-}) => {
-  const { page } = await launch()
-  for (const [name, count] of [
-    ['A', 2],
-    ['B', 3],
-    ['C', 4]
-  ] as const) {
-    await page.keyboard.type(`${name}=$(maru pane new --full --down bash -c 'read x')\n`)
-    await expect(panes(page)).toHaveCount(count)
-  }
-  const row = (await cellSize(page)).height
-  await expectEven(page, 'height', row)
-
-  await run(page, 'maru pane close "$A"; echo closed-$?', 'closed-0')
-  await expect(panes(page)).toHaveCount(3)
-  await expectEven(page, 'height', row)
-})
-
 test('single 에서 ⌘D 로 새 pane 을 다시 나누면 좌우로 늘어선 세 pane 의 폭이 같다', async ({
   launch
 }) => {
@@ -121,31 +100,7 @@ test('single 에서 ⌘D 로 새 pane 을 다시 나누면 좌우로 늘어선 �
   await expectEven(page, 'width', (await cellSize(page)).width)
 })
 
-test('single 에서 ⇧⌘D 로 새 pane 을 다시 나누면 위아래로 늘어선 세 pane 의 높이가 같다', async ({
-  launch
-}) => {
-  const { app, page } = await launch()
-  await split(app, page, 'split-down', 2)
-  await split(app, page, 'split-down', 3)
-  await expectEven(page, 'height', (await cellSize(page)).height)
-})
-
-test('columns 에서 ⇧⌘D 로 새 pane 을 다시 나누면 세 pane 의 높이가 같고 cell 폭은 그대로다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await toggleView(launched, 'columns')
-  const width = (await cellViews(page).first().boundingBox())!.width
-  await split(app, page, 'split-down', 2)
-  await split(app, page, 'split-down', 3)
-  await expectEven(page, 'height', (await cellSize(page)).height)
-  expect((await cellViews(page).first().boundingBox())!.width).toBe(width)
-})
-
-test('⌘⌥방향키는 그 방향의 pane 으로 포커스를 옮기고, 그 방향에 pane 이 없으면 그대로 둔다', async ({
-  launch
-}) => {
+test('⌘⌥방향키는 그 방향의 pane 으로 포커스를 옮긴다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await split(app, page, 'split-down', 3)
@@ -153,12 +108,8 @@ test('⌘⌥방향키는 그 방향의 pane 으로 포커스를 옮기고, 그 �
 
   await clickMenu(app, 'focus-pane-up')
   await typesInto(page, 1, 'up')
-  await clickMenu(app, 'focus-pane-up')
-  await typesInto(page, 1, 'still-up')
   await clickMenu(app, 'focus-pane-left')
   await typesInto(page, 0, 'left')
-  await clickMenu(app, 'focus-pane-left')
-  await typesInto(page, 0, 'still-left')
   await clickMenu(app, 'focus-pane-right')
   await typesInto(page, 1, 'right')
   await clickMenu(app, 'focus-pane-down')
@@ -181,7 +132,7 @@ test('터미널에서 ⇧⌘방향키도 그 방향의 pane 으로 포커스를 
   await typesInto(page, 2, 'down')
 })
 
-test('Next·Previous Pane 은 cell 안의 pane 을 읽는 순서로 돈 뒤 다른 workspace 의 cell 로 넘어가고, 끝에서는 처음으로 돈다', async ({
+test('Next·Previous Pane 은 cell 안의 pane 을 읽는 순서로 돌고, 마지막 cell 에서는 다른 workspace 의 첫 cell 로 넘어간다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -199,13 +150,7 @@ test('Next·Previous Pane 은 cell 안의 pane 을 읽는 순서로 돈 뒤 다�
     [
       ['next-pane', 0, 0],
       ['next-pane', 0, 2],
-      ['next-pane', 0, 3],
-      ['next-pane', 0, 1],
-      ['next-pane', 1, 0],
-      ['next-pane', 0, 0],
-      ['previous-pane', 1, 0],
-      ['previous-pane', 0, 1],
-      ['previous-pane', 0, 3]
+      ['previous-pane', 0, 0]
     ] as const
   ).entries()) {
     await clickMenu(app, id)

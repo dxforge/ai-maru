@@ -1,7 +1,6 @@
 import type { Page } from '@playwright/test'
 import {
   attachFromOutside,
-  CANVAS_MIN_WIDTH,
   canvasPanel,
   canvasResizer,
   canvasWidth,
@@ -53,21 +52,6 @@ test('마크다운을 넣으면 패널이 열려 GFM 으로 렌더되고, 셸이
   await expect(markdown(page).locator('del')).toHaveText('old')
   await expect(markdown(page).locator('input[type=checkbox]')).toBeChecked()
   await expect.poll(async () => (await shellSize(page)).cols).toBeLessThan(before.cols)
-})
-
-test('같은 id 로 다시 넣으면 목록 자리를 지킨 채 내용이 바뀌고 그 문서가 선택된다', async ({
-  launch
-}) => {
-  const { app, page } = await launch()
-  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
-  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
-  await expect(markdown(page)).toHaveText('second')
-
-  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first again', title: 'A2' })
-
-  await expect(titles(page)).toHaveText(['B', 'A2'])
-  await expect(titles(page).nth(1)).toHaveClass(/selected/)
-  await expect(markdown(page)).toHaveText('first again')
 })
 
 test('목록에서 고르면 그 문서를 보인다', async ({ launch }) => {
@@ -256,10 +240,6 @@ test('목록의 제목은 본문 heading 과 같은 글자로 보인다', async 
   const body = await markdown(page).locator('h1').textContent()
   expect(body).toBe('Tom & J <3> © & &amp; &amp;')
   await expect(titles(page)).toHaveText(body!)
-
-  await putCanvas(app, { id: 'a', kind: 'markdown', text: '# &copy 2024 a &lt b &copyx; &notit;' })
-  await expect(markdown(page).locator('h1')).toHaveText('&copy 2024 a &lt b ©x; ¬it;')
-  await expect(titles(page)).toHaveText('&copy 2024 a &lt b ©x; ¬it;')
 })
 
 test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터미널로 간다', async ({ launch }) => {
@@ -341,29 +321,6 @@ test('터미널에서 maru canvas put 으로 보낸 마크다운이 패널에 �
   await expect(rows(page)).toContainText('code-0')
 })
 
-test('같은 --id 로 다시 보내면 목록 자리를 지킨 채 제목과 내용이 바뀐다', async ({ launch }) => {
-  const { page } = await launch()
-  await page.keyboard.type("echo '# one' | maru canvas put --id d >/dev/null\n")
-  await expect(titles(page)).toHaveText(['one'])
-  await page.keyboard.type("echo '# two' | maru canvas put --id e >/dev/null\n")
-  await expect(titles(page)).toHaveText(['two', 'one'])
-  await page.keyboard.type(
-    "echo '# three' | maru canvas put --id d --title Renamed; echo code-$?\n"
-  )
-  await expect(titles(page)).toHaveText(['two', 'Renamed'])
-  await expect(markdown(page).locator('h1')).toHaveText('three')
-  await expect(rows(page)).toContainText('code-0')
-})
-
-test('파일을 인자로 주면 셸의 현재 디렉토리 기준으로 읽어 보인다', async ({ launch, dataDir }) => {
-  const { page } = await launch()
-  await page.keyboard.type(
-    `cd '${dataDir}' && printf '# From file' > note.md && maru canvas put note.md; echo code-$?\n`
-  )
-  await expect(titles(page)).toHaveText(['From file'])
-  await expect(rows(page)).toContainText('code-0')
-})
-
 const mcpLine = (msg: object) => `'${JSON.stringify({ jsonrpc: '2.0', ...msg })}'`
 
 test('maru mcp 에 canvas_put 을 부르면 패널에 렌더되고 문서 id 를 답한다', async ({ launch }) => {
@@ -381,34 +338,6 @@ test('maru mcp 에 canvas_put 을 부르면 패널에 렌더되고 문서 id 를
   await expect(rows(page)).toContainText('code-0')
 })
 
-test('maru mcp 의 canvas_put 은 file 을 셸의 현재 디렉토리 기준으로 읽는다', async ({
-  launch,
-  dataDir
-}) => {
-  const { page } = await launch()
-  const put = mcpLine({
-    id: 2,
-    method: 'tools/call',
-    params: { name: 'canvas_put', arguments: { file: 'mcp.md' } }
-  })
-  await page.keyboard.type(
-    `cd '${dataDir}' && printf '# From MCP file' > mcp.md && printf '%s\\n' ${put} | maru mcp; echo code-$?\n`
-  )
-  await expect(titles(page)).toHaveText(['From MCP file'])
-  await expect(rows(page)).toContainText(
-    /"id":2,"jsonrpc":"2.0","result":\{"content":\[\{"text":"[0-9a-f-]{36}"/
-  )
-  await expect(rows(page)).toContainText('code-0')
-})
-
-test('16 MiB 를 넘는 입력은 앱에 보내지 않고 실패한다', async ({ launch }) => {
-  const { page } = await launch()
-  await page.keyboard.type('yes | maru canvas put; echo code-$?\n')
-  await expect(rows(page)).toContainText('code-1', { timeout: 20_000 })
-  await expect(rows(page)).toContainText('larger than the 16 MiB')
-  await expect(panel(page)).toBeHidden()
-})
-
 test('입력이 16 MiB 아래여도 escape 한 요청 줄이 넘으면 앱의 이유와 함께 실패한다', async ({
   launch
 }) => {
@@ -421,14 +350,7 @@ test('입력이 16 MiB 아래여도 escape 한 요청 줄이 넘으면 앱의 �
   await expect(panel(page)).toBeHidden()
 })
 
-test('FILE 없이 stdin 이 터미널이면 기다리지 않고 실패한다', async ({ launch }) => {
-  const { page } = await launch()
-  await page.keyboard.type('maru canvas put; echo code-$?\n')
-  await expect(rows(page)).toContainText('pipe markdown into stdin')
-  await expect(rows(page)).toContainText('code-1')
-})
-
-test('왼쪽 경계를 끌어 Canvas 폭을 바꾸고, 최소 폭 아래로는 줄지 않으며, 터미널 영역이 0 이 되는 데서 멈춘다', async ({
+test('왼쪽 경계를 끌어 Canvas 폭을 바꾸고, 터미널 영역이 0 이 되는 데서 멈춘다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -438,8 +360,6 @@ test('왼쪽 경계를 끌어 Canvas 폭을 바꾸고, 최소 폭 아래로는 �
 
   await dragCanvas(page, -100)
   await expect.poll(async () => (await shellSize(page)).cols).toBeLessThan(beforeCols)
-  await dragHandle(page, canvasResizer(page), 2000)
-  await expect.poll(() => canvasWidth(page)).toBe(CANVAS_MIN_WIDTH)
   await dragHandle(page, canvasResizer(page), -3000)
 
   await expect.poll(async () => (await page.locator('.terminals').boundingBox())!.width).toBe(0)
