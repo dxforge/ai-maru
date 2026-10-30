@@ -1,6 +1,6 @@
 #!/bin/bash
 # ai-maru claude shim
-# 앱이 터미널의 PATH 앞에 두는 claude 다. 셸이 PATH 에서 claude 를 찾을 때마다 거치므로 스크립트·`exec`·`command` 로 띄운 claude 에도 앱 plugin 을 싣는다.
+# 앱이 터미널 PATH 맨 앞에 두는 claude 다(docs/architecture.md 「claude 는 PATH 의 shim 이 plugin 을 싣는다」).
 # claude 를 자식으로 띄우지 않고 exec 한다 — 앱이 foreground 리더로 claude 의 cwd 를 재고 이름을 보이기 때문이다.
 
 real=
@@ -22,7 +22,7 @@ if [[ -z $real ]]; then
   exit 127
 fi
 
-# claude 안(CLAUDECODE)에서 부른 claude 는 이 pane 의 claude 가 아니므로 앱 plugin 을 싣지 않고 그대로 넘긴다.
+# claude 안(CLAUDECODE)에서 부른 claude 는 이 pane 의 claude 가 아니다. 앱 plugin 의 hook 이 바깥 claude 의 컨텍스트를 건드리므로 plugin 없이 그대로 넘긴다.
 if [[ -z $MARU_CLI || -z $MARU_CLAUDE_PLUGIN || -n $CLAUDECODE ]]; then
   exec "$real" "$@"
 fi

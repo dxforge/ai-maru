@@ -166,8 +166,8 @@ struct Screen {
     cols: u16,
     rows: u16,
     status: Records,
-    /// `app` 이 붙은 루트 레코드를 받은 때의 foreground 리더. 리더가 이 pid 에서 바뀌면 그 프로그램이 끝난 것으로 보고
-    /// 레코드를 전부 지운다. 프로그램이 clear 를 보내지 못하고 죽어도 레코드가 남지 않게 하려는 것이다.
+    /// `app` 이 붙은 루트 레코드를 받은 때의 foreground 리더. 리더가 이 pid 에서 바뀌면 레코드를 전부 지운다(`lib.rs` 의
+    /// `records` 계약).
     status_owner: Option<i32>,
     pane: PaneState,
     outputs: Vec<Weak<Output>>,
@@ -609,7 +609,7 @@ fn watch_foreground(pty: Weak<Pty>, wake: Arc<Wake>) {
                 && owner != leader
             {
                 let mut screen = pty.screen.lock().unwrap();
-                // 재는 동안 다른 프로그램이 새로 보냈으면 그 프로그램의 레코드다.
+                // 락을 놓고 재는 동안 다른 프로그램이 새 레코드를 보냈으면 그 레코드는 지우지 않는다.
                 if screen.status_owner == Some(owner) && screen.forget_records() {
                     screen.publish_state();
                 }
