@@ -3,8 +3,8 @@ import type { GitHead } from '../../../shared/git'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import { isPtyId } from '../../../shared/pty'
 import type { PtyState } from '../../../shared/pty-state'
-import { parseScreen, SCREEN_VERSION } from '../../../shared/screen'
-import { createWorkspaces, focusedPane } from './store'
+import { parseScreen } from '../../../shared/screen'
+import { createWorkspaces, focusedPane, type WorkspacesScreen } from './store'
 
 type Workspaces = ReturnType<typeof createWorkspaces>
 
@@ -55,13 +55,20 @@ const firstPanes = (ws: Workspaces) => ws.cells().map((c) => c.panes[0])
 const wsKeys = (ws: Workspaces) => ws.list.value.map((w) => w.key)
 const selected = (ws: Workspaces) => ws.selected()!
 
+function full(saved: WorkspacesScreen): [WorkspacesScreen, Record<number, string>] {
+  const ptys: Record<number, string> = {}
+  for (const w of saved.workspaces)
+    for (const c of w.cells) for (const p of c.panes) ptys[p.key] = p.ptyId
+  return [saved, ptys]
+}
+
 /** 재시작 전 pane 은 모두 pty 를 띄운 것으로 둔다 — 되살린 store 는 cwd 가 없는 pane 에 시작 디렉토리를 화면 cwd 로 단다. */
 function restarted(from: Workspaces): Workspaces {
   for (const c of from.cells())
     for (const p of c.panes)
       if (p.cwd === undefined) from.setSpawnedCwd(p.key, p.startDir ?? '/home')
   const to = createWorkspaces()
-  to.restore(from.snapshot())
+  to.restore(...full(from.snapshot()))
   return to
 }
 
@@ -91,6 +98,49 @@ describe('snapshot·restore', () => {
     expect(to.cells().map((w) => w.paneCols)).toEqual([undefined, 110])
   })
 
+  it('pty 없이 되살린 pane 은 새 pty id 로 저장한 cwd 에서 셸을 띄우고, 명령·keep·제목은 버린다', () => {
+    const from = arranged()
+    from.splitFrom(from.cells()[0].panes[0].key, 'right', {
+      startDir: '/l',
+      command: ['claude'],
+      keep: true
+    })
+    const saved = from.snapshot()
+    const to = createWorkspaces()
+    to.restore(saved, null)
+    expect(to.snapshot().workspaces.map((w) => w.cells.map((c) => c.layout))).toEqual(
+      saved.workspaces.map((w) => w.cells.map((c) => c.layout))
+    )
+    expect(to.selected()!.key).toBe(from.selected()!.key)
+    const before = saved.workspaces.flatMap((w) => w.cells.flatMap((c) => c.panes))
+    const after = to.cells().flatMap((c) => c.panes)
+    for (const [i, p] of after.entries()) {
+      expect(p.ptyId).not.toBe(before[i].ptyId)
+      expect(p.attach).toBeUndefined()
+      expect(p.command).toBeUndefined()
+      expect(p.keep).toBeUndefined()
+      expect(p.startDir).toBe(before[i].cwd ?? before[i].startDir)
+    }
+    const vim = before.find((p) => p.title === 'vim')!
+    expect(after.find((p) => p.key === vim.key)!.title).toBeUndefined()
+    expect(before.some((p) => p.command)).toBe(true)
+    expect(to.cells().map((w) => w.fontSize)).toEqual([undefined, 18])
+  })
+
+  it('pty 가 없어 새 셸을 띄운 pane 은 명령·keep·제목을 버리고 되살린 cwd 를 시작 디렉토리로 삼는다', () => {
+    const from = createWorkspaces()
+    from.open('/start', { command: ['claude'], keep: true })
+    from.setSpawnedCwd(selected(from).panes[0].key, '/saved')
+    const to = createWorkspaces()
+    to.restore(...full(from.snapshot()))
+    const key = selected(to).panes[0].key
+    to.respawned(key)
+    expect(selected(to).panes[0]).toMatchObject({ startDir: '/saved', attach: true })
+    expect(selected(to).panes[0].command).toBeUndefined()
+    expect(selected(to).panes[0].keep).toBeUndefined()
+    expect(selected(to).panes[0].restoredTitle).toBeUndefined()
+  })
+
   it('되살린 pane 은 pty 에 붙고, 스냅샷에는 붙기와 화면 cwd 의 재료를 싣지 않는다', () => {
     const to = restarted(arranged())
     to.setSpawnedCwd(to.cells()[0].panes[0].key, '/spawned')
@@ -114,7 +164,7 @@ describe('snapshot·restore', () => {
       read.push(cwd)
       return { repo: 'r', branch: 'new' }
     })
-    to.restore(saved)
+    to.restore(...full(saved))
     expect(selected(to).panes[0].git).toEqual({ repo: 'r', branch: 'old' })
     await new Promise((resolve) => setTimeout(resolve))
     expect(read).toEqual(['/r'])
@@ -127,7 +177,7 @@ describe('snapshot·restore', () => {
     const to = createWorkspaces(undefined, src)
     const pty = from.cells()[1].panes[1].ptyId
     src.set(to, pty, { cwd: '/now', cwdReports: 4, title: null })
-    to.restore(from.snapshot())
+    to.restore(...full(from.snapshot()))
     const pane = to.cells()[1].panes[1]
     expect([pane.cwd, pane.title]).toEqual(['/now', undefined])
   })
@@ -248,7 +298,6 @@ describe('workspaces', () => {
     empty.openCell('/e', launch)
     expect(selected(empty).panes[0]).toMatchObject({ command: ['claude'], keep: true })
     const screen = {
-      version: SCREEN_VERSION,
       sidebar: { open: true, width: 280, folded: [] },
       viewMode: 'single',
       ...empty.snapshot()
@@ -361,7 +410,7 @@ describe('workspaces', () => {
     const to = createWorkspaces(undefined, src)
     const saved = from.snapshot()
     src.drop(from, selected(from).panes[0].ptyId)
-    to.restore(saved)
+    to.restore(...full(saved))
     const pane = () => selected(to).panes[0]
     expect(pane().cwd).toBe('/saved')
     to.setSpawnedCwd(pane().key, '/spawned')
@@ -430,7 +479,7 @@ describe('workspaces', () => {
     const to = createWorkspaces(undefined, src)
     const saved = from.snapshot()
     src.drop(from, selected(from).panes[0].ptyId)
-    to.restore(saved)
+    to.restore(...full(saved))
     expect(selected(to).panes[0].title).toBe('kept')
     src.markOld(to, selected(to).panes[0].ptyId)
     expect(selected(to).panes[0].title).toBeUndefined()
@@ -626,7 +675,7 @@ describe('git', () => {
     const r = reader()
     const src = source()
     const to = createWorkspaces(r.read, src)
-    to.restore(from.snapshot())
+    to.restore(...full(from.snapshot()))
     src.set(to, selected(to).panes[0].ptyId, { cwd: '/private/r', cwdReports: 1 })
     expect(selected(to).panes[0].git).toEqual({ repo: 'r', branch: 'old' })
   })
@@ -1075,13 +1124,12 @@ describe('openCellFrom', () => {
     const a = spawn(from, d)
     const old = {
       ...from.snapshot(),
-      version: SCREEN_VERSION,
       sidebar: { open: true, width: 282, folded: [] },
       viewMode: 'single'
     }
     Object.assign(old.workspaces[0].cells[1], { openedBy: d })
     const ws = createWorkspaces()
-    ws.restore(parseScreen(old)!)
+    ws.restore(...full(parseScreen(old)!))
     const b = spawn(ws, d)
     expect(keys(ws)).toEqual([d, b, a])
     expect(JSON.stringify(ws.snapshot())).not.toContain('openedBy')

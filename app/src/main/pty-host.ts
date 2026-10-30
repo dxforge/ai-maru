@@ -35,16 +35,31 @@ function serve(id: string, port: MessagePortMain, sock: Socket, spawned: object)
   bridge(sock, port)
 }
 
-/** renderer 가 cwd 를 이미 가지고 있으므로 `spawned` 에 cwd 를 싣지 않는다. */
+/** pty 에 붙을 때는 renderer 가 cwd 를 이미 가지고 있으므로 `spawned` 에 cwd 를 싣지 않는다. */
 async function reattach(req: OpenRequest, port: MessagePortMain): Promise<void> {
+  // 붙는 동안 온 kill 도 기다리게 한다. 붙지 못하면 이어서 셸을 띄우므로, kill 이 먼저 지나가면 어느 pane 에도 붙지 않은 셸이 남는다.
+  let connected!: () => void
+  spawning.set(req.id, new Promise<void>((resolve) => (connected = resolve)))
   const sock = await connect(socketPath(req.dir, req.id)).catch(() => null)
-  if (sock) return serve(req.id, port, sock, {})
-  end(port, { type: 'gone' })
+  if (sock) {
+    spawning.delete(req.id)
+    connected()
+    return serve(req.id, port, sock, {})
+  }
+  port.postMessage(JSON.stringify({ type: 'gone' }))
+  // `spawnFor` 는 await 하기 전에 `spawning` 의 항목을 제 promise 로 바꾸므로, 그 뒤에 풀린 kill 은 셸이 뜨기를 기다린다.
+  const spawned = spawnFor({ ...req, attach: false, command: undefined, keep: undefined }, port)
+  connected()
+  return spawned
 }
 
 async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
   if (quitting) return end(port)
-  if (req.attach) return reattach(req, port)
+  return req.attach ? reattach(req, port) : spawnFor(req, port)
+}
+
+async function spawnFor(req: OpenRequest, port: MessagePortMain): Promise<void> {
+  if (quitting) return end(port)
   const spawned = startDir(req.cwd).then(async (cwd) => {
     const state = await spawnPty(req.bin, req.dir, req.setup, req.id, cwd, req.command, {
       keep: req.keep
@@ -76,7 +91,7 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
 }
 
 async function kill(req: KillRequest): Promise<void> {
-  await spawning.get(req.id)
+  for (let p = spawning.get(req.id); p; p = spawning.get(req.id)) await p
   await killPty(req.dir, req.id)
 }
 

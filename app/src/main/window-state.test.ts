@@ -1,16 +1,10 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { ViewPrefs } from '../shared/screen'
+import { describe, expect, it } from 'vitest'
 import {
-  readWindowExtras,
-  readWindowState,
+  parseWindowState,
   restoreWindowState,
-  saveWindowStateOnClose,
+  trackWindowState,
   windowBounds,
-  type WindowExtras,
   type WindowState
 } from './window-state'
 
@@ -46,42 +40,24 @@ function fakeWindow(
   return win
 }
 
-function tracked(
-  file: string,
-  init?: Parameters<typeof fakeWindow>[0],
-  prefs: () => WindowExtras = () => ({})
-) {
+function tracked(init?: Parameters<typeof fakeWindow>[0]) {
   const win = fakeWindow(init)
-  saveWindowStateOnClose(
-    win as unknown as Parameters<typeof saveWindowStateOnClose>[0],
-    file,
-    prefs
+  const changes: WindowState[] = []
+  const saved = trackWindowState(win as unknown as Parameters<typeof trackWindowState>[0], (s) =>
+    changes.push(s)
   )
-  return win
+  return { win, changes, saved }
 }
 
-let dir: string
-beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'maru-window-state-'))
-})
-afterEach(() => rmSync(dir, { recursive: true, force: true }))
-
-describe('readWindowState', () => {
-  it('저장한 상태를 그대로 읽는다', () => {
-    const file = join(dir, 'w.json')
-    writeFileSync(file, JSON.stringify({ ...NORMAL, isMaximized: true }))
-    expect(readWindowState(file)).toEqual({ ...NORMAL, isMaximized: true })
-  })
-
-  it('파일이 없거나 JSON 이 아니면 null', () => {
-    expect(readWindowState(join(dir, 'none.json'))).toBeNull()
-    const file = join(dir, 'w.json')
-    writeFileSync(file, '{not json')
-    expect(readWindowState(file)).toBeNull()
+describe('parseWindowState', () => {
+  it('맞는 상태는 그 필드만 옮긴다', () => {
+    expect(parseWindowState({ ...NORMAL, isMaximized: true, extra: 1 })).toEqual({
+      ...NORMAL,
+      isMaximized: true
+    })
   })
 
   it('값이 빠졌거나 크기가 0 이하이거나 정수가 아니면 null', () => {
-    const file = join(dir, 'w.json')
     for (const bad of [
       null,
       [],
@@ -91,44 +67,8 @@ describe('readWindowState', () => {
       { ...NORMAL, y: 1.5 },
       { ...NORMAL, isFullScreen: 'yes' }
     ]) {
-      writeFileSync(file, JSON.stringify(bad))
-      expect(readWindowState(file), JSON.stringify(bad)).toBeNull()
+      expect(parseWindowState(bad), JSON.stringify(bad)).toBeNull()
     }
-  })
-})
-
-describe('readWindowExtras', () => {
-  it('창 위치·크기가 없거나 틀려도 보기 설정은 읽는다', () => {
-    const file = join(dir, 'w.json')
-    writeFileSync(file, JSON.stringify({ viewMode: 'single' }))
-    expect(readWindowExtras(file)).toEqual({ viewMode: 'single' })
-    expect(readWindowState(file)).toBeNull()
-  })
-
-  it('파일이 없거나 JSON 이 아니면 빈 설정', () => {
-    expect(readWindowExtras(join(dir, 'none.json'))).toEqual({})
-    const file = join(dir, 'w.json')
-    writeFileSync(file, '{not json')
-    expect(readWindowExtras(file)).toEqual({})
-  })
-
-  it('닫을 때 저장한 테마를 읽고, 없거나 틀리면 빼 둔다', () => {
-    const file = join(dir, 'w.json')
-    const theme = { background: '#1e1e2e', mode: 'system' }
-    writeFileSync(file, JSON.stringify({ viewMode: 'single', theme }))
-    expect(readWindowExtras(file)).toEqual({ viewMode: 'single', theme })
-    for (const bad of [{ theme: { background: '#1e1e2e', mode: 'auto' } }, { theme: '#1e1e2e' }]) {
-      writeFileSync(file, JSON.stringify(bad))
-      expect(readWindowExtras(file), JSON.stringify(bad)).toEqual({})
-    }
-  })
-
-  it('닫을 때 `extras` 가 준 테마를 함께 저장한다', () => {
-    const file = join(dir, 'w.json')
-    const theme = { background: '#ffffff', mode: 'light' as const }
-    const win = tracked(file, {}, () => ({ viewMode: 'single', theme }))
-    win.emit('close')
-    expect(readWindowExtras(file)).toEqual({ viewMode: 'single', theme })
   })
 })
 
@@ -188,18 +128,16 @@ describe('restoreWindowState', () => {
   })
 })
 
-describe('saveWindowStateOnClose', () => {
+describe('trackWindowState', () => {
   const placed = { x: 10, y: 20, width: 300, height: 200 }
 
-  it('닫을 때 보통 크기와 최대화·전체 화면 여부를 쓰고 readWindowState 가 그대로 읽는다', () => {
-    const file = join(dir, 'w.json')
+  it('보통 크기와 최대화·전체 화면 여부를 준다', () => {
     for (const flags of [
       { maximized: false, fullScreen: false },
       { maximized: true, fullScreen: false },
       { maximized: false, fullScreen: true }
     ]) {
-      tracked(file, { bounds: placed, ...flags }).emit('close')
-      expect(readWindowState(file)).toEqual({
+      expect(tracked({ bounds: placed, ...flags }).saved()).toEqual({
         ...placed,
         isMaximized: flags.maximized,
         isFullScreen: flags.fullScreen
@@ -207,24 +145,20 @@ describe('saveWindowStateOnClose', () => {
     }
   })
 
-  it('닫기 전에는 쓰지 않는다', () => {
-    const file = join(dir, 'w.json')
-    const win = tracked(file)
-    win.emit('resize')
-    expect(readWindowState(file)).toBeNull()
-  })
-
-  it('닫을 때의 상태를 쓴다 — 띄운 뒤 바뀐 크기도', () => {
-    const file = join(dir, 'w.json')
-    const win = tracked(file)
+  it('창이 바뀔 때마다 그때의 상태로 알린다', () => {
+    const { win, changes } = tracked()
     win.s.bounds = placed
-    win.emit('close')
-    expect(readWindowState(file)).toEqual({ ...NORMAL, ...placed })
+    win.emit('move')
+    win.s.maximized = true
+    win.emit('maximize')
+    expect(changes).toEqual([
+      { ...NORMAL, ...placed },
+      { ...NORMAL, ...placed, isMaximized: true }
+    ])
   })
 
-  it('최대화한 뒤 최소화한 채 닫으면 최소화하기 전의 보통 크기와 최대화를 쓴다', () => {
-    const file = join(dir, 'w.json')
-    const win = tracked(file, { bounds: placed })
+  it('최대화한 뒤 최소화하면 최소화하기 전의 보통 크기와 최대화를 준다', () => {
+    const { win, saved, changes } = tracked({ bounds: placed })
     win.s.maximized = true
     win.emit('maximize')
     Object.assign(win.s, {
@@ -233,23 +167,20 @@ describe('saveWindowStateOnClose', () => {
       bounds: { x: 0, y: 0, width: 1440, height: 900 }
     })
     win.emit('resize')
-    win.emit('close')
-    expect(readWindowState(file)).toEqual({ ...NORMAL, ...placed, isMaximized: true })
+    expect(saved()).toEqual({ ...NORMAL, ...placed, isMaximized: true })
+    expect(changes.at(-1)).toEqual({ ...NORMAL, ...placed, isMaximized: true })
   })
 
-  it('보통 상태에서 옮긴 뒤 최소화한 채 닫으면 옮긴 자리를 쓴다', () => {
-    const file = join(dir, 'w.json')
-    const win = tracked(file)
+  it('보통 상태에서 옮긴 뒤 최소화하면 옮긴 자리를 준다', () => {
+    const { win, saved } = tracked()
     win.s.bounds = placed
     win.emit('move')
     win.s.minimized = true
-    win.emit('close')
-    expect(readWindowState(file)).toEqual({ ...NORMAL, ...placed })
+    expect(saved()).toEqual({ ...NORMAL, ...placed })
   })
 
-  it('최대화한 뒤 전체 화면인 채 닫으면 전체 화면에 들어가기 전의 보통 크기와 최대화를 쓴다', () => {
-    const file = join(dir, 'w.json')
-    const win = tracked(file, { bounds: placed })
+  it('최대화한 뒤 전체 화면이면 전체 화면에 들어가기 전의 보통 크기와 최대화를 준다', () => {
+    const { win, saved } = tracked({ bounds: placed })
     win.s.maximized = true
     win.emit('maximize')
     Object.assign(win.s, {
@@ -260,39 +191,17 @@ describe('saveWindowStateOnClose', () => {
     win.emit('resize')
     win.emit('enter-full-screen')
     win.emit('move')
-    win.emit('close')
-    expect(readWindowState(file)).toEqual({
-      ...placed,
-      isMaximized: true,
-      isFullScreen: true
-    })
+    expect(saved()).toEqual({ ...placed, isMaximized: true, isFullScreen: true })
   })
 
-  it('최대화한 창이 전체 화면에서 나온 뒤 닫으면 최대화만 쓴다', () => {
-    const file = join(dir, 'w.json')
-    const win = tracked(file, { bounds: placed })
+  it('최대화한 창이 전체 화면에서 나오면 최대화만 준다', () => {
+    const { win, saved } = tracked({ bounds: placed })
     win.s.maximized = true
     win.emit('maximize')
     Object.assign(win.s, { fullScreen: true, maximized: false })
     win.emit('enter-full-screen')
     Object.assign(win.s, { fullScreen: false, maximized: true })
     win.emit('leave-full-screen')
-    win.emit('close')
-    expect(readWindowState(file)).toEqual({ ...NORMAL, ...placed, isMaximized: true })
-  })
-
-  it('닫을 때의 보기 설정을 함께 쓰고, readWindowState 도 그 파일을 읽는다', () => {
-    const file = join(dir, 'w.json')
-    let prefs: ViewPrefs = { viewMode: 'single' }
-    const win = tracked(file, { bounds: placed }, () => prefs)
-    prefs = { viewMode: 'columns', sidebar: { open: false, width: 300 } }
-    win.emit('close')
-    expect(readWindowExtras(file)).toEqual(prefs)
-    expect(readWindowState(file)).toMatchObject({ ...NORMAL, ...placed })
-  })
-
-  it('쓸 수 없는 경로여도 throw 하지 않는다', () => {
-    const win = tracked(join(dir, 'missing', 'w.json'))
-    expect(() => win.emit('close')).not.toThrow()
+    expect(saved()).toEqual({ ...NORMAL, ...placed, isMaximized: true })
   })
 })

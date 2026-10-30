@@ -20,12 +20,7 @@ import {
   type ProgramStatusRecord,
   type ProgramStatusState
 } from '../../shared/program-status'
-import {
-  clampCanvasWidth,
-  clampSidebarWidth,
-  SCREEN_VERSION,
-  type ScreenState
-} from '../../shared/screen'
+import { clampCanvasWidth, clampSidebarWidth, type ScreenState } from '../../shared/screen'
 import { secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
 import { createCanvas } from './canvas/store'
@@ -46,6 +41,7 @@ import { SHELL } from '../../shared/launcher'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { activeTheme, windowTheme } from './themes'
+import { restoreToast } from './toast/restore'
 import { createToasts } from './toast/store'
 import {
   columnWidth,
@@ -865,7 +861,6 @@ function openFolded(): number[] {
 
 function screen(): ScreenState {
   return {
-    version: SCREEN_VERSION,
     ...workspaces.snapshot(),
     sidebar: { open: sidebarOpen.value, width: sidebarWidth.value, folded: openFolded() },
     viewMode: viewMode.value,
@@ -873,17 +868,14 @@ function screen(): ScreenState {
   }
 }
 
-void window.maru.restoreScreen().then((s) => {
-  if (s?.workspaces.length) {
-    workspaces.restore(s)
-    sidebarOpen.value = s.sidebar.open
-    sidebarWidth.value = s.sidebar.width
-    for (const key of s.sidebar.folded) folded.add(key)
-    viewMode.value = s.viewMode
-    if (s.canvas) canvasWidth.value = s.canvas.width
+void window.maru.restoreScreen().then((r) => {
+  if (r?.layout?.workspaces.length) {
+    workspaces.restore(r.layout, r.ptys)
+    for (const key of prefs.folded ?? []) folded.add(key)
   } else {
     workspaces.open()
   }
+  if (r?.notice) toasts.put('restore', restoreToast(r.notice))
   // 되살린 cell 은 아직 그려지기 전이라 잰 것이 없다. cell 을 다 잰 뒤 `flush: 'post'` 인 스크롤 watch 가 먼저
   // 돌도록, `settled` 는 그다음 프레임에 켠다.
   const unwatch = watch(
@@ -986,7 +978,7 @@ void window.maru.restoreScreen().then((s) => {
                 :ref="(t) => setTerminal(p.key, t)"
                 :pty-id="p.ptyId"
                 :cell-id="c.id"
-                :start-dir="p.startDir"
+                :start-dir="p.attach ? (p.restoredCwd ?? p.startDir) : p.startDir"
                 :command="p.command"
                 :attach="p.attach"
                 :keep="p.keep"
@@ -997,6 +989,7 @@ void window.maru.restoreScreen().then((s) => {
                 :cols="size?.cols"
                 :rows="size?.rows"
                 @exit="removePane(p.key)"
+                @gone="workspaces.respawned(p.key)"
                 @failed="(message) => paneFailed(p.key, message)"
                 @spawned="(dir) => onSpawned(p.key, p.ptyId, dir)"
                 @program-status="(records) => onLegacyProgramStatus(p.ptyId, records)"

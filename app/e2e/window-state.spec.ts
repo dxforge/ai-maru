@@ -1,4 +1,4 @@
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication } from '@playwright/test'
 import {
@@ -11,8 +11,11 @@ import {
   openCanvas,
   sidebarResizer,
   sidebarWidth,
+  readState,
+  stateFile,
   test,
-  toggleView
+  toggleView,
+  writeView
 } from './app'
 
 type Rect = { x: number; y: number; width: number; height: number }
@@ -120,17 +123,17 @@ test('최대화한 뒤 최소화한 채 닫으면 최대화로 뜨고, 최대화
 })
 
 test('최대화로 저장한 창은 모니터 밖에 있었어도 최대화로 뜬다', async ({ launch, dataDir }) => {
-  writeFileSync(
-    join(dataDir, 'window-state.json'),
-    JSON.stringify({
+  writeView(dataDir, {
+    viewMode: 'single',
+    window: {
       x: -100_000,
       y: -100_000,
       width: 640,
       height: 420,
       isMaximized: true,
       isFullScreen: false
-    })
-  )
+    }
+  })
   const { app } = await launch()
   await expect.poll(() => win(app, 'isMaximized')).toBe(true)
   const { x, y } = await win(app, 'getBounds')
@@ -139,17 +142,17 @@ test('최대화로 저장한 창은 모니터 밖에 있었어도 최대화로 �
 })
 
 test('저장한 위치가 연결된 모니터 밖이면 기본 위치·크기로 뜬다', async ({ launch, dataDir }) => {
-  writeFileSync(
-    join(dataDir, 'window-state.json'),
-    JSON.stringify({
+  writeView(dataDir, {
+    viewMode: 'single',
+    window: {
       x: -100_000,
       y: -100_000,
       width: 640,
       height: 420,
       isMaximized: false,
       isFullScreen: false
-    })
-  )
+    }
+  })
   const { app } = await launch()
   const { x, y, width, height } = await win(app, 'getBounds')
   expect({ width, height }).toEqual({ width: 1000, height: 700 })
@@ -161,7 +164,7 @@ test('저장한 파일이 깨졌으면 기본 크기로 뜨고, 닫으면 새로
   launch,
   dataDir
 }) => {
-  writeFileSync(join(dataDir, 'window-state.json'), '{broken')
+  writeFileSync(stateFile(dataDir), '{broken')
   const first = await launch()
   const { width, height } = await win(first.app, 'getBounds')
   expect({ width, height }).toEqual({ width: 1000, height: 700 })
@@ -173,7 +176,7 @@ test('저장한 파일이 깨졌으면 기본 크기로 뜨고, 닫으면 새로
 })
 
 test('저장한 보기 설정이 없으면 columns 로, 사이드바를 연 채 뜬다', async ({ launch, dataDir }) => {
-  rmSync(join(dataDir, 'window-state.json'))
+  rmSync(stateFile(dataDir))
   const { page } = await launch()
   await expect(page.locator('.terminals')).toHaveClass(/columns/)
   await expect(page.locator('.sidebar')).not.toHaveClass(/collapsed/)
@@ -230,10 +233,7 @@ test('기억한 사이드바 상태로 첫 화면부터 그려, 문서가 뜰 �
   launch,
   dataDir
 }) => {
-  writeFileSync(
-    join(dataDir, 'window-state.json'),
-    JSON.stringify({ viewMode: 'single', sidebar: { open: false, width: 282 } })
-  )
+  writeView(dataDir, { viewMode: 'single', sidebar: { open: false, width: 282 } })
   const { app, page } = await launch()
   await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
   // 첫 문서는 `addInitScript` 를 달기 전에 뜨므로, 스크립트를 단 뒤 문서를 새로 고쳐 잰다.
@@ -252,18 +252,43 @@ test('기억한 사이드바 상태로 첫 화면부터 그려, 문서가 뜰 �
   expect(await page.evaluate(() => (window as unknown as { runs: string[] }).runs)).toEqual([])
 })
 
-test('예전 버전이 쓴 위치·크기만 있는 파일이면 그 위치·크기와 columns 로 뜬다', async ({
+test('앞 빌드의 window-state.json·restart.json 은 읽지 않고 지운다', async ({
+  launch,
+  dataDir
+}) => {
+  rmSync(stateFile(dataDir))
+  const old = join(dataDir, 'window-state.json')
+  const restart = join(dataDir, 'restart.json')
+  writeFileSync(
+    old,
+    JSON.stringify({
+      x: 40,
+      y: 30,
+      width: 640,
+      height: 420,
+      isMaximized: false,
+      isFullScreen: false
+    })
+  )
+  writeFileSync(restart, JSON.stringify({ screen: {}, jobs: null }))
+  const { app } = await launch()
+  const { width, height } = await win(app, 'getBounds')
+  expect({ width, height }).toEqual({ width: 1000, height: 700 })
+  expect(existsSync(old)).toBe(false)
+  expect(existsSync(restart)).toBe(false)
+})
+
+test('창을 옮긴 뒤 앱이 강제로 끝나도 다음 실행은 옮긴 자리로 뜬다', async ({
   launch,
   dataDir
 }) => {
   const first = await launch()
   const placed = await placeWindow(first.app)
-  await closeWindow(first.app)
-  const file = join(dataDir, 'window-state.json')
-  const { x, y, width, height, isMaximized, isFullScreen } = JSON.parse(readFileSync(file, 'utf8'))
-  writeFileSync(file, JSON.stringify({ x, y, width, height, isMaximized, isFullScreen }))
+  await expect.poll(() => readState(dataDir)?.view?.window).toMatchObject(placed)
+  const closed = new Promise<void>((resolve) => first.app.once('close', () => resolve()))
+  first.app.process().kill('SIGKILL')
+  await closed
 
   const second = await launch()
   expect(await win(second.app, 'getBounds')).toEqual(placed)
-  await expect(second.page.locator('.terminals')).toHaveClass(/columns/)
 })

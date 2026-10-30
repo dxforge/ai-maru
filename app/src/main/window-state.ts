@@ -1,7 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
 import type { BrowserWindow, Rectangle } from 'electron'
-import { parseViewPrefs, type ViewPrefs } from '../shared/screen'
-import { parseWindowTheme, type WindowTheme } from '../shared/theme'
 
 export type WindowState = Rectangle & { isMaximized: boolean; isFullScreen: boolean }
 
@@ -21,16 +18,8 @@ const CHANGES = [
   'leave-full-screen'
 ] as const
 
-function readJson(file: string): unknown {
-  try {
-    return JSON.parse(readFileSync(file, 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-export function readWindowState(file: string): WindowState | null {
-  const s = readJson(file) as Partial<WindowState> | null
+export function parseWindowState(v: unknown): WindowState | null {
+  const s = v as Partial<WindowState> | null
   const valid =
     typeof s === 'object' &&
     s !== null &&
@@ -42,16 +31,9 @@ export function readWindowState(file: string): WindowState | null {
     s.height! > 0 &&
     typeof s.isMaximized === 'boolean' &&
     typeof s.isFullScreen === 'boolean'
-  return valid ? (s as WindowState) : null
-}
-
-/** `theme` 은 닫을 때 적용돼 있던 테마다. 다음 실행의 첫 창이 renderer 가 그리기 전부터 그 배경색으로 뜨게 한다. */
-export type WindowExtras = ViewPrefs & { theme?: WindowTheme }
-
-export function readWindowExtras(file: string): WindowExtras {
-  const s = readJson(file)
-  const theme = parseWindowTheme((s as { theme?: unknown } | null)?.theme)
-  return { ...parseViewPrefs(s), ...(theme && { theme }) }
+  if (!valid) return null
+  const { x, y, width, height, isMaximized, isFullScreen } = s as WindowState
+  return { x, y, width, height, isMaximized, isFullScreen }
 }
 
 function contains(outer: Rectangle, inner: Rectangle): boolean {
@@ -85,29 +67,24 @@ function currentState(win: StatefulWindow): WindowState {
 }
 
 /**
- * 최소화·전체 화면 중에는 `isMaximized()` 가 false 이므로, 그 상태로 닫으면 들어가기 전에
- * 마지막으로 기록한 상태를 저장한다. 최소화 중에는 `getNormalBounds()` 도 최대화된 크기를 준다.
+ * 최소화·전체 화면 중에는 `isMaximized()` 가 false 이므로, 그 상태면 들어가기 전에 마지막으로 기록한 상태를 준다.
+ * 최소화 중에는 `getNormalBounds()` 도 최대화된 크기를 준다.
  */
-export function saveWindowStateOnClose(
+export function trackWindowState(
   win: TrackedWindow,
-  file: string,
-  extras: () => WindowExtras
-): void {
+  changed: (state: WindowState) => void
+): () => WindowState {
   let last = currentState(win)
-  const update = (): void => {
-    if (!win.isMinimized() && !win.isFullScreen()) last = currentState(win)
-  }
-  for (const event of CHANGES) win.on(event as 'resize', update)
-  const closing = (): WindowState => {
+  const saved = (): WindowState => {
     if (win.isMinimized()) return last
     if (win.isFullScreen()) return { ...last, isFullScreen: true }
     return currentState(win)
   }
-  win.on('close', () => {
-    try {
-      writeFileSync(file, JSON.stringify({ ...closing(), ...extras() }))
-    } catch (err) {
-      console.error(`maru: cannot save the window state to ${file}:`, err)
-    }
-  })
+  for (const event of CHANGES)
+    win.on(event as 'resize', () => {
+      if (win.isMinimized() || win.isFullScreen()) return changed(saved())
+      last = currentState(win)
+      changed(last)
+    })
+  return saved
 }

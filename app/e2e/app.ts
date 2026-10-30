@@ -28,7 +28,7 @@ import { gitEnv } from '../src/main/test-repo-env'
 import type { CanvasMarkdown } from '../src/shared/canvas'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import type { PtyOpen } from '../src/shared/pty'
-import { clampCanvasWidth, clampSidebarWidth } from '../src/shared/screen'
+import { clampCanvasWidth, clampSidebarWidth, STATE_VERSIONS } from '../src/shared/screen'
 import { GHOSTTY } from '../src/shared/theme'
 
 export { expect }
@@ -71,7 +71,7 @@ export const test = base.extend<Fixtures>({
   dataDir: async ({}, use) => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-e2e-'))
     // 대부분의 테스트가 single 에서 시작한다고 가정하므로, 새 dataDir 에 보기 모드를 single 로 써 둔다. 기본값(columns)을 재는 테스트는 이 파일을 지운다.
-    writeFileSync(join(dir, 'window-state.json'), JSON.stringify({ viewMode: 'single' }))
+    writeView(dir, { viewMode: 'single' })
     await use(dir)
     // 앱을 강제로 끝낸 테스트는 pty 를 남긴다.
     await killPtys(ptyDir(dir))
@@ -86,8 +86,8 @@ export const test = base.extend<Fixtures>({
       return launched
     })
     for (const app of apps) {
-      // 프로그램이나 job 이 남은 채 끝난 테스트에서는 앱이 끝나기 전에 확인 창을 띄운다. 확인 창에 막히지 않게 Quit 로 답하게 한다.
-      await stubDialog(app, 0).catch(() => {})
+      // 테스트가 다른 답으로 바꿔 두었을 수 있어, pty 를 끄는 End everything 으로 다시 답하게 한다.
+      await stubDialog(app, END_EVERYTHING).catch(() => {})
       await app.close().catch(() => {})
     }
   },
@@ -135,10 +135,37 @@ async function launchApp(
   await app.evaluate(() => {
     process.once('exit', () => process.kill(process.pid, 'SIGKILL'))
   })
+  // 끄기는 늘 묻는다. 묻는 것을 재지 않는 테스트가 확인 창에 막히지 않게, pty 를 끄고 아무것도 남기지 않는 End everything 으로 답한다.
+  await stubDialog(app, END_EVERYTHING)
   const page = await app.firstWindow()
   // single 보기에서는 고르지 않은 cell 이 숨으므로, 맨 앞 cell 이 아니라 고른 cell 의 터미널을 기다린다.
   await activeTerminal(page)
   return { app, page }
+}
+
+/** 끄기 확인 창의 버튼 순서(`quitDialog`). */
+export const KEEP_TERMINALS = 0
+export const KEEP_LAYOUT = 1
+export const END_EVERYTHING = 2
+
+export function stateFile(dataDir: string): string {
+  return join(dataDir, 'state.json')
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 저장한 모양을 그대로 읽어 본다.
+export function readState(dataDir: string): any {
+  return JSON.parse(readFileSync(stateFile(dataDir), 'utf8'))
+}
+
+export function writeView(dataDir: string, view: object): void {
+  writeFileSync(
+    stateFile(dataDir),
+    JSON.stringify({
+      layout: null,
+      sessions: null,
+      view: { version: STATE_VERSIONS.view, ...view }
+    })
+  )
 }
 
 export async function stubDialog(app: ElectronApplication, response: number): Promise<void> {

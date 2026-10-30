@@ -36,7 +36,7 @@ renderer 는 화면을 되살린 다음 tick 에 `pane:ready` 를 보낸다(`App
 
 셸 cwd(OSC 7)·제목(OSC 0/2)·foreground cwd·OSC 7501 레코드는 maru-pty 가 해석해 하나의 상태로 든다. main 은 pty 마다 maru-pty 에 `subscribe` 연결을 직접 열어 마지막 상태를 든다(`app/src/main/pty-state.ts`). 이 연결로는 화면 바이트가 오지 않는다. attach 스트림은 renderer 가 붙어 있을 때만 있으므로, 상태를 attach 스트림에서 읽으면 main 은 renderer 가 붙은 동안에만 상태를 갖는다.
 
-구독을 여는 때는 셋이다. pane 의 pty 는 pty host 가 띄운 pty 에 붙은 뒤 main 에 `live` 를 보낼 때, job 의 pty 는 main 이 띄운 뒤, 재시작으로 남긴 pty 는 남은 pty 정리가 끝난 뒤다.
+구독을 여는 때는 셋이다. pane 의 pty 는 pty host 가 띄운 pty 에 붙은 뒤 main 에 `live` 를 보낼 때, job 의 pty 는 main 이 띄운 뒤, 뜰 때 되살린 pty 는 남은 pty 정리가 끝난 뒤다.
 
 renderer 는 상태를 main 에서만 받는다. 문서를 로드하면 `pty:states` 로 전체를 묻고, 그 뒤로 main 이 `pty:state` 로 보낸다(`app/src/renderer/src/pty/states.ts`). 화면에 보일 cwd 는 `app/src/renderer/src/workspace/display.ts` 가, pane 이름은 `app/src/shared/pane-name.ts` 가 고른다. xterm.js 는 화면만 그리고 OSC 7·제목을 읽지 않는다.
 
@@ -50,7 +50,7 @@ OSC 7501 레코드는 pane 마다 여럿일 수 있다(루트와 하위). 사이
 
 프로그램이 OSC 9·OSC 777 로 보낸 알림도 같은 `subscribe` 연결로 온다. 상태와 달리 한 번 일어난 일이라 maru-pty 는 알림을 들지 않고 받을 때마다 구독자에게 보낸다. main 은 pty 마다 읽지 않은 마지막 알림 하나를 상태와 함께 든다(`pty:state` 의 `notification`). 새 알림은 이전 것을 대신한다. 사용자가 그 pane 을 위의 done 과 같은 기준으로 보고 떠나면(`pane:seen`) 지운다. maru-pty 가 알림을 들지 않으므로 앱을 끄면 읽지 않은 알림은 사라진다. 데스크톱 알림은 main 이 한 번만 띄운다(`app/src/main/desktop-notification.ts`). 같은 pty 에 붙은 창이나 클라이언트가 여럿이어도 겹치지 않게 하기 위해서다. 앱의 창이 포커스되어 있으면 사이드바와 pane 헤더에 보이므로 띄우지 않는다. 알림을 누르면 main 이 창을 앞으로 가져오고 `pane:select` 로 renderer 에 그 pane 을 고르게 한다.
 
-`subscribe` 를 더하며 maru-pty 의 프로토콜 버전을 올리지 않았다. 올리면 앱을 다시 깔 때 남은 pty 가 모두 끝나기 때문이다. 그래서 `subscribe` 를 모르는 이전 maru-pty 의 pty 가 남을 수 있다. main 은 그 pty 를 `old` 로 renderer 에 알리고, renderer 는 그 pty 에 한해 attach 스트림의 `program_status` 를 레코드로 쓴다. 그 pty 의 cwd 는 되살린 값으로 보이고 제목은 비운다. main 은 그 pty 의 레코드를 모르므로 `maru pane list` 는 그 pty 의 STATE·APP·MESSAGE 를 비우고, 이름도 레코드가 없는 pane 처럼 짓는다. 이 경로는 이전 maru-pty 의 pty 가 모두 끝나면 지운다.
+버전 1 의 maru-pty 가운데는 `subscribe` 를 모르는 것이 있어서, main 은 그 pty 를 `old` 로 renderer 에 알리고 renderer 는 그 pty 에 한해 attach 스트림의 `program_status` 를 레코드로 쓴다. 버전 2 의 앱은 버전이 다른 pty 에 붙지 않고 버전 1 의 maru-pty 는 `subscribe` 를 `protocol_mismatch` 로 거절하므로, 이 경로에는 닿지 않는다. maru-pty 의 버전을 올리는 기준은 `PROTOCOL_VERSION` 의 doc 주석에 있다.
 
 ## 시간 초과한 pane 요청은 창이 취소한다
 
@@ -62,11 +62,15 @@ OSC 7501 레코드는 pane 마다 여럿일 수 있다(루트와 하위). 사이
 
 cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을 지울 때 cell 도 지우므로, kill 로 그 cell 의 마지막 pty 가 빠지면 main 은 cell 이 닫힌 것으로 보고 그 cell 의 job 을 끈다(`sendKill`, `app/src/main/index.ts`). 문서가 바뀔 때 이전 문서의 pty 를 끄는 경로도 같은 `sendKill` 을 부른다. 그래서 창을 새로 고치면 그 창 cell 의 job 도 꺼진다. pane 이 없는 cell 을 남기는 경로가 생기면 이 판단이 틀어진다.
 
-## 재시작은 pty 를 남긴다
+## 끄기·뜨기·재시작
 
-종료는 pty 를 모두 끄고, 재시작은 끄지 않는다. renderer 는 화면(workspace·cell·pane 배치와 사이드바·보기 모드, `app/src/shared/screen.ts`)이 바뀔 때마다 main 에 보낸다. 재시작하면 main 이 마지막으로 받은 화면과 main 이 가진 job 표를 userData 의 `restart.json` 에 쓴 뒤 다시 뜬다(`app/src/main/restart.ts`). renderer 에게 그때 묻지 않으므로 renderer 가 멈춰 있어도 재시작한다.
+앱이 끝나는 경우는 재시작, 사용자의 끄기, 비정상 종료 셋이다. main 은 어느 경우로 끝나도 다음에 뜬 앱이 읽도록 상태를 userData 의 `state.json` 에 바뀔 때마다 쓴다(`app/src/main/state.ts`). renderer 는 화면(workspace·cell·pane 배치와 사이드바·보기 모드, `app/src/shared/screen.ts`)이 바뀔 때마다 main 에 보내고, main 은 그 화면과 job 표, 창 위치·크기, 테마를 `layout`·`sessions`·`view` 세 부분으로 나눠 쓴다. 부분마다 형식 버전이 있고 따로 읽는다. 잃었을 때의 결과가 다르기 때문이다. `layout` 을 잃으면 빈 화면, `sessions`(pane 마다의 pty 와 job 표)를 잃으면 레이아웃만 남는다. `view` 는 버전이 다르면 통째로, 같으면 틀린 필드만 잃는다.
 
-다시 뜬 앱의 남은 pty 정리는 이 파일에 있는 pty 만 남기고, 그 가운데 프로토콜 버전이 다른 pty 는 끈다. 되살린 pane 은 `pty:open` 의 `attach` 로 pty 를 띄우지 않고 붙는다.
+뜰 때는 묻지 않고 하나를 고른다. `layout` 을 읽지 못하면 빈 화면이다. `layout` 은 읽었는데 `sessions` 가 없거나 읽지 못했거나, `sessions` 의 살아 있는 pty 가운데 프로토콜 버전이 다른 것이 하나라도 있으면 레이아웃만 되살린다. 레이아웃만 되살리면 남은 pty 를 모두 끄고, pane 마다 저장한 cwd 에서 새 셸을 띄운다. 명령은 다시 돌리지 않는다. 둘 다 되면 전체 복원이다. `sessions` 의 pty 만 남기고, 되살린 pane 은 `pty:open` 의 `attach` 로 pty 를 띄우지 않고 붙는다. 붙을 pty 가 이미 끝났으면 pty host 가 `gone` 을 보낸 뒤 같은 pty id 로 저장한 cwd 에서 새 셸을 띄우고, pane 은 그 이유를 터미널에 쓴다. `layout`·`sessions` 가 있는데 읽지 못했거나 pty 프로토콜 버전이 달라 버렸으면 toast 로 알린다. 비어 있으면(끄기·재시작에서 고른 결과, OS 종료·시그널) 알리지 않는다.
+
+⌘Q·메뉴의 Quit·창 닫기는 pane 이 하나라도 있으면 늘 묻는다: Keep terminals / Keep layout only / End everything / Cancel. Keep terminals 는 pty 를 끄지 않는다. Keep layout only 는 `sessions` 를, End everything 은 `layout`·`sessions` 를 비워 쓰고 pty 를 끈다. 고른 결과를 쓴 뒤의 변경은 쓰지 않는다 — pty 가 끝나며 renderer 가 pane 을 닫아도 고른 결과가 남는다. OS 종료(`powerMonitor` 의 `shutdown`)와 SIGTERM·SIGINT·SIGHUP 은 묻지 않고 Keep layout only 로 끝낸다. pty 는 OS 와 함께 끝나거나 이 앱이 끈다.
+
+재시작은 pty 를 남긴다. 재시작 전에 설치된 번들의 `maru-pty --protocol-version` 과 `state-versions.json`(세 부분의 형식 버전)을 지금 앱의 것과 견주어(`app/src/main/restart.ts`) 다시 뜬 앱이 전체 복원을 할 수 있으면 묻지 않는다. 할 수 없으면 레이아웃만 되살려 재시작할지(pty 프로토콜·`sessions` 형식이 다를 때), 빈 화면으로 재시작할지(`layout` 형식이 다를 때) 묻는다. 고르면 그 결과를 쓰고 pty 를 끈 뒤 다시 뜬다. 재시작은 renderer 에게 묻지 않으므로 renderer 가 멈춰 있어도 재시작한다.
 
 ## MCP 도구는 `maru mcp` 가 앱에 중계한다
 
@@ -78,7 +82,7 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 ## 닫기 전 확인 창은 main 이 띄운다
 
-⌘W(pane)·⇧⌘W(workspace)·창 닫기·⌘Q 는 셸 말고 도는 프로그램이나 끝나지 않은 job 이 있으면 확인 창을 띄운다(`app/src/main/close-confirm.ts`). 실행 중인지는 maru-pty 의 `foreground` 응답과 main 의 job 표로 가리므로, ⌘W·⇧⌘W 도 renderer 가 아니라 main 이 묻고 renderer 는 답을 받은 뒤에 닫는다. 어느 경로든 main 은 renderer 가 마지막으로 보낸 화면(`lastScreen`)에서 pane 과 cell 을 찾는다. `maru pane close` 는 프로그램이 돌아도 묻지 않는다 — CLI 의 답 상한 안에 사용자의 답을 기다릴 수 없기 때문이다.
+⌘W(pane)·⇧⌘W(workspace)는 셸 말고 도는 프로그램이나 끝나지 않은 job 이 있으면 확인 창을 띄운다(`app/src/main/close-confirm.ts`). 창 닫기·⌘Q 는 pane 이 하나라도 있으면 늘 묻고("끄기·뜨기·재시작"), 그 창에 도는 프로그램과 job 의 수를 적는다. 실행 중인지는 maru-pty 의 `foreground` 응답과 main 의 job 표로 가리므로, ⌘W·⇧⌘W 도 renderer 가 아니라 main 이 묻고 renderer 는 답을 받은 뒤에 닫는다. 어느 경로든 main 은 renderer 가 마지막으로 보낸 화면(`lastScreen`)에서 pane 과 cell 을 찾는다. `maru pane close` 는 프로그램이 돌아도 묻지 않는다 — CLI 의 답 상한 안에 사용자의 답을 기다릴 수 없기 때문이다.
 
 ## pane 경계와 글자 칸 격자
 

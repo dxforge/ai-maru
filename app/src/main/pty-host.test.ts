@@ -36,13 +36,19 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
 
 const dir = '/tmp/s'
 
-function open(id: string, attach = false, keep?: boolean): ReturnType<typeof fakePort> {
+function open(
+  id: string,
+  attach = false,
+  keep?: boolean,
+  extra: Partial<OpenRequest> = {}
+): ReturnType<typeof fakePort> {
   const port = fakePort()
   const req: OpenRequest = {
     type: 'open',
     id,
     attach,
     keep,
+    ...extra,
     dir,
     bin: 'maru-pty',
     setup: {} as never
@@ -102,6 +108,36 @@ describe('pty host', () => {
     await vi.waitFor(() => expect(port.messages).toContain(null))
     expect(port.messages).toContainEqual({ type: 'exit', code: null, signal: null })
     expect(pty.killPty).toHaveBeenCalledWith(dir, 'p-00000001')
+  })
+
+  it('붙을 pty 가 없으면 gone 을 알리고, 같은 id 로 cwd 에서 명령 없이 셸을 띄워 이어 준다', async () => {
+    pty.connect.mockRejectedValueOnce(new Error('refused')).mockResolvedValueOnce({})
+    pty.spawnPty.mockResolvedValue('live')
+    const port = open('p-00000001', true, true, { cwd: '/w', command: ['claude'] })
+    await vi.waitFor(() =>
+      expect(port.messages).toContainEqual({ type: 'spawned', id: 'p-00000001', cwd: '/w' })
+    )
+    expect(port.messages[0]).toEqual({ type: 'gone' })
+    expect(port.messages).not.toContain(null)
+    expect(pty.spawnPty).toHaveBeenCalledWith('maru-pty', dir, {}, 'p-00000001', '/w', undefined, {
+      keep: undefined
+    })
+    expect(toMain).toEqual([{ type: 'live', id: 'p-00000001' }])
+  })
+
+  it('붙는 중에 온 kill 은 gone 뒤 띄운 셸이 뜬 뒤에 끈다', async () => {
+    let refuse!: (err: Error) => void
+    pty.connect
+      .mockReturnValueOnce(new Promise((_, reject) => (refuse = reject)))
+      .mockReturnValue(new Promise(() => {}))
+    pty.spawnPty.mockResolvedValue('live')
+    open('p-00000001', true, undefined, { cwd: '/w' })
+    kill('p-00000001')
+    await new Promise((r) => setTimeout(r, 20))
+    expect(pty.killPty).not.toHaveBeenCalled()
+    refuse(new Error('refused'))
+    await vi.waitFor(() => expect(pty.spawnPty).toHaveBeenCalled())
+    await vi.waitFor(() => expect(pty.killPty).toHaveBeenCalledWith(dir, 'p-00000001'))
   })
 
   it('keep 으로 연 pty 만 --keep 으로 띄운다', async () => {

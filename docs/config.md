@@ -48,7 +48,7 @@ Claude Code 의 입력창은 터미널 아래에 있어 시선이 아래에 머�
 
 columns 보기에서 cell 은 pane 하나가 이 열 수를 받는 폭으로 그려진다. 좌우로 나눈 cell 은 pane 수만큼 넓어진다. 터미널 열 수라서 글꼴 크기를 바꾸면 픽셀 폭도 바뀐다.
 
-Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-step` 만큼 넓히거나 좁힌다. 두 명령으로 폭을 바꾼 cell 은 `column-cols` 가 바뀌어도 그 폭을 지킨다. 바꾸지 않은 cell 은 저장하면 바로 새 폭이 된다. 두 명령으로 `column-cols` 와 같은 폭에 돌아온 cell 은 다시 `column-cols` 를 따른다. 바꾼 폭은 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다.
+Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-step` 만큼 넓히거나 좁힌다. 두 명령으로 폭을 바꾼 cell 은 `column-cols` 가 바뀌어도 그 폭을 지킨다. 바꾸지 않은 cell 은 저장하면 바로 새 폭이 된다. 두 명령으로 `column-cols` 와 같은 폭에 돌아온 cell 은 다시 `column-cols` 를 따른다. 바꾼 폭은 `config.toml` 에 쓰지 않고, 다음 실행이 레이아웃을 되살릴 때 남는다(앱을 끌 때 End everything 을 고르지 않았을 때).
 
 ### `column-step`
 
@@ -108,7 +108,7 @@ theme = { light = "Catppuccin Latte", dark = "Catppuccin Mocha" }
 
 ## 단축키로 글꼴 크기 바꾸기
 
-⌘+ / ⌘- 는 선택한 cell 의 모든 터미널 글꼴 크기를 1px 씩 바꾸고, ⌘0 은 `font-size` 로 되돌린다. ⌘= 도 글꼴을 키운다. ⌘+ 의 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 은 ⌘- / ⌘0 과 같이 동작한다. 범위는 `font-size` 와 같은 8–32 다. 바꾼 크기는 `config.toml` 에 쓰지 않고, 앱 안의 Restart 로 다시 띄울 때만 남는다. 새로 연 cell 은 `font-size` 로 시작한다.
+⌘+ / ⌘- 는 선택한 cell 의 모든 터미널 글꼴 크기를 1px 씩 바꾸고, ⌘0 은 `font-size` 로 되돌린다. ⌘= 도 글꼴을 키운다. ⌘+ 의 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 은 ⌘- / ⌘0 과 같이 동작한다. 범위는 `font-size` 와 같은 8–32 다. 바꾼 크기는 `config.toml` 에 쓰지 않고, 다음 실행이 레이아웃을 되살릴 때 남는다(앱을 끌 때 End everything 을 고르지 않았을 때). 새로 연 cell 은 `font-size` 로 시작한다.
 
 ## 문제가 있으면
 

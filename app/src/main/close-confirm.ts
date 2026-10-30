@@ -87,15 +87,35 @@ export function stopJobDialog(name: string): Dialog {
 
 export type Running = { panes: number; jobs: number }
 
-export function runningDialog(
-  { panes, jobs }: Running,
-  message: string,
-  action: string
-): Dialog | null {
-  if (!panes && !jobs) return null
-  const parts = [
-    panes && `${panes} ${panes === 1 ? 'pane is' : 'panes are'} running a program`,
+/** `paneNoun` 이 false 면 앞 문장이 pane 을 이미 세었으므로 "1 is running" 처럼 쓴다. */
+function runningParts({ panes, jobs }: Running, paneNoun = true): string[] {
+  const verb = panes === 1 ? 'is' : 'are'
+  const subject = paneNoun ? `${panes === 1 ? 'pane' : 'panes'} ${verb}` : verb
+  return [
+    panes && `${panes} ${subject} running a program`,
     jobs && `${jobs} ${jobs === 1 ? 'job is' : 'jobs are'} running`
-  ].filter(Boolean)
+  ].filter((p): p is string => Boolean(p))
+}
+
+export function runningDialog(running: Running, message: string, action: string): Dialog | null {
+  if (!running.panes && !running.jobs) return null
+  const parts = runningParts(running)
   return { message, detail: `${parts.join(' and ')}.`, buttons: [action, 'Cancel'] }
+}
+
+export const QUIT_OUTCOMES = ['keep', 'layout', 'end'] as const
+
+/** 버튼 순서는 `QUIT_OUTCOMES` 와 같고 마지막이 Cancel 이다. */
+export function quitDialog({ open, panes, jobs }: Running & { open: number }): Dialog {
+  const running = runningParts({ panes, jobs }, false)
+  const count = `${open} ${open === 1 ? 'pane is' : 'panes are'} open`
+  return {
+    message: 'Quit AI Maru?',
+    detail:
+      `${running.length ? `${count}; ${running.join(' and ')}` : count}.\n\n` +
+      'Choose Keep terminals to leave the terminals running for the next launch. Choose Keep ' +
+      'layout only to end the terminals and reopen the panes with new shells next time. Choose ' +
+      'End everything to end the terminals and start with an empty screen next time.',
+    buttons: ['Keep terminals', 'Keep layout only', 'End everything', 'Cancel']
+  }
 }

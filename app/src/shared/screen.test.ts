@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  parseLayoutPart,
   parseScreen,
   parseViewPrefs,
   screenPanes,
-  SCREEN_VERSION,
+  splitScreen,
+  STATE_VERSIONS,
   type ScreenState
 } from './screen'
 
 const screen: ScreenState = {
-  version: SCREEN_VERSION,
   workspaces: [
     {
       key: 1,
@@ -48,9 +49,6 @@ describe('parseScreen', () => {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 모양을 일부러 깨뜨린다.
   it.each<[string, (s: Record<string, any>) => void]>([
-    ['버전이 다름', (s) => (s.version = SCREEN_VERSION + 1)],
-    ['이전 빌드의 버전 1', (s) => (s.version = 1)],
-    ['pane 에 sessionId 를 쓰던 이전 빌드의 버전 2', (s) => (s.version = 2)],
     ['pty id 모양이 아님', (s) => (s.workspaces[0].cells[0].panes[0].ptyId = '../x')],
     ['pane 이 없는 cell', (s) => (s.workspaces[0].cells[0].panes = [])],
     ['cell 이 없는 workspace', (s) => (s.workspaces[0].cells = [])],
@@ -128,6 +126,27 @@ describe('parseScreen', () => {
   })
 })
 
+describe('splitScreen · parseLayoutPart', () => {
+  it('pty 를 뺀 레이아웃과 pane 마다의 pty 로 나누고, 나눈 레이아웃은 그대로 읽힌다', () => {
+    const { layout, ptys } = splitScreen(screen)
+    expect(ptys).toEqual([
+      { pane: 0, pty: 'p-0000000a' },
+      { pane: 2, pty: 'p-0000000b' }
+    ])
+    expect(JSON.stringify(layout)).not.toContain('ptyId')
+    expect(layout.version).toBe(STATE_VERSIONS.layout)
+    expect(parseLayoutPart(JSON.parse(JSON.stringify(layout)))).toEqual(layout)
+  })
+
+  it('버전이 다르거나 모양이 틀리면 null', () => {
+    const { layout } = splitScreen(screen)
+    expect(parseLayoutPart({ ...layout, version: STATE_VERSIONS.layout + 1 })).toBeNull()
+    expect(parseLayoutPart({ ...layout, selected: 'x' })).toBeNull()
+    expect(parseLayoutPart({ ...layout, workspaces: [{ key: 1, id: 'w', cells: [] }] })).toBeNull()
+    expect(parseLayoutPart(null)).toBeNull()
+  })
+})
+
 describe('screenPanes', () => {
   it('모든 pane 과 cell id 를 주고, workspace 를 주면 그 workspace 의 것만 준다', () => {
     const two = clone() as unknown as ScreenState
@@ -191,6 +210,8 @@ describe('parseViewPrefs', () => {
 
   it('객체가 아니면 빈 설정', () => {
     expect(parseViewPrefs(null)).toEqual({})
+    expect(parseViewPrefs({ folded: [1, 3] })).toEqual({ folded: [1, 3] })
+    expect(parseViewPrefs({ folded: [1, 'x'] })).toEqual({})
     expect(parseViewPrefs([])).toEqual({})
     expect(parseViewPrefs('columns')).toEqual({})
   })

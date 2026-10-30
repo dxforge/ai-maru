@@ -1,8 +1,7 @@
-import { readFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { rmSync } from 'node:fs'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { GHOSTTY } from '../src/shared/theme'
-import { closeWindow, configFile, expect, test, toast, writeConfig } from './app'
+import { closeWindow, configFile, expect, readState, test, toast, writeConfig } from './app'
 
 const MOCHA = '#1e1e2e'
 const LATTE = '#eff1f5'
@@ -128,8 +127,7 @@ test('닫을 때 적용돼 있던 테마를 적어 두어, 다음 실행의 창�
   writeConfig(dataDir, '[terminal]\ntheme = "Catppuccin Latte"\n')
   const first = await launch()
   await closeWindow(first.app)
-  const state = JSON.parse(readFileSync(join(dataDir, 'window-state.json'), 'utf8'))
-  expect(state.theme).toEqual({ background: LATTE, mode: 'light' })
+  expect(readState(dataDir).view.theme).toEqual({ background: LATTE, mode: 'light' })
 
   rmSync(configFile(dataDir))
   const second = await launch()

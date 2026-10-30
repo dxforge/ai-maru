@@ -1,23 +1,23 @@
+import versions from '../../resources/state-versions.json'
 import type { GitHead } from './git'
 import type { Layout } from './layout'
 import { isPtyId } from './pty'
 
 /**
- * 재시작 전 앱이 쓰고 다시 뜬 앱이 읽으므로 두 앱의 빌드가 다를 수 있다. 다시 뜬 앱이 옛 모양을 읽지 못하게
- * 바꾸면 버전을 올린다 — 다시 뜬 앱은 모르는 버전을 되살리지 않는다. 없어도 되는 필드를 더할 때는 올리지 않는다.
- * 그 필드는 해당 parse 함수에서도 옮긴다. `parseScreen` 은 아는 필드만 옮기고, 선택 필드는 빠뜨려도 타입 검사를
- * 통과하기 때문이다.
+ * `state.json` 의 부분마다의 형식 버전이다. 번들의 `state-versions.json` 에서 읽어, 재시작 전 앱이 설치된 빌드의 같은 파일과
+ * 견줄 수 있게 한다(`main/restart.ts`). 다음에 뜰 앱이 옛 모양을 읽지 못하게 바꾸면 그 부분의 버전을 올린다 — 다음에 뜬
+ * 앱은 모르는 버전의 부분을 버린다. 없어도 되는 필드를 더할 때는 올리지 않는다. 그 필드는 해당 parse 함수에서도 옮긴다.
+ * parse 함수는 아는 필드만 옮기고, 선택 필드는 빠뜨려도 타입 검사를 통과하기 때문이다.
  */
-export const SCREEN_VERSION = 3
+export const STATE_VERSIONS: { layout: number; sessions: number; view: number } = versions
 
 /**
  * `cwd`·`title`·`git` 은 저장할 때 화면에 보이던 값이다. main 은 `maru pane list` 의 이름을 이 값으로 짓고, 다시 뜬
  * 앱은 pty 의 상태가 오기 전까지 이 값을 보인다. `keep` 은 런처로 띄운 pane 에 붙는다. 앱은 그 pane 의 pty 를
  * `--keep` 으로 띄우고, 명령이 실패하면(`failedExit`) pane 을 남긴다.
  */
-export type ScreenPane = {
+export type LayoutPane = {
   key: number
-  ptyId: string
   startDir?: string
   command?: string[]
   keep?: true
@@ -26,10 +26,12 @@ export type ScreenPane = {
   git?: GitHead
 }
 
-export type ScreenCell = {
+export type ScreenPane = LayoutPane & { ptyId: string }
+
+type CellOf<P> = {
   key: number
   id: string
-  panes: ScreenPane[]
+  panes: P[]
   layout: Layout
   focused: number
   fontSize?: number
@@ -37,14 +39,14 @@ export type ScreenCell = {
   paneCols?: number
 }
 
-export type ScreenWorkspace = {
-  key: number
-  id: string
-  cells: ScreenCell[]
-}
+type WorkspaceOf<P> = { key: number; id: string; cells: CellOf<P>[] }
 
+export type ScreenCell = CellOf<ScreenPane>
+export type ScreenWorkspace = WorkspaceOf<ScreenPane>
+type LayoutWorkspace = WorkspaceOf<LayoutPane>
+
+/** renderer 가 화면이 바뀔 때마다 main 에 보내는 화면이다. main 은 이것을 `state.json` 의 세 부분으로 나눠 쓴다. */
 export type ScreenState = {
-  version: typeof SCREEN_VERSION
   workspaces: ScreenWorkspace[]
   /** 선택한 cell 의 key 다. */
   selected: number | null
@@ -54,16 +56,34 @@ export type ScreenState = {
   canvas?: { width: number }
 }
 
+/** `state.json` 의 `layout`. pane 이 어느 pty 에 붙는지는 `sessions` 에 있다. */
+export type LayoutPart = {
+  version: number
+  workspaces: LayoutWorkspace[]
+  selected: number | null
+}
+
+/**
+ * 뜰 때 main 이 renderer 에 주는 복원할 것이다. `ptys` 는 pane key 마다 붙을 pty 이고, null 이면 모든 pane 이 새 셸을
+ * 띄운다. `notice` 는 사용자가 고르지 않았는데 세션이나 레이아웃을 잃은 이유다.
+ */
+export type Restore = {
+  layout: LayoutPart | null
+  ptys: Record<number, string> | null
+  notice: 'layout' | 'sessions' | 'protocol' | null
+}
+
 const SIDEBAR_WIDTH = { min: 200, max: 480 }
 const CANVAS_MIN_WIDTH = 240
 
 /**
- * 재시작이 아닌 실행에서도 되살리는 화면 설정이다. 사이드바의 접힌 workspace 목록(`folded`)은 넣지
- * 않는다. 일반 실행은 workspace 를 되살리지 않아 `folded` 의 key 가 가리킬 것이 없기 때문이다.
+ * 첫 화면을 그리기 전에 renderer 가 받는 보기 설정이다. `folded` 는 접힌 workspace 의 key 다. 레이아웃을 되살리지
+ * 않으면 가리킬 workspace 가 없어 renderer 가 쓰지 않는다.
  */
 export type ViewPrefs = {
   viewMode?: ScreenState['viewMode']
   sidebar?: { open: boolean; width: number }
+  folded?: number[]
   canvas?: ScreenState['canvas']
 }
 
@@ -107,11 +127,10 @@ function parseGit(v: unknown): GitHead | null {
   return compact({ repo: v.repo, branch: v.branch, common: v.common, sub: v.sub })
 }
 
-function parsePane(v: unknown): ScreenPane | null {
+function parseLayoutPane(v: unknown): LayoutPane | null {
   if (
     !isObj(v) ||
     !isKey(v.key) ||
-    !isPtyId(v.ptyId) ||
     !optString(v.startDir) ||
     !optString(v.cwd) ||
     !optString(v.title)
@@ -129,7 +148,6 @@ function parsePane(v: unknown): ScreenPane | null {
   const keep = v.keep === true || undefined
   return compact({
     key: v.key,
-    ptyId: v.ptyId,
     startDir: v.startDir,
     command,
     keep,
@@ -139,7 +157,13 @@ function parsePane(v: unknown): ScreenPane | null {
   })
 }
 
-function parseCell(v: unknown): ScreenCell | null {
+function parseScreenPane(v: unknown): ScreenPane | null {
+  const pane = parseLayoutPane(v)
+  const { ptyId } = v as Obj
+  return pane && isPtyId(ptyId) ? { ...pane, ptyId } : null
+}
+
+function parseCell<P>(v: unknown, parsePane: (x: unknown) => P | null): CellOf<P> | null {
   if (!isObj(v) || !isKey(v.key) || typeof v.id !== 'string' || !isKey(v.focused)) return null
   const { fontSize, paneCols } = v
   if (fontSize !== undefined && !(typeof fontSize === 'number' && Number.isFinite(fontSize)))
@@ -151,16 +175,25 @@ function parseCell(v: unknown): ScreenCell | null {
   return compact({ key: v.key, id: v.id, panes, layout, focused: v.focused, fontSize, paneCols })
 }
 
-function parseWorkspace(v: unknown): ScreenWorkspace | null {
-  if (!isObj(v) || !isKey(v.key) || typeof v.id !== 'string') return null
-  const cells = parseList(v.cells, parseCell)
-  return cells && { key: v.key, id: v.id, cells }
+function parseWorkspaces<P>(
+  v: unknown,
+  parsePane: (x: unknown) => P | null
+): WorkspaceOf<P>[] | null {
+  return parseList(
+    v,
+    (w): WorkspaceOf<P> | null => {
+      if (!isObj(w) || !isKey(w.key) || typeof w.id !== 'string') return null
+      const cells = parseList(w.cells, (c) => parseCell(c, parsePane))
+      return cells && { key: w.key, id: w.id, cells }
+    },
+    true
+  )
 }
 
 export function parseScreen(v: unknown): ScreenState | null {
-  if (!isObj(v) || v.version !== SCREEN_VERSION) return null
+  if (!isObj(v)) return null
   const { selected, sidebar } = v
-  const workspaces = parseList(v.workspaces, parseWorkspace, true)
+  const workspaces = parseWorkspaces(v.workspaces, parseScreenPane)
   if (!workspaces) return null
   if (selected !== null && !isKey(selected)) return null
   const prefs = parseViewPrefs(v)
@@ -168,13 +201,41 @@ export function parseScreen(v: unknown): ScreenState | null {
   if (v.canvas !== undefined && !prefs.canvas) return null
   if (!isObj(sidebar) || !Array.isArray(sidebar.folded) || !sidebar.folded.every(isKey)) return null
   return compact<ScreenState>({
-    version: SCREEN_VERSION,
     workspaces,
     selected,
     sidebar: { ...prefs.sidebar, folded: sidebar.folded },
     viewMode: prefs.viewMode,
     canvas: prefs.canvas
   })
+}
+
+export function parseLayoutPart(v: unknown): LayoutPart | null {
+  if (!isObj(v) || v.version !== STATE_VERSIONS.layout) return null
+  const workspaces = parseWorkspaces(v.workspaces, parseLayoutPane)
+  if (!workspaces) return null
+  if (v.selected !== null && !isKey(v.selected)) return null
+  return { version: STATE_VERSIONS.layout, workspaces, selected: v.selected }
+}
+
+export function splitScreen(screen: ScreenState): {
+  layout: LayoutPart
+  ptys: { pane: number; pty: string }[]
+} {
+  const ptys: { pane: number; pty: string }[] = []
+  const workspaces = screen.workspaces.map((w) => ({
+    ...w,
+    cells: w.cells.map((c) => ({
+      ...c,
+      panes: c.panes.map(({ ptyId, ...p }) => {
+        ptys.push({ pane: p.key, pty: ptyId })
+        return p
+      })
+    }))
+  }))
+  return {
+    layout: { version: STATE_VERSIONS.layout, workspaces, selected: screen.selected },
+    ptys
+  }
 }
 
 export function screenPanes(
@@ -196,17 +257,18 @@ export function clampCanvasWidth(width: number): number {
 }
 
 /**
- * `parseScreen` 과 `viewPrefs()`(`main/index.ts`)가 `ScreenState` 도 넘기므로, 이 함수는 그 안에서
- * `viewMode`, `sidebar` 의 열림·폭, `canvas` 의 폭만 골라 돌려준다. `ViewPrefs` 의 필드 이름을 바꾸면 `ScreenState` 의
- * 것도 같이 바꿔야 한다.
+ * 필드마다 따로 읽어 틀린 필드만 버린다. `parseScreen` 이 `ScreenState` 를, `parseViewPart`(`main/state.ts`)가
+ * `state.json` 의 `view` 를 넘긴다. 그래서 `viewMode`·`sidebar`·`canvas` 의 이름을 바꾸면 `ScreenState` 의 것도
+ * 같이 바꾸고 `view` 의 버전을 올린다.
  */
 export function parseViewPrefs(v: unknown): ViewPrefs {
   if (!isObj(v)) return {}
-  const { viewMode, sidebar, canvas } = v
+  const { viewMode, sidebar, canvas, folded } = v
   const prefs: ViewPrefs = {}
   if (viewMode === 'single' || viewMode === 'columns') prefs.viewMode = viewMode
   if (isObj(sidebar) && typeof sidebar.open === 'boolean' && typeof sidebar.width === 'number')
     prefs.sidebar = { open: sidebar.open, width: clampSidebarWidth(sidebar.width) }
+  if (Array.isArray(folded) && folded.every(isKey)) prefs.folded = [...folded]
   if (isObj(canvas) && typeof canvas.width === 'number')
     prefs.canvas = { width: clampCanvasWidth(canvas.width) }
   return prefs

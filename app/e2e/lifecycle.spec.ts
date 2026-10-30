@@ -27,8 +27,10 @@ import {
   ptyFiles,
   slowPtyBin,
   sockets,
+  stateFile,
   split,
   stubDialog,
+  END_EVERYTHING,
   test,
   typesInto,
   wrapPtyBin
@@ -113,7 +115,10 @@ test('프로세스가 없는 pty 의 레코드는 지우고 새 pty 를 띄운�
   expect(existsSync(join(dir, 'p-dead.sock'))).toBe(false)
 })
 
-test('앱이 강제로 끝나 남은 pty 는 다음에 켤 때 끝낸다', async ({ launch, dataDir }) => {
+test('앱이 강제로 끝나 남은 pty 가 state.json 의 sessions 에 없으면 다음에 켤 때 끝낸다', async ({
+  launch,
+  dataDir
+}) => {
   const first = await launch()
   await first.page.keyboard.type('echo left-$((1+1))\n')
   await expect(rows(first.page)).toContainText('left-2')
@@ -122,6 +127,7 @@ test('앱이 강제로 끝나 남은 pty 는 다음에 켤 때 끝낸다', async
   first.app.process().kill('SIGKILL')
   await closed
   expect(sockets(dataDir)).toEqual([left])
+  rmSync(stateFile(dataDir), { force: true })
 
   const { page } = await launch()
   await page.keyboard.type('echo fresh-$((2+2))\n')
@@ -189,7 +195,7 @@ test('job 이 뜨기 전에 앱을 끄면 그 job 의 pty 는 뜬 뒤에 끝난�
   expect(marks('started-')).toHaveLength(1)
 
   // 띄우는 중인 job 도 끝나지 않은 job 이라 묻는다.
-  await stubDialog(app, 0)
+  await stubDialog(app, END_EVERYTHING)
   await app.close()
 
   await expect.poll(() => marks('started-'), { timeout: 10_000 }).toHaveLength(2)

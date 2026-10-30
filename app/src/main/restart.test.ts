@@ -1,53 +1,19 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer, type Server } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PROTOCOL_VERSION } from '../shared/protocol'
-import { SCREEN_VERSION, type ScreenState } from '../shared/screen'
-import type { JobsFile } from './job'
+import { STATE_VERSIONS } from '../shared/screen'
+import { socketPath } from './pty'
 import {
   checkRestart,
-  restartFile,
-  screenPtys,
+  installedVersions,
   ptyProtocol,
-  takeRestart,
-  writeRestart,
-  type RestartState
+  restartDialog,
+  restartRefusal,
+  type Incompatible
 } from './restart'
-import { socketPath } from './pty'
-
-const screen: ScreenState = {
-  version: SCREEN_VERSION,
-  workspaces: [
-    {
-      key: 3,
-      id: 'w-00000001',
-      cells: [
-        {
-          key: 1,
-          id: 'c-00000001',
-          panes: [
-            { key: 0, ptyId: 'p-0000000a', cwd: '/tmp' },
-            { key: 2, ptyId: 'p-0000000b', command: ['sh', '-c', 'true'], title: 't' }
-          ],
-          layout: { split: 'right', first: { pane: 0 }, second: { pane: 2 } },
-          focused: 2
-        },
-        {
-          key: 4,
-          id: 'c-00000002',
-          panes: [{ key: 5, ptyId: 'p-0000000c' }],
-          layout: { pane: 5 },
-          focused: 5
-        }
-      ]
-    }
-  ],
-  selected: 1,
-  sidebar: { open: false, width: 300, folded: [1] },
-  viewMode: 'columns'
-}
 
 let dir: string
 beforeEach(() => {
@@ -62,72 +28,21 @@ function fakeBin(output: string): string {
   return bin
 }
 
-describe('restart 파일', () => {
-  const jobs: JobsFile = {
-    version: 3,
-    jobs: [
-      {
-        pty: 'p-0000000a',
-        cell: 'c-1',
-        owner: 'p-0000000b',
-        command: ['x'],
-        pending: false
-      }
-    ]
-  }
-  const state: RestartState = { screen, jobs }
+function versions(v: object | string): string {
+  const file = join(dir, 'state-versions.json')
+  writeFileSync(file, typeof v === 'string' ? v : JSON.stringify(v))
+  return file
+}
 
-  it('쓴 화면·job 표를 한 번만 읽고 지운다', async () => {
-    const path = restartFile(dir)
-    await writeRestart(path, state)
-    expect(await takeRestart(path)).toEqual(state)
-    expect(existsSync(path)).toBe(false)
-    expect(await takeRestart(path)).toBeNull()
-  })
-
-  it('job 표가 없거나 맞지 않으면 그 부분만 버리고, 옛 앱이 쓴 claude 부분은 무시한다', async () => {
-    const path = restartFile(dir)
-    await writeRestart(path, { screen, jobs: null })
-    expect(await takeRestart(path)).toEqual({ screen, jobs: null })
-    writeFileSync(
-      path,
-      JSON.stringify({
-        screen,
-        jobs: { ...jobs, version: 1 },
-        claude: { version: 1, sessions: {} }
-      })
-    )
-    expect(await takeRestart(path)).toEqual({ screen, jobs: null })
-  })
-
-  it('화면이 맞지 않거나 깨진 파일은 되살리지 않고 지운다', async () => {
-    const path = restartFile(dir)
-    const cases = [
-      JSON.stringify({ screen: { ...screen, version: SCREEN_VERSION + 1 }, jobs }),
-      // 화면만 담던 옛 모양이다.
-      JSON.stringify(screen),
-      'null',
-      '{'
-    ]
-    for (const text of cases) {
-      writeFileSync(path, text)
-      expect(await takeRestart(path)).toBeNull()
-      expect(existsSync(path)).toBe(false)
-    }
-  })
-
-  it('쓰지 못하면 던진다', async () => {
-    const path = restartFile(dir)
-    // 디렉토리가 그 자리에 있으면 tmp 를 옮겨 놓지 못한다.
-    mkdirSync(path)
-    await expect(writeRestart(path, state)).rejects.toThrow()
-  })
-
-  it('화면의 모든 cell 에서 pty id 를 모은다', () => {
-    expect(screenPtys(screen)).toEqual(new Set(['p-0000000a', 'p-0000000b', 'p-0000000c']))
-    expect(screenPtys(null)).toEqual(new Set())
-  })
-})
+async function livePty(d: string, id: string): Promise<Server> {
+  const server = createServer((s) => s.destroy())
+  await new Promise<void>((r) => server.listen(socketPath(d, id), r))
+  writeFileSync(
+    join(d, `${id}.json`),
+    JSON.stringify({ protocol_version: PROTOCOL_VERSION, id, pid: process.pid })
+  )
+  return server
+}
 
 describe('ptyProtocol', () => {
   it('바이너리가 알려 준 버전을 읽고, 못 읽으면 null 이다', async () => {
@@ -138,54 +53,121 @@ describe('ptyProtocol', () => {
   })
 })
 
+describe('installedVersions', () => {
+  it('세 버전이 모두 정수면 읽고, 파일이 없거나 틀리면 null 이다', async () => {
+    expect(await installedVersions(versions({ layout: 2, sessions: 1, view: 3, x: 1 }))).toEqual({
+      layout: 2,
+      sessions: 1,
+      view: 3
+    })
+    expect(await installedVersions(versions({ layout: 2, sessions: 1 }))).toBeNull()
+    expect(await installedVersions(versions('{nope'))).toBeNull()
+    expect(await installedVersions(join(dir, 'missing.json'))).toBeNull()
+  })
+})
+
 describe('checkRestart', () => {
-  const ptyDir = (): string => join(dir, 'run')
+  const same = (): string => versions(STATE_VERSIONS)
+  const check = (bin: string, versionsFile: string, d = join(dir, 'run')) =>
+    checkRestart({ devServer: false, bin, versionsFile, dir: d })
 
-  it('dev 서버로 띄웠거나 받은 화면이 없으면 재시작하지 않는다', async () => {
+  it('dev 서버로 띄웠으면 재시작하지 않는다', async () => {
     const bin = fakeBin(String(PROTOCOL_VERSION))
-    expect(await checkRestart({ devServer: true, screen, bin, dir: ptyDir() })).toEqual({
-      ok: false,
-      reason: 'dev_server'
-    })
-    expect(await checkRestart({ devServer: false, screen: null, bin, dir: ptyDir() })).toEqual({
-      ok: false,
-      reason: 'no_screen'
-    })
+    expect(
+      await checkRestart({ devServer: true, bin, versionsFile: same(), dir: join(dir, 'run') })
+    ).toEqual({ ok: false, reason: 'dev_server' })
   })
 
-  it('버전이 같으면 재시작한다', async () => {
-    const bin = fakeBin(String(PROTOCOL_VERSION))
-    expect(await checkRestart({ devServer: false, screen, bin, dir: ptyDir() })).toEqual({
-      ok: true
-    })
+  it('프로토콜과 형식 버전이 같으면 재시작한다', async () => {
+    expect(await check(fakeBin(String(PROTOCOL_VERSION)), same())).toEqual({ ok: true })
   })
 
-  it('버전이 달라도 산 pty 가 없으면 재시작한다', async () => {
-    const bin = fakeBin(String(PROTOCOL_VERSION + 1))
-    expect(await checkRestart({ devServer: false, screen, bin, dir: ptyDir() })).toEqual({
-      ok: true
-    })
+  it('프로토콜이 달라도 산 pty 가 없으면 재시작한다', async () => {
+    expect(await check(fakeBin(String(PROTOCOL_VERSION + 1)), same())).toEqual({ ok: true })
   })
 
-  it('버전이 다르고 산 pty 가 있으면 꺼질 pty 수를 알린다', async () => {
-    const bin = fakeBin(String(PROTOCOL_VERSION + 1))
+  it('view 버전만 다르면 묻지 않는다', async () => {
+    const file = versions({ ...STATE_VERSIONS, view: STATE_VERSIONS.view + 1 })
+    expect(await check(fakeBin(String(PROTOCOL_VERSION)), file)).toEqual({ ok: true })
+  })
+
+  it('프로토콜이 다르고 산 pty 가 있으면 레이아웃만 복원한다', async () => {
     const d = mkdtempSync(join(tmpdir(), 'maru-live-'))
-    const server = createServer((s) => s.destroy())
-    await new Promise<void>((r) => server.listen(socketPath(d, 'p-0000000a'), r))
-    writeFileSync(
-      join(d, 'p-0000000a.json'),
-      JSON.stringify({ protocol_version: PROTOCOL_VERSION, id: 'p-0000000a', pid: process.pid })
-    )
+    const server = await livePty(d, 'p-0000000a')
     try {
-      expect(await checkRestart({ devServer: false, screen, bin, dir: d })).toEqual({
+      expect(await check(fakeBin(String(PROTOCOL_VERSION + 1)), same(), d)).toEqual({
         ok: false,
         reason: 'incompatible',
+        result: 'layout',
         ptys: 1,
-        protocol: PROTOCOL_VERSION + 1
+        protocol: PROTOCOL_VERSION + 1,
+        formats: []
       })
     } finally {
       server.close()
       rmSync(d, { recursive: true, force: true })
     }
+  })
+
+  it('sessions 형식이 다르면 산 pty 가 없어도 레이아웃만 복원한다', async () => {
+    const file = versions({ ...STATE_VERSIONS, sessions: STATE_VERSIONS.sessions + 1 })
+    expect(await check(fakeBin(String(PROTOCOL_VERSION)), file)).toEqual({
+      ok: false,
+      reason: 'incompatible',
+      result: 'layout',
+      ptys: 0,
+      formats: ['sessions']
+    })
+  })
+
+  it('layout 형식이 다르거나 형식 버전 파일이 없으면 빈 화면이다', async () => {
+    const bin = fakeBin(String(PROTOCOL_VERSION))
+    const file = versions({ ...STATE_VERSIONS, layout: STATE_VERSIONS.layout + 1 })
+    expect(await check(bin, file)).toMatchObject({ result: 'empty', formats: ['layout'] })
+    expect(await check(bin, join(dir, 'missing.json'))).toMatchObject({
+      result: 'empty',
+      formats: ['layout', 'sessions'],
+      formatsUnknown: true
+    })
+    expect(
+      restartDialog((await check(bin, join(dir, 'missing.json'))) as Incompatible).detail
+    ).toBe(
+      "The installed app's saved-state format couldn't be determined. The app will start with an empty screen."
+    )
+  })
+})
+
+describe('restartDialog · restartRefusal', () => {
+  const protocol: Incompatible = {
+    ok: false,
+    reason: 'incompatible',
+    result: 'layout',
+    ptys: 2,
+    protocol: 9,
+    formats: []
+  }
+  const layout: Incompatible = {
+    ok: false,
+    reason: 'incompatible',
+    result: 'empty',
+    ptys: 1,
+    formats: ['layout', 'sessions']
+  }
+
+  it('결과에 맞는 버튼과 이유를 준다', () => {
+    expect(restartDialog(protocol)).toEqual({
+      message: 'Restart with layout only?',
+      detail: `The installed app uses pty protocol version 9, while this app uses version ${PROTOCOL_VERSION}. This will end 2 terminals. The panes will reopen with new shells in their last directories.`,
+      buttons: ['Restart with layout only', 'Cancel']
+    })
+    expect(restartDialog(layout).buttons).toEqual(['Restart with an empty screen', 'Cancel'])
+    expect(restartDialog(layout).detail).toBe(
+      'The installed app uses a different format for the saved layout and terminal sessions. This will end 1 terminal. The app will start with an empty screen.'
+    )
+  })
+
+  it('CLI 메시지는 플래그를 주면 어떻게 되는지 적는다', () => {
+    expect(restartRefusal(protocol)).toMatch(/Pass --kill-ptys to restart with the layout only\.$/)
+    expect(restartRefusal(layout)).toMatch(/Pass --kill-ptys to restart with an empty screen\.$/)
   })
 })
