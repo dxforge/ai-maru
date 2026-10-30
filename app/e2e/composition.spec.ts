@@ -7,6 +7,7 @@ import {
   GROUND,
   isInk,
   screenshotPixels,
+  settled,
   test,
   writeConfig,
   type Box,
@@ -59,21 +60,6 @@ async function glyphInk(
     return x < 0 ? -1 : from + x
   })
   return { starts, end: ink.lastIndexOf(true) }
-}
-
-/**
- * `read` 가 세 번 연달아 같게 잰 값. WebGL renderer 는 커서(textarea)가 옮겨 간 다음 프레임에 캔버스를 그린다.
- * 그 사이에 찍으면 지우기 전의 글자나 빈 화면이 잡힌다.
- */
-async function settled<T>(read: () => Promise<T>): Promise<T> {
-  const seen: string[] = []
-  await expect
-    .poll(async () => {
-      seen.push(JSON.stringify(await read()))
-      return seen.length >= 3 && seen.slice(-3).every((v) => v === seen.at(-1))
-    })
-    .toBe(true)
-  return JSON.parse(seen.at(-1)!)
 }
 
 async function compose(cdp: CDPSession, text: string): Promise<void> {

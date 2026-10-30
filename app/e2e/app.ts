@@ -293,6 +293,10 @@ export function attachFromOutside(sockPath: string, cols: number, rows: number):
   })
 }
 
+export function resizeFromOutside(sock: Socket, cols: number, rows: number): void {
+  sock.write(request({ type: 'resize', cols, rows }))
+}
+
 // xterm 이 그리는 canvas 가운데 render layer 가 아닌 것이 WebGL renderer 의 것이다.
 export const WEBGL_CANVAS = '.xterm-screen > canvas:not([class*="-layer"])'
 
@@ -434,6 +438,21 @@ export async function activeTerminal(page: Page): Promise<void> {
 export async function run(page: Page, command: string, expected: string | RegExp): Promise<void> {
   await page.keyboard.type(`${command}\n`)
   await expect(rows(page)).toContainText(expected)
+}
+
+/**
+ * `read` 가 세 번 연달아 같게 잰 값. 화면이 바뀌는 중에 잰 값을 거른다. WebGL renderer 는 커서(textarea)가 옮겨 간
+ * 다음 프레임에 캔버스를 그리고, 셸은 resize 뒤 프롬프트를 다시 그리기 때문이다.
+ */
+export async function settled<T>(read: () => Promise<T>): Promise<T> {
+  const seen: string[] = []
+  await expect
+    .poll(async () => {
+      seen.push(JSON.stringify(await read()))
+      return seen.length >= 3 && seen.slice(-3).every((v) => v === seen.at(-1))
+    })
+    .toBe(true)
+  return JSON.parse(seen.at(-1)!)
 }
 
 export async function typesInto(page: Page, i: number, marker: string): Promise<void> {
