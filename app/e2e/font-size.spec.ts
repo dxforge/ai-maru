@@ -13,6 +13,12 @@ import {
   cellViews,
   writeConfig
 } from './app'
+import { FONT_SIZE } from '../src/renderer/src/font'
+
+const BASE = `${FONT_SIZE}px`
+const PLUS1 = `${FONT_SIZE + 1}px`
+const PLUS2 = `${FONT_SIZE + 2}px`
+const PLUS4 = `${FONT_SIZE + 4}px`
 
 function fontSizes(page: Page): Promise<string[][]> {
   return cellViews(page).evaluateAll((ws) =>
@@ -40,7 +46,7 @@ test('Increase·Decrease·Reset Font Size 는 선택한 cell 의 모든 pane 만
 
   await increase(app)
   await increase(app)
-  await expect.poll(() => fontSizes(page)).toEqual([['14px'], ['16px', '16px']])
+  await expect.poll(() => fontSizes(page)).toEqual([[BASE], [PLUS2, PLUS2]])
   await expect
     .poll(async () => {
       const after = await shellSize(page)
@@ -49,10 +55,10 @@ test('Increase·Decrease·Reset Font Size 는 선택한 cell 의 모든 pane 만
     .toBe(true)
 
   await decrease(app)
-  await expect.poll(() => fontSizes(page)).toEqual([['14px'], ['15px', '15px']])
+  await expect.poll(() => fontSizes(page)).toEqual([[BASE], [PLUS1, PLUS1]])
 
   await reset(app)
-  await expect.poll(() => fontSizes(page)).toEqual([['14px'], ['14px', '14px']])
+  await expect.poll(() => fontSizes(page)).toEqual([[BASE], [BASE, BASE]])
   await expect.poll(() => shellSize(page)).toEqual(before)
 })
 
@@ -63,7 +69,7 @@ test('Reset Font Size 로 cell 의 글꼴을 되돌려도 터미널 행 수가 �
   const { app, page } = launched
   const bigger = async () => {
     for (let i = 0; i < 4; i++) await increase(app)
-    await expect.poll(() => fontSizes(page)).toEqual([['18px']])
+    await expect.poll(() => fontSizes(page)).toEqual([[PLUS4]])
   }
   await bigger()
   await expectRowsChangeOnce(launched, () => reset(app), bigger)
@@ -100,10 +106,10 @@ test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않았거나 
   await clickMenu(app, 'previous-cell')
   await increase(app)
   await decrease(app)
-  await expect.poll(() => fontSizes(page)).toEqual([['14px'], ['14px'], ['15px']])
+  await expect.poll(() => fontSizes(page)).toEqual([[BASE], [BASE], [PLUS1]])
 
   writeConfig(dataDir, '[terminal]\nfont-size = 18\n')
-  await expect.poll(() => fontSizes(page)).toEqual([['18px'], ['18px'], ['15px']])
+  await expect.poll(() => fontSizes(page)).toEqual([['18px'], ['18px'], [PLUS1]])
 
   const rowHeight = () =>
     cellViews(page)
@@ -112,7 +118,7 @@ test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않았거나 
   const row = await rowHeight()
   writeConfig(dataDir, '[terminal]\nfont-size = 18\nline-height = 2\n')
   await expect.poll(rowHeight).toBeGreaterThan(row)
-  expect(await fontSizes(page)).toEqual([['18px'], ['18px'], ['15px']])
+  expect(await fontSizes(page)).toEqual([['18px'], ['18px'], [PLUS1]])
 })
 
 test('나눈 pane 은 cell 의 크기를 쓰고, 새 workspace 는 띄운 쪽이 아니라 설정 파일의 크기로 시작한다', async ({
@@ -124,7 +130,7 @@ test('나눈 pane 은 cell 의 크기를 쓰고, 새 workspace 는 띄운 쪽이
   await increase(app)
   await split(app, page, 'split-down', 2)
   await newWorkspace(launched, 2)
-  await expect.poll(() => fontSizes(page)).toEqual([['16px', '16px'], ['14px']])
+  await expect.poll(() => fontSizes(page)).toEqual([[PLUS2, PLUS2], [BASE]])
 })
 
 test('재시작하면 cell 마다 바꾼 크기를 되살리고, columns 카드 폭과 셸이 본 크기도 그대로다', async ({
@@ -135,13 +141,13 @@ test('재시작하면 cell 마다 바꾼 크기를 되살리고, columns 카드 
   await newWorkspace(first, 2)
   await increase(first.app)
   await increase(first.app)
-  await expect.poll(() => fontSizes(first.page)).toEqual([['14px'], ['16px']])
+  await expect.poll(() => fontSizes(first.page)).toEqual([[BASE], [PLUS2]])
   const widths = await cardWidths(first.page)
   const before = await shellSize(first.page)
 
   await restartWith(first.app)
   const { page } = await launch()
-  await expect.poll(() => fontSizes(page)).toEqual([['14px'], ['16px']])
+  await expect.poll(() => fontSizes(page)).toEqual([[BASE], [PLUS2]])
   await expect.poll(() => cardWidths(page)).toEqual(widths)
   await expect.poll(() => shellSize(page)).toEqual(before)
 })
@@ -154,7 +160,7 @@ test('columns 보기에서 크기를 키운 카드는 pane 이 80열인 채로 �
   await toggleView(launched, 'columns')
   await newWorkspace(launched, 2)
   for (let i = 0; i < 4; i++) await increase(app)
-  await expect.poll(() => fontSizes(page)).toEqual([['14px'], ['18px']])
+  await expect.poll(() => fontSizes(page)).toEqual([[BASE], [PLUS4]])
   await expect.poll(async () => (await shellSize(page)).cols).toBe(80)
 
   const measure = (i: number) =>
@@ -170,17 +176,17 @@ test('columns 보기에서 크기를 키운 카드는 pane 이 80열인 채로 �
   expect(large.width).toBeGreaterThan(small.width)
   expect(large.header).toBeGreaterThan(small.header)
   expect(large.pane).toBe(large.header)
-  expect([small.title, large.title]).toEqual(['14px', '18px'])
+  expect([small.title, large.title]).toEqual([BASE, PLUS4])
 })
 
 test('명령 팔레트에서 Increase·Decrease·Reset Font Size 를 실행한다', async ({ launch }) => {
   const launched = await launch()
   const { page } = launched
   for (const [query, size] of [
-    ['increase font', '15px'],
-    ['increase font', '16px'],
-    ['decrease font', '15px'],
-    ['reset font', '14px']
+    ['increase font', PLUS1],
+    ['increase font', PLUS2],
+    ['decrease font', PLUS1],
+    ['reset font', BASE]
   ]) {
     await openPalette(launched)
     await page.keyboard.type(query)
@@ -193,10 +199,10 @@ test('명령 팔레트에서 Increase·Decrease·Reset Font Size 를 실행한�
 test('⌘= 과 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 도 터미널에서 글꼴 크기를 바꾼다', async ({ launch }) => {
   const { page } = await launch()
   for (const [key, size] of [
-    ['Meta+Equal', '15px'],
-    ['Meta+Equal', '16px'],
-    ['Shift+Meta+Minus', '15px'],
-    ['Shift+Meta+Digit0', '14px']
+    ['Meta+Equal', PLUS1],
+    ['Meta+Equal', PLUS2],
+    ['Shift+Meta+Minus', PLUS1],
+    ['Shift+Meta+Digit0', BASE]
   ]) {
     await page.keyboard.press(key)
     await expect.poll(() => fontSizes(page)).toEqual([[size]])
@@ -214,7 +220,7 @@ test('팔레트 입력창에 포커스가 있으면 창의 keydown 은 ⌘= / �
     await page.keyboard.press(key)
   await expect(page.locator('.palette .query')).toHaveValue('canv')
   await expect(page.locator('.palette .query')).toBeFocused()
-  expect(await fontSizes(page)).toEqual([['14px']])
+  expect(await fontSizes(page)).toEqual([[BASE]])
 })
 
 test('설정 파일의 글꼴을 바꿔도 글자 칸 크기가 같으면 columns 카드 폭과 셸이 본 크기가 그대로다', async ({
@@ -226,7 +232,7 @@ test('설정 파일의 글꼴을 바꿔도 글자 칸 크기가 같으면 column
   await toggleView(launched, 'columns')
   await newWorkspace(launched, 2)
   await increase(app)
-  await expect.poll(() => fontSizes(page)).toEqual([['14px'], ['15px']])
+  await expect.poll(() => fontSizes(page)).toEqual([[BASE], [PLUS1]])
   const widths = await cardWidths(page)
   const before = await shellSize(page)
 

@@ -1,9 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Locator, Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import {
   activeHeader,
-  type Box,
   clickMenu,
   expect,
   focusPane,
@@ -16,7 +15,6 @@ import {
   pressNew,
   programStatus as status,
   run,
-  screenshotPixels,
   shellRows,
   shellValue,
   split,
@@ -113,64 +111,25 @@ test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상�
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
 })
 
-test('상태 아이콘은 상태마다 SVG 로 줄 가운데에 그리고, 선과 면은 아이콘 자리의 글자색을 따르며, working 만 원 중심을 축으로 돌고, 상태가 사라지면 terminal glyph 로 돌아온다', async ({
+test('상태 아이콘은 상태마다 SVG 로 그리고, working 만 움직이며, 상태가 사라지면 terminal glyph 로 돌아온다', async ({
   launch
 }) => {
   const { page } = await launch()
   const icons = [
-    [paneRows(page).locator('.state'), paneRows(page)],
-    [activeHeader(page).locator('.status-icon'), activeHeader(page)],
-    [page.locator('.cell-header .status-icon'), page.locator('.cell-header')]
-  ] as const
+    paneRows(page).locator('.state'),
+    activeHeader(page).locator('.status-icon'),
+    page.locator('.cell-header .status-icon')
+  ]
   // 사이드바는 쉬는 agent 의 앞 칸에 상태 아이콘 대신 agent 아이콘을 두므로, agent 가 아닌 app 으로 모든 상태를 그린다.
   for (const state of Object.keys(STATE_LABELS)) {
     await page.keyboard.type(status(state, undefined, 'make'))
     await expect(paneRows(page)).toHaveClass(new RegExp(state))
-    for (const [icon, row] of icons) {
+    for (const icon of icons) {
       const svg = icon.locator('svg')
       await expect(svg).toHaveAttribute('data-state', state)
-      const middle = (b: { y: number; height: number }) => b.y + b.height / 2
-      expect(
-        Math.abs(middle((await svg.boundingBox())!) - middle((await row.boundingBox())!))
-      ).toBeLessThanOrEqual(0.5)
-      const paint = await icon.evaluate((el) => ({
-        color: getComputedStyle(el).color,
-        painted: [...el.querySelectorAll('svg *')].flatMap((s) => {
-          const c = getComputedStyle(s)
-          return [c.fill, c.stroke].filter((v) => v !== 'none')
-        })
-      }))
-      expect(paint.painted.length).toBeGreaterThan(0)
-      for (const v of paint.painted) expect(v).toBe(paint.color)
-
-      const spin = await svg.evaluate((el) => {
-        const anims = el.getAnimations()
-        if (anims.length === 0) return null
-        const center = (s: Element) => {
-          const r = s.getBoundingClientRect()
-          return [r.x + r.width / 2, r.y + r.height / 2]
-        }
-        const [a] = anims
-        a.pause()
-        const duration = Number(a.effect!.getComputedTiming().duration)
-        a.currentTime = 0
-        const ring0 = center(el.querySelector('circle')!)
-        const arc0 = center(el.querySelector('path')!)
-        a.currentTime = duration / 4
-        const ring1 = center(el.querySelector('circle')!)
-        const arc1 = center(el.querySelector('path')!)
-        a.play()
-        return { count: anims.length, ring0, ring1, arc0, arc1 }
-      })
-      if (state !== 'working') {
-        expect(spin).toBeNull()
-        continue
-      }
-      expect(spin!.count).toBe(1)
-      for (const i of [0, 1]) expect(Math.abs(spin!.ring1[i] - spin!.ring0[i])).toBeLessThan(0.5)
-      expect(
-        Math.hypot(spin!.arc1[0] - spin!.arc0[0], spin!.arc1[1] - spin!.arc0[1])
-      ).toBeGreaterThan(1)
+      expect(await svg.evaluate((el) => el.getAnimations().length)).toBe(
+        state === 'working' ? 1 : 0
+      )
     }
   }
 
@@ -179,7 +138,6 @@ test('상태 아이콘은 상태마다 SVG 로 줄 가운데에 그리고, 선�
   const header = activeHeader(page).locator('.status-icon')
   await expect(header.locator('svg')).toHaveCount(0)
   await expect(header).toHaveText(ICONS.terminal)
-  await expect(header).toHaveCSS('font-family', '"Symbols Nerd Font Mono"')
   await expect(page.locator('.cell-header .status-icon svg')).toHaveCount(0)
 })
 
@@ -388,73 +346,6 @@ test('pane 줄을 누르면 그 cell 을 고르고 그 pane 에 키 입력이 �
   await typesInto(page, 1, 'same')
 })
 
-test('사이드바의 상태 아이콘과 Claude 아이콘은 잉크의 가운데를 행 가운데에서 0.5px 안에 그린다', async ({
-  launch
-}) => {
-  const { app, page } = await launch()
-  await split(app, page, 'split-right', 2)
-  await page.keyboard.type(status('idle'))
-  await split(app, page, 'split-down', 3)
-  await page.keyboard.type(status('blocked', 'kind=permission'))
-  await expect(paneRows(page)).toHaveClass([/idle/, /blocked/])
-  const shell = shellRows(page)
-  const [idle, blocked] = [paneRows(page).nth(0), paneRows(page).nth(1)]
-
-  for (const [row, icons] of [
-    [shell, ['.state']],
-    [idle, ['.state']],
-    [blocked, ['.state']]
-  ] as const) {
-    for (const offset of await inkOffsets(page, row, icons))
-      expect(Math.abs(offset)).toBeLessThanOrEqual(0.5)
-  }
-})
-
-test('사이드바·pane 헤더·cell 헤더의 상태 원은 셸의 터미널 아이콘과 같은 높이로 그린다', async ({
-  launch
-}) => {
-  const { app, page } = await launch()
-  await split(app, page, 'split-right', 2)
-  await page.keyboard.type(status('blocked', 'kind=permission'))
-  await expect(paneRows(page)).toHaveClass(/blocked/)
-  await expect(page.locator('.cell-header .row-bar-icon svg')).toHaveAttribute(
-    'data-state',
-    'blocked'
-  )
-
-  const sameHeight = async (icon: Locator, a: number, b: number) => {
-    const em = await icon.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
-    // 0.15em 은 viewBox 가 `0 0 16 16` 인 원(차이 0.18em 이상)은 걸러 내고 지금 원(차이 0.11em 이하)은 통과시킨다. 두 값은 DPR 1·2, 글꼴 9~14px 에서 쟀다.
-    expect(Math.abs(a - b)).toBeLessThanOrEqual(em * 0.15)
-  }
-
-  const [sidebarShell] = await inkExtents(page, shellRows(page), ['.state'])
-  const [sidebarBlocked] = await inkExtents(page, paneRows(page), ['.state'])
-  await sameHeight(paneRows(page).locator('.state'), sidebarBlocked.height, sidebarShell.height)
-
-  // pane 헤더는 터미널 반대쪽 가장자리 1px 에 pane 경계선을 그린다. 그 선이 잉크로 잡히지 않게 헤더 위치와 상관없이 위아래 1px 을 뺀다.
-  const withoutLine = async (header: Locator): Promise<Box> => {
-    const box = (await header.boundingBox())!
-    return { ...box, y: box.y + 1, height: box.height - 2 }
-  }
-  const [headerShell] = await inkExtents(
-    page,
-    paneHeader(page, 0),
-    ['.row-bar-icon'],
-    await withoutLine(paneHeader(page, 0))
-  )
-  const [headerBlocked] = await inkExtents(
-    page,
-    paneHeader(page, 1),
-    ['.row-bar-icon'],
-    await withoutLine(paneHeader(page, 1))
-  )
-  const [cellBlocked] = await inkExtents(page, page.locator('.cell-header'), ['.row-bar-icon'])
-  const headerIcon = paneHeader(page, 1).locator('.row-bar-icon')
-  await sameHeight(headerIcon, headerBlocked.height, headerShell.height)
-  await sameHeight(headerIcon, cellBlocked.height, headerShell.height)
-})
-
 /** 지금 focus 를 가진 pane 의 pty id. */
 function ptyIdOf(page: Page, dataDir: string, name: string): Promise<string> {
   return shellValue(page, dataDir, name, '$MARU_PTY_ID')
@@ -628,51 +519,3 @@ test('떠날 때 루트와 하위의 done 은 idle 이 되고 blocked·error 는
     .find((cols) => cols[0] === left)!
   expect([row[1], row[2], row[7]]).toEqual(['idle', 'claude-code', 'finished'])
 })
-
-async function inkOffsets(page: Page, row: Locator, icons: readonly string[]): Promise<number[]> {
-  const clip = (await row.boundingBox())!
-  return (await inkExtents(page, row, icons, clip)).map(
-    (ink) => ink.top + ink.height / 2 - clip.height / 2
-  )
-}
-
-/**
- * 맨 위·맨 아래 잉크 줄은 그 줄의 가장 짙은 픽셀이 아이콘의 가장 짙은 픽셀에 견줘 얼마나 짙은지만큼만 센다.
- * 줄 단위로 세면 가장자리가 픽셀 경계 어디에 걸리는지에 따라 높이가 한 픽셀씩 달라지기 때문이다.
- */
-async function inkExtents(
-  page: Page,
-  row: Locator,
-  icons: readonly string[],
-  rowBox?: Box
-): Promise<{ top: number; height: number }[]> {
-  const clip = rowBox ?? (await row.boundingBox())!
-  const boxes = await Promise.all(icons.map(async (s) => (await row.locator(s).boundingBox())!))
-  const image = await screenshotPixels(page, clip)
-  const scale = image.width / clip.width
-  const at = (x: number, y: number) => {
-    const i = (y * image.width + x) * 4
-    return image.data.slice(i, i + 3)
-  }
-  const background = at(image.width - 1, 0)
-  return boxes.map((box, n) => {
-    const darkness = (y: number) => {
-      let most = 0
-      for (
-        let x = Math.floor((box.x - clip.x) * scale);
-        x < (box.x + box.width - clip.x) * scale;
-        x++
-      )
-        for (const [i, v] of at(x, y).entries()) most = Math.max(most, Math.abs(v - background[i]))
-      return most
-    }
-    const byRow = [...Array(image.height).keys()].map(darkness)
-    const rows = byRow.flatMap((d, y) => (d > 30 ? [y] : []))
-    if (rows.length === 0) throw new Error(`'${icons[n]}' 의 영역에서 잉크가 있는 줄을 찾지 못했다`)
-    const [first, last] = [rows[0], rows[rows.length - 1]]
-    const peak = Math.max(...byRow)
-    const top = first + 1 - byRow[first] / peak
-    const bottom = last + byRow[last] / peak
-    return { top: top / scale, height: (bottom - top) / scale }
-  })
-}

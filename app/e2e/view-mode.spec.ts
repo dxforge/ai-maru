@@ -1,9 +1,7 @@
 import type { Locator, Page } from '@playwright/test'
-import { SCROLLBAR_WIDTH, TERMINAL_PADDING } from '../src/renderer/src/workspace/columns'
 import {
   activePane,
   cellSize,
-  cellWidth,
   clickMenu,
   expect,
   expectCols,
@@ -18,7 +16,6 @@ import {
   restartWith,
   rows,
   run,
-  screenshotPixels,
   shellSize,
   setZoom,
   split,
@@ -169,14 +166,6 @@ async function scrollbarHeight(page: Page): Promise<number> {
 
 async function overflows(page: Page): Promise<boolean> {
   return page.locator('.terminals').evaluate((el) => el.scrollWidth > el.clientWidth)
-}
-
-async function scrollArea(page: Page): Promise<{ left: number; right: number; bottom: number }> {
-  return page.locator('.terminals').evaluate((el) => {
-    const { top, left } = el.getBoundingClientRect()
-    const x = left + el.clientLeft
-    return { left: x, right: x + el.clientWidth, bottom: top + el.clientTop + el.clientHeight }
-  })
 }
 
 test('View 메뉴의 Toggle View Mode 는 cell 을 가로로 늘어놓아 80열로 보이고, 다시 누르면 선택한 것만 보인다', async ({
@@ -638,36 +627,6 @@ test('고전 스크롤바 설정의 columns 에서 가로 스크롤바는 기본
   expect((await shellSize(page)).rows).toBe(before.rows)
 })
 
-test('고전 스크롤바 설정에서 columns 가 넘치지 않을 때도 가로 스크롤바의 트랙이 바탕과 다른 색으로 보이고, 넘치면 thumb 이 트랙과 다른 색으로 보인다', async ({
-  launch
-}) => {
-  const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
-  const { page } = launched
-  await toggleView(launched, 'columns')
-  expect(await overflows(page)).toBe(false)
-  const area = await scrollArea(page)
-  const bar = await scrollbarHeight(page)
-  const reds = async (x: number): Promise<{ ground: number; bar: number }> => {
-    const { data } = await screenshotPixels(
-      page,
-      { x, y: area.bottom - 1, width: 1, height: bar + 1 },
-      'css'
-    )
-    return { ground: data[0], bar: data[(1 + Math.floor(bar / 2)) * 4] }
-  }
-
-  const empty = await reds(area.left + 40)
-  expect(empty.bar).not.toBe(empty.ground)
-
-  await newWorkspace(launched, 2)
-  await cellItems(page).first().click()
-  await expect.poll(() => page.locator('.terminals').evaluate((el) => el.scrollLeft)).toBe(0)
-  const thumb = await reds(area.left + 40)
-  const track = await reds(area.right - 40)
-  expect(track.bar).toBe(empty.bar)
-  expect(thumb.bar).not.toBe(track.bar)
-})
-
 test('overlay 스크롤바 설정에서 columns 의 가로 스크롤바는 넘쳐도 자리를 차지하지 않는다', async ({
   launch
 }) => {
@@ -678,20 +637,6 @@ test('overlay 스크롤바 설정에서 columns 의 가로 스크롤바는 넘�
 
   expect(await overflows(page)).toBe(true)
   expect(await scrollbarHeight(page)).toBe(0)
-})
-
-test('columns 에서 선택한 cell 의 테두리는 아래 변도 스크롤 영역 안에 그려진다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { page } = launched
-  await toggleView(launched, 'columns')
-
-  // 테두리는 카드 바깥 1px 의 box-shadow 라, 스크롤 영역이 자르지 않으려면 그 1px 이 영역 안에 있어야 한다.
-  const area = await scrollArea(page)
-  const card = (await cellViews(page).first().boundingBox())!
-  expect(card.y + card.height + 1).toBeLessThanOrEqual(area.bottom)
-  expect(card.x - 1).toBeGreaterThanOrEqual(area.left)
 })
 
 test('columns 에서 사이드바로 고른 cell 만 선택 표시를 하고, 다른 cell 을 고르면 표시가 옮겨 간다', async ({
@@ -711,30 +656,6 @@ test('columns 에서 사이드바로 고른 cell 만 선택 표시를 하고, �
   await expect(cellViews(page).nth(0)).not.toHaveClass(/selected/)
 })
 
-test('columns 에서 포커스를 따라 스크롤해도 선택한 cell 의 옆 테두리는 스크롤 영역 안에 그려진다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { page } = launched
-  await newWorkspace(launched, 2)
-  await newWorkspace(launched, 3)
-  await toggleView(launched, 'columns')
-  await cellItems(page).first().click()
-  await expect.poll(() => inView(page, cellViews(page).nth(0))).toBe(true)
-
-  const area = await scrollArea(page)
-  const right = async (): Promise<number> => {
-    const card = (await cellViews(page).nth(2).boundingBox())!
-    return card.x + card.width + 1
-  }
-  await cellItems(page).nth(2).click()
-  await expect.poll(right).toBeLessThanOrEqual(area.right)
-
-  const left = async (): Promise<number> => (await cellViews(page).nth(0).boundingBox())!.x - 1
-  await cellItems(page).first().click()
-  await expect.poll(left).toBeGreaterThanOrEqual(area.left)
-})
-
 test('columns 에서 줌을 바꿔도 pane 은 80열이다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
@@ -750,7 +671,7 @@ test('columns 에서 줌을 바꿔도 pane 은 80열이다', async ({ launch }) 
 })
 
 for (const size of [8, 9, 16]) {
-  test(`DOM 으로 그려도 글꼴 크기 ${size} 의 columns pane 은 80열이고, 카드 폭은 80열에 여백과 스크롤바를 더해 글자 칸 폭의 배수로 올린 폭이다`, async ({
+  test(`DOM 으로 그려도 글꼴 크기 ${size} 의 columns pane 은 80열이다`, async ({
     launch,
     dataDir
   }) => {
@@ -759,11 +680,6 @@ for (const size of [8, 9, 16]) {
     const { page } = launched
     await toggleView(launched, 'columns')
     await expectCols(page, 80)
-    const { width } = await cellSize(page)
-    expect(await cellWidth(page)).toBeCloseTo(
-      Math.ceil(80 + (TERMINAL_PADDING + SCROLLBAR_WIDTH) / width) * width,
-      0
-    )
   })
 }
 

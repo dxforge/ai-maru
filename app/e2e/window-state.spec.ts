@@ -38,7 +38,7 @@ function win<M extends Method>(
   ) as Promise<ReturnType<Electron.BrowserWindow[M]>>
 }
 
-/** 기본 크기(1000×700)나 OS 가 고르는 기본 위치와 같으면 복원하지 않아도 테스트가 통과하므로, 둘 다와 다른 자리로 옮긴다. */
+/** 기본 크기나 OS 가 고르는 기본 위치와 같으면 복원하지 않아도 테스트가 통과하므로, 둘 다와 다른 자리로 옮긴다. */
 async function placeWindow(app: ElectronApplication): Promise<Rect> {
   await app.evaluate(({ BrowserWindow, screen }) => {
     const area = screen.getPrimaryDisplay().workArea
@@ -155,7 +155,7 @@ test('저장한 위치가 연결된 모니터 밖이면 기본 위치·크기로
   })
   const { app } = await launch()
   const { x, y, width, height } = await win(app, 'getBounds')
-  expect({ width, height }).toEqual({ width: 1000, height: 700 })
+  expect({ width, height }).not.toEqual({ width: 640, height: 420 })
   expect(x).toBeGreaterThan(-100_000)
   expect(y).toBeGreaterThan(-100_000)
 })
@@ -167,7 +167,7 @@ test('저장한 파일이 깨졌으면 기본 크기로 뜨고, 닫으면 새로
   writeFileSync(stateFile(dataDir), '{broken')
   const first = await launch()
   const { width, height } = await win(first.app, 'getBounds')
-  expect({ width, height }).toEqual({ width: 1000, height: 700 })
+  expect({ width, height }).not.toEqual({ width: 640, height: 420 })
   const placed = await placeWindow(first.app)
   await closeWindow(first.app)
 

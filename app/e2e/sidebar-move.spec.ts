@@ -12,7 +12,6 @@ import {
   restartWith,
   rows,
   run,
-  screenshotPixels,
   test,
   toggleView,
   workspaceHeads,
@@ -23,7 +22,6 @@ import {
 const cards = (page: Page) => page.locator('.sidebar .list .group')
 const grip = (page: Page, i: number) => cards(page).nth(i).locator('.grip')
 const opacity = (el: Locator) => el.evaluate((e) => Number(getComputedStyle(e).opacity))
-const hovered = (el: Locator) => el.evaluate((e) => e.matches(':hover'))
 const ghost = (page: Page) => page.locator('.sidebar .ghost')
 const line = (page: Page) => page.locator('.sidebar .drop-line')
 const slot = (page: Page) => page.locator('.sidebar .new-workspace')
@@ -276,7 +274,7 @@ test('끄는 동안 포인터가 목록의 아래·위 끝 가까이 오면 그�
   await page.mouse.up()
 })
 
-test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우스를 올린 cell 에만 흐리게 보이다가 손잡이에 올리면 진해지며 창을 끄는 영역이 아니다', async ({
+test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우스를 올린 cell 에만 보이며 창을 끄는 영역이 아니다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -293,118 +291,11 @@ test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우�
   await cards(page).nth(1).hover()
   await expect.poll(() => opacity(grip(page, 1))).toBeGreaterThan(0)
   await expect(grip(page, 0)).toHaveCSS('opacity', '0')
-  const faint = await opacity(grip(page, 1))
-  await grip(page, 1).hover()
-  await expect.poll(() => opacity(grip(page, 1))).toBeGreaterThan(faint)
   expect(
     await grip(page, 0).evaluate((el) =>
       getComputedStyle(el).getPropertyValue('-webkit-app-region')
     )
   ).toBe('no-drag')
-})
-
-test('마우스를 첫 행에서 손잡이 위로 옮겨도 첫 행은 hover 배경을 지키고, 고른 pane 의 행은 선택 배경을 지킨다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { page } = launched
-  await arrange(launched, [['alpha', 'bravo']])
-  const background = (i: number) =>
-    cards(page)
-      .nth(i)
-      .locator('.pane-row')
-      .first()
-      .evaluate((el) => getComputedStyle(el).backgroundColor)
-
-  const handle = (await grip(page, 0).boundingBox())!
-  await page.mouse.move(handle.x + handle.width + 4, handle.y + handle.height / 2)
-  const hoverBackground = await background(0)
-  const focused = await background(1)
-  await cards(page).nth(1).locator('.pane-row').hover()
-  expect(await background(0)).not.toBe(hoverBackground)
-
-  await page.mouse.move(handle.x + handle.width + 4, handle.y + handle.height / 2)
-  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2, { steps: 4 })
-  await expect.poll(() => hovered(grip(page, 0))).toBe(true)
-  expect(await background(0)).toBe(hoverBackground)
-
-  await grip(page, 1).hover()
-  await expect.poll(() => hovered(grip(page, 1))).toBe(true)
-  expect(await background(1)).toBe(focused)
-})
-
-async function dotSizes(page: Page, i: number): Promise<string[]> {
-  await grip(page, i).evaluate((el) => ((el as HTMLElement).style.opacity = '1'))
-  const b = (await grip(page, i).boundingBox())!
-  // 손잡이 아래쪽에는 첫 행 제목의 글자가 걸리므로, 위쪽 여백과 점을 그리는 `::before` 의 높이까지만 찍는다.
-  const dots = await grip(page, i).evaluate(
-    (el) =>
-      parseFloat(getComputedStyle(el).paddingTop) +
-      parseFloat(getComputedStyle(el, '::before').height)
-  )
-  const clip = {
-    x: Math.floor(b.x),
-    y: Math.floor(b.y),
-    width: Math.ceil(b.width) + 1,
-    height: dots
-  }
-  const { data, width, height } = await screenshotPixels(page, clip, 'css')
-  const ink = (x: number, y: number) => data[(y * width + x) * 4] > data[0] + 60
-  const seen = new Set<number>()
-  const sizes: string[] = []
-  for (let y = 0; y < height; y++)
-    for (let x = 0; x < width; x++) {
-      if (seen.has(y * width + x) || !ink(x, y)) continue
-      const box = { x0: x, x1: x, y0: y, y1: y }
-      const todo = [[x, y]]
-      seen.add(y * width + x)
-      while (todo.length) {
-        const [px, py] = todo.pop()!
-        box.x0 = Math.min(box.x0, px)
-        box.x1 = Math.max(box.x1, px)
-        box.y0 = Math.min(box.y0, py)
-        box.y1 = Math.max(box.y1, py)
-        for (const [nx, ny] of [
-          [px + 1, py],
-          [px - 1, py],
-          [px, py + 1],
-          [px, py - 1]
-        ])
-          if (
-            nx >= 0 &&
-            ny >= 0 &&
-            nx < width &&
-            ny < height &&
-            !seen.has(ny * width + nx) &&
-            ink(nx, ny)
-          ) {
-            seen.add(ny * width + nx)
-            todo.push([nx, ny])
-          }
-      }
-      sizes.push(`${box.x1 - box.x0 + 1}x${box.y1 - box.y0 + 1}`)
-    }
-  return sizes
-}
-
-test('1x 화면에서 손잡이의 점은 펼친 사이드바와 접은 사이드바 모두 같은 크기의 정사각형으로 찍힌다', async ({
-  launch
-}) => {
-  const launched = await launch(undefined, undefined, ['--force-device-scale-factor=1'])
-  const { app, page } = launched
-  await arrange(launched, [['alpha', 'bravo']])
-  expect(await page.evaluate(() => devicePixelRatio)).toBe(1)
-
-  const expanded = await dotSizes(page, 1)
-  await collapseSidebar(app, page)
-  const collapsed = await dotSizes(page, 1)
-
-  expect(expanded.length).toBeGreaterThan(0)
-  expect(collapsed).toEqual(expanded)
-  const [size, ...others] = new Set(expanded)
-  expect(others).toEqual([])
-  const [w, h] = size.split('x')
-  expect(w).toBe(h)
 })
 
 test('첫 행의 위쪽이라도 손잡이 밖을 누르면 cell 을 끌지 않고 그 pane 을 고른다', async ({

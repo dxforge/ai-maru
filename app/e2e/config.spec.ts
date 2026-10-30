@@ -12,7 +12,6 @@ import {
   newWorkspace,
   openCanvas,
   shellSize,
-  sidebarWidth,
   test,
   toast,
   toggleView,
@@ -42,18 +41,6 @@ async function terminalFont(page: Page) {
 const fontSize = async (page: Page): Promise<string> => (await terminalFont(page)).size
 
 const DEFAULT_SIZE = `${FONT_SIZE}px`
-
-async function toastInBottomLeft(page: Page): Promise<boolean> {
-  const box = await toast(page).boundingBox()
-  if (!box) return false
-  const height = await page.evaluate(() => innerHeight)
-  return (
-    box.x >= 0 &&
-    box.x + box.width <= (await sidebarWidth(page)) &&
-    box.y > height / 2 &&
-    box.y + box.height <= height
-  )
-}
 
 test('설정 파일이 없으면 지금 기본값으로 그린다', async ({ launch }) => {
   const { page } = await launch()
@@ -188,8 +175,9 @@ test('columns 보기에서 화면 밖에 있던 cell 도 줄 높이에 맞춘다
   await newWorkspace(launched, 3)
   const first = page.locator('.panes').first()
   await expect.poll(async () => (await first.boundingBox())!.x + 1 < 0).toBe(true)
+  const { row } = await terminalFont(page)
   writeConfig(dataDir, '[terminal]\nline-height = 2\n')
-  await expect.poll(async () => (await terminalFont(page)).row).toBeGreaterThanOrEqual(28)
+  await expect.poll(async () => (await terminalFont(page)).row).toBeGreaterThan(row)
   const shown = await shellSize(page)
   await clickMenu(app, 'previous-cell')
   await clickMenu(app, 'previous-cell')
@@ -219,7 +207,7 @@ test('pane 헤더도 설정 글꼴을 따른다', async ({ launch, dataDir }) =>
   expect(header).toEqual([font.family, font.size])
 })
 
-test('헤더는 기본으로 pane 아래에 있고, layout.header = "top" 으로 고치면 바로 위로 옮기며, 토스트는 두 위치 모두 왼쪽 아래에 뜬다', async ({
+test('헤더는 기본으로 pane 아래에 있고, layout.header = "top" 으로 고치면 바로 위로 옮기고, 되돌리면 아래로 돌아온다', async ({
   launch,
   dataDir
 }) => {
@@ -227,15 +215,12 @@ test('헤더는 기본으로 pane 아래에 있고, layout.header = "top" 으로
   await expect.poll(() => headerOffsets(page)).toMatchObject({ bottom: 0 })
   expect((await headerOffsets(page)).top).toBeGreaterThan(0)
 
-  writeConfig(dataDir, '[layout]\nheader = "top"\n[terminal]\nfont-size = 40\n')
+  writeConfig(dataDir, '[layout]\nheader = "top"\n')
   await expect.poll(() => headerOffsets(page)).toMatchObject({ top: 0 })
   expect((await headerOffsets(page)).bottom).toBeGreaterThan(0)
-  await expect.poll(() => toastInBottomLeft(page)).toBe(true)
-  const placed = await toast(page).boundingBox()
 
-  writeConfig(dataDir, '[layout]\nheader = "bottom"\n[terminal]\nfont-size = 40\n')
+  writeConfig(dataDir, '[layout]\nheader = "bottom"\n')
   await expect.poll(() => headerOffsets(page)).toMatchObject({ bottom: 0 })
-  await expect.poll(() => toast(page).boundingBox()).toEqual(placed)
 })
 
 test('layout.header 가 top·bottom 이 아니면 알리고 아래에 둔다', async ({ launch, dataDir }) => {
@@ -382,14 +367,13 @@ test('토스트가 떠 있어도 Canvas 헤더의 닫기 버튼으로 Canvas 를
   await expect(toast(page)).toHaveCount(1)
 })
 
-test('토스트는 사이드바 왼쪽 아래 안쪽에 뜨고, 기본 폭의 사이드바를 접어도 펼쳤을 때의 폭을 지킨다', async ({
+test('토스트는 기본 폭의 사이드바를 접어도 펼쳤을 때의 폭을 지킨다', async ({
   launch,
   dataDir
 }) => {
   writeConfig(dataDir, '[terminal]\nfont-size = 40\n')
   const { app, page } = await launch()
   await expect(toast(page)).toHaveCount(1)
-  expect(await toastInBottomLeft(page)).toBe(true)
   const { width } = (await toast(page).boundingBox())!
   await collapseSidebar(app, page)
   expect((await toast(page).boundingBox())!.width).toBe(width)

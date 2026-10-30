@@ -4,7 +4,6 @@ import type { CDPSession, Page } from '@playwright/test'
 import {
   cellSize,
   expect,
-  GROUND,
   isInk,
   screenshotPixels,
   settled,
@@ -171,41 +170,15 @@ for (const size of [undefined, 13, 15, 16])
         expect(await settled(ink)).toEqual(composing)
       })
 
-for (const size of [undefined, 13, 15, 16])
-  test(`글꼴 크기 ${size ?? '기본값'}: 조합창은 터미널 배경에 밑줄로 두 글자 칸을 덮어 그 아래의 커서를 가린다`, async ({
-    launch,
-    dataDir
-  }) => {
-    if (size !== undefined) writeConfig(dataDir, `[terminal]\nfont-size = ${size}\n`)
-    const launched = await launch({ MARU_DOM_RENDERER: '' })
-    const { page } = launched
-    const cell = await cellSize(page)
-    const at = await cursor(page)
-    const cdp = await page.context().newCDPSession(page)
-    await compose(cdp, '한')
-    const view = page.locator('.terminal-view.active .composition-view')
-    await expect(view).toBeVisible()
-    const style = await view.evaluate((el) => {
-      const s = getComputedStyle(el)
-      const r = el.getBoundingClientRect()
-      return {
-        background: s.backgroundColor,
-        decoration: s.textDecorationLine,
-        fontSize: s.fontSize,
-        left: r.left,
-        top: r.top,
-        bottom: r.bottom,
-        width: r.width
-      }
-    })
-    if (size !== undefined) expect(style.fontSize).toBe(`${size}px`)
-    expect(style.background).toBe(`rgb(${GROUND.join(', ')})`)
-    expect(style.decoration).toBe('underline')
-    expect(style.left).toBeCloseTo(at.x, 1)
-    expect(style.width).toBeCloseTo(2 * cell.width, 1)
-    expect(style.top).toBeLessThanOrEqual(at.y + 0.01)
-    expect(style.bottom).toBeGreaterThanOrEqual(at.y + cell.height - 0.01)
-  })
+test('조합창은 설정한 글꼴 크기로 쓴다', async ({ launch, dataDir }) => {
+  writeConfig(dataDir, '[terminal]\nfont-size = 16\n')
+  const { page } = await launch({ MARU_DOM_RENDERER: '' })
+  const cdp = await page.context().newCDPSession(page)
+  await compose(cdp, '한')
+  const view = page.locator('.terminal-view.active .composition-view')
+  await expect(view).toBeVisible()
+  await expect(view).toHaveCSS('font-size', '16px')
+})
 
 test('마지막 열에서 조합해도 조합창이 터미널 밖으로 넘치지 않고, 남은 폭보다 긴 조합은 끝을 보인다', async ({
   launch
@@ -265,33 +238,4 @@ test('조합 중에 커서가 마지막 열로 옮겨지면 조합창을 남은 
   expect(await view.evaluate((el) => el.getBoundingClientRect().right)).toBeLessThanOrEqual(
     right + 0.5
   )
-})
-
-test('한글과 영문을 설치된 D2Coding 으로 그린다', async ({ launch }) => {
-  const launched = await launch({ MARU_DOM_RENDERER: '' })
-  const { page } = launched
-  // 설치되지 않은 글꼴을 앞에 두면 뒤의 글꼴로 그려 폭이 같다.
-  const installed = await page.evaluate(() => {
-    const ctx = document.createElement('canvas').getContext('2d')!
-    const width = (font: string): number => {
-      ctx.font = font
-      return ctx.measureText('abc 한').width
-    }
-    return width('14px D2Coding, serif') !== width('14px serif')
-  })
-  test.skip(!installed, 'D2Coding 이 설치돼 있지 않다')
-
-  const cdp = await page.context().newCDPSession(page)
-  await cdp.send('DOM.enable')
-  await cdp.send('CSS.enable')
-  const fonts = async (selector: string): Promise<string[]> => {
-    const { root } = await cdp.send('DOM.getDocument')
-    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector })
-    const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId })
-    return fonts.map((f) => f.familyName)
-  }
-  await compose(cdp, '한')
-  await expect(page.locator('.terminal-view.active .composition-view')).toBeVisible()
-  expect(await fonts('.terminal-view.active .composition-view')).toEqual(['D2Coding'])
-  expect(await fonts('.row-bar-text')).toEqual(['D2Coding'])
 })

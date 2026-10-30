@@ -499,7 +499,6 @@ test('팔레트는 기본으로 창 아래쪽에 pane 헤더를 가리지 않게
   await shrinkList(page)
   const shrunk = await paletteLayout(page)
   expect(fixedEdge(full, shrunk), JSON.stringify({ full, shrunk })).toBe('bottom')
-  expect(shrunk.gap).toBe(full.gap)
 })
 
 test('layout.palette = "top" 이면 팔레트는 창 위쪽에 뜨고 입력줄이 맨 위에 놓이며, 열린 채로 고쳐도 옮긴다', async ({

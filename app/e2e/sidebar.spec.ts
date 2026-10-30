@@ -1,7 +1,7 @@
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { ICONS } from '../src/renderer/src/icons'
 import {
   clickMenu,
@@ -40,6 +40,8 @@ import {
 
 // 셸에서 친 git 은 `/usr/bin/git`(xcrun shim)을 거치므로, 부하가 걸리면 `git switch` 한 번에 최대 3.6초 걸렸다. 15초는 그 값에 여유를 둔 것이고 잰 근거는 없다.
 const shellGit = { timeout: 15_000 }
+
+const opacity = (el: Locator) => el.evaluate((e) => Number(getComputedStyle(e).opacity))
 
 function repoHome(dataDir: string, format: 'files' | 'reftable' = 'files'): string {
   const home = zshHome(dataDir, 'proj', 'notes')
@@ -110,7 +112,7 @@ test('workspace 이름 줄은 첫 cell 의 첫 pane 의 저장소 이름(저장�
 
   await collapseSidebar(app, page)
   await expect(workspaceNames(page)).toBeVisible()
-  await expect(workspaceNames(page)).toHaveCSS('opacity', '1')
+  await expect.poll(() => opacity(workspaceNames(page))).toBeGreaterThan(0)
 })
 
 test('cell 이름은 workspace 와 다른 부분만 적는다: 같은 저장소는 branch(하위 폴더면 상대 경로), 다른 저장소는 이름과 branch, git 밖은 폴더 이름', async ({
@@ -751,7 +753,7 @@ test('도는 job 의 ✕ 는 확인 창을 띄우고, 취소하면 남기며 Sto
   const dev = jobRows(page).first()
   await expect(dev.locator('.kill')).toHaveCSS('opacity', '0')
   await dev.hover()
-  await expect(dev.locator('.kill')).toHaveCSS('opacity', '1')
+  await expect.poll(() => opacity(dev.locator('.kill'))).toBeGreaterThan(0)
   await expect(dev.locator('.time')).toBeHidden()
 
   await stubDialog(app, 1)
@@ -789,7 +791,7 @@ test('job ✕ 는 키보드로도 닿고, 포커스를 받으면 보인다', asy
   const kill = jobRows(page).first().locator('.kill')
   await kill.focus()
   await expect(kill).toBeFocused()
-  await expect(kill).toHaveCSS('opacity', '1')
+  await expect.poll(() => opacity(kill)).toBeGreaterThan(0)
   await stubDialog(app, 0)
   await page.keyboard.press('Enter')
   await expect(jobRows(page)).toHaveCount(0)

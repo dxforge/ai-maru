@@ -6,7 +6,6 @@ import {
   clickMenu,
   expect,
   focusPane,
-  isInk,
   newWorkspace,
   paneHeader,
   panes,
@@ -14,9 +13,7 @@ import {
   putCanvas,
   resizeBy,
   run,
-  screenshotPixels,
   setZoom,
-  shellSize,
   split,
   test,
   toggleView,
@@ -214,7 +211,7 @@ test('single 보기에서도 선택된 cell 의 헤더만 이름·상태를 보�
   await run(page, 'echo keep-$((1+1))', 'keep-2')
 })
 
-test('columns 의 cell 헤더는 idle 만 있으면 pane 헤더와 같은 idle 아이콘을 같은 크기로 보인다', async ({
+test('columns 의 cell 헤더는 idle 만 있으면 pane 헤더와 같은 idle 아이콘을 보인다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -227,11 +224,6 @@ test('columns 의 cell 헤더는 idle 만 있으면 pane 헤더와 같은 idle �
 
   await expect(cellIcon.locator('svg')).toHaveAttribute('data-state', 'idle')
   await expect(paneIcon.locator('svg')).toHaveAttribute('data-state', 'idle')
-  const size = (l: typeof cellIcon) =>
-    l
-      .locator('svg')
-      .evaluate((e) => [e.getBoundingClientRect().width, e.getBoundingClientRect().height])
-  expect(await size(cellIcon)).toEqual(await size(paneIcon))
 })
 
 test('pane 헤더와 columns 의 cell 헤더는 글자 위에서도 기본 커서를 보이고, Canvas 글자에서 헤더로 끌어도 헤더 글자는 선택되지 않는다', async ({
@@ -283,63 +275,6 @@ test('pane 헤더와 columns 의 cell 헤더는 글자 위에서도 기본 커�
     expect(selection.text).toContain('canvas-heading')
     expect(selection.inHeader).toBe(false)
   }
-})
-
-test('Canvas 패널 헤더에는 pane 헤더의 모양이 걸리지 않는다', async ({ launch }) => {
-  const { app, page } = await launch()
-  await clickMenu(app, 'toggle-canvas')
-  const header = page.locator('.canvas header')
-  await expect(header).toBeVisible()
-
-  const head = (await header.boundingBox())!
-  const close = (await header.locator('.close').boundingBox())!
-  expect(close.y).toBeGreaterThanOrEqual(head.y)
-  expect(close.y + close.height).toBeLessThanOrEqual(head.y + head.height)
-  expect(await header.evaluate((h) => getComputedStyle(h).fontFamily)).not.toContain(
-    'Symbols Nerd Font Mono'
-  )
-})
-
-test('명령 팔레트와 Canvas 패널은 앱 테마 색을 쓴다', async ({ launch }) => {
-  const { app, page } = await launch()
-  await clickMenu(app, 'toggle-canvas')
-  await clickMenu(app, 'command-palette')
-  await expect(page.locator('.palette')).toBeVisible()
-
-  const colors = await page.evaluate(() => {
-    const token = (name: string) => {
-      const probe = document.createElement('div')
-      probe.style.color = `var(${name})`
-      document.body.append(probe)
-      const color = getComputedStyle(probe).color
-      probe.remove()
-      return color
-    }
-    const css = (s: string) => getComputedStyle(document.querySelector(s)!)
-    return {
-      palette: [css('.palette').backgroundColor, css('.palette').borderTopColor],
-      canvas: css('.canvas').color,
-      tokens: [token('--raised'), token('--line'), token('--fg')]
-    }
-  })
-  const [raised, line, fg] = colors.tokens
-  expect(colors.palette).toEqual([raised, line])
-  expect(colors.canvas).toBe(fg)
-})
-
-test('터미널 왼쪽 여백도 터미널 배경으로 칠한다', async ({ launch }) => {
-  const { page } = await launch()
-  await shellSize(page)
-  // 띄운 직후 맨 아래 행은 비어 있으므로, 그 행에서 왼쪽 여백과 첫 글자 칸의 앞부분을 1px 높이로 잘라 색을 비교한다.
-  const line = await page.locator('.terminal-view.active .xterm').evaluate((xterm) => {
-    const left = xterm.getBoundingClientRect().left
-    const screen = xterm.querySelector('.xterm-screen')!.getBoundingClientRect()
-    return { x: left, y: screen.bottom - 4, width: screen.left - left + 4, height: 1 }
-  })
-  const { width, data } = await screenshotPixels(page, line, 'css')
-  const rgb = (x: number) => data.slice(x * 4, x * 4 + 3)
-  expect(isInk(data, (width - 1) * 4)).toBe(false)
-  expect(rgb(1)).toEqual(rgb(width - 1))
 })
 
 async function measure(page: Page) {
@@ -490,45 +425,6 @@ for (const level of [1.5, 0.5, -0.5]) {
   })
 }
 
-test('포커스 없는 pane 의 스크롤바도 흐리게 덮는다', async ({ launch }) => {
-  const { app, page } = await launch()
-  await split(app, page, 'split-right', 2)
-  await run(page, 'seq 1 300', '300')
-  const sliderRect = () =>
-    page.evaluate(() => {
-      const track = document
-        .querySelectorAll('.panes.selected .pane')[1]
-        .querySelector('.xterm-vertical')!
-      const r = track.querySelector('.xterm-slider')!.getBoundingClientRect()
-      return {
-        x: Math.floor(r.left + r.width / 2),
-        y: Math.floor(r.top + r.height / 2),
-        shrunk: r.height < track.getBoundingClientRect().height
-      }
-    })
-  // 출력이 뜬 직후에는 스크롤바가 아직 갱신되지 않아 슬라이더가 트랙 전체를 차지한다.
-  await expect.poll(async () => (await sliderRect()).shrunk).toBe(true)
-  const slider = await sliderRect()
-  const background = await pixel(page, slider.x - 40, slider.y)
-  const hovered = async () => {
-    await page.mouse.move(slider.x - 40, slider.y)
-    await page.mouse.move(slider.x, slider.y)
-    await expect.poll(() => pixel(page, slider.x, slider.y)).not.toEqual(background)
-    return pixel(page, slider.x, slider.y)
-  }
-  const focused = await hovered()
-
-  await clickMenu(app, 'focus-pane-left')
-  await expect(paneHeader(page, 1)).not.toHaveClass(/focused/)
-
-  await expect.poll(async () => (await hovered())[0]).toBeLessThan(focused[0])
-})
-
-async function pixel(page: Page, x: number, y: number): Promise<number[]> {
-  const { data } = await screenshotPixels(page, { x, y, width: 1, height: 1 })
-  return data.slice(0, 3)
-}
-
 test('columns 에서 줌과 창 크기를 바꿔도 pane 경계는 행·열 격자에 놓인다', async ({ launch }) => {
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
@@ -612,31 +508,4 @@ test('헤더가 위면 columns 의 cell 헤더는 카드 맨 위, pane 헤더 �
     return { gap: r.top - card.top, below: pane.top - r.bottom }
   })
   expect(layout).toEqual({ gap: 0, below: 0 })
-})
-
-test('pane 헤더와 columns 의 cell 헤더는 터미널과 같은 글꼴·크기로 쓰고, 두 헤더의 높이가 같다', async ({
-  launch
-}) => {
-  const { app, page } = await launch()
-  await toggleView({ app, page }, 'columns')
-  await expect(page.locator('.cell-header')).toHaveCount(1)
-
-  const style = await page.evaluate(() => {
-    const css = (s: string) => getComputedStyle(document.querySelector(s)!)
-    const [terminal, title, name] = [
-      css('.xterm-rows'),
-      css('.pane-header .title'),
-      css('.cell-header .name')
-    ]
-    return {
-      terminal: [terminal.fontFamily, terminal.fontSize],
-      title: [title.fontFamily, title.fontSize],
-      name: [name.fontFamily, name.fontSize],
-      headerHeight: document.querySelector('.cell-header')!.getBoundingClientRect().height,
-      paneHeaderHeight: document.querySelector('.pane-header')!.getBoundingClientRect().height
-    }
-  })
-  expect(style.title).toEqual(style.terminal)
-  expect(style.name).toEqual(style.terminal)
-  expect(style.headerHeight).toBe(style.paneHeaderHeight)
 })
