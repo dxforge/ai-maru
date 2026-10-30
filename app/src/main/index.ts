@@ -30,6 +30,7 @@ import { AfterReply, CliError, listenCli, optionalBoolean, type Handlers } from 
 import { configDir, configFile, readConfigFile, watchConfig } from './config-file'
 import { gitHead } from './git'
 import { createInbox } from './inbox'
+import { mcpHandlers } from './mcp'
 import { installCommandMenu } from './menu'
 import { createMonitor } from './monitor'
 import { isDevReload } from './navigation'
@@ -355,6 +356,8 @@ function confirmQuit(): void {
   })().finally(() => (quitCheck = null))
 }
 
+const putDoc = canvasPut(mainWindow)
+
 const cliHandlers: Handlers = {
   ping: (_params, pty) => ({ pty }),
   'pane.list': () => {
@@ -364,7 +367,8 @@ const cliHandlers: Handlers = {
       panes: paneRows(screen.workspaces, ptyStates.state, process.env.SHELL, process.env.HOME)
     }
   },
-  'canvas.put': canvasPut(mainWindow),
+  'canvas.put': putDoc,
+  ...mcpHandlers({ put: putDoc, version: app.getVersion() }),
   ...monitor.handlers,
   ...inbox,
   ...panes.handlers,

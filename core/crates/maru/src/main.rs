@@ -57,6 +57,7 @@
 //! | `job.send` | `target`, `text`(문자열) | `null` |
 //! | `job.kill` | `target` | `null` |
 //! | `app.restart` | `kill_ptys`(bool, 선택) | `null` |
+//! | `mcp.message` | `message`(MCP 의 JSON-RPC 2.0 메시지 객체) | `{"message":<MCP 응답 객체>}`, 안쪽이 알림이나 응답이면 `null` |
 //!
 //! `pane.list` 는 창의 모든 workspace·cell 의 pane 을 화면 순서(workspace → cell → pane)로 돌려준다.
 //! job 은 들지 않는다. `state`·`kind`·`message` 는 사이드바가 보이는 program_status 레코드(루트와 하위
@@ -144,6 +145,26 @@
 //!   "name":<이름, 없으면 뺀다>,"code","signal"}` 을 보낸다. 그 pty 에 구독이 없으면 보류했다가
 //!   구독이 생길 때 보낸다. `job.kill` 이나 cell 닫기로 끝난 job 은 알리지 않는다.
 //!
+//! # mcp
+//!
+//! 앱 claude plugin 의 `.mcp.json` 이 `maru mcp` 를 MCP 서버로 띄운다. `maru mcp` 는 stdin 의 한 줄(MCP 의 stdio
+//! 전송에서 메시지 하나)마다 연결 하나를 열어 `mcp.message` 로 앱에 보내고, `result.message` 를 stdout 에 한 줄로
+//! 쓴다. `result` 가 `null` 이면 쓰지 않는다. stdin 이 닫히면 끝난다. 도구는 앱이 처리하고 `maru mcp` 는 메시지를
+//! 해석하지 않고 옮긴다. 예외는 하나다 — `canvas_put` 의 `file` 은 `maru mcp` 가 자기 cwd 기준으로 읽어
+//! `text` 로 바꿔 보낸다. 읽기 규칙은 `maru canvas put FILE` 과 같고, 읽지 못하면 앱에 보내지 않고 도구 실행
+//! 오류(`isError`)로 답한다. `text` 와 함께 온 `file` 은 읽지 않고 그대로 보낸다.
+//!
+//! 안쪽 메시지의 실패는 앱이 `result.message` 안의 JSON-RPC `error`(도구 인자가 틀린 것은 `isError` 결과)로
+//! 돌려준다. 바깥 `error` 는 줄 프로토콜 자체의 실패에만 쓴다. 앱은 MCP 세션의 상태를 두지 않는다.
+//!
+//! 앱에 연결하지 못하면(소켓이 없거나 연결을 거절하면) `maru mcp` 는 `MARU_SOCKET` 이 있는 디렉토리가 바뀔
+//! 때마다 다시 붙어 보며 10초까지 기다린다. 연결한 뒤의 실패(답 없이 닫힘·시간 초과·바깥 `error`)는 다시 보내지
+//! 않는다. 기다려도 붙지 못했거나 연결한 뒤 실패한 메시지가 `tools/call` 이면 도구 실행 오류로, 그 밖의 요청이면
+//! JSON-RPC `error`(-32603)로 답한다. 알림이면 답하지 않는다. 프로세스는 끝나지 않고 다음 메시지를 받는다.
+//!
+//! 앱이 클라이언트에 먼저 보내는 메시지(알림·요청)는 아직 없다. 생기면 `monitor.subscribe` 처럼 연결을 열어 두는
+//! `mcp.subscribe` 를 더한다. 요청 한 줄의 16 MiB 상한은 감싼 줄 전체에 걸리므로 MCP 메시지는 그보다 작아야 한다.
+//!
 //! # status
 //!
 //! `maru status` 는 앱에 요청을 보내지 않는다. 자기 제어 터미널(`/dev/tty`)에 OSC 7501 보고를 써서,
@@ -179,9 +200,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, IsTerminal, Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const PROTOCOL_VERSION: u64 = 1;
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -246,6 +267,11 @@ enum Command {
         #[command(subcommand)]
         command: StatusCommand,
     },
+    /// Serve the app's MCP tools, such as canvas_put, over stdin and stdout.
+    ///
+    /// Relays each MCP message, one JSON-RPC message per line, to the app and writes the
+    /// app's reply. The app's claude plugin runs this as its MCP server.
+    Mcp,
     /// Commands the app's claude plugin runs from its hooks and monitors.
     #[command(hide = true)]
     Claude {
@@ -602,6 +628,7 @@ fn run(command: Command) -> Result<()> {
             };
             write_once(terminal, &report)?
         }
+        Command::Mcp => mcp()?,
         Command::Claude { command } => match command {
             ClaudeCommand::Hook => claude_hook()?,
             ClaudeCommand::Monitor => claude_monitor()?,
@@ -849,15 +876,7 @@ fn claude_monitor() -> Result<()> {
     // macOS 의 poll 은 쓰기를 기다리지 않으면 pipe·socket 의 상대가 닫힌 것을 알리지 않는다.
     let kq = Kqueue::new().context("cannot create a kqueue")?;
     watch(&kq, 1, EventFilter::EVFILT_WRITE, FilterFlag::empty()).context("cannot watch stdout")?;
-    // 다시 뜬 앱이 소켓을 같은 경로로 옮기므로(모듈 doc 「claude monitor」) 디렉토리를 감시한다.
-    let dir = std::path::Path::new(&target.socket)
-        .parent()
-        .and_then(|d| File::open(d).ok());
-    if let Some(d) = &dir {
-        let fd = d.as_raw_fd() as usize;
-        watch(&kq, fd, EventFilter::EVFILT_VNODE, FilterFlag::NOTE_WRITE)
-            .context("cannot watch the app's socket directory")?;
-    }
+    let dir = watch_socket_dir(&kq, &target)?;
     let mut app = None;
     if !resubscribe(&kq, &target, &mut app)? {
         return Ok(());
@@ -1037,31 +1056,170 @@ fn bsd_info(pid: u32) -> Option<nix::libc::proc_bsdinfo> {
     (n == size).then(|| unsafe { info.assume_init() })
 }
 
+fn mcp() -> Result<()> {
+    let target = target()?;
+    let mut out = std::io::stdout().lock();
+    for line in std::io::stdin().lock().split(b'\n') {
+        let line = line.context("cannot read stdin")?;
+        if line.trim_ascii().is_empty() {
+            continue;
+        }
+        let Some(reply) = mcp_reply(&target, &line) else {
+            continue;
+        };
+        // 읽는 쪽이 닫혔으면 답할 곳이 없다.
+        if writeln!(out, "{reply}").and_then(|()| out.flush()).is_err() {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn mcp_reply(target: &Target, line: &[u8]) -> Option<Value> {
+    let mut msg = match serde_json::from_slice::<Value>(line) {
+        Ok(msg @ Value::Object(_)) => msg,
+        Ok(_) => return Some(rpc_error(&Value::Null, -32600, "not a JSON-RPC message")),
+        Err(_) => return Some(rpc_error(&Value::Null, -32700, "not JSON")),
+    };
+    // 응답과 알림에는 답하지 않으므로, 실패도 알릴 곳이 없다.
+    let request = msg.get("method").is_some() && msg.get("id").is_some();
+    let id = msg["id"].clone();
+    let tool_call = msg["method"] == "tools/call";
+    let sent = read_file_argument(&mut msg, tool_call).and_then(|()| relay(target, msg));
+    match sent {
+        Ok(reply) => reply,
+        Err(_) if !request => None,
+        // claude 는 도구 실행 오류를 읽고 다시 부를 수 있다.
+        Err(e) if tool_call => Some(tool_error(&id, &format!("{e:#}"))),
+        Err(e) => Some(rpc_error(&id, -32603, &format!("{e:#}"))),
+    }
+}
+
+/// `canvas_put` 의 `file` 을 읽어 `text` 로 바꾼다. `text` 와 같이 왔으면 그대로 두어, 인자 규칙을 검사하는 앱이 거절하게 한다.
+fn read_file_argument(msg: &mut Value, tool_call: bool) -> Result<()> {
+    if !tool_call || msg.pointer("/params/name").and_then(Value::as_str) != Some("canvas_put") {
+        return Ok(());
+    }
+    let Some(args) = msg
+        .pointer_mut("/params/arguments")
+        .and_then(Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+    let Some(Value::String(file)) = args.get("file") else {
+        return Ok(());
+    };
+    if args.contains_key("text") {
+        return Ok(());
+    }
+    let text = read_markdown(Path::new(file))?;
+    args.remove("file");
+    args.insert("text".into(), text.into());
+    Ok(())
+}
+
+fn relay(target: &Target, message: Value) -> Result<Option<Value>> {
+    let stream = connect_waiting(target).context("AI Maru app is not running")?;
+    let mut params = Map::new();
+    params.insert("message".into(), message);
+    // 연결된 뒤의 실패는 다시 보내지 않는다. 앱이 이미 처리했다면 `id` 없이 부른 `canvas_put` 이 문서를 하나 더
+    // 만들기 때문이다.
+    match exchange(&stream, target, "mcp.message", params)? {
+        Value::Null => Ok(None),
+        mut result => match result.get_mut("message").map(Value::take) {
+            Some(message @ Value::Object(_)) => Ok(Some(message)),
+            _ => bail!("the app answered without a message"),
+        },
+    }
+}
+
+/// 앱에 붙는다. 소켓이 없거나 연결을 거절하면 — 앱이 아직 안 떴거나 다시 뜨는 중이면 — 소켓 디렉토리가 바뀔 때마다
+/// 다시 붙어 보며 `TIMEOUT` 까지 기다린다.
+fn connect_waiting(target: &Target) -> Result<UnixStream> {
+    let deadline = Instant::now() + TIMEOUT;
+    let mut watching: Option<(Kqueue, File)> = None;
+    loop {
+        let err = match connect(target) {
+            Ok(stream) => return Ok(stream),
+            Err(e) => e,
+        };
+        let absent = err.downcast_ref::<std::io::Error>().is_some_and(|e| {
+            matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused)
+        });
+        if !absent {
+            return Err(err);
+        }
+        let Some((kq, _dir)) = &watching else {
+            // 감시를 건 뒤 한 번 더 붙어 본다. 첫 연결 시도와 감시를 건 사이에 뜬 앱은 디렉토리 변화로 잡히지 않기
+            // 때문이다.
+            let kq = Kqueue::new().context("cannot create a kqueue")?;
+            let Some(dir) = watch_socket_dir(&kq, target)? else {
+                return Err(err);
+            };
+            watching = Some((kq, dir));
+            continue;
+        };
+        let left = deadline.saturating_duration_since(Instant::now());
+        let timeout = nix::libc::timespec {
+            tv_sec: left.as_secs() as _,
+            tv_nsec: left.subsec_nanos() as _,
+        };
+        let mut events = [KEvent::new(
+            0,
+            EventFilter::EVFILT_VNODE,
+            EvFlags::empty(),
+            FilterFlag::empty(),
+            0,
+            0,
+        )];
+        match kq.kevent(&[], &mut events, Some(timeout)) {
+            Ok(0) => return Err(err),
+            Ok(_) | Err(Errno::EINTR) => {}
+            Err(e) => return Err(e).context("cannot watch the app's socket directory"),
+        }
+    }
+}
+
+/// 다시 뜬 앱은 소켓을 같은 경로로 옮기므로(모듈 doc 「claude monitor」) 소켓이 있는 디렉토리를 `kq` 로 감시한다.
+/// 디렉토리를 열 수 없으면 `None` 이다.
+fn watch_socket_dir(kq: &Kqueue, target: &Target) -> Result<Option<File>> {
+    let Some(dir) = Path::new(&target.socket)
+        .parent()
+        .and_then(|d| File::open(d).ok())
+    else {
+        return Ok(None);
+    };
+    let fd = dir.as_raw_fd() as usize;
+    watch(kq, fd, EventFilter::EVFILT_VNODE, FilterFlag::NOTE_WRITE)
+        .context("cannot watch the app's socket directory")?;
+    Ok(Some(dir))
+}
+
+fn rpc_error(id: &Value, code: i64, message: &str) -> Value {
+    json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
+}
+
+fn tool_error(id: &Value, text: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": { "content": [{ "type": "text", "text": text }], "isError": true },
+    })
+}
+
 fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) -> Result<String> {
     if id.as_deref() == Some("") {
         bail!("--id must not be empty");
     }
     // 앱 터미널 밖이면 끝나지 않는 입력을 읽기 전에 실패해야 한다.
     let target = target()?;
-    let (source, mut text) = match file.filter(|f| f.as_os_str() != "-") {
-        Some(path) => {
-            let source = path.display().to_string();
-            let input = File::open(&path).with_context(|| format!("cannot read {source}"))?;
-            let text = read_text(&source, input)?;
-            (source, text)
-        }
-        None => (
-            "stdin".to_owned(),
+    let text = match file.filter(|f| f.as_os_str() != "-") {
+        Some(path) => read_markdown(&path)?,
+        None => markdown(
+            "stdin",
             read_stdin("give a FILE or pipe markdown into stdin, e.g. `maru canvas put note.md`")?,
-        ),
+        )?,
     };
-    // marked 는 BOM 뒤의 `#` 을 제목으로 읽지 않는다.
-    if text.starts_with('\u{feff}') {
-        text.drain(..'\u{feff}'.len_utf8());
-    }
-    if text.trim().is_empty() {
-        bail!("{source} is empty");
-    }
     let mut params = Map::new();
     params.insert("text".into(), text.into());
     if let Some(id) = id {
@@ -1075,6 +1233,24 @@ fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) 
         Some(id) => Ok(id.to_owned()),
         None => bail!("the app answered without a document id: {result}"),
     }
+}
+
+/// Canvas 에 보일 마크다운 파일을 읽는다. `maru canvas put FILE` 과 MCP 도구 `canvas_put` 의 `file` 이 함께 쓴다.
+fn read_markdown(path: &Path) -> Result<String> {
+    let source = path.display().to_string();
+    let input = File::open(path).with_context(|| format!("cannot read {source}"))?;
+    markdown(&source, read_text(&source, input)?)
+}
+
+fn markdown(source: &str, mut text: String) -> Result<String> {
+    // marked 는 BOM 뒤의 `#` 을 제목으로 읽지 않는다.
+    if text.starts_with('\u{feff}') {
+        text.drain(..'\u{feff}'.len_utf8());
+    }
+    if text.trim().is_empty() {
+        bail!("{source} is empty");
+    }
+    Ok(text)
 }
 
 fn read_text(source: &str, input: impl Read) -> Result<String> {
@@ -1435,15 +1611,23 @@ fn connect(target: &Target) -> Result<UnixStream> {
 }
 
 fn call(target: &Target, method: &str, params: Map<String, Value>) -> Result<Value> {
-    let stream = connect(target)?;
+    exchange(&connect(target)?, target, method, params)
+}
 
-    (&stream)
+fn exchange(
+    stream: &UnixStream,
+    target: &Target,
+    method: &str,
+    params: Map<String, Value>,
+) -> Result<Value> {
+    let mut stream = stream;
+    stream
         .write_all(request_line(target, method, params).as_bytes())
         .map_err(timed_out)
         .context("cannot send the request to the app")?;
 
     let mut reply = String::new();
-    BufReader::new(&stream)
+    BufReader::new(stream)
         .read_line(&mut reply)
         .map_err(timed_out)
         .context("cannot read the app's answer")?;

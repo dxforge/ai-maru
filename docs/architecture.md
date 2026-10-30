@@ -66,6 +66,10 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 다시 뜬 앱의 남은 pty 정리는 이 파일에 있는 pty 만 남기고, 그 가운데 프로토콜 버전이 다른 pty 는 끈다. 되살린 pane 은 `pty:open` 의 `attach` 로 pty 를 띄우지 않고 붙는다.
 
+## MCP 도구는 `maru mcp` 가 앱에 중계한다
+
+앱이 claude 에 싣는 plugin(`app/resources/claude-plugin`)의 `.mcp.json` 이 `maru mcp` 를 MCP 서버로 띄운다. `maru mcp` 는 MCP 메시지를 줄 프로토콜의 `mcp.message` 로 하나씩 앱에 보내고, 도구는 앱의 main(`app/src/main/mcp.ts`)이 처리한다. `canvas_put` 은 `maru canvas put` 과 같은 `canvasPut` 으로 간다. MCP 메시지를 처리하는 쪽을 나중에 앱 밖의 프로세스로 옮겨도 `maru mcp`·plugin 설정·도구 이름이 그대로이도록, `maru mcp` 는 메시지를 해석하지 않는다. 예외는 `canvas_put` 의 `file` 을 읽는 것뿐이다 — 상대 경로의 기준인 claude 의 cwd 를 `maru mcp` 가 알기 때문이다. 앱은 MCP 세션의 상태를 두지 않는다. 그래서 앱이 다시 떠도 claude 는 `initialize` 를 다시 보내지 않고 같은 `maru mcp` 로 도구를 부른다. MCP 의 HTTP 전송을 쓰지 않은 것은 앱에 HTTP 서버와 MCP SDK 를 들이지 않기 위해서다.
+
 ## 런처로 띄운 pane 은 명령이 실패하면 남는다
 
 런처(⌘P)가 명령으로 띄운 pane 은 화면 snapshot 에 `keep` 이 붙고(`ScreenPane`), pty 를 `maru-pty --keep` 으로 띄운다. 명령이 0 이나 130 으로 끝나거나 셸이 SIGINT 로 끝나면 다른 명령 pane 처럼 pane 을 지운다. 130 과 SIGINT 는 사용자가 Ctrl-C 로 끈 것이기 때문이다. 그 밖의 코드나 시그널로 끝나면 renderer 는 pane 을 지우지 않고 종료 상태를 터미널 마지막 줄에 쓴다. 재시작 뒤 다시 붙은 pane 도 `exit` 를 다시 받아 종료 상태를 마지막 줄에 쓰고 남는다. maru-pty 가 화면과 종료 상태를 들고 있기 때문이다. maru-pty 는 명령이 끝나면 상태의 명령을 안 도는 중으로 바꾸고 종료 코드를 싣는다. 그래서 OSC 7501 레코드가 없는 남긴 pane 은 헤더와 사이드바에 종료 코드를 보인다. ⌘W 는 그 pane 을 실행 중으로 보지 않으므로 확인 창을 띄우지 않는다. 남긴 pane 을 닫으면 renderer 가 보내는 kill 로 maru-pty 도 끝난다.
