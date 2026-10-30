@@ -168,6 +168,45 @@ function checkCell(force = false): void {
   emit('cell', c)
 }
 term.onDimensionsChange(() => checkCell())
+// xterm 6 은 resize 뒤 스크롤바의 위치를 buffer 가 보이는 줄에 다시 맞추지 않는다(xtermjs/xterm.js#6172). 휠을 굴린 뒤
+// 행 수가 줄면 다음 휠이 줄어든 행 수만큼 위로 튀므로, resize 뒤에 위치를 맞춘다. upstream 이 고치면 지운다.
+type XtermViewport = {
+  queueSync?(): void
+  scrollToLine?(line: number, disableSmoothScroll?: boolean): void
+}
+let resyncPending = false
+let resyncFrame: number | undefined
+// 스크롤 범위가 옛 행 수로 남은 동안 위치를 맞추면 buffer 가 그 범위 안으로 잘린 위치로 끌려간다. 화면 밖이라 그리기를
+// 멈춘 터미널에서는 xterm 이 렌더러의 크기 계산을 `requestIdleCallback` 이 돌 때나 터미널이 다시 보일 때 가운데 먼저 오는
+// 때로 미룬다. 프로그램이 synchronized output 을 켠 동안에는 xterm 이 스크롤 범위를 다시 정하는 것을 synchronized output 이
+// 끝난 뒤 그릴 때로 미룬다.
+function canResync(): boolean {
+  const d = term.dimensions
+  return (
+    !!d &&
+    d.device.canvas.height === d.device.cell.height * term.rows &&
+    !term.modes.synchronizedOutputMode
+  )
+}
+function resyncScroll(): void {
+  if (!resyncPending || resyncFrame !== undefined || !canResync()) return
+  const viewport = (term as unknown as { _core?: { _viewport?: XtermViewport } })._core?._viewport
+  // `queueSync` 가 다음 프레임에 스크롤 범위를 지금 행 수로 다시 정하므로, 위치는 그 뒤에 rAF 로 맞춘다.
+  viewport?.queueSync?.()
+  resyncFrame = requestAnimationFrame(() => {
+    resyncFrame = undefined
+    if (!canResync()) return
+    resyncPending = false
+    viewport?.scrollToLine?.(term.buffer.active.viewportY, true)
+  })
+}
+term.onResize(() => {
+  resyncPending = true
+  // xterm 은 이 listener 가 돈 뒤에 렌더러의 크기를 새 행 수로 바꾼다.
+  queueMicrotask(resyncScroll)
+})
+// xterm 은 미뤄 둔 크기 계산과 스크롤 범위를 다시 그릴 때 새 행 수로 바꾸므로, 그릴 때마다 위치 맞추기를 다시 시도한다.
+term.onRender(resyncScroll)
 let pty: Attachment | null = null
 let started = false
 // pty 는 붙을 때의 크기로 행마다 개행을 넣어 재생하므로, 뒤에 넓혀도 펼쳐지지 않는다. 그래서 `App` 이 열·행 수를 정한 뒤에 붙는다.
@@ -336,6 +375,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   intersection?.disconnect()
+  if (resyncFrame !== undefined) cancelAnimationFrame(resyncFrame)
   textLinks.dispose()
   if (webgl) disposeWebgl()
   term.dispose()
