@@ -1,10 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { killPty } from '../src/main/pty'
+import { killPty, killPtys } from '../src/main/pty'
+import { STATE_VERSIONS } from '../src/shared/screen'
 import {
   canvasWidth,
   clickMenu,
   dialogCalls,
+  END_EVERYTHING,
   expect,
   newCell,
   newWorkspace,
@@ -16,6 +18,7 @@ import {
   paneTerminalRows,
   programStatus,
   panes,
+  readState,
   restartWith,
   rows,
   run,
@@ -23,8 +26,10 @@ import {
   ptyDir,
   sockets,
   split,
+  stateFile,
   stubDialog,
   test,
+  toast,
   toggleView,
   typesInto,
   cellGroups,
@@ -34,6 +39,7 @@ import {
   cellViews,
   workspaceNames,
   wrapPtyBin,
+  zshHome,
   type Launched
 } from './app'
 
@@ -115,25 +121,6 @@ test('재시작 뒤 Canvas 는 재시작 전에 끌어 정한 폭으로 열린�
   await expect.poll(() => canvasWidth(again.page)).toBe(width)
 })
 
-test('재시작하면 window-state.json 의 보기 설정보다 재시작 전 화면을 따른다', async ({
-  launch,
-  dataDir
-}) => {
-  const first = await launch()
-  await toggleView(first, 'columns')
-  await clickMenu(first.app, 'toggle-sidebar')
-  await expect(first.page.locator('.sidebar')).toHaveClass(/collapsed/)
-  await restartWith(first.app)
-  writeFileSync(
-    join(dataDir, 'window-state.json'),
-    JSON.stringify({ viewMode: 'single', sidebar: { open: true, width: 300 } })
-  )
-
-  const { page } = await launch()
-  await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
-  await expect(page.locator('.terminals')).toHaveClass(/columns/)
-})
-
 test('재시작 뒤에도 pty 가 들고 있던 상태가 다시 붙을 때 돌아오고, 되살린 셸의 보고를 따른다', async ({
   launch
 }) => {
@@ -178,45 +165,138 @@ test('앱이 꺼진 동안 셸이 보고한 cwd·제목을 다시 뜬 앱이 프
   await expect(cellPlaces(again)).toHaveText(['moved'])
 })
 
-test('다시 뜬 앱이 프로토콜이 달라 끈 pty 의 pane 에는 상태가 없다', async ({
+test('다시 뜬 앱은 pty 의 프로토콜이 다르면 그 pty 를 끄고 레이아웃만 되살려 새 셸을 띄우고 알린다', async ({
   launch,
   dataDir
 }) => {
   const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
   await shellUp(page, 0)
   await page.keyboard.type(programStatus('working'))
-  await expect(paneRows(page)).toHaveClass(/working/)
+  await expect(paneRows(page).first()).toHaveClass(/working/)
   await restartWith(app)
-  const [sock] = sockets(dataDir)
-  const record = join(ptyDir(dataDir), `${basename(sock, '.sock')}.json`)
+  const old = sockets(dataDir)
+  const record = join(ptyDir(dataDir), `${basename(old[0], '.sock')}.json`)
   writeFileSync(
     record,
     JSON.stringify({ ...JSON.parse(readFileSync(record, 'utf8')), protocol_version: 999 })
   )
 
   const { page: again } = await launch()
-  await expect(panes(again).filter({ hasText: 'ended while the app was restarting' })).toHaveCount(
-    1
-  )
+  await expect(toast(again)).toContainText("Couldn't reattach to the terminals")
+  await expect(toast(again)).toContainText('different or unknown pty protocol version')
+  await expect(panes(again)).toHaveCount(2)
   await expect(paneRows(again)).toHaveCount(0)
+  await expect(panes(again).filter({ hasText: 'pty had ended' })).toHaveCount(0)
+  await run(again, 'echo fresh-$((1+1))', 'fresh-2')
+  for (const sock of old) expect(sockets(dataDir)).not.toContain(sock)
 })
 
-test('재시작 동안 끝난 pty 의 pane 은 이유를 보이고 남는다', async ({ launch, dataDir }) => {
-  const { app, page } = await launch()
+test('재시작 동안 끝난 pty 의 pane 은 이유를 보인 뒤 같은 pane 에 저장한 cwd 로 새 셸을 띄운다', async ({
+  launch,
+  dataDir
+}) => {
+  // bash 는 cwd 를 알리지 않아, 저장할 cwd 가 생기도록 zsh 로 띄운다.
+  const zsh = { SHELL: '/bin/zsh', HOME: zshHome(dataDir, 'moved') }
+  const moved = join(zsh.HOME, 'moved')
+  const { app, page } = await launch(zsh)
   await split(app, page, 'split-right', 2)
   await shellUp(page, 0)
   await shellUp(page, 1)
+  await run(page, `cd '${moved}'; X=old; echo in-$((1+1))`, 'in-2')
+  await expect
+    .poll(() => readState(dataDir).layout?.workspaces?.[0]?.cells?.[0]?.panes?.[1]?.cwd)
+    .toBe(moved)
   await restartWith(app)
-  const [gone] = sockets(dataDir)
-  await killPty(ptyDir(dataDir), basename(gone, '.sock'))
+  const second: string = readState(dataDir).sessions.ptys[1].pty
+  await killPty(ptyDir(dataDir), second)
 
-  const { app: again, page: shown } = await launch()
+  const { page: shown } = await launch(zsh)
   await expect(panes(shown)).toHaveCount(2)
-  const ended = panes(shown).filter({ hasText: 'ended while the app was restarting' })
-  await expect(ended).toHaveCount(1)
-  await ended.locator('.xterm-screen').click()
-  await clickMenu(again, 'close-pane')
-  await expect(panes(shown)).toHaveCount(1)
+  const gone = panes(shown).filter({ hasText: 'the pty had ended; trying to start a new shell' })
+  await expect(gone).toHaveCount(1)
+  await gone.locator('.xterm-screen').click()
+  await run(shown, 'echo "at=$PWD x=$X"', `at=${moved} x=`)
+  await expect(toast(shown)).toHaveCount(0)
+})
+
+test('명령으로 띄운 pane 의 pty 가 재시작 동안 끝났으면 명령을 다시 돌리지 않고 셸을 띄운다', async ({
+  launch,
+  dataDir
+}) => {
+  const ran = join(dataDir, 'ran')
+  const { app, page } = await launch()
+  await run(page, `maru pane new sh -c 'echo x >> ${ran}; read x'; echo made-$((1+1))`, 'made-2')
+  await expect(panes(page)).toHaveCount(2)
+  await expect.poll(() => readFileSync(ran, 'utf8')).toBe('x\n')
+  await restartWith(app)
+  const saved = readState(dataDir)
+  const commandPane = saved.layout.workspaces[0].cells[0].panes[1].key
+  const pty = saved.sessions.ptys.find((p: { pane: number }) => p.pane === commandPane).pty
+  await killPty(ptyDir(dataDir), pty)
+
+  const { page: again } = await launch()
+  await expect(panes(again)).toHaveCount(2)
+  const gone = panes(again).nth(1)
+  await expect(gone).toContainText('the pty had ended; trying to start a new shell')
+  await gone.locator('.xterm-screen').click()
+  await run(again, 'echo shell-$((1+1))', 'shell-2')
+  expect(readFileSync(ran, 'utf8')).toBe('x\n')
+  await expect
+    .poll(() => readState(dataDir).layout.workspaces[0].cells[0].panes[1].command)
+    .toBeUndefined()
+})
+
+test('앱이 강제로 끝나도 다음 실행은 살아 있는 셸에 다시 붙는다', async ({ launch, dataDir }) => {
+  const first = await launch()
+  await run(first.page, 'X=crash-$((40+2)); echo set-$((1+1))', 'set-2')
+  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(1)
+  const closed = new Promise<void>((resolve) => first.app.once('close', () => resolve()))
+  first.app.process().kill('SIGKILL')
+  await closed
+
+  const { page } = await launch()
+  await run(page, 'echo "x=$X"', 'x=crash-42')
+  await expect(toast(page)).toHaveCount(0)
+})
+
+test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살리고 pane 마다 새 셸을 띄우며 알리지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const first = await launch()
+  await split(first.app, first.page, 'split-right', 2)
+  await shellUp(first.page, 1)
+  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(2)
+  const closed = new Promise<void>((resolve) => first.app.once('close', () => resolve()))
+  first.app.process().kill('SIGKILL')
+  await closed
+  await killPtys(ptyDir(dataDir))
+
+  const { page } = await launch()
+  await expect(panes(page)).toHaveCount(2)
+  await expect(panes(page).filter({ hasText: 'the pty had ended' })).toHaveCount(2)
+  await expect(toast(page)).toHaveCount(0)
+  await run(page, 'echo back-$((1+1))', 'back-2')
+})
+
+test('state.json 의 layout 을 읽지 못하면 pty 를 끄고 빈 화면으로 뜨며 알린다', async ({
+  launch,
+  dataDir
+}) => {
+  const first = await launch()
+  await newWorkspace(first, 2)
+  await restartWith(first.app)
+  const saved = readState(dataDir)
+  saved.layout.version = 999
+  writeFileSync(stateFile(dataDir), JSON.stringify(saved))
+  const old = sockets(dataDir)
+
+  const { page } = await launch()
+  await expect(toast(page)).toContainText("Couldn't restore the workspace layout")
+  await expect(cellItems(page)).toHaveCount(1)
+  await run(page, 'echo empty-$((1+1))', 'empty-2')
+  for (const sock of old) expect(sockets(dataDir)).not.toContain(sock)
 })
 
 test('재시작 뒤 maru pane new 가 되살린 pane 을 나눈다', async ({ launch }) => {
@@ -328,17 +408,14 @@ test('재시작 전에 maru cell new 가 찍은 cell id 로 재시작 뒤에도 
   await expect(cellViews(again).nth(1).locator('.xterm-rows').nth(1)).toContainText('mark-added')
 })
 
-test('재시작한 뒤의 종료는 pty 를 끄고 restart 파일을 남기지 않는다', async ({
-  launch,
-  dataDir
-}) => {
+test('재시작한 뒤 End everything 으로 끄면 되살린 pty 도 끈다', async ({ launch, dataDir }) => {
   const { app, page: first } = await launch()
   await shellUp(first, 0)
   await restartWith(app)
   expect(sockets(dataDir)).toHaveLength(1)
   const { app: again, page } = await launch()
   await run(page, 'echo back-$((1+1))', 'back-2')
-  expect(existsSync(join(dataDir, 'restart.json'))).toBe(false)
+  await stubDialog(again, END_EVERYTHING)
   await again.close()
   expect(sockets(dataDir)).toEqual([])
 })
@@ -348,23 +425,74 @@ function otherProtocolBin(dataDir: string): Record<string, string> {
   return { MARU_PTY_BIN: bin }
 }
 
-test('버전이 다르면 확인 창을 띄우고, 취소하면 재시작하지 않는다', async ({ launch, dataDir }) => {
+function otherVersions(dataDir: string, part: 'layout' | 'sessions'): Record<string, string> {
+  const file = join(dataDir, 'installed-versions.json')
+  writeFileSync(file, JSON.stringify({ ...STATE_VERSIONS, [part]: STATE_VERSIONS[part] + 1 }))
+  return { MARU_STATE_VERSIONS_FILE: file }
+}
+
+test('pty 프로토콜이 다르면 레이아웃만 되살릴지 묻고, 취소하면 재시작하지 않는다', async ({
+  launch,
+  dataDir
+}) => {
   const { app, page } = await launch(otherProtocolBin(dataDir))
   await run(page, 'echo up-$((1+1))', 'up-2')
+  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(1)
   await stubDialog(app, 1)
   await clickMenu(app, 'restart')
   await expect.poll(() => dialogCalls(app)).toHaveLength(1)
-  expect((await dialogCalls(app))[0].detail).toContain('1 terminal(s) will end')
+  expect((await dialogCalls(app))[0]).toMatchObject({
+    message: 'Restart with layout only?',
+    detail: expect.stringContaining('The installed app uses pty protocol version 2'),
+    buttons: ['Restart with layout only', 'Cancel']
+  })
+  expect((await dialogCalls(app))[0].detail).toContain('This will end 1 terminal.')
   await run(page, 'echo still-$((1+1))', 'still-2')
-  expect(existsSync(join(dataDir, 'restart.json'))).toBe(false)
+  expect(readState(dataDir).sessions).not.toBeNull()
 })
 
-test('버전이 달라도 확인하면 재시작한다', async ({ launch, dataDir }) => {
+test('pty 프로토콜이 달라도 확인하면 pty 를 끄고 재시작하고, 다시 뜬 앱은 레이아웃만 되살리며 알리지 않는다', async ({
+  launch,
+  dataDir
+}) => {
   const { app, page } = await launch(otherProtocolBin(dataDir))
+  await split(app, page, 'split-right', 2)
   await run(page, 'echo up-$((1+1))', 'up-2')
   await stubDialog(app, 0)
   await restartWith(app)
-  expect(existsSync(join(dataDir, 'restart.json'))).toBe(true)
+  expect(sockets(dataDir)).toEqual([])
+  expect(readState(dataDir)).toMatchObject({ sessions: null, layout: { version: 1 } })
+
+  const again = await launch()
+  await expect(panes(again.page)).toHaveCount(2)
+  await expect(toast(again.page)).toHaveCount(0)
+})
+
+test('layout 형식이 다른 빌드로는 빈 화면으로 재시작할지 묻고, 확인하면 다음 실행은 빈 화면이며 알리지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const first = await launch(otherVersions(dataDir, 'layout'))
+  await newWorkspace(first, 2)
+  await stubDialog(first.app, 1)
+  await clickMenu(first.app, 'restart')
+  await expect
+    .poll(() => dialogCalls(first.app))
+    .toMatchObject([
+      {
+        message: 'Restart with an empty screen?',
+        detail: expect.stringContaining('a different format for the saved layout.'),
+        buttons: ['Restart with an empty screen', 'Cancel']
+      }
+    ])
+  await stubDialog(first.app, 0)
+  await restartWith(first.app)
+  expect(readState(dataDir)).toMatchObject({ layout: null, sessions: null })
+  expect(sockets(dataDir)).toEqual([])
+
+  const { page } = await launch()
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect(toast(page)).toHaveCount(0)
 })
 
 test('maru app restart 로 재시작한다', async ({ launch, dataDir }) => {
@@ -381,11 +509,14 @@ test('maru app restart 로 재시작한다', async ({ launch, dataDir }) => {
   await run(again, `cat '${done}'`, 'cli=0')
 })
 
-test('버전이 달라도 maru app restart --kill-ptys 는 재시작한다', async ({ launch, dataDir }) => {
+test('버전이 달라도 maru app restart --kill-ptys 는 레이아웃만 남기고 재시작한다', async ({
+  launch,
+  dataDir
+}) => {
   const { app, page } = await launch(otherProtocolBin(dataDir))
   await shellUp(page, 0)
   await restartWith(app, () => page.keyboard.type('"$MARU_CLI" app restart --kill-ptys\n'))
-  expect(existsSync(join(dataDir, 'restart.json'))).toBe(true)
+  expect(readState(dataDir)).toMatchObject({ sessions: null, layout: { version: 1 } })
 })
 
 test('화면을 저장하지 못하면 maru app restart 는 실패하고 앱은 그대로다', async ({
@@ -393,7 +524,7 @@ test('화면을 저장하지 못하면 maru app restart 는 실패하고 앱은 
   dataDir
 }) => {
   // 임시 파일 자리에 디렉토리가 있으면 쓰기가 실패한다.
-  mkdirSync(join(dataDir, 'restart.json.tmp'))
+  mkdirSync(join(dataDir, 'state.json.tmp'))
   const { page } = await launch()
   await run(page, '"$MARU_CLI" app restart; echo "cli=$?"', 'cli=1')
   await run(page, 'echo still-$((1+1))', 'still-2')
@@ -404,7 +535,7 @@ test('버전이 다르면 maru app restart 는 이유를 보이고 재시작하�
   dataDir
 }) => {
   const { page } = await launch(otherProtocolBin(dataDir))
-  await run(page, '"$MARU_CLI" app restart', 'Pass --kill-ptys to restart anyway.')
+  await run(page, '"$MARU_CLI" app restart', 'Pass --kill-ptys to restart with the layout only.')
   await run(page, 'echo still-$((1+1))', 'still-2')
 })
 

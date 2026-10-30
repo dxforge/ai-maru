@@ -126,11 +126,12 @@
 //!
 //! `app.restart` 는 pty 를 끄지 않고 앱을 다시 띄운다. 다시 뜬 앱은 workspace·cell·pane 을
 //! 되살리고 같은 pty 에 다시 붙는다. 앱은 답을 보낸 뒤에 끝난다. 설치된 앱의 `maru-pty` 와
-//! 떠 있는 pty 의 프로토콜 버전이 다르면 다시 뜬 앱은 그 pty 에 붙지 못한다.
-//! 이때 `kill_ptys` 가 true 가 아니면 재시작하지 않고 -32001 `ptys_would_end` 로 답한다(`data.ptys` 는 꺼질 pty 수). `kill_ptys`
-//! 가 true 면 재시작하고 다시 뜬 앱이 그 pty 를 끈다. 재시작할 수 없으면(dev 서버로 띄웠거나 창이 아직
-//! 배치를 알리지 않았으면) -32001 `restart_unavailable` 로 답한다. 되살릴 화면을 저장하지 못하면 재시작하지
-//! 않고 `internal_error` 로 답한다.
+//! 떠 있는 pty 의 프로토콜 버전이 다르거나 상태 파일의 형식 버전이 다르면 다시 뜬 앱은 그 pty 에
+//! 붙지 못한다. 이때 `kill_ptys` 가 true 가 아니면 재시작하지 않고 -32001 `ptys_would_end` 로 답한다.
+//! `data.ptys` 는 꺼질 pty 수다. `data.result` 는 `kill_ptys` 를 주면 다시 뜬 앱이 되살릴 것으로, 레이아웃만이면
+//! `layout`, 빈 화면이면 `empty` 다. `kill_ptys` 가 true 면 pty 를 끄고 그 결과로 재시작한다. dev 서버로 띄운
+//! 앱이면 -32001 `restart_unavailable` 로 답한다. 상태를 저장하지 못하면 재시작하지 않고 `internal_error` 로
+//! 답한다.
 //!
 //! `monitor.subscribe` 는 `result` 를 보낸 뒤 연결을 닫지 않고, 알림이 생길 때마다
 //! `{"jsonrpc":"2.0","method":"monitor.event","params":<알림>}` 한 줄을 보낸다. 이 연결은 10초 끊기가
@@ -437,8 +438,9 @@ enum AppCommand {
     /// Restart the app and keep its terminals running. The restarted app restores the
     /// workspaces, cells and panes and reattaches them to their terminals.
     ///
-    /// Refuses when the installed app cannot reattach to the running terminals; pass
-    /// --kill-ptys to restart anyway and end them.
+    /// Refuses when the installed app cannot reattach to the running terminals or read the
+    /// saved state. Pass --kill-ptys to end the terminals and restart with the layout only, or
+    /// with an empty screen if the saved layout cannot be read.
     Restart {
         /// Restart even if the terminals would end.
         #[arg(long)]

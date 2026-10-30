@@ -29,13 +29,6 @@ export type JobRecord = {
   pending: boolean
 }
 
-/**
- * 재시작 전 앱이 쓰고 다시 뜬 앱이 읽는다. 모양을 바꾸면 버전을 올린다. 없어도 되는 필드를 더할 때는 올리지 않는다.
- * 이전 앱의 `isJob` 은 모르는 필드를 보지 않으므로 필드가 더해진 파일도 그대로 읽는다. 버전을 올리면 버전 3 만 읽는
- * 앱으로 재시작할 때 job 을 잃는다.
- */
-export type JobsFile = { version: 3; jobs: JobRecord[] }
-
 export type JobDeps = {
   newId: () => string
   cellOf: (pty: string) => string | undefined
@@ -54,7 +47,7 @@ export type JobDeps = {
 export function createJobs(deps: JobDeps) {
   const jobs: JobRecord[] = []
   const waits = new Map<string, () => void>()
-  let saved = false
+  let detached = false
 
   function cellOf(pty: string): string | undefined {
     return deps.cellOf(pty) ?? jobs.find((j) => j.pty === pty)?.cell
@@ -172,8 +165,8 @@ export function createJobs(deps: JobDeps) {
         await deps.kill(job.pty)
         throw new Error(`job ${name ?? job.pty} was killed while it started`)
       }
-      // `save` 가 표를 넘긴 뒤면 다시 뜬 앱이 이 job 을 기다리므로, 여기서도 기다리면 두 번 알릴 수 있다.
-      if (!saved) watch(job)
+      // `detach` 뒤면 다시 뜬 앱이 이 job 을 기다리므로, 여기서도 기다리면 두 번 알릴 수 있다.
+      if (!detached) watch(job)
       return { pty: job.pty }
     },
     'job.list': (_params, pty) => {
@@ -219,19 +212,21 @@ export function createJobs(deps: JobDeps) {
       for (const j of closing) remove(j)
       await Promise.all(closing.map((j) => deps.kill(j.pty)))
     },
-    /** wait 를 먼저 닫는다 — 쓴 뒤에 끝난 job 은 다시 뜬 앱의 wait 가 받아 한 번만 알린다. */
-    save: (): JobsFile => {
-      saved = true
+    /**
+     * pty 를 남기고 끝내기 전에 부른다. wait 를 닫아, 그 뒤에 끝난 job 은 다음에 뜬 앱의 wait 가 받아 한 번만 알리게
+     * 한다.
+     */
+    detach: (): void => {
+      detached = true
       for (const pty of [...waits.keys()]) stopWaiting(pty)
-      return structuredClone({ version: 3, jobs })
     },
     resume: (): void => {
-      saved = false
+      detached = false
       for (const j of jobs) if (!j.exit && !waits.has(j.pty)) watch(j)
     },
-    restore: (file: JobsFile): void => {
-      jobs.push(...file.jobs)
-      for (const j of file.jobs) if (!j.exit) watch(j)
+    restore: (records: JobRecord[]): void => {
+      jobs.push(...structuredClone(records))
+      for (const j of jobs) if (!j.exit && !waits.has(j.pty)) watch(j)
       deps.changed()
     }
   }
@@ -255,7 +250,10 @@ function isJob(v: unknown): v is JobRecord {
   )
 }
 
-export function parseJobsFile(v: unknown): JobsFile | null {
-  if (!isObj(v) || v.version !== 3 || !Array.isArray(v.jobs) || !v.jobs.every(isJob)) return null
-  return v as JobsFile
+/**
+ * `isJob` 은 모르는 필드를 보지 않는다. 그래서 job 레코드에 없어도 되는 필드를 더할 때는 `sessions` 의 버전을 올리지
+ * 않는다 — 이전 앱도 그 레코드를 그대로 읽는다.
+ */
+export function parseJobRecords(v: unknown): JobRecord[] | null {
+  return Array.isArray(v) && v.every(isJob) ? v : null
 }

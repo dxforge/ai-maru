@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { expect, rows, test, cellPlaces, zshHome } from './app'
+import { STATE_VERSIONS } from '../src/shared/screen'
+import { cellPlaces, expect, restartWith, rows, stubDialog, test, zshHome } from './app'
 
 let installed: string
 let installDir: string
@@ -88,4 +89,17 @@ test('설치본에는 DevTools 메뉴가 없고, 열려고 해도 열리지 않�
     return { inMenu: roles.includes('toggledevtools'), opened: contents.isDevToolsOpened() }
   })
   expect(devTools).toEqual({ inMenu: false, opened: false })
+})
+
+test('설치본에 상태 파일의 형식 버전이 실리고, 같은 빌드로의 재시작은 묻지 않는다', async ({
+  launch
+}) => {
+  const file = join(installed, 'Contents/Resources/state-versions.json')
+  expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(STATE_VERSIONS)
+  const { app, page } = await launch({}, executable())
+  await page.keyboard.type('echo up-$((1+1))\n')
+  await expect(rows(page)).toContainText('up-2')
+  // 물으면 Cancel 로 답해 앱이 남고, 아래 restartWith 가 창이 닫히기를 기다리다 실패한다.
+  await stubDialog(app, 1)
+  await restartWith(app)
 })

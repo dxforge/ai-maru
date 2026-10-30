@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CliError, InvalidParams } from './cli-server'
-import { createJobs, parseJobsFile, type JobDeps, type JobsFile } from './job'
+import { createJobs, parseJobRecords, type JobDeps, type JobRecord } from './job'
 import type { PtyExit } from '../shared/pty'
 
 const A = 'p-0000000a'
@@ -381,49 +381,48 @@ describe('closeCell', () => {
 })
 
 describe('재시작', () => {
-  it('save 는 wait 를 모두 닫고 표를 돌려주며, 그 뒤의 종료는 알리지 않는다', async () => {
+  it('detach 는 wait 를 모두 닫고, 그 뒤의 종료는 알리지 않는다. list 는 wait 를 닫지 않는다', async () => {
     const t = setup()
     const run = await t.start({ name: 'run' })
     const done = await t.start({ name: 'done' })
     t.listening.clear()
     await t.exit(done, { code: 0, signal: null })
-    const file = t.jobs.save()
+    const listed = t.jobs.list()
+    expect(t.waits.get(run)!.cancelled).toBe(false)
+    t.jobs.detach()
     expect(t.waits.get(run)!.cancelled).toBe(true)
-    expect(file).toEqual({
-      version: 3,
-      jobs: [
-        {
-          pty: run,
-          name: 'run',
-          cell: 'c-1',
-          owner: A,
-          command: ['sleep', '9'],
-          started: 1000,
-          pending: false
-        },
-        {
-          pty: done,
-          name: 'done',
-          cell: 'c-1',
-          owner: A,
-          command: ['sleep', '9'],
-          started: 1000,
-          exit: { code: 0, signal: null },
-          pending: true
-        }
-      ]
-    })
+    expect(listed).toEqual([
+      {
+        pty: run,
+        name: 'run',
+        cell: 'c-1',
+        owner: A,
+        command: ['sleep', '9'],
+        started: 1000,
+        pending: false
+      },
+      {
+        pty: done,
+        name: 'done',
+        cell: 'c-1',
+        owner: A,
+        command: ['sleep', '9'],
+        started: 1000,
+        exit: { code: 0, signal: null },
+        pending: true
+      }
+    ])
     await flush()
     expect(await t.list()).toHaveLength(2)
   })
 
-  it('save 한 뒤에 뜬 job 은 wait 를 걸지 않는다', async () => {
+  it('detach 한 뒤에 뜬 job 은 wait 를 걸지 않는다', async () => {
     const t = setup()
     let release = (): void => {}
     t.deps.spawn.mockImplementationOnce(() => new Promise<void>((r) => (release = r)))
     const started = t.start({ name: 'late' })
     await flush()
-    t.jobs.save()
+    t.jobs.detach()
     release()
     const id = await started
     expect(t.waits.has(id)).toBe(false)
@@ -434,7 +433,7 @@ describe('재시작', () => {
   it('resume 은 끝나지 않은 job 의 wait 를 다시 건다', async () => {
     const t = setup()
     const id = await t.start({ name: 'run' })
-    t.jobs.save()
+    t.jobs.detach()
     t.jobs.resume()
     expect(t.waits.get(id)!.cancelled).toBe(false)
     await t.exit(id, { code: 3, signal: null })
@@ -443,28 +442,25 @@ describe('재시작', () => {
 
   it('restore 는 끝나지 않은 job 에만 wait 를 걸고, 붙여 둔 알림만 보낸다', async () => {
     const t = setup()
-    const file: JobsFile = {
-      version: 3,
-      jobs: [
-        { pty: 'p-000000a1', cell: 'c-1', owner: A, command: ['a'], pending: false },
-        {
-          pty: 'p-000000a2',
-          cell: 'c-1',
-          owner: A,
-          command: ['b'],
-          exit: { code: 1, signal: null },
-          pending: true
-        },
-        {
-          pty: 'p-000000a3',
-          cell: 'c-1',
-          owner: A,
-          command: ['c'],
-          exit: { code: 0, signal: null },
-          pending: false
-        }
-      ]
-    }
+    const file: JobRecord[] = [
+      { pty: 'p-000000a1', cell: 'c-1', owner: A, command: ['a'], pending: false },
+      {
+        pty: 'p-000000a2',
+        cell: 'c-1',
+        owner: A,
+        command: ['b'],
+        exit: { code: 1, signal: null },
+        pending: true
+      },
+      {
+        pty: 'p-000000a3',
+        cell: 'c-1',
+        owner: A,
+        command: ['c'],
+        exit: { code: 0, signal: null },
+        pending: false
+      }
+    ]
     t.jobs.restore(file)
     expect([...t.waits.keys()]).toEqual(['p-000000a1'])
     expect((await t.list()).map((j) => j.pty)).toEqual(['p-000000a1', 'p-000000a2', 'p-000000a3'])
@@ -497,7 +493,7 @@ describe('창에 보이는 표', () => {
     await t.start({ name: 'b' })
     await t.jobs.closeCell('c-1')
     expect(t.changes()).toBe(5)
-    t.jobs.restore({ version: 3, jobs: [] })
+    t.jobs.restore([])
     expect(t.changes()).toBe(6)
   })
 
@@ -513,18 +509,17 @@ describe('창에 보이는 표', () => {
   })
 })
 
-describe('parseJobsFile', () => {
-  it('모양이 맞는 파일만 받는다', () => {
+describe('parseJobRecords', () => {
+  it('모양이 맞는 표만 받는다', () => {
     const job = { pty: A, cell: 'c-1', owner: B, command: ['x'], pending: false }
-    expect(parseJobsFile({ version: 3, jobs: [job] })).toEqual({ version: 3, jobs: [job] })
-    expect(parseJobsFile({ version: 2, jobs: [job] })).toBeNull()
-    expect(parseJobsFile({ version: 4, jobs: [job] })).toBeNull()
-    expect(parseJobsFile({ version: 3, jobs: [{ ...job, pty: 'x' }] })).toBeNull()
-    expect(parseJobsFile({ version: 3, jobs: [{ ...job, command: [] }] })).toBeNull()
-    expect(parseJobsFile({ version: 3, jobs: [{ ...job, exit: { code: 'x' } }] })).toBeNull()
+    expect(parseJobRecords([job])).toEqual([job])
+    expect(parseJobRecords([{ ...job, pty: 'x' }])).toBeNull()
+    expect(parseJobRecords([{ ...job, command: [] }])).toBeNull()
+    expect(parseJobRecords([{ ...job, exit: { code: 'x' } }])).toBeNull()
     const timed = { ...job, started: 1000 }
-    expect(parseJobsFile({ version: 3, jobs: [timed] })).toEqual({ version: 3, jobs: [timed] })
-    expect(parseJobsFile({ version: 3, jobs: [{ ...job, started: '1' }] })).toBeNull()
-    expect(parseJobsFile(null)).toBeNull()
+    expect(parseJobRecords([timed])).toEqual([timed])
+    expect(parseJobRecords([{ ...job, started: '1' }])).toBeNull()
+    expect(parseJobRecords(null)).toBeNull()
+    expect(parseJobRecords({ version: 3, jobs: [job] })).toBeNull()
   })
 })

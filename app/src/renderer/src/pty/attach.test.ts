@@ -1,6 +1,6 @@
 import type { Terminal } from '@xterm/xterm'
 import { describe, expect, it } from 'vitest'
-import { attach } from './attach'
+import { attach, GONE_MESSAGE } from './attach'
 import type { PtyConnection, PtyMessage } from './connection'
 
 function fakeTerminal(cols: number, rows: number) {
@@ -45,6 +45,7 @@ function fakeConnection() {
 
 const handlers = {
   onExit: () => {},
+  onGone: () => {},
   onSpawned: () => {},
   onOpenFailed: () => {},
   onProgramStatus: () => {}
@@ -105,20 +106,31 @@ describe('attach', () => {
     expect(term.written).toEqual([replayAndOutput])
   })
 
-  it('되살린 pty 가 없으면 이유만 보이고 pane 을 닫거나 실패로 알리지 않는다', () => {
+  it('되살린 pty 가 없으면 이유를 보이고, 이어 띄운 새 셸을 받는다', () => {
     const term = fakeTerminal(80, 24)
-    const { conn, deliver, close } = fakeConnection()
+    const { conn, deliver } = fakeConnection()
     const calls: string[] = []
     attach(term as unknown as Terminal, conn, {
       ...handlers,
       onExit: () => calls.push('exit'),
-      onSpawned: () => calls.push('spawned'),
+      onGone: () => calls.push('gone'),
+      onSpawned: (_id, cwd) => calls.push(`spawned ${cwd}`),
       onOpenFailed: () => calls.push('failed')
     })
     deliver(JSON.stringify({ type: 'gone' }))
+    deliver(JSON.stringify({ type: 'spawned', id: 'p-00000001', cwd: '/w' }))
+    expect(calls).toEqual(['gone', 'spawned /w'])
+    expect(term.written).toEqual([GONE_MESSAGE])
+  })
+
+  it('gone 뒤 새 셸을 띄우지 못하고 닫히면 실패로 알린다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, deliver, close } = fakeConnection()
+    const failed: string[] = []
+    attach(term as unknown as Terminal, conn, { ...handlers, onOpenFailed: (m) => failed.push(m) })
+    deliver(JSON.stringify({ type: 'gone' }))
     close()
-    expect(calls).toEqual([])
-    expect(term.written).toEqual(['\r\n[the pty ended while the app was restarting]\r\n'])
+    expect(failed).toEqual(['disconnected before the pty started'])
   })
 
   it('셸이 끝난 뒤 연결이 닫히면 끊김을 보이지 않는다', () => {
@@ -243,6 +255,7 @@ describe('attach', () => {
     const got: unknown[] = []
     attach(term as unknown as Terminal, conn, {
       onExit: () => got.push('exit'),
+      onGone: () => got.push('gone'),
       onSpawned: () => got.push('spawned'),
       onOpenFailed: () => got.push('failed'),
       onProgramStatus: () => got.push('status')

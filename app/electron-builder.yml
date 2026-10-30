@@ -20,6 +20,9 @@ extraResources:
     to: zsh/.zshenv
   - from: resources/claude-plugin
     to: claude-plugin
+  # 재시작 전 앱이 설치된 번들의 상태 파일 형식 버전을 읽는다(src/main/restart.ts).
+  - from: resources/state-versions.json
+    to: state-versions.json
 mac:
   target: dir
   category: public.app-category.developer-tools

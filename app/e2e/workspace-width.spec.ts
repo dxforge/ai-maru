@@ -1,15 +1,16 @@
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { writeFileSync } from 'node:fs'
 import {
   activeTerminal,
   clickMenu,
   expect,
   expectCols,
   newWorkspace,
+  readState,
   restartWith,
   run,
   shellSize,
   split,
+  stateFile,
   test,
   toast,
   toggleView,
@@ -150,8 +151,8 @@ test('재시작 뒤 cell 의 pane 폭이 남고, 80 으로 돌아온 cell 은 �
   await expectCols(page, 80)
 
   await restartWith(app)
-  const saved = JSON.parse(readFileSync(join(dataDir, 'restart.json'), 'utf8'))
-  expect(saved.screen.workspaces.map((w: { cells: object[] }) => 'paneCols' in w.cells[0])).toEqual(
+  const saved = readState(dataDir)
+  expect(saved.layout.workspaces.map((w: { cells: object[] }) => 'paneCols' in w.cells[0])).toEqual(
     [true, false]
   )
 
@@ -171,10 +172,9 @@ test('재시작 화면의 pane 폭이 간격의 배수만큼 떨어져 있지 �
   await toggleView(first, 'columns')
   await expectCols(first.page, 80)
   await restartWith(first.app)
-  const file = join(dataDir, 'restart.json')
-  const saved = JSON.parse(readFileSync(file, 'utf8'))
-  saved.screen.workspaces[0].cells[0].paneCols = 95
-  writeFileSync(file, JSON.stringify(saved))
+  const saved = readState(dataDir)
+  saved.layout.workspaces[0].cells[0].paneCols = 95
+  writeFileSync(stateFile(dataDir), JSON.stringify(saved))
 
   const { app, page } = await launch()
   await expectCols(page, 95)
@@ -231,8 +231,8 @@ test('column-cols 를 고치면 폭을 바꾸지 않은 cell 은 따라가고 �
   await expectCols(page, 100)
 
   await restartWith(app)
-  const saved = JSON.parse(readFileSync(join(dataDir, 'restart.json'), 'utf8'))
-  expect(saved.screen.workspaces.map((w: { cells: object[] }) => 'paneCols' in w.cells[0])).toEqual(
+  const saved = readState(dataDir)
+  expect(saved.layout.workspaces.map((w: { cells: object[] }) => 'paneCols' in w.cells[0])).toEqual(
     [false, true]
   )
 

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   closePaneDialog,
   createQuitPermission,
+  QUIT_OUTCOMES,
+  quitDialog,
   runningDialog,
   runningPanes,
   runningProgram,
@@ -140,6 +142,21 @@ describe('확인 창', () => {
 
   it('도는 것이 없으면 묻지 않는다', () => {
     expect(runningDialog({ panes: 0, jobs: 0 }, 'Quit?', 'Quit')).toBeNull()
+  })
+})
+
+describe('quitDialog', () => {
+  it('버튼은 고를 결과 순서이고 마지막이 Cancel 이다', () => {
+    const d = quitDialog({ open: 1, panes: 0, jobs: 0 })
+    expect(d.buttons).toEqual(['Keep terminals', 'Keep layout only', 'End everything', 'Cancel'])
+    expect(QUIT_OUTCOMES).toEqual(['keep', 'layout', 'end'])
+  })
+
+  it('열린 pane 수와 돌고 있는 것을 센다', () => {
+    expect(quitDialog({ open: 1, panes: 0, jobs: 0 }).detail).toMatch(/^1 pane is open\.\n/)
+    expect(quitDialog({ open: 3, panes: 1, jobs: 2 }).detail).toMatch(
+      /^3 panes are open; 1 is running a program and 2 jobs are running\.\n/
+    )
   })
 })
 

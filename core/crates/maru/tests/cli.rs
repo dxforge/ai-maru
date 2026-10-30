@@ -1271,13 +1271,13 @@ fn app_restart_shows_the_apps_reason() {
         error(
             req,
             -32001,
-            "1 terminal(s) will end. Pass --kill-ptys to restart anyway.",
-            json!({ "code": "ptys_would_end", "ptys": 1 }),
+            "This will end 1 terminal. Pass --kill-ptys to restart with the layout only.",
+            json!({ "code": "ptys_would_end", "ptys": 1, "result": "layout" }),
         )
     });
     let out = maru(Some(&sock), &["app", "restart"]);
     server.join().unwrap();
-    assert_fails_with(&out, "Pass --kill-ptys to restart anyway.");
+    assert_fails_with(&out, "Pass --kill-ptys to restart with the layout only.");
 }
 
 fn opened_cell() -> Value {

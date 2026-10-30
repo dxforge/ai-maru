@@ -3,7 +3,13 @@ import { sameGitHead, type GitHead } from '../../../shared/git'
 import { focusedPane, startDirOf } from '../../../shared/names'
 import type { ProgramStatusState } from '../../../shared/program-status'
 import type { PtyState } from '../../../shared/pty-state'
-import type { ScreenCell, ScreenState, ScreenWorkspace } from '../../../shared/screen'
+import type {
+  LayoutPane,
+  LayoutPart,
+  ScreenCell,
+  ScreenState,
+  ScreenWorkspace
+} from '../../../shared/screen'
 import { newPtyId, randomId } from '../../../shared/pty'
 import { paneCwd, paneTitle } from './display'
 import {
@@ -356,6 +362,17 @@ export function createWorkspaces(
     refresh(p)
   }
 
+  /** 되살린 pane 의 pty 가 없어 host 가 같은 id 로 새 셸을 띄웠다. 앞의 명령과 제목은 그 셸의 것이 아니다. */
+  function respawned(key: number): void {
+    const p = pane(key)
+    if (!p) return
+    delete p.command
+    delete p.keep
+    p.restoredTitle = undefined
+    p.startDir = p.restoredCwd ?? p.startDir
+    refresh(p)
+  }
+
   // pane 마다 마지막으로 청한 답만 쓴다. 답은 청한 순서대로 오지 않아, 늦게 온 답이 새 답을 덮을 수 있다.
   function claim(key: number): () => boolean {
     const read = ++reads
@@ -399,21 +416,28 @@ export function createWorkspaces(
     return JSON.parse(JSON.stringify(screen, (k, v) => (UNSAVED.has(k) ? undefined : v)))
   }
 
-  function restore(screen: WorkspacesScreen): void {
-    list.value = screen.workspaces.map((w) => ({
+  /**
+   * `ptys` 에 없는 pane 은 저장한 cwd 에서 새 셸을 띄운다. 명령은 다시 돌리지 않고, 앞의 프로그램이 정한 제목도
+   * 쓰지 않는다.
+   */
+  function restore(
+    layout: Pick<LayoutPart, 'workspaces' | 'selected'>,
+    ptys: Readonly<Record<number, string>> | null
+  ): void {
+    const restorePane = (p: LayoutPane): Pane => {
+      const pty = ptys?.[p.key]
+      if (pty) return { ...p, ptyId: pty, attach: true, restoredCwd: p.cwd, restoredTitle: p.title }
+      const fresh: Pane = { key: p.key, ptyId: ptyId(), startDir: p.cwd ?? p.startDir }
+      if (p.cwd !== undefined) fresh.restoredCwd = fresh.cwd = p.cwd
+      if (p.git) fresh.git = p.git
+      return fresh
+    }
+    list.value = layout.workspaces.map((w) => ({
       ...w,
-      cells: w.cells.map((c) => ({
-        ...c,
-        panes: c.panes.map((p) => ({
-          ...p,
-          attach: true,
-          restoredCwd: p.cwd,
-          restoredTitle: p.title
-        }))
-      }))
+      cells: w.cells.map((c) => ({ ...c, panes: c.panes.map(restorePane) }))
     }))
-    selectedKey.value = screen.selected
-    const keys = screen.workspaces.flatMap((w) => [
+    selectedKey.value = layout.selected
+    const keys = layout.workspaces.flatMap((w) => [
       w.key,
       ...w.cells.flatMap((c) => [c.key, ...c.panes.map((p) => p.key)])
     ])
@@ -444,6 +468,7 @@ export function createWorkspaces(
     workspaceOf,
     applyState,
     setSpawnedCwd,
+    respawned,
     setFontSize,
     setPaneCols,
     snapshot,

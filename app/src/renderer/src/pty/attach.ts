@@ -6,6 +6,8 @@ import type { PtyConnection } from './connection'
 
 export type AttachHandlers = {
   onExit(exit: PtyExit): void
+  /** 되살린 pane 의 pty 가 없었다. host 가 이어서 같은 연결로 새 셸을 띄운다(`onSpawned`). */
+  onGone(): void
   /** 되살린 pane 이 붙으면 `cwd` 가 없다. */
   onSpawned(id: string, cwd: string | undefined): void
   onOpenFailed(message: string): void
@@ -23,6 +25,8 @@ export type Attachment = {
   /** xterm 은 직접 지우지 않는다. maru-pty 가 지우는 바이트를 출력과 같은 순서로 보내 준다. */
   clearScrollback(): void
 }
+
+export const GONE_MESSAGE = '\r\n[the pty had ended; trying to start a new shell]\r\n'
 
 export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHandlers): Attachment {
   const encoder = new TextEncoder()
@@ -78,10 +82,10 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
         ended = true
         handlers.onExit({ code: m.code ?? null, signal: m.signal ?? null })
         break
-      // 되살린 pane 은 지우지 않고 이유를 보인다 — 말없이 사라지면 재시작 전 배치와 달라 헷갈린다.
+      // 새 셸이 그 자리에 뜨므로, 앞의 프로그램이 이어지지 않는다는 것을 보인다.
       case 'gone':
-        ended = true
-        term.write('\r\n[the pty ended while the app was restarting]\r\n')
+        term.write(GONE_MESSAGE)
+        handlers.onGone()
         break
       case 'error':
         term.write(`\r\n[maru-pty: ${m.code}] ${m.message ?? ''}\r\n`)

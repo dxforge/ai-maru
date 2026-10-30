@@ -62,6 +62,8 @@ const {
 }>()
 const emit = defineEmits<{
   exit: []
+  /** 되살린 pane 의 pty 가 없어 같은 자리에 새 셸이 뜬다. */
+  gone: []
   failed: [message: string]
   /** `cwd` 는 pty 를 띄운 실제 시작 디렉토리다. 되살린 pane 이 남은 pty 에 붙으면 없다. */
   spawned: [cwd: string | undefined]
@@ -361,6 +363,7 @@ onMounted(() => {
       if (keep && failedExit(exit)) writeBelowContent(exitMessage(exit))
       else emit('exit')
     },
+    onGone: () => emit('gone'),
     onOpenFailed: (message) => emit('failed', message),
     onSpawned: (_id, dir) => emit('spawned', dir),
     onProgramStatus: (records) => emit('programStatus', records)

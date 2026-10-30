@@ -20,6 +20,8 @@ import { canvasPut, putCanvas } from './canvas'
 import {
   closePaneDialog,
   createQuitPermission,
+  QUIT_OUTCOMES,
+  quitDialog,
   runningDialog,
   runningPanes,
   runningProgram,
@@ -41,14 +43,7 @@ import { createJobs, JOB_REPLY_MS } from './job'
 import { createLauncherStore, listDirs } from './launcher'
 import { longestExistingPaths, openLink, type LinkOpener } from './links'
 import { createPortWatch, readPorts } from './ports'
-import {
-  checkRestart,
-  restartFile,
-  screenPtys,
-  takeRestart,
-  writeRestart,
-  type RestartCheck
-} from './restart'
+import { checkRestart, restartDialog, restartRefusal, type RestartCheck } from './restart'
 import {
   appSocketPath,
   capturePty,
@@ -56,6 +51,7 @@ import {
   foregroundCwd,
   killPty,
   killPtys,
+  livePtys,
   QUIT_TIMEOUT_MS,
   readRecord,
   runDir,
@@ -73,22 +69,30 @@ import { createPtyCells } from './pty-cells'
 import { createPtyStates } from './pty-state'
 import { createSeen } from './seen'
 import {
-  readWindowExtras,
-  readWindowState,
+  createStateStore,
+  readState,
+  removeOldStateFiles,
+  restorePlan,
+  sessionPtys,
+  stateFile,
+  type Outcome,
+  type StateStore
+} from './state'
+import {
   restoreWindowState,
-  saveWindowStateOnClose,
-  windowBounds
+  trackWindowState,
+  windowBounds,
+  type WindowState
 } from './window-state'
 import { jobName, type JobView } from '../shared/job'
 import { isPathCandidates } from '../shared/link'
 import { paneRows } from '../shared/pane-list'
 import type { CloseAnswer, PaneReply } from '../shared/pane'
-import { PROTOCOL_VERSION } from '../shared/protocol'
 import {
   parseScreen,
-  parseViewPrefs,
   screenPanes,
-  type ScreenState,
+  type LayoutPart,
+  type Restore,
   type ViewPrefs
 } from '../shared/screen'
 import { isPtyId, newPtyId, type PtyOpen } from '../shared/pty'
@@ -225,17 +229,28 @@ const panes = createPanes(
 )
 
 const devServer = Boolean(process.env.ELECTRON_RENDERER_URL)
-// `screen:state` 는 자주 오고 재시작·창 닫기·문서 로드 때만 읽으므로, 받은 값을 그대로 두었다가 읽을 때 `parseScreen`·`parseViewPrefs` 로 검사한다.
+// renderer 가 보낸 마지막 화면. 닫기 확인·`maru pane list` 때만 읽으므로, 받은 값을 그대로 두었다가 읽을 때 `parseScreen` 으로 검사한다.
 let lastScreen: unknown = null
-let keepPtys = false
 let restarting = false
+let store: StateStore | null = null
+let outcome: Outcome | null = null
+let savedWindow: (() => WindowState) | null = null
 
-function windowStateFile(): string {
-  return join(app.getPath('userData'), 'window-state.json')
-}
+/**
+ * 변경이 쏟아질 때(창을 끌어 옮기는 동안 `move`, 출력마다 바뀌는 제목) 한 번에 모아 쓴다. 앱이 죽으면 마지막 0.5초의
+ * 변경만 잃는다.
+ */
+const STATE_DEBOUNCE_MS = 500
 
 function viewPrefs(): ViewPrefs {
-  return { ...readWindowExtras(windowStateFile()), ...parseViewPrefs(lastScreen) }
+  const { viewMode, sidebar, folded, canvas } = store?.view() ?? {}
+  return { viewMode, sidebar, folded, canvas }
+}
+
+function openPanes(): number {
+  const screen = parseScreen(lastScreen)
+  const layout: Pick<LayoutPart, 'workspaces'> | null = screen ?? store?.layout() ?? null
+  return (layout?.workspaces ?? []).flatMap((w) => w.cells.flatMap((c) => c.panes)).length
 }
 
 const DEFAULT_WINDOW_THEME: WindowTheme = {
@@ -247,54 +262,70 @@ let theme: WindowTheme | null = null
 function applyTheme(next: WindowTheme): void {
   if (theme && next.background === theme.background && next.mode === theme.mode) return
   theme = next
+  store?.setTheme(next)
   // 창 틀이 시스템 설정 대신 터미널 배경을 따라야, 어두운 터미널 위에 밝은 타이틀바가 뜨지 않는다.
   nativeTheme.themeSource = next.mode
   const win = mainWindow()
   if (win && !win.isDestroyed()) win.setBackgroundColor(next.background)
 }
 
-function restartCheck(): Promise<RestartCheck> {
-  const screen = parseScreen(lastScreen)
-  return checkRestart({ devServer, screen, bin: ptyBin(), dir: ptyDir() })
+function versionsFile(): string {
+  return process.env.MARU_STATE_VERSIONS_FILE ?? resourceDir('state-versions.json')
 }
 
-/** 저장하지 못하면 던진다 — 다시 뜬 앱은 화면 없이 pty 를 모두 끄기 때문이다. */
-async function saveScreen(): Promise<void> {
-  const screen = parseScreen(lastScreen)
-  if (!screen) throw new Error('the window has not reported its layout yet')
+function restartCheck(): Promise<RestartCheck> {
+  return checkRestart({ devServer, bin: ptyBin(), versionsFile: versionsFile(), dir: ptyDir() })
+}
+
+/** 쓰지 못하면 던진다. 다음에 뜬 앱이 고른 결과를 모르기 때문이다. */
+function finishWith(o: Outcome): void {
+  if (outcome) return
   try {
-    await writeRestart(restartFile(app.getPath('userData')), {
-      screen,
-      jobs: jobs?.save() ?? null
-    })
+    if (savedWindow) store?.setWindow(savedWindow())
+  } catch {
+    // 창이 이미 닫혔다. 마지막으로 알린 창 상태가 남아 있다.
+  }
+  if (o === 'keep') jobs?.detach()
+  try {
+    store?.finish(o)
   } catch (err) {
-    jobs?.resume()
+    if (o === 'keep') jobs?.resume()
     throw err
+  }
+  outcome = o
+  quitPermission.allow()
+}
+
+function quitWith(o: Outcome): void {
+  try {
+    finishWith(o)
+  } catch (err) {
+    console.error('maru: cannot save the state before quitting:', err)
+    // 고른 대로 끝낸다. pty 를 남기면 다음 실행이 디스크에 남은 마지막 상태로 다시 붙을 수 있다.
+    if (o === 'keep') jobs?.detach()
+    outcome = o
+    quitPermission.allow()
   }
 }
 
 function relaunch(): void {
   if (restarting) return
   restarting = true
-  keepPtys = true
   app.relaunch()
   app.quit()
 }
 
+function restartOutcome(check: RestartCheck): Outcome {
+  if (check.ok) return 'keep'
+  return check.reason === 'incompatible' && check.result === 'empty' ? 'end' : 'layout'
+}
+
 async function restartFromMenu(): Promise<void> {
   const check = await restartCheck()
-  if (!check.ok && check.reason !== 'incompatible') return
-  if (
-    !check.ok &&
-    !(await confirm({
-      message: 'Restart and end all terminals?',
-      detail: incompatibleDetail(check),
-      buttons: ['Restart', 'Cancel']
-    }))
-  )
-    return
+  if (!check.ok && check.reason === 'dev_server') return
+  if (!check.ok && !(await confirm(restartDialog(check)))) return
   try {
-    await saveScreen()
+    finishWith(restartOutcome(check))
   } catch (err) {
     dialog.showErrorBox('Cannot restart', err instanceof Error ? err.message : String(err))
     return
@@ -302,34 +333,24 @@ async function restartFromMenu(): Promise<void> {
   relaunch()
 }
 
-function incompatibleDetail(check: { ptys: number; protocol: number | null }): string {
-  const installed =
-    check.protocol === null ? 'cannot tell its pty protocol' : `uses pty protocol ${check.protocol}`
-  return `${check.ptys} terminal(s) will end: the installed app ${installed} and this app uses ${PROTOCOL_VERSION}.`
-}
-
 const restartHandlers: Handlers = {
   'app.restart': async (params) => {
     const kill = optionalBoolean(params.kill_ptys, 'kill_ptys')
     const check = await restartCheck()
-    if (!check.ok && check.reason !== 'incompatible') {
+    if (!check.ok && check.reason === 'dev_server') {
       throw new CliError(
         -32001,
         'restart_unavailable',
-        check.reason === 'dev_server'
-          ? 'an app started by the dev server cannot restart itself'
-          : 'the window has not reported its layout yet'
+        'an app started by the dev server cannot restart itself'
       )
     }
     if (!check.ok && !kill) {
-      throw new CliError(
-        -32001,
-        'ptys_would_end',
-        `${incompatibleDetail(check)} Pass --kill-ptys to restart anyway.`,
-        { ptys: check.ptys }
-      )
+      throw new CliError(-32001, 'ptys_would_end', restartRefusal(check), {
+        ptys: check.ptys,
+        result: check.result
+      })
     }
-    await saveScreen()
+    finishWith(restartOutcome(check))
     return new AfterReply(null, relaunch)
   }
 }
@@ -392,10 +413,14 @@ const SHUTDOWN_GRACE_MS = 60_000
 const quitPermission = createQuitPermission(SHUTDOWN_GRACE_MS)
 let quitCheck: Promise<void> | null = null
 
-// 한 번 통과한 종료는 끝까지 묻지 않는다. `will-quit` 이 pty 를 끈 뒤 부르는 `app.quit()` 도 `before-quit` 를 거친다.
+/**
+ * 한 번 통과한 종료는 끝까지 묻지 않는다. `will-quit` 이 pty 를 끈 뒤 부르는 `app.quit()` 도 `before-quit` 를 거친다.
+ * 묻지 않고 끝나는 종료(OS 종료, 시그널)는 pty 가 OS 와 함께 끝나거나 이 앱이 끄므로 레이아웃만 남긴다.
+ */
 function mayQuit(): boolean {
-  if (!quitPermission.allowed() && !keepPtys) return false
+  if (!quitPermission.allowed() && outcome !== 'keep') return false
   quitPermission.allow()
+  if (!outcome) quitWith('layout')
   return true
 }
 
@@ -403,10 +428,27 @@ function mayQuit(): boolean {
 function confirmQuit(): void {
   if (quitCheck) return
   quitCheck = (async () => {
-    const { panes } = screenPanes(parseScreen(lastScreen))
-    const running = { panes: await runningPanes(panes, programDeps), jobs: jobs?.running() ?? 0 }
-    const options = runningDialog(running, 'Quit and end all terminals?', 'Quit')
-    if (options && !quitPermission.allowed() && !(await confirm(options))) return
+    if (!quitPermission.allowed()) {
+      const open = openPanes()
+      if (open === 0) {
+        quitWith('end')
+      } else {
+        const { panes } = screenPanes(parseScreen(lastScreen))
+        const running = {
+          panes: await runningPanes(panes, programDeps),
+          jobs: jobs?.running() ?? 0
+        }
+        const { response } = await dialog.showMessageBox({
+          type: 'question',
+          ...quitDialog({ open, ...running }),
+          defaultId: 0,
+          cancelId: QUIT_OUTCOMES.length
+        })
+        const chosen = QUIT_OUTCOMES[response]
+        if (!chosen) return
+        quitWith(chosen)
+      }
+    }
     quitPermission.allow()
     app.quit()
   })().finally(() => (quitCheck = null))
@@ -437,9 +479,7 @@ function openExternal(url: string): void {
   if (/^(https?|mailto):/i.test(url)) void shell.openExternal(url)
 }
 
-function createWindow(): void {
-  const stateFile = windowStateFile()
-  const state = readWindowState(stateFile)
+function createWindow(state: WindowState | null): void {
   const displays = screen.getAllDisplays().map((d) => d.bounds)
   const win = new BrowserWindow({
     width: 1000,
@@ -477,7 +517,7 @@ function createWindow(): void {
     confirmQuit()
   })
   restoreWindowState(win, state)
-  saveWindowStateOnClose(win, stateFile, () => ({ ...viewPrefs(), ...(theme && { theme }) }))
+  savedWindow = trackWindowState(win, (s) => store?.setWindow(s))
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -536,25 +576,48 @@ if (!app.requestSingleInstanceLock()) {
 
 function start(): void {
   if (unobtrusive) app.dock?.hide()
-  applyTheme(readWindowExtras(windowStateFile()).theme ?? DEFAULT_WINDOW_THEME)
+  const userData = app.getPath('userData')
+  const read = readState(stateFile(userData))
+  removeOldStateFiles(userData)
+  const layout = read.layout.kind === 'ok' ? read.layout.value : null
+  const sessions = read.sessions.kind === 'ok' ? read.sessions.value : null
+  store = createStateStore({
+    path: stateFile(userData),
+    debounceMs: STATE_DEBOUNCE_MS,
+    initial: { layout, sessions, view: read.view }
+  })
+  applyTheme(read.view.theme ?? DEFAULT_WINDOW_THEME)
   ipcMain.on('theme:apply', (_event, t: unknown) => {
     const parsed = parseWindowTheme(t)
     if (parsed) applyTheme(parsed)
   })
-  const userData = app.getPath('userData')
-  const restored = takeRestart(restartFile(userData))
-  // 재시작으로 뜨지 않았으면 앱이 비정상으로 끝나 남은 pty 다. 새 pty 는 그 정리가 끝난 뒤에 띄운다.
-  const leftovers = restored.then(async (r) => {
-    const keep = screenPtys(r?.screen ?? null)
-    for (const j of r?.jobs?.jobs ?? []) keep.add(j.pty)
+  const plan = (async () => {
+    const live = new Set(await livePtys(ptyDir()))
+    const alive = (sessions ? sessionPtys(sessions) : []).filter((pty) => live.has(pty))
+    const records = await Promise.all(alive.map((pty) => readRecord(ptyDir(), pty)))
+    const protocols = new Map(alive.map((pty, i) => [pty, records[i]?.protocol_version ?? null]))
+    const p = restorePlan(read, (pty) => (protocols.has(pty) ? protocols.get(pty) : undefined))
+    if (p.mode !== 'full') store?.discard(p.mode === 'empty' ? 'end' : 'layout')
+    return p
+  })()
+  // 새 pty 는 앞의 앱이 남긴 pty 의 정리가 끝난 뒤에 띄운다.
+  const leftovers = plan.then(async (p) => {
+    const keep = new Set(p.mode === 'full' && sessions ? sessionPtys(sessions) : [])
     await killPtys(ptyDir(), undefined, keep)
     for (const id of keep) ptyStates.watch(id)
   })
-  let toRestore: Promise<ScreenState | null> | null = restored.then((r) => r?.screen ?? null)
+  let toRestore: Promise<Restore> | null = plan.then((p) => ({
+    layout: p.mode === 'empty' ? null : layout,
+    ptys:
+      p.mode === 'full' && sessions
+        ? Object.fromEntries(sessions.ptys.map(({ pane, pty }) => [pane, pty]))
+        : null,
+    notice: p.notice
+  }))
   ipcMain.handle('screen:restore', () => {
-    const screen = toRestore
+    const r = toRestore
     toRestore = null
-    return screen
+    return r
   })
   ipcMain.on('screen:prefs', (event) => (event.returnValue = viewPrefs()))
   const launcher = createLauncherStore(join(userData, 'launcher.json'))
@@ -579,7 +642,10 @@ function start(): void {
     const win = mainWindow()
     if (win && !win.isDestroyed()) win.webContents.send('config:changed', config)
   })
-  ipcMain.on('screen:state', (_event, screen: unknown) => (lastScreen = screen))
+  ipcMain.on('screen:state', (_event, screen: unknown) => {
+    lastScreen = screen
+    store?.setScreen(screen)
+  })
   const refused: CloseAnswer = { close: false, asked: false }
   ipcMain.handle('pane:confirm-close', (_event, pty: unknown) =>
     isPtyId(pty) ? checkClose(() => closePaneCheck(pty)) : refused
@@ -631,6 +697,7 @@ function start(): void {
     emit: monitor.emit,
     now: Date.now,
     changed: () => {
+      store?.setJobs(jobTable.list())
       sendJobs()
       portWatch.update()
     }
@@ -670,7 +737,10 @@ function start(): void {
     if (close) await jobTable.kill(pty)
   })
   // `leftovers` 의 `killPtys` 는 job pty 를 끄지 않으므로 그것을 기다리지 않고 되살린다.
-  jobsRestored = restored.then((r) => void (r?.jobs && jobTable.restore(r.jobs)))
+  jobsRestored = plan.then((p) => {
+    if (p.mode === 'full' && sessions) jobTable.restore(sessions.jobs)
+  })
+  void jobsRestored.then(() => store?.enable())
   // 터미널은 CLI 없이도 쓸 수 있어야 한다. env 는 그대로 넣어 CLI 가 앱에 닿지 않는다고 말하게 한다.
   const cliServer = listenCli(cli.socket, { ...cliHandlers, ...jobTable.handlers }).catch((err) => {
     console.error(`maru: cannot listen on ${cli.socket}:`, err)
@@ -811,7 +881,7 @@ function start(): void {
     portWatch.stop()
     quitting = true
     void Promise.all([
-      keepPtys ||
+      outcome === 'keep' ||
         Promise.all([
           stopHost(),
           // job 의 시작 폴더 확인(`startDir`)에는 시간 제한이 없다. 응답하지 않는 마운트에 있는 job 때문에 앱이 꺼지지 않을 수 있으므로, host 와 같은 상한까지만 기다린다.
@@ -830,5 +900,5 @@ function start(): void {
       id === 'restart' ? void restartFromMenu() : mainWindow()?.webContents.send('command:run', id),
     { canRestart: !devServer }
   )
-  createWindow()
+  createWindow(read.view.window ?? null)
 }

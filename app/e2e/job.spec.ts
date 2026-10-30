@@ -10,6 +10,7 @@ import {
   run,
   sockets,
   stubDialog,
+  END_EVERYTHING,
   test,
   cellItems
 } from './app'
@@ -150,16 +151,28 @@ test('재시작 뒤 job 이 남고, 재시작 동안 끝난 job 의 알림이 �
   await run(shown, 'maru job list', /keep\s+running/)
   await expect(rows(shown)).toContainText(/late\s+exited 7/)
   expect(jobEvents(events)).toHaveLength(1)
-  await stubDialog(again, 0)
+  await stubDialog(again, END_EVERYTHING)
   await again.close()
   expect(sockets(dataDir)).toEqual([])
+})
+
+test('재시작 전에 끝난 job 도 다시 뜬 앱에서 출력을 읽는다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await run(
+    page,
+    "maru job new --name done sh -c 'echo out-$((40+2)); exit 3'; sleep 1; maru job list",
+    /done\s+exited 3/
+  )
+  await restartWith(app)
+  const { page: again } = await launch()
+  await run(again, 'maru job read done', 'out-42')
 })
 
 test('앱을 끝내면 job 도 끝난다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await run(page, 'maru job new --name a sleep 100; echo up-$((1+1))', 'up-2')
   expect(sockets(dataDir)).toHaveLength(2)
-  await stubDialog(app, 0)
+  await stubDialog(app, END_EVERYTHING)
   await app.close()
   expect(sockets(dataDir)).toEqual([])
 })
