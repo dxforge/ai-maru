@@ -1,6 +1,7 @@
 //! 프로그램이 OSC 7501 로 보고한 레코드. 수명 규칙은 프로토콜(ghostty `terminal.h` 의
 //! `GhosttyTerminalProgramStatusFn`)대로다. 새 프롬프트·프로그램 종료에 working·blocked 를 지우는
-//! 규칙은 이 프로세스가 둘 다 알 수 없어(셸이 OSC 133 을 찍지 않는다) 구현하지 않는다.
+//! 규칙은 이 프로세스가 둘 다 알 수 없어(셸이 OSC 133 을 찍지 않는다) 구현하지 않는다. 대신 `pty.rs` 가
+//! foreground 리더가 바뀐 것을 보고 레코드를 지운다(`lib.rs` 의 `records`).
 
 use crate::vt::{ProgramStatusKind, ProgramStatusReport, ProgramStatusState};
 use std::collections::BTreeMap;
@@ -64,6 +65,10 @@ impl Records {
             self.entries.remove(&oldest);
         }
         changed
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
     }
 
     pub fn is_empty(&self) -> bool {

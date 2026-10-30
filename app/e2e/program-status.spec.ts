@@ -6,6 +6,7 @@ import {
   clickMenu,
   expect,
   focusPane,
+  inProgram,
   newCell,
   newWorkspace,
   restartWith,
@@ -28,7 +29,7 @@ import {
 import { ICONS, STATE_LABELS } from '../src/renderer/src/icons'
 import { SEEN_MS } from '../src/renderer/src/pty/seen'
 
-test('claude 가 clear 를 보내지 못하고 죽어도 셸 함수가 clear 를 써서 상태가 사라진다', async ({
+test('claude 가 clear 를 보내지 못하고 죽어도 foreground 가 셸로 돌아오면 상태가 사라진다', async ({
   launch,
   dataDir
 }) => {
@@ -38,7 +39,7 @@ test('claude 가 clear 를 보내지 못하고 죽어도 셸 함수가 clear 를
   const pidFile = join(dataDir, 'claude.pid')
   writeFileSync(
     join(bin, 'claude'),
-    `#!/bin/sh\necho $$ > '${pidFile}'\nprintf '\\033]7501;state=idle\\033\\\\'\nsleep 60\n`,
+    `#!/bin/sh\necho $$ > '${pidFile}'\n${status('idle')}sleep 60\n`,
     { mode: 0o755 }
   )
   const { page } = await launch({
@@ -55,7 +56,7 @@ test('claude 가 clear 를 보내지 못하고 죽어도 셸 함수가 clear 를
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
 })
 
-test('claude 가 끝나면 셸 함수의 clear 가 maru status 로 쓴 하위 레코드도 지운다', async ({
+test('claude 가 clear 없이 끝나면 maru status 로 쓴 하위 레코드도 함께 지운다', async ({
   launch,
   dataDir
 }) => {
@@ -158,6 +159,7 @@ test('maru status 로 쓴 하위 레코드가 루트보다 급하면 사이드�
 }) => {
   const { page } = await launch()
   const cellHeader = page.locator('.cell-header')
+  await inProgram(page)
   await page.keyboard.type(status('done'))
   await expect(paneRows(page)).toHaveClass(/done/)
 
@@ -402,6 +404,7 @@ test('떠날 때 루트와 하위의 done 은 idle 이 되고 blocked·error 는
 }) => {
   const { app, page } = await launch()
   const left = await ptyIdOf(page, dataDir, 'left')
+  await inProgram(page)
   await run(
     page,
     'maru status put done --app claude-code --title T --msg finished && maru status put done --id build && maru status put blocked --id ask --kind question && maru status put error --id fail; echo put-$((1+1))',

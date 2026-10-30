@@ -1423,7 +1423,10 @@ fn help_is_in_english_and_describes_every_option_but_the_size() {
     }
 }
 
-const OSC_WORKING: &str = r"printf '\033]7501;state=working:app=x:msg=aGk=\033\\'";
+// `app` 을 붙이면 보낸 프로그램이 끝날 때 지워지므로, 그 규칙을 재지 않는 테스트는 `app` 없이 보낸다.
+const OSC_WORKING: &str = r"printf '\033]7501;state=working:msg=aGk=\033\\'";
+const OSC_WORKING_APP: &str = r"printf '\033]7501;state=working:app=x:msg=aGk=\033\\'";
+const OSC_ASK: &str = r"printf '\033]7501;state=blocked:id=ask:kind=question\033\\'";
 const OSC_CLEAR: &str = r"printf '\033]7501;state=clear\033\\'";
 
 /// `uri` 의 `%` 는 printf 의 형식 문자가 되지 않게 `%%` 로 바꿔 넣는다.
@@ -1461,7 +1464,7 @@ fn osc_7_0_2_and_7501_reach_every_subscriber() {
     let tmp = tmpdir();
     let dir = std::fs::canonicalize(tmp.path()).unwrap();
     a.input(&format!(
-        "{}; printf '\\033]2;my title\\007'; {OSC_WORKING}; echo done-$((1))\n",
+        "{}; printf '\\033]2;my title\\007'; {OSC_WORKING_APP}; echo done-$((1))\n",
         osc7(&format!("file://{}/a%20b", dir.display()))
     ));
     a.output_until("done-1");
@@ -1727,6 +1730,105 @@ fn clearing_the_records_empties_them_and_the_foreground_cwd() {
     a.input(&format!("{OSC_CLEAR}\n"));
     let st = s.state_until(|v| v["records"] == json!([]));
     assert_eq!(st["foreground_cwd"], Value::Null, "{st}");
+}
+
+fn run_program(a: &mut Conn, s: &mut Conn, script: &str) -> tempfile::TempDir {
+    let tmp = tmpdir();
+    let path = tmp.path().join("program.sh");
+    std::fs::write(&path, script).unwrap();
+    a.input(&format!("sh {}; echo back-$((4))\n", path.display()));
+    s.state_until(|v| v["records"] != json!([]));
+    tmp
+}
+
+#[test]
+fn records_with_an_app_go_once_the_program_that_sent_them_ends() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let _program = run_program(
+        &mut a,
+        &mut s,
+        &format!("{OSC_WORKING_APP}; {OSC_ASK}; sleep 1.5"),
+    );
+    let st = s.state_until(|v| v["records"].as_array().is_some_and(|r| r.len() == 2));
+    assert_eq!(st["records"][0]["app"], "x", "{st}");
+    a.output_until("back-4");
+    let ended = Instant::now();
+    let st = s.state_until(|v| v["records"] == json!([]));
+    assert!(
+        ended.elapsed() < Duration::from_millis(1500),
+        "프로그램이 끝나고 늦게 지웠다: {:?}",
+        ended.elapsed()
+    );
+    assert_eq!(st["foreground_cwd"], Value::Null, "{st}");
+}
+
+#[test]
+fn records_without_an_app_stay_after_the_program_ends() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let _program = run_program(&mut a, &mut s, &format!("{OSC_WORKING}; sleep 0.5"));
+    a.output_until("back-4");
+    let texts = s.texts_for(Duration::from_secs(2));
+    assert!(
+        texts.iter().all(|t| t["records"] != json!([])),
+        "app 없는 레코드를 지웠다: {texts:?}"
+    );
+}
+
+#[test]
+fn records_stay_while_the_program_execs_into_another() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let _program = run_program(
+        &mut a,
+        &mut s,
+        &format!("{OSC_WORKING_APP}; exec sleep 2.5"),
+    );
+    let texts = s.texts_for(Duration::from_secs(2));
+    assert!(
+        texts.iter().all(|t| t["records"] != json!([])),
+        "exec 로 바뀐 프로그램이 도는 중에 지웠다: {texts:?}"
+    );
+    a.output_until("back-4");
+    s.state_until(|v| v["records"] == json!([]));
+}
+
+#[test]
+fn records_with_an_app_go_once_the_program_that_sent_them_is_stopped() {
+    let p = start();
+    let (mut s, _) = p.subscribe();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let _program = run_program(
+        &mut a,
+        &mut s,
+        &format!("{OSC_WORKING_APP}; sleep 0.5; kill -TSTP $$; sleep 1"),
+    );
+    s.state_until(|v| v["records"] == json!([]));
+    a.input("fg\n");
+    a.output_until("back-4");
+}
+
+fn records_after_keep_command(report: &str) -> Value {
+    let p = start_keep(&format!("{report}; sleep 1"));
+    let (mut s, first) = p.subscribe();
+    if first["records"] == json!([]) {
+        s.state_until(|v| v["records"] != json!([]));
+    }
+    s.state_until(|v| v["command"]["running"] == false)["records"].clone()
+}
+
+#[test]
+fn records_with_an_app_go_when_the_command_that_sent_them_ends_under_keep() {
+    assert_eq!(records_after_keep_command(OSC_WORKING_APP), json!([]));
+}
+
+#[test]
+fn records_without_an_app_stay_when_the_command_ends_under_keep() {
+    assert_ne!(records_after_keep_command(OSC_WORKING), json!([]));
 }
 
 #[test]

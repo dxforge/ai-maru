@@ -383,14 +383,18 @@ export type ShellSetup = { cli: CliAccess; zdotdir: string; claudePlugin: string
 /** 계약은 core/crates/maru 의 모듈 doc 에 있다. */
 export function shellEnv(env: NodeJS.ProcessEnv, id: string, setup: ShellSetup): NodeJS.ProcessEnv {
   const base = ptyEnv(env)
+  // claude shim 은 plugin 옆 `bin` 에 있다. 설치본에서는 maru 와 같은 디렉토리다. `.zshenv` 의 `_maru_path` 도 이렇게 찾는다.
+  const dirs = new Set([dirname(setup.cli.bin), join(dirname(setup.claudePlugin), 'bin')])
   return {
     ...base,
     MARU_SOCKET: setup.cli.socket,
     MARU_PTY_ID: id,
     MARU_CLI: setup.cli.bin,
     MARU_CLAUDE_PLUGIN: setup.claudePlugin,
-    PATH: [dirname(setup.cli.bin), base.PATH].filter(Boolean).join(delimiter),
+    PATH: [...dirs, base.PATH].filter(Boolean).join(delimiter),
     ZDOTDIR: setup.zdotdir,
+    // `.zshenv` 가 ZDOTDIR 을 지우므로, claude shim 이 claude 에 ZDOTDIR 을 되돌려 줄 때 이 값을 쓴다.
+    MARU_ZDOTDIR: setup.zdotdir,
     // truecolor 는 앱 터미널(xterm.js)이 지원하므로 띄운 쪽 터미널의 값을 덮어쓴다.
     COLORTERM: 'truecolor',
     // claude 는 TERM_PROGRAM 으로 알아보는 터미널이거나 이 값이 있을 때만 마크다운 취소선을 SGR 9 로 낸다. xterm.js 는

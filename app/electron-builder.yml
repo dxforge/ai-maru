@@ -16,6 +16,9 @@ extraResources:
     to: bin/maru-pty
   - from: ../core/target/release/maru
     to: bin/maru
+  # 앱 `shellEnv`(`pty.ts`)와 `.zshenv` 의 `_maru_path` 는 claude shim 을 claude-plugin 옆 `bin` 에서 찾으므로, claude-plugin 과 같은 부모 아래 `bin` 에 둔다.
+  - from: resources/bin/claude
+    to: bin/claude
   - from: resources/zsh/.zshenv
     to: zsh/.zshenv
   - from: resources/claude-plugin
