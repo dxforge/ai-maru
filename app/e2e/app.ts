@@ -392,6 +392,19 @@ export function programStatus(state: string, extra?: string, app = 'claude-code'
   return `printf '\\033]7501;${fields}\\033\\\\'\n`
 }
 
+/**
+ * claude 처럼 foreground 에 남아, 친 줄을 하나씩 돌리는 프로그램을 띄운다. maru-pty 는 `app` 이 붙은 루트 레코드를 보낸
+ * foreground 리더가 바뀌면 레코드를 지운다. 프롬프트에서 보내면 셸이 다음 명령을 돌릴 때 지워지므로, 레코드를 보낸 뒤
+ * 같은 pane 에서 다른 명령을 돌리는 테스트는 이 안에서 한다. 비대화형 sh 라 자식이 같은 프로세스 그룹에 남는다.
+ */
+export async function inProgram(page: Page): Promise<void> {
+  await run(
+    page,
+    `sh -c 'echo program-$((6*7)); while IFS= read -r l; do eval "$l"; done'`,
+    'program-42'
+  )
+}
+
 export function activeHeader(page: Page) {
   return activePane(page).locator('.pane-header')
 }

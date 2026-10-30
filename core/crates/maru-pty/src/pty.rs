@@ -141,7 +141,7 @@ pub async fn wait_exit(rx: &mut watch::Receiver<Option<Exit>>) -> Option<Exit> {
 pub struct Pty {
     pub tty: String,
     pub shell_pid: u32,
-    master: Master,
+    master: Arc<Master>,
     writer: Arc<Mutex<std::fs::File>>,
     screen: Arc<Mutex<Screen>>,
     exit_rx: watch::Receiver<Option<Exit>>,
@@ -166,6 +166,9 @@ struct Screen {
     cols: u16,
     rows: u16,
     status: Records,
+    /// `app` 이 붙은 루트 레코드를 받은 때의 foreground 리더. 리더가 이 pid 에서 바뀌면 레코드를 전부 지운다(`lib.rs` 의
+    /// `records` 계약).
+    status_owner: Option<i32>,
     pane: PaneState,
     outputs: Vec<Weak<Output>>,
     /// 상태 구독자에게 보낼 마지막 상태. 이 프로세스가 끝날 때 비워 구독 연결을 닫게 한다.
@@ -182,11 +185,18 @@ impl Screen {
 
     /// 한 `write` 의 콜백 결과를 상태에 반영하고, 상태가 바뀌었을 수 있으면 true 다. 제목은 VT 가 들고 있어
     /// 콜백이 불렸는지만 본다.
-    fn apply_events(&mut self, events: &VtEvents) -> bool {
+    fn apply_events(&mut self, events: &VtEvents, leader: impl Fn() -> Option<i32>) -> bool {
         let now = std::time::Instant::now();
         let mut changed = events.title_changed;
         for report in &events.reports {
             changed |= self.status.apply(report, now);
+            if !report.clear && report.id.is_empty() {
+                self.status_owner = if report.app.is_empty() {
+                    None
+                } else {
+                    leader()
+                };
+            }
         }
         for event in &events.cwd {
             changed |= self.pane.apply(event);
@@ -198,9 +208,17 @@ impl Screen {
             }
         }
         if self.status.is_empty() {
-            changed |= self.pane.foreground_cwd.take().is_some();
+            changed |= self.forget_records();
         }
         changed
+    }
+
+    fn forget_records(&mut self) -> bool {
+        let had = !self.status.is_empty() || self.pane.foreground_cwd.is_some();
+        self.status.clear();
+        self.status_owner = None;
+        self.pane.foreground_cwd = None;
+        had
     }
 
     fn state_message(&self) -> Arc<str> {
@@ -266,6 +284,7 @@ impl Pty {
             cols,
             rows,
             status: Records::default(),
+            status_owner: None,
             pane: if command.is_empty() {
                 PaneState::default()
             } else {
@@ -294,6 +313,8 @@ impl Pty {
                 let _ = w.write_all(&reply).and_then(|()| w.flush());
             }
         });
+        let master = Arc::new(spawned.master);
+        let master_r = master.clone();
         let wake = Arc::new(Wake::default());
         let screen_r = screen.clone();
         let wake_r = wake.clone();
@@ -315,7 +336,7 @@ impl Pty {
                 let events = screen.vt.take_events();
                 // 보고를 실은 바이트보다 먼저 구독자에게 넣는다. 다른 연결이라 순서가 보장되지는 않지만,
                 // 같은 청크의 출력을 보고 다음 일을 시작한 클라이언트에 상태가 늦게 닿는 일을 줄인다.
-                if screen.apply_events(&events) {
+                if screen.apply_events(&events, || master_r.foreground_pgid()) {
                     screen.publish_state();
                 }
                 for n in &events.notifications {
@@ -351,7 +372,13 @@ impl Pty {
             };
             let _ = drained_rx.recv_timeout(DRAIN_AFTER_EXIT);
             let mut screen = screen_e.lock().unwrap();
-            if screen.pane.command_exited(exit.code, exit.signal) {
+            let mut changed = screen.pane.command_exited(exit.code, exit.signal);
+            // 셸이 끝나면 리더를 더 잴 수 없다. 셸이 exec 한 명령(런처의 claude)이 보낸 레코드도 지워지게, 기억한
+            // 리더가 있으면 그 프로그램도 끝난 것으로 본다.
+            if screen.status_owner.is_some() {
+                changed |= screen.forget_records();
+            }
+            if changed {
                 screen.publish_state();
             }
             drop(screen);
@@ -361,7 +388,7 @@ impl Pty {
         let pty = Arc::new(Pty {
             tty: spawned.tty,
             shell_pid,
-            master: spawned.master,
+            master,
             writer,
             screen,
             exit_rx,
@@ -567,17 +594,31 @@ fn watch_foreground(pty: Weak<Pty>, wake: Arc<Wake>) {
             let Some(pty) = pty.upgrade() else {
                 return;
             };
-            let keep = {
+            let (keep, owner) = {
                 let screen = pty.screen.lock().unwrap();
                 if pty.exited().is_some() || screen.status.is_empty() {
                     break;
                 }
                 // 셸 없이 띄운 명령은 OSC 7 이 없다. 그때는 시작 디렉토리의 경로(심볼릭 링크일 수 있다)를 지킨다.
-                screen.pane.cwd.clone().or_else(|| pty.start_cwd.clone())
+                let keep = screen.pane.cwd.clone().or_else(|| pty.start_cwd.clone());
+                (keep, screen.status_owner)
             };
             // 락을 놓고 잰다 — proc 읽기가 느려도 출력 반영을 막지 않게.
+            let leader = pty.master.foreground_pgid();
+            if let (Some(owner), Some(leader)) = (owner, leader)
+                && owner != leader
+            {
+                let mut screen = pty.screen.lock().unwrap();
+                // 락을 놓고 재는 동안 다른 프로그램이 새 레코드를 보냈으면 그 레코드는 지우지 않는다.
+                if screen.status_owner == Some(owner) && screen.forget_records() {
+                    screen.publish_state();
+                }
+                drop(screen);
+                drop(pty);
+                continue;
+            }
             // 리더가 먼저 끝난 파이프라인(`a | b`)에서는 cwd 를 못 읽는다. 옮긴 것이 아니므로 그대로 둔다.
-            if let Some(cwd) = pty.foreground().cwd {
+            if let Some(cwd) = procinfo::cwd(leader.unwrap_or(pty.shell_pid as i32)) {
                 let cwd = same_dir_as(&cwd, keep.as_deref());
                 let mut screen = pty.screen.lock().unwrap();
                 // 재는 동안 레코드가 비었으면 읽기 스레드가 지운 값을 되살리지 않는다.

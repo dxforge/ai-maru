@@ -17,6 +17,8 @@ import { describe, expect, it } from 'vitest'
 
 const ZSH = '/bin/zsh'
 const zdotdir = join(__dirname, '../../resources/zsh')
+const plugin = join(__dirname, '../../resources/claude-plugin')
+const shimDir = join(__dirname, '../../resources/bin')
 
 function home(files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), 'maru-zsh-'))
@@ -105,6 +107,48 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv', () => {
     })
     expect(loginShell(h, 'print $MARK')).toBe('cfg\n')
   })
+
+  describe('앱 안(MARU_CLI 있음)에서', () => {
+    const app = appEnv('/opt/maru')
+    const run = (h: string, command: string) => shellWith(h, app, command)
+
+    it('사용자의 ~/.zprofile·~/.zshrc·~/.zlogin 을 그 순서로 읽고, 끝나면 ZDOTDIR 이 없다', () => {
+      const h = home({ '.zprofile': 'O=p', '.zshrc': 'O+=r', '.zlogin': 'O+=l' })
+      expect(run(h, 'print $O ${ZDOTDIR-unset}')).toBe('prl unset\n')
+    })
+
+    it('사용자 ~/.zshrc 가 source 한 파일은 ${0:A:h} 로 자기 디렉토리를 찾고, 함수 안의 $0 는 함수 이름이다', () => {
+      const h = home({
+        'plug/p.zsh': 'print -r -- ${0:A:h}; f() { print $0 }; f',
+        '.zshrc': 'source $HOME/plug/p.zsh'
+      })
+      expect(run(h, 'true')).toBe(`${realpathSync(h)}/plug\nf\n`)
+    })
+
+    it.skipIf(!existsSync('/etc/zshrc'))(
+      '/etc/zshrc 가 정한 HISTFILE 은 사용자 자리를 가리킨다',
+      () => {
+        const h = home({ '.zshrc': '' })
+        expect(run(h, 'print -r -- $HISTFILE')).toBe(`${h}/.zsh_history\n`)
+      }
+    )
+
+    it('사용자 시작 파일은 사용자 ZDOTDIR 아래에서 돈다', () => {
+      const h = home({ '.zshrc': 'print -r -- ${ZDOTDIR-unset}' })
+      expect(run(h, 'true')).toBe('unset\n')
+    })
+
+    it('~/.zshenv 가 정한 ZDOTDIR 에서 나머지 시작 파일을 읽고, 그 값을 export 한 채 남긴다', () => {
+      const h = home({
+        '.zshenv': 'export ZDOTDIR=$HOME/cfg',
+        'cfg/.zshrc': 'MARK=cfg',
+        '.zshrc': 'MARK=home'
+      })
+      expect(run(h, 'print $MARK ${ZDOTDIR#$HOME/}; zsh -fc "print \\$ZDOTDIR"')).toBe(
+        `cfg cfg\n${h}/cfg\n`
+      )
+    })
+  })
 })
 
 describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 PATH', () => {
@@ -133,6 +177,18 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 PATH', () => {
     expect(atPrompt(h, ['true'], appEnv(bin))).toBe(`mine ${bin}\nmine ${bin}\n`)
   })
 
+  it('claude shim 디렉토리(plugin 옆 bin)를 maru 디렉토리 바로 뒤에 둔다', () => {
+    expect(atPrompt(pushedBack(), ['print -l $path[1,2]'], appEnv(bin))).toBe(
+      `${bin}\n${shimDir}\n`
+    )
+  })
+
+  it('설치본처럼 claude shim 이 maru 와 같은 디렉토리면 한 번만 둔다', () => {
+    expect(atPrompt(pushedBack(), ['print -l $path[1,2]'], appEnv(shimDir))).toBe(
+      `${shimDir}\n/opt/first\n`
+    )
+  })
+
   it('패키징된 앱처럼 디렉토리에 공백이 있어도 통째로 옮긴다', () => {
     const spaced = '/opt/AI Maru/bin'
     expect(atPrompt(pushedBack(), ['print $path[1]'], appEnv(spaced))).toBe(`${spaced}\n`)
@@ -145,12 +201,16 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 PATH', () => {
 
   it('사용자 ~/.zshrc 가 PATH 를 통째로 다시 써도 되살린다', () => {
     const h = pushedBack({ '.zshrc': 'export PATH=/opt/mine:/usr/bin:/bin' })
-    expect(atPrompt(h, ['print $PATH'], appEnv(bin))).toBe(`${bin}:/opt/mine:/usr/bin:/bin\n`)
+    expect(atPrompt(h, ['print $PATH'], appEnv(bin))).toBe(
+      `${bin}:${shimDir}:/opt/mine:/usr/bin:/bin\n`
+    )
   })
 
-  it('이미 PATH 에 있는 maru 디렉토리는 앞으로 옮기고 두 번 넣지 않는다', () => {
-    const h = pushedBack({ '.zshrc': `export PATH=/opt/mine:${bin}:/usr/bin:/bin` })
-    expect(atPrompt(h, ['print $PATH'], appEnv(bin))).toBe(`${bin}:/opt/mine:/usr/bin:/bin\n`)
+  it('이미 PATH 에 있는 maru·claude shim 디렉토리는 앞으로 옮기고 두 번 넣지 않는다', () => {
+    const h = pushedBack({ '.zshrc': `export PATH=/opt/mine:${shimDir}:${bin}:/usr/bin:/bin` })
+    expect(atPrompt(h, ['print $PATH'], appEnv(bin))).toBe(
+      `${bin}:${shimDir}:/opt/mine:/usr/bin:/bin\n`
+    )
   })
 
   it('사용자가 프롬프트에서 바꾼 PATH 는 다음 프롬프트에도 그대로다', () => {
@@ -166,49 +226,27 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 PATH', () => {
   })
 })
 
-function fakes(
-  dir: string,
-  claudeExit: string | ((log: string) => string)
-): { bin: string; log: string } {
+function fakes(dir: string): { log: string; env: Record<string, string> } {
   const bin = join(dir, 'fakebin')
+  const real = join(dir, 'real')
   const log = join(dir, 'calls.log')
   mkdirSync(bin, { recursive: true })
-  const record = (name: string) => `#!/bin/sh\necho "${name} $*" >> '${log}'\n`
-  const exit = typeof claudeExit === 'function' ? claudeExit(log) : claudeExit
-  writeFileSync(join(bin, 'claude'), `${record('claude')}${exit}\n`, { mode: 0o755 })
-  writeFileSync(join(bin, 'maru'), record('maru'), { mode: 0o755 })
-  return { bin, log }
+  mkdirSync(real, { recursive: true })
+  writeFileSync(join(real, 'claude'), `#!/bin/sh\necho "claude $*" >> '${log}'\n`, { mode: 0o755 })
+  writeFileSync(join(bin, 'maru'), '#!/bin/sh\n', { mode: 0o755 })
+  const env = { ...appEnv(bin), PATH: `${bin}:${shimDir}:${real}:/usr/bin:/bin` }
+  return { log, env }
 }
 
 function appEnv(bin: string): Record<string, string> {
-  return { PATH: `${bin}:/usr/bin:/bin`, MARU_CLI: join(bin, 'maru'), MARU_CLAUDE_PLUGIN: '/plug' }
+  return { PATH: `${bin}:/usr/bin:/bin`, MARU_CLI: join(bin, 'maru'), MARU_CLAUDE_PLUGIN: plugin }
 }
 
-/** 셸이 SIGINT 로 끝나는 경우도 보므로 종료 코드를 따지지 않는다. */
 function shellWith(homeDir: string, env: Record<string, string>, command: string): string {
-  return spawnLogin(homeDir, command, homeDir, env).stdout
+  return stdoutOf(spawnLogin(homeDir, command, homeDir, env))
 }
-
-const CLEAR = '\x1b]7501;state=clear\x1b\\'
 
 const EXPECT = '/usr/bin/expect'
-
-/**
- * `expect` 의 `spawn` 이 만든 pty 를 controlling tty 로 쥔 zsh 에서 돌린다. `spawnZsh` 의 셸에는 tty 가
- * 없어 `/dev/tty` 에 쓰는 것을 볼 수 없고, `script` 는 자기 stdin 이 tty 여야 돈다. 돌려주는 값은 pty 에
- * 찍힌 출력 전부다. 명령은 Tcl 의 따옴표 규칙을 피해 env 로 넘긴다.
- */
-function ttyShellWith(homeDir: string, env: Record<string, string>, command: string): string {
-  const script = `spawn -noecho ${ZSH} -l -i -c $env(MARU_TEST_COMMAND); expect eof`
-  const r = spawnSync(EXPECT, ['-c', script], {
-    cwd: homeDir,
-    env: { ...zshEnv(homeDir, env), MARU_TEST_COMMAND: command },
-    encoding: 'utf8',
-    timeout: 10_000,
-    killSignal: 'SIGKILL'
-  })
-  return r.stdout
-}
 
 const PROMPT = 'P> '
 
@@ -374,126 +412,54 @@ describe.skipIf(!existsSync(ZSH) || !existsSync(EXPECT))('앱의 .zshenv 의 OSC
   })
 })
 
-function loginShellWith(homeDir: string, env: Record<string, string>, command: string): string {
-  return stdoutOf(spawnLogin(homeDir, command, homeDir, env))
-}
-
-describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 claude 함수', () => {
-  const tty = it.skipIf(!existsSync(EXPECT))
-
-  tty('앱 plugin 을 실어 claude 를 띄우고, 끝나면 tty 에 OSC 7501 clear 를 쓴다', () => {
+describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 와 claude shim', () => {
+  it('셸에는 claude 함수가 없고, PATH 의 shim 을 거쳐 앱 plugin 을 싣는다', () => {
     const h = home({ '.zshrc': '' })
-    const { bin, log } = fakes(h, 'exit 0')
-    const out = ttyShellWith(h, appEnv(bin), 'claude -p "a b"; print code=$?')
-    expect(out).toContain(CLEAR)
-    expect(out).toContain('code=0')
-    expect(readFileSync(log, 'utf8')).toBe('claude --plugin-dir /plug -p a b\n')
+    const { log, env } = fakes(h)
+    expect(shellWith(h, env, 'whence -w claude')).toBe('claude: command\n')
+    shellWith(h, env, 'claude -p "a b"')
+    expect(readFileSync(log, 'utf8')).toBe(`claude --plugin-dir ${plugin} -p a b\n`)
   })
 
-  tty('clear 는 stdout 이 아니라 tty 에 쓴다', () => {
+  it.each([
+    ['command claude', 'command claude x'],
+    ['exec claude', 'exec claude x'],
+    ['새로 연 zsh', `${ZSH} -c 'claude x'`]
+  ])('%s 도 앱 plugin 을 싣는다', (_, command) => {
     const h = home({ '.zshrc': '' })
-    const { bin } = fakes(h, 'exit 0')
-    const captured = join(h, 'stdout.txt')
-    expect(ttyShellWith(h, appEnv(bin), `claude > '${captured}'`)).toContain(CLEAR)
-    expect(readFileSync(captured, 'utf8')).toBe('')
+    const { log, env } = fakes(h)
+    shellWith(h, env, command)
+    expect(readFileSync(log, 'utf8')).toBe(`claude --plugin-dir ${plugin} x\n`)
   })
 
-  it('tty 가 없으면 clear 를 건너뛰고 claude 의 종료 코드를 돌려준다', () => {
-    const h = home({ '.zshrc': '' })
-    const { bin } = fakes(h, 'exit 3')
-    const r = spawnLogin(h, 'claude; print code=$?', h, appEnv(bin))
-    expect(r.stdout).toBe('code=3\n')
-    expect(r.stderr).toBe('')
-  })
-
-  tty('Ctrl-C 로 claude 와 함께 셸이 SIGINT 를 받아도 clear 를 쓴다', () => {
-    const h = home({ '.zshrc': '' })
-    const { bin } = fakes(h, 'kill -INT $PPID; kill -INT $$')
-    expect(ttyShellWith(h, appEnv(bin), 'claude')).toContain(CLEAR)
-  })
-
-  tty('claude 가 SIGKILL 로 죽어도 clear 를 쓴다', () => {
-    const h = home({ '.zshrc': '' })
-    const { bin } = fakes(h, 'kill -9 $$')
-    expect(ttyShellWith(h, appEnv(bin), 'claude')).toContain(CLEAR)
-  })
-
-  it('앱의 값이 없으면 claude 를 그대로 부른다', () => {
-    const h = home({ '.zshrc': '' })
-    const { bin, log } = fakes(h, 'exit 0')
-    shellWith(h, { PATH: `${bin}:/usr/bin:/bin` }, 'claude x')
-    expect(readFileSync(log, 'utf8')).toBe('claude x\n')
+  it('런처처럼 -c 로 받은 claude 도, 사용자 ~/.zshrc 가 진짜 claude 디렉토리를 PATH 앞에 붙이면 shim 을 거친다', () => {
+    const h = home({ '.zshrc': 'path=($HOME/real $path)' })
+    const { log, env } = fakes(h)
+    const r = spawnZsh(['-c', '"$@"', 'zsh', 'claude', 'x'], h, h, env)
+    expect(r.status).toBe(0)
+    expect(readFileSync(log, 'utf8')).toBe(`claude --plugin-dir ${plugin} x\n`)
   })
 
   it('사용자 alias 를 거쳐도 앱 plugin 이 실린다', () => {
     const h = home({ '.zshrc': "alias claude='claude --mine'" })
-    const { bin, log } = fakes(h, 'exit 0')
-    shellWith(h, appEnv(bin), 'claude')
-    expect(readFileSync(log, 'utf8')).toBe('claude --plugin-dir /plug --mine\n')
+    const { log, env } = fakes(h)
+    shellWith(h, env, 'claude')
+    expect(readFileSync(log, 'utf8')).toBe(`claude --plugin-dir ${plugin} --mine\n`)
   })
 
   it('사용자 .zshrc 가 정의한 claude 함수가 이긴다', () => {
     const h = home({ '.zshrc': 'claude() { print mine }' })
-    const { bin } = fakes(h, 'exit 0')
-    expect(shellWith(h, appEnv(bin), 'claude')).toBe('mine\n')
+    const { env } = fakes(h)
+    expect(shellWith(h, env, 'claude')).toBe('mine\n')
   })
-
-  it('사용자 ~/.zshenv 가 정의한 claude 함수도 이긴다', () => {
-    const h = home({ '.zshenv': 'claude() { print mine }', '.zshrc': '' })
-    const { bin } = fakes(h, 'exit 0')
-    expect(shellWith(h, appEnv(bin), 'claude')).toBe('mine\n')
-  })
-
-  const recordHyperlink = (log: string) =>
-    `echo "hyperlink=\${FORCE_HYPERLINK-unset} marker=\${MARU_CLAUDE_FORCED_HYPERLINK-unset} zdotdir=\${ZDOTDIR-unset}" >> '${log}'; exit 0`
-
-  it('claude 에만 FORCE_HYPERLINK=1 과 표식·앱 ZDOTDIR 을 붙이고 셸에는 남기지 않는다', () => {
-    const h = home({ '.zshrc': '' })
-    const { bin, log } = fakes(h, recordHyperlink)
-    expect(
-      shellWith(h, appEnv(bin), 'claude; print shell=${FORCE_HYPERLINK-unset} ${ZDOTDIR-unset}')
-    ).toBe('shell=unset unset\n')
-    expect(readFileSync(log, 'utf8')).toContain(`hyperlink=1 marker=1 zdotdir=${zdotdir}\n`)
-  })
-
-  it.each(['0', ''])(
-    '사용자가 FORCE_HYPERLINK 를 %j 로 정해 두었으면 그 값을 두고 표식도 붙이지 않는다',
-    (value) => {
-      const h = home({ '.zshrc': '' })
-      const { bin, log } = fakes(h, recordHyperlink)
-      shellWith(h, { ...appEnv(bin), FORCE_HYPERLINK: value }, 'claude')
-      expect(readFileSync(log, 'utf8')).toContain(`hyperlink=${value} marker=unset zdotdir=unset\n`)
-    }
-  )
-
-  tty(
-    'claude 안(CLAUDECODE)에서 띄운 claude 는 plugin·env 없이 그대로 부르고 clear 를 쓰지 않는다',
-    () => {
-      const h = home({ '.zshrc': '' })
-      const { bin, log } = fakes(h, recordHyperlink)
-      const out = ttyShellWith(h, { ...appEnv(bin), CLAUDECODE: '1' }, 'claude --version')
-      expect(out).not.toContain(CLEAR)
-      expect(readFileSync(log, 'utf8')).toBe(
-        'claude --version\nhyperlink=unset marker=unset zdotdir=unset\n'
-      )
-    }
-  )
 
   it('claude 의 Bash 도구가 띄우는 로그인 셸은 표식을 보고 FORCE_HYPERLINK 를 지운다', () => {
     const h = home({ '.zshrc': '' })
     const forced = { FORCE_HYPERLINK: '1', MARU_CLAUDE_FORCED_HYPERLINK: '1' }
     const print =
       'print ${FORCE_HYPERLINK-unset} ${MARU_CLAUDE_FORCED_HYPERLINK-unset} ${ZDOTDIR-unset}'
-    expect(loginShellWith(h, forced, print)).toBe('unset unset unset\n')
+    expect(shellWith(h, forced, print)).toBe('unset unset unset\n')
     // 표식이 없으면 사용자가 정한 값이라 둔다.
-    expect(loginShellWith(h, { FORCE_HYPERLINK: '1' }, print)).toBe('1 unset unset\n')
-  })
-
-  it('사용자 ~/.zshenv 의 claude alias 를 거쳐도 앱 plugin 이 실린다', () => {
-    const h = home({ '.zshenv': "alias claude='claude --mine'", '.zshrc': '' })
-    const { bin, log } = fakes(h, 'exit 0')
-    const r = spawnLogin(h, 'claude', h, appEnv(bin))
-    expect(r.stderr).toBe('')
-    expect(readFileSync(log, 'utf8')).toBe('claude --plugin-dir /plug --mine\n')
+    expect(shellWith(h, { FORCE_HYPERLINK: '1' }, print)).toBe('1 unset unset\n')
   })
 })

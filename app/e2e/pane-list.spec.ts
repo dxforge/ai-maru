@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
   expect,
+  inProgram,
   newWorkspace,
   paneRows,
   programStatus,
@@ -70,6 +71,7 @@ test('maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순
   await newWorkspace(launched, 2)
   const second = await enter(page, join(dataDir, 'proj-b'))
   await expect(workspaceNames(page).nth(1)).toHaveText('proj-b')
+  await inProgram(page)
   await page.keyboard.type(programStatus('working', `msg=${base64('reading')}`, 'cargo'))
   await expect(paneRows(page).nth(1)).toHaveClass(/working/)
 

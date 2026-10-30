@@ -101,10 +101,6 @@ function useTool(dataDir: string, config = ''): [string, string] {
 
 type FakeClaude = { fake: string; env: Record<string, string>; signal(s: NodeJS.Signals): void }
 
-/**
- * PATH 맨 앞에 OSC 7501 로 `working` 을 알리고 기다리는 `claude` 를 둔다. 런처의 `claude` 는 앱의 `.zshenv` 가 정의한
- * `claude` 함수를 거치고, 절대경로 `fake` 는 거치지 않는다.
- */
 function fakeClaude(dataDir: string): FakeClaude {
   const bin = join(dataDir, 'fakebin')
   mkdirSync(bin)
@@ -247,7 +243,7 @@ test('명령이 0 이 아닌 코드로 끝나면 pane 이 화면을 남긴 채 �
   expect(await dialogCalls(app)).toEqual([])
 })
 
-test('런처로 띄운 claude 가 working 을 알린 뒤 SIGKILL 로 끝나면 셸 함수의 clear 로 Working 이 사라지고 종료 코드 137 을 보인다', async ({
+test('런처로 띄운 claude 가 working 을 알린 뒤 SIGKILL 로 끝나면 Working 이 사라지고 끝난 시그널을 보인다', async ({
   launch,
   dataDir
 }) => {
@@ -255,29 +251,17 @@ test('런처로 띄운 claude 가 working 을 알린 뒤 SIGKILL 로 끝나면 �
   const dir = project(dataDir, 'proj-a')
   const launched = await launch(claude.env)
   const { page } = launched
-  await launchAt(launched, dir)
-  await expect(activeHeader(page)).toHaveClass(/working/)
-  await expect(paneRows(page)).toHaveClass(/working/)
-  claude.signal('SIGKILL')
-  await expect(rows(page)).toContainText('[exited with code 137]')
-  await expect(activeHeader(page)).not.toHaveClass(/working/)
-  await expect(activeHeader(page)).toHaveClass(/command-failed/)
-  await expect(activeHeader(page).locator('.command-tail')).toHaveText('137')
-  await expect(paneRows(page)).toHaveCount(0)
-  const row = cellItems(page).nth(1)
-  await expect(row).toHaveClass(/shell/)
-  await expect(row).toHaveClass(/command-failed/)
-  await expect(row).toHaveAttribute('aria-label', 'Exited with code 137: claude, proj-a')
-
-  // 셸 함수를 거치지 않는 명령은 끝날 때 OSC 7501 `clear` 를 보내는 쪽이 없어 레코드가 남는다. zsh 가 명령을 exec 하므로
-  // 셸이 시그널로 끝난다.
-  await launchFake(launched, claude, dir)
-  claude.signal('SIGKILL')
-  await expect(rows(page)).toContainText('[exited with signal 9]')
-  await expect(activeHeader(page)).toHaveClass(/working/)
-  await expect(activeHeader(page).locator('.command-tail')).toHaveCount(0)
-  await expect(paneRows(page)).toHaveClass(/working/)
-  await expect(paneRows(page)).toHaveAttribute('aria-label', 'Working: Claude, proj-a')
+  // `claude` 는 PATH 의 shim 을 거치고, 경로로 고른 명령은 거치지 않는다. 둘 다 zsh 가 exec 하므로 셸이 시그널로 끝난다.
+  for (const start of [() => launchAt(launched, dir), () => launchFake(launched, claude, dir)]) {
+    await start()
+    await expect(activeHeader(page)).toHaveClass(/working/)
+    await expect(paneRows(page)).toHaveClass(/working/)
+    claude.signal('SIGKILL')
+    await expect(rows(page)).toContainText('[exited with signal 9]')
+    await expect(activeHeader(page)).not.toHaveClass(/working/)
+    await expect(activeHeader(page)).toHaveClass(/command-failed/)
+    await expect(paneRows(page)).toHaveCount(0)
+  }
 })
 
 test('커서를 그린 내용 위에 두고 끝난 명령의 종료 코드는 그 내용을 덮지 않고 마지막 줄 아래에 쓴다', async ({

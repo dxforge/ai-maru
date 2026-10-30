@@ -1,7 +1,7 @@
-# 앱이 ZDOTDIR 로 이 파일을 읽힌다. 지워야 나머지 시작 파일이 사용자 자리에서 읽힌다.
+# 앱이 ZDOTDIR 로 이 파일을 읽힌다. 사용자 ~/.zshenv 가 앱 없이 뜬 zsh 에서처럼 ZDOTDIR 이 없는 상태로 돌게 지운다.
 typeset -g _maru_zdotdir=$ZDOTDIR
 unset ZDOTDIR
-# claude 함수가 claude 에만 붙인 FORCE_HYPERLINK 를, claude 의 Bash 도구가 띄우는 이 셸에서 지운다.
+# 앱의 claude shim 이 claude 에만 붙인 FORCE_HYPERLINK 를, claude 의 Bash 도구가 띄우는 이 셸에서 지운다.
 if [[ -n $MARU_CLAUDE_FORCED_HYPERLINK ]]; then
   unset FORCE_HYPERLINK MARU_CLAUDE_FORCED_HYPERLINK
 fi
@@ -163,38 +163,41 @@ _maru_osc133_precmd() {
 }
 
 # 로그인 셸은 이 파일 뒤에 /etc/zprofile 을 읽는다. 거기서 path_helper 가 /etc/paths 의 디렉토리를 앞에 두므로,
-# 앱이 PATH 맨 앞에 붙인 maru 디렉토리가 뒤로 밀린다.
-# 시작 파일을 다 읽은 첫 프롬프트에서 한 번 다시 앞에 붙이고 빠진다 — 그 뒤 사용자가 바꾼 PATH 는 둔다.
+# 앱이 PATH 맨 앞에 붙인 maru 디렉토리와 claude shim 디렉토리(plugin 옆 `bin`)가 뒤로 밀린다. 사용자 시작 파일도
+# 진짜 claude 가 든 디렉토리를 앞에 붙일 수 있다. 시작 파일을 다 읽은 뒤 한 번 다시 앞에 붙이고 빠진다 — 그 뒤 사용자가
+# 바꾼 PATH 는 둔다. 앱의 .zlogin 이 부르고, 그 파일을 읽지 않는 셸(로그인 셸이 아니거나 CLAUDECODE 안)에서는 첫 프롬프트의 precmd 가 부른다.
 _maru_path() {
   emulate -L zsh
   add-zsh-hook -d precmd _maru_path
   [[ -n $MARU_CLI ]] || return 0
-  local dir=${MARU_CLI:h}
-  path=($dir ${path:#$dir})
+  local -a dirs=(${MARU_CLI:h})
+  [[ -n $MARU_CLAUDE_PLUGIN ]] && dirs+=(${MARU_CLAUDE_PLUGIN:h}/bin)
+  local dir
+  for dir in $dirs; do
+    path=(${path:#$dir})
+  done
+  path=(${(u)dirs} $path)
 }
 add-zsh-hook precmd _maru_path
 
-# `name()` 꼴은 사용자 ~/.zshenv 의 claude alias 가 펼쳐져 parse error 가 난다.
-(( $+functions[claude] )) || function claude {
-  # claude 안(CLAUDECODE)에서 부른 claude 는 이 pane 의 claude 가 아니다. 앱 plugin 의 hook 과 끝의 clear 가
-  # 바깥 claude 의 컨텍스트와 pane 상태를 건드리므로 그대로 넘긴다.
-  if [[ -z $MARU_CLI || -z $MARU_CLAUDE_PLUGIN || -n $CLAUDECODE ]]; then
-    command claude "$@"
-    return
-  fi
-  # 이 앱의 터미널 env 에서는 claude 가 FORCE_HYPERLINK 가 있을 때만 OSC 8 링크를 찍는다. 값은 claude 프로세스에만 붙인다.
-  # 자식에게 물려주면 Bash 도구가 돌리는 CLI 가 파이프에 OSC 8 을 섞기 때문이다. zsh 는 로그인 여부와 상관없이 `$ZDOTDIR/.zshenv` 를 읽으므로,
-  # ZDOTDIR 을 앱 디렉토리로 되돌려 Bash 도구의 셸이 이 파일 맨 위에서 지우게 한다. 사용자가 정해 둔 값은 덮지 않는다.
-  local -a forced=()
-  if [[ -z ${FORCE_HYPERLINK+set} ]]; then
-    forced=(FORCE_HYPERLINK=1 MARU_CLAUDE_FORCED_HYPERLINK=1 ZDOTDIR=$_maru_zdotdir)
-  fi
-  # claude 가 OSC 7501 의 clear 를 보내지 못하고 죽어도 pty 의 레코드가 남지 않게, 끝나면 이 셸이 tty 에
-  # clear 를 쓴다. stdout 은 파이프일 수 있어 tty 에 쓴다. Ctrl-C 로 셸도 SIGINT 를 받으면 함수의
-  # 남은 명령을 건너뛰므로 always 로 둔다.
-  {
-    env "${forced[@]}" claude --plugin-dir "$MARU_CLAUDE_PLUGIN" "$@"
-  } always {
-    { print -n '\e]7501;state=clear\e\\' > /dev/tty } 2> /dev/null
-  }
+# 런처는 명령을 `-c` 로 돌려 프롬프트가 뜨지 않으므로 precmd 가 불리지 않는다. 로그인 셸은 마지막에 .zlogin 을 읽으므로,
+# ZDOTDIR 을 앱 디렉토리로 두어 앱의 .zprofile·.zshrc·.zlogin 을 거치게 한다. 그 파일들은 사용자 파일을 사용자
+# ZDOTDIR 로 되돌린 채 읽는다.
+_maru_rc_user() {
+  unset ZDOTDIR
+  (( _maru_user_zdotdir_set )) || return 0
+  typeset -g ZDOTDIR=$_maru_user_zdotdir
+  (( _maru_user_zdotdir_exported )) && export ZDOTDIR
+  return 0
 }
+# 앱 디렉토리 값은 export 하지 않는다. export 하면 자식 프로세스에 앱의 ZDOTDIR 이 새기 때문이다.
+_maru_rc_app() {
+  typeset -gi _maru_user_zdotdir_set=${+ZDOTDIR} _maru_user_zdotdir_exported=0
+  typeset -g _maru_user_zdotdir=${ZDOTDIR-}
+  [[ ${(t)ZDOTDIR} == *export* ]] && _maru_user_zdotdir_exported=1
+  unset ZDOTDIR
+  typeset -g ZDOTDIR=$_maru_zdotdir
+}
+if [[ -o login && -n $MARU_CLI && -n $_maru_zdotdir && -z $CLAUDECODE ]]; then
+  _maru_rc_app
+fi

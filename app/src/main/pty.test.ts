@@ -109,16 +109,17 @@ describe('shellEnv', () => {
   const cli = { socket: '/run/app.sock', bin: '/build/bin/maru' }
   const setup = { cli, zdotdir: '/res/zsh', claudePlugin: '/res/claude-plugin' }
 
-  it('앱 소켓과 pty id, CLI 와 claude plugin 의 경로를 넣고 CLI 의 디렉토리를 PATH 앞에 붙인다', () => {
+  it('앱 소켓과 pty id, CLI 와 claude plugin 의 경로를 넣고 CLI 와 claude shim 의 디렉토리를 PATH 앞에 붙인다', () => {
     const env = shellEnv({ PATH: '/usr/bin:/bin', HOME: '/h' }, 'p-1', setup)
     expect(env).toEqual({
-      PATH: '/build/bin:/usr/bin:/bin',
+      PATH: '/build/bin:/res/bin:/usr/bin:/bin',
       HOME: '/h',
       MARU_SOCKET: '/run/app.sock',
       MARU_PTY_ID: 'p-1',
       MARU_CLI: '/build/bin/maru',
       MARU_CLAUDE_PLUGIN: '/res/claude-plugin',
       ZDOTDIR: '/res/zsh',
+      MARU_ZDOTDIR: '/res/zsh',
       COLORTERM: 'truecolor',
       CLAUDE_CODE_FORCE_STRIKETHROUGH: '1'
     })
@@ -148,12 +149,18 @@ describe('shellEnv', () => {
     })
   })
 
-  it('물려받은 ZDOTDIR 대신 앱의 zsh 디렉토리를 넣는다', () => {
-    expect(shellEnv({ ZDOTDIR: '/outer' }, 'p-1', setup).ZDOTDIR).toBe('/res/zsh')
+  it('물려받은 ZDOTDIR·MARU_ZDOTDIR 대신 앱의 zsh 디렉토리를 넣는다', () => {
+    const env = shellEnv({ ZDOTDIR: '/outer', MARU_ZDOTDIR: '/outer' }, 'p-1', setup)
+    expect([env.ZDOTDIR, env.MARU_ZDOTDIR]).toEqual(['/res/zsh', '/res/zsh'])
   })
 
-  it('PATH 가 없으면 CLI 의 디렉토리만 둔다', () => {
-    expect(shellEnv({}, 'p-1', setup).PATH).toBe('/build/bin')
+  it('PATH 가 없으면 CLI 와 claude shim 의 디렉토리만 둔다', () => {
+    expect(shellEnv({}, 'p-1', setup).PATH).toBe('/build/bin:/res/bin')
+  })
+
+  it('설치본처럼 claude shim 이 CLI 와 같은 디렉토리면 한 번만 붙인다', () => {
+    const bundled = { ...setup, cli: { ...cli, bin: '/res/bin/maru' } }
+    expect(shellEnv({ PATH: '/bin' }, 'p-1', bundled).PATH).toBe('/res/bin:/bin')
   })
 
   it('띄운 쪽 pty 의 값은 여기서도 뺀다', () => {

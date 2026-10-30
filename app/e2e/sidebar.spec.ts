@@ -207,7 +207,7 @@ test('프롬프트가 뜨지 않아도 Claude 의 상태가 바뀌면 branch 를
 
   // claude 가 일하는 동안처럼 프롬프트가 돌아오지 않게 sleep 으로 붙든다.
   const report = programStatus('working').trimEnd()
-  await page.keyboard.type(`git switch -q -c by-claude && ${report} && sleep 30\n`)
+  await page.keyboard.type(`(git switch -q -c by-claude && ${report} && sleep 30)\n`)
   await expect(paneRows(page)).toHaveClass(/working/, shellGit)
   await expect(branch(page)).toHaveText(/by-claude$/)
 })
@@ -247,7 +247,7 @@ test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어
   // `foreground` 는 실제 경로(`~/proj`)를 답하고, OSC 7 은 `$PWD`(`~/link`)를 준다. branch 를 바꿔 두고, branch 를 다시 읽은
   // 것을 확인한 뒤에 경로를 확인한다.
   const report = programStatus('working').trimEnd()
-  await page.keyboard.type(`git switch -q -c by-claude && ${report} && sleep 30\n`)
+  await page.keyboard.type(`(git switch -q -c by-claude && ${report} && sleep 30)\n`)
   await expect(paneRows(page)).toHaveClass(/working/, shellGit)
   await expect(branch(page)).toHaveText(/by-claude$/)
   await expect(tip(page)).toHaveAttribute('title', /\n~\/link$/)
@@ -404,10 +404,10 @@ test('마지막 cell 을 닫으면 창 제목과 폴더 아이콘이 앱의 것�
 const collapsedGroups = (page: Page) => page.locator('.sidebar.collapsed .group')
 
 async function twoClaudes(app: ElectronApplication, page: Page): Promise<void> {
-  await page.keyboard.type(`${programStatus('working').trimEnd()} && sleep 600\n`)
+  await page.keyboard.type(`(${programStatus('working').trimEnd()} && sleep 600)\n`)
   await split(app, page, 'split-right', 2)
   await page.keyboard.type(
-    `${programStatus('blocked', 'kind=permission').trimEnd()} && sleep 600\n`
+    `(${programStatus('blocked', 'kind=permission').trimEnd()} && sleep 600)\n`
   )
   await expect(paneRows(page)).toHaveClass([/working/, /blocked/])
 }

@@ -69,6 +69,18 @@ test('설치본의 터미널에서 MARU_CLI·MARU_CLAUDE_PLUGIN 은 번들 안�
   await expect(rows(page)).toContainText('plugin-2')
 })
 
+test('설치본의 zsh 터미널에서 claude 는 번들 안의 실행할 수 있는 shim 이다', async ({
+  launch,
+  dataDir
+}) => {
+  const { page } = await launch({ SHELL: '/bin/zsh', HOME: zshHome(dataDir) }, executable())
+  const shim = join(installed, 'Contents/Resources/bin/claude')
+  await page.keyboard.type(
+    `test "$(whence -p claude)" -ef '${shim}' && test -x '${shim}' && echo shim-$((1+1)) || echo shim-other\n`
+  )
+  await expect(rows(page)).toContainText('shim-2')
+})
+
 test('설치본의 zsh 에서 cell 이름이 cd 를 따른다', async ({ launch, dataDir }) => {
   const home = zshHome(dataDir, 'proj')
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home }, executable())
