@@ -101,10 +101,6 @@ function useTool(dataDir: string, config = ''): [string, string] {
 
 type FakeClaude = { fake: string; env: Record<string, string>; signal(s: NodeJS.Signals): void }
 
-/**
- * PATH 맨 앞에 OSC 7501 로 `working` 을 알리고 기다리는 `claude` 를 둔다. 런처의 `claude` 는 앱의 `.zshenv` 가 정의한
- * `claude` 함수를 거치고, 절대경로 `fake` 는 거치지 않는다.
- */
 function fakeClaude(dataDir: string): FakeClaude {
   const bin = join(dataDir, 'fakebin')
   mkdirSync(bin)
