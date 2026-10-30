@@ -45,6 +45,8 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'command-palette', key: 'P', shift: true, meta: true },
   { target: 'command', action: 'next-cell', key: ']', shift: true, meta: true },
   { target: 'command', action: 'previous-cell', key: '[', shift: true, meta: true },
+  { target: 'command', action: 'next-pane', key: ']', meta: true },
+  { target: 'command', action: 'previous-pane', key: '[', meta: true },
   { target: 'command', action: 'toggle-sidebar', key: 'B', meta: true },
   { target: 'command', action: 'toggle-canvas', key: 'B', alt: true, meta: true },
   { target: 'command', action: 'toggle-view-mode', key: '\\', meta: true },

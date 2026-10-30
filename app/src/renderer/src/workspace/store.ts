@@ -8,6 +8,7 @@ import { newPtyId, randomId } from '../../../shared/pty'
 import { paneCwd, paneTitle } from './display'
 import {
   neighbor,
+  readingOrder,
   removePane,
   splitPane,
   splitRoot,
@@ -180,6 +181,23 @@ export function createWorkspaces(
     if (!n) return undefined
     const i = all.findIndex((c) => c.key === selectedKey.value)
     return all[(i + by + n) % n].key
+  }
+
+  function stepPane(by: 1 | -1): number | undefined {
+    const c = selected()
+    if (c) {
+      const order = readingOrder(c.layout)
+      const to = order[order.indexOf(c.focused) + by]
+      if (to !== undefined) {
+        c.focused = to
+        return c.key
+      }
+    }
+    const key = step(by)
+    if (key === undefined) return undefined
+    const next = cell(key)!
+    next.focused = readingOrder(next.layout).at(by === 1 ? 0 : -1)!
+    return key
   }
 
   function close(key: number): void {
@@ -432,6 +450,7 @@ export function createWorkspaces(
     restore,
     selected,
     step,
+    stepPane,
     select: (key: number): void => void (selectedKey.value = key)
   }
 }

@@ -37,6 +37,15 @@ describe('commandKeys', () => {
     expect(formatKeys(commandKeys('focus-pane-down')!)).toBe('⌥⌘↓')
   })
 
+  it('다음·이전 pane 은 ⌘] / ⌘[ 이고 메뉴에 건다', () => {
+    expect(toAccelerator(commandKeys('next-pane')!)).toBe('Command+]')
+    expect(toAccelerator(commandKeys('previous-pane')!)).toBe('Command+[')
+    expect(formatKeys(commandKeys('next-pane')!)).toBe('⌘]')
+    expect(formatKeys(commandKeys('previous-pane')!)).toBe('⌘[')
+    expect(secondaryCommand(press('BracketRight', { metaKey: true }))).toBeUndefined()
+    expect(secondaryCommand(press('BracketLeft', { metaKey: true }))).toBeUndefined()
+  })
+
   it('보기 모드 전환은 ⌘\\ 다', () => {
     expect(formatKeys(commandKeys('toggle-view-mode')!)).toBe('⌘\\')
     expect(toAccelerator(commandKeys('toggle-view-mode')!)).toBe('Command+\\')

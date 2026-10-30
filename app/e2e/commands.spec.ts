@@ -65,10 +65,12 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['close-pane', 'Close Pane', 'Command+W'],
     ['close-workspace', 'Close Workspace', 'Shift+Command+W']
   ])
-  expect(menus.view.slice(0, 17)).toEqual([
+  expect(menus.view.slice(0, 19)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
     ['next-cell', 'Next Cell', 'Shift+Command+]'],
     ['previous-cell', 'Previous Cell', 'Shift+Command+['],
+    ['next-pane', 'Next Pane', 'Command+]'],
+    ['previous-pane', 'Previous Pane', 'Command+['],
     ['toggle-sidebar', 'Toggle Sidebar', 'Command+B'],
     ['toggle-canvas', 'Toggle Canvas', 'Alt+Command+B'],
     ['toggle-view-mode', 'Toggle View Mode', 'Command+\\'],
@@ -112,6 +114,8 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
   await page.keyboard.press('Alt+Meta+KeyB')
   await page.keyboard.press('Meta+KeyB')
   await page.keyboard.press('Shift+Meta+BracketRight')
+  await page.keyboard.press('Meta+BracketRight')
+  await page.keyboard.press('Meta+BracketLeft')
   await page.keyboard.press('Meta+Equal')
   await page.keyboard.press('Meta+Minus')
   await page.keyboard.press('Meta+Digit0')
@@ -124,6 +128,8 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
     { code: 'KeyB', prevented: false },
     { code: 'KeyB', prevented: false },
     { code: 'BracketRight', prevented: false },
+    { code: 'BracketRight', prevented: false },
+    { code: 'BracketLeft', prevented: false },
     { code: 'Equal', prevented: false },
     { code: 'Minus', prevented: false },
     { code: 'Digit0', prevented: false },
@@ -344,6 +350,8 @@ test('팔레트는 자신을 뺀 명령을 단축키와 함께 보이고, 입력
     'Close Workspace⇧⌘W',
     'Next Cell⇧⌘]',
     'Previous Cell⇧⌘[',
+    'Next Pane⌘]',
+    'Previous Pane⌘[',
     'Toggle Sidebar⌘B',
     'Toggle Canvas⌥⌘B',
     'Toggle View Mode⌘\\',
