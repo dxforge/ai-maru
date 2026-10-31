@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PaneReply } from '../shared/pane'
 import { CliError, InvalidParams } from './cli-server'
 import { createPanes, type PaneChannel } from './pane'
+import { createWindowReady } from './window-ready'
 
 const A = 'p-0000000a'
 const B = 'p-0000000b'
@@ -9,6 +10,7 @@ const B = 'p-0000000b'
 function setup({ window = true, ready = true } = {}) {
   const sent: { channel: PaneChannel; id: number; arg: unknown }[] = []
   const cells = new Map([[A, 'c-0000000a']])
+  const windowReady = createWindowReady()
   const panes = createPanes(
     (channel, id, arg) => {
       if (!window) return false
@@ -16,11 +18,12 @@ function setup({ window = true, ready = true } = {}) {
       return true
     },
     (pty) => cells.get(pty),
+    windowReady,
     1000
   )
-  if (ready) panes.ready()
+  if (ready) windowReady.ready()
   const answer = (reply: PaneReply) => panes.reply(sent.at(-1)!.id, reply)
-  return { ...panes, sent, answer, cells }
+  return { ...panes, ready: windowReady.ready, unready: windowReady.unready, sent, answer, cells }
 }
 
 afterEach(() => vi.useRealTimers())
@@ -208,6 +211,7 @@ describe('창이 준비되기 전', () => {
 
   it('넘기다 던지면 그 요청만 실패하고 나머지는 넘긴다', async () => {
     const sent: number[] = []
+    const windowReady = createWindowReady()
     const panes = createPanes(
       (_channel, id) => {
         if (id === 0) throw new Error('boom')
@@ -215,11 +219,12 @@ describe('창이 준비되기 전', () => {
         return true
       },
       () => undefined,
+      windowReady,
       1000
     )
     const first = panes.handlers['pane.close']({ target: B }, A)
     const second = panes.handlers['pane.close']({ target: B }, A)
-    panes.ready()
+    windowReady.ready()
     await expect(first).rejects.toThrow('boom')
     expect(sent).toEqual([1])
     panes.reply(1, null)

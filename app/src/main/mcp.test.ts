@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { canvasPut } from './canvas'
 import { InvalidParams } from './cli-server'
 import { CANVAS_PUT_TOOL, mcpHandlers } from './mcp'
+import { createWindowReady } from './window-ready'
 
 function hub(
   put: (params: Record<string, unknown>) => Promise<{ id: string }> = async () => ({
@@ -144,7 +145,7 @@ describe('tools/call canvas_put', () => {
         isDestroyed: () => false,
         webContents: { send: (...a: unknown[]) => sent.push(a) }
       }
-      const { send } = hub(canvasPut(() => win as unknown as BrowserWindow))
+      const { send } = hub(canvasPut(() => win as unknown as BrowserWindow, createWindowReady()))
       expect(await send(call(args))).toEqual(toolError(reason))
       expect(sent).toEqual([])
     }

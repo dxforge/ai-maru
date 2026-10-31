@@ -376,13 +376,15 @@ fn without_the_app_it_waits_ten_seconds_then_fails_that_message_and_keeps_runnin
     let mut mcp = Mcp::spawn(Some(&sock), tmp.path());
     let started = Instant::now();
     mcp.send(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }));
+    mcp.send(&json!({ "jsonrpc": "2.0", "id": 99, "result": {} }));
     mcp.send(&canvas_put(1, json!({ "text": "# T" })));
     mcp.send(&request(2, "initialize", json!({})));
 
-    let first = mcp.next(Duration::from_secs(30));
+    let first = mcp.next(Duration::from_secs(40));
     let waited = started.elapsed();
-    // 알림도 10초를 기다리므로 `canvas_put` 의 답은 두 번의 대기(20초쯤) 뒤에 나온다.
-    assert!(waited >= Duration::from_secs(19), "{waited:?}");
+    // 알림과 응답은 기다리지 않고 버리므로 `canvas_put` 은 자기 대기(10초)만큼만 늦는다.
+    assert!(waited >= Duration::from_secs(9), "{waited:?}");
+    assert!(waited < Duration::from_secs(15), "{waited:?}");
     assert_eq!(first["id"], 1);
     assert!(
         tool_error_text(&first).starts_with("AI Maru app is not running"),

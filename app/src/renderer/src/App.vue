@@ -828,7 +828,7 @@ void window.maru.restoreScreen().then((r) => {
     }
   )
   watch(screen, window.maru.saveScreen, { immediate: true })
-  // 되살린 터미널이 `pty:open` 을 보낸 다음 tick 에 부른다(docs/architecture.md 의 "pane 요청은 창이 준비된 뒤에 넘긴다").
+  // 되살린 터미널이 `pty:open` 을 보낸 다음 tick 에 부른다(docs/architecture.md 의 "창에 보내는 요청은 창이 준비된 뒤에 넘긴다").
   void nextTick(window.maru.paneReady)
 })
 </script>
