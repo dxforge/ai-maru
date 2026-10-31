@@ -210,12 +210,25 @@ const desktopNotifications = createDesktopNotifications({
   }
 })
 
+// renderer 가 `pane:viewed` 로 알린, 입력 focus 를 가진 pane 의 pty. renderer 를 다시 읽으면 renderer 가 다시 알리기 전까지 보고 있는 pty 가 없는 것으로 친다.
+let viewedPty: string | null = null
+
 // main 은 renderer 가 붙어 있든 아니든 pty 마다 상태 구독을 열어 마지막 상태를 든다(docs/architecture.md 의 "pty 상태는 main 이 구독해 든다").
 const ptyStates = createPtyStates({
   subscribe: (id, on) => subscribeState(ptyDir(), id, on),
   isLive: (id) => ptyLive(ptyDir(), id),
   emit: (pty, entry) => sendToWindows('pty:state', pty, entry),
-  notified: desktopNotifications
+  notified: desktopNotifications,
+  viewing: (pty) => pty === viewedPty,
+  doneWhileViewed: (pty, records) => void seen(pty, records)
+})
+
+const seen = createSeen({
+  records: ptyStates.records,
+  run: async (args) => {
+    const cli = cliAccess()
+    await runFile(cli.bin, args, { env: { ...process.env, MARU_SOCKET: cli.socket } })
+  }
 })
 
 const panes = createPanes(
@@ -501,7 +514,10 @@ function createWindow(state: WindowState | null): void {
     openExternal(url)
   })
   // `will-navigate` 가 navigation 을 막으면 문서가 그대로이므로, 새 문서로 바뀐 뒤(`did-navigate`)에 `unready` 를 부른다.
-  win.webContents.on('did-navigate', panes.unready)
+  win.webContents.on('did-navigate', () => {
+    panes.unready()
+    viewedPty = null
+  })
   win.webContents.setWindowOpenHandler(({ url }) => {
     openExternal(url)
     return { action: 'deny' }
@@ -516,6 +532,7 @@ function createWindow(state: WindowState | null): void {
     event.preventDefault()
     confirmQuit()
   })
+  win.on('closed', () => void (viewedPty = null))
   restoreWindowState(win, state)
   savedWindow = trackWindowState(win, (s) => store?.setWindow(s))
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -754,16 +771,13 @@ function start(): void {
     typeof cwd === 'string' ? gitHead(cwd) : null
   )
   ipcMain.handle('pty:states', () => ptyStates.entries())
-  const seen = createSeen({
-    records: ptyStates.records,
-    run: async (args) => {
-      await runFile(cli.bin, args, { env: { ...process.env, MARU_SOCKET: cli.socket } })
-    }
-  })
   ipcMain.on('pane:seen', (_event, pty: unknown) => {
     if (!isPtyId(pty)) return
     ptyStates.seen(pty)
     void seen(pty)
+  })
+  ipcMain.on('pane:viewed', (_event, pty: unknown) => {
+    viewedPty = isPtyId(pty) ? pty : null
   })
   const linkOpener: LinkOpener = {
     openExternal: (url) => shell.openExternal(url),

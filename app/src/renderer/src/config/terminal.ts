@@ -4,6 +4,7 @@ import type { TerminalTheme } from '../../../shared/theme'
 import { DEFAULT_THEME, themeNamed, type ThemeChoice } from '../themes'
 import { LAUNCHER_KEYS, parseLauncher, type LauncherConfig } from './launcher'
 import { LAYOUT_KEYS, parseLayout, parseNumber, type LayoutConfig } from './layout'
+import { NOTIFICATION_KEYS, parseNotification, type NotificationConfig } from './notification'
 
 export type TerminalFont = { fontFamily: string; fontSize: number; lineHeight: number }
 
@@ -26,6 +27,7 @@ export type ConfigResult =
       theme: ThemeChoice
       layout: LayoutConfig
       launcher: LauncherConfig
+      notification: NotificationConfig
       names: string[]
       warnings: string[]
     }
@@ -39,7 +41,8 @@ const RANGES = {
 const TABLES = {
   terminal: new Set<string>(['font-family', 'theme', ...Object.keys(RANGES)]),
   layout: new Set<string>(LAYOUT_KEYS),
-  launcher: new Set<string>(LAUNCHER_KEYS)
+  launcher: new Set<string>(LAUNCHER_KEYS),
+  notification: new Set<string>(NOTIFICATION_KEYS)
 }
 
 export function stepFontSize(size: number, by: 1 | -1): number {
@@ -114,7 +117,8 @@ export function parseConfig(text: string): ConfigResult {
   const theme = parseTheme(terminal.theme, warnings)
   const layout = parseLayout(table(doc, 'layout', warnings), warnings)
   const launcher = parseLauncher(table(doc, 'launcher', warnings), warnings)
-  return { ok: true, font, theme, layout, launcher, names, warnings }
+  const notification = parseNotification(table(doc, 'notification', warnings), warnings)
+  return { ok: true, font, theme, layout, launcher, notification, names, warnings }
 }
 
 function table(doc: Table, name: keyof typeof TABLES, warnings: string[]): Table {

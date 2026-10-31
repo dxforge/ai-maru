@@ -26,12 +26,14 @@ export function idleArgs(pty: string, r: ProgramStatusRecord): string[] {
 }
 
 /**
- * 사용자가 확인한 pane 의 done 레코드를 모두 idle 로 바꾼다. 레코드는 maru-pty 가 들고 있으므로 그 pty 의 터미널에
- * OSC 7501 을 쓴다 — 앱 메모리에서만 덮으면 앱을 다시 띄울 때 maru-pty 가 done 을 다시 보낸다.
+ * 그 pane 의 done 레코드를 idle 로 바꾼다. `records` 를 넘기지 않으면 든 레코드 전부를 본다. 레코드는 maru-pty 가 들고
+ * 있으므로 그 pty 의 터미널에 OSC 7501 을 쓴다 — 앱 메모리에서만 덮으면 앱을 다시 띄울 때 maru-pty 가 done 을 다시 보낸다.
  */
-export function createSeen(deps: SeenDeps): (pty: string) => Promise<void> {
-  return async (pty) => {
-    for (const r of deps.records(pty)) {
+export function createSeen(
+  deps: SeenDeps
+): (pty: string, records?: readonly ProgramStatusRecord[]) => Promise<void> {
+  return async (pty, records = deps.records(pty)) => {
+    for (const r of records) {
       if (r.state !== 'done') continue
       try {
         await deps.run(idleArgs(pty, r))

@@ -85,4 +85,10 @@ describe('createSeen', () => {
     expect(error).toHaveBeenCalledOnce()
     error.mockRestore()
   })
+
+  it('레코드를 넘기면 든 레코드 대신 그것만 본다', async () => {
+    const { seen, runs } = setup([record('a', 'done'), record('b', 'done')])
+    await seen('p-1', [record('b', 'done')])
+    expect(runs).toEqual([['status', 'put', 'idle', '--pty', 'p-1', '--id', 'b']])
+  })
 })

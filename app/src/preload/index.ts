@@ -65,8 +65,14 @@ const api = {
   },
   /** main 이 지금 든 pty 상태 전체. `onPtyState` 를 단 뒤에 부른다. */
   ptyStates: (): Promise<Record<string, PtyStateEntry>> => ipcRenderer.invoke('pty:states'),
-  /** 사용자가 이 pty 의 pane 을 확인하고 떠났다. main 이 그 pty 의 done 레코드를 idle 로 바꾸고 읽지 않은 알림을 지운다. */
+  /** 사용자가 이 pty 의 pane 에 들어와 머물렀다. main 이 그 pty 의 done 레코드를 idle 로 바꾸고 읽지 않은 알림을 지운다. */
   paneSeen: (pty: string): void => ipcRenderer.send('pane:seen', pty),
+  /**
+   * 입력 focus 를 가진 pane 이 바뀌었다. 앱 창에 focus 가 없거나, 런처처럼 터미널이 아닌 요소가 키보드 focus 를 가지거나,
+   * `notification.seen-ms` 가 `false` 면 null 이다. main 은 이 pty 에 오는 알림을 들지 않고, 새로 done 이 된 레코드를 바로 idle 로
+   * 바꾼다.
+   */
+  paneViewed: (pty: string | null): void => ipcRenderer.send('pane:viewed', pty),
   /** 사용자가 이 pty 의 데스크톱 알림을 눌렀다. renderer 가 그 pane(job 이면 job 의 cell)을 선택한다. */
   onPaneSelect: (cb: (pty: string) => void): void => {
     ipcRenderer.on('pane:select', (_event, pty: string) => cb(pty))

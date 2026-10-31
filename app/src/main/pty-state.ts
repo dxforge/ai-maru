@@ -8,6 +8,9 @@ export type PtyStatesDeps = {
   /** `entry` 가 null 이면 그 pty 의 상태를 지웠다. */
   emit(pty: string, entry: PtyStateEntry | null): void
   notified(pty: string, notification: PtyNotification): void
+  viewing(pty: string): boolean
+  /** 보고 있는 pty 의 레코드가 done 이 됐다. `records` 는 이번 상태에서 done 이 된 레코드다. */
+  doneWhileViewed(pty: string, records: ProgramStatusRecord[]): void
 }
 
 /**
@@ -39,10 +42,20 @@ export function createPtyStates(deps: PtyStatesDeps) {
     w.close = deps.subscribe(id, {
       state: (state) => {
         got = true
+        const before = stateOf(id)?.records
         update({ entry: { state } })
+        // 처음 받은 상태의 done 레코드는 `doneWhileViewed` 로 넘기지 않는다. 언제 done 이 됐는지 모르기 때문이다 — 앱을
+        // 다시 띄우면 끄기 전에 done 이 된 레코드가 첫 상태로 온다.
+        if (!before || !current() || !deps.viewing(id)) return
+        // `state` 는 보고 있는 동안에도 상태가 바뀔 때마다 온다. 보기 전부터 done 이던 레코드까지 넘기면 머문 시간을 재지 않고
+        // 지우게 되므로, 그런 레코드는 `pane:seen` 으로만 지운다.
+        const done = state.records.filter(
+          (r) => r.state === 'done' && !before.some((b) => b.id === r.id && b.state === 'done')
+        )
+        if (done.length) deps.doneWhileViewed(id, done)
       },
       notification: (notification) => {
-        if (!current()) return
+        if (!current() || deps.viewing(id)) return
         update({ notification })
         deps.notified(id, notification)
       },

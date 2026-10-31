@@ -169,7 +169,13 @@ function focusedTerminal(): Terminal | undefined {
   return c && terminals.get(c.focused)
 }
 
-const seenTracker = createSeenTracker({ now: () => performance.now(), seen: window.maru.paneSeen })
+const seenTracker = createSeenTracker({
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
+  delay: () => config.notification.value.seenMs,
+  viewed: window.maru.paneViewed,
+  seen: window.maru.paneSeen
+})
 
 function viewedPty(): string | null {
   const c = workspaces.selected()
@@ -182,6 +188,7 @@ function viewedPty(): string | null {
 const updateViewed = (): void => void setTimeout(() => seenTracker.view(viewedPty()))
 for (const type of ['focusin', 'focusout']) document.addEventListener(type, updateViewed)
 for (const type of ['focus', 'blur']) window.addEventListener(type, updateViewed)
+watch(() => config.notification.value.seenMs, updateViewed)
 
 // 보이지 않는 터미널에는 포커스를 줄 수 없어, 선택이 화면에 반영된 뒤에 준다.
 async function focusSelected(): Promise<void> {

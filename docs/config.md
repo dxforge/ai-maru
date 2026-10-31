@@ -35,6 +35,7 @@ commands = ["claude", "codex"]
 | `layout.column-cols` | `80` | 20–500 의 정수(열 수). columns 보기에서 pane 하나가 받는 터미널 열 수. |
 | `layout.column-step` | `20` | 1–480 의 정수(열 수). Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸는 열 수. |
 | `launcher.commands` | `["claude", "codex"]` | 비지 않은 문자열 배열. 런처(⌘P)가 띄울 명령. |
+| `notification.seen-ms` | `500` | 0 이상의 정수(ms), 또는 `false`. 알림 점과 done 이 온 pane 에 들어가 이만큼 머물면 지운다. |
 
 pane 헤더와 cell 헤더도 터미널의 글꼴과 크기를 따른다.
 
@@ -65,6 +66,12 @@ Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸�
 항목 하나가 명령 하나다. 앱은 항목을 공백으로 나눠 인자로 넘기고 따옴표는 풀지 않는다(`"claude --model opus"` 는 `claude`·`--model`·`opus`). 로그인 셸이 sh·bash·zsh·ksh·dash 면 명령은 그 셸의 대화형 모드(`-i -c`)를 거쳐 뜨므로, 터미널에서 친 것과 같이 rc 가 정한 PATH·함수를 쓴다. 그 밖의 셸이면 `/bin/sh -c` 로 뜬다. 명령이 0 이나 130(Ctrl-C 의 SIGINT)으로 끝나면 pane 이 닫힌다. 그 밖의 코드나 SIGINT 가 아닌 시그널로 끝나면 pane 이 출력과 `[exited with code N]`(시그널이면 `[exited with signal N]`)을 남긴다. PATH 에 없는 명령은 셸이 127 로 끝나므로 pane 에 오류가 남는다.
 
 런처의 최근 목록은 `config.toml` 이 아니라 앱 데이터 폴더의 `launcher.json` 에 앱이 쓴다. 런처로 연 디렉토리만 들어가고, 런처에서 ⇧⌘⌫ 나 행의 × 로 지운다.
+
+### `seen-ms`
+
+프로그램이 OSC 9·OSC 777 로 보낸 알림은 사이드바와 pane 헤더에 점으로 남고, Claude Code 가 일을 마친 pane 은 done 으로 남는다. 입력 focus 를 가진 pane 에 온 알림은 점을 띄우지 않고, 그 pane 에서 done 이 되면 바로 idle 로 바꾼다. 앱 창에 focus 가 없으면 focus 를 가진 pane 이 없는 것으로 친다. 다른 곳에 있을 때 온 점과 done 은 그 pane 에 들어가 `seen-ms` 만큼 머물면 지운다. 그보다 빨리 지나간 pane 은 그대로 둔다. ⌘] 로 pane 을 훑고 지나가도 점이 남게 하기 위해서다.
+
+`0` 이면 들어가자마자 지운다. `false` 면 지우지 않고, 보고 있는 pane 에 온 알림과 done 도 남긴다. 2147483647(약 24.8일)보다 큰 값은 `false` 와 같다.
 
 ### `font-family`
 
@@ -97,7 +104,7 @@ theme = { light = "Catppuccin Latte", dark = "Catppuccin Mocha" }
 ### 범위를 벗어나거나 잘못 적은 값
 
 - 범위를 벗어난 숫자는 가까운 끝값으로 맞춘다(`font-size = 40` 이면 32, `column-cols = 10` 이면 20).
-- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `column-cols`·`column-step` 에 정수가 아닌 값(`100.5`)을 적어도 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적거나 `theme` 에 모르는 이름을 적어도 기본값을 쓴다. `launcher.commands` 가 배열이 아니거나 비었거나, 문자열이 아닌 항목이나 빈(공백뿐인) 문자열이 있어도 기본값을 쓴다.
+- 숫자 자리에 숫자가 아닌 값을 적거나 `font-family` 에 문자열이 아닌 값을 적으면 그 키는 기본값을 쓴다. `column-cols`·`column-step` 에 정수가 아닌 값(`100.5`)을 적어도 기본값을 쓴다. `header`·`palette` 에 `"top"`·`"bottom"` 이 아닌 값을 적거나 `theme` 에 모르는 이름을 적어도 기본값을 쓴다. `launcher.commands` 가 배열이 아니거나 비었거나, 문자열이 아닌 항목이나 빈(공백뿐인) 문자열이 있어도 기본값을 쓴다. `notification.seen-ms` 에 정수도 `false` 도 아닌 값을 적어도 기본값을 쓰고, 음수는 0 으로 맞춘다.
 - 모르는 키는 무시한다.
 
 ## 고치면 바로 적용된다
