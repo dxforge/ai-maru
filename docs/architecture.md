@@ -28,7 +28,7 @@ workspace·cell 목록은 renderer 만 가진다. renderer 는 pty 를 열 때 `
 
 ## 창에 보내는 요청은 창이 준비된 뒤에 넘긴다
 
-CLI 서버는 앱이 뜨자마자 요청을 받으므로, 재시작에서 남은 pty 의 요청은 창이 문서를 로드하는 중에도 온다. renderer 가 리스너(`onPaneNew`·`onCanvasPut` 등)를 달기 전에 보낸 IPC 는 받는 쪽이 없어 버려진다. 그래서 main 은 renderer 가 `pane:ready` 를 보낼 때까지 pane 요청과 Canvas 문서를 쌓아 두고(`app/src/main/window-ready.ts`), 창이 새 문서로 바뀌면(`did-navigate`) 다시 쌓는다. pane 요청은 쌓인 시간을 포함해 8초 안에 답을 받지 못하면 실패로 답하고, Canvas 문서는 8초 안에 창에 넘기지 못하면 실패로 답한다. `maru` 가 10초 안에 답을 받지 못하면 시간 초과로 끝나기 때문이다.
+CLI 서버는 앱이 뜨자마자 요청을 받으므로, 재시작에서 남은 pty 의 요청은 창이 문서를 로드하는 중에도 온다. renderer 가 리스너(`onPaneNew`·`onCanvasPut` 등)를 달기 전에 보낸 IPC 는 받는 쪽이 없어 버려진다. 그래서 main 은 renderer 가 `pane:ready` 를 보낼 때까지 pane 요청과 Canvas 문서를 쌓아 두고(`app/src/main/window-ready.ts`), 창이 새 문서로 바뀌면(`did-navigate`) 다시 쌓는다. pane 요청은 쌓인 시간을 포함해 8초 안에 답을 받지 못하면 실패로 답한다. Canvas 문서는 8초 안에 창에 넘기지 못하면 실패로 답한다. `maru` 가 10초 안에 답을 받지 못하면 시간 초과로 끝나기 때문이다.
 
 renderer 는 화면을 되살린 다음 tick 에 `pane:ready` 를 보낸다(`App.vue`). 다음 tick 에는 되살린 터미널이 mount 돼 `pty:open` 을 보낸 뒤다. 되살리기 전에 넘기면 renderer 는 부른 pane 을 찾지 못한다. 같은 renderer 의 IPC 는 보낸 순서대로 닿으므로, main 은 쌓아 둔 요청을 넘길 때 되살린 pty 의 cell 을 안다(위의 "main 이 아는 pty 의 cell"). 그래서 `cell.new` 는 부른 pty 의 cell 과 `after`·`before` 로 가리킨 pty 의 cell 을 요청을 받을 때가 아니라 창에 넘길 때 찾는다. 터미널이 mount 될 때 pty 를 열지 않도록 바뀌면, main 은 되살린 pty 의 cell 을 모른 채 넘겨 새 cell 이 새 workspace 로 목록 끝에 놓인다.
 
