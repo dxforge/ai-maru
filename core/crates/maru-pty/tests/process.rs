@@ -1733,12 +1733,23 @@ fn clearing_the_records_empties_them_and_the_foreground_cwd() {
 }
 
 fn run_program(a: &mut Conn, s: &mut Conn, script: &str) -> tempfile::TempDir {
+    run_program_until(a, s, script, |v| v["records"] != json!([])).0
+}
+
+/// 구독은 밀린 상태 가운데 마지막 것만 보내므로(`lib.rs` 모듈 doc) 중간 상태는 오지 않을 수 있다. 기다릴 상태를
+/// 처음부터 `until` 로 받아, 그 상태를 이 함수가 먼저 읽고 버리지 않게 한다.
+fn run_program_until(
+    a: &mut Conn,
+    s: &mut Conn,
+    script: &str,
+    until: impl Fn(&Value) -> bool,
+) -> (tempfile::TempDir, Value) {
     let tmp = tmpdir();
     let path = tmp.path().join("program.sh");
     std::fs::write(&path, script).unwrap();
     a.input(&format!("sh {}; echo back-$((4))\n", path.display()));
-    s.state_until(|v| v["records"] != json!([]));
-    tmp
+    let st = s.state_until(until);
+    (tmp, st)
 }
 
 #[test]
@@ -1746,21 +1757,21 @@ fn records_with_an_app_go_once_the_program_that_sent_them_ends() {
     let p = start();
     let (mut s, _) = p.subscribe();
     let (mut a, _, _) = p.attach("primary", 80, 24);
-    let _program = run_program(
+    let go_dir = tmpdir();
+    let go = go_dir.path().join("go");
+    let (_program, st) = run_program_until(
         &mut a,
         &mut s,
-        &format!("{OSC_WORKING_APP}; {OSC_ASK}; sleep 1.5"),
+        &format!(
+            "{OSC_WORKING_APP}; {OSC_ASK}; while [ ! -e {} ]; do sleep 0.1; done",
+            go.display()
+        ),
+        |v| v["records"].as_array().is_some_and(|r| r.len() == 2),
     );
-    let st = s.state_until(|v| v["records"].as_array().is_some_and(|r| r.len() == 2));
     assert_eq!(st["records"][0]["app"], "x", "{st}");
+    std::fs::write(&go, "").unwrap();
     a.output_until("back-4");
-    let ended = Instant::now();
     let st = s.state_until(|v| v["records"] == json!([]));
-    assert!(
-        ended.elapsed() < Duration::from_millis(1500),
-        "프로그램이 끝나고 늦게 지웠다: {:?}",
-        ended.elapsed()
-    );
     assert_eq!(st["foreground_cwd"], Value::Null, "{st}");
 }
 
