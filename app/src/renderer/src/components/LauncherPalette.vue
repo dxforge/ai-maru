@@ -20,28 +20,47 @@ import {
   matchDirs,
   pathQuery,
   pickCommand,
+  commandChoices,
+  commandList,
   type Row
 } from '../launcher/query'
 import { SHELL } from '../../../shared/launcher'
-import { matchesWords } from '../../../shared/commands'
+import { tildePath } from '../workspace/cwd'
 import { arrowIndex, closeOnFocusLoss, revealSelected } from './palette'
 
-export type Launch = { dir: string; command: string; where: 'workspace' | 'cell' }
+export type LaunchWhere = 'workspace' | 'cell' | 'split-right' | 'split-down'
 
+/** `dir` 이 없으면 pane 을 여는 쪽이 정한 디렉토리(홈)에서 띄운다. */
+export type Launch = { dir?: string; command: string; where: LaunchWhere }
+
+const WHERE_LABELS: Record<LaunchWhere, string> = {
+  workspace: 'New Workspace',
+  cell: 'New Cell',
+  'split-right': 'Split Right',
+  'split-down': 'Split Down'
+}
+
+/**
+ * `at` 을 주면 디렉토리 단계 없이 그 디렉토리의 명령 단계로 열고, 고른 명령은 `at.where` 에 띄운다. 셸은 그 자리를 여는
+ * 키로 열면 되므로 목록에 두지 않는다.
+ */
 const {
   position,
   commands,
-  home = undefined
+  home = undefined,
+  at = undefined
 } = defineProps<{
   position: Position
   commands: readonly string[]
   home?: string
+  at?: { dir?: string; where: LaunchWhere }
 }>()
 const emit = defineEmits<{ launch: [launch: Launch]; close: [] }>()
 
 const input = useTemplateRef<HTMLInputElement>('input')
 const query = ref('')
 const recent = shallowRef<readonly string[]>([])
+const list = computed(() => commandList(commands, !at))
 /** 마지막으로 띄운 명령. 명령 단계에서 처음 고르는 행이다. */
 const command = ref(commands[0])
 const problem = ref<string | null>(null)
@@ -49,15 +68,16 @@ let launching = false
 
 const loaded = window.maru.launcherState().then((state) => {
   recent.value = state.recent
-  command.value = pickCommand(commands, state.command)
+  command.value = pickCommand(list.value, state.command)
 })
-watch(
-  () => commands,
-  (list) => (command.value = pickCommand(list, command.value))
-)
+watch(list, (l) => (command.value = pickCommand(l, command.value)))
 
 /** 디렉토리를 고른 뒤의 명령 단계. `query` 는 돌아갈 때 되살릴 디렉토리 단계의 입력이다. */
-const chosen = shallowRef<{ dir: string; label: string; query: string } | null>(null)
+const chosen = shallowRef<{ dir?: string; label: string; query: string } | null>(
+  at
+    ? { dir: at.dir, label: at.dir === undefined ? '~' : tildePath(at.dir, home), query: '' }
+    : null
+)
 
 const dirs = shallowRef<{ parent: string; names: string[] } | null>(null)
 const path = computed(() => pathQuery(query.value, home))
@@ -80,14 +100,13 @@ watch(
 const pathMode = computed(() => !chosen.value && isPathInput(query.value))
 
 const commandRows = computed(() =>
-  [
-    ...commands.map((c) => ({
-      command: c,
-      label: c,
-      icon: programIcon(commandArgv(c)[0]) ?? ICONS.running
-    })),
-    { command: SHELL, label: 'shell', icon: ICONS.terminal }
-  ].filter((r) => matchesWords(r.label, query.value))
+  commandChoices(list.value, query.value).map((r) => ({
+    ...r,
+    icon:
+      r.command === SHELL
+        ? ICONS.terminal
+        : (programIcon(commandArgv(r.command)[0]) ?? ICONS.running)
+  }))
 )
 
 const rows = computed<Row[]>(() => {
@@ -112,6 +131,10 @@ function initialIndex(): number {
   return path.value?.fragment === '' ? -1 : 0
 }
 const index = ref(initialIndex())
+// chord 목록은 명령 단계로 바로 뜨므로, 기억한 명령이 온 뒤에 첫 선택을 그 명령으로 다시 둔다.
+void loaded.then(() => {
+  if (at && !query.value) index.value = initialIndex()
+})
 watch([query, chosen], () => {
   index.value = initialIndex()
   problem.value = null
@@ -142,11 +165,17 @@ function target(): Row | undefined {
   return pathMode.value ? { path: expandPath(query.value, home), label: query.value } : undefined
 }
 
-async function launch(dir: string, cmd: string, cell: boolean): Promise<void> {
+async function launch(dir: string | undefined, cmd: string, cell: boolean): Promise<void> {
   if (launching) return
   launching = true
   try {
-    const r = await window.maru.launched(dir, cmd)
+    if (at) {
+      // 띄울 pane 은 기록이 끝나기를 기다릴 까닭이 없다. 실패는 main 이 로그로 남긴다.
+      void window.maru.launchedCommand(cmd)
+      emit('launch', { dir, command: cmd, where: at.where })
+      return
+    }
+    const r = await window.maru.launched(dir!, cmd)
     if (!r.ok) {
       problem.value = r.reason
       return
@@ -171,17 +200,19 @@ async function choose(given?: Row): Promise<void> {
 
 function back(): void {
   const c = chosen.value
-  if (!c) return
+  if (!c || at) return
   chosen.value = null
   query.value = c.query
 }
 
-function enter(cell: boolean): void {
+async function enter(cell: boolean): Promise<void> {
   const c = chosen.value
   if (!c) {
     void choose()
     return
   }
+  // 기억한 명령이 오기 전에 누른 Enter 도 그 명령을 띄운다.
+  await loaded
   const row = commandRows.value[index.value]
   if (row) void launch(c.dir, row.command, cell)
 }
@@ -213,7 +244,7 @@ function onKeydown(e: KeyboardEvent): void {
   if (moved !== undefined && index.value < 0)
     index.value = (e.key === 'ArrowDown') === (position === 'top') ? 0 : n - 1
   else if (moved !== undefined) index.value = moved
-  else if (e.key === 'Enter') enter(e.metaKey)
+  else if (e.key === 'Enter') void enter(e.metaKey)
   // ⌘⌫ 는 입력창에서 커서 앞을 줄 처음까지 지우는 키라, 최근 목록의 행 지우기는 ⇧⌘⌫ 에 둔다.
   else if (e.key === 'Backspace' && e.metaKey && e.shiftKey && row && !pathMode.value)
     void forget(row)
@@ -223,7 +254,7 @@ function onKeydown(e: KeyboardEvent): void {
   } else if (e.key === 'ArrowRight' && row && pathMode.value && atEnd(e.target as HTMLInputElement))
     query.value = `${row.label}/`
   else if (e.key === 'Escape') {
-    if (chosen.value) back()
+    if (chosen.value && !at) back()
     else emit('close')
   } else return
   e.preventDefault()
@@ -287,7 +318,9 @@ function onKeydown(e: KeyboardEvent): void {
       </ul>
       <div class="section">
         <span class="path" :class="{ label: !chosen }">{{ section }}</span>
-        <span v-if="chosen" class="where">{{ meta ? 'New Cell' : 'New Workspace' }}</span>
+        <span v-if="chosen" class="where">{{
+          WHERE_LABELS[at?.where ?? (meta ? 'cell' : 'workspace')]
+        }}</span>
       </div>
     </div>
   </div>

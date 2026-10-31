@@ -647,6 +647,9 @@ function start(): void {
       ? launcher.launched(dir, command)
       : { ok: false, reason: 'not a directory path' }
   )
+  ipcMain.handle('launcher:command', (_event, command: unknown) =>
+    typeof command === 'string' ? launcher.launchedCommand(command) : undefined
+  )
   ipcMain.handle('launcher:forget', (_event, dir: unknown) =>
     typeof dir === 'string' ? launcher.forget(dir) : launcher.read()
   )

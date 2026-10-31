@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { available, filterCommands, type CommandId } from '../../../shared/commands'
-import { commandKeys, formatKeys } from '../../../shared/shortcuts'
+import { commandLabel } from '../../../shared/shortcuts'
 import type { Position } from '../config/layout'
 import { arrowIndex, closeOnFocusLoss, revealSelected } from './palette'
 
@@ -14,7 +14,7 @@ const index = ref(0)
 const matches = computed(() =>
   filterCommands(query.value)
     .filter((c) => available(c, window.maru))
-    .map((c) => ({ ...c, keys: commandKeys(c.id) }))
+    .map((c) => ({ ...c, keys: commandLabel(c.id) }))
 )
 watch(query, () => (index.value = 0))
 revealSelected(useTemplateRef<HTMLUListElement>('list'), index)
@@ -59,7 +59,7 @@ function onKeydown(e: KeyboardEvent): void {
           @click="emit('run', c.id)"
         >
           <span>{{ c.title }}</span>
-          <kbd v-if="c.keys">{{ formatKeys(c.keys) }}</kbd>
+          <kbd v-if="c.keys">{{ c.keys }}</kbd>
         </li>
         <li v-if="!matches.length" class="empty">No matching commands</li>
       </ul>

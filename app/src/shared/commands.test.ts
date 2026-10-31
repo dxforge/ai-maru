@@ -11,6 +11,10 @@ describe('filterCommands', () => {
       'Open Launcher',
       'Split Right',
       'Split Down',
+      'Launch in New Cell…',
+      'Launch in New Workspace…',
+      'Launch Split Right…',
+      'Launch Split Down…',
       'Close Pane',
       'Close Workspace',
       'Next Cell',
@@ -43,7 +47,7 @@ describe('filterCommands', () => {
   it('단어가 이름에 모두 들어 있는 명령만 남기고 대소문자를 가리지 않는다', () => {
     expect(titles('CANV')).toEqual(['Toggle Canvas'])
     expect(titles('view')).toEqual(['Toggle View Mode'])
-    expect(titles('space new')).toEqual(['New Workspace'])
+    expect(titles('space new')).toEqual(['New Workspace', 'Launch in New Workspace…'])
     expect(titles('new canvas')).toEqual([])
   })
 })

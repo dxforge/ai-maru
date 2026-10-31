@@ -53,6 +53,10 @@ export function createLauncherStore(path: string) {
       }))
       return { ok: true }
     },
+    /** chord 로 띄운 명령은 디렉토리를 고른 것이 아니라 pane 의 디렉토리를 쓰므로, 명령만 기억하고 최근 목록은 그대로 둔다. */
+    async launchedCommand(command: string): Promise<void> {
+      await update((s) => ({ ...s, command }))
+    },
     forget(dir: string): Promise<LauncherState> {
       return update((s) => ({ ...s, recent: s.recent.filter((p) => !samePath(p, dir)) }))
     }

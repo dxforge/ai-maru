@@ -17,7 +17,7 @@ import type { JobView } from '../../shared/job'
 import type { PaneReply } from '../../shared/pane'
 import type { ProgramStatusRecord } from '../../shared/program-status'
 import { clampCanvasWidth, clampSidebarWidth, type ScreenState } from '../../shared/screen'
-import { secondaryCommand } from '../../shared/shortcuts'
+import { chords, secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
 import { createCanvas } from './canvas/store'
 import { createSeenTracker } from './pty/seen'
@@ -25,7 +25,8 @@ import { createPtyStates, syncPtyStates } from './pty/states'
 import { syncJobs } from './workspace/jobs'
 import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
-import LauncherPalette, { type Launch } from './components/LauncherPalette.vue'
+import LauncherPalette, { type Launch, type LaunchWhere } from './components/LauncherPalette.vue'
+import { createChordKeys } from './chord'
 import PaneHeader from './components/PaneHeader.vue'
 import StatusIcon from './components/StatusIcon.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
@@ -65,6 +66,7 @@ import {
   focusedPane,
   startDirOf,
   type Cell,
+  type PaneInit,
   type PlaceError
 } from './workspace/store'
 
@@ -564,18 +566,23 @@ function roomFor(from: number, direction: SplitDirection, full: boolean): boolea
   )
 }
 
-function splitSelected(direction: SplitDirection): void {
+function canSplit(direction: SplitDirection): boolean {
   const c = workspaces.selected()
-  if (!c) return
+  if (!c) return false
   if (!roomFor(c.focused, direction, false)) {
-    return toasts.put('split', {
+    toasts.put('split', {
       level: 'warning',
       title: 'No space for a new pane',
       lines: [`Each pane keeps at least ${PANE_MIN.cols} columns and ${PANE_MIN.rows} rows.`]
     })
+    return false
   }
   toasts.close('split')
-  workspaces.split(direction)
+  return true
+}
+
+function splitSelected(direction: SplitDirection, init?: PaneInit): void {
+  if (canSplit(direction)) workspaces.split(direction, init)
 }
 
 const views = computed(() =>
@@ -712,8 +719,9 @@ function keepHorizontalScroll(e: WheelEvent): void {
   if (viewMode.value === 'columns' && Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.stopPropagation()
 }
 
-type Overlay = 'palette' | 'launcher'
+type Overlay = 'palette' | 'launcher' | 'launch'
 const overlay = ref<Overlay | null>(null)
+const launchAt = ref<{ dir?: string; where: LaunchWhere }>({ where: 'cell' })
 const palette = useTemplateRef<InstanceType<typeof CommandPalette>>('palette')
 const launcher = useTemplateRef<InstanceType<typeof LauncherPalette>>('launcher')
 
@@ -727,11 +735,26 @@ function closeOverlay(which?: Overlay): void {
   void focusSelected()
 }
 
+const SPLIT_OF: Partial<Record<LaunchWhere, SplitDirection>> = {
+  'split-right': 'right',
+  'split-down': 'down'
+}
+
 function launch({ dir, command, where }: Launch): void {
   const pane = command === SHELL ? {} : ({ command: commandArgv(command), keep: true } as const)
+  const split = SPLIT_OF[where]
   if (where === 'cell') workspaces.openCell(dir, pane)
-  else workspaces.open(dir, pane)
+  else if (where === 'workspace') workspaces.open(dir, pane)
+  // 목록을 띄운 뒤 창이 작아졌으면 자리가 없을 수 있어 다시 본다.
+  else if (split) splitSelected(split, { startDir: dir, ...pane })
   closeOverlay()
+}
+
+function openLaunch(where: LaunchWhere): void {
+  const split = SPLIT_OF[where]
+  if (split && !canSplit(split)) return closeOverlay()
+  launchAt.value = { dir: startDir(), where }
+  overlay.value = 'launch'
 }
 
 const handlers: Record<CommandId, () => void> = {
@@ -739,6 +762,10 @@ const handlers: Record<CommandId, () => void> = {
   'new-cell': newCell,
   'split-right': () => splitSelected('right'),
   'split-down': () => splitSelected('down'),
+  'launch-cell': () => openLaunch('cell'),
+  'launch-workspace': () => openLaunch('workspace'),
+  'launch-split-right': () => openLaunch('split-right'),
+  'launch-split-down': () => openLaunch('split-down'),
   'close-pane': () => void closePane(),
   'close-workspace': () => void closeWorkspace(),
   'next-cell': () => stepCell(1),
@@ -773,10 +800,10 @@ const handlers: Record<CommandId, () => void> = {
   restart: window.maru.restart
 }
 
-// 팔레트·런처를 부르는 명령은 여기서 닫지 않는다. 같은 쪽을 다시 부르면 입력을 그대로 두고 포커스만 되찾고, 다른 쪽을
+// 팔레트·런처·chord 의 명령 목록을 부르는 명령은 여기서 닫지 않는다. 같은 쪽을 다시 부르면 입력을 그대로 두고 포커스만 되찾고, 다른 쪽을
 // 부르면 `overlay` 가 바뀌며 떠 있던 쪽이 닫히기 때문이다.
 function runCommand(id: CommandId): void {
-  if (id !== 'command-palette' && id !== 'launcher') closeOverlay()
+  if (id !== 'command-palette' && id !== 'launcher' && !(id in chords)) closeOverlay()
   handlers[id]()
 }
 window.maru.onCommand(runCommand)
@@ -785,6 +812,32 @@ function isTextInput(t: EventTarget | null): boolean {
   if (t instanceof HTMLTextAreaElement) return !t.classList.contains('xterm-helper-textarea')
   return t instanceof HTMLInputElement || (t instanceof HTMLElement && t.isContentEditable)
 }
+const chord = createChordKeys()
+window.addEventListener('blur', chord.blur)
+// 메뉴의 ⌘T 가 두 번째 키를 같이 받지 않게 창의 keydown 에서 먼저 받아 막는다. 기다리는 동안 누른 다른 키는 터미널에
+// 가지 않게 capture 단계에서 멈춘다.
+window.addEventListener(
+  'keydown',
+  (e) => {
+    const canStart = overlay.value === null && !isTextInput(e.target)
+    const step = chord.down(e, performance.now(), canStart)
+    if (!step.consume) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    if (step.run) runCommand(step.run)
+  },
+  { capture: true }
+)
+window.addEventListener(
+  'keyup',
+  (e) => {
+    if (!chord.up(e.code)) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+  },
+  { capture: true }
+)
+
 // ⇧⌘방향키는 macOS 의 텍스트 선택 키이므로, 입력창에 포커스가 있으면 `secondaryCommand` 의 키는 입력창에 맡긴다. 메뉴에 건 키는 입력창에서도 돈다.
 window.addEventListener('keydown', (e) => {
   const id = secondaryCommand(e)
@@ -970,6 +1023,16 @@ void window.maru.restoreScreen().then((r) => {
       :home="home"
       @launch="launch"
       @close="closeOverlay('launcher')"
+    />
+    <LauncherPalette
+      v-else-if="overlay === 'launch'"
+      :key="launchAt.where"
+      :position="config.layout.value.palette"
+      :commands="config.launcher.value.commands"
+      :home="home"
+      :at="launchAt"
+      @launch="launch"
+      @close="closeOverlay('launch')"
     />
   </div>
 </template>
