@@ -23,8 +23,9 @@ const svg = (width: number) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="20"><rect width="100%" height="100%" fill="red"/></svg>`
 
 const panel = canvasPanel
-const titles = (page: Page) => page.locator('.canvas .list button')
+const titles = (page: Page) => page.locator('.canvas .cards .title')
 const markdown = (page: Page) => page.locator('.canvas .markdown')
+const card = (page: Page, id: string) => page.locator(`.canvas .card[data-id="${id}"]`)
 const reopen = (page: Page) => page.locator('.reopen')
 
 test('문서가 없으면 패널도, 다시 여는 띠도 없다', async ({ launch }) => {
@@ -54,15 +55,28 @@ test('마크다운을 넣으면 패널이 열려 GFM 으로 렌더되고, 셸이
   await expect.poll(async () => (await shellSize(page)).cols).toBeLessThan(before.cols)
 })
 
-test('목록에서 고르면 그 문서를 보인다', async ({ launch }) => {
+test('새 문서는 펼친 채 맨 위에 쌓이고, 제목 줄과 모두 접기·펼치기로 접고 펼치고, ✕ 는 지운다', async ({
+  launch
+}) => {
   const { app, page } = await launch()
   await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
   await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
+  await expect(titles(page)).toHaveText(['B', 'A'])
+  await expect(markdown(page)).toHaveText(['second', 'first'])
 
   await titles(page).filter({ hasText: 'A' }).click()
+  await expect(markdown(page)).toHaveText(['second'])
+  await expect(card(page, 'a').locator('.head')).toHaveAttribute('aria-expanded', 'false')
+  await titles(page).filter({ hasText: 'A' }).click()
+  await expect(markdown(page)).toHaveText(['second', 'first'])
 
-  await expect(markdown(page)).toHaveText('first')
-  await expect(titles(page).nth(1)).toHaveClass(/selected/)
+  await page.locator('.canvas .collapse-all').click()
+  await expect(markdown(page)).toHaveCount(0)
+  await page.locator('.canvas .expand-all').click()
+  await expect(markdown(page)).toHaveText(['second', 'first'])
+
+  await card(page, 'b').locator('.remove').click()
+  await expect(titles(page)).toHaveText(['A'])
 })
 
 test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 새 그림으로 바뀐다', async ({ launch }) => {
@@ -110,7 +124,7 @@ test('닫으면 띠만 남아 셸이 보는 폭이 넓어지고, 띠를 누르�
   await page.locator('.canvas .close').click()
   await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
   await expect(panel(page)).toBeVisible()
-  await expect(markdown(page)).toHaveText('second')
+  await expect(card(page, 'b').locator('.markdown')).toHaveText('second')
 })
 
 test('문서 안의 링크를 누르면 창은 그대로이고 그 주소를 바깥에서 연다', async ({ launch }) => {
@@ -220,6 +234,13 @@ test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터�
 
   await titles(page).filter({ hasText: 'A' }).click()
   await typesIntoTerminal()
+  await page.locator('.canvas .collapse-all').click()
+  await typesIntoTerminal()
+  await page.locator('.canvas .expand-all').click()
+  await typesIntoTerminal()
+  await card(page, 'b').locator('.remove').click()
+  await expect(titles(page)).toHaveText(['A'])
+  await typesIntoTerminal()
   await page.locator('.canvas .close').click()
   await typesIntoTerminal()
   await reopen(page).click()
@@ -241,35 +262,156 @@ test('다른 클라이언트가 터미널을 넓게 잡고 있어도 패널을 �
   await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
   await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
   await titles(page).filter({ hasText: 'A' }).click()
-  await expect(markdown(page)).toHaveText('first')
+  await expect(markdown(page)).toHaveText(['second'])
   await page.locator('.canvas .close').click()
   await expect(panel(page)).toBeHidden()
 })
 
-test('보던 문서가 바뀌면 스크롤 자리를 지키고, 다른 문서를 고르면 맨 위부터 보인다', async ({
+const long = (tag: string) => Array.from({ length: 200 }, (_, i) => `${tag} line ${i}`).join('\n\n')
+
+// 패널 폭 transition 이 끝나기 전에 스크롤하면 폭이 넓어지면서 줄이 다시 감겨 scrollTop 이 맞지 않는다.
+const settle = (page: Page) =>
+  expect.poll(() => panel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
+
+test('보던 문서가 바뀌거나 새 문서가 위에 들어와도 읽던 내용은 화면에서 움직이지 않는다', async ({
   launch
 }) => {
   const { app, page } = await launch()
-  const long = (tag: string) =>
-    Array.from({ length: 200 }, (_, i) => `${tag} line ${i}`).join('\n\n')
-  const view = page.locator('.canvas .view')
-  const scrollTop = () => view.evaluate((el) => el.scrollTop)
+  const scroller = page.locator('.canvas .scroll')
+  const scrollTop = () => scroller.evaluate((el) => el.scrollTop)
+  const screenTop = () => card(page, 'a').evaluate((el) => el.getBoundingClientRect().top)
 
   await putCanvas(app, { id: 'b', kind: 'markdown', text: long('b'), title: 'B' })
   await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
-  await expect(markdown(page)).toContainText('a line 0')
-  // 패널 폭 transition 이 끝나기 전에 스크롤하면 폭이 넓어지면서 scrollTop 이 바뀌어 1000 에 머물지 않는다.
-  await expect.poll(() => panel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
-  await view.evaluate((el) => el.scrollTo(0, 1000))
+  await expect(card(page, 'a').locator('.markdown')).toContainText('a line 0')
+  await settle(page)
+  await scroller.evaluate((el) => el.scrollTo(0, 1000))
   await expect.poll(scrollTop).toBe(1000)
 
   await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a2'), title: 'A' })
-  await expect(markdown(page)).toContainText('a2 line 0')
+  await expect(card(page, 'a').locator('.markdown')).toContainText('a2 line 0')
   expect(await scrollTop()).toBe(1000)
+  await expect(titles(page)).toHaveText(['A', 'B'])
 
+  const before = await screenTop()
+  await putCanvas(app, { id: 'c', kind: 'markdown', text: 'new', title: 'C' })
+  await expect(titles(page)).toHaveText(['C', 'A', 'B'])
+  await expect(card(page, 'c').locator('.row')).toHaveClass(/flash/)
+  // scrollTop 은 장치 픽셀 단위로 맞춰진다. 그래서 소수 위치에 놓인 카드의 화면 위치가 장치 픽셀 하나(0.5px 미만)
+  // 안에서 어긋나므로 근삿값으로 잰다.
+  expect(await screenTop()).toBeCloseTo(before, 0)
+  expect(await scrollTop()).toBeGreaterThan(1000)
+})
+
+test('닫힌 패널에 새 문서가 들어와 다시 열려도 읽던 내용이 같은 자리에 보인다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const scroller = page.locator('.canvas .scroll')
+  const reading = () =>
+    scroller.evaluate((el) => {
+      const top = el.getBoundingClientRect().top
+      const p = [...el.querySelectorAll('p')].find((x) => x.getBoundingClientRect().bottom > top)!
+      return { text: p.textContent, top: p.getBoundingClientRect().top - top }
+    })
+
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: long('b'), title: 'B' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await expect(card(page, 'a').locator('.markdown')).toContainText('a line 0')
+  await settle(page)
+  // 1000·5000 에서는 Chromium 의 scroll anchoring 이 폭 변화를 보정해, 읽던 자리가 어긋나도 이 테스트가 잡지 못한다.
+  // 3000 은 어긋남이 드러나는 값이다.
+  await scroller.evaluate((el) => el.scrollTo(0, 3000))
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBe(3000)
+  const before = await reading()
+
+  await page.locator('.canvas .close').click()
+  await expect(panel(page)).toBeHidden()
+  await settle(page)
+  await putCanvas(app, { id: 'c', kind: 'markdown', text: 'new', title: 'C' })
+  await expect(titles(page)).toHaveText(['C', 'A', 'B'])
+  await settle(page)
+
+  const after = await reading()
+  expect(after.text).toBe(before.text)
+  expect(after.top).toBeCloseTo(before.top, 0)
+})
+
+test('붙은 제목을 누르면 그 문서로 가서, 그 제목이 위쪽 묶음 바로 아래에 온다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const scroller = page.locator('.canvas .scroll')
+  const bottom = (sel: string) =>
+    page.locator(sel).evaluate((el) => el.getBoundingClientRect().bottom)
+  const top = (sel: string) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().top)
+
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: long('b'), title: 'B' })
   await titles(page).filter({ hasText: 'B' }).click()
-  await expect(markdown(page)).toContainText('b line 0')
-  await expect.poll(scrollTop).toBe(0)
+  await expect(card(page, 'b').locator('.markdown')).toHaveCount(0)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await settle(page)
+  await scroller.evaluate((el) => el.scrollTo(0, 1000))
+
+  const pinned = page.locator('.canvas .pins.bottom .row[data-id="b"]')
+  await expect(pinned).toBeVisible()
+  await expect(card(page, 'b').locator('.row')).toHaveClass(/ghost/)
+  await pinned.locator('.head').click()
+
+  await expect(card(page, 'b').locator('.markdown')).toContainText('b line 0')
+  await expect(page.locator('.canvas .pins.top .row[data-id="a"]')).toBeVisible()
+  await expect
+    .poll(() => top('.canvas .card[data-id="b"]'))
+    .toBeCloseTo(await bottom('.canvas .pins.top'), 0)
+})
+
+test('모든 제목이 위에 붙은 채 붙은 제목의 ✕ 를 누르면 그 문서가 화면에서 빠진다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const errors: Error[] = []
+  page.on('pageerror', (e) => errors.push(e))
+  const scroller = page.locator('.canvas .scroll')
+  for (const id of ['c', 'b', 'a'])
+    await putCanvas(app, { id, kind: 'markdown', text: long(id), title: id.toUpperCase() })
+  await settle(page)
+  await scroller.evaluate((el) => el.scrollTo(0, el.scrollHeight))
+
+  const pinnedB = page.locator('.canvas .pins.top .row[data-id="b"]')
+  await expect(pinnedB).toBeVisible()
+  await pinnedB.locator('.remove').click()
+
+  await expect(page.locator('.canvas .card')).toHaveCount(2)
+  await expect(page.locator('.canvas .card[data-id="b"]')).toHaveCount(0)
+  await expect(page.locator('.canvas .pins .row[data-id="b"]')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('넘친 제목은 「더」 줄로 묶이고, 누르면 뜨는 목록에서 고른 문서로 간다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const scroller = page.locator('.canvas .scroll')
+  for (const id of ['e', 'd', 'c', 'b', 'a'])
+    await putCanvas(app, { id, kind: 'markdown', text: long(id), title: id.toUpperCase() })
+  await settle(page)
+  await scroller.evaluate((el) => el.scrollTo(0, el.scrollHeight))
+
+  const more = page.locator('.canvas .pins.top .more')
+  await expect(more).toContainText('3')
+  await expect(page.locator('.canvas .pins.top .row')).toHaveCount(2)
+  await more.click()
+  await expect(page.locator('.canvas .popover button')).toHaveText(['A', 'B', 'C'])
+
+  await page.locator('.canvas .popover button', { hasText: 'A' }).click()
+  const topOf = (sel: string) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().top)
+  await expect
+    .poll(
+      async () =>
+        (await topOf('.canvas .card[data-id="a"] .row')) - (await topOf('.canvas .scroll'))
+    )
+    .toBeCloseTo(0, 0)
+  await expect(page.locator('.canvas .popover')).toHaveCount(0)
 })
 
 test('터미널에서 maru canvas put 으로 보낸 마크다운이 패널에 렌더되고 id 가 찍힌다', async ({
