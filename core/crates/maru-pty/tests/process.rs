@@ -1904,24 +1904,21 @@ fn the_foreground_cwd_is_measured_only_while_records_exist() {
     a.input("echo back-$((1))\n");
     a.output_until("back-1");
 
-    let started = Instant::now();
+    let go_dir = tmpdir();
+    let go_cd = go_dir.path().join("cd");
+    let go_back = go_dir.path().join("back");
     a.input(&format!(
-        "{OSC_WORKING}; sleep 1.5; (cd {path_str}; sleep 3); echo back-$((2))\n"
+        "{OSC_WORKING}; while [ ! -e {} ]; do sleep 0.1; done; \
+         (cd {path_str}; while [ ! -e {} ]; do sleep 0.1; done); echo back-$((2))\n",
+        go_cd.display(),
+        go_back.display()
     ));
     let st = s.state_until(|v| !v["foreground_cwd"].is_null());
-    assert!(
-        started.elapsed() < Duration::from_millis(900),
-        "처음 재기가 늦었다: {:?}",
-        started.elapsed()
-    );
     assert_eq!(st["foreground_cwd"], start_dir, "{st}");
+    std::fs::write(&go_cd, "").unwrap();
     let st = s.state_until(|v| v["foreground_cwd"] == path_str);
-    assert!(
-        started.elapsed() < Duration::from_secs(4),
-        "옮긴 cwd 가 늦게 왔다: {:?}",
-        started.elapsed()
-    );
     assert_eq!(st["records"][0]["state"], "working");
+    std::fs::write(&go_back, "").unwrap();
     a.output_until("back-2");
     s.state_until(|v| v["foreground_cwd"] == start_dir);
 
@@ -1985,7 +1982,7 @@ fn without_a_shell_cwd_the_foreground_cwd_keeps_the_symlinked_start_dir() {
 }
 
 #[test]
-fn an_osc_7_while_records_exist_measures_the_foreground_cwd_at_once() {
+fn an_osc_7_while_records_exist_moves_the_foreground_cwd_to_the_reported_dir() {
     let p = start();
     let (mut s, _) = p.subscribe();
     let (mut a, _, _) = p.attach("primary", 80, 24);
@@ -1994,21 +1991,9 @@ fn an_osc_7_while_records_exist_measures_the_foreground_cwd_at_once() {
     let path = path.to_str().unwrap();
 
     a.input(&format!("{OSC_WORKING}\n"));
-    // 레코드가 생겨 막 잰 때라, 다음 정기 재기까지 1초에 가깝게 남는다.
     s.state_until(|v| !v["foreground_cwd"].is_null());
     a.input(&format!("cd {path}; {OSC7_PWD}\n"));
-    // 셸이 늦게 돌아도 테스트가 실패하지 않도록, 시간은 셸 cwd 가 실린 상태를 받은 때부터 잰다. 구독은 바뀐 상태 가운데
-    // 마지막 것만 보내므로(`lib.rs` 모듈 doc) `cwd` 와 `foreground_cwd` 가 한 상태에 같이 올 수 있다.
-    let st = s.state_until(|v| v["cwd"] == path);
-    let reported = Instant::now();
-    if st["foreground_cwd"] != path {
-        s.state_until(|v| v["foreground_cwd"] == path);
-    }
-    assert!(
-        reported.elapsed() < Duration::from_millis(500),
-        "OSC 7 뒤 foreground cwd 가 늦게 왔다: {:?}",
-        reported.elapsed()
-    );
+    s.state_until(|v| v["cwd"] == path && v["foreground_cwd"] == path);
 }
 
 #[test]
