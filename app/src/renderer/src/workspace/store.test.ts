@@ -4,7 +4,7 @@ import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/pr
 import { isPtyId } from '../../../shared/pty'
 import type { PtyState } from '../../../shared/pty-state'
 import { parseScreen } from '../../../shared/screen'
-import { createWorkspaces, focusedPane, type WorkspacesScreen } from './store'
+import { createWorkspaces, focusedPane, orderedPanes, type WorkspacesScreen } from './store'
 
 type Workspaces = ReturnType<typeof createWorkspaces>
 
@@ -944,7 +944,19 @@ describe('panes', () => {
     expect(createWorkspaces().step(1)).toBeUndefined()
   })
 
-  it('stepPane 은 선택된 cell 안에서 읽는 순서로 포커스를 옮기고 선택은 그대로 둔다', () => {
+  it('orderedPanes 는 연 순서가 아니라 나눈 배치 순서로 pane 을 준다', () => {
+    const ws = opened(1)
+    const p1 = selected(ws).focused
+    ws.split('right')
+    const p2 = selected(ws).focused
+    ws.focusPane(p1)
+    ws.split('down')
+    const p3 = selected(ws).focused
+    // 왼쪽 column 에 p1 위 · p3 아래, 오른쪽 column 에 p2 다.
+    expect(orderedPanes(selected(ws)).map((p) => p.key)).toEqual([p1, p3, p2])
+  })
+
+  it('stepPane 은 선택된 cell 안에서 나눈 배치 순서로 포커스를 옮기고 선택은 그대로 둔다', () => {
     const ws = opened(2)
     const cell = keys(ws)[1]
     const p1 = selected(ws).focused
@@ -954,13 +966,44 @@ describe('panes', () => {
     ws.split('down')
     const p3 = selected(ws).focused
     ws.focusPane(p1)
-    expect(ws.stepPane(1)).toBe(cell)
-    expect(selected(ws).focused).toBe(p2)
+    // 왼쪽 column 에 p1 위 · p3 아래, 오른쪽 column 에 p2 라 배치 순서는 p1 → p3 → p2 다.
     expect(ws.stepPane(1)).toBe(cell)
     expect(selected(ws).focused).toBe(p3)
-    expect(ws.stepPane(-1)).toBe(cell)
+    expect(ws.stepPane(1)).toBe(cell)
     expect(selected(ws).focused).toBe(p2)
+    expect(ws.stepPane(-1)).toBe(cell)
+    expect(selected(ws).focused).toBe(p3)
     expect(ws.selectedKey.value).toBe(cell)
+  })
+
+  it('stepPane 이 다른 cell 로 넘어가면 그 cell 의 배치 순서 처음·끝 pane 에 포커스를 준다', () => {
+    const ws = createWorkspaces()
+    // 왼쪽 column 에 1 위 · 3 아래, 오른쪽 column 에 2 인 cell 을 연다. 처음 pane 은 1 이다.
+    const threePanes = (): [number, number, number] => {
+      ws.openCell()
+      const p1 = selected(ws).focused
+      ws.split('right')
+      const p2 = selected(ws).focused
+      ws.focusPane(p1)
+      ws.split('down')
+      return [p1, p2, selected(ws).focused]
+    }
+    ws.open()
+    const [b1, b2, b3] = threePanes()
+    ws.closePane(b1)
+    const [, c2] = threePanes()
+    ws.openCell()
+    const [a, b, c, d] = ws.cells()
+    // b 는 b3 | b2 라 배치 순서는 b3 → b2, 연 순서는 b2 → b3 다.
+    expect(b.panes.map((p) => p.key)).toEqual([b2, b3])
+
+    ws.select(a.key)
+    ws.select(ws.stepPane(1)!)
+    expect([ws.selectedKey.value, selected(ws).focused]).toEqual([b.key, b3])
+    // c 의 배치 순서는 1 → 3 → 2 라 마지막은 아래 pane 3 이 아니라 오른쪽 column 의 2 다.
+    ws.select(d.key)
+    ws.select(ws.stepPane(-1)!)
+    expect([ws.selectedKey.value, selected(ws).focused]).toEqual([c.key, c2])
   })
 
   it('stepPane 은 cell 의 끝을 넘으면 다음 cell 의 첫 pane, 이전 cell 의 마지막 pane 으로 가고 끝에서는 반대쪽 끝으로 돈다', () => {
