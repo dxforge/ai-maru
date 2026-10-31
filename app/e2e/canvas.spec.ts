@@ -303,6 +303,40 @@ test('보던 문서가 바뀌거나 새 문서가 위에 들어와도 읽던 내
   expect(await scrollTop()).toBeGreaterThan(1000)
 })
 
+test('닫힌 패널에 새 문서가 들어와 다시 열려도 읽던 내용이 같은 자리에 보인다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const scroller = page.locator('.canvas .scroll')
+  const reading = () =>
+    scroller.evaluate((el) => {
+      const top = el.getBoundingClientRect().top
+      const p = [...el.querySelectorAll('p')].find((x) => x.getBoundingClientRect().bottom > top)!
+      return { text: p.textContent, top: p.getBoundingClientRect().top - top }
+    })
+
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: long('b'), title: 'B' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await expect(card(page, 'a').locator('.markdown')).toContainText('a line 0')
+  await settle(page)
+  // 1000·5000 에서는 Chromium 의 scroll anchoring 이 폭 변화를 보정해, 읽던 자리가 어긋나도 이 테스트가 잡지 못한다.
+  // 3000 은 어긋남이 드러나는 값이다.
+  await scroller.evaluate((el) => el.scrollTo(0, 3000))
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBe(3000)
+  const before = await reading()
+
+  await page.locator('.canvas .close').click()
+  await expect(panel(page)).toBeHidden()
+  await settle(page)
+  await putCanvas(app, { id: 'c', kind: 'markdown', text: 'new', title: 'C' })
+  await expect(titles(page)).toHaveText(['C', 'A', 'B'])
+  await settle(page)
+
+  const after = await reading()
+  expect(after.text).toBe(before.text)
+  expect(after.top).toBeCloseTo(before.top, 0)
+})
+
 test('붙은 제목을 누르면 그 문서로 가서, 그 제목이 위쪽 묶음 바로 아래에 온다', async ({
   launch
 }) => {

@@ -1,7 +1,7 @@
 // 붙는 제목 계산은 제목 줄 높이에 기대므로 CSS 도 이 값을 쓴다(`CardStream.vue` 가 `--row-h` 로 넘긴다).
 export const ROW_H = 26
 
-// 위·아래 각각 붙는 제목의 수. 넘친 제목은 바깥쪽 한 줄로 묶는다.
+// 위·아래 각각 붙는 제목의 최대 수다. 넘친 제목은 바깥쪽 한 줄로 묶는다.
 export const PIN_CAP = 2
 
 export type Pins = { above: number; below: number }
@@ -75,8 +75,8 @@ export function anchorScroll(before: Layout, after: readonly CardBox[], anchor?:
     const j = after.findIndex((a) => a.id === c.id)
     if (j === -1) continue
     const { top, height } = after[j]
-    // 기준 문서가 줄어 화면 맨 위까지의 거리보다 낮아졌으면, 그 거리를 더해 다음 문서로 넘어가지 않도록 그 문서의
-    // 제목으로 간다.
+    // 기준 문서의 높이가 바뀌기 전 화면 맨 위까지의 거리보다 작아졌으면, 그 거리를 더한 자리는 다음 문서 안이다.
+    // 그래서 그 문서의 제목으로 간다.
     if (scrollTop - c.top >= height) return goToScrollTop(j, top)
     return Math.max(0, top + (scrollTop - c.top))
   }

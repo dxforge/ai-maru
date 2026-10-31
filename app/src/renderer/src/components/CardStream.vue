@@ -3,6 +3,8 @@
 // 펼치거나 접는다. 스크롤해서 화면 밖으로 나간 제목은 위쪽 것은 패널 위에, 아래쪽 것은 패널 아래에 붙고, 붙은 제목을
 // 누르면 그 항목으로 간다. 항목이 무엇인지는 모른다 — 쓰는 쪽이 항목과 펼침 상태를 넘기고, 줄의 메타와 본문을 slot
 // 으로 채운다.
+// 새로 들어온 항목과 같은 id 로 새 객체가 온 항목을 잠깐 강조한다. 그래서 쓰는 쪽은 같은 id 의 항목을 내용이 바뀔
+// 때만 새 객체로 넘긴다.
 import {
   computed,
   nextTick,
@@ -105,7 +107,7 @@ watch(
 function request(id: string, on: boolean, how: NonNullable<typeof place>): void {
   place = how
   emit('expand', id, on)
-  // 쓰는 쪽이 펼침을 바꾸지 않았으면 맞출 것도 없으니 다음 변경에 남기지 않는다.
+  // 쓰는 쪽이 펼침을 바꾸지 않으면 watch 가 돌지 않아 `place` 가 다음 변경에 쓰이므로, 다음 tick 에 지운다.
   void nextTick(() => (place = null))
 }
 
@@ -125,7 +127,6 @@ function goTo(id: string): void {
   }
 }
 
-// 새로 들어온 항목과 같은 id 로 바뀐 항목(객체가 바뀐 것)을 잠깐 강조한다. 처음 그릴 때 있던 항목은 강조하지 않는다.
 const flashing = reactive(new Set<string>())
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
 let known = new Map(items.map((it) => [it.id, it]))
