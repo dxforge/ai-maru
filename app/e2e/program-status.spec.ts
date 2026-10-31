@@ -7,7 +7,6 @@ import {
   expect,
   focusPane,
   inProgram,
-  newCell,
   newWorkspace,
   restartWith,
   paneHeader,
@@ -24,10 +23,18 @@ import {
   cellGroups as groups,
   cellItems,
   windowLosesFocus,
+  writeConfig,
   zshHome
 } from './app'
 import { ICONS, STATE_LABELS } from '../src/renderer/src/icons'
-import { SEEN_MS } from '../src/renderer/src/pty/seen'
+import { DEFAULT_NOTIFICATION } from '../src/renderer/src/config/notification'
+
+const SEEN_MS = DEFAULT_NOTIFICATION.seenMs!
+
+/** 보고 있는 pane 에 쓴 done 이 바로 idle 로 바뀌지 않게 한다. done 을 보이는 것을 재는 테스트가 쓴다. */
+function keepDone(dataDir: string): void {
+  writeConfig(dataDir, '[notification]\nseen-ms = false\n')
+}
 
 test('claude 가 clear 를 보내지 못하고 죽어도 foreground 가 셸로 돌아오면 상태가 사라진다', async ({
   launch,
@@ -81,8 +88,10 @@ test('claude 가 clear 없이 끝나면 maru status 로 쓴 하위 레코드도 
 })
 
 test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상태가 바뀌고, clear 로 사라진다', async ({
-  launch
+  launch,
+  dataDir
 }) => {
+  keepDone(dataDir)
   const { page } = await launch()
   await expect(paneRows(page)).toHaveCount(0)
   await page.keyboard.type(status('working'))
@@ -112,8 +121,10 @@ test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상�
 })
 
 test('상태 아이콘은 상태마다 SVG 로 그리고, working 만 움직이며, 상태가 사라지면 terminal glyph 로 돌아온다', async ({
-  launch
+  launch,
+  dataDir
 }) => {
+  keepDone(dataDir)
   const { page } = await launch()
   const icons = [
     paneRows(page).locator('.state'),
@@ -155,8 +166,10 @@ test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아�
 })
 
 test('maru status 로 쓴 하위 레코드가 루트보다 급하면 사이드바·pane 헤더·cell 헤더가 그것을 보인다', async ({
-  launch
+  launch,
+  dataDir
 }) => {
+  keepDone(dataDir)
   const { page } = await launch()
   const cellHeader = page.locator('.cell-header')
   await inProgram(page)
@@ -214,8 +227,10 @@ test('셸 pane 과 Claude pane 모두 pane 마다 줄이 있고, 포커스된 pa
 })
 
 test('상태가 있는 pane 의 셸이 끝나면 pane 과 함께 사라지고, 다른 pane 의 상태는 그대로다', async ({
-  launch
+  launch,
+  dataDir
 }) => {
+  keepDone(dataDir)
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await page.keyboard.type(status('working'))
@@ -276,7 +291,7 @@ function ptyIdOf(page: Page, dataDir: string, name: string): Promise<string> {
   return shellValue(page, dataDir, name, '$MARU_PTY_ID')
 }
 
-test('done 인 pane 에 1초 이상 머문 뒤 다른 pane 으로 옮기면 idle 이 된다', async ({
+test('다른 pane 에 있을 때 done 이 된 pane 에 들어가 머물면 떠나지 않아도 idle 이 된다', async ({
   launch,
   dataDir
 }) => {
@@ -286,41 +301,29 @@ test('done 인 pane 에 1초 이상 머문 뒤 다른 pane 으로 옮기면 idle
   await page.keyboard.type(`maru status put done --pty ${left} --app claude-code\n`)
   await expect(paneHeader(page, 0)).toHaveClass(/done/)
   await focusPane(app, page, 'focus-pane-left', 0)
-  await page.waitForTimeout(SEEN_MS)
-  // 머무는 동안에는 done 을 그대로 보인다.
-  await expect(paneHeader(page, 0)).toHaveClass(/done/)
-  await focusPane(app, page, 'focus-pane-right', 1)
   await expect(paneHeader(page, 0)).toHaveClass(/idle/)
   await expect(paneRows(page)).toHaveClass(/idle/)
   await expect(paneRows(page).locator('.title')).toHaveText('Claude')
   await expect(page.locator('.cell-header')).toHaveClass(/idle/)
 })
 
-test('done 인 pane 에 1초 이상 머문 뒤 앱 창이 focus 를 잃으면 idle 이 된다', async ({
+test('보고 있는 pane 에 온 done 은 바로 idle 이 되고, 앱 창에 focus 가 없을 때 온 done 은 남는다', async ({
   launch
 }) => {
   const { page } = await launch()
+  await page.keyboard.type(status('working'))
+  await expect(paneRows(page)).toHaveClass(/working/)
   await page.keyboard.type(status('done'))
-  await expect(paneRows(page)).toHaveClass(/done/)
-  await page.waitForTimeout(SEEN_MS)
+  await expect(paneRows(page)).toHaveClass(/idle/)
+
   await windowLosesFocus(page)
-  await expect(paneRows(page)).toHaveClass(/idle/)
-})
-
-test('pane 에 focus 가 들어온 지 1초가 지났으면, done 이 온 직후에 런처가 키보드 focus 를 가져가도 idle 이 된다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await page.waitForTimeout(SEEN_MS)
   await page.keyboard.type(status('done'))
   await expect(paneRows(page)).toHaveClass(/done/)
-  await clickMenu(app, 'launcher')
-  await expect(page.locator('.launcher .query')).toBeFocused()
-  await expect(paneRows(page)).toHaveClass(/idle/)
+  await page.waitForTimeout(SEEN_MS)
+  await expect(paneRows(page)).toHaveClass(/done/)
 })
 
-test('런처로 키보드 focus 가 1초 안에 빠지면 done 이 남고, 런처를 닫고 돌아오면 그때부터 다시 잰다', async ({
+test('런처로 키보드 focus 가 머무는 시간 안에 빠지면 done 이 남고, 런처를 닫고 돌아오면 그때부터 다시 잰다', async ({
   launch,
   dataDir
 }) => {
@@ -344,45 +347,22 @@ test('런처로 키보드 focus 가 1초 안에 빠지면 done 이 남고, 런�
 
   await page.keyboard.press('Escape')
   await expect(panes(page).nth(0).locator('.xterm-helper-textarea:focus')).toHaveCount(1)
-  await page.waitForTimeout(SEEN_MS)
-  await clickMenu(app, 'launcher')
   await expect(paneHeader(page, 0)).toHaveClass(/idle/)
 })
 
-test('마우스로 다른 pane 을 누르거나 새 cell 로 옮겨도 떠난 것으로 친다', async ({
-  launch,
-  dataDir
-}) => {
-  const launched = await launch()
-  const { app, page } = launched
+test('마우스로 pane 을 눌러 들어와도 머물면 idle 이 된다', async ({ launch, dataDir }) => {
+  const { app, page } = await launch()
   const left = await ptyIdOf(page, dataDir, 'left')
   await split(app, page, 'split-right', 2)
-  const terminal = (i: number) => panes(page).nth(i).locator('.xterm-screen')
-  const putDone = `maru status put done --pty ${left} --app claude-code\n`
-
-  await page.keyboard.type(putDone)
+  await page.keyboard.type(`maru status put done --pty ${left} --app claude-code\n`)
   await expect(paneHeader(page, 0)).toHaveClass(/done/)
-  await terminal(0).click()
-  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
-  await page.waitForTimeout(SEEN_MS)
-  await terminal(1).click()
+  await panes(page).nth(0).locator('.xterm-screen').click()
   await expect(paneHeader(page, 0)).toHaveClass(/idle/)
-
-  await page.keyboard.type(putDone)
-  await expect(paneHeader(page, 0)).toHaveClass(/done/)
-  await terminal(0).click()
-  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
-  await page.waitForTimeout(SEEN_MS)
-  await newCell(launched, 2)
-  await expect(groups(page).nth(0).locator('.pane-row:not(.shell)')).toHaveClass(/idle/)
 })
 
 test('idle 로 바꾼 레코드는 재시작한 앱에도 idle 이다', async ({ launch }) => {
   const { app, page } = await launch()
   await page.keyboard.type(status('done'))
-  await expect(paneRows(page)).toHaveClass(/done/)
-  await page.waitForTimeout(SEEN_MS)
-  await windowLosesFocus(page)
   await expect(paneRows(page)).toHaveClass(/idle/)
 
   await restartWith(app)
@@ -390,7 +370,7 @@ test('idle 로 바꾼 레코드는 재시작한 앱에도 idle 이다', async ({
   await expect(paneRows(again)).toHaveClass(/idle/)
 })
 
-test('떠날 때 루트와 하위의 done 은 idle 이 되고 blocked·error 는 그대로다', async ({
+test('idle 로 바꿀 때 루트와 하위의 done 은 idle 이 되고 blocked·error 는 그대로다', async ({
   launch,
   dataDir
 }) => {
@@ -403,7 +383,6 @@ test('떠날 때 루트와 하위의 done 은 idle 이 되고 blocked·error 는
     'put-2'
   )
   await expect(paneRows(page)).toHaveClass(/blocked/)
-  await page.waitForTimeout(SEEN_MS)
   await split(app, page, 'split-right', 2)
   await page.waitForTimeout(SEEN_MS)
   await expect(paneRows(page)).toHaveClass(/blocked/)

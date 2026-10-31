@@ -3,6 +3,7 @@ import { GHOSTTY } from '../../../shared/theme'
 import { DEFAULT_THEME, themeNamed } from '../themes'
 import { commandArgv, DEFAULT_LAUNCHER } from './launcher'
 import { DEFAULT_LAYOUT } from './layout'
+import { DEFAULT_NOTIFICATION } from './notification'
 import { DEFAULT_FONT, fontNames, fontSizeOverride, parseConfig, stepFontSize } from './terminal'
 
 const FAMILY = "D2Coding, Menlo, 'Symbols Nerd Font Mono', monospace"
@@ -21,10 +22,12 @@ describe('parseConfig', () => {
       theme: DEFAULT_THEME,
       layout: DEFAULT_LAYOUT,
       launcher: DEFAULT_LAUNCHER,
+      notification: DEFAULT_NOTIFICATION,
       names: [],
       warnings: []
     })
     expect(DEFAULT_LAUNCHER).toEqual({ commands: ['claude', 'codex'] })
+    expect(DEFAULT_NOTIFICATION).toEqual({ seenMs: 500 })
     expect(DEFAULT_THEME).toEqual({ kind: 'one', theme: GHOSTTY })
     expect(DEFAULT_FONT).toEqual({ fontFamily: FAMILY, fontSize: 14, lineHeight: 1.2 })
     expect(DEFAULT_LAYOUT).toEqual({
@@ -294,6 +297,40 @@ describe('parseConfig', () => {
     const r = ok('[launcher]\ncommand = "claude"\n')
     expect(r.launcher).toEqual(DEFAULT_LAUNCHER)
     expect(r.warnings).toEqual(['Unknown key launcher.command.'])
+  })
+
+  for (const [value, seenMs] of [
+    ['0', 0],
+    ['1200', 1200],
+    ['2147483647', 2147483647],
+    ['2147483648', null],
+    ['false', null]
+  ] as const) {
+    it(`notification.seen-ms = ${value} 를 ${seenMs} 로 읽는다`, () => {
+      const r = ok(`[notification]\nseen-ms = ${value}\n`)
+      expect(r.notification).toEqual({ seenMs })
+      expect(r.warnings).toEqual([])
+    })
+  }
+
+  it('notification.seen-ms 가 음수면 알리고 0 으로 맞춘다', () => {
+    const r = ok('[notification]\nseen-ms = -5\n')
+    expect(r.notification).toEqual({ seenMs: 0 })
+    expect(r.warnings).toEqual(['notification.seen-ms = -5 is less than 0, using 0.'])
+  })
+
+  for (const value of ['1.5', 'true', '"500"']) {
+    it(`notification.seen-ms 가 ${value} 면 알리고 기본값을 쓴다`, () => {
+      const r = ok(`[notification]\nseen-ms = ${value}\n`)
+      expect(r.notification).toEqual(DEFAULT_NOTIFICATION)
+      expect(r.warnings).toEqual(['notification.seen-ms must be an integer or false, using 500.'])
+    })
+  }
+
+  it('notification 의 모르는 키를 알린다', () => {
+    const r = ok('[notification]\nseen = 1\n')
+    expect(r.notification).toEqual(DEFAULT_NOTIFICATION)
+    expect(r.warnings).toEqual(['Unknown key notification.seen.'])
   })
 
   it('문법 오류는 줄과 열을 준다', () => {

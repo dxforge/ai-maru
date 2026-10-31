@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { ProgramStatusRecord, ProgramStatusState } from '../shared/program-status'
 import type { PtyNotification, PtyState, PtyStateEntry } from '../shared/pty-state'
 import type { StateHandlers } from './pty'
 import { createPtyStates } from './pty-state'
@@ -19,6 +20,8 @@ function setup(live = true) {
   const subs: { id: string; on: StateHandlers; closed: boolean }[] = []
   const emitted: [string, PtyStateEntry | null][] = []
   const notified: [string, PtyNotification][] = []
+  const doneWhileViewed: [string, string[]][] = []
+  const viewed = { pty: null as string | null }
   let alive = live
   const isLive = vi.fn(async () => alive)
   const states = createPtyStates({
@@ -29,13 +32,17 @@ function setup(live = true) {
     },
     isLive,
     emit: (pty, entry) => void emitted.push([pty, entry]),
-    notified: (pty, n) => void notified.push([pty, n])
+    notified: (pty, n) => void notified.push([pty, n]),
+    viewing: (pty) => viewed.pty === pty,
+    doneWhileViewed: (pty, records) => void doneWhileViewed.push([pty, records.map((r) => r.id)])
   })
   return {
     states,
     subs,
     emitted,
     notified,
+    doneWhileViewed,
+    viewed,
     isLive,
     last: () => subs[subs.length - 1],
     die: () => void (alive = false)
@@ -231,5 +238,80 @@ describe('createPtyStates', () => {
     answer(true)
     await new Promise((r) => setTimeout(r))
     expect(t.subs).toHaveLength(1)
+  })
+})
+
+describe('createPtyStates 의 보고 있는 pty', () => {
+  const first = { title: 'Tests', body: '3 failed' }
+  const record = (id: string, s: ProgramStatusState): ProgramStatusRecord => ({
+    id,
+    state: s,
+    kind: null,
+    progress: null,
+    app: '',
+    title: '',
+    message: ''
+  })
+
+  it('보고 있는 pty 에 온 알림은 들지 않고 notified 에도 넘기지 않는다', () => {
+    const t = setup()
+    t.states.watch('p-1')
+    t.last().on.state(state())
+    t.viewed.pty = 'p-1'
+    const count = t.emitted.length
+    t.last().on.notification(first)
+    expect(t.notified).toEqual([])
+    expect(t.emitted).toHaveLength(count)
+    expect(t.states.entries()).toEqual({ 'p-1': { state: state() } })
+  })
+
+  it('다른 pty 를 보고 있으면 알림을 든다', () => {
+    const t = setup()
+    t.states.watch('p-1')
+    t.last().on.state(state())
+    t.viewed.pty = 'p-2'
+    t.last().on.notification(first)
+    expect(t.notified).toEqual([['p-1', first]])
+    expect(t.states.entries()).toEqual({ 'p-1': { state: state(), notification: first } })
+  })
+
+  it('보고 있는 pty 에서 이번에 done 이 된 레코드만 넘기고, 그 전부터 done 이던 것은 넘기지 않는다', () => {
+    const t = setup()
+    t.states.watch('p-1')
+    t.last().on.state(state({ records: [record('', 'done'), record('a', 'working')] }))
+    t.viewed.pty = 'p-1'
+    t.last().on.state(state({ title: 'x', records: [record('', 'done'), record('a', 'working')] }))
+    expect(t.doneWhileViewed).toEqual([])
+    t.last().on.state(state({ records: [record('', 'done'), record('a', 'done')] }))
+    expect(t.doneWhileViewed).toEqual([['p-1', ['a']]])
+  })
+
+  it('보고 있지 않은 pty 의 done 은 넘기지 않는다', () => {
+    const t = setup()
+    t.states.watch('p-1')
+    t.viewed.pty = 'p-2'
+    t.last().on.state(state({ records: [record('', 'done')] }))
+    expect(t.doneWhileViewed).toEqual([])
+  })
+
+  it('다시 구독한 첫 상태에 이미 있던 done 은 넘기지 않는다', async () => {
+    const t = setup()
+    t.states.watch('p-1')
+    t.last().on.state(state({ records: [record('', 'done')] }))
+    t.viewed.pty = 'p-1'
+    t.last().on.closed()
+    await vi.waitFor(() => expect(t.subs).toHaveLength(2))
+    t.last().on.state(state({ records: [record('', 'done')] }))
+    expect(t.doneWhileViewed).toEqual([])
+  })
+
+  it('보고 있는 pty 를 처음 구독해 받은 첫 상태의 done 은 넘기지 않는다', () => {
+    const t = setup()
+    t.viewed.pty = 'p-1'
+    t.states.watch('p-1')
+    t.last().on.state(state({ records: [record('', 'done')] }))
+    expect(t.doneWhileViewed).toEqual([])
+    t.last().on.state(state({ records: [record('', 'done'), record('a', 'done')] }))
+    expect(t.doneWhileViewed).toEqual([['p-1', ['a']]])
   })
 })
