@@ -78,6 +78,15 @@ describe('createLauncherStore', () => {
     expect(await store.read()).toEqual({ recent: [a], command: 'claude' })
   })
 
+  it('launchedCommand 는 명령만 기억하고 최근 목록은 바꾸지 않는다', async () => {
+    const store = createLauncherStore(file)
+    const a = join(dir, 'a')
+    await store.launched(a, 'claude')
+    await store.launchedCommand('codex')
+    expect(await store.read()).toEqual({ recent: [a], command: 'codex' })
+    expect(saved()).toEqual({ recent: [a], command: 'codex' })
+  })
+
   it('forget 은 그 경로만 지운다', async () => {
     const store = createLauncherStore(file)
     const a = join(dir, 'a')

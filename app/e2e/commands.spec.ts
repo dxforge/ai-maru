@@ -62,6 +62,10 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['launcher', 'Open Launcher', 'Command+P'],
     ['split-right', 'Split Right', 'Command+D'],
     ['split-down', 'Split Down', 'Shift+Command+D'],
+    ['launch-cell', 'Launch in New Cell…', null],
+    ['launch-workspace', 'Launch in New Workspace…', null],
+    ['launch-split-right', 'Launch Split Right…', null],
+    ['launch-split-down', 'Launch Split Down…', null],
     ['close-pane', 'Close Pane', 'Command+W'],
     ['close-workspace', 'Close Workspace', 'Shift+Command+W']
   ])

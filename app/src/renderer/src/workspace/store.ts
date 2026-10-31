@@ -97,7 +97,7 @@ export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
 
 type PaneCommand = Pick<Pane, 'command' | 'keep'>
 
-type PaneInit = Pick<Pane, 'startDir'> & PaneCommand
+export type PaneInit = Pick<Pane, 'startDir'> & PaneCommand
 
 /** pty 상태 저장소(`pty/states.ts`)에서 store 가 읽는 것. */
 export type PaneSource = {
@@ -267,11 +267,11 @@ export function createWorkspaces(
     list.value.splice(at < index ? index - 1 : index, 0, w)
   }
 
-  function split(direction: SplitDirection): void {
+  function split(direction: SplitDirection, init?: PaneInit): void {
     const c = selected()
     if (!c) return
     const from = focusedPane(c)
-    c.focused = splitFrom(from.key, direction, { startDir: startDirOf(from) })
+    c.focused = splitFrom(from.key, direction, init ?? { startDir: startDirOf(from) })
   }
 
   function splitFrom(

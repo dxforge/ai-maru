@@ -32,6 +32,7 @@ export type Shortcut = Keys &
     | { target: 'command'; action: CommandId }
     | { target: 'menu'; action: MenuAction }
     | { target: 'terminal'; input: string }
+    | { target: 'chord' }
   )
 
 export const shortcuts: readonly Shortcut[] = [
@@ -71,6 +72,8 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'widen-cell', key: '.', shift: true, meta: true },
   { target: 'command', action: 'narrow-cell', key: ',', shift: true, meta: true },
   { target: 'command', action: 'clear-scrollback', key: 'K', meta: true },
+  // `chords` 의 앞 키. 메뉴 항목에는 키를 하나만 걸 수 있어 창이 keydown 으로 받는다.
+  { target: 'chord', key: 'J', meta: true },
 
   // Electron 이 role 에 거는 기본 키와 같다.
   { target: 'menu', action: 'hide', key: 'H', meta: true },
@@ -96,6 +99,35 @@ export const shortcuts: readonly Shortcut[] = [
 
 export function commandKeys(id: CommandId): Keys | undefined {
   return shortcuts.find((s) => s.target === 'command' && s.action === id)
+}
+
+/** chord 명령마다, 두 번째 키를 빌려 올 명령이다. 그 자리를 여는 명령의 키를 그대로 쓰므로, 그 명령의 키를 바꾸면 chord 도 따라간다. */
+export const chords: Readonly<Partial<Record<CommandId, CommandId>>> = {
+  'launch-cell': 'new-cell',
+  'launch-workspace': 'new-workspace',
+  'launch-split-right': 'split-right',
+  'launch-split-down': 'split-down'
+}
+
+export const chordPrefix: Keys = shortcuts.find((s) => s.target === 'chord')!
+
+export function commandChord(id: CommandId): readonly [Keys, Keys] | undefined {
+  const second = chords[id]
+  const keys = second && commandKeys(second)
+  return keys && [chordPrefix, keys]
+}
+
+export function commandLabel(id: CommandId): string | undefined {
+  const keys = commandKeys(id)
+  if (keys) return formatKeys(keys)
+  return commandChord(id)?.map(formatKeys).join(' ')
+}
+
+export function chordCommand(e: KeyEventLike): CommandId | undefined {
+  return (Object.keys(chords) as CommandId[]).find((id) => {
+    const keys = commandChord(id)
+    return keys && matchesKeys(e, keys[1])
+  })
 }
 
 export function menuKeys(action: MenuAction): Keys | undefined {

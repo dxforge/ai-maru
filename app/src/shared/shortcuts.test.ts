@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  chordCommand,
+  chords,
+  commandChord,
   commandKeys,
+  commandLabel,
   formatKeys,
   isSelectAll,
   keyCode,
@@ -67,6 +71,34 @@ describe('commandKeys', () => {
   it('스크롤백 지우기는 ⌘K 다', () => {
     expect(toAccelerator(commandKeys('clear-scrollback')!)).toBe('Command+K')
     expect(formatKeys(commandKeys('clear-scrollback')!)).toBe('⌘K')
+  })
+})
+
+describe('chords', () => {
+  it('launch 명령은 메뉴에 걸 키가 없고, 팔레트에는 ⌘J 뒤에 그 자리를 여는 키를 보인다', () => {
+    expect(commandKeys('launch-cell')).toBeUndefined()
+    expect(commandLabel('launch-cell')).toBe('⌘J ⌘T')
+    expect(commandLabel('launch-workspace')).toBe('⌘J ⌘N')
+    expect(commandLabel('launch-split-right')).toBe('⌘J ⌘D')
+    expect(commandLabel('launch-split-down')).toBe('⌘J ⇧⌘D')
+    expect(commandLabel('new-cell')).toBe('⌘T')
+  })
+
+  it('두 번째 키는 그 자리를 여는 명령의 키다', () => {
+    for (const [id, second] of Object.entries(chords))
+      expect(commandChord(id as keyof typeof chords)![1]).toBe(commandKeys(second))
+  })
+
+  it('⌘ 를 쥐지 않은 두 번째 키는 chord 가 아니다', () => {
+    expect(chordCommand(press('KeyT', { metaKey: true }))).toBe('launch-cell')
+    expect(chordCommand(press('KeyD', { shiftKey: true, metaKey: true }))).toBe('launch-split-down')
+    expect(chordCommand(press('KeyT'))).toBeUndefined()
+    expect(chordCommand(press('KeyD', { shiftKey: true }))).toBeUndefined()
+  })
+
+  it('앞 키 ⌘J 는 창이 받는 키라 명령의 두 번째 키로 돌지 않는다', () => {
+    expect(secondaryCommand(press('KeyJ', { metaKey: true }))).toBeUndefined()
+    expect(chordCommand(press('KeyJ', { metaKey: true }))).toBeUndefined()
   })
 })
 

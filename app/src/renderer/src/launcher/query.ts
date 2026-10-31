@@ -53,9 +53,19 @@ export function joinDir(parent: string, name: string): string {
   return parent.endsWith('/') ? parent + name : `${parent}/${name}`
 }
 
-/** 기억한 명령이 `commands` 에 있거나 셸(`SHELL`)이면 그것을, 아니면 첫 명령을 고른다. */
-export function pickCommand(commands: readonly string[], remembered: string | null): string {
-  return remembered === SHELL || (remembered !== null && commands.includes(remembered))
-    ? remembered
-    : commands[0]
+export function commandList(commands: readonly string[], shell: boolean): readonly string[] {
+  return shell ? [...commands, SHELL] : commands
+}
+
+export function pickCommand(list: readonly string[], remembered: string | null): string {
+  return remembered !== null && list.includes(remembered) ? remembered : list[0]
+}
+
+export function commandChoices(
+  list: readonly string[],
+  query: string
+): { command: string; label: string }[] {
+  return list
+    .map((c) => ({ command: c, label: c === SHELL ? 'shell' : c }))
+    .filter((r) => matchesWords(r.label, query))
 }

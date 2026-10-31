@@ -8,6 +8,10 @@ export type CommandId =
   | 'previous-pane'
   | 'split-right'
   | 'split-down'
+  | 'launch-cell'
+  | 'launch-workspace'
+  | 'launch-split-right'
+  | 'launch-split-down'
   | 'close-pane'
   | 'close-workspace'
   | 'focus-pane-left'
@@ -39,6 +43,10 @@ export const commands: readonly Command[] = [
   { id: 'launcher', title: 'Open Launcher', menu: 'file' },
   { id: 'split-right', title: 'Split Right', menu: 'file' },
   { id: 'split-down', title: 'Split Down', menu: 'file' },
+  { id: 'launch-cell', title: 'Launch in New Cell…', menu: 'file' },
+  { id: 'launch-workspace', title: 'Launch in New Workspace…', menu: 'file' },
+  { id: 'launch-split-right', title: 'Launch Split Right…', menu: 'file' },
+  { id: 'launch-split-down', title: 'Launch Split Down…', menu: 'file' },
   { id: 'close-pane', title: 'Close Pane', menu: 'file' },
   { id: 'close-workspace', title: 'Close Workspace', menu: 'file' },
   { id: 'command-palette', title: 'Command Palette…', menu: 'view', palette: false },

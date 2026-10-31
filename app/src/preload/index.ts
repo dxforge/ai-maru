@@ -109,6 +109,9 @@ const api = {
   /** `dir` 이 디렉토리면 런처의 최근 목록 맨 앞에 두고 `command` 를 기억한다. 아니면 이유를 준다. */
   launched: (dir: string, command: string): Promise<LaunchResult> =>
     ipcRenderer.invoke('launcher:launched', dir, command),
+  /** 최근 목록은 그대로 두고 `command` 만 기억한다. */
+  launchedCommand: (command: string): Promise<void> =>
+    ipcRenderer.invoke('launcher:command', command),
   forgetLaunch: (dir: string): Promise<LauncherState> => ipcRenderer.invoke('launcher:forget', dir),
   /** `dir` 의 하위 디렉토리 이름. 읽지 못하면 빈 목록이다. */
   listDirs: (dir: string): Promise<string[]> => ipcRenderer.invoke('launcher:dirs', dir),

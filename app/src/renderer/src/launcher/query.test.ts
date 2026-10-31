@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { expandPath, filterRecent, joinDir, matchDirs, pathQuery, pickCommand } from './query'
+import {
+  expandPath,
+  filterRecent,
+  joinDir,
+  matchDirs,
+  pathQuery,
+  pickCommand,
+  commandChoices,
+  commandList
+} from './query'
 import { SHELL } from '../../../shared/launcher'
 
 const HOME = '/Users/me'
@@ -100,7 +109,23 @@ describe('pickCommand', () => {
     expect(pickCommand(commands, null)).toBe('claude')
   })
 
-  it('기억한 것이 셸이면 목록과 상관없이 셸을 고른다', () => {
-    expect(pickCommand(commands, SHELL)).toBe(SHELL)
+  it('기억한 것이 셸이면 셸을 붙인 목록에서는 셸을, 뺀 목록에서는 첫 명령을 고른다', () => {
+    expect(pickCommand(commandList(commands, true), SHELL)).toBe(SHELL)
+    expect(pickCommand(commandList(commands, false), SHELL)).toBe('claude')
+  })
+})
+
+describe('commandList', () => {
+  it('셸은 shell 일 때만 끝에 붙는다', () => {
+    expect(commandList(['claude', 'codex'], true)).toEqual(['claude', 'codex', SHELL])
+    expect(commandList(['claude', 'codex'], false)).toEqual(['claude', 'codex'])
+  })
+})
+
+describe('commandChoices', () => {
+  it('셸 행은 shell 로 보이고, 입력한 낱말로 거른다', () => {
+    const list = commandList(['claude', 'codex'], true)
+    expect(commandChoices(list, '').map((r) => r.label)).toEqual(['claude', 'codex', 'shell'])
+    expect(commandChoices(list, 'sh')).toEqual([{ command: SHELL, label: 'shell' }])
   })
 })
