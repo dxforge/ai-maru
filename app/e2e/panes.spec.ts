@@ -130,11 +130,11 @@ test('터미널에서 ⇧⌘방향키도 그 방향의 pane 으로 포커스를 
   await typesInto(page, 2, 'down')
 })
 
-test('Next·Previous Pane 은 cell 안의 pane 을 읽는 순서로 돌고, 마지막 cell 에서는 다른 workspace 의 첫 cell 로 넘어간다', async ({
+test('사이드바와 Next·Previous Pane 은 cell 안의 pane 을 나눈 배치 순서로 늘어놓고 돌며, 마지막 cell 에서는 다른 workspace 의 첫 cell 로 넘어간다', async ({
   launch
 }) => {
   const { app, page } = await launch()
-  // 첫 cell 을 ((0 위, 3 아래) | 2) 위, 1 아래로 나눈다. 읽는 순서는 0·2·3·1 이다.
+  // 첫 cell 을 ((0 위, 3 아래) | 2) 위, 1 아래로 나눈다. 배치 순서는 0·3·2·1 로, 연 순서 0·1·2·3 과도 줄 순서 0·2·3·1 과도 다르다.
   await split(app, page, 'split-down', 2)
   await focusPane(app, page, 'focus-pane-up', 0)
   await split(app, page, 'split-right', 3)
@@ -144,16 +144,17 @@ test('Next·Previous Pane 은 cell 안의 pane 을 읽는 순서로 돌고, 마�
   await expect(cellItems(page)).toHaveCount(2)
   await activeTerminal(page)
 
-  for (const [n, [id, cell, pane]] of (
+  for (const [n, [id, cell, pane, row]] of (
     [
-      ['next-pane', 0, 0],
-      ['next-pane', 0, 2],
-      ['previous-pane', 0, 0]
+      ['next-pane', 0, 0, 0],
+      ['next-pane', 0, 3, 1],
+      ['previous-pane', 0, 0, 0]
     ] as const
   ).entries()) {
     await clickMenu(app, id)
     await expect(cellGroups(page).nth(cell)).toHaveClass(/selected/)
     await typesInto(page, pane, `step${n}`)
+    await expect(cellGroups(page).nth(cell).locator('.pane-row').nth(row)).toHaveClass(/focused/)
   }
 })
 

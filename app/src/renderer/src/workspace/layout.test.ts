@@ -3,7 +3,6 @@ import {
   columnCount,
   neighbor,
   panes,
-  readingOrder,
   rects,
   removePane,
   splitPane,
@@ -234,42 +233,5 @@ describe('neighbor', () => {
     expect(neighbor(layout, 2, 'right')).toBeUndefined()
     expect(neighbor({ pane: 1 }, 1, 'down')).toBeUndefined()
     expect(neighbor(layout, 9, 'down')).toBeUndefined()
-  })
-})
-
-describe('readingOrder', () => {
-  it('pane 이 하나면 그것만 준다', () => {
-    expect(readingOrder({ pane: 1 })).toEqual([1])
-  })
-
-  it('위 줄을 왼쪽에서 오른쪽으로 읽은 뒤 아래 줄로 간다', () => {
-    expect(readingOrder(threePanes())).toEqual([1, 2, 3])
-    const twoRows: Layout = {
-      split: 'down',
-      first: { split: 'right', first: { pane: 1 }, second: { pane: 2 } },
-      second: { pane: 3 }
-    }
-    expect(readingOrder(twoRows)).toEqual([1, 2, 3])
-  })
-
-  it('왼쪽 column 을 아래로 나눴어도 위 변이 같은 오른쪽 pane 을 아래 pane 보다 먼저 준다', () => {
-    let layout = splitPane({ pane: 1 }, 1, 2, 'right')
-    layout = splitPane(layout, 1, 3, 'down')
-    expect(panes(layout)).toEqual([1, 3, 2])
-    expect(readingOrder(layout)).toEqual([1, 2, 3])
-  })
-
-  it('양쪽 column 의 줄 높이가 달라도 위 변의 높이 순서로 준다', () => {
-    // 왼쪽 1·2 는 위 변이 0·1/2, 오른쪽 3·4·5 는 0·1/3·2/3 이다.
-    const layout: Layout = {
-      split: 'right',
-      first: { split: 'down', first: { pane: 1 }, second: { pane: 2 } },
-      second: {
-        split: 'down',
-        first: { pane: 3 },
-        second: { split: 'down', first: { pane: 4 }, second: { pane: 5 } }
-      }
-    }
-    expect(readingOrder(layout)).toEqual([1, 3, 4, 2, 5])
   })
 })

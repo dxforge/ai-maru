@@ -26,7 +26,7 @@ import {
   type Row,
   type RowSource
 } from '../workspace/sidebarRows'
-import { focusedPane, type Cell, type Pane, type Workspace } from '../workspace/store'
+import { focusedPane, orderedPanes, type Cell, type Pane, type Workspace } from '../workspace/store'
 
 const {
   workspaces,
@@ -85,7 +85,7 @@ function cellGroup(src: RowSource, c: DeepReadonly<Cell>, base: DeepReadonly<Pan
   return {
     c,
     selected,
-    rows: c.panes.map((p) => paneRow(src, p, selected && p === current, base))
+    rows: orderedPanes(c).map((p) => paneRow(src, p, selected && p === current, base))
   }
 }
 

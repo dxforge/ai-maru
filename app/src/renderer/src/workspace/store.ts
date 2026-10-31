@@ -14,11 +14,12 @@ import { newPtyId, randomId } from '../../../shared/pty'
 import { paneCwd, paneTitle } from './display'
 import {
   neighbor,
-  readingOrder,
+  panes,
   removePane,
   splitPane,
   splitRoot,
   type FocusDirection,
+  type Layout,
   type SplitDirection,
   type Widths
 } from './layout'
@@ -80,6 +81,17 @@ export type Cell = Omit<ScreenCell, 'panes'> & { panes: Pane[] }
 export type Workspace = Omit<ScreenWorkspace, 'cells'> & { cells: Cell[] }
 
 export { focusedPane, startDirOf }
+
+/**
+ * `WorkspaceSidebar.vue` 가 cell 의 pane 을 이 순서로 나열한다. `stepPane` 은 같은 순서를 `panes(layout)` 으로 직접
+ * 돌므로 한쪽 순서를 바꾸면 다른 쪽도 같이 바꾼다.
+ */
+export function orderedPanes<P extends { key: number }>(c: {
+  layout: Layout
+  panes: readonly P[]
+}): P[] {
+  return panes(c.layout).map((key) => c.panes.find((p) => p.key === key)!)
+}
 
 export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
 
@@ -192,7 +204,7 @@ export function createWorkspaces(
   function stepPane(by: 1 | -1): number | undefined {
     const c = selected()
     if (c) {
-      const order = readingOrder(c.layout)
+      const order = panes(c.layout)
       const to = order[order.indexOf(c.focused) + by]
       if (to !== undefined) {
         c.focused = to
@@ -202,7 +214,7 @@ export function createWorkspaces(
     const key = step(by)
     if (key === undefined) return undefined
     const next = cell(key)!
-    next.focused = readingOrder(next.layout).at(by === 1 ? 0 : -1)!
+    next.focused = panes(next.layout).at(by === 1 ? 0 : -1)!
     return key
   }
 
