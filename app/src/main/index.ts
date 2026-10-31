@@ -39,6 +39,7 @@ import { installCommandMenu } from './menu'
 import { createMonitor } from './monitor'
 import { isDevReload } from './navigation'
 import { createPanes } from './pane'
+import { createWindowReady } from './window-ready'
 import { createJobs, JOB_REPLY_MS } from './job'
 import { createLauncherStore, listDirs } from './launcher'
 import { longestExistingPaths, openLink, type LinkOpener } from './links'
@@ -231,6 +232,7 @@ const seen = createSeen({
   }
 })
 
+const windowReady = createWindowReady()
 const panes = createPanes(
   (channel, id, arg) => {
     const win = mainWindow()
@@ -238,7 +240,8 @@ const panes = createPanes(
     win.webContents.send(channel, id, arg)
     return true
   },
-  (pty) => jobs?.cellOf(pty)
+  (pty) => jobs?.cellOf(pty),
+  windowReady
 )
 
 const devServer = Boolean(process.env.ELECTRON_RENDERER_URL)
@@ -467,7 +470,7 @@ function confirmQuit(): void {
   })().finally(() => (quitCheck = null))
 }
 
-const putDoc = canvasPut(mainWindow)
+const putDoc = canvasPut(mainWindow, windowReady)
 
 const cliHandlers: Handlers = {
   ping: (_params, pty) => ({ pty }),
@@ -515,7 +518,7 @@ function createWindow(state: WindowState | null): void {
   })
   // `will-navigate` 가 navigation 을 막으면 문서가 그대로이므로, 새 문서로 바뀐 뒤(`did-navigate`)에 `unready` 를 부른다.
   win.webContents.on('did-navigate', () => {
-    panes.unready()
+    windowReady.unready()
     viewedPty = null
   })
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -766,7 +769,7 @@ function start(): void {
   // 셸이 뜨자마자 `maru` 를 불러도 닿게.
   const ready = Promise.all([leftovers, cliServer])
   ipcMain.on('pane:reply', (_event, id: number, reply: PaneReply) => panes.reply(id, reply))
-  ipcMain.on('pane:ready', () => panes.ready())
+  ipcMain.on('pane:ready', () => windowReady.ready())
   ipcMain.handle('git:head', (_event, cwd: unknown) =>
     typeof cwd === 'string' ? gitHead(cwd) : null
   )
@@ -782,7 +785,7 @@ function start(): void {
   const linkOpener: LinkOpener = {
     openExternal: (url) => shell.openExternal(url),
     openPath: (path) => shell.openPath(path),
-    putCanvas: (doc) => putCanvas(mainWindow, doc),
+    putCanvas: (doc) => putCanvas(mainWindow, windowReady, doc),
     foregroundCwd: (id) => foregroundCwd(ptyDir(), id)
   }
   ipcMain.handle('link:open', (_event, text: unknown, pty: unknown) => {

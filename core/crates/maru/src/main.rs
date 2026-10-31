@@ -158,10 +158,15 @@
 //! 안쪽 메시지의 실패는 앱이 `result.message` 안의 JSON-RPC `error`(도구 인자가 틀린 것은 `isError` 결과)로
 //! 돌려준다. 바깥 `error` 는 줄 프로토콜 자체의 실패에만 쓴다. 앱은 MCP 세션의 상태를 두지 않는다.
 //!
-//! 앱에 연결하지 못하면(소켓이 없거나 연결을 거절하면) `maru mcp` 는 `MARU_SOCKET` 이 있는 디렉토리가 바뀔
-//! 때마다 다시 붙어 보며 10초까지 기다린다. 연결한 뒤의 실패(답 없이 닫힘·시간 초과·바깥 `error`)는 다시 보내지
-//! 않는다. 기다려도 붙지 못했거나 연결한 뒤 실패한 메시지가 `tools/call` 이면 도구 실행 오류로, 그 밖의 요청이면
-//! JSON-RPC `error`(-32603)로 답한다. 알림이면 답하지 않는다. 프로세스는 끝나지 않고 다음 메시지를 받는다.
+//! 요청을 보낼 때 앱에 연결하지 못하면(소켓이 없거나 연결을 거절하면) `maru mcp` 는 `MARU_SOCKET` 이 있는
+//! 디렉토리가 바뀔 때마다 다시 붙어 보며 10초까지 기다린다. 요청은 `method` 와 `id` 가 함께 있는 메시지다.
+//! 연결하지 못한 알림과 응답은 기다리지 않고 버린다. 앱은 `notifications/*` 와 응답으로 하는 일이 없고, 기다리면
+//! 그동안 뒤따르는 요청이 밀리기 때문이다. `id` 없이 온 `tools/call` 도 알림이므로 버린다. 앱은 이것을 실행하지만
+//! claude 는 `tools/call` 을 `id` 없이 보내지 않는다.
+//!
+//! 연결한 뒤의 실패(답 없이 닫힘·시간 초과·바깥 `error`)는 다시 보내지 않는다. 기다려도 붙지 못했거나 연결한 뒤
+//! 실패한 메시지가 `tools/call` 이면 도구 실행 오류로, 그 밖의 요청이면 JSON-RPC `error`(-32603)로 답한다.
+//! 알림이면 답하지 않는다. 프로세스는 끝나지 않고 다음 메시지를 받는다.
 //!
 //! 앱이 클라이언트에 먼저 보내는 메시지(알림·요청)는 아직 없다. 생기면 `monitor.subscribe` 처럼 연결을 열어 두는
 //! `mcp.subscribe` 를 더한다. 요청 한 줄의 16 MiB 상한은 감싼 줄 전체에 걸리므로 MCP 메시지는 그보다 작아야 한다.
@@ -1087,7 +1092,7 @@ fn mcp_reply(target: &Target, line: &[u8]) -> Option<Value> {
     let request = msg.get("method").is_some() && msg.get("id").is_some();
     let id = msg["id"].clone();
     let tool_call = msg["method"] == "tools/call";
-    let sent = read_file_argument(&mut msg, tool_call).and_then(|()| relay(target, msg));
+    let sent = read_file_argument(&mut msg, tool_call).and_then(|()| relay(target, msg, request));
     match sent {
         Ok(reply) => reply,
         Err(_) if !request => None,
@@ -1120,8 +1125,13 @@ fn read_file_argument(msg: &mut Value, tool_call: bool) -> Result<()> {
     Ok(())
 }
 
-fn relay(target: &Target, message: Value) -> Result<Option<Value>> {
-    let stream = connect_waiting(target).context("AI Maru app is not running")?;
+fn relay(target: &Target, message: Value, wait: bool) -> Result<Option<Value>> {
+    let stream = if wait {
+        connect_waiting(target)
+    } else {
+        connect(target)
+    }
+    .context("AI Maru app is not running")?;
     let mut params = Map::new();
     params.insert("message".into(), message);
     // 연결된 뒤의 실패는 다시 보내지 않는다. 앱이 이미 처리했다면 `id` 없이 부른 `canvas_put` 이 문서를 하나 더

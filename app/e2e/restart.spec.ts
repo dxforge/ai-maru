@@ -384,6 +384,23 @@ test('재시작 직후 남은 pty 가 곧바로 부른 maru pane new 는 그 pan
   await expect(panes(again).nth(1).locator('.xterm-rows')).toContainText('split-2')
 })
 
+test('재시작 직후 남은 pty 가 곧바로 부른 maru canvas put 은 창이 준비된 뒤 문서를 띄우고 성공한다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await shellUp(page, 0)
+  const doc = join(dataDir, 'restarted.md')
+  writeFileSync(doc, '# Restarted\n')
+  const out = join(dataDir, 'canvas-put')
+  await page.keyboard.type(callOnReturn(`canvas put --title restarted '${doc}'`, out))
+  await restartWith(app)
+  const { page: again } = await launch()
+  await expect.poll(readResult(out), { timeout: 15_000 }).toBe('code=0')
+  await expect(again.locator('.canvas .list button')).toHaveText(['restarted'])
+  await expect(again.locator('.canvas .markdown h1')).toHaveText('Restarted')
+})
+
 test('재시작 전에 maru cell new 가 찍은 cell id 로 재시작 뒤에도 maru pane new --cell 이 그 cell 에 띄운다', async ({
   launch,
   dataDir

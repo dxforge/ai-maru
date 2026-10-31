@@ -4,6 +4,7 @@ import { basename, extname } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import type { CanvasDoc, CanvasItem, CanvasMarkdown } from '../shared/canvas'
 import { InvalidParams } from './cli-server'
+import { WINDOW_WAIT_MS, type WindowReady } from './window-ready'
 
 const IMAGE_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -27,15 +28,37 @@ export async function canvasDocFor(path: string): Promise<CanvasDoc | null> {
 
 export async function putCanvas(
   window: () => BrowserWindow | undefined,
+  windowReady: WindowReady,
   doc: CanvasDoc
 ): Promise<void> {
-  const win = window()
-  if (!win || win.isDestroyed()) throw new Error('no window to show the document in')
-  win.webContents.send('canvas:put', await toItem(doc))
+  const item = await toItem(doc)
+  let unqueue = (): void => {}
+  let timer: NodeJS.Timeout | undefined
+  try {
+    await new Promise<void>((resolve, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`the window was not ready within ${WINDOW_WAIT_MS / 1000}s`)),
+        WINDOW_WAIT_MS
+      )
+      unqueue = windowReady.whenReady(() => {
+        const win = window()
+        if (!win || win.isDestroyed()) return reject(new Error('no window to show the document in'))
+        try {
+          win.webContents.send('canvas:put', item)
+          resolve()
+        } catch (e) {
+          reject(e)
+        }
+      })
+    })
+  } finally {
+    clearTimeout(timer)
+    unqueue()
+  }
 }
 
 // 계약은 core/crates/maru 의 모듈 doc 에 있다.
-export function canvasPut(window: () => BrowserWindow | undefined) {
+export function canvasPut(window: () => BrowserWindow | undefined, windowReady: WindowReady) {
   return async (params: Record<string, unknown>): Promise<{ id: string }> => {
     const { text, id, title } = params
     if (typeof text !== 'string') throw new InvalidParams('params.text must be a string')
@@ -51,7 +74,7 @@ export function canvasPut(window: () => BrowserWindow | undefined) {
       text,
       ...(title === undefined ? {} : { title })
     }
-    await putCanvas(window, doc)
+    await putCanvas(window, windowReady, doc)
     return { id: doc.id }
   }
 }
