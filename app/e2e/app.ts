@@ -736,7 +736,7 @@ export function canvasPanel(page: Page): Locator {
 }
 
 export function canvasTitles(page: Page): Locator {
-  return page.locator('.canvas .list button')
+  return page.locator('.canvas .cards .title')
 }
 
 export function toast(page: Page): Locator {

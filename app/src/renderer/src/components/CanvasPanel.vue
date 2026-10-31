@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, useTemplateRef, watch } from 'vue'
-import { renderMarkdown } from '../canvas/markdown'
-import type { Canvas } from '../canvas/store'
+import { useTemplateRef } from 'vue'
+import { clockTime, type Canvas } from '../canvas/store'
+import { ICONS } from '../icons'
+import CanvasDoc from './CanvasDoc.vue'
+import CardStream from './CardStream.vue'
 
 const { canvas, width, resizing } = defineProps<{
   canvas: Canvas
@@ -12,17 +14,6 @@ const { canvas, width, resizing } = defineProps<{
 // 이 컴포넌트는 루트가 둘이라 `$el` 로 패널을 가리킬 수 없다.
 const panel = useTemplateRef<HTMLElement>('panel')
 defineExpose({ panel })
-
-const view = useTemplateRef<HTMLDivElement>('view')
-const doc = computed(() => canvas.selected.value)
-const html = computed(() => (doc.value?.kind === 'markdown' ? renderMarkdown(doc.value.text) : ''))
-
-// 같은 문서가 바뀔 때는 읽던 자리를 지킨다.
-watch(
-  () => canvas.selectedId.value,
-  () => view.value?.scrollTo(0, 0),
-  { flush: 'post' }
-)
 </script>
 
 <template>
@@ -36,24 +27,37 @@ watch(
   >
     <header class="bar">
       <span>Canvas</span>
-      <button class="close" title="Close" @mousedown.prevent @click="canvas.close()">✕</button>
-    </header>
-    <ul class="list">
-      <li v-for="d in canvas.docs.value" :key="d.id">
+      <span class="actions">
         <button
-          :class="{ selected: d.id === canvas.selectedId.value }"
+          class="expand-all"
+          title="Expand all"
           @mousedown.prevent
-          @click="canvas.select(d.id)"
+          @click="canvas.expandAll()"
         >
-          {{ d.title }}
+          <span class="nerd-icon">{{ ICONS.expandAll }}</span>
         </button>
-      </li>
-    </ul>
-    <div ref="view" class="view">
-      <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown 이 DOMPurify 로 거른 HTML 이다 -->
-      <div v-if="doc?.kind === 'markdown'" class="markdown" v-html="html" />
-      <img v-else-if="doc?.kind === 'image'" class="image" :src="doc.url" :alt="doc.title" />
-    </div>
+        <button
+          class="collapse-all"
+          title="Collapse all"
+          @mousedown.prevent
+          @click="canvas.collapseAll()"
+        >
+          <span class="nerd-icon">{{ ICONS.collapseAll }}</span>
+        </button>
+        <button class="close" title="Close" @mousedown.prevent @click="canvas.close()">
+          <span class="nerd-icon">{{ ICONS.close }}</span>
+        </button>
+      </span>
+    </header>
+    <CardStream
+      :items="canvas.docs.value"
+      :expanded="canvas.expanded"
+      @expand="canvas.expand"
+      @remove="canvas.remove"
+    >
+      <template #meta="{ item }">{{ clockTime(item.at) }}</template>
+      <template #body="{ item }"><CanvasDoc :doc="item" /></template>
+    </CardStream>
   </aside>
   <button
     v-if="!canvas.open.value && canvas.docs.value.length"
@@ -117,48 +121,22 @@ button {
   cursor: pointer;
 }
 
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.expand-all,
+.collapse-all,
 .close {
   padding: 2px 6px;
 }
 
-.list {
-  flex: none;
-  max-height: calc(5 * 26px);
-  overflow-y: auto;
-  margin: 0;
-  padding: 4px 0;
-  list-style: none;
-  border-bottom: 1px solid var(--line);
-}
-
-.list button {
-  display: block;
-  width: 100%;
-  height: 26px;
-  padding: 0 12px;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.list button:hover {
-  background: var(--hover);
-}
-
-.list button.selected {
-  background: var(--selected);
+.expand-all:hover,
+.collapse-all:hover,
+.close:hover {
   color: var(--fg);
-}
-
-.view {
-  flex: 1;
-  overflow: auto;
-  padding: 12px 16px;
-}
-
-.image {
-  max-width: 100%;
 }
 
 .reopen {
@@ -167,51 +145,5 @@ button {
   padding: 12px 4px;
   font-size: 12px;
   color: var(--muted);
-}
-
-.markdown :deep(a) {
-  color: var(--accent);
-}
-
-.markdown :deep(code) {
-  font-family: ui-monospace, monospace;
-  font-size: 0.9em;
-  background: var(--raised);
-  padding: 0.1em 0.3em;
-  border-radius: 3px;
-}
-
-.markdown :deep(pre) {
-  overflow-x: auto;
-  padding: 8px 12px;
-  background: var(--raised);
-  border-radius: 4px;
-}
-
-.markdown :deep(pre code) {
-  padding: 0;
-  background: none;
-}
-
-.markdown :deep(blockquote) {
-  margin: 0;
-  padding-left: 12px;
-  border-left: 3px solid var(--faint);
-  color: var(--muted);
-}
-
-.markdown :deep(table) {
-  border-collapse: collapse;
-}
-
-.markdown :deep(th),
-.markdown :deep(td) {
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-}
-
-.markdown :deep(hr) {
-  border: none;
-  border-top: 1px solid var(--line);
 }
 </style>

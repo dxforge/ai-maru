@@ -172,7 +172,7 @@ test('포커스가 터미널 밖에 있어도 ⇧⌘방향키는 pane 을 옮긴
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await putCanvas(app, { id: 'a', kind: 'markdown', text: 'x', title: 'A' })
-  await page.locator('.canvas .list button').first().focus()
+  await page.locator('.canvas .cards .head').first().focus()
   await page.keyboard.press('Shift+Meta+ArrowLeft')
   await typesInto(page, 0, 'left')
 })

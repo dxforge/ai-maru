@@ -6,6 +6,7 @@ import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { commandClass, ICONS, STATE_LABELS } from '../icons'
+import FoldChevron from './FoldChevron.vue'
 import StatusIcon from './StatusIcon.vue'
 import { commandLabel, commandTail, elapsed, notificationText } from '../workspace/display'
 import {
@@ -257,7 +258,7 @@ const workspaceDragged = (workspace: number): boolean =>
           /></span>
           <span class="workspace-name">{{ name }}</span>
           <span v-if="dot" class="unread-dot" />
-          <span class="chevron nerd-icon">{{ wf ? ICONS.collapsed : ICONS.expanded }}</span>
+          <FoldChevron class="chevron" :open="!wf" />
         </button>
         <div
           v-for="({ c, selected, rows }, ci) in cells"
@@ -389,7 +390,6 @@ const workspaceDragged = (workspace: number): boolean =>
 .workspace-head .chevron {
   flex: none;
   margin-left: auto;
-  font-size: 11px;
   opacity: 0;
 }
 

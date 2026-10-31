@@ -1,7 +1,7 @@
 import { resolveObjectURL } from 'node:buffer'
 import { describe, expect, it } from 'vitest'
 import type { CanvasItem } from '../../../shared/canvas'
-import { createCanvas } from './store'
+import { clockTime, createCanvas, type Canvas } from './store'
 
 const md = (id: string, text: string, title?: string): CanvasItem => ({
   id,
@@ -24,48 +24,104 @@ function titleOf(item: CanvasItem): string {
   return c.docs.value[0].title
 }
 
+const docOf = (c: Canvas, id: string) => c.docs.value.find((d) => d.id === id)
+const urlOf = (c: Canvas, id: string): string => (docOf(c, id) as { url: string }).url
+
 describe('createCanvas', () => {
   it('처음엔 문서도 없고 패널도 닫혀 있다', () => {
     const c = createCanvas()
     expect(c.docs.value).toEqual([])
     expect(c.open.value).toBe(false)
-    expect(c.selected.value).toBeNull()
+    expect([...c.expanded]).toEqual([])
   })
 
-  it('새 문서는 목록 맨 위에 들어가고, 패널이 열리며 그 문서가 선택된다', () => {
+  it('새 문서는 펼친 채 맨 위에 들어가고 패널이 열린다', () => {
     const c = createCanvas()
     c.put(md('a', 'A'))
+    c.expand('a', false)
     c.put(md('b', 'B'))
     expect(c.docs.value.map((d) => d.id)).toEqual(['b', 'a'])
-    expect(c.selected.value?.id).toBe('b')
+    expect([...c.expanded]).toEqual(['b'])
     expect(c.open.value).toBe(true)
   })
 
-  it('같은 id 가 다시 오면 자리를 지킨 채 내용만 바뀌고 그 문서가 선택된다', () => {
+  it('같은 id 가 다시 오면 자리와 펼침 상태를 지킨 채 내용만 바뀐다', () => {
     const c = createCanvas()
     c.put(md('a', 'A'))
     c.put(md('b', 'B'))
+    c.expand('a', false)
     c.put(md('a', 'A2'))
     expect(c.docs.value.map((d) => d.id)).toEqual(['b', 'a'])
-    expect(c.selected.value).toMatchObject({ id: 'a', text: 'A2' })
+    expect(docOf(c, 'a')).toMatchObject({ text: 'A2' })
+    expect(c.expanded.has('a')).toBe(false)
+  })
+
+  it('받은 시각을 붙이고, 같은 id 로 고치면 고친 시각으로 바꾼다', () => {
+    let t = 1000
+    const c = createCanvas(() => t)
+    c.put(md('a', 'A'))
+    t = 2000
+    c.put(md('b', 'B'))
+    expect(docOf(c, 'a')?.at).toBe(1000)
+    t = 3000
+    c.put(md('a', 'A2'))
+    expect(docOf(c, 'a')?.at).toBe(3000)
+    expect(docOf(c, 'b')?.at).toBe(2000)
   })
 
   it('같은 id 의 이미지가 다시 오면 앞 그림의 URL 을 놓는다', () => {
     const c = createCanvas()
     c.put(image('i', 'a.png'))
-    const first = (c.selected.value as { url: string }).url
+    const first = urlOf(c, 'i')
     c.put(image('i', 'a.png'))
     expect(resolveObjectURL(first)).toBeUndefined()
-    expect(resolveObjectURL((c.selected.value as { url: string }).url)).toBeDefined()
+    expect(resolveObjectURL(urlOf(c, 'i'))).toBeDefined()
   })
 
   it('같은 id 로 이미지 대신 마크다운이 오면 그림의 URL 을 놓는다', () => {
     const c = createCanvas()
     c.put(image('i', 'a.png'))
-    const url = (c.selected.value as { url: string }).url
+    const url = urlOf(c, 'i')
     c.put(md('i', 'text'))
     expect(resolveObjectURL(url)).toBeUndefined()
-    expect(c.selected.value).toMatchObject({ kind: 'markdown', text: 'text' })
+    expect(docOf(c, 'i')).toMatchObject({ kind: 'markdown', text: 'text' })
+  })
+
+  it('지우면 목록과 펼침 상태에서 빠지고, 이미지는 URL 을 놓는다', () => {
+    const c = createCanvas()
+    c.put(image('i', 'a.png'))
+    c.put(md('a', 'A'))
+    const url = urlOf(c, 'i')
+    c.remove('i')
+    expect(c.docs.value.map((d) => d.id)).toEqual(['a'])
+    expect([...c.expanded]).toEqual(['a'])
+    expect(resolveObjectURL(url)).toBeUndefined()
+    c.remove('nope')
+    expect(c.docs.value.map((d) => d.id)).toEqual(['a'])
+  })
+
+  it('지운 id 로 다시 오면 새 문서처럼 펼친 채 맨 위에 들어간다', () => {
+    const c = createCanvas()
+    c.put(md('a', 'A'))
+    c.put(md('b', 'B'))
+    c.remove('a')
+    c.put(md('a', 'A2'))
+    expect(c.docs.value.map((d) => d.id)).toEqual(['a', 'b'])
+    expect(c.expanded.has('a')).toBe(true)
+  })
+
+  it('여러 문서를 함께 펼치고, 모두 접기·모두 펼치기는 모든 문서를 접고 펼친다', () => {
+    const c = createCanvas()
+    c.put(md('a', 'A'))
+    c.put(md('b', 'B'))
+    c.expand('a', false)
+    c.expand('a', true)
+    expect([...c.expanded].toSorted()).toEqual(['a', 'b'])
+    c.collapseAll()
+    expect([...c.expanded]).toEqual([])
+    expect(c.docs.value).toHaveLength(2)
+    c.expandAll()
+    expect([...c.expanded].toSorted()).toEqual(['a', 'b'])
   })
 
   it('닫은 뒤 문서가 오면 다시 열린다', () => {
@@ -77,15 +133,15 @@ describe('createCanvas', () => {
     expect(c.open.value).toBe(true)
   })
 
-  it('닫은 패널을 다시 열면 고른 문서가 그대로다', () => {
+  it('닫은 패널을 다시 열면 펼침 상태가 그대로다', () => {
     const c = createCanvas()
     c.put(md('a', 'A'))
     c.put(md('b', 'B'))
-    c.select('a')
+    c.expand('b', false)
     c.close()
     c.reopen()
     expect(c.open.value).toBe(true)
-    expect(c.selected.value?.id).toBe('a')
+    expect([...c.expanded]).toEqual(['a'])
   })
 
   it('toggle 은 열린 패널을 닫고 닫힌 패널을 연다 — 문서가 없어도 연다', () => {
@@ -98,8 +154,14 @@ describe('createCanvas', () => {
     c.toggle()
     expect(c.open.value).toBe(false)
     c.toggle()
-    expect(c.selected.value?.id).toBe('a')
     expect(c.open.value).toBe(true)
+  })
+})
+
+describe('clockTime', () => {
+  it('받은 시각을 그 자리의 HH:MM 으로 보인다', () => {
+    expect(clockTime(new Date(2026, 0, 2, 9, 5, 59).getTime())).toBe('09:05')
+    expect(clockTime(new Date(2026, 0, 2, 23, 40).getTime())).toBe('23:40')
   })
 })
 

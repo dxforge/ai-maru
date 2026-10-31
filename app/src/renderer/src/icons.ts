@@ -8,11 +8,11 @@ export const ICONS = {
   openai: '\uEC81',
   terminal: '\uEA85',
   branch: '\uEA68',
-  expanded: '\uEAB4',
-  collapsed: '\uEAB6',
   error: '\uEA87',
   warning: '\uEA6C',
   close: '\uEA76',
+  expandAll: '\uEB95',
+  collapseAll: '\uEAC5',
   gear: '\uEAF8',
   running: '\uEB2C'
 } as const
