@@ -347,6 +347,9 @@ test('붙은 제목을 누르면 그 문서로 가서, 그 제목이 위쪽 묶�
   const top = (sel: string) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().top)
 
   await putCanvas(app, { id: 'b', kind: 'markdown', text: long('b'), title: 'B' })
+  // 패널이 열리는 동안 누르면 Playwright 가 제목을 화면에 넣으려고 긴 문서를 몇 px 스크롤해, 제목이 패널 위에 붙고
+  // 누를 카드의 제목 줄은 숨는다.
+  await settle(page)
   await titles(page).filter({ hasText: 'B' }).click()
   await expect(card(page, 'b').locator('.markdown')).toHaveCount(0)
   await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })

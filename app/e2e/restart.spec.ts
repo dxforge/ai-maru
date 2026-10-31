@@ -4,6 +4,7 @@ import { killPty, killPtys } from '../src/main/pty'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import { STATE_VERSIONS } from '../src/shared/screen'
 import {
+  canvasTitles,
   canvasWidth,
   clickMenu,
   dialogCalls,
@@ -218,6 +219,8 @@ test('재시작 동안 끝난 pty 의 pane 은 이유를 보인 뒤 같은 pane 
   await expect(gone).toHaveCount(1)
   await gone.locator('.xterm-screen').click()
   await run(shown, 'echo "at=$PWD x=$X"', `at=${moved} x=`)
+  // 문구를 셸 화면 위에 끼우고도 커서가 셸이 아는 자리에 있어야, 친 명령이 프롬프트 뒤에 붙는다.
+  await expect(gone.locator('.xterm-rows')).toContainText('% echo "at=$PWD')
   await expect(toast(shown)).toHaveCount(0)
 })
 
@@ -397,7 +400,7 @@ test('재시작 직후 남은 pty 가 곧바로 부른 maru canvas put 은 창�
   await restartWith(app)
   const { page: again } = await launch()
   await expect.poll(readResult(out), { timeout: 15_000 }).toBe('code=0')
-  await expect(again.locator('.canvas .list button')).toHaveText(['restarted'])
+  await expect(canvasTitles(again)).toHaveText(['restarted'])
   await expect(again.locator('.canvas .markdown h1')).toHaveText('Restarted')
 })
 

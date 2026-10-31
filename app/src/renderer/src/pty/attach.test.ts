@@ -120,7 +120,40 @@ describe('attach', () => {
     deliver(JSON.stringify({ type: 'gone' }))
     deliver(JSON.stringify({ type: 'spawned', id: 'p-00000001', cwd: '/w' }))
     expect(calls).toEqual(['gone', 'spawned /w'])
-    expect(term.written).toEqual([GONE_MESSAGE])
+    expect(term.written).toEqual([])
+    deliver(JSON.stringify({ type: 'attached', cols: 80, rows: 24, cursor_x: 2, cursor_y: 0 }))
+    const replay = new TextEncoder().encode('% ')
+    deliver(replay)
+    const output = new TextEncoder().encode('later')
+    deliver(output)
+    expect(term.written).toHaveLength(3)
+    expect(term.written[0]).toBe(replay)
+    expect(term.written[1]).toContain(GONE_MESSAGE)
+    expect(term.written[2]).toBe(output)
+  })
+
+  it('gone 뒤 새 셸이 붙지 못하고 끝나면 이유를 끝난 알림 앞에 보인다', () => {
+    for (const end of [
+      { type: 'exit', code: 1, signal: null },
+      { type: 'error', code: 'open_failed', message: 'no shell' }
+    ]) {
+      const term = fakeTerminal(80, 24)
+      const { conn, deliver } = fakeConnection()
+      attach(term as unknown as Terminal, conn, handlers)
+      deliver(JSON.stringify({ type: 'gone' }))
+      deliver(JSON.stringify(end))
+      expect(term.written[0]).toBe(GONE_MESSAGE)
+    }
+  })
+
+  it('gone 뒤 새 셸에 붙었다는 응답만 오고 재생 없이 닫혀도 이유를 보인다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, deliver, close } = fakeConnection()
+    attach(term as unknown as Terminal, conn, handlers)
+    deliver(JSON.stringify({ type: 'gone' }))
+    deliver(JSON.stringify({ type: 'attached', cols: 80, rows: 24, cursor_x: 0, cursor_y: 0 }))
+    close()
+    expect(term.written[0]).toBe(GONE_MESSAGE)
   })
 
   it('gone 뒤 새 셸을 띄우지 못하고 닫히면 실패로 알린다', () => {
@@ -131,6 +164,7 @@ describe('attach', () => {
     deliver(JSON.stringify({ type: 'gone' }))
     close()
     expect(failed).toEqual(['disconnected before the pty started'])
+    expect(term.written[0]).toBe(GONE_MESSAGE)
   })
 
   it('셸이 끝난 뒤 연결이 닫히면 끊김을 보이지 않는다', () => {
