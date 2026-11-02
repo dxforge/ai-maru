@@ -67,7 +67,7 @@ test('접은 채 닫은 workspace 의 key 를 재시작 뒤 새 workspace 가 �
   await expect(workspaceHeads(again.page).nth(1)).toHaveAttribute('aria-expanded', 'true')
 })
 
-test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 같고 셸의 상태가 남는다', async ({
+test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드와 바꾼 workspace 이름이 같고 셸의 상태가 남는다', async ({
   launch
 }) => {
   const first = await launch()
@@ -76,6 +76,10 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 �
   await shellUp(page, 0)
   await shellUp(page, 1)
   await page.keyboard.type('export MARK=kept-$((1+1))\n')
+  await workspaceHeads(page).nth(0).dblclick()
+  await expect(page.locator('.sidebar .workspace-name-input')).toBeFocused()
+  await page.keyboard.type('renamed')
+  await page.keyboard.press('Enter')
   await newWorkspace(first, 2)
   await shellUp(page, 0)
   await workspaceHeads(page).nth(1).click()
@@ -90,6 +94,7 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드가 �
   await expect(again.locator('.terminals')).toHaveClass(/columns/)
   await expect(cellItems(again)).toHaveCount(1)
   await expect(workspaceHeads(again).nth(1)).toHaveAttribute('aria-expanded', 'false')
+  await expect(workspaceNames(again).nth(0)).toHaveText('renamed')
   await expect(panes(again)).toHaveCount(2)
   await expect(panes(again).nth(1).locator('.terminal-view')).toHaveClass(/active/)
   await run(again, 'echo $MARK', 'kept-2')

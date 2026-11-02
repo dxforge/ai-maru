@@ -192,6 +192,9 @@ for (const type of ['focusin', 'focusout']) document.addEventListener(type, upda
 for (const type of ['focus', 'blur']) window.addEventListener(type, updateViewed)
 watch(() => config.notification.value.seenMs, updateViewed)
 
+/** 이름을 고치는 중인 workspace 의 key */
+const renaming = ref<number | null>(null)
+
 // 보이지 않는 터미널에는 포커스를 줄 수 없어, 선택이 화면에 반영된 뒤에 준다.
 async function focusSelected(): Promise<void> {
   await nextTick()
@@ -354,6 +357,25 @@ const folded = reactive(new Set<number>())
 function toggleFold(key: number): void {
   if (!folded.delete(key)) folded.add(key)
 }
+// 접은 사이드바는 입력창을 놓기에 좁아 편다.
+function startRename(key: number): void {
+  sidebarOpen.value = true
+  renaming.value = key
+}
+function endRename(key: number, name: string | null, refocus: boolean): void {
+  if (name !== null) workspaces.rename(key, name)
+  // 다른 workspace 의 고치기를 시작해 이 입력창이 빠졌으면 새 고치기는 그대로 둔다.
+  if (renaming.value !== key) return
+  renaming.value = null
+  if (refocus) void focusSelected()
+}
+// 고치는 동안 그 workspace 가 닫히면 입력창도 사라지므로 고치기를 끝낸다.
+watch(
+  () => renaming.value !== null && !workspaces.list.value.some((w) => w.key === renaming.value),
+  (gone) => {
+    if (gone) renaming.value = null
+  }
+)
 const SIDEBAR_WIDTH = 280
 const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
 // 토스트는 사이드바 안쪽 양옆 12px 을 비운다.
@@ -732,7 +754,11 @@ const launcher = useTemplateRef<InstanceType<typeof LauncherPalette>>('launcher'
 function closeOverlay(which?: Overlay): void {
   if (overlay.value === null || (which && overlay.value !== which)) return
   overlay.value = null
-  void focusSelected()
+  // 팔레트에서 고른 명령은 팔레트를 닫은 뒤에 돈다(`runCommand`). 그 명령이 workspace 이름 고치기를 열었으면 입력창이
+  // 포커스를 가져가므로 터미널에 포커스를 주지 않는다.
+  void nextTick(() => {
+    if (renaming.value === null) void focusSelected()
+  })
 }
 
 const SPLIT_OF: Partial<Record<LaunchWhere, SplitDirection>> = {
@@ -768,6 +794,11 @@ const handlers: Record<CommandId, () => void> = {
   'launch-split-down': () => openLaunch('split-down'),
   'close-pane': () => void closePane(),
   'close-workspace': () => void closeWorkspace(),
+  'rename-workspace': () => {
+    const c = workspaces.selected()
+    const w = c && workspaces.workspaceOf(c.key)
+    if (w) startRename(w.key)
+  },
   'next-cell': () => stepCell(1),
   'previous-cell': () => stepCell(-1),
   'next-pane': () => stepPane(1),
@@ -786,6 +817,8 @@ const handlers: Record<CommandId, () => void> = {
   },
   'toggle-sidebar': () => {
     sidebarOpen.value = !sidebarOpen.value
+    // 접은 사이드바에는 입력창을 둘 자리가 없다. 터미널에 포커스를 주면 입력창이 포커스를 잃어 고치던 이름을 확정하고 닫힌다.
+    if (!sidebarOpen.value && renaming.value !== null) void focusSelected()
   },
   'toggle-canvas': canvas.toggle,
   'toggle-view-mode': () => {
@@ -913,11 +946,14 @@ void window.maru.restoreScreen().then((r) => {
         :now="now"
         :home="home"
         :shell="shell"
+        :renaming="renaming"
         @focus="selectPane"
         @fold="toggleFold"
         @kill-job="killJob"
         @move-cell="moveCell"
         @move-workspace="moveWorkspace"
+        @start-rename="startRename"
+        @end-rename="endRename"
       />
     </div>
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />

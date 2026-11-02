@@ -51,6 +51,18 @@ test('홈 디렉토리 workspace 의 WORKSPACE 는 사이드바처럼 ~ 다', as
   expect(cols[3]).toBe('~')
 })
 
+test('workspace 이름을 바꾸면 WORKSPACE 는 바꾼 이름이다', async ({ launch, dataDir }) => {
+  const { page } = await launch()
+  await ptyIdOf(page)
+  await page.locator('.sidebar .workspace-head').nth(0).dblclick()
+  await expect(page.locator('.sidebar .workspace-name-input')).toBeFocused()
+  await page.keyboard.type('renamed')
+  await page.keyboard.press('Enter')
+  await expect(workspaceNames(page).nth(0)).toHaveText('renamed')
+  const [, cols] = await paneList(page, join(dataDir, 'panes.out'))
+  expect(cols[3]).toBe('renamed')
+})
+
 test('maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순서대로, 사이드바의 이름과 함께 TSV 로 찍는다', async ({
   launch,
   dataDir

@@ -83,6 +83,7 @@ describe('snapshot·restore', () => {
     src.set(ws, p.ptyId, { cwd: '/moved', cwdReports: 1, title: 'vim' })
     ws.setFontSize(selected(ws).key, 18)
     ws.setPaneCols(selected(ws).key, 110)
+    ws.rename(ws.list.value[1].key, '리뷰')
     ws.select(ws.cells()[0].key)
     return ws
   }
@@ -96,6 +97,7 @@ describe('snapshot·restore', () => {
     expect([pane.cwd, pane.title]).toEqual(['/moved', 'vim'])
     expect(to.cells().map((w) => w.fontSize)).toEqual([undefined, 18])
     expect(to.cells().map((w) => w.paneCols)).toEqual([undefined, 110])
+    expect(to.list.value.map((w) => w.name)).toEqual([undefined, '리뷰'])
   })
 
   it('pty 없이 되살린 pane 은 새 pty id 로 저장한 cwd 에서 셸을 띄우고, 명령·keep·제목은 버린다', () => {
@@ -1355,5 +1357,52 @@ describe('moveCell·moveWorkspace', () => {
     const before = JSON.parse(JSON.stringify(selected(ws)))
     ws.moveCell(a, { workspace: wsKeys(ws)[2], index: 2 })
     expect(JSON.parse(JSON.stringify(ws.cells().find((c) => c.key === a)))).toEqual(before)
+  })
+})
+
+describe('rename', () => {
+  it('앞뒤 공백을 잘라 이름으로 두고, 다른 workspace 는 건드리지 않는다', () => {
+    const ws = opened(2)
+    const [a, b] = wsKeys(ws)
+    ws.rename(b, '  리뷰 ')
+    expect(ws.list.value.map((w) => w.name)).toEqual([undefined, '리뷰'])
+    ws.rename(a, 'd-0')
+    expect(ws.list.value.map((w) => w.name)).toEqual(['d-0', '리뷰'])
+  })
+
+  it('비우거나 공백만 남기면 이름을 지운다', () => {
+    const ws = opened(1)
+    const [a] = wsKeys(ws)
+    ws.rename(a, '리뷰')
+    ws.rename(a, '   ')
+    expect(ws.list.value[0]).not.toHaveProperty('name')
+    ws.rename(a, '리뷰')
+    ws.rename(a, '')
+    expect(ws.list.value[0]).not.toHaveProperty('name')
+  })
+
+  it('cd 해도 바꾼 이름은 그대로다', () => {
+    const src = source()
+    const ws = createWorkspaces(undefined, src)
+    ws.open('/d-0')
+    ws.rename(wsKeys(ws)[0], '리뷰')
+    src.set(ws, selected(ws).panes[0].ptyId, { cwd: '/elsewhere', cwdReports: 1 })
+    expect(selected(ws).panes[0].cwd).toBe('/elsewhere')
+    expect(ws.list.value[0].name).toBe('리뷰')
+  })
+
+  it('cell 하나뿐인 workspace 를 새 workspace 로 옮겨도 이름은 그대로고, 떼어 낸 cell 의 새 workspace 는 이름이 없다', () => {
+    const ws = opened(1)
+    ws.openCell('/d-1')
+    const [a] = wsKeys(ws)
+    ws.rename(a, '리뷰')
+    ws.moveCell(ws.cells()[1].key, 'new')
+    expect(ws.list.value.map((w) => w.name)).toEqual(['리뷰', undefined])
+  })
+
+  it('없는 workspace 면 아무것도 하지 않는다', () => {
+    const ws = opened(1)
+    ws.rename(999, '리뷰')
+    expect(ws.list.value[0]).not.toHaveProperty('name')
   })
 })

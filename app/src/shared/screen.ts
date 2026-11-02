@@ -39,7 +39,8 @@ type CellOf<P> = {
   paneCols?: number
 }
 
-type WorkspaceOf<P> = { key: number; id: string; cells: CellOf<P>[] }
+/** `name` 은 사용자가 바꾼 이름이다. 없으면 첫 cell 의 첫 pane 으로 이름을 짓는다(`workspaceName`). */
+type WorkspaceOf<P> = { key: number; id: string; name?: string; cells: CellOf<P>[] }
 
 export type ScreenCell = CellOf<ScreenPane>
 export type ScreenWorkspace = WorkspaceOf<ScreenPane>
@@ -183,8 +184,11 @@ function parseWorkspaces<P>(
     v,
     (w): WorkspaceOf<P> | null => {
       if (!isObj(w) || !isKey(w.key) || typeof w.id !== 'string') return null
+      if (w.name !== undefined && typeof w.name !== 'string') return null
       const cells = parseList(w.cells, (c) => parseCell(c, parsePane))
-      return cells && { key: w.key, id: w.id, cells }
+      // `rename`(`store.ts`)이 빈 이름을 받으면 이름을 지우는 것과 맞춰, 비었거나 공백뿐인 이름은 이름이 없는 것으로 본다.
+      const name = typeof w.name === 'string' && w.name.trim() ? w.name : undefined
+      return cells && compact({ key: w.key, id: w.id, name, cells })
     },
     true
   )

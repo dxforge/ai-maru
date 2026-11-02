@@ -17,6 +17,7 @@ describe('filterCommands', () => {
       'Launch Split Down…',
       'Close Pane',
       'Close Workspace',
+      'Rename Workspace…',
       'Next Cell',
       'Previous Cell',
       'Next Pane',
