@@ -232,7 +232,7 @@ test('명령으로 띄운 pane 의 pty 가 재시작 동안 끝났으면 명령�
   const { app, page } = await launch()
   await run(page, `maru pane new sh -c 'echo x >> ${ran}; read x'; echo made-$((1+1))`, 'made-2')
   await expect(panes(page)).toHaveCount(2)
-  await expect.poll(() => readFileSync(ran, 'utf8')).toBe('x\n')
+  await expect.poll(readResult(ran)).toBe('x')
   await restartWith(app)
   const saved = readState(dataDir)
   const commandPane = saved.layout.workspaces[0].cells[0].panes[1].key
