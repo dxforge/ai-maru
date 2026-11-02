@@ -68,7 +68,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['launch-split-down', 'Launch Split Down…', null],
     ['close-pane', 'Close Pane', 'Command+W'],
     ['close-workspace', 'Close Workspace', 'Shift+Command+W'],
-    ['rename-workspace', 'Rename Workspace…', null]
+    ['rename-workspace', 'Rename Workspace…', 'Shift+Command+R']
   ])
   expect(menus.view.slice(0, 19)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
@@ -126,6 +126,7 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
   await page.keyboard.press('Meta+Digit0')
   await page.keyboard.press('Shift+Meta+Period')
   await page.keyboard.press('Shift+Meta+Comma')
+  await page.keyboard.press('Shift+Meta+KeyR')
 
   expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual([
     { code: 'Backslash', prevented: false },
@@ -139,7 +140,8 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
     { code: 'Minus', prevented: false },
     { code: 'Digit0', prevented: false },
     { code: 'Period', prevented: false },
-    { code: 'Comma', prevented: false }
+    { code: 'Comma', prevented: false },
+    { code: 'KeyR', prevented: false }
   ])
   // 키가 글자로 새면 줄 끝에 붙는다. 새어 나온 \ 는 뒤의 $ 를 이스케이프하므로 pass-24 가 찍히지 않는다.
   await run(page, '$((2+2))', 'pass-24')

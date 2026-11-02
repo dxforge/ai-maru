@@ -1078,6 +1078,20 @@ test('명령 팔레트의 Rename Workspace… 는 고른 cell 의 workspace 이�
   await run(page, 'echo palette-$((1+1))', 'palette-2')
 })
 
+test('터미널에 포커스가 있을 때 ⇧⌘R 이 거는 Rename Workspace… 메뉴 항목은 이름을 고치게 하고, 정하면 터미널이 입력을 받는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await run(page, 'echo up-$((1+1))', 'up-2')
+
+  await clickMenu(app, 'rename-workspace')
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('menu')
+  await page.keyboard.press('Enter')
+  await expect(workspaceNames(page)).toHaveText(['menu'])
+  await run(page, 'echo menu-$((1+1))', 'menu-2')
+})
+
 test('이름을 고치다 pane 줄을 누르면 이미 고른 줄이든 아니든 친 이름으로 정하고 그 pane 이 입력을 받는다', async ({
   launch
 }) => {

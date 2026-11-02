@@ -68,6 +68,12 @@ describe('commandKeys', () => {
     expect(formatKeys(commandKeys('narrow-cell')!)).toBe('⇧⌘,')
   })
 
+  it('workspace 이름 바꾸기는 ⇧⌘R 이고 메뉴에 건다', () => {
+    expect(toAccelerator(commandKeys('rename-workspace')!)).toBe('Shift+Command+R')
+    expect(commandLabel('rename-workspace')).toBe('⇧⌘R')
+    expect(secondaryCommand(press('KeyR', { shiftKey: true, metaKey: true }))).toBeUndefined()
+  })
+
   it('스크롤백 지우기는 ⌘K 다', () => {
     expect(toAccelerator(commandKeys('clear-scrollback')!)).toBe('Command+K')
     expect(formatKeys(commandKeys('clear-scrollback')!)).toBe('⌘K')
