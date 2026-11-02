@@ -176,7 +176,7 @@ body,
 /* 팔레트를 창 아래의 pane 헤더와 cell 헤더보다 위에 띄운다. 헤더 높이는 글자 크기를 따르지만, 그대로 따라가면 cell
    마다 팔레트 자리가 바뀌므로 고정값으로 둔다. */
 .palette-backdrop.bottom .palette {
-  max-height: calc(100% - 72px);
+  max-height: calc(100% - 56px - var(--space-6));
   margin-bottom: 56px;
 }
 
@@ -185,7 +185,7 @@ body,
   flex-direction: column;
   box-sizing: border-box;
   width: min(500px, calc(100% - 32px));
-  max-height: calc(100% - 32px);
+  max-height: calc(100% - 2 * var(--space-6));
   margin: var(--space-6) auto;
   border: 1px solid var(--line);
   border-radius: var(--radius-2);
@@ -200,7 +200,7 @@ body,
 .palette .query {
   flex: none;
   box-sizing: border-box;
-  width: calc(100% - 12px);
+  width: calc(100% - 2 * var(--space-3));
   margin: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
