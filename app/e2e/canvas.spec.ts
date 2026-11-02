@@ -384,7 +384,8 @@ test('쌓인 문서의 알약을 누르면 그 문서들을 넣고 맨 위로 �
   await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
   await putCanvas(app, { id: 'c', kind: 'markdown', text: 'third', title: 'C' })
   await expect(held(page)).toHaveText(/2 new/)
-  await held(page).click()
+  // 알약의 `held-bounce` 애니메이션이 끝없이 돌아 Playwright 의 stable 검사를 통과하지 못하므로 `force` 로 누른다.
+  await held(page).click({ force: true })
   await expect(titles(page)).toHaveText(['C', 'B', 'A'])
   await expect.poll(scrollTop).toBe(0)
   await expect(held(page)).toHaveCount(0)

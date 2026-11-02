@@ -259,16 +259,18 @@ onBeforeUnmount(() => {
           <template #meta><slot name="meta" :item="items[i]" /></template>
         </StreamRow>
       </div>
-      <button
-        v-if="held"
-        class="held"
-        :style="{ top: `${heldTop + 8}px` }"
-        @mousedown.prevent
-        @click="flush"
-      >
-        <span class="nerd-icon">{{ ICONS.arrowUp }}</span
-        >{{ held }} new
-      </button>
+      <Transition name="held">
+        <button
+          v-if="held"
+          class="held"
+          :style="{ top: `${heldTop + 8}px` }"
+          @mousedown.prevent
+          @click="flush"
+        >
+          <span class="nerd-icon">{{ ICONS.arrowUp }}</span
+          >{{ held }} new
+        </button>
+      </Transition>
       <div v-if="popover" v-overlay-scroll="'y'" class="popover" :class="popover">
         <button
           v-for="it in popoverItems"
@@ -497,8 +499,45 @@ button {
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
-  transform: translateX(-50%);
+  translate: -50% 0;
   box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+  animation: held-bounce 1s ease-in-out infinite;
+}
+
+.held:hover {
+  filter: brightness(1.1);
+  animation-play-state: paused;
+}
+
+/* 가운데 맞춤을 `transform` 이 아니라 `translate` 로 하는 것은 `held-bounce` 의 `transform` 이 그 값을 덮지 않게 하기 위해서다. 나타날 때의 이동도 `translate` 를 바꾸므로 `-50%` 를 같이 적는다. */
+.held-enter-active,
+.held-leave-active {
+  transition:
+    opacity 0.15s,
+    translate 0.15s;
+}
+
+.held-enter-from,
+.held-leave-to {
+  opacity: 0;
+  translate: -50% -8px;
+}
+
+@keyframes held-bounce {
+  50% {
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .held {
+    animation: none;
+  }
+
+  .held-enter-active,
+  .held-leave-active {
+    transition: none;
+  }
 }
 
 .popover {
