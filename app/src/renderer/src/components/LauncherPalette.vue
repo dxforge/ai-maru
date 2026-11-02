@@ -276,7 +276,7 @@ function onKeydown(e: KeyboardEvent): void {
         @keyup="(e) => (meta = e.metaKey)"
         @blur="onBlur"
       />
-      <ul v-if="chosen" ref="list" class="list">
+      <ul v-if="chosen" ref="list" v-overlay-scroll="'y'" class="list">
         <li v-if="problem" class="problem">{{ problem }}</li>
         <li
           v-for="(r, i) in commandRows"
@@ -293,7 +293,7 @@ function onKeydown(e: KeyboardEvent): void {
         </li>
         <li v-if="!commandRows.length" class="empty">{{ empty }}</li>
       </ul>
-      <ul v-else ref="list" class="list">
+      <ul v-else ref="list" v-overlay-scroll="'y'" class="list">
         <li v-if="problem" class="problem">{{ problem }}</li>
         <li
           v-for="(r, i) in rows"

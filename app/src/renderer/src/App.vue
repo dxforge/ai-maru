@@ -923,6 +923,7 @@ void window.maru.restoreScreen().then((r) => {
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />
     <div
       ref="terminalsArea"
+      v-overlay-scroll.children="viewMode === 'columns' ? 'x' : null"
       class="terminals"
       :class="viewMode"
       @wheel.capture="keepHorizontalScroll"
@@ -1120,13 +1121,10 @@ void window.maru.restoreScreen().then((r) => {
   /* 포커스를 따라 scrollIntoView 할 때도 카드를 영역 끝에 붙이지 않고 같은 여백을 남긴다. */
   scroll-padding: 8px;
   background: color-mix(in srgb, var(--side), var(--ground));
-  /* 스크롤바가 자리를 차지하는 설정에서, 넘치기 시작하거나 그칠 때마다 터미널의 줄 수가 바뀌지 않게. */
+  /* 시스템 스크롤바가 overlay 인지는 `attachOverlayScroll` 이 처음 씌울 때 한 번만 잰다. 그 뒤 시스템 설정을 고전
+     스크롤바로 바꾸면 native 스크롤바가 자리를 차지한다. 그때도 넘치기 시작하거나 그칠 때 터미널의 줄 수가 바뀌지 않게
+     스크롤바 자리를 늘 잡아 둔다. */
   overflow-x: scroll;
-  scrollbar-width: thin;
-  /* 스크롤바가 자리를 차지하는 설정에서는 넘치지 않을 때도 트랙에 색을 칠한다. 트랙이 투명하면 넘치기 시작할 때 비어 있던 스크롤바 자리에 thumb 만 나타나고, 넘침이 그치면 사라지기 때문이다.
-     overlay 스크롤바 설정에서는 가만히 있을 때도 스크롤할 때도 트랙이 보이지 않는다.
-     스크롤바가 나타난 동안 그 위에 마우스를 올리면 트랙이 칠해진다. */
-  scrollbar-color: var(--thumb) var(--track);
 }
 
 .columns .panes {

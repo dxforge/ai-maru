@@ -231,7 +231,7 @@ const workspaceDragged = (workspace: number): boolean =>
 <template>
   <nav ref="nav" class="sidebar" :class="{ collapsed }">
     <div class="titlebar" />
-    <div ref="list" class="list">
+    <div ref="list" v-overlay-scroll="'y'" class="list">
       <div
         v-for="({ w, name, folded: wf, state, notified, dot, cells }, wi) in groups"
         :key="w.key"

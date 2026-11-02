@@ -192,7 +192,7 @@ onBeforeUnmount(() => {
   <div class="stream" :style="{ '--row-h': `${ROW_H}px` }">
     <slot name="toolbar" />
     <div ref="stage" class="stage">
-      <div ref="scroller" class="scroll" @scroll="onScroll">
+      <div ref="scroller" v-overlay-scroll="'y'" class="scroll" @scroll="onScroll">
         <div ref="list" class="cards">
           <section v-for="(item, i) in items" :key="item.id" class="card" :data-id="item.id">
             <StreamRow
@@ -240,7 +240,7 @@ onBeforeUnmount(() => {
           <template #meta><slot name="meta" :item="items[i]" /></template>
         </StreamRow>
       </div>
-      <div v-if="popover" class="popover" :class="popover">
+      <div v-if="popover" v-overlay-scroll="'y'" class="popover" :class="popover">
         <button
           v-for="it in popoverItems"
           :key="it.id"

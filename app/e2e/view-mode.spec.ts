@@ -1,12 +1,14 @@
 import type { Locator, Page } from '@playwright/test'
 import {
   activePane,
+  CLASSIC_SCROLLBARS,
   clickMenu,
   expect,
   expectCols,
   focusPane,
   newWorkspace,
   openPalette,
+  OVERLAY_SCROLLBARS,
   paneRows,
   panes,
   programStatus,
@@ -30,10 +32,6 @@ async function inView(page: Page, el: Locator): Promise<boolean> {
   const box = (await el.boundingBox())!
   return box.x >= area.x - 1 && box.x + box.width <= area.x + area.width + 1
 }
-
-// 이 앱을 띄우는 인자로 macOS 의 "스크롤 막대 보기" 설정을 바꾼다. Cocoa 가 `-키 값` 인자를 설정으로 읽기 때문이다.
-const CLASSIC_SCROLLBARS = ['-AppleShowScrollBars', 'Always']
-const OVERLAY_SCROLLBARS = ['-AppleShowScrollBars', 'WhenScrolling']
 
 type Scroll = { left: number; frame: number; time: number }
 
@@ -440,38 +438,30 @@ test('columns 에서 앞의 cell 이 닫혀도 포커스된 pane 이 화면에 �
   await run(page, 'echo typed-$((1+1))', 'typed-2')
 })
 
-test('고전 스크롤바 설정의 columns 에서 가로 스크롤바는 기본보다 낮고, cell 이 넘치기 시작하거나 넘침이 그쳐도 그 높이와 터미널의 줄 수는 그대로다', async ({
+test('고전 스크롤바 설정에서도 columns 의 가로 스크롤바는 자리를 차지하지 않고 넘칠 때만 쓸 수 있어, cell 이 넘치기 시작하거나 넘침이 그쳐도 터미널의 줄 수는 그대로다', async ({
   launch
 }) => {
   const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
   const { page } = launched
   await toggleView(launched, 'columns')
-  const standard = await page.evaluate(() => {
-    const el = document.createElement('div')
-    el.style.overflowX = 'scroll'
-    document.body.append(el)
-    const height = el.offsetHeight - el.clientHeight
-    el.remove()
-    return height
-  })
-  const bar = await scrollbarHeight(page)
-  expect(bar).toBeGreaterThan(0)
-  expect(bar).toBeLessThan(standard)
+  const bar = page.locator('.terminals > .os-scrollbar-horizontal')
   const before = await shellSize(page)
 
   await newWorkspace(launched, 2)
   expect(await overflows(page)).toBe(true)
   await cellItems(page).first().click()
 
-  expect(await scrollbarHeight(page)).toBe(bar)
+  expect(await scrollbarHeight(page)).toBe(0)
   expect((await shellSize(page)).rows).toBe(before.rows)
+  await expect(bar).not.toHaveClass(/os-scrollbar-unusable/)
 
   await cellItems(page).nth(1).click()
   await page.keyboard.type('exit\n')
   await expect(cellItems(page)).toHaveCount(1)
   expect(await overflows(page)).toBe(false)
 
-  expect(await scrollbarHeight(page)).toBe(bar)
+  await expect(bar).toHaveClass(/os-scrollbar-unusable/)
+  expect(await scrollbarHeight(page)).toBe(0)
   expect((await shellSize(page)).rows).toBe(before.rows)
 })
 
