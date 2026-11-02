@@ -232,12 +232,18 @@ test('기억한 사이드바 상태로 첫 화면부터 그려, 문서가 뜰 �
   const { app, page } = await launch()
   await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
   // 첫 문서는 `addInitScript` 를 달기 전에 뜨므로, 스크립트를 단 뒤 문서를 새로 고쳐 잰다.
+  // 숨은 스크롤바 안의 transition 은 모으지 않는다. overlayscrollbars 는 스크롤바를 만든 뒤 theme class 를 붙이므로
+  // 손잡이의 폭·색 transition 이 돈다. 그 스크롤바는 opacity 0 이라 보이지 않는다.
   await app.context().addInitScript(() => {
     const runs: string[] = []
     Object.assign(window, { runs })
     document.addEventListener(
       'transitionrun',
-      (e) => runs.push(`${(e.target as Element).className} ${e.propertyName}`),
+      (e) => {
+        const target = e.target as Element
+        if (target.closest('.os-scrollbar-auto-hide-hidden')) return
+        runs.push(`${target.className} ${e.propertyName}`)
+      },
       true
     )
   })
