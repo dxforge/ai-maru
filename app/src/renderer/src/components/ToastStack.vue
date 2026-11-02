@@ -32,20 +32,20 @@ const emit = defineEmits<{ close: [id: string] }>()
   z-index: 3;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-4);
 }
 
 .toast {
   display: flex;
-  gap: 10px;
+  gap: var(--space-5);
   align-items: flex-start;
-  padding: 10px 8px 12px 12px;
+  padding: var(--space-5) var(--space-4) var(--space-5) var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   background: var(--raised);
   box-shadow: 0 4px 16px rgb(0 0 0 / 50%);
   color: var(--fg);
-  font: 13px/1.45 system-ui;
+  font: var(--text-3)/1.45 var(--font-ui);
   overflow-wrap: anywhere;
 }
 
@@ -72,7 +72,7 @@ const emit = defineEmits<{ close: [id: string] }>()
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .title {
@@ -86,7 +86,7 @@ const emit = defineEmits<{ close: [id: string] }>()
 
 .detail {
   font:
-    12px ui-monospace,
+    var(--text-2) var(--font-mono),
     monospace;
 }
 
@@ -96,7 +96,7 @@ const emit = defineEmits<{ close: [id: string] }>()
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-1);
   background: transparent;
   color: var(--muted);
   font-size: 14px;

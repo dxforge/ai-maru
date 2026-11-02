@@ -372,7 +372,7 @@ const workspaceDragged = (workspace: number): boolean =>
   --row-height: 30px;
   background: var(--side);
   font:
-    13px system-ui,
+    var(--text-3) var(--font-ui),
     'Symbols Nerd Font Mono',
     sans-serif;
 }
@@ -389,13 +389,13 @@ const workspaceDragged = (workspace: number): boolean =>
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 6px 0;
+  padding: var(--space-3) 0;
 }
 
 .workspace-head {
   width: 100%;
-  gap: 8px;
-  padding: 0 10px 0 12px;
+  gap: var(--space-4);
+  padding: 0 var(--space-5);
   box-sizing: border-box;
   color: var(--muted);
 }
@@ -429,7 +429,7 @@ const workspaceDragged = (workspace: number): boolean =>
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: var(--text-1);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -446,8 +446,8 @@ const workspaceDragged = (workspace: number): boolean =>
 /* workspace 사이에는 선을 긋고 선 위아래를 같은 폭으로 띄운다. 접은 workspace 와 펼친 workspace 의 간격이 같도록 마지막
    cell 의 아래 여백은 뺀다. */
 .workspace + .workspace {
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
   border-top: 1px solid var(--line);
 }
 
@@ -457,8 +457,8 @@ const workspaceDragged = (workspace: number): boolean =>
 
 .group {
   position: relative;
-  margin: 0 6px 6px;
-  border-radius: 6px;
+  margin: 0 var(--space-3) var(--space-3);
+  border-radius: var(--radius-2);
   overflow: hidden;
   background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
@@ -503,7 +503,7 @@ button {
 .branch {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--space-2);
   /* 저장소 이름이 길어 줄어들어도 branch 아이콘(11px)은 남긴다. */
   min-width: 11px;
 }
@@ -522,8 +522,8 @@ button {
   align-items: center;
   width: 100%;
   height: var(--row-height);
-  gap: 4px;
-  padding: 0 6px;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
   box-sizing: border-box;
   color: var(--muted);
   white-space: nowrap;
@@ -549,7 +549,7 @@ button {
 
 .tail {
   flex: none;
-  margin-left: 4px;
+  margin-left: var(--space-2);
   color: var(--faint);
 }
 
@@ -577,7 +577,7 @@ button {
 }
 
 .command-tail {
-  font-size: 11px;
+  font-size: var(--text-1);
   font-variant-numeric: tabular-nums;
 }
 
@@ -588,11 +588,11 @@ button {
 .place {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   flex: 0 1 auto;
   min-width: 0;
   max-width: 60%;
-  font-size: 11px;
+  font-size: var(--text-1);
 }
 
 .job-row {
@@ -607,7 +607,7 @@ button {
 
 .ports,
 .time {
-  font-size: 11px;
+  font-size: var(--text-1);
   font-variant-numeric: tabular-nums;
 }
 
@@ -628,7 +628,7 @@ button {
   width: 16px;
   height: 16px;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: var(--radius-1);
   font-size: 12px;
   opacity: 0;
 }
@@ -703,7 +703,7 @@ button {
   position: fixed;
   z-index: 10;
   margin: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   background: color-mix(in srgb, var(--fg) 12%, var(--side));
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
   opacity: 0.92;
@@ -728,12 +728,12 @@ button {
 .new-workspace {
   display: grid;
   place-items: center;
-  height: 30px;
-  margin: 8px 6px 0;
+  height: var(--row-height);
+  margin: var(--space-4) var(--space-3) 0;
   border: 1px dashed var(--accent);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--text-2);
 }
 
 .new-workspace.target {

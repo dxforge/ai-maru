@@ -115,7 +115,7 @@ function onTransition(e: TransitionEvent): void {
   overflow: hidden;
   color: var(--fg);
   font:
-    14px/1.6 system-ui,
+    var(--text-4)/1.6 var(--font-ui),
     sans-serif;
   transition: flex-basis var(--panel-duration) var(--panel-easing);
 }
@@ -137,9 +137,9 @@ function onTransition(e: TransitionEvent): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px 4px 12px;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--line);
-  font-size: 12px;
+  font-size: var(--text-2);
   color: var(--muted);
   -webkit-app-region: drag;
 }
@@ -159,13 +159,13 @@ button {
 .actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .expand-all,
 .collapse-all,
 .close {
-  padding: 2px 6px;
+  padding: var(--space-1) var(--space-3);
 }
 
 .expand-all:hover,
@@ -177,8 +177,8 @@ button {
 .reopen {
   flex: none;
   writing-mode: vertical-rl;
-  padding: 12px 4px;
-  font-size: 12px;
+  padding: var(--space-5) var(--space-2);
+  font-size: var(--text-2);
   color: var(--muted);
 }
 </style>

@@ -276,14 +276,14 @@ onBeforeUnmount(() => {
 }
 
 .cards {
-  padding: 6px 6px 0;
+  padding: var(--space-3) var(--space-3) 0;
 }
 
 .card {
-  margin-bottom: 6px;
+  margin-bottom: var(--space-3);
   overflow: hidden;
   background: var(--ground);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   /* border 는 제목 줄을 1px 밀어, 카드 위치로 계산한 붙는 자리와 어긋난다. */
   outline: 1px solid var(--line);
   outline-offset: -1px;
@@ -299,7 +299,7 @@ onBeforeUnmount(() => {
 }
 
 .body {
-  padding: 10px 16px 14px;
+  padding: var(--space-5) var(--space-6) var(--space-6);
 }
 
 .card > .row {
@@ -367,7 +367,7 @@ button {
   background: var(--hdr);
   border-bottom: 1px solid var(--line);
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--text-2);
 }
 
 /* 넘친 제목들이 바로 옆의 붙은 제목 줄 뒤에 포개져 있는 것처럼 보이도록, 줄 안에 바깥쪽으로 갈수록 좁아지는 카드 두 장을 그린다.
@@ -387,21 +387,21 @@ button {
 .pins.top.has-more::after {
   top: var(--row-h);
   border-width: 1px 1px 0;
-  border-radius: 5px 5px 0 0;
+  border-radius: var(--radius-2) var(--radius-2) 0 0;
 }
 
 .pins.bottom.has-more::after {
   bottom: var(--row-h);
   border-width: 0 1px 1px;
-  border-radius: 0 0 5px 5px;
+  border-radius: 0 0 var(--radius-2) var(--radius-2);
 }
 
 .pins.top.has-more .row:first-of-type {
-  border-radius: 5px 5px 0 0;
+  border-radius: var(--radius-2) var(--radius-2) 0 0;
 }
 
 .pins.bottom.has-more .row:last-of-type {
-  border-radius: 0 0 5px 5px;
+  border-radius: 0 0 var(--radius-2) var(--radius-2);
 }
 
 .more::before,
@@ -411,7 +411,7 @@ button {
   bottom: -1px;
   z-index: -1;
   border: 1px solid var(--line);
-  border-radius: 5px 5px 0 0;
+  border-radius: var(--radius-2) var(--radius-2) 0 0;
 }
 
 .more::before {
@@ -439,7 +439,7 @@ button {
 .pins.bottom .more::before,
 .pins.bottom .more::after {
   top: -1px;
-  border-radius: 0 0 5px 5px;
+  border-radius: 0 0 var(--radius-2) var(--radius-2);
 }
 
 .pins.bottom .more::before {
@@ -461,10 +461,10 @@ button {
   z-index: 2;
   max-height: 60%;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: var(--space-2) 0;
   background: var(--raised);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
 }
 
@@ -479,12 +479,12 @@ button {
 .popover button {
   display: block;
   width: 100%;
-  padding: 4px 12px;
+  padding: var(--space-2) var(--space-5);
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: var(--text-3);
   color: var(--fg);
 }
 
