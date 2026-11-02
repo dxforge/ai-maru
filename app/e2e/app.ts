@@ -1,12 +1,16 @@
+import { execFile } from 'node:child_process'
 import {
   chmodSync,
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync
 } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -14,6 +18,7 @@ import { createServer } from 'node:http'
 import { createConnection, type AddressInfo, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { basename, extname, join, normalize } from 'node:path'
+import { promisify } from 'node:util'
 import {
   test as base,
   expect,
@@ -99,6 +104,58 @@ export const test = base.extend<Fixtures>({
   }
 })
 
+const RUNNER_HOME = process.env.HOME
+
+/**
+ * Xcode 를 고른 Mac 에서 `/usr/bin/git`(xcrun shim)은 HOME 마다 처음 실행될 때 `xcodebuild -license check` 를 실행한다.
+ * xcrun 은 그 결과를 HOME 경로별로 사용자 임시 디렉토리(`getconf DARWIN_USER_TEMP_DIR`)의 `xcrun_db` 에 둔다.
+ * 그래서 테스트가 HOME 을 새로 주면, 셸과 앱이 그 HOME 에서 처음 실행하는 git 이 이 확인을 기다린다.
+ * load average 가 100 을 넘은 Mac 에서 새 HOME 의 이 확인이 34.8초 걸렸다. 앱의 git 시간 제한(`GIT_TIMEOUT_MS`, 10초)과 `expect` 의 대기를 넘기는 시간이다.
+ * 그래서 앱을 띄우기 전에 같은 HOME 으로 xcrun 을 한 번 실행해 확인을 끝내 둔다.
+ * 이 확인에 쓴 시간만큼 테스트의 시간 제한을 늘린다. 확인이 시간 제한을 다 쓰면 테스트가 재는 동작까지 가지 못하기 때문이다.
+ * 끝난 뒤에만 늘리면 확인이 시간 제한을 넘길 때 늘리기 전에 테스트가 시간 초과로 끝나기 때문이다.
+ */
+export async function checkXcodeLicense(env: Record<string, string>): Promise<void> {
+  if (env.HOME === RUNNER_HOME) return
+  const info = base.info()
+  const timeout = info.timeout
+  if (timeout) info.setTimeout(timeout + XCRUN_CHECK_LIMIT)
+  const started = Date.now()
+  await withXcrunLock(() =>
+    promisify(execFile)('xcrun', ['--find', 'git'], { env }).catch(() => {})
+  )
+  if (timeout) info.setTimeout(timeout + Date.now() - started)
+}
+
+/** lock 대기와 확인에 주는 시간. 34.8초 걸린 확인 여덟 번을 차례로 기다릴 수 있다. */
+const XCRUN_CHECK_LIMIT = 300_000
+
+const XCRUN_LOCK = join(tmpdir(), 'maru-e2e-xcrun.lock')
+
+/**
+ * 처음 보는 HOME 의 xcrun 은 `xcrun_db` 를 읽어 항목을 더한 뒤 파일을 통째로 다시 쓴다.
+ * 그래서 여러 worker 가 동시에 확인하면 나중에 쓴 쪽이 다른 worker 의 항목을 지운다(서로 다른 HOME 넷을 동시에 실행했을 때 하나가 빠졌다).
+ * 이미 확인한 HOME 의 실행은 이 파일을 쓰지 않으므로, 확인을 한 번에 하나씩만 돌리면 항목이 지워지지 않는다.
+ */
+async function withXcrunLock<T>(fn: () => Promise<T>): Promise<T> {
+  for (;;) {
+    try {
+      closeSync(openSync(XCRUN_LOCK, 'wx'))
+      break
+    } catch {
+      // lock 을 잡은 worker 가 죽으면 lock 파일이 남으므로, 확인 한 번보다 충분히 오래된 lock 은 지운다.
+      const held = statSync(XCRUN_LOCK, { throwIfNoEntry: false })
+      if (held && Date.now() - held.mtimeMs > 120_000) rmSync(XCRUN_LOCK, { force: true })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
+  try {
+    return await fn()
+  } finally {
+    rmSync(XCRUN_LOCK, { force: true })
+  }
+}
+
 async function launchApp(
   dataDir: string,
   env: Record<string, string>,
@@ -111,23 +168,25 @@ async function launchApp(
     delete inherited.MARU_PTY_BIN
     delete inherited.MARU_CLI_BIN
   }
+  const launchEnv = {
+    ...inherited,
+    MARU_UNOBTRUSIVE: '1',
+    MARU_DOM_RENDERER: '1',
+    SHELL: '/bin/bash',
+    BASH_SILENCE_DEPRECATION_WARNING: '1',
+    // 개발자의 `~/.ai-maru/config.toml` 을 읽지 않도록 테스트마다 다른 폴더를 준다. 폴더가 없는 채로 띄우는 테스트가 있으므로 폴더는 만들지 않는다.
+    MARU_CONFIG_DIR: join(dataDir, 'config'),
+    // 개발자의 `~/.ai-maru/run` 에 테스트마다 디렉토리를 남기지 않게 한다.
+    MARU_RUN_DIR: runBase(dataDir),
+    ...env
+  } as Record<string, string>
+  await checkXcodeLicense(launchEnv)
   const app = await electron.launch({
     executablePath,
     // Playwright 의 기본 colorScheme 은 `prefers-color-scheme` 을 light 로 고정해, renderer 가 `nativeTheme.themeSource` 를 따르지 못한다.
     colorScheme: null,
     args: [...(executablePath ? [] : ['.']), `--user-data-dir=${dataDir}`, ...args],
-    env: {
-      ...inherited,
-      MARU_UNOBTRUSIVE: '1',
-      MARU_DOM_RENDERER: '1',
-      SHELL: '/bin/bash',
-      BASH_SILENCE_DEPRECATION_WARNING: '1',
-      // 개발자의 `~/.ai-maru/config.toml` 을 읽지 않도록 테스트마다 다른 폴더를 준다. 폴더가 없는 채로 띄우는 테스트가 있으므로 폴더는 만들지 않는다.
-      MARU_CONFIG_DIR: join(dataDir, 'config'),
-      // 개발자의 `~/.ai-maru/run` 에 테스트마다 디렉토리를 남기지 않게 한다.
-      MARU_RUN_DIR: runBase(dataDir),
-      ...env
-    } as Record<string, string>
+    env: launchEnv
   })
   // main 의 JS 가 끝난(`exit`) 뒤 Electron 이 하는 뒷정리(Chromium 의 종료 작업, macOS CoreAnalytics 의 exit barrier)는
   // 머신이 바쁘면 수십 초 걸린다. 테스트가 재는 앱의 종료 동작은 `exit` 전에 끝나므로, `exit` 가 나면 main 프로세스를
