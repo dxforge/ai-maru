@@ -565,6 +565,46 @@ for (const [header, under] of [
   })
 }
 
+test('고전 스크롤바 설정의 columns 에서 가로 스크롤바의 손잡이를 끌거나 트랙을 눌러도 터미널이 포커스를 지켜, 이어 친 키가 터미널에 간다', async ({
+  launch
+}) => {
+  const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  await newWorkspace(launched, 2)
+  expect(await overflows(page)).toBe(true)
+  await expectRevealed(page)
+  const focused = () =>
+    page.evaluate(() => document.activeElement?.closest('.terminal-view.active') !== null)
+  expect(await focused()).toBe(true)
+
+  const area = page.locator('.terminals')
+  const bar = area.locator('> .os-scrollbar-horizontal')
+  const handle = bar.locator('.os-scrollbar-handle')
+  await area.evaluate((el) => el.scrollBy({ left: -1, behavior: 'instant' }))
+  await expect(bar).not.toHaveClass(/os-scrollbar-auto-hide-hidden/)
+  const grab = (await handle.boundingBox())!
+  await page.mouse.move(grab.x + grab.width / 2, grab.y + grab.height / 2)
+  await expect(bar).toHaveClass(/os-scrollbar-interaction/)
+
+  const before = await area.evaluate((el) => el.scrollLeft)
+  await page.mouse.down()
+  await page.mouse.move(grab.x - grab.width, grab.y + grab.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(() => area.evaluate((el) => el.scrollLeft)).toBeLessThan(before)
+  expect(await focused()).toBe(true)
+
+  const dragged = await area.evaluate((el) => el.scrollLeft)
+  const track = (await bar.boundingBox())!
+  const moved = (await handle.boundingBox())!
+  expect(moved.x + moved.width).toBeLessThan(track.x + track.width - 8)
+  await page.mouse.click(track.x + track.width - 4, moved.y + moved.height / 2)
+  await expect.poll(() => area.evaluate((el) => el.scrollLeft)).toBeGreaterThan(dragged)
+  expect(await focused()).toBe(true)
+
+  await run(page, 'echo typed-$((1+1))', 'typed-2')
+})
+
 test('columns 에서 사이드바로 고른 cell 만 선택 표시를 하고, 다른 cell 을 고르면 표시가 옮겨 간다', async ({
   launch
 }) => {

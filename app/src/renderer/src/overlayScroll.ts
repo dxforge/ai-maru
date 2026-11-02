@@ -32,6 +32,16 @@ export function attachOverlayScroll(el: HTMLElement, axis: ScrollAxis, children 
             elementEvents: null
           }
         : {}
+    },
+    {
+      // 라이브러리가 그린 스크롤바는 포커스를 받을 수 없는 div 이므로, 그것을 누르면 브라우저가 터미널 등 포커스를 가진 요소를 blur 한다.
+      // mousedown 의 기본 동작을 막아 포커스를 그대로 둔다. 손잡이 끌기와 트랙 클릭은 라이브러리가 pointerdown 으로 처리하므로 영향받지 않는다.
+      initialized(instance) {
+        const { scrollbarHorizontal, scrollbarVertical } = instance.elements()
+        for (const s of [scrollbarHorizontal, scrollbarVertical]) {
+          s.scrollbar.addEventListener('mousedown', (e) => e.preventDefault())
+        }
+      }
     }
   )
 }

@@ -399,6 +399,23 @@ test('고전 스크롤바 설정에서도 Canvas 의 스크롤바는 자리를 �
   await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeCloseTo(before + height, 0)
 })
 
+test('고전 스크롤바 설정에서 Canvas 의 스크롤바 트랙을 눌러도 터미널이 포커스를 지킨다', async ({
+  launch
+}) => {
+  const { app, page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await settle(page)
+  const focused = () =>
+    page.evaluate(() => document.activeElement?.closest('.terminal-view.active') !== null)
+  expect(await focused()).toBe(true)
+
+  const scroller = page.locator('.canvas .scroll')
+  const box = (await scroller.locator('> .os-scrollbar-vertical').boundingBox())!
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 4)
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  expect(await focused()).toBe(true)
+})
+
 const wide = (tag: string) => '```\n' + `${tag} `.repeat(400) + '\n```'
 
 test('고전 스크롤바 설정에서 문서를 다시 그려도 새 코드 블록에 스크롤바를 씌운다', async ({
