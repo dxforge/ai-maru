@@ -124,6 +124,53 @@ describe('createCanvas', () => {
     expect([...c.expanded].toSorted()).toEqual(['a', 'b'])
   })
 
+  it('붙잡은 동안 온 문서는 새 문서도 고친 문서도 넣지 않고, 놓으면 받은 순서와 받은 시각으로 넣는다', () => {
+    let t = 1000
+    const c = createCanvas(() => t)
+    c.put(md('a', 'A'))
+    c.close()
+    c.hold(true)
+    t = 2000
+    c.put(md('b', 'B'))
+    c.put(md('a', 'A2'))
+    c.put(md('c', 'C'))
+    expect(c.docs.value.map((d) => d.id)).toEqual(['a'])
+    expect(docOf(c, 'a')).toMatchObject({ text: 'A' })
+    expect(c.open.value).toBe(false)
+    t = 3000
+    c.hold(false)
+    expect(c.docs.value.map((d) => d.id)).toEqual(['c', 'b', 'a'])
+    expect(docOf(c, 'a')).toMatchObject({ text: 'A2', at: 2000 })
+    expect([...c.expanded].toSorted()).toEqual(['a', 'b', 'c'])
+    expect(c.open.value).toBe(true)
+  })
+
+  it('붙잡은 수만큼 놓아야 쌓인 문서가 들어가고, 놓기만 하면 바로 들어간다', () => {
+    const c = createCanvas()
+    c.hold(true)
+    c.hold(true)
+    c.put(md('a', 'A'))
+    c.hold(false)
+    expect(c.docs.value).toEqual([])
+    c.hold(false)
+    expect(c.docs.value.map((d) => d.id)).toEqual(['a'])
+    c.hold(false)
+    c.put(md('b', 'B'))
+    expect(c.docs.value.map((d) => d.id)).toEqual(['b', 'a'])
+  })
+
+  it('붙잡은 동안 지운 문서가 쌓여 있었으면 놓을 때 새 문서처럼 들어간다', () => {
+    const c = createCanvas()
+    c.put(md('a', 'A'))
+    c.put(md('b', 'B'))
+    c.hold(true)
+    c.put(md('a', 'A2'))
+    c.remove('a')
+    expect(c.docs.value.map((d) => d.id)).toEqual(['b'])
+    c.hold(false)
+    expect(c.docs.value.map((d) => d.id)).toEqual(['a', 'b'])
+  })
+
   it('닫은 뒤 문서가 오면 다시 열린다', () => {
     const c = createCanvas()
     c.put(md('a', 'A'))

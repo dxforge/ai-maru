@@ -89,6 +89,7 @@ function onTransition(e: TransitionEvent): void {
       :style="frozen === undefined ? {} : { width: `${frozen}px` }"
       @expand="canvas.expand"
       @remove="canvas.remove"
+      @hold="canvas.hold"
     >
       <template #meta="{ item }">{{ clockTime(item.at) }}</template>
       <template #body="{ item }"><CanvasDoc :doc="item" /></template>

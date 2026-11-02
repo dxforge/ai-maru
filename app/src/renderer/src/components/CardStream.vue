@@ -34,7 +34,11 @@ const { items, expanded } = defineProps<{
   items: readonly T[]
   expanded: ReadonlySet<string>
 }>()
-const emit = defineEmits<{ expand: [id: string, on: boolean]; remove: [id: string] }>()
+const emit = defineEmits<{
+  expand: [id: string, on: boolean]
+  remove: [id: string]
+  hold: [on: boolean]
+}>()
 defineSlots<{
   toolbar?(): unknown
   meta?(props: { item: T }): unknown
@@ -201,6 +205,7 @@ onBeforeUnmount(() => {
               :class="{ ghost: pinned(i), flash: flashing.has(item.id) }"
               @open="toggle(item.id)"
               @remove="emit('remove', item.id)"
+              @hold="emit('hold', $event)"
             >
               <template #meta><slot name="meta" :item="item" /></template>
             </StreamRow>
@@ -236,6 +241,7 @@ onBeforeUnmount(() => {
           :open="expanded.has(items[i].id)"
           @open="goTo(items[i].id)"
           @remove="emit('remove', items[i].id)"
+          @hold="emit('hold', $event)"
         >
           <template #meta><slot name="meta" :item="items[i]" /></template>
         </StreamRow>

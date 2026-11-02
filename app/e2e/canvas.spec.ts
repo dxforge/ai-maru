@@ -305,6 +305,102 @@ test('보던 문서가 바뀌거나 새 문서가 위에 들어와도 읽던 내
   expect(await scrollTop()).toBeGreaterThan(1000)
 })
 
+test('맨 위에서 읽던 중에 새 문서가 들어오면 새 문서는 위에 붙고 읽던 문서는 그 바로 아래에 남는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const scroller = page.locator('.canvas .scroll')
+  const top = (sel: string) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().top)
+  const bottom = (sel: string) =>
+    page.locator(sel).evaluate((el) => el.getBoundingClientRect().bottom)
+
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await expect(card(page, 'a').locator('.markdown')).toContainText('a line 0')
+  await settle(page)
+  expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0)
+
+  await putCanvas(app, { id: 'c', kind: 'markdown', text: long('c'), title: 'C' })
+  await expect(titles(page)).toHaveText(['C', 'A'])
+  const pinned = page.locator('.canvas .pins.top .row[data-id="c"]')
+  await expect(pinned).toBeVisible()
+  await expect(pinned).toHaveClass(/flash/)
+  await expect(card(page, 'a').locator('.row')).not.toHaveClass(/ghost/)
+  expect(await top('.canvas .card[data-id="a"]')).toBeCloseTo(await bottom('.canvas .pins.top'), 0)
+})
+
+// 같은 채널의 IPC 는 보낸 순서대로 오고 한 메시지의 listener 는 붙인 순서대로 불리므로, 앱보다 뒤에 붙인 이 listener
+// 가 센 수만큼 앱이 문서를 받았다.
+async function countPuts(page: Page): Promise<() => Promise<number>> {
+  await page.evaluate(() => {
+    const w = window as unknown as { puts: number; maru: { onCanvasPut(cb: () => void): void } }
+    w.puts = 0
+    w.maru.onCanvasPut(() => w.puts++)
+  })
+  return () => page.evaluate(() => (window as unknown as { puts: number }).puts)
+}
+
+test('✕ 위에 커서가 있는 동안 온 문서는 목록에 끼우지 않아, 누르면 커서 아래의 그 문서가 지워진다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
+  await expect(markdown(page)).toHaveText(['second', 'first'])
+  await settle(page)
+  const puts = await countPuts(page)
+
+  await card(page, 'b').locator('.remove').hover()
+  await putCanvas(app, { id: 'c', kind: 'markdown', text: 'new', title: 'C' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first2', title: 'A' })
+  await expect.poll(puts).toBe(2)
+  await expect(titles(page)).toHaveText(['B', 'A'])
+  await expect(markdown(page)).toHaveText(['second', 'first'])
+
+  await page.mouse.down()
+  await page.mouse.up()
+  await expect(titles(page)).toHaveText(['C', 'A'])
+  await expect(markdown(page)).toHaveText(['new', 'first2'])
+})
+
+test('✕ 에서 커서가 나가면 그동안 온 문서를 받은 순서대로 끼운다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
+  await settle(page)
+  const puts = await countPuts(page)
+
+  await card(page, 'a').locator('.remove').hover()
+  await putCanvas(app, { id: 'c', kind: 'markdown', text: 'third', title: 'C' })
+  await putCanvas(app, { id: 'd', kind: 'markdown', text: 'fourth', title: 'D' })
+  await expect.poll(puts).toBe(2)
+  await expect(titles(page)).toHaveText(['B', 'A'])
+
+  await card(page, 'a').locator('.head').hover()
+  await expect(titles(page)).toHaveText(['D', 'C', 'B', 'A'])
+})
+
+test('붙은 제목의 ✕ 위에 커서가 있는 동안 온 문서도 커서가 나갈 때까지 끼우지 않는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const scroller = page.locator('.canvas .scroll')
+  for (const id of ['c', 'b', 'a'])
+    await putCanvas(app, { id, kind: 'markdown', text: long(id), title: id.toUpperCase() })
+  await settle(page)
+  await scroller.evaluate((el) => el.scrollTo(0, el.scrollHeight))
+  const pinnedB = page.locator('.canvas .pins.top .row[data-id="b"]')
+  await expect(pinnedB).toBeVisible()
+  const puts = await countPuts(page)
+
+  await pinnedB.locator('.remove').hover()
+  await putCanvas(app, { id: 'd', kind: 'markdown', text: 'new', title: 'D' })
+  await expect.poll(puts).toBe(1)
+  await expect(titles(page)).toHaveText(['A', 'B', 'C'])
+
+  await pinnedB.locator('.head').hover()
+  await expect(titles(page)).toHaveText(['D', 'A', 'B', 'C'])
+})
+
 test('닫힌 패널에 새 문서가 들어와 다시 열려도 읽던 내용이 같은 자리에 보인다', async ({
   launch
 }) => {

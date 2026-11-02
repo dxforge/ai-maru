@@ -101,9 +101,24 @@ describe('anchorScroll', () => {
     cards: [box('a', 0, 300), box('b', 300, 300), box('c', 600, 300)]
   })
 
-  it('맨 위에 있었으면 새 문서가 들어와도 맨 위에 둔다', () => {
-    const after = [box('n', 0, 200), box('a', 200, 300), box('b', 500, 300), box('c', 800, 300)]
-    expect(anchorScroll(before(0), after)).toBe(0)
+  it('맨 위에서 새 문서가 위에 들어오면 읽던 문서의 제목을 새 문서 제목들의 묶음 바로 아래에 둔다', () => {
+    const one = [box('n', 0, 200), box('a', 200, 300), box('b', 500, 300), box('c', 800, 300)]
+    expect(anchorScroll(before(0), one)).toBe(200 - R)
+    const many = [
+      box('n', 0, 200),
+      box('m', 200, 200),
+      box('l', 400, 200),
+      box('k', 600, 200),
+      box('a', 800, 300)
+    ]
+    expect(anchorScroll(before(0), many)).toBe(800 - 3 * R)
+  })
+
+  it('맨 위에서 읽던 문서 위로 들어온 문서가 없으면 맨 위에 둔다', () => {
+    const replaced = [box('a', 0, 500), box('b', 500, 300), box('c', 800, 300)]
+    expect(anchorScroll(before(0), replaced)).toBe(0)
+    expect(anchorScroll(before(0), [box('b', 0, 300), box('c', 300, 300)])).toBe(0)
+    expect(anchorScroll({ scrollTop: 0, cards: [] }, [box('n', 0, 200)])).toBe(0)
   })
 
   it('읽던 중이면 새 문서가 들어온 높이만큼 옮겨 보던 내용이 움직이지 않는다', () => {

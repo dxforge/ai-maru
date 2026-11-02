@@ -14,13 +14,29 @@ export function createCanvas(now: () => number = Date.now) {
   const expanded = reactive(new Set<string>())
   const open = ref(false)
 
-  // 바뀐 문서를 위로 올리지 않는 건, 보낸 쪽이 문서를 고칠 때마다 목록이 뒤바뀌지 않게.
+  // `hold` 를 켠 횟수를 세므로, 커서가 한 x 에서 다른 x 로 옮길 때 한 x 의 `hold(false)` 와 다른 x 의
+  // `hold(true)` 가 어느 순서로 와도 쌓인 문서가 풀리지 않는다.
+  let holds = 0
+  const held: CanvasEntry[] = []
+
   function put(item: CanvasItem): void {
     const entry = toEntry(item, now())
-    const i = docs.value.findIndex((d) => d.id === item.id)
+    if (holds > 0) held.push(entry)
+    else place(entry)
+  }
+
+  function hold(on: boolean): void {
+    holds = Math.max(0, holds + (on ? 1 : -1))
+    if (holds === 0) held.splice(0).forEach(place)
+  }
+
+  // 바뀐 문서는 위로 올리지 않는다. 올리면 보낸 쪽이 문서를 고칠 때마다 목록 순서가 바뀌기 때문이다.
+  function place(entry: CanvasEntry): void {
+    const { id } = entry
+    const i = docs.value.findIndex((d) => d.id === id)
     if (i === -1) {
       docs.value.unshift(entry)
-      expanded.add(item.id)
+      expanded.add(id)
     } else {
       release(docs.value[i])
       docs.value[i] = entry
@@ -46,6 +62,7 @@ export function createCanvas(now: () => number = Date.now) {
     expanded: readonly(expanded),
     open: readonly(open),
     put,
+    hold,
     remove,
     expand,
     expandAll: (): void => docs.value.forEach((d) => expanded.add(d.id)),

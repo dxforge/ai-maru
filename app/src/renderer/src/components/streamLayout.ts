@@ -62,12 +62,12 @@ export function goToScrollTop(index: number, top: number): number {
   return Math.max(0, top - bandRows(index) * ROW_H)
 }
 
-// 문서가 들고 나거나 펼침이 바뀐 뒤 읽던 내용이 화면에서 움직이지 않는 scrollTop. 맨 위에 있었으면 맨 위에 둔다.
-// 기준은 `anchor`(누른 제목의 문서)이고, 없으면 바뀌기 전 화면 맨 위에 걸친 문서다. 기준 문서가 사라졌으면 그 뒤에
-// 남은 첫 문서를 쓴다.
+// 문서가 들고 나거나 펼침이 바뀐 뒤의 scrollTop 이다. 읽던 내용이 화면에서 움직이지 않게 맞추고, 맨 위에 있었으면
+// 읽던 문서의 제목을 위쪽 묶음 바로 아래에 둔다. 기준은 `anchor`(누른 제목의 문서)이고, 없으면 바뀌기 전 화면
+// 맨 위에 걸친 문서다. 기준 문서가 사라졌으면 그 뒤에 남은 첫 문서를 쓴다.
 export function anchorScroll(before: Layout, after: readonly CardBox[], anchor?: string): number {
   const { scrollTop, cards } = before
-  if (scrollTop <= 0 && anchor === undefined) return 0
+  const atTop = scrollTop <= 0 && anchor === undefined
   let from = anchor === undefined ? -1 : cards.findIndex((c) => c.id === anchor)
   if (from === -1) from = cards.findIndex((c) => c.top + c.height > scrollTop)
   if (from === -1) return scrollTop
@@ -75,6 +75,10 @@ export function anchorScroll(before: Layout, after: readonly CardBox[], anchor?:
     const j = after.findIndex((a) => a.id === c.id)
     if (j === -1) continue
     const { top, height } = after[j]
+    // 바뀌기 전 scrollTop 이 0 이면 위에 들어온 문서의 제목이 위쪽 묶음에 붙는다. 읽던 문서를 같은 자리에 두면
+    // 그 묶음이 읽던 문서의 제목을 덮으므로, 읽던 문서의 제목을 묶음 바로 아래에 둔다. 위에 들어온 문서가 없으면
+    // 목록 위 여백까지 보이게 0 에 둔다.
+    if (atTop) return j === 0 ? 0 : goToScrollTop(j, top)
     // 기준 문서의 높이가 바뀌기 전 화면 맨 위까지의 거리보다 작아졌으면, 그 거리를 더한 자리는 다음 문서 안이다.
     // 그래서 그 문서의 제목으로 간다.
     if (scrollTop - c.top >= height) return goToScrollTop(j, top)
