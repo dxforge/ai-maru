@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { cellLabel, dirName, sidebarLabel, windowTitle, workspaceName } from './names'
+import {
+  autoWorkspaceName,
+  cellLabel,
+  dirName,
+  labelBase,
+  sidebarLabel,
+  windowTitle,
+  workspaceName
+} from './names'
 
 describe('dirName', () => {
   it('경로의 마지막 이름이다', () => {
@@ -74,19 +82,58 @@ describe('sidebarLabel', () => {
   })
 })
 
-describe('workspaceName', () => {
-  it('저장소 안이면 branch 없이 저장소 이름, 밖이면 디렉토리 이름, 모르면 Shell 이다', () => {
-    expect(workspaceName({ cwd: '/r/ai-maru/app', git: { repo: 'ai-maru', branch: 'main' } })).toBe(
-      'ai-maru'
-    )
-    expect(workspaceName({ cwd: '/tmp/notes' })).toBe('notes')
-    expect(workspaceName({})).toBe('Shell')
+describe('autoWorkspaceName', () => {
+  const ws = (pane: { cwd?: string; git?: { repo: string; branch?: string } }, name?: string) => ({
+    ...(name !== undefined && { name }),
+    cells: [{ panes: [pane, { cwd: '/tmp/other' }] }, { panes: [{ cwd: '/tmp/third' }] }]
+  })
+
+  it('첫 cell 의 첫 pane 이 저장소 안이면 branch 없이 저장소 이름, 밖이면 디렉토리 이름, 모르면 Shell 이다', () => {
+    expect(
+      autoWorkspaceName(ws({ cwd: '/r/ai-maru/app', git: { repo: 'ai-maru', branch: 'main' } }))
+    ).toBe('ai-maru')
+    expect(autoWorkspaceName(ws({ cwd: '/tmp/notes' }))).toBe('notes')
+    expect(autoWorkspaceName(ws({}))).toBe('Shell')
   })
 
   it('home 을 주면 홈 디렉토리는 ~ 다', () => {
-    expect(workspaceName({ cwd: '/h/u' }, '/h/u')).toBe('~')
-    expect(workspaceName({ cwd: '/h/u' })).toBe('u')
-    expect(workspaceName({ cwd: '/h/u/notes' }, '/h/u')).toBe('notes')
+    expect(autoWorkspaceName(ws({ cwd: '/h/u' }), '/h/u')).toBe('~')
+    expect(autoWorkspaceName(ws({ cwd: '/h/u' }))).toBe('u')
+    expect(autoWorkspaceName(ws({ cwd: '/h/u/notes' }), '/h/u')).toBe('notes')
+  })
+
+  it('바꾼 이름이 있어도 첫 pane 으로 짓는다', () => {
+    expect(autoWorkspaceName(ws({ cwd: '/tmp/notes' }, '리뷰'))).toBe('notes')
+  })
+})
+
+describe('workspaceName', () => {
+  const ws = (name?: string) => ({
+    ...(name !== undefined && { name }),
+    cells: [{ panes: [{ cwd: '/h/u', git: { repo: 'ai-maru', branch: 'main' } }] }]
+  })
+
+  it('바꾼 이름이 없으면 첫 cell 의 첫 pane 으로 짓는다', () => {
+    expect(workspaceName(ws())).toBe('ai-maru')
+    expect(workspaceName({ cells: [{ panes: [{ cwd: '/h/u' }] }] }, '/h/u')).toBe('~')
+  })
+
+  it('바꾼 이름이 있으면 pane 의 위치와 상관없이 그 이름이다', () => {
+    expect(workspaceName(ws('리뷰'))).toBe('리뷰')
+    expect(workspaceName(ws('ai-maru'))).toBe('ai-maru')
+  })
+})
+
+describe('labelBase', () => {
+  const first = { cwd: '/r/ai-maru' }
+  const second = { cwd: '/tmp/notes' }
+
+  it('바꾼 이름이 없으면 첫 cell 의 첫 pane 이다', () => {
+    expect(labelBase({ cells: [{ panes: [first, second] }] })).toBe(first)
+  })
+
+  it('바꾼 이름이 있으면 없다', () => {
+    expect(labelBase({ name: '리뷰', cells: [{ panes: [first] }] })).toBeUndefined()
   })
 })
 

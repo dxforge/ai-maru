@@ -52,7 +52,7 @@ export function paneRow(
   src: RowSource,
   p: DeepReadonly<Pane>,
   focused: boolean,
-  base: DeepReadonly<Pane>
+  base: DeepReadonly<Pane> | undefined
 ): Row {
   const r = src.shown(p.ptyId)
   const s = r?.state

@@ -192,9 +192,15 @@ for (const type of ['focusin', 'focusout']) document.addEventListener(type, upda
 for (const type of ['focus', 'blur']) window.addEventListener(type, updateViewed)
 watch(() => config.notification.value.seenMs, updateViewed)
 
+/** 이름을 고치는 중인 workspace 의 key */
+const renaming = ref<number | null>(null)
+
 // 보이지 않는 터미널에는 포커스를 줄 수 없어, 선택이 화면에 반영된 뒤에 준다.
 async function focusSelected(): Promise<void> {
   await nextTick()
+  // workspace 이름을 고치는 동안에는 입력창의 포커스를 빼앗지 않는다. 명령 팔레트로 고치기를 시작하면 팔레트를 닫으며 부른
+  // 이 함수가 입력창이 포커스를 받은 뒤에 돈다.
+  if (renaming.value !== null) return
   focusedTerminal()?.focus()
 }
 
@@ -354,6 +360,25 @@ const folded = reactive(new Set<number>())
 function toggleFold(key: number): void {
   if (!folded.delete(key)) folded.add(key)
 }
+// 접은 사이드바는 입력창을 놓기에 좁아 편다.
+function startRename(key: number): void {
+  sidebarOpen.value = true
+  renaming.value = key
+}
+function endRename(key: number, name: string | null, refocus: boolean): void {
+  if (name !== null) workspaces.rename(key, name)
+  // 다른 workspace 의 고치기를 시작해 이 입력창이 빠졌으면 새 고치기는 그대로 둔다.
+  if (renaming.value !== key) return
+  renaming.value = null
+  if (refocus) void focusSelected()
+}
+// 고치는 동안 그 workspace 가 닫히면 입력창도 사라지므로 고치기를 끝낸다.
+watch(
+  () => renaming.value !== null && !workspaces.list.value.some((w) => w.key === renaming.value),
+  (gone) => {
+    if (gone) renaming.value = null
+  }
+)
 const SIDEBAR_WIDTH = 280
 const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
 // 토스트는 사이드바 안쪽 양옆 12px 을 비운다.
@@ -768,6 +793,11 @@ const handlers: Record<CommandId, () => void> = {
   'launch-split-down': () => openLaunch('split-down'),
   'close-pane': () => void closePane(),
   'close-workspace': () => void closeWorkspace(),
+  'rename-workspace': () => {
+    const c = workspaces.selected()
+    const w = c && workspaces.workspaceOf(c.key)
+    if (w) startRename(w.key)
+  },
   'next-cell': () => stepCell(1),
   'previous-cell': () => stepCell(-1),
   'next-pane': () => stepPane(1),
@@ -913,11 +943,14 @@ void window.maru.restoreScreen().then((r) => {
         :now="now"
         :home="home"
         :shell="shell"
+        :renaming="renaming"
         @focus="selectPane"
         @fold="toggleFold"
         @kill-job="killJob"
         @move-cell="moveCell"
         @move-workspace="moveWorkspace"
+        @start-rename="startRename"
+        @end-rename="endRename"
       />
     </div>
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />

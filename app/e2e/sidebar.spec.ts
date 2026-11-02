@@ -12,6 +12,7 @@ import {
   foregroundNames,
   git,
   newWorkspace,
+  openPalette,
   paneRows,
   panes,
   programStatus,
@@ -965,4 +966,114 @@ test('명령을 주어 띄운 pane 은 이름 자리에 명령 전체를 쓰고,
   await expect(row.locator('.command-tail')).toHaveCount(0)
   await expect(row.locator('.place')).not.toHaveCount(0)
   await expect(row).toHaveAttribute('title', /^bash -c read x\nRunning for <1m\n/)
+})
+
+const nameInput = (page: Page) => page.locator('.sidebar .workspace-name-input')
+
+test('workspace 이름 줄을 두 번 누르면 이름을 고치고, Enter 로 정한 이름은 셸이 cd 해도 그대로이며 cell 줄은 저장소 이름을 온전히 쓴다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = repoHome(dataDir)
+  const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  await page.keyboard.type('cd proj\n')
+  await expect(workspaceNames(page)).toHaveText(['proj'])
+  await expect(cellPlaces(page)).toHaveText([/main$/])
+  await expect(cellPlaces(page).locator('.name')).toHaveCount(0)
+
+  const head = workspaceHeads(page).nth(0)
+  await head.dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await expect(nameInput(page)).toHaveValue('proj')
+  await page.keyboard.type('review')
+  await page.keyboard.press('Enter')
+  await expect(nameInput(page)).toHaveCount(0)
+  await expect(workspaceNames(page)).toHaveText(['review'])
+  await expect(head).toHaveAttribute('aria-expanded', 'true')
+  await expect(head).toHaveAttribute('aria-label', 'Collapse review')
+  await expect(head).toHaveAttribute('title', 'proj')
+  await expect(cellPlaces(page).locator('.name')).toHaveText(['proj'])
+
+  await page.keyboard.type('cd ~/notes\n')
+  await expect(cellPlaces(page)).toHaveText(['notes'])
+  await expect(workspaceNames(page)).toHaveText(['review'])
+  await expect(head).toHaveAttribute('title', 'notes')
+})
+
+test('이름을 고치다 Esc 를 누르면 이름이 그대로이고, 비우고 정하면 자동 이름으로 돌아가며, 두 경우 모두 터미널이 입력을 받는다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  const auto = (await workspaceNames(page).textContent())!
+
+  await workspaceHeads(page).nth(0).dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('review')
+  await page.keyboard.press('Enter')
+  await expect(workspaceNames(page)).toHaveText(['review'])
+
+  await workspaceHeads(page).nth(0).dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('other')
+  await page.keyboard.press('Escape')
+  await expect(nameInput(page)).toHaveCount(0)
+  await expect(workspaceNames(page)).toHaveText(['review'])
+  await run(page, 'echo esc-$((1+1))', 'esc-2')
+
+  await workspaceHeads(page).nth(0).dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('   ')
+  await page.keyboard.press('Enter')
+  await expect(workspaceNames(page)).toHaveText([auto])
+  await run(page, 'echo empty-$((1+1))', 'empty-2')
+})
+
+test('이름을 고치다 다른 workspace 줄을 두 번 누르면 고치던 이름을 정하고 그 workspace 이름을 고치며, 오류를 남기지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  const errors: string[] = []
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text())
+  })
+  await newWorkspace(launched, 2)
+  const second = (await workspaceNames(page).nth(1).textContent())!
+
+  await workspaceHeads(page).nth(0).dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('first')
+  await workspaceHeads(page).nth(1).dblclick()
+  await expect(nameInput(page)).toHaveCount(1)
+  await expect(nameInput(page)).toBeFocused()
+  await expect(nameInput(page)).toHaveValue(second)
+  await expect(workspaceNames(page)).toHaveText(['first'])
+
+  await page.keyboard.type('second')
+  await page.keyboard.press('Enter')
+  await expect(nameInput(page)).toHaveCount(0)
+  await expect(workspaceNames(page)).toHaveText(['first', 'second'])
+  await run(page, 'echo switch-$((1+1))', 'switch-2')
+  expect(errors).toEqual([])
+})
+
+test('명령 팔레트의 Rename Workspace… 는 고른 cell 의 workspace 이름을 고치고, 접은 사이드바는 편다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await newWorkspace(launched, 2)
+  await collapseSidebar(app, page)
+
+  await openPalette(launched)
+  await page.keyboard.type('rename')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.sidebar')).not.toHaveClass(/collapsed/)
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('second')
+  await page.keyboard.press('Enter')
+  await expect(workspaceNames(page).nth(1)).toHaveText('second')
+  await expect(workspaceNames(page).nth(0)).not.toHaveText('second')
+  await run(page, 'echo palette-$((1+1))', 'palette-2')
 })

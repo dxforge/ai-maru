@@ -46,9 +46,24 @@ export function sidebarLabel(p: Named, base: Named | undefined, home?: string): 
   return { ...(branch === undefined ? { name: repo } : { branch }), ...(sub && { sub }) }
 }
 
+type NamedWorkspace<P> = { name?: string; cells: readonly { panes: readonly P[] }[] }
+
 /** `home` 을 주면 홈 디렉토리를 `~` 로 쓴다. 사이드바가 pane 줄의 위치(`sidebarLabel`)와 맞추려고 준다. */
-export function workspaceName(p: Named, home?: string): string {
+export function autoWorkspaceName(w: NamedWorkspace<Named>, home?: string): string {
+  const p = w.cells[0].panes[0]
   return p.git ? p.git.repo : dirLabel(p.cwd, home)
+}
+
+export function workspaceName(w: NamedWorkspace<Named>, home?: string): string {
+  return w.name ?? autoWorkspaceName(w, home)
+}
+
+/**
+ * cell·pane 줄이 `sidebarLabel` 에 넘길 `base` 다. 바꾼 이름에는 저장소 이름이 없을 수 있으므로 `base` 를 두지 않고, 줄마다
+ * 저장소 이름을 온전히 적게 한다.
+ */
+export function labelBase<P>(w: NamedWorkspace<P>): P | undefined {
+  return w.name === undefined ? w.cells[0].panes[0] : undefined
 }
 
 export function windowTitle(label: Label): string {

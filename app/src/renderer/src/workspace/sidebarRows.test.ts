@@ -92,6 +92,17 @@ describe('paneRow', () => {
       expect(r.place).toBeUndefined()
     })
 
+    it('base 가 없으면(바꾼 이름이 있는 workspace) 같은 저장소의 pane 도 저장소 이름을 온전히 쓴다', () => {
+      const repo = { repo: 'ai-maru', branch: 'feat/x', common: '/r/ai-maru/.git', sub: '' }
+      const wt = { key: 2, ptyId: 'p-2', cwd: '/r/wt', git: repo }
+      const first = { ...base, cwd: '/r/ai-maru', git: { ...repo, branch: 'main' } }
+      expect(paneRow(source(), wt, false, first).place).toEqual({ branch: 'feat/x' })
+      expect(paneRow(source(), wt, false, undefined).place).toEqual({
+        name: 'ai-maru',
+        branch: 'feat/x'
+      })
+    })
+
     it('명령 pane 은 명령이 돌아도 위치를 쓴다', () => {
       const r = at({ ...shell, command: ['make'] }, running)
       expect(r.commandTail).toBe(false)

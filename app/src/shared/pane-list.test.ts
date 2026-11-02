@@ -197,6 +197,23 @@ describe('paneRows', () => {
     ])
   })
 
+  it('바꾼 이름이 있는 workspace 의 WORKSPACE 는 그 이름이다', () => {
+    const workspaces = [
+      {
+        key: 1,
+        id: 'w-1',
+        name: '리뷰',
+        cells: [cell(2, [{ key: 3, ptyId: 'p-a', cwd: '/h/u' }])]
+      },
+      { key: 4, id: 'w-4', cells: [cell(5, [{ key: 6, ptyId: 'p-b', cwd: '/h/u/notes' }])] }
+    ]
+    const rows = paneRows(workspaces, () => undefined, SHELL, '/h/u')
+    expect(rows.map((r) => [r.pty, r.workspace])).toEqual([
+      ['p-a', '리뷰'],
+      ['p-b', 'notes']
+    ])
+  })
+
   it('CELL 은 cell id 라 헤더 이름이 같은 cell 끼리도 갈리고, DIR 은 pane 자신의 cwd 다', () => {
     const workspaces = [
       {

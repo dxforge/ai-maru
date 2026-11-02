@@ -67,7 +67,8 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['launch-split-right', 'Launch Split Right…', null],
     ['launch-split-down', 'Launch Split Down…', null],
     ['close-pane', 'Close Pane', 'Command+W'],
-    ['close-workspace', 'Close Workspace', 'Shift+Command+W']
+    ['close-workspace', 'Close Workspace', 'Shift+Command+W'],
+    ['rename-workspace', 'Rename Workspace…', null]
   ])
   expect(menus.view.slice(0, 19)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],

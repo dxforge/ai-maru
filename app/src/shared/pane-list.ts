@@ -17,7 +17,7 @@ export function paneRows(
 ): PaneRow[] {
   const rows: PaneRow[] = []
   for (const w of workspaces) {
-    const workspace = workspaceName(w.cells[0].panes[0], home)
+    const workspace = workspaceName(w, home)
     for (const c of w.cells) {
       for (const p of c.panes) {
         const s = state(p.ptyId)

@@ -53,6 +53,7 @@ describe('parseScreen', () => {
     ['pane 이 없는 cell', (s) => (s.workspaces[0].cells[0].panes = [])],
     ['cell 이 없는 workspace', (s) => (s.workspaces[0].cells = [])],
     ['workspace id 가 문자열이 아님', (s) => (s.workspaces[0].id = 1)],
+    ['workspace 이름이 문자열이 아님', (s) => (s.workspaces[0].name = 1)],
     ['cell id 가 문자열이 아님', (s) => (s.workspaces[0].cells[0].id = 1)],
     ['배치의 나눔 방향이 틀림', (s) => (s.workspaces[0].cells[0].layout.split = 'left')],
     ['명령이 문자열 배열이 아님', (s) => (s.workspaces[0].cells[0].panes[1].command = [1])],
@@ -96,6 +97,13 @@ describe('parseScreen', () => {
     expect(parseScreen(s)!.workspaces[0].cells[0].paneCols).toBe(110)
   })
 
+  it('workspace 이름은 없어도 되고, 있으면 그대로 돌려준다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].name = '리뷰'
+    expect(parseScreen(s)!.workspaces[0].name).toBe('리뷰')
+    expect(parseScreen(clone())!.workspaces[0]).not.toHaveProperty('name')
+  })
+
   it('Canvas 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {
     expect(parseScreen({ ...clone(), canvas: { width: 300 } })).toEqual({
       ...screen,
@@ -136,6 +144,14 @@ describe('splitScreen · parseLayoutPart', () => {
     expect(JSON.stringify(layout)).not.toContain('ptyId')
     expect(layout.version).toBe(STATE_VERSIONS.layout)
     expect(parseLayoutPart(JSON.parse(JSON.stringify(layout)))).toEqual(layout)
+  })
+
+  it('workspace 이름은 레이아웃에 남고 다시 읽어도 그대로다', () => {
+    const named = clone() as ScreenState
+    named.workspaces[0].name = '리뷰'
+    const { layout } = splitScreen(named)
+    expect(layout.workspaces[0].name).toBe('리뷰')
+    expect(parseLayoutPart(JSON.parse(JSON.stringify(layout)))!.workspaces[0].name).toBe('리뷰')
   })
 
   it('버전이 다르거나 모양이 틀리면 null', () => {

@@ -267,6 +267,14 @@ export function createWorkspaces(
     list.value.splice(at < index ? index - 1 : index, 0, w)
   }
 
+  function rename(key: number, name: string): void {
+    const w = list.value.find((x) => x.key === key)
+    if (!w) return
+    const trimmed = name.trim()
+    if (trimmed) w.name = trimmed
+    else delete w.name
+  }
+
   function split(direction: SplitDirection, init?: PaneInit): void {
     const c = selected()
     if (!c) return
@@ -482,6 +490,7 @@ export function createWorkspaces(
     openCellFrom,
     moveCell,
     moveWorkspace,
+    rename,
     split,
     splitFrom,
     pane,

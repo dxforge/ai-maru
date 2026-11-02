@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, type DeepReadonly } from 'vue'
 import type { JobView } from '../../../shared/job'
-import { workspaceName } from '../../../shared/names'
+import { autoWorkspaceName, labelBase, workspaceName } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { commandClass, ICONS, STATE_LABELS } from '../icons'
 import FoldChevron from './FoldChevron.vue'
 import StatusIcon from './StatusIcon.vue'
+import WorkspaceNameInput from './WorkspaceNameInput.vue'
 import { commandLabel, commandTail, elapsed, notificationText } from '../workspace/display'
 import {
   dropAt,
@@ -42,7 +43,8 @@ const {
   jobs = [],
   now = 0,
   home = undefined,
-  shell = undefined
+  shell = undefined,
+  renaming = null
 } = defineProps<{
   workspaces: readonly DeepReadonly<Workspace>[]
   selectedKey: number | null
@@ -58,6 +60,8 @@ const {
   now?: number
   home?: string
   shell?: string
+  /** 이름을 고치는 중인 workspace 의 key */
+  renaming?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -66,6 +70,12 @@ const emit = defineEmits<{
   killJob: [pty: string]
   moveCell: [cell: number, to: { workspace: number; index: number } | 'new']
   moveWorkspace: [workspace: number, index: number]
+  startRename: [workspace: number]
+  /**
+   * `name` 이 null 이면 취소다. `refocus` 면 터미널에 포커스를 돌려준다. 다른 곳을 눌러 끝냈으면 포커스는 누른 곳에
+   * 둔다.
+   */
+  endRename: [workspace: number, name: string | null, refocus: boolean]
 }>()
 
 // `groups` 밖에 둔다. `groups` 안에 두면 job 표가 바뀔 때마다 job 과 상관없는 pane 줄까지 다시 만들기 때문이다.
@@ -80,7 +90,7 @@ const jobsByCell = computed(() => {
   return map
 })
 
-function cellGroup(src: RowSource, c: DeepReadonly<Cell>, base: DeepReadonly<Pane>) {
+function cellGroup(src: RowSource, c: DeepReadonly<Cell>, base: DeepReadonly<Pane> | undefined) {
   const selected = c.key === selectedKey
   const current = focusedPane(c)
   return {
@@ -93,11 +103,12 @@ function cellGroup(src: RowSource, c: DeepReadonly<Cell>, base: DeepReadonly<Pan
 const groups = computed(() => {
   const src: RowSource = { shown, command, notification, home, shell }
   return workspaces.map((w) => {
-    const base = w.cells[0].panes[0]
+    const base = labelBase(w)
     const f = folded.has(w.key)
     return {
       w,
-      name: workspaceName(base, home),
+      name: workspaceName(w, home),
+      auto: autoWorkspaceName(w, home),
       folded: f,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       cells: f ? [] : w.cells.map((c) => cellGroup(src, c, base))
@@ -233,21 +244,29 @@ const workspaceDragged = (workspace: number): boolean =>
     <div class="titlebar" />
     <div ref="list" class="list">
       <div
-        v-for="({ w, name, folded: wf, state, notified, dot, cells }, wi) in groups"
+        v-for="({ w, name, auto, folded: wf, state, notified, dot, cells }, wi) in groups"
         :key="w.key"
         class="workspace"
         :class="{ dragging: workspaceDragged(w.key) }"
         :data-workspace="w.key"
       >
+        <div v-if="renaming === w.key" class="workspace-head editing">
+          <WorkspaceNameInput
+            :value="name"
+            @done="(n, refocus) => emit('endRename', w.key, n, refocus)"
+          />
+        </div>
         <button
+          v-else
           class="workspace-head"
           :class="{ folded: wf }"
-          :title="name"
+          :title="auto"
           :aria-label="wf ? `Expand ${name}` : `Collapse ${name}`"
           :aria-expanded="!wf"
           @mousedown.prevent
           @pointerdown="grabWorkspace($event, w.key, wi)"
           @click="emit('fold', w.key)"
+          @dblclick="emit('startRename', w.key)"
         >
           <span
             v-if="state"
@@ -385,6 +404,12 @@ const workspaceDragged = (workspace: number): boolean =>
 
 .workspace-head:hover {
   color: var(--fg);
+}
+
+.workspace-head.editing {
+  display: flex;
+  align-items: center;
+  height: var(--row-height);
 }
 
 .workspace-head .chevron {
