@@ -305,6 +305,97 @@ test('보던 문서가 바뀌거나 새 문서가 위에 들어와도 읽던 내
   expect(await scrollTop()).toBeGreaterThan(1000)
 })
 
+// 같은 채널의 IPC 는 보낸 순서대로 오고 한 메시지의 listener 는 붙인 순서대로 불리므로, 앱보다 뒤에 붙인 이 listener
+// 가 센 수만큼 앱이 문서를 받았다.
+async function countPuts(page: Page): Promise<() => Promise<number>> {
+  await page.evaluate(() => {
+    const w = window as unknown as { puts: number; maru: { onCanvasPut(cb: () => void): void } }
+    w.puts = 0
+    w.maru.onCanvasPut(() => w.puts++)
+  })
+  return () => page.evaluate(() => (window as unknown as { puts: number }).puts)
+}
+
+const held = (page: Page) => page.locator('.canvas .held')
+
+// Canvas 는 창 오른쪽에 있으므로 왼쪽 위 끝은 패널 밖이다.
+const leavePanel = (page: Page) => page.mouse.move(1, 1)
+
+test('커서가 패널 안에 있는 동안 온 문서는 끼우지 않고 수만 보이며, 커서가 나가면 받은 순서대로 끼운다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
+  await expect(markdown(page)).toHaveText(['second', 'first'])
+  await settle(page)
+  const puts = await countPuts(page)
+
+  await card(page, 'a').locator('.markdown').hover()
+  await putCanvas(app, { id: 'c', kind: 'markdown', text: 'third', title: 'C' })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first2', title: 'A' })
+  await putCanvas(app, { id: 'd', kind: 'markdown', text: 'fourth', title: 'D' })
+  await expect.poll(puts).toBe(3)
+  await expect(titles(page)).toHaveText(['B', 'A'])
+  await expect(markdown(page)).toHaveText(['second', 'first'])
+  await expect(held(page)).toHaveText(/3 new/)
+
+  await leavePanel(page)
+  await expect(titles(page)).toHaveText(['D', 'C', 'B', 'A'])
+  await expect(markdown(page)).toHaveText(['fourth', 'third', 'second', 'first2'])
+  await expect(held(page)).toHaveCount(0)
+})
+
+test('✕ 위에서 다른 ✕ 로 옮겨도 그 사이에 문서가 끼지 않아, 누르면 커서 아래의 그 문서가 지워진다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
+  await expect(markdown(page)).toHaveText(['second', 'first'])
+  await settle(page)
+  const puts = await countPuts(page)
+
+  await card(page, 'b').locator('.remove').hover()
+  await putCanvas(app, { id: 'd', kind: 'markdown', text: 'new', title: 'D' })
+  await expect.poll(puts).toBe(1)
+  await card(page, 'a').locator('.remove').hover()
+  await page.mouse.down()
+  await page.mouse.up()
+  await expect(titles(page)).toHaveText(['B'])
+
+  await leavePanel(page)
+  await expect(titles(page)).toHaveText(['D', 'B'])
+})
+
+test('쌓인 문서의 알약을 누르면 그 문서들을 넣고 맨 위로 가며, 그 뒤에 온 문서는 다시 쌓인다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const scroller = page.locator('.canvas .scroll')
+  const scrollTop = () => scroller.evaluate((el) => el.scrollTop)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await settle(page)
+  await scroller.evaluate((el) => el.scrollTo(0, 1000))
+  await expect.poll(scrollTop).toBe(1000)
+  const puts = await countPuts(page)
+
+  await card(page, 'a').locator('.markdown').hover()
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
+  await putCanvas(app, { id: 'c', kind: 'markdown', text: 'third', title: 'C' })
+  await expect(held(page)).toHaveText(/2 new/)
+  // 알약의 `held-bounce` 애니메이션이 끝없이 돌아 Playwright 의 stable 검사를 통과하지 못하므로 `force` 로 누른다.
+  await held(page).click({ force: true })
+  await expect(titles(page)).toHaveText(['C', 'B', 'A'])
+  await expect.poll(scrollTop).toBe(0)
+  await expect(held(page)).toHaveCount(0)
+
+  await putCanvas(app, { id: 'd', kind: 'markdown', text: 'fourth', title: 'D' })
+  await expect.poll(puts).toBe(3)
+  await expect(held(page)).toHaveText(/1 new/)
+  await expect(titles(page)).toHaveText(['C', 'B', 'A'])
+})
+
 test('닫힌 패널에 새 문서가 들어와 다시 열려도 읽던 내용이 같은 자리에 보인다', async ({
   launch
 }) => {
@@ -354,6 +445,7 @@ test('붙은 제목을 누르면 그 문서로 가서, 그 제목이 위쪽 묶�
   await settle(page)
   await titles(page).filter({ hasText: 'B' }).click()
   await expect(card(page, 'b').locator('.markdown')).toHaveCount(0)
+  await leavePanel(page)
   await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
   await settle(page)
   await scroller.evaluate((el) => el.scrollTo(0, 1000))
@@ -379,6 +471,7 @@ test('고전 스크롤바 설정에서도 Canvas 의 스크롤바는 자리를 �
   await settle(page)
   await titles(page).filter({ hasText: 'B' }).click()
   await expect(card(page, 'b').locator('.markdown')).toHaveCount(0)
+  await leavePanel(page)
   await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
   await settle(page)
   await scroller.evaluate((el) => el.scrollTo(0, 1000))
