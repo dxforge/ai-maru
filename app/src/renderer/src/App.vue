@@ -194,13 +194,16 @@ watch(() => config.notification.value.seenMs, updateViewed)
 
 /** 이름을 고치는 중인 workspace 의 key */
 const renaming = ref<number | null>(null)
+let renameStarts = 0
 
 // 보이지 않는 터미널에는 포커스를 줄 수 없어, 선택이 화면에 반영된 뒤에 준다.
 async function focusSelected(): Promise<void> {
+  const starts = renameStarts
   await nextTick()
-  // workspace 이름을 고치는 동안에는 입력창의 포커스를 빼앗지 않는다. 명령 팔레트로 고치기를 시작하면 팔레트를 닫으며 부른
-  // 이 함수가 입력창이 포커스를 받은 뒤에 돈다.
-  if (renaming.value !== null) return
+  // 기다리는 사이에 workspace 이름 고치기가 시작됐으면 입력창의 포커스를 빼앗지 않는다. 명령 팔레트로 고치기를 시작하면
+  // 팔레트를 닫으며 부른 이 함수가 입력창이 포커스를 받은 뒤에 돈다. 고치는 중에 이 함수를 부르면 터미널에 포커스를
+  // 준다. 그러면 입력창이 포커스를 잃어 고치던 이름을 확정한다.
+  if (renameStarts !== starts) return
   focusedTerminal()?.focus()
 }
 
@@ -364,6 +367,7 @@ function toggleFold(key: number): void {
 function startRename(key: number): void {
   sidebarOpen.value = true
   renaming.value = key
+  renameStarts++
 }
 function endRename(key: number, name: string | null, refocus: boolean): void {
   if (name !== null) workspaces.rename(key, name)
@@ -816,6 +820,8 @@ const handlers: Record<CommandId, () => void> = {
   },
   'toggle-sidebar': () => {
     sidebarOpen.value = !sidebarOpen.value
+    // 접은 사이드바에는 입력창을 둘 자리가 없다. 터미널에 포커스를 주면 입력창이 포커스를 잃어 고치던 이름을 확정하고 닫힌다.
+    if (!sidebarOpen.value && renaming.value !== null) void focusSelected()
   },
   'toggle-canvas': canvas.toggle,
   'toggle-view-mode': () => {

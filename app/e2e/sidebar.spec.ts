@@ -1077,3 +1077,88 @@ test('명령 팔레트의 Rename Workspace… 는 고른 cell 의 workspace 이�
   await expect(workspaceNames(page).nth(0)).not.toHaveText('second')
   await run(page, 'echo palette-$((1+1))', 'palette-2')
 })
+
+test('이름을 고치다 pane 줄을 누르면 이미 고른 줄이든 아니든 친 이름으로 정하고 그 pane 이 입력을 받는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  const first = workspaceNames(page).nth(0)
+
+  await workspaceHeads(page).nth(0).dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('review')
+  await cellItems(page).nth(1).click()
+  await expect(nameInput(page)).toHaveCount(0)
+  await expect(first).toHaveText('review')
+  await run(page, 'echo same-$((1+1))', 'same-2')
+  await expect(first).toHaveText('review')
+
+  await workspaceHeads(page).nth(0).dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('again')
+  await cellItems(page).nth(0).click()
+  await expect(nameInput(page)).toHaveCount(0)
+  await expect(first).toHaveText('again')
+  await run(page, 'echo other-$((1+1))', 'other-2')
+  await expect(first).toHaveText('again')
+})
+
+test('이름을 고치다 New Cell·Next Cell 로 cell 을 고르거나 사이드바를 접으면 친 이름으로 정하고 터미널이 입력을 받는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+
+  await workspaceHeads(page).nth(0).dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('new')
+  await newCell(launched, 2)
+  await expect(nameInput(page)).toHaveCount(0)
+  await expect(workspaceNames(page)).toHaveText(['new'])
+  await run(page, 'echo new-$((1+1))', 'new-2')
+
+  await workspaceHeads(page).nth(0).dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('next')
+  await clickMenu(app, 'next-cell')
+  await expect(nameInput(page)).toHaveCount(0)
+  await expect(workspaceNames(page)).toHaveText(['next'])
+  await run(page, 'echo next-$((1+1))', 'next-2')
+
+  await workspaceHeads(page).nth(0).dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('fold')
+  await clickMenu(app, 'toggle-sidebar')
+  await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
+  await expect(nameInput(page)).toHaveCount(0)
+  await expect(workspaceHeads(page).nth(0)).toHaveAttribute('aria-label', 'Collapse fold')
+  await run(page, 'echo fold-$((1+1))', 'fold-2')
+})
+
+test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 이름이 셸의 cd 를 계속 따라가고, 같은 이름이라도 Enter 로 정하면 고정한다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = repoHome(dataDir)
+  const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  await page.keyboard.type('cd proj\n')
+  await expect(workspaceNames(page)).toHaveText(['proj'])
+  const head = workspaceHeads(page).nth(0)
+
+  await head.dblclick()
+  await expect(nameInput(page)).toHaveValue('proj')
+  await cellItems(page).nth(0).click()
+  await expect(nameInput(page)).toHaveCount(0)
+  await page.keyboard.type('cd ~/notes\n')
+  await expect(workspaceNames(page)).toHaveText(['notes'])
+
+  await head.dblclick()
+  await expect(nameInput(page)).toHaveValue('notes')
+  await page.keyboard.press('Enter')
+  await expect(nameInput(page)).toHaveCount(0)
+  await page.keyboard.type('cd ~/proj\n')
+  await expect(head).toHaveAttribute('title', 'proj')
+  await expect(workspaceNames(page)).toHaveText(['notes'])
+})

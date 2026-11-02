@@ -4,6 +4,7 @@ import {
   cellLabel,
   dirName,
   labelBase,
+  nameOnFocusLoss,
   sidebarLabel,
   windowTitle,
   workspaceName
@@ -121,6 +122,19 @@ describe('workspaceName', () => {
   it('바꾼 이름이 있으면 pane 의 위치와 상관없이 그 이름이다', () => {
     expect(workspaceName(ws('리뷰'))).toBe('리뷰')
     expect(workspaceName(ws('ai-maru'))).toBe('ai-maru')
+  })
+})
+
+describe('nameOnFocusLoss', () => {
+  it('앞뒤 공백을 자른 값이 열 때의 이름과 같으면 취소다', () => {
+    expect(nameOnFocusLoss('ai-maru', 'ai-maru')).toBeNull()
+    expect(nameOnFocusLoss('  ai-maru ', 'ai-maru')).toBeNull()
+  })
+
+  it('다르면 친 값을 확정하고, 비웠으면 빈 값을 넘겨 자동 이름으로 돌아가게 한다', () => {
+    expect(nameOnFocusLoss('review', 'ai-maru')).toBe('review')
+    expect(nameOnFocusLoss('ai-maru2', 'ai-maru')).toBe('ai-maru2')
+    expect(nameOnFocusLoss('  ', 'ai-maru')).toBe('  ')
   })
 })
 

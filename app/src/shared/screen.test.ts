@@ -104,6 +104,16 @@ describe('parseScreen', () => {
     expect(parseScreen(clone())!.workspaces[0]).not.toHaveProperty('name')
   })
 
+  it.each(['', '   '])('workspace 이름이 %j 이면 이름이 없는 것으로 본다', (name) => {
+    const s = clone() as ScreenState
+    s.workspaces[0].name = name
+    expect(parseScreen(s)!.workspaces[0]).not.toHaveProperty('name')
+    const { layout } = splitScreen(s)
+    expect(parseLayoutPart(JSON.parse(JSON.stringify(layout)))!.workspaces[0]).not.toHaveProperty(
+      'name'
+    )
+  })
+
   it('Canvas 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {
     expect(parseScreen({ ...clone(), canvas: { width: 300 } })).toEqual({
       ...screen,

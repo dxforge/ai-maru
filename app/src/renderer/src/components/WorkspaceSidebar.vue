@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, type DeepReadonly } from 'vue'
 import type { JobView } from '../../../shared/job'
-import { autoWorkspaceName, labelBase, workspaceName } from '../../../shared/names'
+import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
@@ -105,10 +105,11 @@ const groups = computed(() => {
   return workspaces.map((w) => {
     const base = labelBase(w)
     const f = folded.has(w.key)
+    const auto = autoWorkspaceName(w, home)
     return {
       w,
-      name: workspaceName(w, home),
-      auto: autoWorkspaceName(w, home),
+      name: w.name ?? auto,
+      auto,
       folded: f,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       cells: f ? [] : w.cells.map((c) => cellGroup(src, c, base))

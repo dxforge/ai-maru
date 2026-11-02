@@ -186,7 +186,9 @@ function parseWorkspaces<P>(
       if (!isObj(w) || !isKey(w.key) || typeof w.id !== 'string') return null
       if (w.name !== undefined && typeof w.name !== 'string') return null
       const cells = parseList(w.cells, (c) => parseCell(c, parsePane))
-      return cells && compact({ key: w.key, id: w.id, name: w.name, cells })
+      // `rename`(`store.ts`)이 빈 이름을 받으면 이름을 지우는 것과 맞춰, 비었거나 공백뿐인 이름은 이름이 없는 것으로 본다.
+      const name = typeof w.name === 'string' && w.name.trim() ? w.name : undefined
+      return cells && compact({ key: w.key, id: w.id, name, cells })
     },
     true
   )
