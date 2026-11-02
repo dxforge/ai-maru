@@ -14,8 +14,7 @@ export function createCanvas(now: () => number = Date.now) {
   const expanded = reactive(new Set<string>())
   const open = ref(false)
 
-  // `hold` 를 켠 횟수를 세므로, 커서가 한 x 에서 다른 x 로 옮길 때 한 x 의 `hold(false)` 와 다른 x 의
-  // `hold(true)` 가 어느 순서로 와도 쌓인 문서가 풀리지 않는다.
+  // `hold` 는 줄마다 따로 켜고 끈다. 켠 횟수를 세므로, 한 줄이 꺼도 다른 줄이 켜 둔 동안은 쌓인 문서가 풀리지 않는다.
   let holds = 0
   const held: CanvasEntry[] = []
 
