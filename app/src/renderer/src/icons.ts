@@ -11,6 +11,7 @@ export const ICONS = {
   error: '\uEA87',
   warning: '\uEA6C',
   close: '\uEA76',
+  arrowUp: '\uEAA1',
   expandAll: '\uEB95',
   collapseAll: '\uEAC5',
   gear: '\uEAF8',

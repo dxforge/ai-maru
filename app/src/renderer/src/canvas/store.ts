@@ -1,4 +1,4 @@
-import { reactive, readonly, ref } from 'vue'
+import { computed, reactive, readonly, ref } from 'vue'
 import type { CanvasItem } from '../../../shared/canvas'
 import { firstHeading } from './markdown'
 
@@ -14,19 +14,34 @@ export function createCanvas(now: () => number = Date.now) {
   const expanded = reactive(new Set<string>())
   const open = ref(false)
 
-  // `hold` 는 줄마다 따로 켜고 끈다. 켠 횟수를 세므로, 한 줄이 꺼도 다른 줄이 켜 둔 동안은 쌓인 문서가 풀리지 않는다.
-  let holds = 0
-  const held: CanvasEntry[] = []
+  // 붙잡은 동안(`hold(true)`) 온 문서는 목록에 넣지 않고 쌓아 둔다. 목록이 바뀌면 커서 아래의 버튼이 다른 문서의
+  // 것으로 바뀌어, 누르려던 것과 다른 문서가 지워지기 때문이다. 닫힌 패널은 누를 수 없으므로 붙잡지 않는다.
+  let holding = false
+  const held = ref<CanvasEntry[]>([])
 
   function put(item: CanvasItem): void {
     const entry = toEntry(item, now())
-    if (holds > 0) held.push(entry)
-    else place(entry)
+    if (holding) return void held.value.push(entry)
+    place(entry)
+    open.value = true
+  }
+
+  function flush(): void {
+    for (const entry of held.value.splice(0)) place(entry)
   }
 
   function hold(on: boolean): void {
-    holds = Math.max(0, holds + (on ? 1 : -1))
-    if (holds === 0) held.splice(0).forEach(place)
+    holding = on && open.value
+    if (!holding) flush()
+  }
+
+  // 닫으면서 쌓인 문서는 목록에 넣기만 하고 패널은 열지 않는다. put 처럼 패널을 열면 닫은 패널이 바로 다시 열리기 때문이다.
+  function setOpen(on: boolean): void {
+    if (!on) {
+      holding = false
+      flush()
+    }
+    open.value = on
   }
 
   // 바뀐 문서는 위로 올리지 않는다. 올리면 보낸 쪽이 문서를 고칠 때마다 목록 순서가 바뀌기 때문이다.
@@ -40,7 +55,6 @@ export function createCanvas(now: () => number = Date.now) {
       release(docs.value[i])
       docs.value[i] = entry
     }
-    open.value = true
   }
 
   function remove(id: string): void {
@@ -60,15 +74,17 @@ export function createCanvas(now: () => number = Date.now) {
     docs: readonly(docs),
     expanded: readonly(expanded),
     open: readonly(open),
+    held: computed(() => held.value.length),
     put,
     hold,
+    flush,
     remove,
     expand,
     expandAll: (): void => docs.value.forEach((d) => expanded.add(d.id)),
     collapseAll: (): void => expanded.clear(),
-    close: (): void => void (open.value = false),
-    reopen: (): void => void (open.value = true),
-    toggle: (): void => void (open.value = !open.value)
+    close: (): void => setOpen(false),
+    reopen: (): void => setOpen(true),
+    toggle: (): void => setOpen(!open.value)
   }
 }
 

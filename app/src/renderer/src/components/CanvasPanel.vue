@@ -58,6 +58,8 @@ function onTransition(e: TransitionEvent): void {
     :style="canvas.open.value && width !== undefined ? { flexBasis: `${width}px` } : {}"
     @transitionend="onTransition"
     @transitioncancel="onTransition"
+    @mouseenter="canvas.hold(true)"
+    @mouseleave="canvas.hold(false)"
   >
     <header class="bar">
       <span>Canvas</span>
@@ -86,10 +88,11 @@ function onTransition(e: TransitionEvent): void {
     <CardStream
       :items="canvas.docs.value"
       :expanded="canvas.expanded"
+      :held="canvas.held.value"
       :style="frozen === undefined ? {} : { width: `${frozen}px` }"
       @expand="canvas.expand"
       @remove="canvas.remove"
-      @hold="canvas.hold"
+      @flush="canvas.flush"
     >
       <template #meta="{ item }">{{ clockTime(item.at) }}</template>
       <template #body="{ item }"><CanvasDoc :doc="item" /></template>

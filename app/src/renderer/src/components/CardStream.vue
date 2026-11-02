@@ -15,6 +15,7 @@ import {
   useTemplateRef,
   watch
 } from 'vue'
+import { ICONS } from '../icons'
 import StreamRow from './StreamRow.vue'
 import {
   ROW_H,
@@ -30,15 +31,17 @@ import {
 
 const FLASH_MS = 1500
 
-const { items, expanded } = defineProps<{
+// `held` 는 쓰는 쪽이 아직 넣지 않고 쌓아 둔 항목 수다. 0 보다 크면 목록 위에 알약을 띄우고, 누르면 `flush` 를 낸다.
+const {
+  items,
+  expanded,
+  held = 0
+} = defineProps<{
   items: readonly T[]
   expanded: ReadonlySet<string>
+  held?: number
 }>()
-const emit = defineEmits<{
-  expand: [id: string, on: boolean]
-  remove: [id: string]
-  hold: [on: boolean]
-}>()
+const emit = defineEmits<{ expand: [id: string, on: boolean]; remove: [id: string]; flush: [] }>()
 defineSlots<{
   toolbar?(): unknown
   meta?(props: { item: T }): unknown
@@ -118,6 +121,18 @@ function request(id: string, on: boolean, how: NonNullable<typeof place>): void 
 function toggle(id: string): void {
   request(id, !expanded.has(id), (b, a) => anchorScroll(b, a, id))
 }
+
+// 알약을 누른 것은 쌓인 항목을 보겠다는 뜻이라, 가장 최근 항목이 보이게 맨 위로 간다.
+function flush(): void {
+  place = () => 0
+  emit('flush')
+  void nextTick(() => (place = null))
+}
+
+const heldTop = computed(() => {
+  const { shown, more } = bands.value.top
+  return (shown.length + (more.length ? 1 : 0)) * ROW_H
+})
 
 function goTo(id: string): void {
   popover.value = null
@@ -205,7 +220,6 @@ onBeforeUnmount(() => {
               :class="{ ghost: pinned(i), flash: flashing.has(item.id) }"
               @open="toggle(item.id)"
               @remove="emit('remove', item.id)"
-              @hold="emit('hold', $event)"
             >
               <template #meta><slot name="meta" :item="item" /></template>
             </StreamRow>
@@ -241,11 +255,20 @@ onBeforeUnmount(() => {
           :open="expanded.has(items[i].id)"
           @open="goTo(items[i].id)"
           @remove="emit('remove', items[i].id)"
-          @hold="emit('hold', $event)"
         >
           <template #meta><slot name="meta" :item="items[i]" /></template>
         </StreamRow>
       </div>
+      <button
+        v-if="held"
+        class="held"
+        :style="{ top: `${heldTop + 8}px` }"
+        @mousedown.prevent
+        @click="flush"
+      >
+        <span class="nerd-icon">{{ ICONS.arrowUp }}</span
+        >{{ held }} new
+      </button>
       <div v-if="popover" v-overlay-scroll="'y'" class="popover" :class="popover">
         <button
           v-for="it in popoverItems"
@@ -458,6 +481,24 @@ button {
 
 .more:hover {
   color: var(--fg);
+}
+
+.held {
+  position: absolute;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: var(--accent);
+  color: var(--ground);
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
 }
 
 .popover {
