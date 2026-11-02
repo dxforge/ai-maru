@@ -113,16 +113,22 @@ const RUNNER_HOME = process.env.HOME
  * load average 가 100 을 넘은 Mac 에서 새 HOME 의 이 확인이 34.8초 걸렸다. 앱의 git 시간 제한(`GIT_TIMEOUT_MS`, 10초)과 `expect` 의 대기를 넘기는 시간이다.
  * 그래서 앱을 띄우기 전에 같은 HOME 으로 xcrun 을 한 번 실행해 확인을 끝내 둔다.
  * 이 확인에 쓴 시간만큼 테스트의 시간 제한을 늘린다. 확인이 시간 제한을 다 쓰면 테스트가 재는 동작까지 가지 못하기 때문이다.
+ * 끝난 뒤에만 늘리면 확인이 시간 제한을 넘길 때 늘리기 전에 테스트가 시간 초과로 끝나기 때문이다.
  */
-async function checkXcodeLicense(env: Record<string, string>): Promise<void> {
+export async function checkXcodeLicense(env: Record<string, string>): Promise<void> {
   if (env.HOME === RUNNER_HOME) return
+  const info = base.info()
+  const timeout = info.timeout
+  if (timeout) info.setTimeout(timeout + XCRUN_CHECK_LIMIT)
   const started = Date.now()
   await withXcrunLock(() =>
     promisify(execFile)('xcrun', ['--find', 'git'], { env }).catch(() => {})
   )
-  const info = base.info()
-  if (info.timeout) info.setTimeout(info.timeout + Date.now() - started)
+  if (timeout) info.setTimeout(timeout + Date.now() - started)
 }
+
+/** lock 대기와 확인에 주는 시간. 34.8초 걸린 확인 여덟 번을 차례로 기다릴 수 있다. */
+const XCRUN_CHECK_LIMIT = 300_000
 
 const XCRUN_LOCK = join(tmpdir(), 'maru-e2e-xcrun.lock')
 
