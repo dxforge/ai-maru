@@ -32,9 +32,9 @@ async function typesIntoTerminal(page: Page, marker: string): Promise<void> {
 
 async function armKitty(page: Page, flags: number, read: string): Promise<void> {
   await page.keyboard.type(
-    `printf '\\033[>${flags}u'; echo armed-$((1+1)); IFS= read -rs ${read} k; printf '\\033[<u'; printf 'got=%q\\n' "$k"\n`
+    `printf '\\033[>${flags}u'; echo armed-${flags}-$((1+1)); IFS= read -rs ${read} k; printf '\\033[<u'; printf 'got=%q\\n' "$k"\n`
   )
-  await expect(rows(page)).toContainText('armed-2')
+  await expect(rows(page)).toContainText(`armed-${flags}-2`)
 }
 
 test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W 는 Close Window 가 아니며, 새로 고침과 창 zoom 은 메뉴에 없다', async ({
@@ -156,6 +156,65 @@ test('터미널에서 ⇧↩ 은 kitty 키보드 프로토콜을 켠 프로그�
   await page.keyboard.press('Shift+Enter')
 
   await expect(rows(page)).toContainText("got=$'\\E[13;2u'")
+})
+
+// Playwright 의 `keyboard.press` 는 key 와 code 가 다른 키를 만들지 못하므로 CDP 로 보낸다.
+async function pressHangulCtrlR(page: Page): Promise<void> {
+  const cdp = await page.context().newCDPSession(page)
+  const key = { modifiers: 2, windowsVirtualKeyCode: 82, code: 'KeyR', key: 'ㄱ' }
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...key })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key })
+  await cdp.detach()
+}
+
+test('한글 배열의 ⌃R 은 플래그 4 를 켠 kitty 프로그램에 물리 키의 r 을 base layout key 로 붙여 간다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await armKitty(page, 5, '-t 2 -n15')
+  await pressHangulCtrlR(page)
+  await expect(rows(page)).toContainText("got=$'\\E[12593::114;5u'")
+
+  await armKitty(page, 1, '-t 2 -n10')
+  await pressHangulCtrlR(page)
+  await expect(rows(page)).toContainText("got=$'\\E[12593;5u'")
+
+  await page.keyboard.type(
+    'echo legacy-$((1+1)); IFS= read -rs -t 2 -n1 k; printf \'got=%q\\n\' "$k"\n'
+  )
+  await expect(rows(page)).toContainText('legacy-2')
+  await pressHangulCtrlR(page)
+  await expect(rows(page)).toContainText("got=$'\\022'")
+})
+
+test('플래그 2 를 함께 켠 kitty 프로그램에는 한글 배열의 ⌃R 을 뗄 때도 누를 때와 같은 키 번호와 base layout key 로 간다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await armKitty(page, 7, '-t 2 -n32')
+  await pressHangulCtrlR(page)
+  await expect(rows(page)).toContainText("got=$'\\E[12593::114;5u\\E[12593::114;5:3u'")
+})
+
+test('한글을 조합하는 중에 누른 한글 배열의 ⌃R 은 조합한 글자 뒤에 base layout key 를 붙여 kitty 프로그램에 간다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  // 하(ed 95 98) 뒤에 ESC [12593::114;5 가 와야 한다. `read -d u` 는 시퀀스 끝의 u 앞까지 읽는다.
+  await page.keyboard.type(
+    `printf '\\033[>5u'; echo armed-$((1+1)); IFS= read -rs -t 2 -d u k; printf '\\033[<u'; printf '%s' "$k" | xxd -p | sed 's/^/got=/'\n`
+  )
+  await expect(rows(page)).toContainText('armed-2')
+
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.imeSetComposition', { text: '하', selectionStart: 1, selectionEnd: 1 })
+  const key = { modifiers: 2, windowsVirtualKeyCode: 82, code: 'KeyR', key: 'ㄱ' }
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...key })
+  await cdp.send('Input.insertText', { text: '하' })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key })
+  await cdp.detach()
+
+  await expect(rows(page)).toContainText('got=ed95981b5b31323539333a3a3131343b35')
 })
 
 test('터미널에서 ⌘⌫ 은 커서 앞의 입력을 지운다', async ({ launch }) => {

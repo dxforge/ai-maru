@@ -24,6 +24,7 @@ import { exitMessage, failedExit } from '../../../shared/pty'
 import { isSelectAll, terminalInput } from '../../../shared/shortcuts'
 import { sameFont, type TerminalFont } from '../config/terminal'
 import { alignComposition } from '../terminal/composition'
+import { baseLayoutKeySequence, kittyFlags } from '../terminal/kitty'
 import { createLinkHandler, registerLinkProvider } from '../terminal/links'
 import { pastePaths } from '../terminal/paths'
 import { SCROLLBAR_WIDTH } from '../workspace/columns'
@@ -129,6 +130,13 @@ term.attachCustomKeyEventHandler((e) => {
   const input = terminalInput(e)
   if (input !== undefined) {
     if (e.type === 'keydown') sendInput(input)
+    e.preventDefault()
+    return false
+  }
+  // 누름과 뗌에 같은 base layout key 를 붙여야 하므로 keyup 도 여기서 보낸다.
+  const kitty = baseLayoutKeySequence(e, kittyFlags(term))
+  if (kitty !== undefined) {
+    sendInput(kitty)
     e.preventDefault()
     return false
   }
