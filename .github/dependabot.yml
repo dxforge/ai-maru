@@ -8,6 +8,10 @@ updates:
       time: "09:00"
       timezone: Asia/Seoul
     open-pull-requests-limit: 10
+    ignore:
+      # 타입은 앱이 실제로 쓰는 Electron 의 Node 메이저 버전에 맞춰 직접 올린다.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # addon 두 개의 peer 가 `@xterm/xterm` 의 특정 beta 이상을 요구하므로 세 패키지를 한 group 으로 올린다.
       # 먼저 맞는 group 에 들어가므로 minor-and-patch 보다 앞에 둔다.
