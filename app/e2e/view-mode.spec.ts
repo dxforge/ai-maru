@@ -477,6 +477,94 @@ test('overlay 스크롤바 설정에서 columns 의 가로 스크롤바는 넘�
   expect(await scrollbarHeight(page)).toBe(0)
 })
 
+async function underBar(page: Page): Promise<{ x: number; y: number }> {
+  const point = await page.evaluate(() => {
+    const cells = document.querySelectorAll('.terminals > .panes')
+    const box = cells[cells.length - 1].getBoundingClientRect()
+    const bar = document.querySelector('.terminals > .os-scrollbar-horizontal')!
+    return {
+      x: box.left + box.width / 2,
+      y: box.bottom - 2,
+      barTop: bar.getBoundingClientRect().top
+    }
+  })
+  expect(point.barTop).toBeLessThan(point.y)
+  return point
+}
+
+async function hitAt(page: Page, { x, y }: { x: number; y: number }): Promise<string> {
+  return page.evaluate(
+    ({ x, y }) => {
+      const hit = document.elementFromPoint(x, y)!
+      if (hit.closest('.os-scrollbar')) return 'scrollbar'
+      if (hit.closest('.cell-header')) return 'cell-header'
+      if (hit.closest('.pane-header')) return 'pane-header'
+      if (hit.closest('.body')) return 'terminal'
+      return hit.className
+    },
+    { x, y }
+  )
+}
+
+for (const [header, under] of [
+  ['top', 'terminal'],
+  ['bottom', 'cell-header']
+]) {
+  test(`고전 스크롤바 설정의 columns 에서 헤더가 ${header} 이면, 숨은 가로 스크롤바는 그 아래 ${under} 의 클릭을 가져가지 않고, 스크롤해 나타난 동안에만 받는다`, async ({
+    launch,
+    dataDir
+  }) => {
+    writeConfig(dataDir, `[layout]\nheader = "${header}"\n`)
+    const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
+    const { page } = launched
+    await toggleView(launched, 'columns')
+    await newWorkspace(launched, 2)
+    expect(await overflows(page)).toBe(true)
+    await expectRevealed(page)
+    const bar = page.locator('.terminals > .os-scrollbar-horizontal')
+    await expect(bar).toHaveClass(/os-scrollbar-auto-hide-hidden/)
+    const point = await underBar(page)
+
+    expect(await hitAt(page, point)).toBe(under)
+    const area = page.locator('.terminals')
+    const left = await area.evaluate((el) => el.scrollLeft)
+    await page.evaluate(() => {
+      ;(window as unknown as { pressed?: string }).pressed = undefined
+      addEventListener(
+        'pointerdown',
+        (e) => {
+          const el = e.target as Element
+          ;(window as unknown as { pressed?: string }).pressed = el.closest('.os-scrollbar')
+            ? 'scrollbar'
+            : el.className
+        },
+        { capture: true, once: true }
+      )
+    })
+    await page.mouse.click(point.x, point.y)
+    expect(await page.evaluate(() => (window as unknown as { pressed?: string }).pressed)).not.toBe(
+      'scrollbar'
+    )
+    expect(await area.evaluate((el) => el.scrollLeft)).toBe(left)
+
+    const shown = await area.evaluate(async (el, { x, y }) => {
+      const bar = el.querySelector(':scope > .os-scrollbar-horizontal')!
+      const appeared = new Promise<void>((resolve) => {
+        new MutationObserver((_, observer) => {
+          if (bar.classList.contains('os-scrollbar-auto-hide-hidden')) return
+          observer.disconnect()
+          resolve()
+        }).observe(bar, { attributes: true, attributeFilter: ['class'] })
+      })
+      el.scrollBy({ left: -1, behavior: 'instant' })
+      await appeared
+      await new Promise(requestAnimationFrame)
+      return document.elementFromPoint(x, y)!.closest('.os-scrollbar') !== null
+    }, point)
+    expect(shown).toBe(true)
+  })
+}
+
 test('columns 에서 사이드바로 고른 cell 만 선택 표시를 하고, 다른 cell 을 고르면 표시가 옮겨 간다', async ({
   launch
 }) => {

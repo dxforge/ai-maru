@@ -1127,6 +1127,15 @@ void window.maru.restoreScreen().then((r) => {
   overflow-x: scroll;
 }
 
+/* columns 의 가로 스크롤바는 숨은 동안 클릭을 받지 않는다. 숨은 막대가 cell 의 아래 끝을 덮어, 헤더가 위면 터미널
+   마지막 줄의 클릭을, 헤더가 아래면 cell 헤더의 클릭을 가져가기 때문이다. 그래서 이 막대는 다른 영역과 달리 숨은 자리에
+   마우스를 올려도 나타나지 않는다. 스크롤해 나타난 동안과 그 위에 마우스를 올린 동안(`os-scrollbar-interaction`)에만
+   클릭을 받는다. 라이브러리가 트랙과 손잡이에 `pointer-events: auto` 를 따로 걸므로, 자식에도 `none` 을 건다. */
+.columns > :deep(.os-scrollbar-auto-hide-hidden:not(.os-scrollbar-interaction)),
+.columns > :deep(.os-scrollbar-auto-hide-hidden:not(.os-scrollbar-interaction) *) {
+  pointer-events: none;
+}
+
 .columns .panes {
   position: relative;
   flex: none;
