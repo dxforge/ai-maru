@@ -1105,6 +1105,24 @@ test('이름을 고치다 pane 줄을 누르면 이미 고른 줄이든 아니�
   await expect(first).toHaveText('again')
 })
 
+test('이름을 고치다 다른 workspace 줄을 한 번 누르면 친 이름으로 정하고 그 workspace 를 접으며, 터미널이 입력을 받는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  const heads = workspaceHeads(page)
+
+  await heads.nth(0).dblclick()
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('review')
+  await heads.nth(1).click()
+  await expect(nameInput(page)).toHaveCount(0)
+  await expect(workspaceNames(page).nth(0)).toHaveText('review')
+  await expect(heads.nth(1)).toHaveAttribute('aria-expanded', 'false')
+  await run(page, 'echo fold-$((1+1))', 'fold-2')
+})
+
 test('이름을 고치다 New Cell·Next Cell 로 cell 을 고르거나 사이드바를 접으면 친 이름으로 정하고 터미널이 입력을 받는다', async ({
   launch
 }) => {

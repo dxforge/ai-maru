@@ -71,10 +71,7 @@ const emit = defineEmits<{
   moveCell: [cell: number, to: { workspace: number; index: number } | 'new']
   moveWorkspace: [workspace: number, index: number]
   startRename: [workspace: number]
-  /**
-   * `name` 이 null 이면 취소다. `refocus` 면 터미널에 포커스를 돌려준다. 다른 곳을 눌러 끝냈으면 포커스는 누른 곳에
-   * 둔다.
-   */
+  /** `name` 이 null 이면 취소다. `refocus` 면 터미널에 포커스를 돌려준다. */
   endRename: [workspace: number, name: string | null, refocus: boolean]
 }>()
 

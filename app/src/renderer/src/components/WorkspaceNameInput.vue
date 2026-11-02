@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, useTemplateRef } from 'vue'
+import { onMounted, onUnmounted, useTemplateRef } from 'vue'
 import { nameOnFocusLoss } from '../../../shared/names'
 import { closeOnFocusLoss } from './palette'
 
@@ -22,7 +22,21 @@ function finish(name: string | null, refocus: boolean): void {
   emit('done', name, refocus)
 }
 
-const onBlur = closeOnFocusLoss(input, () => finish(nameOnFocusLoss(el.value, opened), false))
+let pressedOutside = false
+const onBlur = closeOnFocusLoss(input, () =>
+  finish(nameOnFocusLoss(el.value, opened), pressedOutside)
+)
+
+// 사이드바의 줄은 터미널의 포커스를 지키려고 mousedown 의 기본 동작을 막는다. 그래서 사이드바를 눌러도 입력창이 포커스를
+// 잃지 않으므로, 입력창 밖을 누르면 입력창이 스스로 blur 해 포커스를 잃을 때와 같은 규칙(`nameOnFocusLoss`)으로 끝낸다.
+// 이때는 터미널에 포커스를 돌려준다. 사이드바 줄은 포커스를 받지 않아, 돌려주지 않으면 포커스가 body 에 남아 키 입력이
+// 어디에도 가지 않기 때문이다. 포커스를 받는 곳을 눌렀으면 이어지는 mousedown 이 포커스를 그곳으로 옮기므로 누른 자리를
+// 빼앗지 않는다.
+function onPointerDown(e: PointerEvent): void {
+  if (e.target === el) return
+  pressedOutside = true
+  el.blur()
+}
 
 // 처음 값은 템플릿에 묶지 않고 여기서 한 번만 준다. 묶으면 이 컴포넌트가 다시 그려질 때 Vue 가 친 글자를 처음 값으로
 // 되돌리기 때문이다. 자동 이름을 고치는 중에 셸이 cd 하면 `value` 가 바뀌어 다시 그려진다.
@@ -32,7 +46,9 @@ onMounted(() => {
   el.value = value
   el.focus()
   el.select()
+  document.addEventListener('pointerdown', onPointerDown, true)
 })
+onUnmounted(() => document.removeEventListener('pointerdown', onPointerDown, true))
 
 function onKeydown(e: KeyboardEvent): void {
   if (e.isComposing) return
