@@ -1,17 +1,37 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
 import { renderMarkdown } from '../canvas/markdown'
 import type { CanvasEntry } from '../canvas/store'
+import { attachOverlayScroll, detachOverlayScroll } from '../overlayScroll'
 
 // 문서마다 렌더 결과를 computed 로 담아 두려고 컴포넌트로 뗐다. `CardStream` 은 붙는 제목이 바뀔 때마다 다시
 // 그리는데, slot 에서 바로 렌더하면 그때마다 마크다운을 다시 렌더하기 때문이다.
 const { doc } = defineProps<{ doc: CanvasEntry }>()
 const html = computed(() => (doc.kind === 'markdown' ? renderMarkdown(doc.text) : ''))
+
+// `v-html` 로 넣은 코드 블록(`pre`)에는 directive 를 달 수 없으므로, HTML 을 넣은 뒤에 `attachOverlayScroll` 로 스크롤바를 씌운다.
+const root = useTemplateRef<HTMLElement>('root')
+let blocks: HTMLElement[] = []
+function release(): void {
+  for (const b of blocks) detachOverlayScroll(b)
+  blocks = []
+}
+watch(
+  [root, html],
+  ([el]) => {
+    release()
+    if (!el) return
+    blocks = [...el.querySelectorAll<HTMLElement>('pre')]
+    for (const b of blocks) attachOverlayScroll(b, 'x')
+  },
+  { flush: 'post' }
+)
+onBeforeUnmount(release)
 </script>
 
 <template>
   <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown 이 DOMPurify 로 거른 HTML 이다 -->
-  <div v-if="doc.kind === 'markdown'" class="markdown" v-html="html" />
+  <div v-if="doc.kind === 'markdown'" ref="root" class="markdown" v-html="html" />
   <img v-else class="image" :src="doc.url" :alt="doc.title" />
 </template>
 

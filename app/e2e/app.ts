@@ -202,6 +202,10 @@ async function launchApp(
   return { app, page }
 }
 
+// `launch` 에 넘기는 인자로 macOS 의 "스크롤 막대 보기" 설정을 바꾼다. Cocoa 가 `-키 값` 인자를 설정으로 읽기 때문이다.
+export const CLASSIC_SCROLLBARS = ['-AppleShowScrollBars', 'Always']
+export const OVERLAY_SCROLLBARS = ['-AppleShowScrollBars', 'WhenScrolling']
+
 /** 끄기 확인 창의 버튼 순서(`quitDialog`). */
 export const KEEP_TERMINALS = 0
 export const KEEP_LAYOUT = 1

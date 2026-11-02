@@ -4,12 +4,14 @@ import {
   canvasPanel,
   canvasResizer,
   canvasWidth,
+  CLASSIC_SCROLLBARS,
   clickMenu,
   dragCanvas,
   dragHandle,
   grabHandle,
   expect,
   openCanvas,
+  OVERLAY_SCROLLBARS,
   putCanvas,
   rows,
   serveRenderer,
@@ -366,6 +368,78 @@ test('붙은 제목을 누르면 그 문서로 가서, 그 제목이 위쪽 묶�
   await expect
     .poll(() => top('.canvas .card[data-id="b"]'))
     .toBeCloseTo(await bottom('.canvas .pins.top'), 0)
+})
+
+test('고전 스크롤바 설정에서도 Canvas 의 스크롤바는 자리를 차지하지 않아 고정된 제목 줄이 카드와 같은 폭이고, 스크롤을 멈춰 숨은 뒤에도 트랙을 누르면 한 페이지 넘어간다', async ({
+  launch
+}) => {
+  const { app, page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  const scroller = page.locator('.canvas .scroll')
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: long('b'), title: 'B' })
+  await settle(page)
+  await titles(page).filter({ hasText: 'B' }).click()
+  await expect(card(page, 'b').locator('.markdown')).toHaveCount(0)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await settle(page)
+  await scroller.evaluate((el) => el.scrollTo(0, 1000))
+
+  const pinned = page.locator('.canvas .pins.bottom .row[data-id="b"]')
+  await expect(pinned).toBeVisible()
+  expect(await scroller.evaluate((el: HTMLElement) => el.offsetWidth - el.clientWidth)).toBe(0)
+  const pinnedBox = (await pinned.boundingBox())!
+  const rowBox = (await card(page, 'b').locator('.row').boundingBox())!
+  expect(pinnedBox.x).toBeCloseTo(rowBox.x, 0)
+  expect(pinnedBox.width).toBeCloseTo(rowBox.width, 0)
+
+  const bar = scroller.locator('> .os-scrollbar-vertical')
+  await expect(bar).toHaveClass(/os-scrollbar-auto-hide-hidden/)
+  const box = (await bar.boundingBox())!
+  const [before, height] = await scroller.evaluate((el) => [el.scrollTop, el.clientHeight])
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeCloseTo(before + height, 0)
+})
+
+test('고전 스크롤바 설정에서 Canvas 의 스크롤바 트랙을 눌러도 터미널이 포커스를 지킨다', async ({
+  launch
+}) => {
+  const { app, page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await settle(page)
+  const focused = () =>
+    page.evaluate(() => document.activeElement?.closest('.terminal-view.active') !== null)
+  expect(await focused()).toBe(true)
+
+  const scroller = page.locator('.canvas .scroll')
+  const box = (await scroller.locator('> .os-scrollbar-vertical').boundingBox())!
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 4)
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  expect(await focused()).toBe(true)
+})
+
+const wide = (tag: string) => '```\n' + `${tag} `.repeat(400) + '\n```'
+
+test('고전 스크롤바 설정에서 문서를 다시 그려도 새 코드 블록에 스크롤바를 씌운다', async ({
+  launch
+}) => {
+  const { app, page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  const pre = card(page, 'a').locator('.markdown pre')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: wide('old'), title: 'A' })
+  await expect(pre).toHaveAttribute('data-overlayscrollbars')
+  await expect(pre).toContainText('old')
+
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: wide('new'), title: 'A' })
+  await expect(pre).toContainText('new')
+  await expect(pre).toHaveAttribute('data-overlayscrollbars')
+  expect(await pre.evaluate((el: HTMLElement) => el.offsetHeight - el.clientHeight)).toBe(0)
+})
+
+test('overlay 스크롤바 설정에서는 Canvas 가 시스템 스크롤바를 그대로 쓴다', async ({ launch }) => {
+  const { app, page } = await launch({}, undefined, OVERLAY_SCROLLBARS)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: long('a'), title: 'A' })
+  await settle(page)
+  const scroller = page.locator('.canvas .scroll')
+  await expect(scroller).not.toHaveAttribute('data-overlayscrollbars')
+  expect(await scroller.evaluate((el: HTMLElement) => el.offsetWidth - el.clientWidth)).toBe(0)
 })
 
 test('모든 제목이 위에 붙은 채 붙은 제목의 ✕ 를 누르면 그 문서가 화면에서 빠진다', async ({

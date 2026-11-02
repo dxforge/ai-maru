@@ -4,9 +4,41 @@
   font-display: block;
 }
 
-/* ::-webkit-scrollbar 를 쓰면 macOS 의 overlay 스크롤바가 고전 모드로 바뀌어, 표준 속성으로 색만 정한다. */
+/* 시스템 스크롤바가 overlay 일 때 쓰는 native 스크롤바의 모양이다. 아니면 overlayScroll.ts 가 그린 스크롤바(.os-theme-maru)를 쓴다.
+   `::-webkit-scrollbar` 를 쓰면 macOS 의 overlay 스크롤바가 고전 모드로 바뀌므로, 표준 속성으로 폭과 색만 정한다.
+   트랙은 스크롤바에 마우스를 올린 동안만 칠해진다. */
 * {
-  scrollbar-color: var(--thumb) transparent;
+  scrollbar-width: thin;
+  scrollbar-color: var(--thumb) var(--track);
+}
+
+.os-theme-maru {
+  box-sizing: border-box;
+  --os-size: 12px;
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 2px;
+  --os-track-border-radius: 12px;
+  --os-track-bg-hover: var(--track);
+  --os-track-bg-active: var(--track);
+  --os-handle-border-radius: 12px;
+  --os-handle-interactive-area-offset: 4px;
+  --os-handle-bg: var(--thumb);
+  --os-handle-bg-hover: var(--thumb);
+  --os-handle-bg-active: var(--thumb);
+  /* 가만히 있을 때 손잡이는 트랙 폭의 60% 다. 마우스를 올리면 `--os-handle-perpendicular-size-hover` 의 라이브러리 기본값(100%)대로 트랙 폭만큼 굵어진다. */
+  --os-handle-perpendicular-size: 60%;
+}
+
+/* 라이브러리는 숨긴 스크롤바를 `visibility: hidden` 으로 감추므로 그 자리에 마우스가 닿지 않는다. 여기서는 `opacity` 로만
+   감춰, 숨은 스크롤바 자리에 마우스를 올리면 나타나게 한다. */
+.os-scrollbar.os-theme-maru.os-scrollbar-auto-hide-hidden {
+  visibility: visible;
+  transition: opacity 0.4s;
+}
+
+.os-scrollbar.os-theme-maru.os-scrollbar-auto-hide-hidden:hover {
+  opacity: 1;
+  transition: opacity 0.15s;
 }
 
 html,

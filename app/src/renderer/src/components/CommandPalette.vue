@@ -49,7 +49,7 @@ function onKeydown(e: KeyboardEvent): void {
         @keydown="onKeydown"
         @blur="onBlur"
       />
-      <ul ref="list" class="list">
+      <ul ref="list" v-overlay-scroll="'y'" class="list">
         <li
           v-for="(c, i) in matches"
           :key="c.id"

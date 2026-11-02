@@ -1,12 +1,14 @@
 import type { Locator, Page } from '@playwright/test'
 import {
   activePane,
+  CLASSIC_SCROLLBARS,
   clickMenu,
   expect,
   expectCols,
   focusPane,
   newWorkspace,
   openPalette,
+  OVERLAY_SCROLLBARS,
   paneRows,
   panes,
   programStatus,
@@ -30,10 +32,6 @@ async function inView(page: Page, el: Locator): Promise<boolean> {
   const box = (await el.boundingBox())!
   return box.x >= area.x - 1 && box.x + box.width <= area.x + area.width + 1
 }
-
-// 이 앱을 띄우는 인자로 macOS 의 "스크롤 막대 보기" 설정을 바꾼다. Cocoa 가 `-키 값` 인자를 설정으로 읽기 때문이다.
-const CLASSIC_SCROLLBARS = ['-AppleShowScrollBars', 'Always']
-const OVERLAY_SCROLLBARS = ['-AppleShowScrollBars', 'WhenScrolling']
 
 type Scroll = { left: number; frame: number; time: number }
 
@@ -440,38 +438,30 @@ test('columns 에서 앞의 cell 이 닫혀도 포커스된 pane 이 화면에 �
   await run(page, 'echo typed-$((1+1))', 'typed-2')
 })
 
-test('고전 스크롤바 설정의 columns 에서 가로 스크롤바는 기본보다 낮고, cell 이 넘치기 시작하거나 넘침이 그쳐도 그 높이와 터미널의 줄 수는 그대로다', async ({
+test('고전 스크롤바 설정에서도 columns 의 가로 스크롤바는 자리를 차지하지 않고 넘칠 때만 쓸 수 있어, cell 이 넘치기 시작하거나 넘침이 그쳐도 터미널의 줄 수는 그대로다', async ({
   launch
 }) => {
   const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
   const { page } = launched
   await toggleView(launched, 'columns')
-  const standard = await page.evaluate(() => {
-    const el = document.createElement('div')
-    el.style.overflowX = 'scroll'
-    document.body.append(el)
-    const height = el.offsetHeight - el.clientHeight
-    el.remove()
-    return height
-  })
-  const bar = await scrollbarHeight(page)
-  expect(bar).toBeGreaterThan(0)
-  expect(bar).toBeLessThan(standard)
+  const bar = page.locator('.terminals > .os-scrollbar-horizontal')
   const before = await shellSize(page)
 
   await newWorkspace(launched, 2)
   expect(await overflows(page)).toBe(true)
   await cellItems(page).first().click()
 
-  expect(await scrollbarHeight(page)).toBe(bar)
+  expect(await scrollbarHeight(page)).toBe(0)
   expect((await shellSize(page)).rows).toBe(before.rows)
+  await expect(bar).not.toHaveClass(/os-scrollbar-unusable/)
 
   await cellItems(page).nth(1).click()
   await page.keyboard.type('exit\n')
   await expect(cellItems(page)).toHaveCount(1)
   expect(await overflows(page)).toBe(false)
 
-  expect(await scrollbarHeight(page)).toBe(bar)
+  await expect(bar).toHaveClass(/os-scrollbar-unusable/)
+  expect(await scrollbarHeight(page)).toBe(0)
   expect((await shellSize(page)).rows).toBe(before.rows)
 })
 
@@ -485,6 +475,134 @@ test('overlay 스크롤바 설정에서 columns 의 가로 스크롤바는 넘�
 
   expect(await overflows(page)).toBe(true)
   expect(await scrollbarHeight(page)).toBe(0)
+})
+
+async function underBar(page: Page): Promise<{ x: number; y: number }> {
+  const point = await page.evaluate(() => {
+    const cells = document.querySelectorAll('.terminals > .panes')
+    const box = cells[cells.length - 1].getBoundingClientRect()
+    const bar = document.querySelector('.terminals > .os-scrollbar-horizontal')!
+    return {
+      x: box.left + box.width / 2,
+      y: box.bottom - 2,
+      barTop: bar.getBoundingClientRect().top
+    }
+  })
+  expect(point.barTop).toBeLessThan(point.y)
+  return point
+}
+
+async function hitAt(page: Page, { x, y }: { x: number; y: number }): Promise<string> {
+  return page.evaluate(
+    ({ x, y }) => {
+      const hit = document.elementFromPoint(x, y)!
+      if (hit.closest('.os-scrollbar')) return 'scrollbar'
+      if (hit.closest('.cell-header')) return 'cell-header'
+      if (hit.closest('.pane-header')) return 'pane-header'
+      if (hit.closest('.body')) return 'terminal'
+      return hit.className
+    },
+    { x, y }
+  )
+}
+
+for (const [header, under] of [
+  ['top', 'terminal'],
+  ['bottom', 'cell-header']
+]) {
+  test(`고전 스크롤바 설정의 columns 에서 헤더가 ${header} 이면, 숨은 가로 스크롤바는 그 아래 ${under} 의 클릭을 가져가지 않고, 스크롤해 나타난 동안에만 받는다`, async ({
+    launch,
+    dataDir
+  }) => {
+    writeConfig(dataDir, `[layout]\nheader = "${header}"\n`)
+    const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
+    const { page } = launched
+    await toggleView(launched, 'columns')
+    await newWorkspace(launched, 2)
+    expect(await overflows(page)).toBe(true)
+    await expectRevealed(page)
+    const bar = page.locator('.terminals > .os-scrollbar-horizontal')
+    await expect(bar).toHaveClass(/os-scrollbar-auto-hide-hidden/)
+    const point = await underBar(page)
+
+    expect(await hitAt(page, point)).toBe(under)
+    const area = page.locator('.terminals')
+    const left = await area.evaluate((el) => el.scrollLeft)
+    await page.evaluate(() => {
+      ;(window as unknown as { pressed?: string }).pressed = undefined
+      addEventListener(
+        'pointerdown',
+        (e) => {
+          const el = e.target as Element
+          ;(window as unknown as { pressed?: string }).pressed = el.closest('.os-scrollbar')
+            ? 'scrollbar'
+            : el.className
+        },
+        { capture: true, once: true }
+      )
+    })
+    await page.mouse.click(point.x, point.y)
+    expect(await page.evaluate(() => (window as unknown as { pressed?: string }).pressed)).not.toBe(
+      'scrollbar'
+    )
+    expect(await area.evaluate((el) => el.scrollLeft)).toBe(left)
+
+    const shown = await area.evaluate(async (el, { x, y }) => {
+      const bar = el.querySelector(':scope > .os-scrollbar-horizontal')!
+      const appeared = new Promise<void>((resolve) => {
+        new MutationObserver((_, observer) => {
+          if (bar.classList.contains('os-scrollbar-auto-hide-hidden')) return
+          observer.disconnect()
+          resolve()
+        }).observe(bar, { attributes: true, attributeFilter: ['class'] })
+      })
+      el.scrollBy({ left: -1, behavior: 'instant' })
+      await appeared
+      await new Promise(requestAnimationFrame)
+      return document.elementFromPoint(x, y)!.closest('.os-scrollbar') !== null
+    }, point)
+    expect(shown).toBe(true)
+  })
+}
+
+test('고전 스크롤바 설정의 columns 에서 가로 스크롤바의 손잡이를 끌거나 트랙을 눌러도 터미널이 포커스를 지켜, 이어 친 키가 터미널에 간다', async ({
+  launch
+}) => {
+  const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  await newWorkspace(launched, 2)
+  expect(await overflows(page)).toBe(true)
+  await expectRevealed(page)
+  const focused = () =>
+    page.evaluate(() => document.activeElement?.closest('.terminal-view.active') !== null)
+  expect(await focused()).toBe(true)
+
+  const area = page.locator('.terminals')
+  const bar = area.locator('> .os-scrollbar-horizontal')
+  const handle = bar.locator('.os-scrollbar-handle')
+  await area.evaluate((el) => el.scrollBy({ left: -1, behavior: 'instant' }))
+  await expect(bar).not.toHaveClass(/os-scrollbar-auto-hide-hidden/)
+  const grab = (await handle.boundingBox())!
+  await page.mouse.move(grab.x + grab.width / 2, grab.y + grab.height / 2)
+  await expect(bar).toHaveClass(/os-scrollbar-interaction/)
+
+  const before = await area.evaluate((el) => el.scrollLeft)
+  await page.mouse.down()
+  await page.mouse.move(grab.x - grab.width, grab.y + grab.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(() => area.evaluate((el) => el.scrollLeft)).toBeLessThan(before)
+  expect(await focused()).toBe(true)
+
+  const dragged = await area.evaluate((el) => el.scrollLeft)
+  const track = (await bar.boundingBox())!
+  const moved = (await handle.boundingBox())!
+  expect(moved.x + moved.width).toBeLessThan(track.x + track.width - 8)
+  await page.mouse.click(track.x + track.width - 4, moved.y + moved.height / 2)
+  await expect.poll(() => area.evaluate((el) => el.scrollLeft)).toBeGreaterThan(dragged)
+  expect(await focused()).toBe(true)
+
+  await run(page, 'echo typed-$((1+1))', 'typed-2')
 })
 
 test('columns 에서 사이드바로 고른 cell 만 선택 표시를 하고, 다른 cell 을 고르면 표시가 옮겨 간다', async ({

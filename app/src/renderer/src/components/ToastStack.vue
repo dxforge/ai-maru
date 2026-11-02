@@ -10,7 +10,7 @@ const emit = defineEmits<{ close: [id: string] }>()
   <div v-if="toasts.length" class="toast-stack" :style="{ width: `${width}px` }">
     <div v-for="t in toasts" :key="t.id" class="toast" :class="t.level" role="status">
       <span class="icon nerd-icon">{{ ICONS[t.level] }}</span>
-      <div class="body">
+      <div v-overlay-scroll="'y'" class="body">
         <div class="title">{{ t.title }}</div>
         <div v-for="(line, i) in t.lines" :key="i" class="line">{{ line }}</div>
         <div v-if="t.detail" class="detail">{{ t.detail }}</div>
