@@ -1118,7 +1118,7 @@ void window.maru.restoreScreen().then((r) => {
   flex: 1;
   min-width: 0;
   z-index: 1;
-  border-radius: 8px;
+  border-radius: var(--radius-3);
   box-shadow:
     0 0 0 1px var(--line),
     0 4px 24px rgb(0 0 0 / 0.65);
@@ -1151,11 +1151,11 @@ void window.maru.restoreScreen().then((r) => {
 .columns {
   display: flex;
   /* cell 사이는 행을 이어 쓸 필요가 없어 틈을 두고 카드로 나눈다. */
-  gap: 8px;
+  gap: var(--space-4);
   /* 카드 테두리는 바깥 1px 의 box-shadow 라, 여백이 없으면 스크롤 영역이 그 1px 을 자른다. */
-  padding: 8px;
+  padding: var(--space-4);
   /* 포커스를 따라 scrollIntoView 할 때도 카드를 영역 끝에 붙이지 않고 같은 여백을 남긴다. */
-  scroll-padding: 8px;
+  scroll-padding: var(--space-4);
   background: color-mix(in srgb, var(--side), var(--ground));
   /* 시스템 스크롤바가 overlay 인지는 `attachOverlayScroll` 이 처음 씌울 때 한 번만 잰다. 그 뒤 시스템 설정을 고전
      스크롤바로 바꾸면 native 스크롤바가 자리를 차지한다. 그때도 넘치기 시작하거나 그칠 때 터미널의 줄 수가 바뀌지 않게
@@ -1175,7 +1175,7 @@ void window.maru.restoreScreen().then((r) => {
 .columns .panes {
   position: relative;
   flex: none;
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   overflow: clip;
   visibility: visible;
 }

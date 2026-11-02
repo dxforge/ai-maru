@@ -330,7 +330,7 @@ function onKeydown(e: KeyboardEvent): void {
 .program {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   min-width: 0;
 }
 
@@ -345,24 +345,24 @@ function onKeydown(e: KeyboardEvent): void {
 .section {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-5);
   flex: none;
-  padding: 6px 12px 5px;
+  padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--line);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-1);
   font-weight: 600;
 }
 
 /* 아래 팔레트는 column-reverse 라 DOM 순서대로 헤더가 목록 위에 놓인다. 위 팔레트는 입력줄과 목록 사이로 옮긴다. */
 .top .section {
   order: 1;
-  padding: 0 12px 5px;
+  padding: 0 var(--space-5) var(--space-3);
 }
 
 .top .list {
   order: 2;
-  padding: 4px 0 6px;
+  padding: var(--space-2) 0 var(--space-3);
 }
 
 /* 명령 단계의 헤더는 디렉토리 경로라, 대소문자를 바꾸면 다른 경로로 읽힌다. */
@@ -379,8 +379,8 @@ function onKeydown(e: KeyboardEvent): void {
 .remove {
   flex: none;
   visibility: hidden;
-  margin: 0 -4px 0 8px;
-  padding: 0 4px;
+  margin: 0 calc(-1 * var(--space-2)) 0 var(--space-4);
+  padding: 0 var(--space-2);
   border: none;
   background: none;
   color: var(--muted);
@@ -404,7 +404,7 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 .problem {
-  padding: 4px 12px;
+  padding: var(--space-2) var(--space-5);
   color: var(--error);
 }
 </style>

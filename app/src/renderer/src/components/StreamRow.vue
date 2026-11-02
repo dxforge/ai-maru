@@ -26,11 +26,11 @@ defineSlots<{ meta?(): unknown }>()
   align-items: center;
   box-sizing: border-box;
   height: var(--row-h);
-  padding-right: 6px;
+  padding-right: var(--space-3);
   background: var(--hdr);
   border-bottom: 1px solid var(--line);
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: var(--text-3);
 }
 
 .row:hover {
@@ -50,9 +50,9 @@ button {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   height: 100%;
-  padding: 0 4px 0 10px;
+  padding: 0 var(--space-2) 0 var(--space-5);
   text-align: left;
 }
 
@@ -78,7 +78,7 @@ button {
 
 .meta {
   flex: none;
-  font-size: 11px;
+  font-size: var(--text-1);
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }

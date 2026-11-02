@@ -417,12 +417,12 @@ onBeforeUnmount(() => {
   bottom: 0;
   z-index: 12;
   max-width: calc(100% - 16px);
-  padding: 2px 6px;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 0 4px 0 0;
+  border-radius: 0 var(--radius-1) 0 0;
   background: var(--raised);
   color: var(--muted);
-  font: 11px/1.4 system-ui;
+  font: var(--text-1)/1.4 var(--font-ui);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -461,7 +461,7 @@ onBeforeUnmount(() => {
   :deep(.xterm .xterm-scrollable-element > .xterm-scrollbar.xterm-vertical > .xterm-slider) {
   box-sizing: border-box;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-1);
   background-clip: padding-box;
 }
 </style>

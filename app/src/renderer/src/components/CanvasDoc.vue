@@ -45,18 +45,18 @@ onBeforeUnmount(release)
 }
 
 .markdown :deep(code) {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 0.9em;
   background: var(--raised);
   padding: 0.1em 0.3em;
-  border-radius: 3px;
+  border-radius: var(--radius-1);
 }
 
 .markdown :deep(pre) {
   overflow-x: auto;
-  padding: 8px 12px;
+  padding: var(--space-4) var(--space-5);
   background: var(--raised);
-  border-radius: 4px;
+  border-radius: var(--radius-1);
 }
 
 .markdown :deep(pre code) {
@@ -66,7 +66,7 @@ onBeforeUnmount(release)
 
 .markdown :deep(blockquote) {
   margin: 0;
-  padding-left: 12px;
+  padding-left: var(--space-5);
   border-left: 3px solid var(--faint);
   color: var(--muted);
 }
@@ -77,7 +77,7 @@ onBeforeUnmount(release)
 
 .markdown :deep(th),
 .markdown :deep(td) {
-  padding: 4px 8px;
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--line);
 }
 

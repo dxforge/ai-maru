@@ -76,16 +76,16 @@ function onKeydown(e: KeyboardEvent): void {
   flex: 1;
   min-width: 0;
   height: 22px;
-  padding: 0 4px;
-  margin-left: -5px;
+  padding: 0 var(--space-2);
+  margin-left: calc(-1px - var(--space-2));
   box-sizing: border-box;
   border: 1px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius-1);
   outline: none;
   background: var(--ground);
   color: var(--fg);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--text-1);
   font-weight: 600;
   letter-spacing: 0.06em;
 }
