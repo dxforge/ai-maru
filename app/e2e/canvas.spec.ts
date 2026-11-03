@@ -668,6 +668,28 @@ test('터미널에서 보낸 문서는 그 cell 을 고른 동안 보이고, 드
   await expect(viewMenu(page)).toHaveCount(0)
 })
 
+test('두 cell 이 같은 id 로 보낸 문서는 따로 남고, 접기와 ✕ 는 그 cell 의 문서에만 미친다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await putCanvas(app, { id: 'f', kind: 'markdown', text: 'one', title: 'From first' })
+  await newCell(launched, 2)
+  await putCanvas(app, { id: 'f', kind: 'markdown', text: 'two', title: 'From second' })
+  await expect(titles(page)).toHaveText(['From second'])
+
+  await viewButton(page).click()
+  await viewMenu(page).locator('.all').click()
+  await expect(titles(page)).toHaveText(['From second', 'From first'])
+  await expect(card(page, 'f')).toHaveCount(2)
+  await expect(markdown(page)).toHaveText(['two', 'one'])
+
+  await titles(page).filter({ hasText: 'From first' }).click()
+  await expect(markdown(page)).toHaveText(['two'])
+  await card(page, 'f').filter({ hasText: 'From second' }).locator('.remove').click()
+  await expect(titles(page)).toHaveText(['From first'])
+})
+
 test('입력이 16 MiB 아래여도 escape 한 요청 줄이 넘으면 앱의 이유와 함께 실패한다', async ({
   launch
 }) => {

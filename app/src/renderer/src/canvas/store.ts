@@ -9,12 +9,20 @@ import {
 } from '../../../shared/names'
 import { firstHeading } from './markdown'
 
-// `at` 은 renderer 가 문서를 받은 시각(ms)이다. 같은 id 로 고친 문서는 고친 시각이다.
-export type CanvasEntry = CanvasOwner &
-  (
+// `at` 은 renderer 가 문서를 받은 시각(ms)이다. 문서를 고쳐 보냈으면 고친 시각이다.
+export type CanvasEntry = CanvasOwner & { key: string } & (
     | { id: string; kind: 'markdown'; title: string; at: number; text: string }
     | { id: string; kind: 'image'; title: string; at: number; url: string }
   )
+
+/**
+ * 문서는 (cell, id) 로 구별한다. 같은 cell 이 같은 id 로 보내면 그 문서를 고치고, 다른 cell 이 같은 id 로 보내면 다른
+ * 문서다. 링크로 연 파일은 경로가 id 라, 두 cell 이 같은 파일을 열어도 각자의 문서로 남게 하기 위해서다. 소속 없는
+ * 문서끼리는 id 만으로 구별한다.
+ */
+export function docKey(id: string, cell?: string): string {
+  return JSON.stringify([cell ?? null, id])
+}
 
 /** cell 의 `workspace / cell` 이름. workspace 는 cell 이 지금 속한 것이다. */
 export type CellName = { workspace: string; cell: Label }
@@ -90,11 +98,12 @@ export function createCanvas(now: () => number = Date.now) {
       .map(([id, name]) => ({ id, name, closed: true }))
   ])
 
+  // 지금 보기에 들지 않는 문서로는 닫힌 패널을 열지 않는다. 열어도 그 문서는 보이지 않고 터미널 영역만 좁아지기 때문이다.
   function put(item: CanvasItem): void {
     const entry = toEntry(item, now())
     if (holding) return void held.value.push(entry)
     place(entry)
-    open.value = true
+    if (inView(entry)) open.value = true
   }
 
   function flush(): void {
@@ -117,28 +126,28 @@ export function createCanvas(now: () => number = Date.now) {
 
   // 바뀐 문서는 위로 올리지 않는다. 올리면 보낸 쪽이 문서를 고칠 때마다 목록 순서가 바뀌기 때문이다.
   function place(entry: CanvasEntry): void {
-    const { id } = entry
-    const i = docs.value.findIndex((d) => d.id === id)
+    const { key } = entry
+    const i = docs.value.findIndex((d) => d.key === key)
     if (i === -1) {
       docs.value.unshift(entry)
-      expanded.add(id)
+      expanded.add(key)
     } else {
       release(docs.value[i])
       docs.value[i] = entry
     }
   }
 
-  function remove(id: string): void {
-    const i = docs.value.findIndex((d) => d.id === id)
+  function remove(key: string): void {
+    const i = docs.value.findIndex((d) => d.key === key)
     if (i === -1) return
     release(docs.value[i])
     docs.value.splice(i, 1)
-    expanded.delete(id)
+    expanded.delete(key)
   }
 
-  function expand(id: string, on: boolean): void {
-    if (on) expanded.add(id)
-    else expanded.delete(id)
+  function expand(key: string, on: boolean): void {
+    if (on) expanded.add(key)
+    else expanded.delete(key)
   }
 
   return {
@@ -159,8 +168,8 @@ export function createCanvas(now: () => number = Date.now) {
     flush,
     remove,
     expand,
-    expandAll: (): void => docs.value.filter(inView).forEach((d) => expanded.add(d.id)),
-    collapseAll: (): void => docs.value.filter(inView).forEach((d) => expanded.delete(d.id)),
+    expandAll: (): void => docs.value.filter(inView).forEach((d) => expanded.add(d.key)),
+    collapseAll: (): void => docs.value.filter(inView).forEach((d) => expanded.delete(d.key)),
     close: (): void => setOpen(false),
     reopen: (): void => setOpen(true),
     toggle: (): void => setOpen(!open.value)
@@ -172,7 +181,8 @@ function release(entry: CanvasEntry): void {
 }
 
 function toEntry(item: CanvasItem, at: number): CanvasEntry {
-  const owner: CanvasOwner = {
+  const owner: CanvasOwner & { key: string } = {
+    key: docKey(item.id, item.cell),
     ...(item.pty === undefined ? {} : { pty: item.pty }),
     ...(item.cell === undefined ? {} : { cell: item.cell })
   }

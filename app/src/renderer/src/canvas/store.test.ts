@@ -1,7 +1,7 @@
 import { resolveObjectURL } from 'node:buffer'
 import { describe, expect, it } from 'vitest'
 import type { CanvasItem } from '../../../shared/canvas'
-import { clockTime, createCanvas, openCells, type Canvas, type OpenCell } from './store'
+import { clockTime, createCanvas, docKey, openCells, type Canvas, type OpenCell } from './store'
 
 const md = (id: string, text: string, title?: string): CanvasItem => ({
   id,
@@ -25,6 +25,8 @@ function titleOf(item: CanvasItem): string {
 }
 
 const docOf = (c: Canvas, id: string) => c.docs.value.find((d) => d.id === id)
+const k = (id: string, cell?: string): string => docKey(id, cell)
+const keys = (...ids: string[]): string[] => ids.map((id) => k(id))
 const urlOf = (c: Canvas, id: string): string => (docOf(c, id) as { url: string }).url
 
 describe('createCanvas', () => {
@@ -37,11 +39,12 @@ describe('createCanvas', () => {
 
   it('새 문서는 펼친 채 맨 위에 들어가고 패널이 열린다', () => {
     const c = createCanvas()
+    c.choose('all')
     c.put(md('a', 'A'))
-    c.expand('a', false)
+    c.expand(k('a'), false)
     c.put(md('b', 'B'))
     expect(c.docs.value.map((d) => d.id)).toEqual(['b', 'a'])
-    expect([...c.expanded]).toEqual(['b'])
+    expect([...c.expanded]).toEqual(keys('b'))
     expect(c.open.value).toBe(true)
   })
 
@@ -49,11 +52,11 @@ describe('createCanvas', () => {
     const c = createCanvas()
     c.put(md('a', 'A'))
     c.put(md('b', 'B'))
-    c.expand('a', false)
+    c.expand(k('a'), false)
     c.put(md('a', 'A2'))
     expect(c.docs.value.map((d) => d.id)).toEqual(['b', 'a'])
     expect(docOf(c, 'a')).toMatchObject({ text: 'A2' })
-    expect(c.expanded.has('a')).toBe(false)
+    expect(c.expanded.has(k('a'))).toBe(false)
   })
 
   it('받은 시각을 붙이고, 같은 id 로 고치면 고친 시각으로 바꾼다', () => {
@@ -92,11 +95,11 @@ describe('createCanvas', () => {
     c.put(image('i', 'a.png'))
     c.put(md('a', 'A'))
     const url = urlOf(c, 'i')
-    c.remove('i')
+    c.remove(k('i'))
     expect(c.docs.value.map((d) => d.id)).toEqual(['a'])
-    expect([...c.expanded]).toEqual(['a'])
+    expect([...c.expanded]).toEqual(keys('a'))
     expect(resolveObjectURL(url)).toBeUndefined()
-    c.remove('nope')
+    c.remove(k('nope'))
     expect(c.docs.value.map((d) => d.id)).toEqual(['a'])
   })
 
@@ -104,10 +107,10 @@ describe('createCanvas', () => {
     const c = createCanvas()
     c.put(md('a', 'A'))
     c.put(md('b', 'B'))
-    c.remove('a')
+    c.remove(k('a'))
     c.put(md('a', 'A2'))
     expect(c.docs.value.map((d) => d.id)).toEqual(['a', 'b'])
-    expect(c.expanded.has('a')).toBe(true)
+    expect(c.expanded.has(k('a'))).toBe(true)
   })
 
   it('여러 문서를 함께 펼치고, 모두 접기·모두 펼치기는 모든 문서를 접고 펼친다', () => {
@@ -115,14 +118,14 @@ describe('createCanvas', () => {
     c.choose('all')
     c.put(md('a', 'A'))
     c.put(md('b', 'B'))
-    c.expand('a', false)
-    c.expand('a', true)
-    expect([...c.expanded].toSorted()).toEqual(['a', 'b'])
+    c.expand(k('a'), false)
+    c.expand(k('a'), true)
+    expect([...c.expanded].toSorted()).toEqual(keys('a', 'b'))
     c.collapseAll()
     expect([...c.expanded]).toEqual([])
     expect(c.docs.value).toHaveLength(2)
     c.expandAll()
-    expect([...c.expanded].toSorted()).toEqual(['a', 'b'])
+    expect([...c.expanded].toSorted()).toEqual(keys('a', 'b'))
   })
 
   it('붙잡은 동안 온 문서는 새 문서도 고친 문서도 넣지 않고 수만 세며, 놓으면 받은 순서와 받은 시각으로 넣는다', () => {
@@ -142,7 +145,7 @@ describe('createCanvas', () => {
     c.hold(false)
     expect(c.docs.value.map((d) => d.id)).toEqual(['c', 'b', 'a'])
     expect(docOf(c, 'a')).toMatchObject({ text: 'A2', at: 2000 })
-    expect([...c.expanded].toSorted()).toEqual(['a', 'b', 'c'])
+    expect([...c.expanded].toSorted()).toEqual(keys('a', 'b', 'c'))
     expect(c.held.value).toBe(0)
   })
 
@@ -162,6 +165,7 @@ describe('createCanvas', () => {
 
   it('닫으면 쌓인 문서를 넣고 다시 열지 않으며, 닫힌 패널은 붙잡지 않는다', () => {
     const c = createCanvas()
+    c.choose('all')
     c.put(md('a', 'A'))
     c.hold(true)
     c.put(md('b', 'B'))
@@ -176,11 +180,12 @@ describe('createCanvas', () => {
 
   it('붙잡은 동안 지운 문서가 쌓여 있었으면 놓을 때 새 문서처럼 들어간다', () => {
     const c = createCanvas()
+    c.choose('all')
     c.put(md('a', 'A'))
     c.put(md('b', 'B'))
     c.hold(true)
     c.put(md('a', 'A2'))
-    c.remove('a')
+    c.remove(k('a'))
     expect(c.docs.value.map((d) => d.id)).toEqual(['b'])
     c.hold(false)
     expect(c.docs.value.map((d) => d.id)).toEqual(['a', 'b'])
@@ -188,6 +193,7 @@ describe('createCanvas', () => {
 
   it('닫은 뒤 문서가 오면 다시 열린다', () => {
     const c = createCanvas()
+    c.choose('all')
     c.put(md('a', 'A'))
     c.close()
     expect(c.open.value).toBe(false)
@@ -199,15 +205,16 @@ describe('createCanvas', () => {
     const c = createCanvas()
     c.put(md('a', 'A'))
     c.put(md('b', 'B'))
-    c.expand('b', false)
+    c.expand(k('b'), false)
     c.close()
     c.reopen()
     expect(c.open.value).toBe(true)
-    expect([...c.expanded]).toEqual(['a'])
+    expect([...c.expanded]).toEqual(keys('a'))
   })
 
   it('toggle 은 열린 패널을 닫고 닫힌 패널을 연다 — 문서가 없어도 연다', () => {
     const c = createCanvas()
+    c.choose('all')
     c.toggle()
     expect(c.open.value).toBe(true)
     c.toggle()
@@ -220,11 +227,14 @@ describe('createCanvas', () => {
   })
 })
 
-const owned = (id: string, cell?: string): CanvasItem => ({
-  ...md(id, id),
+const owned = (id: string, cell?: string, text = id): CanvasItem => ({
+  ...md(id, text),
   pty: 'p-1',
   ...(cell === undefined ? {} : { cell })
 })
+
+const shownTexts = (c: Canvas): [string | undefined, string][] =>
+  c.shown.value.map((d) => [d.cell, d.kind === 'markdown' ? d.text : d.title])
 
 const named = (id: string, workspace: string, cell: string, branch?: string): OpenCell => ({
   id,
@@ -317,7 +327,7 @@ describe('cell 별 보기', () => {
       { ...B, closed: true },
       { ...C, closed: true }
     ])
-    c.remove('b')
+    c.remove(k('b', 'c-b'))
     expect(c.choices.value.map((x) => x.id)).toEqual(['c-a', 'c-c'])
   })
 
@@ -353,7 +363,7 @@ describe('cell 별 보기', () => {
     c.put(owned('b', 'c-b'))
     c.sync({ cells: [A], current: 'c-a' })
     c.choose({ cell: 'c-b' })
-    c.remove('b')
+    c.remove(k('b', 'c-b'))
     expect(c.choices.value).toEqual([
       { ...A, closed: false },
       { ...B, closed: true }
@@ -368,10 +378,10 @@ describe('cell 별 보기', () => {
     c.put(owned('a', 'c-a'))
     c.put(owned('b', 'c-b'))
     c.collapseAll()
-    expect([...c.expanded]).toEqual(['b'])
-    c.expand('b', false)
+    expect([...c.expanded]).toEqual([k('b', 'c-b')])
+    c.expand(k('b', 'c-b'), false)
     c.expandAll()
-    expect([...c.expanded]).toEqual(['a'])
+    expect([...c.expanded]).toEqual([k('a', 'c-a')])
   })
 
   it('소속이 없거나 모르는 cell 은 이름이 없다', () => {
@@ -380,6 +390,64 @@ describe('cell 별 보기', () => {
     expect(c.nameOf('c-a')).toEqual(A.name)
     expect(c.nameOf(undefined)).toBeUndefined()
     expect(c.nameOf('c-x')).toBeUndefined()
+  })
+
+  it('같은 id 라도 보낸 cell 이 다르면 따로 두고, 같은 cell 이면 고친다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('f', 'c-a', 'A'))
+    c.put(owned('f', 'c-b', 'B'))
+    c.put(owned('f', undefined, 'N'))
+    c.choose('all')
+    expect(shownTexts(c)).toEqual([
+      [undefined, 'N'],
+      ['c-b', 'B'],
+      ['c-a', 'A']
+    ])
+    c.put(owned('f', 'c-a', 'A2'))
+    c.put(owned('f', undefined, 'N2'))
+    expect(shownTexts(c)).toEqual([
+      [undefined, 'N2'],
+      ['c-b', 'B'],
+      ['c-a', 'A2']
+    ])
+    c.choose('current')
+    expect(shownTexts(c)).toEqual([['c-a', 'A2']])
+  })
+
+  it('펼침 상태와 지우기는 (cell, id) 의 그 문서에만 미친다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('f', 'c-a'))
+    c.put(owned('f', 'c-b'))
+    c.expand(k('f', 'c-a'), false)
+    expect([...c.expanded]).toEqual([k('f', 'c-b')])
+    c.remove(k('f', 'c-b'))
+    expect(c.docs.value.map((d) => d.cell)).toEqual(['c-a'])
+    c.choose({ cell: 'c-b' })
+    c.put(owned('f', 'c-b'))
+    expect([...c.expanded].toSorted()).toEqual([k('f', 'c-b')])
+  })
+
+  it('지금 보기에 드는 문서만 닫힌 패널을 연다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('b', 'c-b'))
+    c.put(owned('n'))
+    expect(c.open.value).toBe(false)
+    expect(c.docs.value.map((d) => d.id)).toEqual(['n', 'b'])
+    c.put(owned('a', 'c-a'))
+    expect(c.open.value).toBe(true)
+    c.close()
+    c.choose({ cell: 'c-b' })
+    c.put(owned('a2', 'c-a'))
+    expect(c.open.value).toBe(false)
+    c.put(owned('b', 'c-b'))
+    expect(c.open.value).toBe(true)
+    c.close()
+    c.choose('all')
+    c.put(owned('n'))
+    expect(c.open.value).toBe(true)
   })
 
   it('붙잡은 동안 쌓인 문서는 지금 보기에 드는 것만 센다', () => {

@@ -1,10 +1,11 @@
-<script setup lang="ts" generic="T extends { id: string; title: string }">
+<script setup lang="ts" generic="T extends { key: string; id: string; title: string }">
 // `CardStream` 은 패널 하나의 목록과 내용을 한 스크롤에 그린다. 항목을 위에서부터 카드로 쌓고, 제목 줄을 누르면
 // 펼치거나 접는다. 스크롤해서 화면 밖으로 나간 제목은 위쪽 것은 패널 위에, 아래쪽 것은 패널 아래에 붙고, 붙은 제목을
 // 누르면 그 항목으로 간다. 항목이 무엇인지는 모른다 — 쓰는 쪽이 항목과 펼침 상태를 넘기고, 줄의 메타와 본문을 slot
 // 으로 채운다.
-// 새로 들어온 항목과 같은 id 로 새 객체가 온 항목을 잠깐 강조한다. 그래서 쓰는 쪽은 같은 id 의 항목을 내용이 바뀔
-// 때만 새 객체로 넘긴다.
+// 항목은 `key` 로 구별하고, 펼침 상태·`expand`·`remove` 도 `key` 로 가리킨다. `id` 는 카드·붙은 제목·팝오버 항목의 `data-id` 로만 단다.
+// 새로 들어온 항목과 같은 key 로 새 객체가 온 항목을 잠깐 강조한다. 그래서 쓰는 쪽은 같은 key 의 항목을 내용이
+// 바뀔 때만 새 객체로 넘긴다.
 import {
   computed,
   nextTick,
@@ -41,7 +42,7 @@ const {
   expanded: ReadonlySet<string>
   held?: number
 }>()
-const emit = defineEmits<{ expand: [id: string, on: boolean]; remove: [id: string]; flush: [] }>()
+const emit = defineEmits<{ expand: [key: string, on: boolean]; remove: [key: string]; flush: [] }>()
 defineSlots<{
   toolbar?(): unknown
   meta?(props: { item: T }): unknown
@@ -65,7 +66,7 @@ function cards(): CardBox[] {
   const origin = list.value?.getBoundingClientRect().top ?? 0
   return [...(list.value?.children ?? [])].map((el) => {
     const r = el.getBoundingClientRect()
-    return { id: (el as HTMLElement).dataset.id!, top: r.top - origin, height: r.height }
+    return { id: (el as HTMLElement).dataset.key!, top: r.top - origin, height: r.height }
   })
 }
 
@@ -111,15 +112,15 @@ watch(
   { flush: 'post' }
 )
 
-function request(id: string, on: boolean, how: NonNullable<typeof place>): void {
+function request(key: string, on: boolean, how: NonNullable<typeof place>): void {
   place = how
-  emit('expand', id, on)
+  emit('expand', key, on)
   // 쓰는 쪽이 펼침을 바꾸지 않으면 watch 가 돌지 않아 `place` 가 다음 변경에 쓰이므로, 다음 tick 에 지운다.
   void nextTick(() => (place = null))
 }
 
-function toggle(id: string): void {
-  request(id, !expanded.has(id), (b, a) => anchorScroll(b, a, id))
+function toggle(key: string): void {
+  request(key, !expanded.has(key), (b, a) => anchorScroll(b, a, key))
 }
 
 // 알약을 누른 것은 쌓인 항목을 보겠다는 뜻이라, 가장 최근 항목이 보이게 맨 위로 간다.
@@ -134,38 +135,38 @@ const heldTop = computed(() => {
   return (shown.length + (more.length ? 1 : 0)) * ROW_H
 })
 
-function goTo(id: string): void {
+function goTo(key: string): void {
   popover.value = null
-  const index = items.findIndex((it) => it.id === id)
+  const index = items.findIndex((it) => it.key === key)
   if (index === -1) return
-  if (expanded.has(id)) {
+  if (expanded.has(key)) {
     scroller.value!.scrollTop = goToScrollTop(index, tops[index])
     updatePins()
   } else {
-    request(id, true, (_, after) => goToScrollTop(index, after[index].top))
+    request(key, true, (_, after) => goToScrollTop(index, after[index].top))
   }
 }
 
 const flashing = reactive(new Set<string>())
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
-let known = new Map(items.map((it) => [it.id, it]))
+let known = new Map(items.map((it) => [it.key, it]))
 
 watch(
   () => items.slice(),
   (now) => {
-    for (const it of now) if (known.get(it.id) !== it) flash(it.id)
-    known = new Map(now.map((it) => [it.id, it]))
+    for (const it of now) if (known.get(it.key) !== it) flash(it.key)
+    known = new Map(now.map((it) => [it.key, it]))
   }
 )
 
-function flash(id: string): void {
-  clearTimeout(timers.get(id))
-  flashing.add(id)
+function flash(key: string): void {
+  clearTimeout(timers.get(key))
+  flashing.add(key)
   timers.set(
-    id,
+    key,
     setTimeout(() => {
-      flashing.delete(id)
-      timers.delete(id)
+      flashing.delete(key)
+      timers.delete(key)
     }, FLASH_MS)
   )
 }
@@ -213,17 +214,23 @@ onBeforeUnmount(() => {
     <div ref="stage" class="stage">
       <div ref="scroller" v-overlay-scroll="'y'" class="scroll" @scroll="onScroll">
         <div ref="list" class="cards">
-          <section v-for="(item, i) in items" :key="item.id" class="card" :data-id="item.id">
+          <section
+            v-for="(item, i) in items"
+            :key="item.key"
+            class="card"
+            :data-key="item.key"
+            :data-id="item.id"
+          >
             <StreamRow
               :title="item.title"
-              :open="expanded.has(item.id)"
-              :class="{ ghost: pinned(i), flash: flashing.has(item.id) }"
-              @open="toggle(item.id)"
-              @remove="emit('remove', item.id)"
+              :open="expanded.has(item.key)"
+              :class="{ ghost: pinned(i), flash: flashing.has(item.key) }"
+              @open="toggle(item.key)"
+              @remove="emit('remove', item.key)"
             >
               <template #meta><slot name="meta" :item="item" /></template>
             </StreamRow>
-            <div v-if="expanded.has(item.id)" class="body">
+            <div v-if="expanded.has(item.key)" class="body">
               <slot name="body" :item="item" />
             </div>
           </section>
@@ -239,7 +246,7 @@ onBeforeUnmount(() => {
         <button
           v-if="bands[where].more.length"
           class="more"
-          :class="{ flash: bands[where].more.some((i) => flashing.has(items[i].id)) }"
+          :class="{ flash: bands[where].more.some((i) => flashing.has(items[i].key)) }"
           @mousedown.prevent
           @click="popover = popover === where ? null : where"
         >
@@ -247,14 +254,14 @@ onBeforeUnmount(() => {
         </button>
         <StreamRow
           v-for="i in bands[where].shown"
-          :key="items[i].id"
+          :key="items[i].key"
           class="pinned"
-          :class="{ flash: flashing.has(items[i].id) }"
+          :class="{ flash: flashing.has(items[i].key) }"
           :data-id="items[i].id"
           :title="items[i].title"
-          :open="expanded.has(items[i].id)"
-          @open="goTo(items[i].id)"
-          @remove="emit('remove', items[i].id)"
+          :open="expanded.has(items[i].key)"
+          @open="goTo(items[i].key)"
+          @remove="emit('remove', items[i].key)"
         >
           <template #meta><slot name="meta" :item="items[i]" /></template>
         </StreamRow>
@@ -274,10 +281,10 @@ onBeforeUnmount(() => {
       <div v-if="popover" v-overlay-scroll="'y'" class="popover popup-menu" :class="popover">
         <button
           v-for="it in popoverItems"
-          :key="it.id"
+          :key="it.key"
           :data-id="it.id"
           @mousedown.prevent
-          @click="goTo(it.id)"
+          @click="goTo(it.key)"
         >
           {{ it.title }}
         </button>

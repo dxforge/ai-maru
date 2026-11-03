@@ -17,7 +17,7 @@ const IMAGE_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml'
 }
 
-/** Canvas 가 그릴 수 있는 파일(`.md`·이미지)이면 그 문서. id 는 경로라 같은 파일은 같은 문서를 바꾼다. */
+/** Canvas 가 그릴 수 있는 파일(`.md`·이미지)이면 그 문서. id 는 경로라, 같은 cell 에서 같은 파일을 다시 열면 그 문서를 바꾼다. */
 export async function canvasDocFor(path: string): Promise<CanvasDoc | null> {
   const ext = extname(path).toLowerCase()
   if (ext === '.md') {

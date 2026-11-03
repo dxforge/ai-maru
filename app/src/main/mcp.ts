@@ -20,7 +20,8 @@ export const CANVAS_PUT_TOOL = {
       },
       id: {
         type: 'string',
-        description: 'Document id. Putting again with the same id replaces that document.'
+        description:
+          'Document id. Reusing an id in the same cell replaces the existing document. Documents from other cells stay separate, even when they have the same id.'
       },
       title: {
         type: 'string',
