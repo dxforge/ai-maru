@@ -209,6 +209,30 @@ impl Conn {
     }
 
     fn until(&mut self, want: &[u8]) -> (Vec<Value>, Vec<u8>) {
+        let label = format!("{:?}", String::from_utf8_lossy(want));
+        self.read_until(&label, |out, new| appeared(out, new, want))
+    }
+
+    /// `mark` 가 나온 뒤 출력이 `end` 로 끝날 때까지 읽는다. 이 연결도 밀려 resync 를 받으면 재생은 화면을 다시
+    /// 그리며 `mark` 와 `end` 사이에 커서 이동을 넣으므로, 둘을 이어진 바이트로 기다리지 않는다.
+    fn until_mark_then_end(&mut self, mark: &[u8], end: &[u8]) {
+        let label = format!(
+            "{:?} 뒤 {:?} 로 끝나는 출력",
+            String::from_utf8_lossy(mark),
+            String::from_utf8_lossy(end)
+        );
+        let mut seen = false;
+        self.read_until(&label, |out, new| {
+            seen = seen || appeared(out, new, mark);
+            seen && out.ends_with(end)
+        });
+    }
+
+    fn read_until(
+        &mut self,
+        label: &str,
+        mut done: impl FnMut(&[u8], usize) -> bool,
+    ) -> (Vec<Value>, Vec<u8>) {
         let mut out = Vec::new();
         let mut texts = Vec::new();
         loop {
@@ -216,8 +240,7 @@ impl Conn {
             let Ok(Some((tag, payload))) = frame else {
                 let tail = &out[out.len().saturating_sub(2000)..];
                 panic!(
-                    "{:?} 가 나오기 전에 끊겼다({frame:?}). 마지막 출력: {:?}, Text: {texts:?}",
-                    String::from_utf8_lossy(want),
+                    "기다리던 것({label})이 오기 전에 끊겼다({frame:?}). 마지막 출력: {:?}, Text: {texts:?}",
                     String::from_utf8_lossy(tail)
                 );
             };
@@ -225,10 +248,9 @@ impl Conn {
                 texts.push(serde_json::from_slice(&payload).unwrap());
                 continue;
             }
-            // 누적분을 매번 다 훑으면 대량 출력에서 이 클라이언트가 밀려 resync 에 걸린다.
-            let from = out.len().saturating_sub(want.len());
+            let new = out.len();
             out.extend_from_slice(&payload);
-            if out[from..].windows(want.len()).any(|w| w == want) {
+            if done(&out, new) {
                 return (texts, out);
             }
         }
@@ -287,6 +309,14 @@ impl Conn {
         self.0.set_read_timeout(Some(WAIT)).unwrap();
         texts
     }
+}
+
+/// 누적분을 매번 다 훑으면 대량 출력에서 읽는 쪽이 밀려 resync 에 걸리므로, 앞서 받은 바이트는 `want` 길이만큼만
+/// 다시 본다.
+fn appeared(out: &[u8], new: usize, want: &[u8]) -> bool {
+    out[new.saturating_sub(want.len())..]
+        .windows(want.len())
+        .any(|w| w == want)
 }
 
 fn pid(raw: u32) -> Pid {
@@ -379,6 +409,7 @@ fn reattaching_replays_earlier_output() {
 
 struct Cut {
     command: String,
+    mark: &'static [u8],
     head_mark: Vec<u8>,
     tail_mark: Vec<u8>,
 }
@@ -388,11 +419,13 @@ struct Cut {
 fn cut_output(head: &[u8], tail: &[u8]) -> Cut {
     let octal = |b: &[u8]| b.iter().map(|c| format!("\\{c:03o}")).collect::<String>();
     let (h, t) = (octal(head), octal(tail));
+    let mark: &'static [u8] = b"mark-42";
     Cut {
         command: format!(
             "stty -echo; printf 'mark-%s{h}' $((40+2)); read x; printf '{t}-%s\\n' $((6*7)); stty echo\n"
         ),
-        head_mark: [b"mark-42", head].concat(),
+        mark,
+        head_mark: [mark, head].concat(),
         tail_mark: [tail, b"-42"].concat(),
     }
 }
@@ -423,19 +456,20 @@ fn attaching_in_the_middle_of_a_sequence_replays_its_start() {
 fn a_resync_in_the_middle_of_a_sequence_replays_its_start() {
     // `a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs` 와 같은 양이다.
     const FLOOD: usize = 9 * 1024 * 1024;
-    let cut = cut_output(b"\x1b[3", b"1mRED");
+    let head = b"\x1b[3";
+    let cut = cut_output(head, b"1mRED");
     let p = start();
     let (mut slow, _, _) = p.attach("observer", 80, 24);
     let (mut fast, _, _) = p.attach("primary", 80, 24);
     fast.input(&format!("head -c {FLOOD} /dev/zero; {}", cut.command));
-    fast.bytes_until(&cut.head_mark);
+    fast.until_mark_then_end(cut.mark, head);
 
     // `slow` 가 읽기 시작해야 서버가 밀린 것을 알고 resync 하므로, 재생은 시퀀스가 끊긴 뒤에 뜬다.
     let v = slow.next_text();
     assert_eq!(v["type"], "resync", "{v}");
     let replay = slow.expect_resync_replay();
     assert!(
-        replay.ends_with(b"\x1b[3"),
+        replay.ends_with(head),
         "{:?}",
         String::from_utf8_lossy(&replay[replay.len().saturating_sub(200)..])
     );
@@ -1255,12 +1289,9 @@ fn a_client_that_falls_behind_is_resynced() {
     let p = start();
     let (mut slow, _, _) = p.attach("observer", 80, 24);
     let (mut fast, _, _) = p.attach("primary", 80, 24);
+    // `fast` 도 부하로 읽기가 늦어지면 밀려 resync 를 받으므로, `fast` 가 받은 Text 는 보지 않는다.
     fast.input("yes 0123456789 | head -n 1000000; echo flood-$((6*7))\n");
-    let texts = fast.output_until("flood-42");
-    assert!(
-        texts.is_empty(),
-        "계속 읽는 클라이언트까지 밀렸다: {texts:?}"
-    );
+    fast.output_until("flood-42");
 
     loop {
         let (tag, payload) = slow.frame().expect("resync 전에 끊겼다");
