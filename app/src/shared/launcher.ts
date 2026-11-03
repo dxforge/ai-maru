@@ -1,8 +1,10 @@
 /**
  * 즐겨찾기 하나. `id` 는 항목을 구별하는 값이고, workspace 는 이 값으로 자기 항목을 가리킨다. `dir` 은 workspace 를 연
- * 디렉토리의 절대경로, `name` 은 런처로 열 때 붙일 workspace 이름이다. 같은 `dir` 의 항목이 여럿일 수 있다.
+ * 디렉토리의 절대경로, `name` 은 런처로 열 때 붙일 workspace 이름이다. 같은 `dir` 의 항목이 여럿일 수 있다. `pins` 는
+ * 이 workspace 에 핀을 꽂은 디렉토리의 절대경로로, 꽂은 순서다. 사이드바는 열린 cell 이 맡지 않은 핀을 닫힌 핀 줄로
+ * 보인다.
  */
-export type Favorite = { id: string; dir: string; name: string }
+export type Favorite = { id: string; dir: string; name: string; pins?: string[] }
 
 /**
  * `userData/launcher.json` 의 내용이다. `recent` 는 런처로 연 디렉토리의 절대경로로, 최근에 연 것이 앞이다. `favorites` 는
@@ -31,6 +33,17 @@ function lexicalPath(p: string): string {
     else if (part !== '' && part !== '.') parts.push(part)
   }
   return (p.startsWith('/') ? '/' : '') + parts.join('/')
+}
+
+/** 핀 `dir` 을 끝에 더한다. 같은 디렉토리의 핀이 이미 있으면 `f` 를 그대로 돌려준다. */
+export function withPin(f: Favorite, dir: string): Favorite {
+  return f.pins?.some((p) => samePath(p, dir)) ? f : { ...f, pins: [...(f.pins ?? []), dir] }
+}
+
+/** 핀 `dir` 을 뺀다. 남은 핀이 없으면 `pins` 키도 없앤다. */
+export function withoutPin({ pins, ...f }: Favorite, dir: string): Favorite {
+  const rest = pins?.filter((p) => !samePath(p, dir))
+  return rest?.length ? { ...f, pins: rest } : f
 }
 
 export function favoriteById(

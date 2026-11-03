@@ -8,7 +8,14 @@ import {
 } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { ICONS } from '../icons'
-import { exitText, jobRow, paneRow, workspaceMarks, type RowSource } from './sidebarRows'
+import {
+  closedPins,
+  exitText,
+  jobRow,
+  paneRow,
+  workspaceMarks,
+  type RowSource
+} from './sidebarRows'
 
 const pane = { key: 1, ptyId: 'p-1', title: 'vim' }
 
@@ -160,5 +167,19 @@ describe('workspaceMarks', () => {
       notified: false,
       dot: false
     })
+  })
+})
+
+describe('closedPins', () => {
+  it('열린 cell 이 맡지 않은 핀을 핀 순서대로 내고, 이름은 디렉토리 이름, 경로는 홈을 ~ 로 줄인다', () => {
+    const pins = ['/h/work/app', '/h/notes', '/opt/x']
+    expect(closedPins(pins, [{}, { pin: '/h/work/app/' }], '/h')).toEqual([
+      { dir: '/h/notes', name: 'notes', path: '~/notes' },
+      { dir: '/opt/x', name: 'x', path: '/opt/x' }
+    ])
+  })
+
+  it('홈 디렉토리 핀의 이름은 ~ 다', () => {
+    expect(closedPins(['/h'], [], '/h')).toEqual([{ dir: '/h', name: '~', path: '~' }])
   })
 })

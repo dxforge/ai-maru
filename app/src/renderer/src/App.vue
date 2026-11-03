@@ -34,8 +34,8 @@ import TerminalView from './components/TerminalView.vue'
 import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
 import { commandArgv } from './config/launcher'
-import { favoriteById, SHELL } from '../../shared/launcher'
-import { createFavorites } from './launcher/favorites'
+import { favoriteById, samePath, SHELL } from '../../shared/launcher'
+import { createFavorites, pinToggle } from './launcher/favorites'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { activeTheme, windowTheme } from './themes'
@@ -395,7 +395,9 @@ watch(
   }
 )
 
-const favorites = createFavorites()
+const favorites = createFavorites((id) => {
+  for (const w of workspaces.list.value) if (w.favorite === id) workspaces.clearPins(w.key)
+})
 const favoriteKeys = computed(
   () =>
     new Set(
@@ -407,25 +409,89 @@ const favoriteKeys = computed(
 const linkedFavorites = computed(
   () => new Set(workspaces.list.value.flatMap((w) => w.favorite ?? []))
 )
-function toggleFavorite(key: number): void {
+const favoritePins = computed(
+  () =>
+    new Map(
+      workspaces.list.value.flatMap((w) => {
+        const pins = favoriteById(favorites.list.value, w.favorite)?.pins
+        return pins ? [[w.key, pins] as const] : []
+      })
+    )
+)
+/** 별을 누른 뒤 workspace 가 가리키는 즐겨찾기 항목의 `id` 다. 즐겨찾기에서 뺐거나 넣지 못했으면 undefined 다. */
+function toggleFavorite(key: number): string | undefined {
   const w = workspaces.list.value.find((x) => x.key === key)
-  if (!w) return
+  if (!w) return undefined
   const action = favorites.toggle(
     { dir: workspaceDir(w), name: workspaceName(w, home), favorite: w.favorite },
     linkedFavorites.value
   )
-  if (action.kind === 'loading') return
+  if (action.kind === 'loading') return undefined
   if (action.kind === 'unknown') {
     toasts.put('favorite', {
       level: 'warning',
       title: "Couldn't add to Favorites",
       lines: ["The workspace's directory isn't known yet."]
     })
-    return
+    return undefined
   }
   toasts.close('favorite')
-  if (action.kind === 'link') workspaces.setFavorite(key, action.id)
-  else if (action.kind === 'add') workspaces.setFavorite(key, action.favorite.id)
+  if (action.kind === 'forget') return undefined
+  const id = action.kind === 'link' ? action.id : action.favorite.id
+  workspaces.setFavorite(key, id)
+  return id
+}
+
+// 핀은 workspace 의 즐겨찾기 항목에 붙으므로, 즐겨찾기가 아닌 workspace 에서는 즐겨찾기에 먼저 넣는다.
+function togglePin(cell: number): void {
+  const w = workspaces.workspaceOf(cell)
+  const c = w?.cells.find((x) => x.key === cell)
+  if (!w || !c) return
+  const favorite = favoriteById(favorites.list.value, w.favorite)
+  const action = pinToggle(favorite, c.pin, c.panes[0].cwd)
+  if (action.kind === 'unpin') {
+    unpin(w.key, action.dir)
+    void focusSelected()
+    return
+  }
+  if (action.kind === 'unknown') {
+    toasts.put('pin', {
+      level: 'warning',
+      title: "Couldn't pin the cell",
+      lines: ["The first pane's directory isn't known yet."]
+    })
+    return
+  }
+  toasts.close('pin')
+  const id = favorite?.id ?? toggleFavorite(w.key)
+  if (id === undefined) return
+  workspaces.pinCell(cell, action.dir)
+  void favorites.pin(id, action.dir)
+  // cell 의 자리를 옮기면 터미널이 포커스를 잃어, 드래그로 옮길 때처럼 되돌린다.
+  void focusSelected()
+}
+
+function unpin(workspace: number, dir: string): void {
+  const w = workspaces.list.value.find((x) => x.key === workspace)
+  const favorite = w && favoriteById(favorites.list.value, w.favorite)
+  if (!favorite) return
+  workspaces.unpinDir(workspace, dir)
+  void favorites.unpin(favorite.id, dir)
+}
+
+async function openPin(workspace: number, dir: string): Promise<void> {
+  const reason = await window.maru.notDirectory(dir)
+  if (reason) {
+    toasts.put('pin', {
+      level: 'warning',
+      title: "Couldn't open the pinned directory",
+      lines: [reason]
+    })
+    return
+  }
+  toasts.close('pin')
+  const key = workspaces.openPinned(workspace, dir)
+  if (key !== undefined) selectCell(key)
 }
 function renameFavorite(key: number): void {
   const w = workspaces.list.value.find((x) => x.key === key)
@@ -831,11 +897,18 @@ function launch({ dir, command, where, name, favorite }: Launch): void {
   else if (where === 'workspace') {
     const linked = favorite && workspaces.list.value.find((w) => w.favorite === favorite)
     if (linked) showWorkspace(linked)
-    else workspaces.open(dir, pane, name, favorite)
+    else workspaces.open(dir, pane, name, favorite, pinFor(favorite, dir))
   }
   // 목록을 띄운 뒤 창이 작아졌으면 자리가 없을 수 있어 다시 본다.
   else if (split) splitSelected(split, { startDir: dir, ...pane })
   closeOverlay()
+}
+
+// 즐겨찾기로 연 workspace 의 첫 cell 이 핀의 디렉토리에서 열리면 그 핀을 맡는다. 같은 디렉토리가 닫힌 핀 줄로도 보이지 않게
+// 하기 위해서다.
+function pinFor(favorite: string | undefined, dir: string | undefined): string | undefined {
+  if (dir === undefined) return undefined
+  return favoriteById(favorites.list.value, favorite)?.pins?.find((p) => samePath(p, dir))
 }
 
 function showFavorite(favorite: string): void {
@@ -869,6 +942,10 @@ const handlers: Record<CommandId, () => void> = {
   'toggle-favorite-workspace': () => {
     const w = selectedWorkspace()
     if (w) toggleFavorite(w.key)
+  },
+  'toggle-pin-cell': () => {
+    const key = workspaces.selectedKey.value
+    if (key !== null) togglePin(key)
   },
   'next-cell': () => stepCell(1),
   'previous-cell': () => stepCell(-1),
@@ -1013,6 +1090,7 @@ void window.maru.restoreScreen().then((r) => {
         :urgent="urgent"
         :unread="unread"
         :favorites="favoriteKeys"
+        :pins="favoritePins"
         :folded="folded"
         :jobs="jobs"
         :now="now"
@@ -1027,6 +1105,9 @@ void window.maru.restoreScreen().then((r) => {
         @start-rename="startRename"
         @end-rename="endRename"
         @toggle-favorite="toggleFavorite"
+        @toggle-pin="togglePin"
+        @open-pin="openPin"
+        @unpin="unpin"
       />
     </div>
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />

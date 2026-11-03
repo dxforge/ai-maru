@@ -20,7 +20,8 @@ const SPANS: SidebarSpans = {
       cells: [
         { top: 30, bottom: 60 },
         { top: 66, bottom: 96 }
-      ]
+      ],
+      pinned: 0
     },
     {
       key: 2,
@@ -28,9 +29,18 @@ const SPANS: SidebarSpans = {
       bottom: 168,
       head: { top: 108, bottom: 138 },
       count: 1,
-      cells: [{ top: 138, bottom: 168 }]
+      cells: [{ top: 138, bottom: 168 }],
+      pinned: 0
     },
-    { key: 3, top: 174, bottom: 210, head: { top: 180, bottom: 210 }, count: 3, cells: [] }
+    {
+      key: 3,
+      top: 174,
+      bottom: 210,
+      head: { top: 180, bottom: 210 },
+      count: 3,
+      cells: [],
+      pinned: 0
+    }
   ],
   newWorkspace: { top: 218, bottom: 248 }
 }
@@ -95,6 +105,84 @@ describe('dropAt — cell', () => {
 
   it('workspace 가 없으면 New Workspace 칸 밖에서는 아무것도 주지 않는다', () => {
     expect(dropAt(cell(1, 0), { workspaces: [] }, 10)).toBeUndefined()
+  })
+})
+
+describe('dropAt — 핀', () => {
+  // workspace 1 은 앞 cell 하나가 핀을 맡았고, 그 아래 66~96 에 닫힌 핀 줄이 있고, 102~132 에 나머지 cell 이 있다.
+  // workspace 2 는 핀을 맡은 cell 하나와 나머지 cell 하나다.
+  const spans: SidebarSpans = {
+    workspaces: [
+      {
+        key: 1,
+        top: 0,
+        bottom: 132,
+        head: { top: 0, bottom: 30 },
+        count: 2,
+        cells: [
+          { top: 30, bottom: 60 },
+          { top: 102, bottom: 132 }
+        ],
+        pinned: 1,
+        closed: { top: 66, bottom: 96 }
+      },
+      {
+        key: 2,
+        top: 138,
+        bottom: 240,
+        head: { top: 144, bottom: 174 },
+        count: 2,
+        cells: [
+          { top: 174, bottom: 204 },
+          { top: 210, bottom: 240 }
+        ],
+        pinned: 1
+      }
+    ]
+  }
+
+  it('핀을 맡은 cell 은 같은 workspace 의 핀이 없는 묶음에 놓지 않는다', () => {
+    expect(dropAt(cell(1, 0, 7), spans, 125)).toBeUndefined()
+  })
+
+  it('핀이 없는 cell 은 핀 묶음에 놓지 않고, 핀이 없는 묶음 앞의 선은 닫힌 핀 줄 아래에 긋는다', () => {
+    const from = cell(2, 1)
+    expect(dropAt(from, spans, 35)).toBeUndefined()
+    expect(dropAt(from, spans, 110)).toEqual({
+      drop: { kind: 'cell', workspace: 1, index: 1 },
+      line: 99
+    })
+  })
+
+  it('핀을 맡은 cell 도 다른 workspace 에는 핀이 없는 묶음에만 놓는다', () => {
+    const from = cell(1, 0, 7)
+    expect(dropAt(from, spans, 180)).toBeUndefined()
+    expect(dropAt(from, spans, 220)?.drop).toEqual({ kind: 'cell', workspace: 2, index: 1 })
+  })
+
+  it('핀 묶음 안에서는 옮기고, 핀 묶음 끝의 선은 닫힌 핀 줄 위에 긋는다', () => {
+    const two: SidebarSpans = {
+      workspaces: [
+        {
+          key: 1,
+          top: 0,
+          bottom: 168,
+          head: { top: 0, bottom: 30 },
+          count: 3,
+          cells: [
+            { top: 30, bottom: 60 },
+            { top: 66, bottom: 96 },
+            { top: 138, bottom: 168 }
+          ],
+          pinned: 2,
+          closed: { top: 102, bottom: 132 }
+        }
+      ]
+    }
+    expect(dropAt(cell(1, 0, 7), two, 90)).toEqual({
+      drop: { kind: 'cell', workspace: 1, index: 2 },
+      line: 99
+    })
   })
 })
 

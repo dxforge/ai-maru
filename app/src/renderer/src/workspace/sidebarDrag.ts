@@ -22,6 +22,10 @@ export type WorkspaceSpan = Span & {
   /** 접힌 workspace 는 `cells` 가 비어 있어 cell 수를 따로 싣는다. */
   count: number
   cells: Span[]
+  /** 핀을 맡은 cell 의 수. 이 cell 들이 `cells` 의 앞에 온다. */
+  pinned: number
+  /** 핀을 맡은 cell 과 나머지 cell 사이에 놓인 닫힌 핀 줄들의 자리. 없으면 비운다. */
+  closed?: Span
 }
 
 export type SidebarSpans = { workspaces: WorkspaceSpan[]; newWorkspace?: Span }
@@ -53,9 +57,22 @@ function cellDrop(
   if (!w) return undefined
   const folded = w.cells.length === 0
   const index = folded ? w.count : y < w.head.bottom ? 0 : before(w.cells, y)
-  if (w.key === d.workspace && (index === d.index || index === d.index + 1)) return undefined
-  const line = folded ? w.head.bottom + HALF_GAP : gapLine(w.cells, index, w.head.bottom - HALF_GAP)
-  return { drop: { kind: 'cell', workspace: w.key, index }, line }
+  const same = w.key === d.workspace
+  if (same && (index === d.index || index === d.index + 1)) return undefined
+  // 핀 묶음과 핀이 없는 묶음을 넘어 놓지 않는다. 다른 workspace 로 옮긴 cell 은 핀을 놓으므로 핀이 없는 묶음에만 놓인다.
+  const pinned = same && d.index < w.pinned
+  if (pinned ? index > w.pinned : index < w.pinned) return undefined
+  return {
+    drop: { kind: 'cell', workspace: w.key, index },
+    line: cellLine(w, index, pinned, folded)
+  }
+}
+
+function cellLine(w: WorkspaceSpan, index: number, pinned: boolean, folded: boolean): number {
+  if (folded) return w.head.bottom + HALF_GAP
+  if (w.closed && index === w.pinned)
+    return pinned ? w.closed.top - HALF_GAP : w.closed.bottom + HALF_GAP
+  return gapLine(w.cells, index, w.head.bottom - HALF_GAP)
 }
 
 function workspaceDrop(

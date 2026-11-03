@@ -1,5 +1,6 @@
 import type { DeepReadonly } from 'vue'
 import { jobName, type JobView } from '../../../shared/job'
+import { samePath } from '../../../shared/launcher'
 import { sidebarLabel, type SidebarLabel } from '../../../shared/names'
 import { paneName, type CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
@@ -109,4 +110,24 @@ export function workspaceMarks(
 ): { state?: ProgramStatusState; notified: boolean; dot: boolean } {
   if (!folded) return { notified: false, dot: false }
   return { state, notified: unread, dot: unread && !state }
+}
+
+export type PinRow = { dir: string; name: string; path: string }
+
+/**
+ * workspace 의 닫힌 핀 줄이다. `pins` 는 workspace 가 가리키는 즐겨찾기 항목의 핀으로, 그 순서대로 둔다. 열린 cell 이
+ * 맡은(`pin`) 디렉토리는 빼서 같은 디렉토리가 열린 cell 과 닫힌 줄로 두 번 보이지 않게 한다.
+ */
+export function closedPins(
+  pins: readonly string[],
+  cells: readonly { pin?: string }[],
+  home?: string
+): PinRow[] {
+  return pins
+    .filter((dir) => !cells.some((c) => c.pin !== undefined && samePath(c.pin, dir)))
+    .map((dir) => ({
+      dir,
+      name: sidebarLabel({ cwd: dir }, undefined, home).name!,
+      path: tildePath(dir, home)
+    }))
 }

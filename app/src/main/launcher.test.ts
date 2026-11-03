@@ -259,6 +259,69 @@ describe('createLauncherStore 의 즐겨찾기', () => {
   })
 })
 
+describe('createLauncherStore 의 핀', () => {
+  it('핀은 그 즐겨찾기에 넣은 순서대로 쌓고, 경로는 풀어 두며 같은 디렉토리는 다시 넣지 않는다', async () => {
+    const store = createLauncherStore(file)
+    const a = join(dir, 'a')
+    await store.addFavorite({ id: 'f-1', dir: a, name: 'app' })
+    await store.addFavorite({ id: 'f-2', dir: a, name: 'other' })
+    await store.addPin('f-1', join(a, 'y'))
+    await store.addPin('f-1', join(a, 'x', '..', 'x'))
+    await store.addPin('f-1', join(a, 'y') + '/')
+    expect((await store.read()).favorites).toEqual([
+      { id: 'f-1', dir: a, name: 'app', pins: [join(a, 'y'), join(a, 'x')] },
+      { id: 'f-2', dir: a, name: 'other' }
+    ])
+    expect(saved()).toEqual(await store.read())
+  })
+
+  it('상대경로와 없는 즐겨찾기에는 핀을 넣지 않는다', async () => {
+    const store = createLauncherStore(file)
+    await store.addFavorite({ id: 'f-1', dir: join(dir, 'a'), name: 'app' })
+    await store.addPin('f-1', 'a')
+    await store.addPin('f-2', join(dir, 'a'))
+    expect((await store.read()).favorites).toEqual([
+      { id: 'f-1', dir: join(dir, 'a'), name: 'app' }
+    ])
+  })
+
+  it('핀을 빼고, 마지막 핀을 빼면 pins 키를 지우되 즐겨찾기는 남긴다', async () => {
+    const store = createLauncherStore(file)
+    const a = join(dir, 'a')
+    await store.addFavorite({ id: 'f-1', dir: a, name: 'app' })
+    await store.addPin('f-1', join(a, 'x'))
+    await store.addPin('f-1', join(a, 'y'))
+    expect((await store.removePin('f-1', join(a, 'x') + '/')).favorites).toEqual([
+      { id: 'f-1', dir: a, name: 'app', pins: [join(a, 'y')] }
+    ])
+    expect((await store.removePin('f-1', join(a, 'y'))).favorites).toEqual([
+      { id: 'f-1', dir: a, name: 'app' }
+    ])
+  })
+
+  it('파일의 핀을 읽고, 문자열 배열이 아니거나 빈 배열인 pins 는 버린다', async () => {
+    writeFileSync(
+      file,
+      JSON.stringify({
+        recent: [],
+        favorites: [
+          { id: 'f-1', dir: '/w', name: 'a', pins: ['/w/x'] },
+          { id: 'f-2', dir: '/w', name: 'b', pins: [1] },
+          { id: 'f-3', dir: '/w', name: 'c', pins: [] },
+          { id: 'f-4', dir: '/w', name: 'd', pins: '/w/x' }
+        ],
+        command: null
+      })
+    )
+    expect((await createLauncherStore(file).read()).favorites).toEqual([
+      { id: 'f-1', dir: '/w', name: 'a', pins: ['/w/x'] },
+      { id: 'f-2', dir: '/w', name: 'b' },
+      { id: 'f-3', dir: '/w', name: 'c' },
+      { id: 'f-4', dir: '/w', name: 'd' }
+    ])
+  })
+})
+
 describe('listDirs', () => {
   it('이름순은 대소문자를 가리지 않는다', async () => {
     mkdirSync(join(dir, 'Alpha'))

@@ -819,14 +819,14 @@ test('사이드바 별로 넣은 workspace 는 닫은 뒤에도 런처의 Favori
   await expect(favoriteRows(again.page).locator('.path')).toHaveText([a])
 })
 
-test('런처에서 ⇧⌘⌫ 로 즐겨찾기를 빼면 Favorites 묶음이 없어지고 사이드바의 별도 꺼진다', async ({
+test('런처에서 ⇧⌘⌫ 로 즐겨찾기를 빼면 Favorites 묶음이 없어지고 사이드바의 별과 cell 의 핀도 꺼진다', async ({
   launch,
   dataDir
 }) => {
   const [cmd] = useTool(dataDir)
   const a = project(dataDir, 'proj-a')
   const b = project(dataDir, 'proj-b')
-  writeLauncherState(dataDir, [b], cmd, [{ id: 'f-1', dir: a, name: 'atlas' }])
+  writeLauncherState(dataDir, [b], cmd, [{ id: 'f-1', dir: a, name: 'atlas', pins: [a] }])
   const launched = await launch()
   const { page } = launched
   await openLauncher(launched)
@@ -846,6 +846,8 @@ test('런처에서 ⇧⌘⌫ 로 즐겨찾기를 빼면 Favorites 묶음이 없�
   await expect(workspaceNames(page).nth(1)).toHaveText('atlas')
   await expect(star(page, 1)).toHaveClass(/\bon\b/)
   await expect(star(page, 0)).not.toHaveClass(/\bon\b/)
+  const pin = cellItems(page).nth(1).locator('.pin')
+  await expect(pin).toHaveAttribute('aria-pressed', 'true')
 
   await openLauncher(launched)
   await expect(recentLabels(page)).toHaveText([a, b])
@@ -858,6 +860,12 @@ test('런처에서 ⇧⌘⌫ 로 즐겨찾기를 빼면 Favorites 묶음이 없�
   await expect(section(page)).toHaveText('Recent')
   await expect(labels(page)).toHaveText([a, b])
   await expect(star(page, 1)).not.toHaveClass(/\bon\b/)
+  await expect(pin).toHaveAttribute('aria-pressed', 'false')
+  await page.keyboard.press('Escape')
+  await workspaceHeads(page).nth(1).hover()
+  await star(page, 1).click()
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await expect(pin).toHaveAttribute('aria-pressed', 'false')
 })
 
 test('이름을 고치지 않은 workspace 는 자동 이름으로 즐겨찾기에 들고, 이름을 고치면 즐겨찾기 이름도 바뀌며 비우면 그때의 자동 이름이 된다', async ({
@@ -1055,4 +1063,28 @@ test('이어진 workspace 가 열려 있어도 Recent 의 같은 디렉토리 �
   await expect(launcher(page)).toHaveCount(0)
   await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
   await expect(workspaceNames(page)).toHaveCount(3)
+})
+
+test('핀이 있는 즐겨찾기를 런처로 열면 고른 디렉토리의 cell 하나만 열리고, 그 cell 이 같은 디렉토리의 핀을 맡으며 나머지 핀은 닫힌 줄로 보인다', async ({
+  launch,
+  dataDir
+}) => {
+  const [cmd] = useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const b = project(dataDir, 'proj-b')
+  writeLauncherState(dataDir, [], cmd, [{ id: 'f-1', dir: a, name: 'atlas', pins: [b, a] }])
+  const launched = await launch()
+  const { page } = launched
+  await openLauncher(launched)
+  await toCommands(page, a)
+  await page.keyboard.press('Enter')
+  await activeTerminal(page)
+  await expect(rows(page)).toContainText(`A-ran-in-${a}`)
+
+  const opened = page.locator('.sidebar .workspace').nth(1)
+  await expect(workspaceNames(page).nth(1)).toHaveText('atlas')
+  await expect(opened.locator('.group')).toHaveCount(1)
+  await expect(opened.locator('.group .pin').first()).toHaveAttribute('aria-pressed', 'true')
+  await expect(opened.locator('.closed-pin')).toHaveCount(1)
+  await expect(opened.locator('.closed-pin')).toHaveAttribute('aria-label', 'Open proj-b')
 })

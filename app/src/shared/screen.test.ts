@@ -70,6 +70,7 @@ describe('parseScreen', () => {
     ['pane 폭이 정수가 아님', (s) => (s.workspaces[0].cells[0].paneCols = 110.5)],
     ['pane 폭이 0', (s) => (s.workspaces[0].cells[0].paneCols = 0)],
     ['pane 폭이 음수', (s) => (s.workspaces[0].cells[0].paneCols = -5)],
+    ['핀이 문자열이 아님', (s) => (s.workspaces[0].cells[0].pin = 1)],
     ['keep 이 true 가 아님', (s) => (s.workspaces[0].cells[0].panes[1].keep = false)]
   ])('%s 이면 null', (_, spoil) => {
     const s = clone()
@@ -94,6 +95,13 @@ describe('parseScreen', () => {
     const s = clone() as ScreenState
     s.workspaces[0].cells[0].paneCols = 110
     expect(parseScreen(s)!.workspaces[0].cells[0].paneCols).toBe(110)
+  })
+
+  it('cell 의 핀은 없어도 되고, 있으면 그대로 돌려준다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].cells[0].pin = '/work/app'
+    expect(parseScreen(s)!.workspaces[0].cells[0].pin).toBe('/work/app')
+    expect(parseScreen(clone())!.workspaces[0].cells[0]).not.toHaveProperty('pin')
   })
 
   it('workspace 이름은 없어도 되고, 있으면 그대로 돌려준다', () => {

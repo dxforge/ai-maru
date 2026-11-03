@@ -42,7 +42,7 @@ import { createPanes } from './pane'
 import { createWindowReady } from './window-ready'
 import { createJobs, JOB_REPLY_MS } from './job'
 import { removeTmpFiles } from './json-file'
-import { createLauncherStore, isFavorite, listDirs } from './launcher'
+import { createLauncherStore, isFavorite, listDirs, notDirectory } from './launcher'
 import { longestExistingPaths, openLink, type LinkOpener } from './links'
 import { createPortWatch, readPorts } from './ports'
 import { checkRestart, restartDialog, restartRefusal, type RestartCheck } from './restart'
@@ -668,6 +668,17 @@ function start(): void {
     typeof id === 'string' && typeof name === 'string'
       ? launcher.renameFavorite(id, name)
       : launcher.read()
+  )
+  ipcMain.handle('launcher:pin-add', (_event, id: unknown, dir: unknown) =>
+    typeof id === 'string' && typeof dir === 'string' ? launcher.addPin(id, dir) : launcher.read()
+  )
+  ipcMain.handle('launcher:pin-remove', (_event, id: unknown, dir: unknown) =>
+    typeof id === 'string' && typeof dir === 'string'
+      ? launcher.removePin(id, dir)
+      : launcher.read()
+  )
+  ipcMain.handle('launcher:not-directory', (_event, dir: unknown) =>
+    typeof dir === 'string' ? notDirectory(dir) : 'not a directory path'
   )
   ipcMain.handle('launcher:dirs', (_event, dir: unknown) =>
     typeof dir === 'string' ? listDirs(dir) : []
