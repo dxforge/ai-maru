@@ -321,6 +321,7 @@ function quitWith(o: Outcome): void {
     console.error('maru: cannot save the state before quitting:', err)
     // 고른 대로 끝낸다. pty 를 남기면 다음 실행이 디스크에 남은 마지막 상태로 다시 붙을 수 있다.
     if (o === 'keep') jobs?.detach()
+    store?.stop()
     outcome = o
     quitPermission.allow()
   }
