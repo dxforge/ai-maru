@@ -306,8 +306,8 @@ function onKeydown(e: KeyboardEvent): void {
           <span class="path">{{ r.label }}</span>
           <button
             v-if="!pathMode"
+            v-tooltip="{ text: 'Remove from recent', keys: '⇧⌘⌫' }"
             class="remove nerd-icon"
-            title="Remove from recent (⇧⌘⌫)"
             aria-label="Remove from recent"
             @click.stop="forget(r)"
           >

@@ -14,7 +14,13 @@ defineSlots<{ meta?(): unknown }>()
       <span class="title">{{ title }}</span>
       <span class="meta"><slot name="meta" /></span>
     </button>
-    <button class="remove" title="Remove" @mousedown.prevent @click="emit('remove')">
+    <button
+      v-tooltip="'Remove'"
+      class="remove"
+      aria-label="Remove"
+      @mousedown.prevent
+      @click="emit('remove')"
+    >
       <span class="nerd-icon">{{ ICONS.close }}</span>
     </button>
   </div>

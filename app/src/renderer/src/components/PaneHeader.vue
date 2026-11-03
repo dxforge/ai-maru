@@ -39,15 +39,15 @@ const notice = computed(() => notification && notificationText(notification))
 <template>
   <div class="row-bar pane-header" :class="[state ?? commandClass(command), { focused }]">
     <span
+      v-tooltip="state && STATE_LABELS[state]"
       class="row-bar-icon status-icon"
       :class="{ 'nerd-icon': !state, unread: notification }"
-      :title="state && STATE_LABELS[state]"
       ><StatusIcon v-if="state" :state="state" /><template v-else>{{
         commandIcon(command)
       }}</template></span
     >
     <span class="row-bar-text title">{{ paneName(pane, status, shell, command) }}</span>
-    <span v-if="notice" class="row-bar-text notification" :title="notice">{{ notice }}</span>
+    <span v-if="notice" v-tooltip="notice" class="row-bar-text notification">{{ notice }}</span>
     <span v-if="tail" class="command-tail">{{ tail }}</span>
     <span v-if="agent" class="claude-icon nerd-icon">{{ agent }}</span>
     <span v-if="pane.cwd" class="cwd">{{ dirName(pane.cwd) }}</span>

@@ -71,12 +71,12 @@ test('저장소 안에서는 저장소 이름과 branch 를, 밖에서는 디렉
   const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await expect(cellPlaces(page)).toHaveText(['~'])
   await expect(branch(page)).toHaveCount(0)
-  await expect(tip(page)).toHaveAttribute('title', /\n~$/)
+  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~$/)
 
   await page.keyboard.type('cd proj/.git\n')
   await page.keyboard.type('cd ..; mkdir -p a/b; cd a/b\n')
   await expect(branch(page)).toHaveText(/main$/)
-  await expect(tip(page)).toHaveAttribute('title', /\n~\/proj\/a\/b$/)
+  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/proj\/a\/b$/)
   await expect.poll(() => win(app)).toEqual({ title: 'proj — main', path: join(home, 'proj/a/b') })
 
   await page.keyboard.type('cd ~/notes\n')
@@ -194,7 +194,7 @@ test('셸로 branch 를 바꾸면 다음 프롬프트에 따라가고, worktree 
   await page.keyboard.type('git worktree add -q -b wt ../proj-wt && cd ../proj-wt\n')
   // worktree 로 cd 하기 전에도 cell 이름이 `proj` 이므로, branch 가 `wt` 로 바뀐 뒤에 이름을 확인한다.
   await expect(branch(page)).toHaveText(/wt$/, shellGit)
-  await expect(tip(page)).toHaveAttribute('title', /\n~\/proj-wt$/)
+  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/proj-wt$/)
 })
 
 test('프롬프트가 뜨지 않아도 Claude 의 상태가 바뀌면 branch 를 다시 읽는다', async ({
@@ -229,10 +229,10 @@ test('돌고 있는 프로그램이 다른 worktree 로 옮겨 간 채 Claude �
   const report = programStatus('working').trimEnd()
   await page.keyboard.type(`(cd ../proj-wt && ${report} && sleep 30)\n`)
   await expect(paneRows(page)).toHaveClass(/working/)
-  await expect(tip(page)).toHaveAttribute('title', /\n~\/proj-wt$/)
+  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/proj-wt$/)
 
   await page.keyboard.press('Control+C')
-  await expect(tip(page)).toHaveAttribute('title', /\n~\/proj$/)
+  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/proj$/)
 })
 
 test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어도 pane 의 경로는 그대로 두고 branch 만 다시 읽는다', async ({
@@ -243,7 +243,7 @@ test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어
   symlinkSync(join(home, 'proj'), join(home, 'link'))
   const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await page.keyboard.type('cd link\n')
-  await expect(tip(page)).toHaveAttribute('title', /\n~\/link$/)
+  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/link$/)
 
   // `foreground` 는 실제 경로(`~/proj`)를 답하고, OSC 7 은 `$PWD`(`~/link`)를 준다. branch 를 바꿔 두고, branch 를 다시 읽은
   // 것을 확인한 뒤에 경로를 확인한다.
@@ -251,7 +251,7 @@ test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어
   await page.keyboard.type(`(git switch -q -c by-claude && ${report} && sleep 30)\n`)
   await expect(paneRows(page)).toHaveClass(/working/, shellGit)
   await expect(branch(page)).toHaveText(/by-claude$/)
-  await expect(tip(page)).toHaveAttribute('title', /\n~\/link$/)
+  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/link$/)
   expect((await win(app)).path).toBe(join(home, 'link'))
 })
 
@@ -272,8 +272,8 @@ test('maru cell new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른
   await page.keyboard.type('maru cell new --cwd ~/proj bash ~/claude.sh >/dev/null\n')
   const opened = cellGroups(page).nth(1).locator('.pane-row')
   await expect(paneRows(page)).toHaveClass(/working/)
-  await expect(opened).toHaveAttribute('title', /\n~\/proj$/)
-  await expect(opened).toHaveAttribute('title', /\n~\/proj-wt$/)
+  await expect(opened).toHaveAttribute('data-tooltip', /\n~\/proj$/)
+  await expect(opened).toHaveAttribute('data-tooltip', /\n~\/proj-wt$/)
   await expect(paneRows(page)).toHaveClass(/working/)
 })
 
@@ -293,7 +293,7 @@ test('maru cell new --cwd 로 심볼릭 링크 경로에 바로 띄운 Claude �
   await page.keyboard.type('maru cell new --cwd ~/link bash ~/claude.sh >/dev/null\n')
   const opened = cellGroups(page).nth(1).locator('.pane-row')
   await expect(paneRows(page)).toHaveClass(/blocked/)
-  await expect(opened).toHaveAttribute('title', /\n~\/link$/)
+  await expect(opened).toHaveAttribute('data-tooltip', /\n~\/link$/)
 })
 
 test('경로는 cell 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, cell 헤더에도 branch 가 붙는다', async ({
@@ -307,8 +307,8 @@ test('경로는 cell 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입
   await expect(branch(page)).toHaveText(/main$/)
   await newWorkspace(launched, 2)
   await page.keyboard.type('cd ~/notes\n')
-  await expect(cellItems(page).nth(1)).toHaveAttribute('title', /\n~\/notes$/)
-  await expect(cellItems(page).nth(0)).toHaveAttribute('title', /\n~\/proj$/)
+  await expect(cellItems(page).nth(1)).toHaveAttribute('data-tooltip', /\n~\/notes$/)
+  await expect(cellItems(page).nth(0)).toHaveAttribute('data-tooltip', /\n~\/proj$/)
 
   await cellItems(page).nth(0).click()
   await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
@@ -688,7 +688,10 @@ test('maru job 으로 띄운 job 은 그 cell 의 pane 줄 아래에 이름·듣
   const web = jobRows(page).first()
   await expect(web.locator('.state')).toHaveText(ICONS.gear)
   await expect(web.locator('.title')).toHaveText('web')
-  await expect(web).toHaveAttribute('title', `python3 -m http.server ${port} --bind 127.0.0.1`)
+  await expect(web).toHaveAttribute(
+    'data-tooltip',
+    `python3 -m http.server ${port} --bind 127.0.0.1`
+  )
   await expect(web.locator('.time')).toHaveText('<1m')
   await expect(web.locator('.ports')).toHaveText(`:${port}`, { timeout: 15_000 })
 
@@ -715,7 +718,7 @@ test('끝난 job 은 남아 시간 자리에 exited 를 쓰고 종료 코드는 
   const build = jobRows(page).first()
   await expect(build).toHaveClass(/exited/)
   await expect(build.locator('.time')).toHaveText('exited')
-  await expect(build).toHaveAttribute('title', 'sh -c exit 3\nExited with code 3')
+  await expect(build).toHaveAttribute('data-tooltip', 'sh -c exit 3\nExited with code 3')
 
   await build.hover()
   await build.locator('.kill').click()
@@ -917,7 +920,7 @@ test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리
   await expect(row.locator('.state')).toHaveText(ICONS.running)
   await expect(row.locator('.command-tail')).toHaveText('<1m')
   await expect(row.locator('.place')).toHaveCount(0)
-  await expect(row).toHaveAttribute('title', 'sleep 30\nRunning for <1m\n~')
+  await expect(row).toHaveAttribute('data-tooltip', 'sleep 30\nRunning for <1m\n~')
   await expect(row).toHaveAttribute('aria-label', 'Running: sleep 30')
 
   // 셸은 preexec 에서 OSC 133 C 로 명령을 알린 뒤에 명령을 tty 의 foreground 로 넘긴다. 앱은 OSC 133 C 를 받으면 제목을
@@ -941,7 +944,7 @@ test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리
   await expect(row.locator('.title')).toHaveText("sh -c 'exit 3'")
   await expect(row.locator('.state')).toHaveText(ICONS.error)
   await expect(row.locator('.command-tail')).toHaveText('3')
-  await expect(row).toHaveAttribute('title', "sh -c 'exit 3'\nExited with code 3\n~")
+  await expect(row).toHaveAttribute('data-tooltip', "sh -c 'exit 3'\nExited with code 3\n~")
 
   await page.keyboard.type('false\n')
   await expect(row.locator('.title')).toHaveText('false')
@@ -965,7 +968,7 @@ test('명령을 주어 띄운 pane 은 이름 자리에 명령 전체를 쓰고,
   await expect(row).toHaveClass(/command-running/)
   await expect(row.locator('.command-tail')).toHaveCount(0)
   await expect(row.locator('.place')).not.toHaveCount(0)
-  await expect(row).toHaveAttribute('title', /^bash -c read x\nRunning for <1m\n/)
+  await expect(row).toHaveAttribute('data-tooltip', /^bash -c read x\nRunning for <1m\n/)
 })
 
 const nameInput = (page: Page) => page.locator('.sidebar .workspace-name-input')
@@ -991,13 +994,13 @@ test('workspace 이름 줄을 두 번 누르면 이름을 고치고, Enter 로 �
   await expect(workspaceNames(page)).toHaveText(['review'])
   await expect(head).toHaveAttribute('aria-expanded', 'true')
   await expect(head).toHaveAttribute('aria-label', 'Collapse review')
-  await expect(head).toHaveAttribute('title', 'proj')
+  await expect(head).toHaveAttribute('data-tooltip', 'proj')
   await expect(cellPlaces(page).locator('.name')).toHaveText(['proj'])
 
   await page.keyboard.type('cd ~/notes\n')
   await expect(cellPlaces(page)).toHaveText(['notes'])
   await expect(workspaceNames(page)).toHaveText(['review'])
-  await expect(head).toHaveAttribute('title', 'notes')
+  await expect(head).toHaveAttribute('data-tooltip', 'notes')
 })
 
 test('이름을 고치다 Esc 를 누르면 이름이 그대로이고, 비우고 정하면 자동 이름으로 돌아가며, 두 경우 모두 터미널이 입력을 받는다', async ({
@@ -1191,6 +1194,6 @@ test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 이름이 �
   await page.keyboard.press('Enter')
   await expect(nameInput(page)).toHaveCount(0)
   await page.keyboard.type('cd ~/proj\n')
-  await expect(head).toHaveAttribute('title', 'proj')
+  await expect(head).toHaveAttribute('data-tooltip', 'proj')
   await expect(workspaceNames(page)).toHaveText(['notes'])
 })

@@ -2,6 +2,7 @@
 import { ref, useTemplateRef, watch } from 'vue'
 import { clockTime, type Canvas } from '../canvas/store'
 import { ICONS } from '../icons'
+import { commandLabel } from '../../../shared/shortcuts'
 import CanvasDoc from './CanvasDoc.vue'
 import CanvasViewMenu from './CanvasViewMenu.vue'
 import CardStream from './CardStream.vue'
@@ -67,22 +68,30 @@ function onTransition(e: TransitionEvent): void {
       <CanvasViewMenu :canvas="canvas" />
       <span class="actions">
         <button
+          v-tooltip="'Expand all'"
           class="expand-all"
-          title="Expand all"
+          aria-label="Expand all"
           @mousedown.prevent
           @click="canvas.expandAll()"
         >
           <span class="nerd-icon">{{ ICONS.expandAll }}</span>
         </button>
         <button
+          v-tooltip="'Collapse all'"
           class="collapse-all"
-          title="Collapse all"
+          aria-label="Collapse all"
           @mousedown.prevent
           @click="canvas.collapseAll()"
         >
           <span class="nerd-icon">{{ ICONS.collapseAll }}</span>
         </button>
-        <button class="close" title="Close" @mousedown.prevent @click="canvas.close()">
+        <button
+          v-tooltip="{ text: 'Close Canvas', keys: commandLabel('toggle-canvas') }"
+          class="close"
+          aria-label="Close Canvas"
+          @mousedown.prevent
+          @click="canvas.close()"
+        >
           <span class="nerd-icon">{{ ICONS.close }}</span>
         </button>
       </span>
@@ -110,8 +119,8 @@ function onTransition(e: TransitionEvent): void {
   </aside>
   <button
     v-if="!canvas.open.value && canvas.docs.value.length"
+    v-tooltip="{ text: 'Open Canvas', keys: commandLabel('toggle-canvas') }"
     class="reopen"
-    title="Open Canvas"
     @mousedown.prevent
     @click="canvas.reopen()"
   >

@@ -67,7 +67,7 @@ test('다른 pane 에 OSC 777 알림이 오면 사이드바 행 제목이 알림
   await expect(row.locator('.title')).toHaveText('Tests')
   await expect(row.locator('.state')).toHaveClass(/unread/)
   await expect(row).toHaveAttribute(
-    'title',
+    'data-tooltip',
     new RegExp(`^${shellName} — Tests: 3 failed; see log\n`)
   )
   await expect(row).toHaveAttribute('aria-label', /\. Notification: Tests: 3 failed; see log$/)
