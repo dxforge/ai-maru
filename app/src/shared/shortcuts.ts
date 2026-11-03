@@ -38,7 +38,7 @@ export type Shortcut = Keys &
 export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'new-workspace', key: 'N', meta: true },
   { target: 'command', action: 'new-cell', key: 'T', meta: true },
-  { target: 'command', action: 'launcher', key: 'P', meta: true },
+  { target: 'command', action: 'launcher', key: 'O', meta: true },
   { target: 'command', action: 'split-right', key: 'D', meta: true },
   { target: 'command', action: 'split-down', key: 'D', shift: true, meta: true },
   { target: 'command', action: 'close-pane', key: 'W', meta: true },
