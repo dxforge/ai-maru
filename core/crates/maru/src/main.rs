@@ -70,8 +70,9 @@
 //! cell id 는 cell 이 닫힐 때까지 바뀌지 않는다. cell 을 다른 workspace 로 옮겨도, `app.restart` 뒤에도
 //! 같다.
 //!
-//! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 같은 `id` 의 문서가 있으면 그 문서를 바꾸고,
-//! `id` 가 없으면 앱이 새 id 를 만든다. id 는 형식 없는 문자열이다.
+//! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 보낸 pty 의 cell 이 같은 `id` 로 보낸 문서가 있으면
+//! 그 문서를 바꾸고, `id` 가 없으면 앱이 새 id 를 만든다. 다른 cell 이 보낸 같은 `id` 의 문서는 바꾸지 않는다.
+//! id 는 형식 없는 문자열이다.
 //!
 //! `inbox.push` 는 `to` pty 에 메시지를 보낸다. `to` 가 `p-` 와 hex 8자리가 아니거나 그 pty 가 끝났으면
 //! `invalid_params` 다. `to` 를 구독하는 연결이 있으면 알림을 보내고, 본문이 알림에 다 실렸으면 읽은
@@ -511,13 +512,13 @@ enum StatusKind {
 
 #[derive(Subcommand)]
 enum CanvasCommand {
-    /// Show markdown in the Canvas panel. With --id, replaces the document with that id if
-    /// there is one.
+    /// Show markdown in the Canvas panel. With --id, replaces this cell's document with that
+    /// id if there is one.
     ///
     /// Reads FILE, or stdin when FILE is omitted or `-`. Prints the document's id; pass it
     /// back with --id to replace that document.
     Put {
-        /// Replace the document with this id, or add the document under this id.
+        /// Replace this cell's document with this id, or add one under this id.
         #[arg(long)]
         id: Option<String>,
         /// Title in the panel's list, shown instead of the first heading.

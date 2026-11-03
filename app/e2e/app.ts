@@ -44,8 +44,13 @@ export type Launched = { app: ElectronApplication; page: Page }
 export type CanvasItem =
   CanvasMarkdown | { id: string; kind: 'image'; name: string; mime: string; svg: string }
 
+/** main 을 거치지 않고 renderer 에 문서를 보낸다. main 이 붙이는 cell 은 여기서 보낼 때 선택된 cell 로 붙인다. */
 export async function putCanvas(app: ElectronApplication, item: CanvasItem): Promise<void> {
-  await app.evaluate(({ BrowserWindow }, item) => {
+  await app.evaluate(async ({ BrowserWindow }, item) => {
+    const contents = BrowserWindow.getAllWindows()[0].webContents
+    const cell: string | undefined = await contents.executeJavaScript(
+      `document.querySelector('.panes.selected')?.dataset.cell`
+    )
     const msg =
       item.kind === 'image'
         ? {
@@ -56,7 +61,7 @@ export async function putCanvas(app: ElectronApplication, item: CanvasItem): Pro
             bytes: Buffer.from(item.svg)
           }
         : item
-    BrowserWindow.getAllWindows()[0].webContents.send('canvas:put', msg)
+    contents.send('canvas:put', { ...msg, cell })
   }, item)
 }
 

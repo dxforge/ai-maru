@@ -4,21 +4,25 @@ import {
   canvasPanel,
   canvasResizer,
   canvasWidth,
+  cellItems,
   CLASSIC_SCROLLBARS,
   clickMenu,
   dragCanvas,
   dragHandle,
   grabHandle,
   expect,
+  newCell,
   openCanvas,
   OVERLAY_SCROLLBARS,
   putCanvas,
   rows,
+  run,
   serveRenderer,
   shellSize,
   sockets,
   test,
-  watchTerminalWidths
+  watchTerminalWidths,
+  zshHome
 } from './app'
 
 const svg = (width: number) =>
@@ -611,6 +615,79 @@ test('maru mcp 에 canvas_put 을 부르면 패널에 렌더되고 문서 id 를
   await expect(markdown(page).locator('h1')).toHaveText('From MCP')
   await expect(rows(page)).toContainText('"text":"mcp-doc"')
   await expect(rows(page)).toContainText('code-0')
+})
+
+const viewButton = (page: Page) => page.locator('.canvas .views .view')
+const viewMenu = (page: Page) => page.locator('.canvas .views .menu')
+const cellChoice = (page: Page, cell: string) => viewMenu(page).locator(`[data-cell="${cell}"]`)
+const selectedCell = async (page: Page): Promise<string> =>
+  (await page.locator('.panes.selected').getAttribute('data-cell'))!
+
+test('터미널에서 보낸 문서는 그 cell 을 고른 동안 보이고, 드롭다운으로 닫힌 cell 과 모든 문서를 고른다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: zshHome(dataDir, 'second') })
+  const { app, page } = launched
+  await page.keyboard.type("printf '# First' | maru canvas put >/dev/null\n")
+  await expect(titles(page)).toHaveText(['First'])
+  const first = await selectedCell(page)
+  await newCell(launched, 2)
+  const second = await selectedCell(page)
+  await expect(titles(page)).toHaveCount(0)
+  await expect(viewButton(page)).not.toContainText('second')
+  await page.keyboard.type('cd ~/second\n')
+  await expect(viewButton(page)).toContainText('second')
+  await page.keyboard.type("printf '# Second' | maru canvas put >/dev/null\n")
+  await expect(titles(page)).toHaveText(['Second'])
+
+  await clickMenu(app, 'close-pane')
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect(titles(page)).toHaveText(['First'])
+  await expect(viewButton(page)).not.toContainText('closed')
+  await expect(viewButton(page)).not.toContainText('second')
+
+  await viewButton(page).click()
+  await expect(viewMenu(page).locator('[data-cell]')).toHaveCount(2)
+  await expect(cellChoice(page, first)).not.toContainText('closed')
+  await expect(cellChoice(page, second)).toContainText('closed')
+  await cellChoice(page, second).click()
+  await expect(viewMenu(page)).toHaveCount(0)
+  await expect(titles(page)).toHaveText(['Second'])
+  await expect(viewButton(page)).toContainText('closed')
+
+  await viewButton(page).click()
+  await viewMenu(page).locator('.all').click()
+  await expect(titles(page)).toHaveText(['Second', 'First'])
+  await expect(page.locator('.canvas .card .owner')).toHaveCount(2)
+  await run(page, 'echo typed-$((1+1))', 'typed-2')
+
+  await viewButton(page).click()
+  const box = (await rows(page).boundingBox())!
+  await page.mouse.click(box.x + 10, box.y + 10)
+  await expect(viewMenu(page)).toHaveCount(0)
+})
+
+test('두 cell 이 같은 id 로 보낸 문서는 따로 남고, 접기와 ✕ 는 그 cell 의 문서에만 미친다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await putCanvas(app, { id: 'f', kind: 'markdown', text: 'one', title: 'From first' })
+  await newCell(launched, 2)
+  await putCanvas(app, { id: 'f', kind: 'markdown', text: 'two', title: 'From second' })
+  await expect(titles(page)).toHaveText(['From second'])
+
+  await viewButton(page).click()
+  await viewMenu(page).locator('.all').click()
+  await expect(titles(page)).toHaveText(['From second', 'From first'])
+  await expect(card(page, 'f')).toHaveCount(2)
+  await expect(markdown(page)).toHaveText(['two', 'one'])
+
+  await titles(page).filter({ hasText: 'From first' }).click()
+  await expect(markdown(page)).toHaveText(['two'])
+  await card(page, 'f').filter({ hasText: 'From second' }).locator('.remove').click()
+  await expect(titles(page)).toHaveText(['From first'])
 })
 
 test('입력이 16 MiB 아래여도 escape 한 요청 줄이 넘으면 앱의 이유와 함께 실패한다', async ({

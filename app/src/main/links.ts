@@ -41,7 +41,7 @@ export type LinkOpener = {
   openExternal(url: string): Promise<void>
   /** `shell.openPath` — 실패하면 그 이유, 열었으면 빈 문자열. */
   openPath(path: string): Promise<string>
-  putCanvas(doc: CanvasDoc): Promise<void>
+  putCanvas(doc: CanvasDoc, ptyId: string): Promise<void>
   foregroundCwd(ptyId: string): Promise<string | null>
 }
 
@@ -75,7 +75,7 @@ async function open(text: string, ptyId: string, opener: LinkOpener): Promise<Li
   if (!info) return { ok: false, reason: `${path} doesn't exist` }
   const doc = info.isFile() ? await canvasDocFor(path) : null
   if (doc) {
-    await opener.putCanvas(doc)
+    await opener.putCanvas(doc, ptyId)
     return { ok: true }
   }
   const reason = await opener.openPath(path)

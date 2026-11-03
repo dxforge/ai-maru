@@ -20,7 +20,8 @@ export const CANVAS_PUT_TOOL = {
       },
       id: {
         type: 'string',
-        description: 'Document id. Putting again with the same id replaces that document.'
+        description:
+          'Document id. Reusing an id in the same cell replaces the existing document. Documents from other cells stay separate, even when they have the same id.'
       },
       title: {
         type: 'string',
@@ -34,6 +35,10 @@ type Message = Record<string, unknown>
 type Deps = {
   put: (params: Record<string, unknown>) => Promise<{ id: string }>
   version: string
+}
+type SenderDeps = Omit<Deps, 'put'> & {
+  /** `pty` 는 `maru mcp` 를 띄운 pty 다. */
+  put: (params: Record<string, unknown>, pty: string) => Promise<{ id: string }>
 }
 
 class RpcError extends Error {
@@ -110,11 +115,11 @@ async function handle(msg: Message, deps: Deps): Promise<Message | null> {
   }
 }
 
-export function mcpHandlers(deps: Deps): Handlers {
+export function mcpHandlers(deps: SenderDeps): Handlers {
   return {
-    'mcp.message': async (params) => {
+    'mcp.message': async (params, pty) => {
       if (!isObject(params.message)) throw new InvalidParams('params.message must be an object')
-      const message = await handle(params.message, deps)
+      const message = await handle(params.message, { ...deps, put: (p) => deps.put(p, pty) })
       return message && { message }
     }
   }

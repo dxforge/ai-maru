@@ -16,7 +16,7 @@ import {
   utilityProcess,
   type UtilityProcess
 } from 'electron'
-import { canvasPut, putCanvas } from './canvas'
+import { canvasPut, ownerOf, putCanvas, type CellOf } from './canvas'
 import {
   closePaneDialog,
   createQuitPermission,
@@ -233,6 +233,7 @@ const seen = createSeen({
 })
 
 const windowReady = createWindowReady()
+const cellOf: CellOf = (pty) => jobs?.cellOf(pty)
 const panes = createPanes(
   (channel, id, arg) => {
     const win = mainWindow()
@@ -240,7 +241,7 @@ const panes = createPanes(
     win.webContents.send(channel, id, arg)
     return true
   },
-  (pty) => jobs?.cellOf(pty),
+  cellOf,
   windowReady
 )
 
@@ -470,7 +471,7 @@ function confirmQuit(): void {
   })().finally(() => (quitCheck = null))
 }
 
-const putDoc = canvasPut(mainWindow, windowReady)
+const putDoc = canvasPut(mainWindow, windowReady, cellOf)
 
 const cliHandlers: Handlers = {
   ping: (_params, pty) => ({ pty }),
@@ -788,7 +789,7 @@ function start(): void {
   const linkOpener: LinkOpener = {
     openExternal: (url) => shell.openExternal(url),
     openPath: (path) => shell.openPath(path),
-    putCanvas: (doc) => putCanvas(mainWindow, windowReady, doc),
+    putCanvas: (doc, pty) => putCanvas(mainWindow, windowReady, doc, ownerOf(pty, cellOf)),
     foregroundCwd: (id) => foregroundCwd(ptyDir(), id)
   }
   ipcMain.handle('link:open', (_event, text: unknown, pty: unknown) => {

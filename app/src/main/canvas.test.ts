@@ -3,13 +3,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
-import { canvasPut, putCanvas } from './canvas'
+import { canvasPut, putCanvas, type CellOf } from './canvas'
 import { InvalidParams } from './cli-server'
 import { createWindowReady } from './window-ready'
+import type { CanvasOwner } from '../shared/canvas'
 
 const dir = mkdtempSync(join(tmpdir(), 'maru-canvas-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
 afterEach(() => vi.useRealTimers())
+
+const noCell: CellOf = () => undefined
+const noOwner = (): CanvasOwner => ({})
 
 function readyWindow() {
   const windowReady = createWindowReady()
@@ -36,14 +40,14 @@ describe('putCanvas', () => {
   it('마크다운은 받은 그대로 보낸다', async () => {
     const { win, sent } = fakeWindow()
     const doc = { id: 'a', kind: 'markdown', text: '# hi', title: 't' } as const
-    await putCanvas(() => win, readyWindow(), doc)
+    await putCanvas(() => win, readyWindow(), doc, noOwner)
     expect(sent).toEqual([['canvas:put', doc]])
   })
 
   it('이미지는 부른 때의 파일 내용과 이름·형식을 보낸다', async () => {
     const { win, sent } = fakeWindow()
     const path = file('Shot.PNG', [1, 2, 3])
-    await putCanvas(() => win, readyWindow(), { id: 'b', kind: 'image', path })
+    await putCanvas(() => win, readyWindow(), { id: 'b', kind: 'image', path }, noOwner)
     writeFileSync(path, Buffer.from([9]))
     expect(sent).toEqual([
       [
@@ -63,7 +67,7 @@ describe('putCanvas', () => {
     const { win, sent } = fakeWindow()
     const path = join(dir, 'none.png')
     await expect(
-      putCanvas(() => win, readyWindow(), { id: 'c', kind: 'image', path })
+      putCanvas(() => win, readyWindow(), { id: 'c', kind: 'image', path }, noOwner)
     ).rejects.toThrow()
     expect(sent).toEqual([])
   })
@@ -73,7 +77,7 @@ describe('putCanvas', () => {
     const path = join(dir, 'folder.png')
     mkdirSync(path)
     await expect(
-      putCanvas(() => win, readyWindow(), { id: 'e', kind: 'image', path })
+      putCanvas(() => win, readyWindow(), { id: 'e', kind: 'image', path }, noOwner)
     ).rejects.toThrow()
     expect(sent).toEqual([])
   })
@@ -82,7 +86,7 @@ describe('putCanvas', () => {
     const { win, sent } = fakeWindow()
     const path = file('notes.txt', [1])
     await expect(
-      putCanvas(() => win, readyWindow(), { id: 'd', kind: 'image', path })
+      putCanvas(() => win, readyWindow(), { id: 'd', kind: 'image', path }, noOwner)
     ).rejects.toThrow(/not an image/)
     expect(sent).toEqual([])
   })
@@ -93,10 +97,18 @@ describe('창이 준비되기 전', () => {
     const { win, sent } = fakeWindow()
     const windowReady = createWindowReady()
     let done = 0
-    const first = putCanvas(() => win, windowReady, { id: 'a', kind: 'markdown', text: 'a' }).then(
-      () => done++
+    const first = putCanvas(
+      () => win,
+      windowReady,
+      { id: 'a', kind: 'markdown', text: 'a' },
+      noOwner
+    ).then(() => done++)
+    const second = putCanvas(
+      () => win,
+      windowReady,
+      { id: 'b', kind: 'markdown', text: 'b' },
+      noOwner
     )
-    const second = putCanvas(() => win, windowReady, { id: 'b', kind: 'markdown', text: 'b' })
     await new Promise((r) => setTimeout(r, 10))
     expect(sent).toEqual([])
     expect(done).toBe(0)
@@ -117,12 +129,22 @@ describe('창이 준비되기 전', () => {
     } as unknown as BrowserWindow
     const windowReady = createWindowReady()
     let message = ''
-    const first = putCanvas(() => broken, windowReady, {
-      id: 'a',
-      kind: 'markdown',
-      text: 'a'
-    }).catch((e: Error) => void (message = e.message))
-    const second = putCanvas(() => win, windowReady, { id: 'b', kind: 'markdown', text: 'b' })
+    const first = putCanvas(
+      () => broken,
+      windowReady,
+      {
+        id: 'a',
+        kind: 'markdown',
+        text: 'a'
+      },
+      noOwner
+    ).catch((e: Error) => void (message = e.message))
+    const second = putCanvas(
+      () => win,
+      windowReady,
+      { id: 'b', kind: 'markdown', text: 'b' },
+      noOwner
+    )
     await new Promise((r) => setTimeout(r, 10))
     expect(() => windowReady.ready()).not.toThrow()
     await Promise.all([first, second])
@@ -135,11 +157,16 @@ describe('창이 준비되기 전', () => {
     const { win, sent } = fakeWindow()
     const windowReady = createWindowReady()
     let message = ''
-    const caught = putCanvas(() => win, windowReady, {
-      id: 'a',
-      kind: 'markdown',
-      text: 'a'
-    }).catch((e: Error) => void (message = e.message))
+    const caught = putCanvas(
+      () => win,
+      windowReady,
+      {
+        id: 'a',
+        kind: 'markdown',
+        text: 'a'
+      },
+      noOwner
+    ).catch((e: Error) => void (message = e.message))
     await vi.advanceTimersByTimeAsync(7_999)
     expect(message).toBe('')
     await vi.advanceTimersByTimeAsync(1)
@@ -152,32 +179,66 @@ describe('창이 준비되기 전', () => {
   it('canvas.put 도 창이 준비될 때까지 답하지 않는다', async () => {
     const { win, sent } = fakeWindow()
     const windowReady = createWindowReady()
-    const res = canvasPut(() => win, windowReady)({ text: '# hi', id: 'd' })
+    const res = canvasPut(() => win, windowReady, noCell)({ text: '# hi', id: 'd' }, 'p-1')
     await new Promise((r) => setTimeout(r, 10))
     expect(sent).toEqual([])
     windowReady.ready()
     await expect(res).resolves.toEqual({ id: 'd' })
     expect(sent).toHaveLength(1)
   })
+
+  it('보낸 pty 의 cell 은 창이 준비된 뒤에 찾는다', async () => {
+    const { win, sent } = fakeWindow()
+    const windowReady = createWindowReady()
+    // 재시작 직후처럼 renderer 가 pane 의 pty 를 다시 열기 전에는 main 이 그 pty 의 cell 을 모른다.
+    const cells = new Map<string, string>()
+    const res = canvasPut(
+      () => win,
+      windowReady,
+      (pty) => cells.get(pty)
+    )({ text: 'a', id: 'd' }, 'p-1')
+    await new Promise((r) => setTimeout(r, 10))
+    cells.set('p-1', 'c-1')
+    windowReady.ready()
+    await res
+    expect(sent).toEqual([
+      ['canvas:put', { id: 'd', kind: 'markdown', text: 'a', pty: 'p-1', cell: 'c-1' }]
+    ])
+  })
 })
 
 describe('canvasPut', () => {
   it('id 를 주면 그대로 쓰고, 제목과 함께 마크다운 문서로 넣는다', async () => {
     const { win, sent } = fakeWindow()
-    const res = await canvasPut(() => win, readyWindow())({ text: '# hi', id: 'd', title: 't' })
+    const res = await canvasPut(
+      () => win,
+      readyWindow(),
+      () => 'c-1'
+    )({ text: '# hi', id: 'd', title: 't' }, 'p-1')
     expect(res).toEqual({ id: 'd' })
-    expect(sent).toEqual([['canvas:put', { id: 'd', kind: 'markdown', text: '# hi', title: 't' }]])
+    expect(sent).toEqual([
+      [
+        'canvas:put',
+        { id: 'd', kind: 'markdown', text: '# hi', title: 't', pty: 'p-1', cell: 'c-1' }
+      ]
+    ])
+  })
+
+  it('pty 의 cell 을 찾지 못하면 pty 만 붙인다', async () => {
+    const { win, sent } = fakeWindow()
+    await canvasPut(() => win, readyWindow(), noCell)({ text: 'a', id: 'd' }, 'p-1')
+    expect(sent).toEqual([['canvas:put', { id: 'd', kind: 'markdown', text: 'a', pty: 'p-1' }]])
   })
 
   it('id 가 없으면 새로 만들어 돌려주고, 부를 때마다 다르다', async () => {
     const { win, sent } = fakeWindow()
-    const put = canvasPut(() => win, readyWindow())
-    const a = await put({ text: 'a' })
-    const b = await put({ text: 'b' })
+    const put = canvasPut(() => win, readyWindow(), noCell)
+    const a = await put({ text: 'a' }, 'p-1')
+    const b = await put({ text: 'b' }, 'p-1')
     expect(a.id).toEqual(expect.any(String))
     expect(a.id).not.toBe('')
     expect(a.id).not.toBe(b.id)
-    expect(sent[0]).toEqual(['canvas:put', { id: a.id, kind: 'markdown', text: 'a' }])
+    expect(sent[0]).toEqual(['canvas:put', { id: a.id, kind: 'markdown', text: 'a', pty: 'p-1' }])
   })
 
   it.each([
@@ -188,14 +249,20 @@ describe('canvasPut', () => {
     [{ text: 'x', title: null }]
   ])('params %j 는 InvalidParams 이고 아무것도 보내지 않는다', async (params) => {
     const { win, sent } = fakeWindow()
-    await expect(canvasPut(() => win, readyWindow())(params)).rejects.toBeInstanceOf(InvalidParams)
+    await expect(canvasPut(() => win, readyWindow(), noCell)(params, 'p-1')).rejects.toBeInstanceOf(
+      InvalidParams
+    )
     expect(sent).toEqual([])
   })
 
   it('창이 없거나 파괴됐으면 InvalidParams 가 아닌 오류로 던진다', async () => {
     const gone = fakeWindow(true)
     for (const window of [() => undefined, () => gone.win]) {
-      const err = await canvasPut(window, readyWindow())({ text: 'x' }).catch((e: unknown) => e)
+      const err = await canvasPut(
+        window,
+        readyWindow(),
+        noCell
+      )({ text: 'x' }, 'p-1').catch((e: unknown) => e)
       expect(err).toBeInstanceOf(Error)
       expect(err).not.toBeInstanceOf(InvalidParams)
     }
