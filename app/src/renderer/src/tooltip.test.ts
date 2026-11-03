@@ -256,19 +256,22 @@ describe('vTooltip', () => {
     expect(shownText()).toBe('inner tip')
   })
 
-  it('Esc 로 닫고, 키를 막지 않으며, 안쪽에서 바깥으로 나와도 다시 띄우지 않는다', () => {
-    enter('outer')
-    enter('inner')
-    vi.advanceTimersByTime(SHOW_DELAY)
-    const key = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
-    document.dispatchEvent(key)
-    expect(key.defaultPrevented).toBe(false)
-    expect(shownText()).toBeUndefined()
-    expect(el('inner').hasAttribute('aria-describedby')).toBe(false)
-    leave('inner')
-    vi.advanceTimersByTime(SHOW_DELAY)
-    expect(shownText()).toBeUndefined()
-  })
+  it.each(['Escape', 'a', 'Shift'])(
+    '%s 키로 닫고, 키를 막지 않으며, 안쪽에서 바깥으로 나와도 다시 띄우지 않는다',
+    (name) => {
+      enter('outer')
+      enter('inner')
+      vi.advanceTimersByTime(SHOW_DELAY)
+      const key = new KeyboardEvent('keydown', { key: name, cancelable: true })
+      document.dispatchEvent(key)
+      expect(key.defaultPrevented).toBe(false)
+      expect(shownText()).toBeUndefined()
+      expect(el('inner').hasAttribute('aria-describedby')).toBe(false)
+      leave('inner')
+      vi.advanceTimersByTime(SHOW_DELAY)
+      expect(shownText()).toBeUndefined()
+    }
+  )
 
   it('Esc 로 닫은 뒤 다른 요소에 들어가면 지연을 기다려 띄운다', () => {
     enter('other')

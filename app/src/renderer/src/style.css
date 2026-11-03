@@ -80,7 +80,7 @@
   font:
     var(--text-2) / 1.4 var(--font-ui),
     sans-serif;
-  white-space: pre-line;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
   pointer-events: none;
   user-select: none;

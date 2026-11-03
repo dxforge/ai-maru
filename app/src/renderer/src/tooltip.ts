@@ -64,7 +64,7 @@ const hovered: HTMLElement[] = []
 /** 키보드로 포커스한 요소. */
 let focused: HTMLElement | undefined
 /**
- * Esc·클릭으로 닫을 때 마우스가 올라가 있거나 포커스가 있던 요소. 마우스가 새 요소에 들어갈 때까지 띄우지 않는다.
+ * tooltip 을 닫을 때(키·누르기·창이 포커스를 잃음·요소를 담은 영역의 스크롤) 마우스가 올라가 있거나 포커스가 있던 요소. 마우스가 새 요소에 들어갈 때까지 띄우지 않는다.
  * 포커스가 옮겨 가면 새로 포커스한 요소만 띄운다.
  */
 const muted = new Set<HTMLElement>()
@@ -202,10 +202,13 @@ function onBlur(e: Event): void {
   refresh()
 }
 
-function onKey(e: KeyboardEvent): void {
-  // 키를 막지 않는다. 터미널에 포커스가 있으면 Esc 는 그대로 터미널로 간다.
-  if (e.key === 'Escape') dismiss()
+// 브라우저 기본 tooltip 처럼 어느 키를 눌러도 닫는다. 키는 막지 않아 터미널로 그대로 간다.
+function onKey(): void {
+  dismiss()
 }
+// `App.vue` 가 chord 키(⌘J 뒤의 키)를 window 의 capture 단계에서 멈추므로, 그보다 먼저 달려고 `install` 을 기다리지 않고
+// 모듈을 읽을 때 window 에 단다.
+window.addEventListener('keydown', onKey, true)
 
 // 요소를 담은 영역이 스크롤되면 tooltip 이 요소에서 떨어지므로 닫는다. 터미널처럼 상관없는 영역의 스크롤은 무시한다.
 function onScroll(e: Event): void {
@@ -217,7 +220,6 @@ let installed = false
 function install(): void {
   if (installed) return
   installed = true
-  document.addEventListener('keydown', onKey, true)
   document.addEventListener('scroll', onScroll, true)
   document.addEventListener('mousemove', onMove, { capture: true, passive: true })
   window.addEventListener('blur', dismiss)
