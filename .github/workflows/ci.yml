@@ -10,18 +10,44 @@ defaults:
     working-directory: core
 
 jobs:
+  # 바뀐 경로를 보고 job 을 건너뛴다. workflow 의 on.paths 로 거르면 workflow 가 돌지 않아 required check 가 보고되지 않고 머지가 막힌다. job 수준 if 로 건너뛴 job 은 성공으로 보고된다.
+  # needs 가 실패해 건너뛴 job 도 성공으로 보고되므로, 뒤 job 은 이 job 이 성공하지 못하면 건너뛰지 않고 돈다.
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      # push 이벤트에서는 git 으로 바뀐 경로를 찾으므로 checkout 이 있어야 한다.
+      - uses: actions/checkout@v7
+      - id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            rust:
+              - 'core/**'
+              - '.github/workflows/ci.yml'
+            app:
+              - 'app/**'
+              - '.github/workflows/ci.yml'
+
   fmt:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - run: cargo fmt --check
 
+  # job 수준 if 는 matrix 를 펼치기 전에 판정되므로, matrix job 을 건너뛰면 required check `rust (macos-15)` 가 보고되지 않는 것으로 보인다. 그래서 matrix 없이 그 이름을 직접 단다.
   rust:
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [macos-15]
-    runs-on: ${{ matrix.runner }}
+    name: rust (macos-15)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
       - run: grep '^ZIG_VERSION=' ghostty-vt.env >> "$GITHUB_ENV"
@@ -51,6 +77,8 @@ jobs:
       - run: cargo test
 
   app:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true') }}
     runs-on: ubuntu-24.04
     defaults:
       run:
