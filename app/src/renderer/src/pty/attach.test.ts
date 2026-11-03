@@ -1,4 +1,5 @@
-import type { Terminal } from '@xterm/xterm'
+// @vitest-environment jsdom
+import { Terminal } from '@xterm/xterm'
 import { describe, expect, it } from 'vitest'
 import { attach, GONE_MESSAGE } from './attach'
 import type { PtyConnection, PtyMessage } from './connection'
@@ -49,6 +50,24 @@ const handlers = {
   onSpawned: () => {},
   onOpenFailed: () => {},
   onProgramStatus: () => {}
+}
+
+const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0))
+
+const header = (type: string): string =>
+  JSON.stringify({ type, cols: 20, rows: 4, cursor_x: 0, cursor_y: 0 })
+
+async function drawn(messages: PtyMessage[]): Promise<{ lines: string[]; cursor: number[] }> {
+  const term = new Terminal({ cols: 20, rows: 4, allowProposedApi: true })
+  const { conn, deliver } = fakeConnection()
+  attach(term, conn, handlers)
+  for (const m of messages) deliver(m)
+  await new Promise<void>((done) => term.write('', done))
+  const b = term.buffer.active
+  const lines = Array.from({ length: b.length }, (_, y) => b.getLine(y)!.translateToString(true))
+  const cursor = [b.cursorX, b.cursorY]
+  term.dispose()
+  return { lines, cursor }
 }
 
 describe('attach', () => {
@@ -298,5 +317,26 @@ describe('attach', () => {
     deliver(JSON.stringify({ type: 'state', cwd: '/x', records: [] }))
     expect(got).toEqual([])
     expect(term.written).toEqual([])
+  })
+  // resync 의 RIS 가 끝나지 않은 시퀀스를 끊는다는 계약(`docs/architecture.md`)을 확인한다.
+  it.each([
+    ['UTF-8 글자', '\xea\xb0'],
+    ['CSI', '\x1b[38;5;'],
+    ['OSC', '\x1b]0;ti']
+  ])('프레임이 %s 중간에서 끝난 뒤 resync 를 받으면 화면이 재생과 같다', async (_, cut) => {
+    // 재생도 서버 VT 에서 끝나지 않은 글자(`다` 의 앞 두 바이트)로 끝나고, 다음 프레임이 그 마지막 바이트로 시작한다.
+    const replay = '\x1b[H\x1b[2Jhello\r\n$ \xea\xb0\x80\xeb\x8b'
+    const next = latin1('\xa4 tail')
+    const resynced = await drawn([
+      header('attached'),
+      latin1('before\r\n'),
+      latin1(`$ ${cut}`),
+      header('resync'),
+      latin1(`\x1bc${replay}`),
+      next
+    ])
+    const fresh = await drawn([header('attached'), latin1(replay), next])
+    expect(resynced).toEqual(fresh)
+    expect(fresh.lines[1]).toBe('$ 가다 tail')
   })
 })

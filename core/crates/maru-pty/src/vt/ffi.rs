@@ -56,6 +56,13 @@ unsafe extern "C" {
 
     pub fn ghostty_formatter_free(formatter: GhosttyFormatter);
 
+    pub fn ghostty_terminal_continuation_alloc(
+        terminal: GhosttyTerminal,
+        allocator: *const GhosttyAllocator,
+        out_ptr: *mut *mut u8,
+        out_len: *mut usize,
+    ) -> i32;
+
     pub fn ghostty_free(allocator: *const GhosttyAllocator, ptr: *mut u8, len: usize);
 
     pub fn ghostty_snapshot_encode_alloc(

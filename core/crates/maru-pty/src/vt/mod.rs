@@ -430,11 +430,61 @@ impl VtTerminal {
     }
 
     /// 붙는 클라이언트에 보낼 재생. 그리드 높이·스크롤 리전·커서까지 이 화면과 같게 맞춰 끝난다.
-    ///
+    /// 마지막 출력이 시퀀스나 UTF-8 글자 중간에서 끊겼으면 그 앞부분을 끝에 붙인다. 이어 오는 출력이
+    /// 그 뒷부분으로 시작하기 때문이다.
+    pub fn replay(&self) -> Result<Vec<u8>> {
+        let mut out = self.replay_screens()?;
+        self.push_continuation(&mut out);
+        Ok(out)
+    }
+
+    /// 끝나지 않은 시퀀스가 `CONTINUATION_MAX_BYTES` 를 넘어 ghostty 가 버렸으면 붙이지 않는다. 그때는 이어 오는
+    /// 뒷부분이 클라이언트에 글자로 찍힌다.
+    fn push_continuation(&self, out: &mut Vec<u8>) {
+        let mut out_ptr: *mut u8 = ptr::null_mut();
+        let mut out_len: usize = 0;
+        // SAFETY: `&self` 동안 다른 쓰기가 없다. `out_ptr`·`out_len` 은 지역 변수다.
+        let rc = unsafe {
+            ffi::ghostty_terminal_continuation_alloc(
+                self.raw,
+                ptr::null(),
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        if rc != ffi::GHOSTTY_SUCCESS || out_ptr.is_null() {
+            return;
+        }
+        // SAFETY: 성공하면 (out_ptr, out_len) 은 기본 할당자가 준 유효한 바이트다. 복사한 뒤 같은
+        // 할당자·길이로 해제한다.
+        unsafe {
+            out.extend_from_slice(std::slice::from_raw_parts(out_ptr, out_len));
+            ffi::ghostty_free(ptr::null(), out_ptr, out_len);
+        }
+    }
+
+    /// 파서와 UTF-8 decoder 가 모두 시퀀스 밖에 있으면 true 다. 이때만 바이트를 끼워 넣어도 프로그램의
+    /// 시퀀스가 끊기지 않는다.
+    pub fn at_ground(&self) -> Result<bool> {
+        let mut ground = false;
+        // SAFETY: 이 데이터의 출력 타입은 `bool*` 다.
+        let rc = unsafe {
+            ffi::ghostty_terminal_get(
+                self.raw,
+                ffi::GHOSTTY_TERMINAL_DATA_VT_GROUND,
+                &mut ground as *mut bool as *mut c_void,
+            )
+        };
+        if rc != ffi::GHOSTTY_SUCCESS {
+            bail!("ghostty_terminal_get(VT_GROUND) rc={rc}");
+        }
+        Ok(ground)
+    }
+
     /// 대체 화면이 떠 있으면 일반 화면과 스크롤백을 먼저 싣는다 — 대체 화면만 보내면 그
     /// 프로그램이 끝난 뒤 클라이언트에 빈 화면이 남는다. 포맷은 활성 화면만 내보내므로 복제본을
     /// 일반 화면으로 되돌려 포맷한다.
-    pub fn replay(&self) -> Result<Vec<u8>> {
+    fn replay_screens(&self) -> Result<Vec<u8>> {
         let active = self.format(VtFormat::Vt)?;
         if !self.alternate_active()? {
             return self.with_trailing_blank_rows(active);
@@ -1445,15 +1495,16 @@ mod tests {
         }
     }
 
-    fn assert_continuing_after_replay_matches(t: &mut VtTerminal, first: &[u8]) {
+    fn assert_continuing_after_replay_matches(t: &mut VtTerminal, first: &[u8]) -> VtTerminal {
         let mut c = replayed(t);
         assert_eq!(plain(&c), plain(t));
         for bytes in [first, b"TAIL", b"\r\nnext"] {
             t.write(bytes);
             c.write(bytes);
-            assert_eq!(plain(&c), plain(t));
-            assert_eq!(c.cursor().unwrap(), t.cursor().unwrap());
+            assert_eq!(plain(&c), plain(t), "{first:?}");
+            assert_eq!(c.cursor().unwrap(), t.cursor().unwrap(), "{first:?}");
         }
+        c
     }
 
     fn filled() -> VtTerminal {
@@ -1523,13 +1574,62 @@ mod tests {
         );
     }
 
+    /// (끊긴 앞부분, 이어 오는 뒷부분). 마지막 둘은 `가`(EA B0 80)다.
+    const CUT_SEQUENCES: [(&[u8], &[u8]); 11] = [
+        (b"\x1b[3", b"1mRED"),
+        (b"\x1b[38;5;", b"196mRED"),
+        (b"\x1b", b"[31mRED"),
+        // 시퀀스 안의 C0 는 그 자리에서 실행되고, 앞부분에는 남지 않는다.
+        (b"\x1b[3\x08", b"1mRED"),
+        (b"\x1b]0;ti", b"tle\x07"),
+        (b"\x1b]8;;https://a.test\x1b", b"\\link\x1b]8;;\x1b\\"),
+        (b"\x1bPzz", b"zz\x1b\\"),
+        (b"\x1b_x", b"y\x1b\\"),
+        (b"\x1bXsos", b"\x1b\\"),
+        (b"\xea\xb0", b"\x80"),
+        (b"\xea", b"\xb0\x80"),
+    ];
+
     #[test]
-    fn replay_works_with_an_unfinished_sequence_pending() {
+    fn replay_continues_a_sequence_cut_in_the_middle() {
+        for before in [&b"hello\r\n$ "[..], b"base\r\n\x1b[?1049h\x1b[Halt"] {
+            for (head, tail) in CUT_SEQUENCES {
+                let mut t = term();
+                t.write(before);
+                t.write(head);
+                let mut c = assert_continuing_after_replay_matches(&mut t, tail);
+                assert_eq!(vt(&c), vt(&t), "{head:?}");
+                assert_eq!(c.title(), t.title(), "{head:?}");
+                if t.alternate_active().unwrap() {
+                    t.write(b"\x1b[?1049l");
+                    c.write(b"\x1b[?1049l");
+                    assert_eq!(plain(&c), plain(&t), "{head:?}");
+                    assert!(plain(&c).contains("base"), "{head:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ground_is_false_only_inside_a_sequence_or_a_utf8_character() {
         let mut t = term();
-        t.write(b"base\r\n\x1b[?1049h\x1b[Halt\x1b[3");
-        let mut c = replayed(&t);
-        c.write(b"\x1b[?1049l");
-        assert!(plain(&c).contains("base"));
+        assert!(t.at_ground().unwrap());
+        for (head, tail) in CUT_SEQUENCES {
+            t.write(head);
+            assert!(!t.at_ground().unwrap(), "{head:?}");
+            t.write(tail);
+            assert!(t.at_ground().unwrap(), "{head:?}");
+        }
+    }
+
+    #[test]
+    fn ground_is_false_inside_a_sequence_too_long_to_continue() {
+        let mut t = term();
+        t.write(b"\x1b]52;c;");
+        t.write(&vec![b'A'; 2 * CONTINUATION_MAX_BYTES]);
+        assert!(!t.at_ground().unwrap());
+        t.write(b"\x07");
+        assert!(t.at_ground().unwrap());
     }
 
     #[test]

@@ -112,3 +112,7 @@ renderer 의 xterm 과 `maru-pty` 의 VT 는 글자마다 차지하는 글자 �
 
 - 이 addon 의 emoji 폭 표에는 Unicode 14 이후에 추가된 emoji(🫠 등)가 없어 폭을 1로 센다. `maru-pty` 는 2로 센다.
 - 프로그램이 `CSI ? 2027 l` 로 mode 2027 을 끄면 `maru-pty` 만 꺼진다. xterm 은 이 mode 를 처리하지 않는다.
+
+## 밀린 클라이언트는 RIS 와 재생으로 다시 맞춘다
+
+클라이언트가 밀리면 `maru-pty` 는 그 사이의 출력을 버리고, `resync` 헤더 뒤에 RIS(`\x1bc`)와 재생을 한 프레임으로 보낸다(`attach.rs` 의 `VT_RESET`). renderer(`pty/attach.ts`)는 resync 를 받아도 xterm 을 따로 reset 하지 않고 이 RIS 에 기댄다. RIS 는 xterm 의 그리드와 모드를 기본값으로 돌리고, 버려진 출력의 마지막 프레임이 남긴 끝나지 않은 시퀀스나 UTF-8 글자도 끊는다.
