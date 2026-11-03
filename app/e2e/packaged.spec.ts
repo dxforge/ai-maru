@@ -1,3 +1,4 @@
+import { FuseV1Options, FuseVersion, flipFuses, getCurrentFuseWire } from '@electron/fuses'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -5,16 +6,23 @@ import { basename, join } from 'node:path'
 import { STATE_VERSIONS } from '../src/shared/screen'
 import { cellPlaces, expect, restartWith, rows, stubDialog, test, zshHome } from './app'
 
+let built: string
 let installed: string
 let installDir: string
 
 // 체크아웃 밖, 이름에 공백이 든 경로에서 띄워야 설치한 앱과 같은 조건이 된다.
-test.beforeAll(() => {
-  const built = process.env.MARU_PACKAGED_APP
+test.beforeAll(async () => {
+  built = process.env.MARU_PACKAGED_APP ?? ''
   if (!built) throw new Error('MARU_PACKAGED_APP is not set — run pnpm test:e2e:packaged')
   installDir = mkdtempSync(join(tmpdir(), 'maru-packaged-'))
   installed = join(installDir, basename(built))
   execFileSync('cp', ['-c', '-R', built, installed])
+  // Playwright 는 `--inspect` 로 main 프로세스에 붙으므로, 사본에서만 그 fuse 를 켜고 다시 ad-hoc 서명한다.
+  await flipFuses(installed, {
+    version: FuseVersion.V1,
+    resetAdHocDarwinSignature: true,
+    [FuseV1Options.EnableNodeCliInspectArguments]: true
+  })
 })
 
 test.afterAll(() => {
@@ -25,13 +33,25 @@ function executable(): string {
   return join(installed, 'Contents/MacOS', basename(installed, '.app'))
 }
 
-test('체크아웃 밖에 둔 설치본이 AI Maru 로 떠 터미널을 열고, maru ping 이 앱에 닿는다', async ({
+// 앱 바이너리가 ELECTRON_RUN_AS_NODE 를 받아들이면 Node 로 떠서 Playwright 가 붙지 못한다.
+test('체크아웃 밖에 둔 설치본이 ELECTRON_RUN_AS_NODE 를 줘도 AI Maru 로 떠 터미널을 열고, maru ping 이 앱에 닿는다', async ({
   launch
 }) => {
-  const { app, page } = await launch({}, executable())
+  const { app, page } = await launch({ ELECTRON_RUN_AS_NODE: '1' }, executable())
   expect(await app.evaluate(({ app }) => app.getName())).toBe('AI Maru')
   await page.keyboard.type('maru ping\n')
   await expect(rows(page)).toContainText(/pong \(pty p-/)
+})
+
+test('빌드한 앱은 Node 로 실행하는 경로를 끄고 app.asar 에서만 앱을 읽는다', async () => {
+  const wire = await getCurrentFuseWire(built)
+  const state = (fuse: FuseV1Options): string => String.fromCharCode(wire[fuse]!)
+  expect({
+    runAsNode: state(FuseV1Options.RunAsNode),
+    nodeOptions: state(FuseV1Options.EnableNodeOptionsEnvironmentVariable),
+    inspect: state(FuseV1Options.EnableNodeCliInspectArguments),
+    onlyAsar: state(FuseV1Options.OnlyLoadAppFromAsar)
+  }).toEqual({ runAsNode: '0', nodeOptions: '0', inspect: '0', onlyAsar: '1' })
 })
 
 // asar 헤더: [4B][헤더 pickle 크기 4B][pickle 본문 크기 4B][JSON 길이 4B][JSON]
