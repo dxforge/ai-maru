@@ -193,7 +193,7 @@ impl Screen {
             return Ok(());
         }
         self.pending_clear = false;
-        // 미뤄 둔 사이 대체 화면이 떴으면 None 이라 버린다.
+        // 지울 때 대체 화면이 떠 있으면 None 이라 버린다.
         let Some(seq) = self.vt.clear_scrollback_sequence()? else {
             return Ok(());
         };
