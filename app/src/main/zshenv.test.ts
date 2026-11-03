@@ -20,6 +20,11 @@ const zdotdir = join(__dirname, '../../resources/zsh')
 const plugin = join(__dirname, '../../resources/claude-plugin')
 const shimDir = join(__dirname, '../../resources/bin')
 
+// 테스트마다 zsh 나 expect 를 많아야 두 번 spawn 한다. 테스트 시간 제한을 spawn 제한 두 번보다 길게 두어, 부하로
+// 느려진 spawn 이 spawn 제한 안에 끝났는데도 vitest 기본값 5초에 걸려 실패하지 않게 한다.
+const SPAWN_TIMEOUT_MS = 10_000
+const SLOW = { timeout: 25_000 }
+
 function home(files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), 'maru-zsh-'))
   for (const [name, body] of Object.entries(files)) {
@@ -45,7 +50,7 @@ function spawnZsh(args: string[], homeDir: string, cwd: string, env: object, inp
     env: zshEnv(homeDir, env),
     input,
     encoding: 'utf8',
-    timeout: 10_000,
+    timeout: SPAWN_TIMEOUT_MS,
     killSignal: 'SIGKILL',
     detached: true
   }
@@ -75,7 +80,7 @@ function atPrompt(homeDir: string, commands: string[], env: object = {}): string
   return stdoutOf(r).replace(/\x1b\]7;[^\x07]*\x07/g, '')
 }
 
-describe.skipIf(!existsSync(ZSH))('앱의 .zshenv', () => {
+describe.skipIf(!existsSync(ZSH))('앱의 .zshenv', SLOW, () => {
   it('공백·한글이 든 디렉토리를 바이트 단위로 퍼센트 인코딩해 OSC 7 로 보낸다', () => {
     const h = home({ '.zshrc': '' })
     const dir = join(h, 'a b', '한글')
@@ -151,7 +156,7 @@ describe.skipIf(!existsSync(ZSH))('앱의 .zshenv', () => {
   })
 })
 
-describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 PATH', () => {
+describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 의 PATH', SLOW, () => {
   const bin = '/opt/maru'
   /** 앱이 PATH 맨 앞에 붙인 maru 디렉토리를 `.zprofile` 이 뒤로 밀어낸 상태. macOS 의 path_helper 가 하는 일이다. */
   const pushedBack = (files: Record<string, string> = {}) =>
@@ -267,7 +272,7 @@ function ttyPrompt(
     cwd: h,
     env: { ...zshEnv(h, env), MARU_TEST_COMMANDS: commands.join('\n') },
     encoding: 'utf8',
-    timeout: 10_000,
+    timeout: SPAWN_TIMEOUT_MS,
     killSignal: 'SIGKILL'
   })
   return r.stdout
@@ -277,7 +282,7 @@ const marks = (out: string): string[] =>
   // eslint-disable-next-line no-control-regex
   [...out.matchAll(/\x1b\]133;([^\x07]*)\x07/g)].map((m) => m[1])
 
-describe.skipIf(!existsSync(ZSH) || !existsSync(EXPECT))('앱의 .zshenv 의 OSC 133', () => {
+describe.skipIf(!existsSync(ZSH) || !existsSync(EXPECT))('앱의 .zshenv 의 OSC 133', SLOW, () => {
   it('프롬프트마다 A, 명령이 시작하면 명령 텍스트를 실은 C, 끝나면 종료 코드를 실은 D 를 tty 에 쓴다', () => {
     expect(marks(ttyPrompt({}, ['print hi', 'false']))).toEqual([
       'A',
@@ -412,7 +417,7 @@ describe.skipIf(!existsSync(ZSH) || !existsSync(EXPECT))('앱의 .zshenv 의 OSC
   })
 })
 
-describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 와 claude shim', () => {
+describe.skipIf(!existsSync(ZSH))('앱의 .zshenv 와 claude shim', SLOW, () => {
   it('셸에는 claude 함수가 없고, PATH 의 shim 을 거쳐 앱 plugin 을 싣는다', () => {
     const h = home({ '.zshrc': '' })
     const { log, env } = fakes(h)
