@@ -1361,6 +1361,15 @@ describe('moveCell·moveWorkspace', () => {
 })
 
 describe('rename', () => {
+  it('open 에 준 이름은 새 workspace 의 이름이 되고, 빈 이름이면 붙이지 않는다', () => {
+    const ws = createWorkspaces()
+    ws.open('/a', {}, '리뷰')
+    ws.open('/b', {}, '')
+    ws.open('/c')
+    expect(ws.list.value.map((w) => w.name)).toEqual(['리뷰', undefined, undefined])
+    expect(ws.list.value[1]).not.toHaveProperty('name')
+  })
+
   it('앞뒤 공백을 잘라 이름으로 두고, 다른 workspace 는 건드리지 않는다', () => {
     const ws = opened(2)
     const [a, b] = wsKeys(ws)

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   expandPath,
+  filterFavorites,
   filterRecent,
   joinDir,
+  listEntries,
   matchDirs,
   pathQuery,
   pickCommand,
@@ -70,6 +72,79 @@ describe('filterRecent', () => {
   it('NFD 로 저장된 한글 경로도 NFC 로 친 단어로 거른다', () => {
     const nfd = `${HOME}/${'프로젝트'.normalize('NFD')}`
     expect(filterRecent([nfd], '프로젝트', HOME).map((r) => r.path)).toEqual([nfd])
+  })
+
+  it('즐겨찾기에 든 디렉토리는 표기가 달라도 빼고 준다', () => {
+    const nfd = `${HOME}/${'프로젝트'.normalize('NFD')}`
+    const favorites = [
+      { dir: '/opt/Tools', name: 'tools' },
+      { dir: `${HOME}/프로젝트`.normalize('NFC'), name: 'p' }
+    ]
+    expect(filterRecent([...recent, nfd], '', HOME, favorites).map((r) => r.path)).toEqual([
+      `${HOME}/work/ai-maru`,
+      `${HOME}/notes`
+    ])
+  })
+})
+
+describe('filterFavorites', () => {
+  const favorites = [
+    { dir: `${HOME}/src/atlas/server`, name: 'atlas' },
+    { dir: '/opt/Tools', name: 'Toolbox' }
+  ]
+  const names = (query: string) => filterFavorites(favorites, query, HOME).map((r) => r.name)
+
+  it('빈 입력이면 전부를 넣은 순서대로, 이름과 ~ 로 줄인 경로로 준다', () => {
+    expect(filterFavorites(favorites, '', HOME)).toEqual([
+      { path: `${HOME}/src/atlas/server`, label: '~/src/atlas/server', name: 'atlas' },
+      { path: '/opt/Tools', label: '/opt/Tools', name: 'Toolbox' }
+    ])
+  })
+
+  it('단어마다 이름이나 경로에 든 것만 남긴다', () => {
+    expect(names('ATLAS')).toEqual(['atlas'])
+    expect(names('server')).toEqual(['atlas'])
+    expect(names('toolbox opt')).toEqual(['Toolbox'])
+    expect(names('atlas opt')).toEqual([])
+  })
+})
+
+describe('listEntries', () => {
+  const fav = [{ path: '/f', label: '/f', name: 'f' }]
+  const recent = [
+    { path: '/a', label: '/a' },
+    { path: '/b', label: '/b' }
+  ]
+
+  it('즐겨찾기가 없으면 묶음 제목 없이 최근 목록만 둔다', () => {
+    expect(listEntries([], recent, false)).toEqual([
+      { row: recent[0], index: 0 },
+      { row: recent[1], index: 1 }
+    ])
+  })
+
+  it('위 팔레트는 묶음 제목을 묶음 앞에 두고, index 는 즐겨찾기부터 이어 센다', () => {
+    expect(listEntries(fav, recent, false)).toEqual([
+      { title: 'Favorites' },
+      { row: fav[0], index: 0 },
+      { title: 'Recent' },
+      { row: recent[0], index: 1 },
+      { row: recent[1], index: 2 }
+    ])
+  })
+
+  it('아래 팔레트는 목록이 뒤집혀 그려지므로 묶음 제목을 묶음 뒤에 둔다', () => {
+    expect(listEntries(fav, recent, true)).toEqual([
+      { row: fav[0], index: 0 },
+      { title: 'Favorites' },
+      { row: recent[0], index: 1 },
+      { row: recent[1], index: 2 },
+      { title: 'Recent' }
+    ])
+  })
+
+  it('최근 목록이 비면 Recent 제목을 두지 않는다', () => {
+    expect(listEntries(fav, [], false)).toEqual([{ title: 'Favorites' }, { row: fav[0], index: 0 }])
   })
 })
 

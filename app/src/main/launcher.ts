@@ -1,17 +1,25 @@
 import { constants } from 'node:fs'
 import { access, readdir, readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import type { LaunchResult, LauncherState } from '../shared/launcher'
+import { samePath, type LaunchResult, type LauncherState, type Favorite } from '../shared/launcher'
 import { writeJsonAtomic } from './json-file'
 
-const EMPTY: LauncherState = { recent: [], command: null }
+const EMPTY: LauncherState = { recent: [], favorites: [], command: null }
 
+function isFavorite(v: unknown): v is Favorite {
+  if (typeof v !== 'object' || v === null) return false
+  const { dir, name } = v as Record<string, unknown>
+  return typeof dir === 'string' && typeof name === 'string'
+}
+
+// `favorites` 를 더하기 전에 쓴 파일에는 그 키가 없다.
 function parseState(v: unknown): LauncherState | null {
   if (typeof v !== 'object' || v === null) return null
-  const { recent, command } = v as Record<string, unknown>
+  const { recent, favorites = [], command } = v as Record<string, unknown>
   if (!Array.isArray(recent) || !recent.every((p) => typeof p === 'string')) return null
+  if (!Array.isArray(favorites) || !favorites.every(isFavorite)) return null
   if (command !== null && typeof command !== 'string') return null
-  return { recent, command }
+  return { recent, favorites: favorites.map(({ dir, name }) => ({ dir, name })), command }
 }
 
 async function readState(path: string): Promise<LauncherState> {
@@ -48,6 +56,7 @@ export function createLauncherStore(path: string) {
       if (reason) return { ok: false, reason }
       const dir = resolve(input)
       await update((s) => ({
+        ...s,
         recent: [dir, ...s.recent.filter((p) => !samePath(p, dir))],
         command
       }))
@@ -59,14 +68,27 @@ export function createLauncherStore(path: string) {
     },
     forget(dir: string): Promise<LauncherState> {
       return update((s) => ({ ...s, recent: s.recent.filter((p) => !samePath(p, dir)) }))
+    },
+    /** 이미 든 디렉토리면 그대로 둔다. 상대경로는 main 의 작업 디렉토리를 기준으로 읽히므로 받지 않는다. */
+    addFavorite(dir: string, name: string): Promise<LauncherState> {
+      if (!isAbsolute(dir)) return current()
+      const at = resolve(dir)
+      return update((s) =>
+        s.favorites.some((f) => samePath(f.dir, at))
+          ? s
+          : { ...s, favorites: [...s.favorites, { dir: at, name }] }
+      )
+    },
+    forgetFavorite(dir: string): Promise<LauncherState> {
+      return update((s) => ({ ...s, favorites: s.favorites.filter((f) => !samePath(f.dir, dir)) }))
+    },
+    renameFavorite(dir: string, name: string): Promise<LauncherState> {
+      return update((s) => ({
+        ...s,
+        favorites: s.favorites.map((f) => (samePath(f.dir, dir) ? { ...f, name } : f))
+      }))
     }
   }
-}
-
-// macOS 의 파일 시스템은 이름의 유니코드 정규화를 가리지 않는다. Finder 가 만든 한글 이름(NFD)과 입력기로 친 이름(NFC)이
-// 같은 디렉토리다.
-function samePath(a: string, b: string): boolean {
-  return a.normalize('NFC') === b.normalize('NFC')
 }
 
 /**

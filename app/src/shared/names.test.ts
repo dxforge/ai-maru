@@ -7,6 +7,7 @@ import {
   nameOnFocusLoss,
   sidebarLabel,
   windowTitle,
+  workspaceDir,
   workspaceName
 } from './names'
 
@@ -122,6 +123,28 @@ describe('workspaceName', () => {
   it('바꾼 이름이 있으면 pane 의 위치와 상관없이 그 이름이다', () => {
     expect(workspaceName(ws('리뷰'))).toBe('리뷰')
     expect(workspaceName(ws('ai-maru'))).toBe('ai-maru')
+  })
+})
+
+describe('workspaceDir', () => {
+  const ws = (...cells: { startDir?: string; cwd?: string }[][]) => ({
+    cells: cells.map((panes) => ({ panes }))
+  })
+
+  it('첫 cell 의 첫 pane 을 연 디렉토리를 쓰고, cd 로 옮긴 cwd 나 다른 pane 은 보지 않는다', () => {
+    expect(
+      workspaceDir(
+        ws([{ startDir: '/a', cwd: '/a/sub' }, { startDir: '/b' }], [{ startDir: '/c' }])
+      )
+    ).toBe('/a')
+  })
+
+  it('연 디렉토리를 모르면 그 pane 의 cwd 를 쓴다', () => {
+    expect(workspaceDir(ws([{ cwd: '/a/sub' }, { startDir: '/b' }]))).toBe('/a/sub')
+  })
+
+  it('둘 다 모르면 없다', () => {
+    expect(workspaceDir(ws([{}, { startDir: '/b' }]))).toBeUndefined()
   })
 })
 

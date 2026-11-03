@@ -38,6 +38,7 @@ const {
   notification,
   urgent,
   unread,
+  favorites = new Set(),
   folded,
   collapsed,
   jobs = [],
@@ -54,6 +55,8 @@ const {
   urgent: ReadonlyMap<number, ProgramStatusState>
   /** 읽지 않은 알림이 있는 pane 을 든 workspace 의 key */
   unread: ReadonlySet<number>
+  /** 즐겨찾기에 든 workspace 의 key */
+  favorites?: ReadonlySet<number>
   folded: ReadonlySet<number>
   collapsed: boolean
   jobs?: readonly JobView[]
@@ -73,6 +76,7 @@ const emit = defineEmits<{
   startRename: [workspace: number]
   /** `name` 이 null 이면 취소다. `refocus` 면 터미널에 포커스를 돌려준다. */
   endRename: [workspace: number, name: string | null, refocus: boolean]
+  toggleFavorite: [workspace: number]
 }>()
 
 // `groups` 밖에 둔다. `groups` 안에 두면 job 표가 바뀔 때마다 job 과 상관없는 pane 줄까지 다시 만들기 때문이다.
@@ -235,6 +239,8 @@ const cellDragged = (cell: number): boolean =>
   dragged.value?.kind === 'cell' && dragged.value.cell === cell
 const workspaceDragged = (workspace: number): boolean =>
   dragged.value?.kind === 'workspace' && dragged.value.workspace === workspace
+const favoriteLabel = (workspace: number): string =>
+  favorites.has(workspace) ? 'Remove from Favorites' : 'Add to Favorites'
 </script>
 
 <template>
@@ -275,6 +281,19 @@ const workspaceDragged = (workspace: number): boolean =>
           /></span>
           <span class="workspace-name">{{ name }}</span>
           <span v-if="dot" class="unread-dot" />
+          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 별의 pointerdown·click·dblclick 이 헤더의 끌기·접기·이름 고치기로 전해지지 않게 막는다. -->
+          <span
+            v-tooltip="favoriteLabel(w.key)"
+            role="button"
+            class="favorite nerd-icon"
+            :class="{ on: favorites.has(w.key) }"
+            :aria-label="favoriteLabel(w.key)"
+            :aria-pressed="favorites.has(w.key)"
+            @pointerdown.stop
+            @click.stop="emit('toggleFavorite', w.key)"
+            @dblclick.stop
+            >{{ favorites.has(w.key) ? ICONS.starFull : ICONS.starEmpty }}</span
+          >
           <FoldChevron class="chevron" :open="!wf" />
         </button>
         <div
@@ -433,6 +452,25 @@ const workspaceDragged = (workspace: number): boolean =>
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.favorite {
+  flex: none;
+  visibility: hidden;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-1);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.favorite.on,
+.workspace-head:hover .favorite,
+.workspace-head:focus-visible .favorite {
+  visibility: visible;
+}
+
+.favorite:hover {
+  background: var(--hover);
 }
 
 /* 상태 아이콘이 없는 접은 workspace 는 이름 뒤에 점(`.unread-dot`, `style.css`)을 붙여 위로 올린다. 이름은 길면 말줄임으로

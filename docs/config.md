@@ -69,6 +69,8 @@ Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸�
 
 런처의 최근 목록은 `config.toml` 이 아니라 앱 데이터 폴더의 `launcher.json` 에 앱이 쓴다. 런처로 연 디렉토리만 들어가고, 런처에서 ⇧⌘⌫ 나 행의 × 로 지운다.
 
+즐겨찾기도 `launcher.json` 에 디렉토리와 이름의 쌍으로 들어간다. 사이드바 workspace 줄의 별이나 Toggle Workspace Favorite 명령이 그 workspace 의 첫 pane 을 연 디렉토리를 지금 이름으로 넣고 뺀다. 즐겨찾기에 든 디렉토리의 workspace 이름을 고치면 즐겨찾기 이름도 바뀐다. 런처는 즐겨찾기를 최근 목록과 나눠 입력창에 가까운 쪽에 보이고, 즐겨찾기를 Enter 로 열면 새 workspace 에 그 이름이 붙는다. 런처에서는 ⇧⌘⌫ 나 행의 × 로 빼기만 한다.
+
 ### `seen-ms`
 
 프로그램이 OSC 9·OSC 777 로 보낸 알림은 사이드바와 pane 헤더에 점으로 남고, Claude Code 가 일을 마친 pane 은 done 으로 남는다. 입력 focus 를 가진 pane 에 온 알림은 점을 띄우지 않고, 그 pane 에서 done 이 되면 바로 idle 로 바꾼다. 앱 창에 focus 가 없으면 focus 를 가진 pane 이 없는 것으로 친다. 다른 곳에 있을 때 온 점과 done 은 그 pane 에 들어가 `seen-ms` 만큼 머물면 지운다. 그보다 빨리 지나간 pane 은 그대로 둔다. ⌘] 로 pane 을 훑고 지나가도 점이 남게 하기 위해서다.

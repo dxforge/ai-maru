@@ -113,6 +113,12 @@ const api = {
   launchedCommand: (command: string): Promise<void> =>
     ipcRenderer.invoke('launcher:command', command),
   forgetLaunch: (dir: string): Promise<LauncherState> => ipcRenderer.invoke('launcher:forget', dir),
+  addFavorite: (dir: string, name: string): Promise<LauncherState> =>
+    ipcRenderer.invoke('launcher:favorite-add', dir, name),
+  forgetFavorite: (dir: string): Promise<LauncherState> =>
+    ipcRenderer.invoke('launcher:favorite-forget', dir),
+  renameFavorite: (dir: string, name: string): Promise<LauncherState> =>
+    ipcRenderer.invoke('launcher:favorite-rename', dir, name),
   /** `dir` 의 하위 디렉토리 이름. 읽지 못하면 빈 목록이다. */
   listDirs: (dir: string): Promise<string[]> => ipcRenderer.invoke('launcher:dirs', dir),
   /** pty 에서 셸 말고 도는 프로그램이 있으면 main 이 확인 창을 띄운다. */
