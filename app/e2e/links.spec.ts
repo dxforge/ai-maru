@@ -46,10 +46,17 @@ async function pointAt(page: Page, text: string): Promise<{ x: number; y: number
   return { x: screen.x + (col + 0.5) * cell.width, y: screen.y + (row + 0.5) * cell.height }
 }
 
+/**
+ * xterm 은 mousedown 때 마우스 아래에 잡힌 링크가 있어야 클릭을 링크로 넘긴다. 줄을 이어 붙인 경로는 main 이 그 경로가
+ * 있는지 답한 뒤에 링크가 되므로, ⌘ 를 누른 채 링크가 잡혀 포인터가 바뀐 뒤에 누른다.
+ */
 async function metaClick(page: Page, text: string): Promise<void> {
   const { x, y } = await pointAt(page, text)
   await page.mouse.move(x, y)
   await page.keyboard.down('Meta')
+  await expect(page.locator('.terminal-view.active .xterm-screen')).toHaveClass(
+    /xterm-cursor-pointer/
+  )
   await page.mouse.click(x, y)
   await page.keyboard.up('Meta')
 }
