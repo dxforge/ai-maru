@@ -836,6 +836,10 @@ test('런처에서 ⇧⌘⌫ 로 뺀 즐겨찾기는 최근 목록에 있는 디
     'aria-label',
     'Remove from Favorites'
   )
+  // 즐겨찾기가 있어도 처음 선택은 최근 목록의 첫 행이다. 아래 팔레트는 목록을 뒤집어 그리므로 ArrowDown 이 즐겨찾기 쪽으로 간다.
+  await expect(selected(page)).toHaveText(b)
+  await page.keyboard.press('ArrowDown')
+  await expect(items(page).nth(0)).toHaveClass(/selected/)
   await toCommands(page, a)
   await page.keyboard.press('Enter')
   await activeTerminal(page)
@@ -844,6 +848,8 @@ test('런처에서 ⇧⌘⌫ 로 뺀 즐겨찾기는 최근 목록에 있는 디
   await expect(star(page, 0)).not.toHaveClass(/\bon\b/)
 
   await openLauncher(launched)
+  await expect(selected(page)).toHaveText(b)
+  await page.keyboard.press('ArrowDown')
   await expect(items(page).nth(0)).toHaveClass(/selected/)
   await page.keyboard.press('Shift+Meta+Backspace')
   await expect(favoriteRows(page)).toHaveCount(0)

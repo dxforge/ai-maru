@@ -3,6 +3,7 @@ import {
   expandPath,
   filterFavorites,
   filterRecent,
+  firstDirRow,
   joinDir,
   listEntries,
   matchDirs,
@@ -145,6 +146,22 @@ describe('listEntries', () => {
 
   it('최근 목록이 비면 Recent 제목을 두지 않는다', () => {
     expect(listEntries(fav, [], false)).toEqual([{ title: 'Favorites' }, { row: fav[0], index: 0 }])
+  })
+})
+
+describe('firstDirRow', () => {
+  it('입력이 비면 즐겨찾기를 건너뛰고 최근 목록의 첫 행을 고른다', () => {
+    expect(firstDirRow(2, 3, '')).toBe(2)
+    expect(firstDirRow(2, 3, '  ')).toBe(2)
+    expect(firstDirRow(0, 3, '')).toBe(0)
+  })
+
+  it('최근 목록이 비면 첫 즐겨찾기를 고른다', () => {
+    expect(firstDirRow(2, 0, '')).toBe(0)
+  })
+
+  it('입력이 있으면 맞는 행 가운데 맨 앞을 고른다', () => {
+    expect(firstDirRow(2, 3, 'atlas')).toBe(0)
   })
 })
 

@@ -16,6 +16,7 @@ import {
   expandPath,
   filterFavorites,
   filterRecent,
+  firstDirRow,
   isPathInput,
   joinDir,
   listEntries,
@@ -141,12 +142,14 @@ function initialIndex(): number {
           0,
           commandRows.value.findIndex((r) => r.command === command.value)
         )
-  return path.value?.fragment === '' ? -1 : 0
+  if (path.value?.fragment === '') return -1
+  return firstDirRow(favoriteRows.value.length, dirRows.value.length, query.value)
 }
 const index = ref(initialIndex())
-// chord 목록은 명령 단계로 바로 뜨므로, 기억한 명령이 온 뒤에 첫 선택을 그 명령으로 다시 둔다.
+// 최근 목록과 기억한 명령은 런처를 연 뒤에 온다. 온 뒤에 첫 선택을 다시 두어, 디렉토리 단계에서는 최근 목록의 첫 행을,
+// 명령 단계로 바로 뜨는 chord 목록에서는 기억한 명령을 고른다.
 void loaded.then(() => {
-  if (at && !query.value) index.value = initialIndex()
+  if (!query.value) index.value = initialIndex()
 })
 watch([query, chosen], () => {
   index.value = initialIndex()

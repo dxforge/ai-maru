@@ -47,6 +47,15 @@ export function filterFavorites(
     .filter((r) => matchesWords(`${r.name} ${r.label}`, query))
 }
 
+/**
+ * 디렉토리 단계에서 처음 고르는 행의 자리(`[...favorites, ...recent]` 에서)다. 입력이 비었으면 즐겨찾기를 건너뛰고 최근
+ * 목록의 첫 행을 고른다. ⌘P 를 열고 Enter 를 두 번 누르면 즐겨찾기가 아닌 디렉토리 가운데 마지막에 연 것이 열려야 하기
+ * 때문이다. 최근 목록이 비었으면 첫 즐겨찾기를 고른다. 입력이 있으면 맞는 행 가운데 맨 앞을 고른다.
+ */
+export function firstDirRow(favorites: number, recent: number, query: string): number {
+  return query.trim() === '' && recent > 0 ? favorites : 0
+}
+
 export type ListEntry = { title: string } | { row: Row; index: number }
 
 /**
