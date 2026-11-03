@@ -1,8 +1,8 @@
-import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
   activeHeader,
+  blockStateWrites,
   cellItems,
   clickMenu,
   dialogCalls,
@@ -287,8 +287,7 @@ test('Keep terminals 를 골랐는데 state.json 을 쓰지 못해도 pty 를 �
   launch,
   dataDir
 }) => {
-  // 임시 파일 자리에 디렉토리가 있으면 쓰기가 실패한다.
-  mkdirSync(join(dataDir, 'state.json.tmp'))
+  blockStateWrites(dataDir)
   const { app, page } = await launch()
   await run(page, 'echo up-$((1+1))', 'up-2')
   const before = sockets(dataDir)

@@ -41,6 +41,7 @@ import { isDevReload } from './navigation'
 import { createPanes } from './pane'
 import { createWindowReady } from './window-ready'
 import { createJobs, JOB_REPLY_MS } from './job'
+import { removeTmpFiles } from './json-file'
 import { createLauncherStore, isFavorite, listDirs } from './launcher'
 import { longestExistingPaths, openLink, type LinkOpener } from './links'
 import { createPortWatch, readPorts } from './ports'
@@ -600,6 +601,8 @@ function start(): void {
   const userData = app.getPath('userData')
   const read = readState(stateFile(userData))
   removeOldStateFiles(userData)
+  const launcherFile = join(userData, 'launcher.json')
+  for (const file of [stateFile(userData), launcherFile]) removeTmpFiles(file)
   const layout = read.layout.kind === 'ok' ? read.layout.value : null
   const sessions = read.sessions.kind === 'ok' ? read.sessions.value : null
   store = createStateStore({
@@ -641,7 +644,7 @@ function start(): void {
     return r
   })
   ipcMain.on('screen:prefs', (event) => (event.returnValue = viewPrefs()))
-  const launcher = createLauncherStore(join(userData, 'launcher.json'))
+  const launcher = createLauncherStore(launcherFile)
   ipcMain.handle('launcher:read', () => launcher.read())
   ipcMain.handle('launcher:launched', (_event, dir: unknown, command: unknown) =>
     typeof dir === 'string' && typeof command === 'string'

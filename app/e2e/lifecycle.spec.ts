@@ -266,6 +266,13 @@ test('pty 를 잇는 utilityProcess 가 죽은 뒤에 닫은 pane 의 pty 도 �
   await expect.poll(() => sockets(dataDir)).toHaveLength(1)
 })
 
+test('저장하다 앱이 죽어 남은 임시 파일은 다음 실행이 지운다', async ({ launch, dataDir }) => {
+  const left = ['state.json.123.4.tmp', 'launcher.json.123.5.tmp'].map((n) => join(dataDir, n))
+  for (const file of left) writeFileSync(file, '{')
+  await launch()
+  expect(left.filter((file) => existsSync(file))).toEqual([])
+})
+
 function alive(pid: number): boolean {
   try {
     process.kill(pid, 0)
