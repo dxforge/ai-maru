@@ -92,10 +92,11 @@ export function createJobs(deps: JobDeps) {
     remove(job)
   }
 
-  function notify(job: JobRecord): void {
+  function notify(job: JobRecord): boolean {
     const { pty, name, exit } = job
     const event = { event: 'job', pty, ...(name !== undefined && { name }), ...exit }
     job.pending = !deps.emit(job.owner, event)
+    return !job.pending
   }
 
   function watch(job: JobRecord): void {
@@ -203,7 +204,12 @@ export function createJobs(deps: JobDeps) {
       if (job) await kill(job)
     },
     subscribed: (pty: string): void => {
-      for (const j of jobs) if (j.owner === pty && j.pending) notify(j)
+      // `detach` 뒤에는 앱이 표를 저장하고 끝나는 중이다. 여기서 보내도 저장된 표에는 pending 이 남는다.
+      if (detached) return
+      let sent = false
+      for (const j of jobs) if (j.owner === pty && j.pending) sent = notify(j) || sent
+      // 저장된 표에 pending 이 남으면 다시 뜬 앱이 같은 알림을 또 보낸다.
+      if (sent) deps.changed()
     },
     running: (cells?: ReadonlySet<string>): number =>
       jobs.filter((j) => !j.exit && (!cells || cells.has(j.cell))).length,
