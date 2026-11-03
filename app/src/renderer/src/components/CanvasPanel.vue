@@ -65,36 +65,39 @@ function onTransition(e: TransitionEvent): void {
     @mouseleave="canvas.hold(false)"
   >
     <header class="bar">
-      <CanvasViewMenu :canvas="canvas" />
-      <span class="actions">
-        <button
-          v-tooltip="'Expand all'"
-          class="expand-all"
-          aria-label="Expand all"
-          @mousedown.prevent
-          @click="canvas.expandAll()"
-        >
-          <span class="nerd-icon">{{ ICONS.expandAll }}</span>
-        </button>
-        <button
-          v-tooltip="'Collapse all'"
-          class="collapse-all"
-          aria-label="Collapse all"
-          @mousedown.prevent
-          @click="canvas.collapseAll()"
-        >
-          <span class="nerd-icon">{{ ICONS.collapseAll }}</span>
-        </button>
-        <button
-          v-tooltip="{ text: 'Close Canvas', keys: commandLabel('toggle-canvas') }"
-          class="close"
-          aria-label="Close Canvas"
-          @mousedown.prevent
-          @click="canvas.close()"
-        >
-          <span class="nerd-icon">{{ ICONS.close }}</span>
-        </button>
-      </span>
+      <div class="title-row">
+        <span class="workspace-title">Canvas</span>
+        <span class="actions">
+          <button
+            v-tooltip="'Expand all'"
+            class="expand-all"
+            aria-label="Expand all"
+            @mousedown.prevent
+            @click="canvas.expandAll()"
+          >
+            <span class="nerd-icon">{{ ICONS.expandAll }}</span>
+          </button>
+          <button
+            v-tooltip="'Collapse all'"
+            class="collapse-all"
+            aria-label="Collapse all"
+            @mousedown.prevent
+            @click="canvas.collapseAll()"
+          >
+            <span class="nerd-icon">{{ ICONS.collapseAll }}</span>
+          </button>
+          <button
+            v-tooltip="{ text: 'Close Canvas', keys: commandLabel('toggle-canvas') }"
+            class="close"
+            aria-label="Close Canvas"
+            @mousedown.prevent
+            @click="canvas.close()"
+          >
+            <span class="nerd-icon">{{ ICONS.close }}</span>
+          </button>
+        </span>
+      </div>
+      <div class="picker"><CanvasViewMenu :canvas="canvas" /></div>
     </header>
     <!-- 보기를 바꾸면 다시 만든다. 그대로 두면 새로 보이는 문서를 모두 방금 온 문서로 강조하기 때문이다. -->
     <CardStream
@@ -111,6 +114,7 @@ function onTransition(e: TransitionEvent): void {
         ><CellName
           v-if="canvas.viewCell.value === null"
           class="owner"
+          workspace
           :name="canvas.nameOf(item.cell)"
         />{{ clockTime(item.at) }}</template
       >
@@ -160,14 +164,10 @@ function onTransition(e: TransitionEvent): void {
   position: relative;
   z-index: 4;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-5);
+  flex-direction: column;
   border-bottom: 1px solid var(--line);
   font-size: var(--text-2);
   color: var(--muted);
-  -webkit-app-region: drag;
 }
 
 .bar button {
@@ -180,6 +180,26 @@ button {
   background: none;
   border: none;
   cursor: pointer;
+}
+
+/* 제목 줄은 사이드바 맨 위 줄(`.titlebar`)과 같은 높이·아래 선이라, 제목이 신호등과 같은 높이에 서고 선이 사이드바와 이어진다.
+   창 드래그 영역은 이 줄뿐이다. 드래그 영역을 누르면 페이지에 pointerdown 이 오지 않아, 드롭다운 줄까지 드래그 영역이면
+   드롭다운 옆을 눌러도 드롭다운이 닫히지 않는다. */
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  height: 36px;
+  padding: 0 var(--space-4) 0 calc(2 * var(--space-3));
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+}
+
+.picker {
+  display: flex;
+  min-width: 0;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
 }
 
 .actions {
@@ -202,12 +222,9 @@ button {
 }
 
 .owner {
-  display: inline-block;
   max-width: 18em;
-  margin-right: var(--space-3);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-right: var(--space-3);
   vertical-align: bottom;
 }
 

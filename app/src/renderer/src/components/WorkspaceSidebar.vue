@@ -279,7 +279,7 @@ const favoriteLabel = (workspace: number): string =>
             :class="[state, { unread: notified }]"
             ><StatusIcon :state="state"
           /></span>
-          <span class="workspace-name">{{ name }}</span>
+          <span class="workspace-name workspace-title">{{ name }}</span>
           <span v-if="dot" class="unread-dot" />
           <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 별의 pointerdown·click·dblclick 이 헤더의 끌기·접기·이름 고치기로 전해지지 않게 막는다. -->
           <span class="favorite-slot" :class="{ on: favorites.has(w.key) }"
@@ -450,10 +450,6 @@ const favoriteLabel = (workspace: number): string =>
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: var(--text-1);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .favorite-slot {

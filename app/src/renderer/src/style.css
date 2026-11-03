@@ -286,6 +286,13 @@ body,
   color: var(--muted);
 }
 
+.workspace-title {
+  font-size: var(--text-1);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 /* Canvas 의 「더」 팝오버와 보기 드롭다운처럼 버튼을 늘어놓은 작은 메뉴다. 자리는 쓰는 쪽이 정한다. */
 .popup-menu {
   overflow-y: auto;

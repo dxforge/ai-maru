@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
-import type { Canvas, CanvasView, CellChoice } from '../canvas/store'
+import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import type { Canvas, CanvasView } from '../canvas/store'
 import { ICONS } from '../icons'
 import CellName from './CellName.vue'
 import FoldChevron from './FoldChevron.vue'
@@ -11,13 +11,12 @@ const root = useTemplateRef<HTMLElement>('root')
 const opened = ref(false)
 
 const keyOf = (v: CanvasView): string => (typeof v === 'string' ? v : `cell:${v.cell}`)
+const checked = (v: CanvasView): boolean => keyOf(v) === keyOf(canvas.view.value)
 
-type Item = { view: CanvasView; text?: string; choice?: CellChoice }
-const items = computed((): Item[] => [
+const fixed = [
   { view: 'current', text: 'Current cell' },
-  { view: 'all', text: 'All documents' },
-  ...canvas.choices.value.map((c) => ({ view: { cell: c.id }, choice: c }))
-])
+  { view: 'all', text: 'All documents' }
+] as const
 
 function choose(v: CanvasView): void {
   canvas.choose(v)
@@ -49,48 +48,55 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOutside, 
       @mousedown.prevent
       @click="opened = !opened"
     >
-      <span class="label">
-        <template v-if="canvas.viewCell.value === null">All documents</template>
-        <template v-else-if="canvas.viewCell.value"
-          ><CellName :name="canvas.nameOf(canvas.viewCell.value)" /><template
-            v-if="canvas.isClosed(canvas.viewCell.value)"
-          >
-            <span class="closed">closed</span></template
-          ></template
-        >
-        <template v-else>Current cell</template>
-      </span>
+      <span v-if="canvas.viewCell.value === null" class="label">All documents</span>
+      <template v-else-if="canvas.viewCell.value"
+        ><CellName class="label" :name="canvas.nameOf(canvas.viewCell.value)" /><span
+          v-if="canvas.isClosed(canvas.viewCell.value)"
+          class="closed"
+          >closed</span
+        ></template
+      >
+      <span v-else class="label">Current cell</span>
       <FoldChevron class="chev" :open="true" />
     </button>
     <div v-if="opened" v-overlay-scroll="'y'" class="menu popup-menu" role="menu">
-      <template v-for="(it, i) in items" :key="keyOf(it.view)">
-        <hr v-if="i === 2" />
+      <button
+        v-for="it in fixed"
+        :key="it.view"
+        :class="it.view"
+        role="menuitemradio"
+        :aria-checked="checked(it.view)"
+        @mousedown.prevent
+        @click="choose(it.view)"
+      >
+        <span class="check nerd-icon">{{ checked(it.view) ? ICONS.check : '' }}</span
+        >{{ it.text }}
+      </button>
+      <hr v-if="canvas.choices.value.length" />
+      <div v-for="g in canvas.choices.value" :key="g.id" class="group" role="group">
+        <div class="group-name workspace-title">{{ g.workspace }}</div>
         <button
-          :class="typeof it.view === 'string' ? it.view : undefined"
-          :data-cell="it.choice?.id"
+          v-for="c in g.cells"
+          :key="c.id"
+          :data-cell="c.id"
           role="menuitemradio"
-          :aria-checked="keyOf(it.view) === keyOf(canvas.view.value)"
+          :aria-checked="checked({ cell: c.id })"
           @mousedown.prevent
-          @click="choose(it.view)"
+          @click="choose({ cell: c.id })"
         >
-          <span class="check nerd-icon">{{
-            keyOf(it.view) === keyOf(canvas.view.value) ? ICONS.check : ''
-          }}</span
-          ><template v-if="it.choice"
-            ><CellName class="label" :name="it.choice.name" /><span
-              v-if="it.choice.closed"
-              class="closed"
-              >closed</span
-            ></template
-          ><template v-else>{{ it.text }}</template>
+          <span class="check nerd-icon">{{ checked({ cell: c.id }) ? ICONS.check : '' }}</span
+          ><CellName class="label" :name="c.name" /><span v-if="c.closed" class="closed"
+            >closed</span
+          >
         </button>
-      </template>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .views {
+  flex: 1;
   min-width: 0;
   -webkit-app-region: no-drag;
 }
@@ -107,8 +113,9 @@ button {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  max-width: 100%;
+  width: 100%;
   padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  text-align: left;
   border-radius: var(--radius-1);
   color: var(--fg);
 }
@@ -119,6 +126,7 @@ button {
 }
 
 .label {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -129,6 +137,11 @@ button {
 .closed {
   flex: none;
   color: var(--faint);
+}
+
+/* `FoldChevron` 은 열리면 아래를 가리키므로, 목록이 열린 동안 반 바퀴 더 돌려 위를 가리킨다. 회전 트랜지션은 `FoldChevron` 의 것을 쓴다. */
+.view.opened .chev {
+  transform: rotate(-90deg);
 }
 
 .closed {
@@ -148,6 +161,14 @@ button {
   display: flex;
   align-items: center;
   padding-left: var(--space-3);
+}
+
+.group-name {
+  padding: var(--space-3) var(--space-5) var(--space-1) var(--space-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
 }
 
 .check {

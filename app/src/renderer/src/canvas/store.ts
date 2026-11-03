@@ -24,17 +24,20 @@ export function docKey(id: string, cell?: string): string {
   return JSON.stringify([cell ?? null, id])
 }
 
-/** cell 의 `workspace / cell` 이름. workspace 는 cell 이 지금 속한 것이다. */
+/** cell 의 workspace 이름과, 화면의 cell 헤더와 같은 cell 이름. workspace 는 cell 이 지금 속한 것이다. */
 export type CellName = { workspace: string; cell: Label }
 
-export type OpenCell = { id: string; name: CellName }
+export type OpenCell = { id: string; group: string; name: CellName }
 
 /** 「현재 cell」 은 선택된 cell 을 따라가고, `{ cell }` 은 그 cell 에 고정한다. */
 export type CanvasView = 'current' | 'all' | { cell: string }
 
 export type CellChoice = OpenCell & { closed: boolean }
 
+export type ChoiceGroup = { id: string; workspace: string; cells: CellChoice[] }
+
 type NamedWorkspace = {
+  id: string
   name?: string
   cells: readonly { id: string; focused: number; panes: readonly (Named & { key: number })[] }[]
 }
@@ -42,8 +45,22 @@ type NamedWorkspace = {
 export function openCells(workspaces: readonly NamedWorkspace[], home?: string): OpenCell[] {
   return workspaces.flatMap((w) => {
     const workspace = workspaceName(w, home)
-    return w.cells.map((c) => ({ id: c.id, name: { workspace, cell: cellLabel(focusedPane(c)) } }))
+    return w.cells.map((c) => ({
+      id: c.id,
+      group: w.id,
+      name: { workspace, cell: cellLabel(focusedPane(c)) }
+    }))
   })
+}
+
+export function groupChoices(choices: readonly CellChoice[]): ChoiceGroup[] {
+  const groups = new Map<string, ChoiceGroup>()
+  for (const c of [...choices].sort((a, b) => Number(a.closed) - Number(b.closed))) {
+    const g = groups.get(c.group)
+    if (g) g.cells.push(c)
+    else groups.set(c.group, { id: c.group, workspace: c.name.workspace, cells: [c] })
+  }
+  return [...groups.values()]
 }
 
 export type Canvas = ReturnType<typeof createCanvas>
@@ -62,14 +79,15 @@ export function createCanvas(now: () => number = Date.now) {
   const cells = shallowRef<readonly OpenCell[]>([])
   const current = ref<string>()
   // 닫힌 cell 은 workspace 목록에서 빠져 이름을 구할 수 없으므로, 빠지기 직전의 이름을 기억해 둔다.
-  const closed = reactive(new Map<string, CellName>())
+  const closed = reactive(new Map<string, OpenCell>())
 
   /** 열린 cell 과 선택된 cell 이 바뀔 때마다 부른다. */
   function sync(next: { cells: readonly OpenCell[]; current?: string }): void {
     const ids = new Set(next.cells.map((c) => c.id))
-    for (const c of cells.value) if (!ids.has(c.id)) closed.set(c.id, c.name)
+    for (const c of cells.value) if (!ids.has(c.id)) closed.set(c.id, c)
     for (const id of ids) closed.delete(id)
-    cells.value = next.cells
+    // `App.vue` 의 watch 는 다른 cell 을 고를 때도 `sync` 를 부른다. 목록이 그대로이면 `cells` 를 바꾸지 않는다. 바꾸면 `cells` 를 읽는 `choices` 와 드롭다운이 다시 그려지기 때문이다.
+    if (JSON.stringify(next.cells) !== JSON.stringify(cells.value)) cells.value = next.cells
     current.value = next.current
   }
 
@@ -87,16 +105,18 @@ export function createCanvas(now: () => number = Date.now) {
 
   function nameOf(cell: string | undefined): CellName | undefined {
     if (cell === undefined) return undefined
-    return cells.value.find((c) => c.id === cell)?.name ?? closed.get(cell)
+    return (cells.value.find((c) => c.id === cell) ?? closed.get(cell))?.name
   }
 
   // 고른 닫힌 cell 은 문서가 모두 지워져도 남긴다. 빠지면 드롭다운에 체크된 항목이 없어지기 때문이다.
-  const choices = computed((): CellChoice[] => [
-    ...cells.value.map((c) => ({ ...c, closed: false })),
-    ...[...closed]
-      .filter(([id]) => id === viewCell.value || docs.value.some((d) => d.cell === id))
-      .map(([id, name]) => ({ id, name, closed: true }))
-  ])
+  const choices = computed((): ChoiceGroup[] =>
+    groupChoices([
+      ...cells.value.map((c) => ({ ...c, closed: false })),
+      ...[...closed.values()]
+        .filter((c) => c.id === viewCell.value || docs.value.some((d) => d.cell === c.id))
+        .map((c) => ({ ...c, closed: true }))
+    ])
+  )
 
   // 지금 보기에 들지 않는 문서로는 닫힌 패널을 열지 않는다. 열어도 그 문서는 보이지 않고 터미널 영역만 좁아지기 때문이다.
   function put(item: CanvasItem): void {
