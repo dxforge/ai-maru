@@ -192,13 +192,16 @@ test('dev 서버에서 뜬 창에서도 상대 링크는 창을 옮기지 않고
   ).toEqual([dev, null])
 })
 
-test('문서 안의 스크립트는 돌지 않고, 이미지는 대체 텍스트만 남는다', async ({ launch }) => {
+test('문서 안의 HTML 은 글자로 보이고 스크립트는 돌지 않으며, 이미지는 대체 텍스트만 남는다', async ({
+  launch
+}) => {
   const { app, page } = await launch()
   await putCanvas(app, {
     id: 'a',
     kind: 'markdown',
     text: [
       'before',
+      '<div class="palette-backdrop"><input placeholder="fake"></div>',
       '<img src="x" onerror="window.pwned = 1"> <img src="https://example.com/raw.png">',
       '<script>window.pwned = 2</script>',
       '![원격 그림](https://example.com/a.png) ![상대 그림](./a.png)',
@@ -207,7 +210,11 @@ test('문서 안의 스크립트는 돌지 않고, 이미지는 대체 텍스트
   })
 
   await expect(markdown(page)).toContainText('after')
+  await expect(markdown(page)).toContainText(
+    '<div class="palette-backdrop"><input placeholder="fake"></div>'
+  )
   await expect(markdown(page)).toContainText('원격 그림 상대 그림')
+  await expect(page.locator('.palette-backdrop, [placeholder="fake"]')).toHaveCount(0)
   await expect(markdown(page).locator('script, img')).toHaveCount(0)
   expect(await page.evaluate(() => (window as { pwned?: number }).pwned)).toBeUndefined()
 })

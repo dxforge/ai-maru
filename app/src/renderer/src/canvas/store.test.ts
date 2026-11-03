@@ -513,9 +513,11 @@ describe('문서 제목', () => {
   })
 
   it('heading 안의 인라인 마크다운은 글자만 남긴다', () => {
-    expect(titleOf(md('a', '# **굵게** `code` [링크](https://x) <em>e</em>'))).toBe(
-      '굵게 code 링크 e'
-    )
+    expect(titleOf(md('a', '# **굵게** `code` [링크](https://x)'))).toBe('굵게 code 링크')
+  })
+
+  it('heading 안의 HTML 은 본문처럼 태그까지 글자로 남긴다', () => {
+    expect(titleOf(md('a', '# <em>e</em> &amp; *<b>굵게</b>*'))).toBe('<em>e</em> & <b>굵게</b>')
   })
 
   it('heading 의 문자 참조는 본문처럼 풀고, 코드 안의 것은 글자 그대로 둔다', () => {
