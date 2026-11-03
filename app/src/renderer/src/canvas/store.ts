@@ -1,16 +1,12 @@
 import { computed, reactive, readonly, ref, shallowRef } from 'vue'
 import type { CanvasItem, CanvasOwner } from '../../../shared/canvas'
 import {
-  labelBase,
-  sidebarLabel,
+  cellLabel,
+  focusedPane,
   workspaceName,
-  type Named,
-  type SidebarLabel
+  type Label,
+  type Named
 } from '../../../shared/names'
-import { paneName } from '../../../shared/pane-name'
-import type { Layout } from '../../../shared/layout'
-import { orderedPanes } from '../workspace/store'
-import type { RowSource } from '../workspace/sidebarRows'
 import { firstHeading } from './markdown'
 
 // `at` 은 renderer 가 문서를 받은 시각(ms)이다. 문서를 고쳐 보냈으면 고친 시각이다.
@@ -28,11 +24,8 @@ export function docKey(id: string, cell?: string): string {
   return JSON.stringify([cell ?? null, id])
 }
 
-/**
- * cell 을 사이드바의 pane 줄처럼 부르는 이름이다. `title`·`place` 는 그 cell 의 사이드바 첫 줄(화면에 놓인 순서로 첫 pane)과 같은 값이고,
- * `more` 는 그 밖의 pane 수다. 포커스된 pane 을 쓰지 않는 것은 pane 을 누를 때마다 이름이 바뀌지 않게 하기 위해서다.
- */
-export type CellName = { workspace: string; title: string; more: number; place?: SidebarLabel }
+/** cell 의 workspace 이름과, 화면의 cell 헤더와 같은 cell 이름. workspace 는 cell 이 지금 속한 것이다. */
+export type CellName = { workspace: string; cell: Label }
 
 export type OpenCell = { id: string; group: string; name: CellName }
 
@@ -43,35 +36,20 @@ export type CellChoice = OpenCell & { closed: boolean }
 
 export type ChoiceGroup = { id: string; workspace: string; cells: CellChoice[] }
 
-type NamedPane = Named & {
-  key: number
-  ptyId?: string
-  title?: string
-  command?: readonly string[]
-}
-
 type NamedWorkspace = {
   id: string
   name?: string
-  cells: readonly { id: string; layout: Layout; panes: readonly NamedPane[] }[]
+  cells: readonly { id: string; focused: number; panes: readonly (Named & { key: number })[] }[]
 }
 
-export type NameSource = Omit<RowSource, 'notification'>
-
-export function openCells(workspaces: readonly NamedWorkspace[], src: NameSource): OpenCell[] {
+export function openCells(workspaces: readonly NamedWorkspace[], home?: string): OpenCell[] {
   return workspaces.flatMap((w) => {
-    const workspace = workspaceName(w, src.home)
-    const base = labelBase(w)
-    return w.cells.map((c) => {
-      const p = orderedPanes(c)[0]
-      const title = paneName(p, src.shown(p.ptyId), src.shell, src.command(p.ptyId))
-      const place = p.cwd === undefined ? undefined : sidebarLabel(p, base, src.home)
-      return {
-        id: c.id,
-        group: w.id,
-        name: { workspace, title, more: c.panes.length - 1, ...(place && { place }) }
-      }
-    })
+    const workspace = workspaceName(w, home)
+    return w.cells.map((c) => ({
+      id: c.id,
+      group: w.id,
+      name: { workspace, cell: cellLabel(focusedPane(c)) }
+    }))
   })
 }
 
@@ -108,7 +86,7 @@ export function createCanvas(now: () => number = Date.now) {
     const ids = new Set(next.cells.map((c) => c.id))
     for (const c of cells.value) if (!ids.has(c.id)) closed.set(c.id, c)
     for (const id of ids) closed.delete(id)
-    // `App.vue` 의 watch 는 pty 상태에서 이름과 상관없는 값(알림, cwd 보고 횟수 등)이 바뀌어도 다시 부르므로, 이름이 그대로면 목록을 바꾸지 않아 그것을 그리는 화면도 다시 만들지 않는다.
+    // `App.vue` 의 watch 는 다른 cell 을 고를 때도 `sync` 를 부른다. 목록이 그대로이면 `cells` 를 바꾸지 않는다. 바꾸면 `cells` 를 읽는 `choices` 와 드롭다운이 다시 그려지기 때문이다.
     if (JSON.stringify(next.cells) !== JSON.stringify(cells.value)) cells.value = next.cells
     current.value = next.current
   }

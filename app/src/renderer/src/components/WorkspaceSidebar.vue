@@ -7,7 +7,6 @@ import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/pr
 import type { PtyNotification } from '../../../shared/pty-state'
 import { commandClass, ICONS, STATE_LABELS } from '../icons'
 import FoldChevron from './FoldChevron.vue'
-import PlaceLabel from './PlaceLabel.vue'
 import StatusIcon from './StatusIcon.vue'
 import WorkspaceNameInput from './WorkspaceNameInput.vue'
 import { commandLabel, commandTail, elapsed, notificationText } from '../workspace/display'
@@ -330,7 +329,13 @@ const favoriteLabel = (workspace: number): string =>
               }}</template></span
             >
             <span class="title">{{ r.text }}</span>
-            <PlaceLabel v-if="r.place" class="tail place" :place="r.place" />
+            <span v-if="r.place" class="tail place"
+              ><span v-if="r.place.name" class="name">{{ r.place.name }}</span
+              ><span v-if="r.place.branch" class="branch"
+                ><span class="nerd-icon">{{ ICONS.branch }}</span
+                ><span class="branch-name">{{ r.place.branch }}</span></span
+              ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
+            >
             <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
               commandTail(r.command, now)
             }}</span>
@@ -543,6 +548,35 @@ button {
   background: var(--hover);
 }
 
+.name,
+.branch-name,
+.sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.name {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.branch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* 저장소 이름이 길어 줄어들어도 branch 아이콘(11px)은 남긴다. */
+  min-width: 11px;
+}
+
+.branch .nerd-icon {
+  flex: none;
+}
+
+.sub {
+  flex: none;
+  max-width: 50%;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -612,8 +646,13 @@ button {
 }
 
 .place {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   flex: 0 1 auto;
+  min-width: 0;
   max-width: 60%;
+  font-size: var(--text-1);
 }
 
 .job-row {

@@ -115,6 +115,7 @@ button {
   gap: var(--space-2);
   width: 100%;
   padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  text-align: left;
   border-radius: var(--radius-1);
   color: var(--fg);
 }

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { CellName } from '../canvas/store'
-import PlaceLabel from './PlaceLabel.vue'
 
 const { name = undefined, workspace = false } = defineProps<{
   name?: CellName
@@ -14,9 +13,8 @@ const { name = undefined, workspace = false } = defineProps<{
   <span v-if="!name" class="cell-name">—</span>
   <span v-else class="cell-name">
     <span v-if="workspace" class="workspace">{{ name.workspace }} ·</span>
-    <span class="pane-title">{{ name.title }}</span>
-    <span v-if="name.more" class="pane-count">+{{ name.more }}</span>
-    <PlaceLabel v-if="name.place" class="place" :place="name.place" />
+    <span class="cell">{{ name.cell.name }}</span>
+    <span v-if="name.cell.branch" class="branch">{{ name.cell.branch }}</span>
   </span>
 </template>
 
@@ -29,24 +27,19 @@ const { name = undefined, workspace = false } = defineProps<{
   white-space: nowrap;
 }
 
-.pane-title {
+.cell,
+.branch {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.workspace,
-.pane-count,
-.place {
+.workspace {
   flex: none;
-  color: var(--faint);
 }
 
-/* 사이드바 줄처럼 위치는 오른쪽 끝에 붙이고, 줄 폭의 60% 를 넘으면 줄여 pane 이름이 늘 보이게 한다.
-   그래서 이 이름을 그리는 쪽이 줄 폭을 정해 줘야 한다. 글자 길이만큼 폭을 잡으면 자기 폭의 60% 가 되어 자리가 남아도 잘린다. */
-.place {
-  flex: 0 1 auto;
-  max-width: 60%;
-  margin-left: auto;
+.workspace,
+.branch {
+  color: var(--faint);
 }
 </style>

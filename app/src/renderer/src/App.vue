@@ -88,15 +88,7 @@ function onLegacyProgramStatus(pty: string, records: ProgramStatusRecord[]): voi
 const home = window.maru.home
 const shell = window.maru.shell
 watch(
-  () => ({
-    cells: openCells(workspaces.list.value, {
-      shown: ptyStates.shown,
-      command: ptyStates.command,
-      home,
-      shell
-    }),
-    current: workspaces.selected()?.id
-  }),
+  () => ({ cells: openCells(workspaces.list.value, home), current: workspaces.selected()?.id }),
   canvas.sync,
   { immediate: true }
 )

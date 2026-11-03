@@ -1,8 +1,6 @@
 import { resolveObjectURL } from 'node:buffer'
 import { describe, expect, it } from 'vitest'
 import type { CanvasItem } from '../../../shared/canvas'
-import type { Layout } from '../../../shared/layout'
-import { programName, type ProgramStatusRecord } from '../../../shared/program-status'
 import {
   clockTime,
   createCanvas,
@@ -247,13 +245,13 @@ const owned = (id: string, cell?: string, text = id): CanvasItem => ({
 const shownTexts = (c: Canvas): [string | undefined, string][] =>
   c.shown.value.map((d) => [d.cell, d.kind === 'markdown' ? d.text : d.title])
 
-const named = (id: string, workspace: string, title: string): OpenCell => ({
+const named = (id: string, workspace: string, cell: string, branch?: string): OpenCell => ({
   id,
   group: `w-${workspace}`,
-  name: { workspace, title, more: 0 }
+  name: { workspace, cell: branch === undefined ? { name: cell } : { name: cell, branch } }
 })
 
-const A = named('c-a', 'ws', 'app')
+const A = named('c-a', 'ws', 'app', 'main')
 const B = named('c-b', 'ws', 'core')
 const C = named('c-c', 'other', 'docs')
 
@@ -293,7 +291,7 @@ describe('cell 별 보기', () => {
     expect(c.choices.value).toBe(before)
     expect(c.viewCell.value).toBe('c-b')
     c.sync({ cells: [A, named('c-b', 'ws', 'renamed')], current: 'c-b' })
-    expect(flat(c).map((x) => x.name.title)).toEqual(['app', 'renamed'])
+    expect(flat(c).map((x) => x.name.cell.name)).toEqual(['app', 'renamed'])
   })
 
   it('선택된 cell 이 없으면 현재 cell 보기에는 아무 문서도 없다', () => {
@@ -366,7 +364,7 @@ describe('cell 별 보기', () => {
     const c = createCanvas()
     c.sync({ cells: [A, B], current: 'c-a' })
     c.put(owned('b', 'c-b'))
-    const moved = named('c-b', 'other', 'fix')
+    const moved = named('c-b', 'other', 'core', 'fix')
     c.sync({ cells: [A, moved], current: 'c-a' })
     c.sync({ cells: [A], current: 'c-a' })
     expect(c.nameOf('c-b')).toEqual(moved.name)
@@ -497,134 +495,38 @@ describe('cell 별 보기', () => {
 })
 
 describe('openCells', () => {
-  const home = '/Users/me'
-  type Head = { repo: string; branch?: string; sub?: string }
-  const pane = (
-    key: number,
-    cwd: string | undefined,
-    more: { git?: Head; title?: string } = {}
-  ) => ({
-    key,
-    ptyId: `p-${key}`,
-    ...(cwd !== undefined && { cwd }),
-    ...(more.title !== undefined && { title: more.title }),
-    ...(more.git && { git: { ...more.git, common: `/r/${more.git.repo}/.git` } })
-  })
-  const cell = <P extends { key: number }>(id: string, panes: P[], layout?: Layout) => ({
-    id,
-    panes,
-    layout:
-      layout ??
-      panes
-        .slice(1)
-        .reduce<Layout>((first, p) => ({ split: 'right', first, second: { pane: p.key } }), {
-          pane: panes[0].key
-        })
-  })
-  const src = (records: Record<string, string> = {}, commands: Record<string, string> = {}) => ({
-    shown: (pty?: string) =>
-      pty && records[pty] ? ({ app: records[pty] } as ProgramStatusRecord) : undefined,
-    command: (pty?: string) =>
-      pty && commands[pty] ? { running: true as const, text: commands[pty] } : undefined,
-    home,
-    shell: '/bin/zsh'
-  })
-
-  it('workspace 순서, 그 안의 cell 순서로 workspace 이름과 첫 pane 의 사이드바 줄 이름·위치를 붙인다', () => {
-    const app = { repo: 'app', branch: 'main' }
+  it('workspace 순서, 그 안의 cell 순서로 workspace 와 이름을 붙이고, cell 이름은 cell 헤더처럼 포커스된 pane 으로 정한다', () => {
+    const home = '/Users/me'
+    const pane = (key: number, cwd: string, git?: { repo: string; branch: string }) => ({
+      key,
+      cwd,
+      ...(git && { git: { ...git, common: `${cwd}/.git` } })
+    })
     const cells = openCells(
       [
         {
           id: 'w-1',
           cells: [
-            cell('c-1', [pane(1, '/r/app', { git: app, title: 'Fix the menu' })]),
-            cell('c-2', [pane(2, '/r/app/wt', { git: { ...app, branch: 'fix' } }), pane(3, home)]),
-            cell('c-3', [pane(4, '/r/core', { git: { repo: 'core', branch: 'main' } })])
+            {
+              id: 'c-1',
+              focused: 2,
+              panes: [pane(1, home), pane(2, '/r/app', { repo: 'app', branch: 'main' })]
+            },
+            { id: 'c-2', focused: 3, panes: [pane(3, '/tmp/x')] }
           ]
         },
-        { id: 'w-2', cells: [cell('c-4', [pane(5, home), pane(6, '/tmp'), pane(7, '/')])] }
+        {
+          id: 'w-2',
+          name: 'Named',
+          cells: [{ id: 'c-3', focused: 4, panes: [pane(4, '/r/core')] }]
+        }
       ],
-      src()
+      home
     )
     expect(cells).toEqual([
-      {
-        id: 'c-1',
-        group: 'w-1',
-        name: { workspace: 'app', title: 'Fix the menu', more: 0, place: { branch: 'main' } }
-      },
-      {
-        id: 'c-2',
-        group: 'w-1',
-        name: { workspace: 'app', title: 'zsh', more: 1, place: { branch: 'fix' } }
-      },
-      {
-        id: 'c-3',
-        group: 'w-1',
-        name: { workspace: 'app', title: 'zsh', more: 0, place: { name: 'core', branch: 'main' } }
-      },
-      {
-        id: 'c-4',
-        group: 'w-2',
-        name: { workspace: '~', title: 'zsh', more: 2, place: { name: '~' } }
-      }
-    ])
-  })
-
-  it('포커스된 pane 이 아니라 첫 pane 을 쓰고, 이름은 사이드바처럼 프로그램·명령을 따른다', () => {
-    const cells = openCells(
-      [
-        {
-          id: 'w-1',
-          cells: [
-            cell('c-1', [pane(1, '/tmp/a'), pane(2, '/tmp/b')]),
-            cell('c-2', [pane(3, '/tmp/c')])
-          ]
-        }
-      ],
-      src({ 'p-1': 'claude' }, { 'p-3': 'pnpm dev' })
-    )
-    expect(cells.map((c) => [c.name.title, c.name.place])).toEqual([
-      [programName('claude'), { name: 'a' }],
-      ['pnpm dev', { name: 'c' }]
-    ])
-  })
-
-  it('먼저 연 pane 이 아니라 화면에 놓인 순서로 첫 pane 을 쓴다', () => {
-    const cells = openCells(
-      [
-        {
-          id: 'w-1',
-          cells: [
-            cell('c-1', [pane(1, '/tmp/a'), pane(2, '/tmp/b')], {
-              split: 'right',
-              first: { pane: 2 },
-              second: { pane: 1 }
-            })
-          ]
-        }
-      ],
-      src()
-    )
-    expect(cells.map((c) => [c.name.place, c.name.more])).toEqual([[{ name: 'b' }, 1]])
-  })
-
-  it('이름을 바꾼 workspace 는 위치에 저장소 이름을 다 적고, cwd 를 모르는 pane 은 위치가 없다', () => {
-    const cells = openCells(
-      [
-        {
-          id: 'w-1',
-          name: 'Named',
-          cells: [
-            cell('c-1', [pane(1, '/r/app', { git: { repo: 'app', branch: 'main' } })]),
-            cell('c-2', [pane(2, undefined)])
-          ]
-        }
-      ],
-      src()
-    )
-    expect(cells.map((c) => c.name)).toEqual([
-      { workspace: 'Named', title: 'zsh', more: 0, place: { name: 'app', branch: 'main' } },
-      { workspace: 'Named', title: 'zsh', more: 0 }
+      { id: 'c-1', group: 'w-1', name: { workspace: '~', cell: { name: 'app', branch: 'main' } } },
+      { id: 'c-2', group: 'w-1', name: { workspace: '~', cell: { name: 'x' } } },
+      { id: 'c-3', group: 'w-2', name: { workspace: 'Named', cell: { name: 'core' } } }
     ])
   })
 })
@@ -633,7 +535,7 @@ describe('groupChoices', () => {
   const choice = (id: string, group: string, closed: boolean, workspace = group): CellChoice => ({
     id,
     group,
-    name: { workspace, title: id, more: 0 },
+    name: { workspace, cell: { name: id } },
     closed
   })
 
