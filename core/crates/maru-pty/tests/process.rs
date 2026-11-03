@@ -201,15 +201,14 @@ impl Conn {
     }
 
     fn output_until(&mut self, want: &str) -> Vec<Value> {
-        self.until(want).0
+        self.until(want.as_bytes()).0
     }
 
-    fn bytes_until(&mut self, want: &str) -> Vec<u8> {
-        self.until(want).1
+    fn bytes_until(&mut self, want: impl AsRef<[u8]>) -> Vec<u8> {
+        self.until(want.as_ref()).1
     }
 
-    fn until(&mut self, want: &str) -> (Vec<Value>, Vec<u8>) {
-        let want = want.as_bytes();
+    fn until(&mut self, want: &[u8]) -> (Vec<Value>, Vec<u8>) {
         let mut out = Vec::new();
         let mut texts = Vec::new();
         loop {
@@ -251,10 +250,11 @@ impl Conn {
         }
     }
 
-    fn expect_resync_replay(&mut self) {
+    fn expect_resync_replay(&mut self) -> Vec<u8> {
         let (tag, replay) = self.frame().expect("resync 재생 전에 끊겼다");
         assert_eq!(tag, TAG_BINARY);
         assert!(replay.starts_with(b"\x1bc"), "리셋으로 시작하지 않는다");
+        replay
     }
 
     fn next_text(&mut self) -> Value {
@@ -377,6 +377,73 @@ fn reattaching_replays_earlier_output() {
     );
 }
 
+struct Cut {
+    command: String,
+    head_mark: Vec<u8>,
+    tail_mark: Vec<u8>,
+}
+
+/// 셸이 `mark-42` 와 `head` 를 쓰고 입력 한 줄을 기다렸다가 `tail` 과 `-42` 를 쓰는 명령. 기다리는 동안 보낸 입력이
+/// 되돌아와 끊긴 시퀀스 사이에 끼지 않게 echo 를 끈다.
+fn cut_output(head: &[u8], tail: &[u8]) -> Cut {
+    let octal = |b: &[u8]| b.iter().map(|c| format!("\\{c:03o}")).collect::<String>();
+    let (h, t) = (octal(head), octal(tail));
+    Cut {
+        command: format!(
+            "stty -echo; printf 'mark-%s{h}' $((40+2)); read x; printf '{t}-%s\\n' $((6*7)); stty echo\n"
+        ),
+        head_mark: [b"mark-42", head].concat(),
+        tail_mark: [tail, b"-42"].concat(),
+    }
+}
+
+#[test]
+fn attaching_in_the_middle_of_a_sequence_replays_its_start() {
+    let cases: [(&[u8], &[u8]); 2] = [(b"\x1b[3", b"1mRED"), (b"\xea\xb0", b"\x80")];
+    for (head, tail) in cases {
+        let cut = cut_output(head, tail);
+        let p = start();
+        let (mut a, _, _) = p.attach("primary", 80, 24);
+        a.input(&cut.command);
+        a.bytes_until(&cut.head_mark);
+
+        let (mut c, _, replay) = p.attach("observer", 80, 24);
+        assert!(
+            replay.ends_with(head),
+            "{head:?}: {:?}",
+            String::from_utf8_lossy(&replay)
+        );
+        a.input("go\n");
+        let after = c.bytes_until(&cut.tail_mark);
+        assert!(after.starts_with(&cut.tail_mark), "{head:?}: {after:?}");
+    }
+}
+
+#[test]
+fn a_resync_in_the_middle_of_a_sequence_replays_its_start() {
+    // `a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs` 와 같은 양이다.
+    const FLOOD: usize = 9 * 1024 * 1024;
+    let cut = cut_output(b"\x1b[3", b"1mRED");
+    let p = start();
+    let (mut slow, _, _) = p.attach("observer", 80, 24);
+    let (mut fast, _, _) = p.attach("primary", 80, 24);
+    fast.input(&format!("head -c {FLOOD} /dev/zero; {}", cut.command));
+    fast.bytes_until(&cut.head_mark);
+
+    // `slow` 가 읽기 시작해야 서버가 밀린 것을 알고 resync 하므로, 재생은 시퀀스가 끊긴 뒤에 뜬다.
+    let v = slow.next_text();
+    assert_eq!(v["type"], "resync", "{v}");
+    let replay = slow.expect_resync_replay();
+    assert!(
+        replay.ends_with(b"\x1b[3"),
+        "{:?}",
+        String::from_utf8_lossy(&replay[replay.len().saturating_sub(200)..])
+    );
+    fast.input("go\n");
+    let after = slow.bytes_until(&cut.tail_mark);
+    assert!(after.starts_with(&cut.tail_mark), "{after:?}");
+}
+
 #[test]
 fn every_attached_client_sees_the_output() {
     let p = start();
@@ -443,10 +510,14 @@ fn only_one_primary_sets_the_size() {
 
 const CLEAR_SCROLLBACK: &str = "\x1b[3J";
 
-fn contains(haystack: &[u8], needle: &str) -> bool {
+fn find(haystack: &[u8], needle: &str) -> Option<usize> {
     haystack
         .windows(needle.len())
-        .any(|w| w == needle.as_bytes())
+        .position(|w| w == needle.as_bytes())
+}
+
+fn contains(haystack: &[u8], needle: &str) -> bool {
+    find(haystack, needle).is_some()
 }
 
 #[test]
@@ -466,6 +537,84 @@ fn clear_scrollback_clears_the_replay_and_reaches_every_client() {
     let replay = String::from_utf8_lossy(&replay);
     assert!(!replay.contains("done-2"), "{replay:?}");
     assert!(!replay.contains("\n50\r"), "{replay:?}");
+}
+
+#[test]
+fn clear_scrollback_in_the_middle_of_a_sequence_waits_for_its_end() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let (mut b, _, _) = p.attach("observer", 80, 24);
+    let cut = cut_output(b"\x1b[38;5;", b"196mRED");
+    a.input(&cut.command);
+    a.bytes_until(&cut.head_mark);
+
+    a.send_text(json!({ "type": "clear_scrollback" }));
+    a.send_text(json!({ "type": "clear_scrollback" }));
+    a.input("go\n");
+    a.input("echo after-$((1+2))\n");
+    for (name, c) in [("primary", &mut a), ("observer", &mut b)] {
+        let out = c.bytes_until("after-3");
+        let shown = String::from_utf8_lossy(&out);
+        let tail = find(&out, "196mRED-42").expect("뒷부분이 없다");
+        let clear = find(&out, CLEAR_SCROLLBACK).expect("지우는 바이트가 없다");
+        assert!(tail < clear, "{name}: {shown:?}");
+        assert!(
+            !contains(&out[clear + 1..], CLEAR_SCROLLBACK),
+            "{name}: {shown:?}"
+        );
+    }
+}
+
+#[test]
+fn clear_scrollback_waits_again_when_the_next_output_ends_in_a_sequence() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let (mut b, _, _) = p.attach("observer", 80, 24);
+    a.input(concat!(
+        "stty -echo; printf 'mark-%s\\033[38;5;' $((40+2)); read x; ",
+        "printf '196m-%s\\033[3' $((40+2)); read x; printf '1mRED-%s\\n' $((6*7)); stty echo\n"
+    ));
+    a.bytes_until(b"mark-42\x1b[38;5;");
+
+    a.send_text(json!({ "type": "clear_scrollback" }));
+    a.input("go\n");
+    a.bytes_until(b"196m-42\x1b[3");
+    // 미뤄 둔 사이에 붙은 클라이언트도 재생 뒤에 뒷부분, 그다음 지우는 바이트를 받는다.
+    let (mut c, _, replay) = p.attach("observer", 80, 24);
+    assert!(
+        replay.ends_with(b"\x1b[3"),
+        "{:?}",
+        String::from_utf8_lossy(&replay)
+    );
+    a.input("go\n");
+    a.input("echo after-$((1+2))\n");
+    for (name, c) in [("primary", &mut a), ("observer", &mut b), ("late", &mut c)] {
+        let out = c.bytes_until("after-3");
+        let shown = String::from_utf8_lossy(&out);
+        let tail = find(&out, "1mRED-42").expect("뒷부분이 없다");
+        let clear = find(&out, CLEAR_SCROLLBACK).expect("지우는 바이트가 없다");
+        assert!(tail < clear, "{name}: {shown:?}");
+        assert!(
+            !contains(&out[clear + 1..], CLEAR_SCROLLBACK),
+            "{name}: {shown:?}"
+        );
+    }
+}
+
+#[test]
+fn clear_scrollback_waiting_for_a_sequence_is_dropped_when_the_alternate_screen_opens() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    let (mut b, _, _) = p.attach("observer", 80, 24);
+    let cut = cut_output(b"\x1b[38;5;", b"196m\x1b[?1049hALT");
+    a.input(&cut.command);
+    a.bytes_until(&cut.head_mark);
+
+    a.send_text(json!({ "type": "clear_scrollback" }));
+    a.input("go\n");
+    a.input("printf '\\033[?1049l'; echo left-$((4+4))\n");
+    assert!(!contains(&a.bytes_until("left-8"), CLEAR_SCROLLBACK));
+    assert!(!contains(&b.bytes_until("left-8"), CLEAR_SCROLLBACK));
 }
 
 #[test]

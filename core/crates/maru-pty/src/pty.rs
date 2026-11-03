@@ -171,6 +171,8 @@ struct Screen {
     status_owner: Option<i32>,
     pane: PaneState,
     outputs: Vec<Weak<Output>>,
+    /// 출력이 시퀀스 중간일 때 받은 스크롤백 지우기. 출력이 시퀀스를 끝내면 지운다.
+    pending_clear: bool,
     /// 상태 구독자에게 보낼 마지막 상태. 이 프로세스가 끝날 때 비워 구독 연결을 닫게 한다.
     state_tx: Option<watch::Sender<Arc<str>>>,
     /// 상태와 달리 한 번 일어난 일이라 마지막 것만 남기지 않고 모두 보낸다.
@@ -181,6 +183,23 @@ impl Screen {
     fn broadcast(&mut self, f: impl Fn(&Output)) {
         self.outputs
             .retain(|o| o.upgrade().inspect(|o| f(o)).is_some());
+    }
+
+    /// 출력이 시퀀스 중간이면 `pending_clear` 만 세우고, reader 루프가 청크를 보낼 때마다 다시 부른다. 지우는
+    /// 바이트가 시퀀스 사이에 끼면 프로그램의 시퀀스가 끊겨 뒷부분이 글자로 찍히기 때문이다.
+    fn clear_scrollback(&mut self) -> Result<()> {
+        if !self.vt.at_ground()? {
+            self.pending_clear = true;
+            return Ok(());
+        }
+        self.pending_clear = false;
+        // 지울 때 대체 화면이 떠 있으면 None 이라 버린다.
+        let Some(seq) = self.vt.clear_scrollback_sequence()? else {
+            return Ok(());
+        };
+        self.vt.write(&seq);
+        self.broadcast(|o| o.push(&seq));
+        Ok(())
     }
 
     /// 한 `write` 의 콜백 결과를 상태에 반영하고, 상태가 바뀌었을 수 있으면 true 다. 제목은 VT 가 들고 있어
@@ -291,6 +310,7 @@ impl Pty {
                 PaneState::for_command(command, epoch_millis())
             },
             outputs: Vec::new(),
+            pending_clear: false,
             state_tx: None,
             notification_tx: broadcast::channel(NOTIFICATION_BACKLOG).0,
         };
@@ -349,6 +369,11 @@ impl Pty {
                     wake_r.wake();
                 }
                 screen.broadcast(|o| o.push(bytes));
+                if screen.pending_clear
+                    && let Err(e) = screen.clear_scrollback()
+                {
+                    log!("maru-pty: clear_scrollback failed: {e:#}");
+                }
                 drop(screen);
                 for reply in events.pty_replies {
                     let _ = reply_tx.send(reply);
@@ -429,19 +454,14 @@ impl Pty {
         self.resize_locked(&mut screen, conn, cols, rows)
     }
 
-    /// 지우는 바이트를 PTY 출력과 같은 락 안에서 VT 에 쓰고 모든 구독자에게 보낸다. 출력 사이에 같은
-    /// 순서로 끼어야 클라이언트의 xterm 이 이 화면과 같게 지워진다.
+    /// 지우는 바이트를 PTY 출력과 같은 락 안에서 VT 에 쓰고 모든 구독자에게 보낸다(시퀀스 중간이면 미룬다).
+    /// 출력 사이에 같은 순서로 끼어야 클라이언트의 xterm 이 이 화면과 같게 지워진다.
     pub fn clear_scrollback_if_primary(&self, conn: u64) -> Result<()> {
         let mut screen = self.screen.lock().unwrap();
         if !self.is_primary(conn) {
             return Ok(());
         }
-        let Some(seq) = screen.vt.clear_scrollback_sequence()? else {
-            return Ok(());
-        };
-        screen.vt.write(&seq);
-        screen.broadcast(|o| o.push(&seq));
-        Ok(())
+        screen.clear_scrollback()
     }
 
     fn resize_locked(&self, screen: &mut Screen, conn: u64, cols: u16, rows: u16) -> Result<()> {
