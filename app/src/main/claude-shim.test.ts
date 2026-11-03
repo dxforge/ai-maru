@@ -13,6 +13,11 @@ import { describe, expect, it } from 'vitest'
 
 const SHIM = join(__dirname, '../../resources/bin/claude')
 
+// 테스트마다 shim 을 한 번 spawn 한다. 테스트 시간 제한을 spawn 제한보다 길게 두어, 부하로
+// 느려진 spawn 이 spawn 제한 안에 끝났는데도 vitest 기본값 5초에 걸려 실패하지 않게 한다.
+const SPAWN_TIMEOUT_MS = 10_000
+const TEST_TIMEOUT_MS = 15_000
+
 type Setup = { dir: string; shimDir: string; realDir: string; log: string }
 
 function setup(claudeTail = 'exit 0'): Setup {
@@ -51,13 +56,13 @@ function run(env: Record<string, string>, args: string[] = []) {
   return spawnSync('/bin/bash', ['-c', 'claude "$@"', 'bash', ...args], {
     env,
     encoding: 'utf8',
-    timeout: 10_000
+    timeout: SPAWN_TIMEOUT_MS
   })
 }
 
 const calls = (s: Setup) => readFileSync(s.log, 'utf8')
 
-describe('앱의 claude shim', () => {
+describe('앱의 claude shim', { timeout: TEST_TIMEOUT_MS }, () => {
   it('앱 plugin 을 모든 인자 앞에 실어 PATH 의 다음 claude 를 부르고, 이름은 claude 로 남긴다', () => {
     const s = setup()
     expect(run(appEnv(s), ['-p', 'a b']).status).toBe(0)
@@ -76,7 +81,8 @@ describe('앱의 claude shim', () => {
     const s = setup('echo "pid=$$" >> "$0.pid"')
     const r = spawnSync('/bin/bash', ['-c', 'claude & echo "pid=$!"; wait'], {
       env: appEnv(s),
-      encoding: 'utf8'
+      encoding: 'utf8',
+      timeout: SPAWN_TIMEOUT_MS
     })
     expect(readFileSync(join(s.realDir, 'claude.pid'), 'utf8')).toBe(r.stdout)
   })
