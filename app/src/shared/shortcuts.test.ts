@@ -74,6 +74,12 @@ describe('commandKeys', () => {
     expect(secondaryCommand(press('KeyR', { shiftKey: true, metaKey: true }))).toBeUndefined()
   })
 
+  it('런처는 ⌘O 이고 메뉴에 걸며, ⌘P 에는 아무것도 걸지 않는다', () => {
+    expect(toAccelerator(commandKeys('launcher')!)).toBe('Command+O')
+    expect(commandLabel('launcher')).toBe('⌘O')
+    expect(shortcuts.some((s) => matchesKeys(press('KeyP', { metaKey: true }), s))).toBe(false)
+  })
+
   it('스크롤백 지우기는 ⌘K 다', () => {
     expect(toAccelerator(commandKeys('clear-scrollback')!)).toBe('Command+K')
     expect(formatKeys(commandKeys('clear-scrollback')!)).toBe('⌘K')

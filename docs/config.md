@@ -34,7 +34,7 @@ commands = ["claude", "codex"]
 | `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트와 런처를 창의 아래에 띄울지 위에 띄울지. |
 | `layout.column-cols` | `80` | 20–500 의 정수(열 수). columns 보기에서 pane 하나가 받는 터미널 열 수. |
 | `layout.column-step` | `20` | 1–480 의 정수(열 수). Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸는 열 수. |
-| `launcher.commands` | `["claude", "codex"]` | 비지 않은 문자열 배열. 런처(⌘P)가 띄울 명령. |
+| `launcher.commands` | `["claude", "codex"]` | 비지 않은 문자열 배열. 런처(⌘O)가 띄울 명령. |
 | `notification.seen-ms` | `500` | 0 이상의 정수(ms), 또는 `false`. 알림 점과 done 이 온 pane 에 들어가 이만큼 머물면 지운다. |
 
 pane 헤더와 cell 헤더도 터미널의 글꼴과 크기를 따른다.
@@ -59,7 +59,7 @@ Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸�
 
 ### `launcher`
 
-런처(⌘P, File 메뉴의 Open Launcher)는 디렉토리를 고른 뒤 명령을 골라 그 디렉토리에서 띄운다. 명령 목록은 `commands` 의 항목 뒤에 명령 없이 셸만 여는 `shell` 이 붙는다. `shell` 로 연 pane 은 ⌘N 으로 연 pane 과 같다. 명령 단계에서 Enter 는 새 workspace 에, ⌘Enter 는 지금 workspace 의 새 cell 에 띄운다. Esc 는 디렉토리 단계로 돌아간다. 명령 단계는 마지막으로 띄운 명령을 먼저 고른다.
+런처(⌘O, File 메뉴의 Open Launcher)는 디렉토리를 고른 뒤 명령을 골라 그 디렉토리에서 띄운다. 명령 목록은 `commands` 의 항목 뒤에 명령 없이 셸만 여는 `shell` 이 붙는다. `shell` 로 연 pane 은 ⌘N 으로 연 pane 과 같다. 명령 단계에서 Enter 는 새 workspace 에, ⌘Enter 는 지금 workspace 의 새 cell 에 띄운다. Esc 는 디렉토리 단계로 돌아간다. 명령 단계는 마지막으로 띄운 명령을 먼저 고른다.
 
 ⌘J 를 누르고 5초 안에 ⌘T·⌘N·⌘D·⇧⌘D 가운데 하나를 누르면 디렉토리 단계 없이 명령 단계가 뜬다. 고른 명령은 지금 pane 의 디렉토리에서, 두 번째 키가 여는 자리(새 cell·새 workspace·오른쪽으로 나누기·아래로 나누기)에 뜬다. 이 목록에는 `shell` 이 없다. 셸은 두 번째 키만 누르면 열리기 때문이다. ⌘ 를 떼고 누른 키, Esc, 그 밖의 키를 누르거나 창을 떠나면 기다리기를 그만둔다. 이때 누른 키는 터미널에도 메뉴에도 가지 않는다. File 메뉴와 명령 팔레트의 Launch in New Cell… 등도 같은 목록을 띄운다. 이렇게 띄운 디렉토리는 최근 목록에 넣지 않는다.
 

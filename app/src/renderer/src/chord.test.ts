@@ -57,7 +57,7 @@ describe('chordStep', () => {
       press('KeyT', 't'),
       press('KeyD', 'D', { shiftKey: true }),
       press('Escape', 'Escape'),
-      press('KeyP', 'p', { metaKey: true }),
+      press('KeyO', 'o', { metaKey: true }),
       press('KeyT', 't', { metaKey: true, altKey: true }),
       cmdJ
     ]

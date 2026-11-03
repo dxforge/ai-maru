@@ -59,7 +59,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
   expect(menus.file).toEqual([
     ['new-workspace', 'New Workspace', 'Command+N'],
     ['new-cell', 'New Cell', 'Command+T'],
-    ['launcher', 'Open Launcher', 'Command+P'],
+    ['launcher', 'Open Launcher', 'Command+O'],
     ['split-right', 'Split Right', 'Command+D'],
     ['split-down', 'Split Down', 'Shift+Command+D'],
     ['launch-cell', 'Launch in New Cell…', null],
