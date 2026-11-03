@@ -69,7 +69,7 @@ Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸�
 
 런처의 최근 목록은 `config.toml` 이 아니라 앱 데이터 폴더의 `launcher.json` 에 앱이 쓴다. 런처로 연 디렉토리만 들어가고, 런처에서 ⇧⌘⌫ 나 행의 × 로 지운다.
 
-즐겨찾기도 `launcher.json` 에 디렉토리와 이름의 쌍으로 들어간다. 사이드바 workspace 줄의 별이나 Toggle Workspace Favorite 명령이 그 workspace 의 첫 pane 을 연 디렉토리를 지금 이름으로 넣고 뺀다. 즐겨찾기에 든 디렉토리의 workspace 이름을 고치면 즐겨찾기 이름도 바뀐다. 런처는 즐겨찾기를 최근 목록과 나눠 입력창에 가까운 쪽에 보이고, 즐겨찾기를 Enter 로 열면 새 workspace 에 그 이름이 붙는다. 런처에서는 ⇧⌘⌫ 나 행의 × 로 빼기만 한다.
+즐겨찾기도 `launcher.json` 의 `favorites` 에 `id`·`dir`·`name` 으로 들어가고, 같은 디렉토리의 항목을 여럿 둘 수 있다. 사이드바 workspace 줄의 별이나 Toggle Workspace Favorite 명령이 그 workspace 의 첫 pane 을 연 디렉토리를 지금 이름으로 넣고 뺀다. 즐겨찾기는 넣은 workspace 와 이어지고, 별은 이어진 workspace 에만 붙는다. 디렉토리가 같은 다른 workspace 에는 붙지 않는다. 이어진 workspace 의 이름을 고치면 그 즐겨찾기의 이름도 바뀐다. 런처는 즐겨찾기를 최근 목록과 나눠 입력창에 가까운 쪽에 보이고, 즐겨찾기를 Enter 로 열면 새 workspace 에 그 이름이 붙고 그 즐겨찾기와 이어진다. 이미 열린 workspace 와 이어진 즐겨찾기를 Enter 로 고르면 새로 열지 않고 그 workspace 로 간다. ⌘Enter 로 연 cell 은 즐겨찾기와 잇지 않는다. 런처에서는 ⇧⌘⌫ 나 행의 × 로 빼기만 한다.
 
 ### `seen-ms`
 

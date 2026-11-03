@@ -163,18 +163,22 @@ describe('createLauncherStore 의 즐겨찾기', () => {
       file,
       JSON.stringify({
         recent: [],
-        favorites: [{ dir: '/x', name: 'x', extra: 1 }],
+        favorites: [{ id: 'f-1', dir: '/work/app', name: 'app', extra: 1 }],
         command: null
       })
     )
-    expect((await createLauncherStore(file).read()).favorites).toEqual([{ dir: '/x', name: 'x' }])
+    expect((await createLauncherStore(file).read()).favorites).toEqual([
+      { id: 'f-1', dir: '/work/app', name: 'app' }
+    ])
   })
 
   for (const [label, favorites] of [
     ['favorites 가 배열이 아니면', '{}'],
     ['항목이 객체가 아니면', '["/x"]'],
-    ['name 이 없으면', '[{"dir":"/x"}]'],
-    ['dir 이 문자열이 아니면', '[{"dir":1,"name":"x"}]']
+    ['name 이 없으면', '[{"id":"f-1","dir":"/x"}]'],
+    ['id 가 없으면', '[{"dir":"/x","name":"x"}]'],
+    ['id 가 문자열이 아니면', '[{"id":1,"dir":"/x","name":"x"}]'],
+    ['dir 이 문자열이 아니면', '[{"id":"f-1","dir":1,"name":"x"}]']
   ]) {
     it(`${label} 빈 목록으로 시작한다`, async () => {
       writeFileSync(file, `{"recent":["/y"],"favorites":${favorites},"command":null}`)
@@ -191,12 +195,12 @@ describe('createLauncherStore 의 즐겨찾기', () => {
     const a = join(dir, 'a')
     const b = join(dir, 'b')
     await store.launched(a, 'claude')
-    await store.addFavorite(b, 'bee')
-    expect(await store.addFavorite(a, 'ay')).toEqual({
+    await store.addFavorite({ id: 'f-b', dir: b, name: 'bee' })
+    expect(await store.addFavorite({ id: 'f-a', dir: a, name: 'ay' })).toEqual({
       recent: [a],
       favorites: [
-        { dir: b, name: 'bee' },
-        { dir: a, name: 'ay' }
+        { id: 'f-b', dir: b, name: 'bee' },
+        { id: 'f-a', dir: a, name: 'ay' }
       ],
       command: 'claude'
     })
@@ -204,38 +208,42 @@ describe('createLauncherStore 의 즐겨찾기', () => {
     expect((await createLauncherStore(file).read()).favorites).toHaveLength(2)
   })
 
-  it('같은 디렉토리를 가리키는 다른 표기(., .., 한글 NFD)는 한 번만 넣고 이름을 바꾸지 않는다', async () => {
+  it('같은 디렉토리를 다른 id 로 여러 번 넣을 수 있고, 경로는 풀어서 둔다', async () => {
     const store = createLauncherStore(file)
     const a = join(dir, 'a')
-    await store.addFavorite(a, 'first')
-    await store.addFavorite(`${a}/.`, 'second')
-    await store.addFavorite(`${a}/../a`, 'third')
-    const hangul = join(dir, '프로젝트')
-    await store.addFavorite(hangul.normalize('NFD'), 'nfd')
-    await store.addFavorite(hangul.normalize('NFC'), 'nfc')
+    await store.addFavorite({ id: 'f-1', dir: a, name: 'app' })
+    await store.addFavorite({ id: 'f-2', dir: `${a}/../a/.`, name: 'app review' })
     expect((await store.read()).favorites).toEqual([
-      { dir: a, name: 'first' },
-      { dir: hangul.normalize('NFD'), name: 'nfd' }
+      { id: 'f-1', dir: a, name: 'app' },
+      { id: 'f-2', dir: a, name: 'app review' }
+    ])
+  })
+
+  it('이미 든 id 는 다시 넣지 않는다', async () => {
+    const store = createLauncherStore(file)
+    await store.addFavorite({ id: 'f-1', dir: join(dir, 'a'), name: 'app' })
+    await store.addFavorite({ id: 'f-1', dir: join(dir, 'b'), name: 'other' })
+    expect((await store.read()).favorites).toEqual([
+      { id: 'f-1', dir: join(dir, 'a'), name: 'app' }
     ])
   })
 
   it('상대경로는 넣지 않는다', async () => {
     const store = createLauncherStore(file)
-    expect((await store.addFavorite('a', 'a')).favorites).toEqual([])
+    expect((await store.addFavorite({ id: 'f-1', dir: 'a', name: 'a' })).favorites).toEqual([])
   })
 
-  it('빼기와 이름 바꾸기는 다른 표기의 같은 디렉토리에도 맞는다', async () => {
+  it('빼기와 이름 바꾸기는 id 로 찾고, 같은 디렉토리의 다른 항목은 건드리지 않는다', async () => {
     const store = createLauncherStore(file)
     const a = join(dir, 'a')
-    const hangul = join(dir, '프로젝트')
-    await store.addFavorite(a, 'ay')
-    await store.addFavorite(hangul.normalize('NFD'), 'old')
-    expect((await store.renameFavorite(hangul.normalize('NFC'), 'new')).favorites).toEqual([
-      { dir: a, name: 'ay' },
-      { dir: hangul.normalize('NFD'), name: 'new' }
+    await store.addFavorite({ id: 'f-1', dir: a, name: 'app' })
+    await store.addFavorite({ id: 'f-2', dir: a, name: 'old' })
+    expect((await store.renameFavorite('f-2', 'new')).favorites).toEqual([
+      { id: 'f-1', dir: a, name: 'app' },
+      { id: 'f-2', dir: a, name: 'new' }
     ])
-    expect((await store.forgetFavorite(hangul.normalize('NFC'))).favorites).toEqual([
-      { dir: a, name: 'ay' }
+    expect((await store.forgetFavorite('f-2')).favorites).toEqual([
+      { id: 'f-1', dir: a, name: 'app' }
     ])
     expect(saved()).toEqual(await store.read())
   })
@@ -243,10 +251,10 @@ describe('createLauncherStore 의 즐겨찾기', () => {
   it('없는 즐겨찾기를 빼거나 이름을 바꾸면 목록이 그대로다', async () => {
     const store = createLauncherStore(file)
     const a = join(dir, 'a')
-    await store.addFavorite(a, 'ay')
-    await store.renameFavorite(join(dir, 'b'), 'bee')
-    await store.forgetFavorite(join(dir, 'b'))
-    expect((await store.read()).favorites).toEqual([{ dir: a, name: 'ay' }])
+    await store.addFavorite({ id: 'f-1', dir: a, name: 'app' })
+    await store.renameFavorite('f-2', 'other')
+    await store.forgetFavorite('f-2')
+    expect((await store.read()).favorites).toEqual([{ id: 'f-1', dir: a, name: 'app' }])
   })
 })
 

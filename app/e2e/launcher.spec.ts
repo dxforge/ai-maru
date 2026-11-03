@@ -7,6 +7,7 @@ import {
   activeTerminal,
   cellGroups,
   cellItems,
+  cellViews,
   clickMenu,
   dialogCalls,
   expect,
@@ -826,7 +827,7 @@ test('런처에서 ⇧⌘⌫ 로 뺀 즐겨찾기는 최근 목록에 있는 디
   const [cmd] = useTool(dataDir)
   const a = project(dataDir, 'proj-a')
   const b = project(dataDir, 'proj-b')
-  writeLauncherState(dataDir, [b], cmd, [{ dir: a, name: 'atlas' }])
+  writeLauncherState(dataDir, [b], cmd, [{ id: 'f-1', dir: a, name: 'atlas' }])
   const launched = await launch()
   const { page } = launched
   await openLauncher(launched)
@@ -885,4 +886,106 @@ test('이름을 고치지 않은 workspace 는 자동 이름으로 즐겨찾기�
   await expect(star(page, 1)).not.toHaveClass(/\bon\b/)
   await expectFavoriteNames(launched, [])
   await expect(rows(page)).toContainText(`A-ran-in-${a}`)
+})
+
+test('같은 디렉토리의 workspace 가운데 별을 누른 workspace 만 즐겨찾기가 되고, 이름을 고치면 그 workspace 의 줄만 바뀌며, 둘 다 넣으면 줄이 둘이다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { app, page } = launched
+  await launchAt(launched, a)
+  await launchAt(launched, a)
+  await expect(workspaceNames(page).nth(1)).toHaveText('proj-a')
+  await expect(workspaceNames(page).nth(2)).toHaveText('proj-a')
+  await workspaceHeads(page).nth(1).hover()
+  await star(page, 1).click()
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await expect(star(page, 2)).not.toHaveClass(/\bon\b/)
+
+  await renameSelected(app, page, 'review')
+  await expectFavoriteNames(launched, ['proj-a'])
+  await cellItems(page).nth(1).click()
+  await renameSelected(app, page, 'app')
+  await expectFavoriteNames(launched, ['app'])
+
+  await workspaceHeads(page).nth(2).hover()
+  await star(page, 2).click()
+  await expect(star(page, 2)).toHaveClass(/\bon\b/)
+  await openLauncher(launched)
+  await expect(favoriteRows(page).locator('.name')).toHaveText(['app', 'review'])
+  await expect(favoriteRows(page).locator('.path')).toHaveText([a, a])
+})
+
+test('별을 누른 workspace 를 닫고 같은 디렉토리를 다시 열어 같은 이름에서 별을 누르면 남은 줄을 다시 쓰고, 이름을 고치면 그 줄이 바뀐다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { app, page } = launched
+  await launchAt(launched, a)
+  await expect(workspaceNames(page).nth(1)).toHaveText('proj-a')
+  await clickMenu(app, 'toggle-favorite-workspace')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await stubDialog(app, 0)
+  await clickMenu(app, 'close-workspace')
+  await expect(workspaceHeads(page)).toHaveCount(1)
+
+  await launchAt(launched, a)
+  await expect(workspaceNames(page).nth(1)).toHaveText('proj-a')
+  await expect(star(page, 1)).not.toHaveClass(/\bon\b/)
+  await clickMenu(app, 'toggle-favorite-workspace')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await expectFavoriteNames(launched, ['proj-a'])
+  await renameSelected(app, page, 'app')
+  await expectFavoriteNames(launched, ['app'])
+})
+
+test('Favorites 에서 Enter 로 연 workspace 는 별이 붙고 재시작해도 남으며, 그 줄에서 다시 Enter 하면 새로 열지 않고 접혀 있어도 펴서 그 workspace 로 간다', async ({
+  launch,
+  dataDir
+}) => {
+  const [cmd] = useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  writeLauncherState(dataDir, [], cmd, [{ id: 'f-1', dir: a, name: 'app' }])
+  const first = await launch()
+  const { app, page } = first
+  await openLauncher(first)
+  await expect(items(page).nth(0)).toHaveClass(/favorite/)
+  await toCommands(page, a)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await activeTerminal(page)
+  await expect(workspaceNames(page).nth(1)).toHaveText('app')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+
+  // 경로를 쳐서 같은 디렉토리를 열면 즐겨찾기와 잇지 않는다.
+  await launchAt(first, a)
+  await expect(workspaceNames(page)).toHaveCount(3)
+  await expect(star(page, 2)).not.toHaveClass(/\bon\b/)
+  await expect(cellViews(page).nth(2)).toHaveClass(/selected/)
+
+  await workspaceHeads(page).nth(1).click()
+  await expect(workspaceHeads(page).nth(1)).toHaveAttribute('aria-expanded', 'false')
+  // 즐겨찾기인 디렉토리는 Recent 에 겹쳐 보이지 않으므로 처음 고른 행이 그 즐겨찾기다.
+  await openLauncher(first)
+  await expect(items(page)).toHaveCount(1)
+  await expect(items(page).nth(0)).toHaveClass(/selected/)
+  await toCommands(page, a)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+  await expect(workspaceHeads(page).nth(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect(workspaceNames(page)).toHaveCount(3)
+  await expect(cellItems(page)).toHaveCount(3)
+  await restartWith(app)
+
+  const again = await launch()
+  await expect(workspaceNames(again.page)).toHaveCount(3)
+  await expect(star(again.page, 1)).toHaveClass(/\bon\b/)
+  await expect(star(again.page, 2)).not.toHaveClass(/\bon\b/)
 })

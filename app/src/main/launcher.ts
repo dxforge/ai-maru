@@ -6,10 +6,10 @@ import { writeJsonAtomic } from './json-file'
 
 const EMPTY: LauncherState = { recent: [], favorites: [], command: null }
 
-function isFavorite(v: unknown): v is Favorite {
+export function isFavorite(v: unknown): v is Favorite {
   if (typeof v !== 'object' || v === null) return false
-  const { dir, name } = v as Record<string, unknown>
-  return typeof dir === 'string' && typeof name === 'string'
+  const { id, dir, name } = v as Record<string, unknown>
+  return typeof id === 'string' && typeof dir === 'string' && typeof name === 'string'
 }
 
 // `favorites` 를 더하기 전에 쓴 파일에는 그 키가 없다.
@@ -19,7 +19,7 @@ function parseState(v: unknown): LauncherState | null {
   if (!Array.isArray(recent) || !recent.every((p) => typeof p === 'string')) return null
   if (!Array.isArray(favorites) || !favorites.every(isFavorite)) return null
   if (command !== null && typeof command !== 'string') return null
-  return { recent, favorites: favorites.map(({ dir, name }) => ({ dir, name })), command }
+  return { recent, favorites: favorites.map(({ id, dir, name }) => ({ id, dir, name })), command }
 }
 
 async function readState(path: string): Promise<LauncherState> {
@@ -69,23 +69,23 @@ export function createLauncherStore(path: string) {
     forget(dir: string): Promise<LauncherState> {
       return update((s) => ({ ...s, recent: s.recent.filter((p) => !samePath(p, dir)) }))
     },
-    /** 이미 든 디렉토리면 그대로 둔다. 상대경로는 main 의 작업 디렉토리를 기준으로 읽히므로 받지 않는다. */
-    addFavorite(dir: string, name: string): Promise<LauncherState> {
+    /** 상대경로는 main 의 작업 디렉토리를 기준으로 읽히므로 받지 않는다. */
+    addFavorite({ id, dir, name }: Favorite): Promise<LauncherState> {
       if (!isAbsolute(dir)) return current()
       const at = resolve(dir)
       return update((s) =>
-        s.favorites.some((f) => samePath(f.dir, at))
+        s.favorites.some((f) => f.id === id)
           ? s
-          : { ...s, favorites: [...s.favorites, { dir: at, name }] }
+          : { ...s, favorites: [...s.favorites, { id, dir: at, name }] }
       )
     },
-    forgetFavorite(dir: string): Promise<LauncherState> {
-      return update((s) => ({ ...s, favorites: s.favorites.filter((f) => !samePath(f.dir, dir)) }))
+    forgetFavorite(id: string): Promise<LauncherState> {
+      return update((s) => ({ ...s, favorites: s.favorites.filter((f) => f.id !== id) }))
     },
-    renameFavorite(dir: string, name: string): Promise<LauncherState> {
+    renameFavorite(id: string, name: string): Promise<LauncherState> {
       return update((s) => ({
         ...s,
-        favorites: s.favorites.map((f) => (samePath(f.dir, dir) ? { ...f, name } : f))
+        favorites: s.favorites.map((f) => (f.id === id ? { ...f, name } : f))
       }))
     }
   }

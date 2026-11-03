@@ -21,8 +21,12 @@ export function pathQuery(input: string, home: string | undefined): PathQuery | 
   return { prefix, fragment: input.slice(slash + 1), parent: expandPath(prefix, home) }
 }
 
-/** `name` 은 즐겨찾기 행에만 있다. */
-export type Row = { path: string; label: string; name?: string }
+/** `name`·`id` 는 즐겨찾기 행에만 있다. */
+export type Row = { path: string; label: string; name?: string; id?: string }
+
+/** 목록 행의 key 다. 같은 디렉토리의 즐겨찾기 항목이 여럿일 수 있어 즐겨찾기 행은 `id` 로 구별한다. */
+export const entryKey = (row: Row): string =>
+  row.id === undefined ? `recent:${row.path}` : `favorite:${row.id}`
 
 /** 즐겨찾기에 든 디렉토리는 즐겨찾기 묶음에 보이므로 빼고 준다. */
 export function filterRecent(
@@ -43,7 +47,7 @@ export function filterFavorites(
   home: string | undefined
 ): Row[] {
   return favorites
-    .map(({ dir, name }) => ({ path: dir, label: tildePath(dir, home), name }))
+    .map(({ id, dir, name }) => ({ path: dir, label: tildePath(dir, home), name, id }))
     .filter((r) => matchesWords(`${r.name} ${r.label}`, query))
 }
 

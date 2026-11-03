@@ -25,6 +25,7 @@ import {
   pickCommand,
   commandChoices,
   commandList,
+  entryKey,
   type Row
 } from '../launcher/query'
 import { SHELL } from '../../../shared/launcher'
@@ -34,8 +35,17 @@ import { arrowIndex, closeOnFocusLoss, revealSelected } from './palette'
 
 export type LaunchWhere = 'workspace' | 'cell' | 'split-right' | 'split-down'
 
-/** `dir` 이 없으면 pane 을 여는 쪽이 정한 디렉토리(홈)에서 띄운다. `name` 은 즐겨찾기로 연 새 workspace 의 이름이다. */
-export type Launch = { dir?: string; command: string; where: LaunchWhere; name?: string }
+/**
+ * `dir` 이 없으면 pane 을 여는 쪽이 정한 디렉토리(홈)에서 띄운다. `name`·`favorite` 은 즐겨찾기로 열 때 그 항목의
+ * 이름과 `id` 다.
+ */
+export type Launch = {
+  dir?: string
+  command: string
+  where: LaunchWhere
+  name?: string
+  favorite?: string
+}
 
 const WHERE_LABELS: Record<LaunchWhere, string> = {
   workspace: 'New Workspace',
@@ -79,7 +89,13 @@ const loaded = window.maru.launcherState().then((state) => {
 watch(list, (l) => (command.value = pickCommand(l, command.value)))
 
 /** 디렉토리를 고른 뒤의 명령 단계. `query` 는 돌아갈 때 되살릴 디렉토리 단계의 입력이다. */
-const chosen = shallowRef<{ dir?: string; label: string; query: string; name?: string } | null>(
+const chosen = shallowRef<{
+  dir?: string
+  label: string
+  query: string
+  name?: string
+  favorite?: string
+} | null>(
   at
     ? { dir: at.dir, label: at.dir === undefined ? '~' : tildePath(at.dir, home), query: '' }
     : null
@@ -186,7 +202,7 @@ function target(): Row | undefined {
 }
 
 async function launch(dir: string | undefined, cmd: string, cell: boolean): Promise<void> {
-  const name = chosen.value?.name
+  const { name, favorite } = chosen.value ?? {}
   if (launching) return
   launching = true
   try {
@@ -201,7 +217,7 @@ async function launch(dir: string | undefined, cmd: string, cell: boolean): Prom
       problem.value = r.reason
       return
     }
-    emit('launch', { dir, command: cmd, where: cell ? 'cell' : 'workspace', name })
+    emit('launch', { dir, command: cmd, where: cell ? 'cell' : 'workspace', name, favorite })
   } finally {
     launching = false
   }
@@ -219,7 +235,8 @@ async function choose(given?: Row): Promise<void> {
     dir: row.path,
     label: row.label.replace(/(?<=.)\/+$/, ''),
     query: query.value,
-    name: row.name
+    name: row.name,
+    favorite: row.id
   }
   query.value = ''
 }
@@ -252,16 +269,13 @@ onMounted(() => window.addEventListener('blur', resetMeta))
 onUnmounted(() => window.removeEventListener('blur', resetMeta))
 
 async function forget(row: Row): Promise<void> {
-  if (row.name === undefined) recent.value = (await window.maru.forgetLaunch(row.path)).recent
-  else await favorites.forget(row.path)
+  if (row.id === undefined) recent.value = (await window.maru.forgetLaunch(row.path)).recent
+  else await favorites.forget(row.id)
   index.value = Math.min(index.value, Math.max(0, rows.value.length - 1))
 }
 
 const removeLabel = (row: Row): string =>
-  row.name === undefined ? 'Remove from recent' : 'Remove from Favorites'
-
-const entryKey = (row: Row): string =>
-  `${row.name === undefined ? 'recent' : 'favorite'}:${row.path}`
+  row.id === undefined ? 'Remove from recent' : 'Remove from Favorites'
 
 function atEnd(el: HTMLInputElement): boolean {
   return el.selectionStart === el.value.length && el.selectionEnd === el.value.length
@@ -335,11 +349,11 @@ function onKeydown(e: KeyboardEvent): void {
           <li
             v-else
             class="item"
-            :class="{ selected: e.index === index, favorite: e.row.name !== undefined }"
+            :class="{ selected: e.index === index, favorite: e.row.id !== undefined }"
             @mousemove="index = e.index"
             @click="choose(e.row)"
           >
-            <span v-if="e.row.name !== undefined" class="favorite-row"
+            <span v-if="e.row.id !== undefined" class="favorite-row"
               ><span class="star nerd-icon">{{ ICONS.starFull }}</span
               ><span class="name">{{ e.row.name }}</span
               ><span class="path">{{ e.row.label }}</span></span

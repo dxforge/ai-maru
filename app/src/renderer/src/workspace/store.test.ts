@@ -84,6 +84,7 @@ describe('snapshot·restore', () => {
     ws.setFontSize(selected(ws).key, 18)
     ws.setPaneCols(selected(ws).key, 110)
     ws.rename(ws.list.value[1].key, '리뷰')
+    ws.setFavorite(ws.list.value[1].key, 'f-1')
     ws.select(ws.cells()[0].key)
     return ws
   }
@@ -98,6 +99,7 @@ describe('snapshot·restore', () => {
     expect(to.cells().map((w) => w.fontSize)).toEqual([undefined, 18])
     expect(to.cells().map((w) => w.paneCols)).toEqual([undefined, 110])
     expect(to.list.value.map((w) => w.name)).toEqual([undefined, '리뷰'])
+    expect(to.list.value.map((w) => w.favorite)).toEqual([undefined, 'f-1'])
   })
 
   it('pty 없이 되살린 pane 은 새 pty id 로 저장한 cwd 에서 셸을 띄우고, 명령·keep·제목은 버린다', () => {
@@ -1357,6 +1359,23 @@ describe('moveCell·moveWorkspace', () => {
     const before = JSON.parse(JSON.stringify(selected(ws)))
     ws.moveCell(a, { workspace: wsKeys(ws)[2], index: 2 })
     expect(JSON.parse(JSON.stringify(ws.cells().find((c) => c.key === a)))).toEqual(before)
+  })
+})
+
+describe('favorite', () => {
+  it('open 에 준 즐겨찾기 id 를 새 workspace 가 가리킨다', () => {
+    const ws = createWorkspaces()
+    ws.open('/work/app', {}, 'app', 'f-1')
+    ws.open('/work/app')
+    expect(ws.list.value.map((w) => w.favorite)).toEqual(['f-1', undefined])
+    expect(ws.list.value[1]).not.toHaveProperty('favorite')
+  })
+
+  it('setFavorite 는 그 workspace 만 바꾼다', () => {
+    const ws = opened(2)
+    const [, b] = wsKeys(ws)
+    ws.setFavorite(b, 'f-2')
+    expect(ws.list.value.map((w) => w.favorite)).toEqual([undefined, 'f-2'])
   })
 })
 

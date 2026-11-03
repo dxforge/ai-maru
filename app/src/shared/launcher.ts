@@ -1,5 +1,8 @@
-/** 즐겨찾기 하나. `dir` 은 workspace 를 연 디렉토리의 절대경로, `name` 은 런처로 열 때 붙일 workspace 이름이다. */
-export type Favorite = { dir: string; name: string }
+/**
+ * 즐겨찾기 하나. `id` 는 항목을 구별하는 값이고, workspace 는 이 값으로 자기 항목을 가리킨다. `dir` 은 workspace 를 연
+ * 디렉토리의 절대경로, `name` 은 런처로 열 때 붙일 workspace 이름이다. 같은 `dir` 의 항목이 여럿일 수 있다.
+ */
+export type Favorite = { id: string; dir: string; name: string }
 
 /**
  * `userData/launcher.json` 의 내용이다. `recent` 는 런처로 연 디렉토리의 절대경로로, 최근에 연 것이 앞이다. `favorites` 는
@@ -30,9 +33,13 @@ function lexicalPath(p: string): string {
   return (p.startsWith('/') ? '/' : '') + parts.join('/')
 }
 
-export function findFavorite(
+export function favoriteById(
   favorites: readonly Favorite[],
-  dir: string | undefined
+  id: string | undefined
 ): Favorite | undefined {
-  return dir === undefined ? undefined : favorites.find((f) => samePath(f.dir, dir))
+  return id === undefined ? undefined : favorites.find((f) => f.id === id)
+}
+
+export function findFavorite(favorites: readonly Favorite[], dir: string): Favorite | undefined {
+  return favorites.find((f) => samePath(f.dir, dir))
 }

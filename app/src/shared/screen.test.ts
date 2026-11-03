@@ -114,6 +114,17 @@ describe('parseScreen', () => {
     )
   })
 
+  it('workspace 의 즐겨찾기 id 는 문자열이면 옮기고, 아니면 버린다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].favorite = 'f-1'
+    expect(parseScreen(s)!.workspaces[0].favorite).toBe('f-1')
+    const { layout } = splitScreen(s)
+    expect(parseLayoutPart(JSON.parse(JSON.stringify(layout)))!.workspaces[0].favorite).toBe('f-1')
+    expect(parseScreen(clone())!.workspaces[0]).not.toHaveProperty('favorite')
+    ;(s.workspaces[0] as { favorite: unknown }).favorite = 1
+    expect(parseScreen(s)!.workspaces[0]).not.toHaveProperty('favorite')
+  })
+
   it('Canvas 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {
     expect(parseScreen({ ...clone(), canvas: { width: 300 } })).toEqual({
       ...screen,
