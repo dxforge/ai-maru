@@ -222,7 +222,19 @@ export function stateFile(dataDir: string): string {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 저장한 모양을 그대로 읽어 본다.
 export function readState(dataDir: string): any {
-  return JSON.parse(readFileSync(stateFile(dataDir), 'utf8'))
+  const text = readFileSync(stateFile(dataDir), 'utf8')
+  try {
+    return JSON.parse(text)
+  } catch (err) {
+    // 깨진 파일은 테스트가 끝나면 dataDir 와 함께 지워지므로, 원인을 볼 수 있게 내용을 오류에 담는다.
+    throw new Error(`state.json is not JSON: ${JSON.stringify(text)}`, { cause: err })
+  }
+}
+
+/** `state.json` 자리에 디렉토리를 두어 앱의 상태 저장을 실패하게 한다. 디렉토리 위로는 rename 하지 못하기 때문이다. */
+export function blockStateWrites(dataDir: string): void {
+  rmSync(stateFile(dataDir), { force: true })
+  mkdirSync(stateFile(dataDir))
 }
 
 export function writeView(dataDir: string, view: object): void {

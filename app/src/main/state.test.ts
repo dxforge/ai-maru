@@ -279,6 +279,33 @@ describe('createStateStore', () => {
     expect(saved()).toEqual({ layout: null, sessions: null, view })
   })
 
+  it('finish 가 던져도 끝내지 않았으므로 그 뒤의 변경을 타이머가 쓴다 — 끄지 않고 이어 쓰는 경우', () => {
+    vi.useFakeTimers()
+    mkdirSync(path)
+    const s = store(full)
+    s.enable()
+    s.setJobs([])
+    expect(() => s.finish('end')).toThrow()
+    rmSync(path, { recursive: true })
+    vi.advanceTimersByTime(MS)
+    expect(saved()).toEqual({ ...full, sessions: { ...sessions, jobs: [] } })
+  })
+
+  it('finish 가 던진 뒤 stop 하면 쓰지 않는다 — 끄는 동안의 변경이 디스크에 남은 마지막 상태를 덮지 않는다', () => {
+    vi.useFakeTimers()
+    mkdirSync(path)
+    const s = store(full)
+    s.enable()
+    s.setJobs([])
+    expect(() => s.finish('end')).toThrow()
+    s.stop()
+    rmSync(path, { recursive: true })
+    s.setScreen(screen)
+    s.setJobs([job])
+    vi.advanceTimersByTime(MS)
+    expect(existsSync(path)).toBe(false)
+  })
+
   it('discard 는 판정이 버린 부분을 비운다', () => {
     const s = store(full)
     s.discard('layout')

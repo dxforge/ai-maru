@@ -137,12 +137,13 @@ describe('createLauncherStore', () => {
 
   it('쓰지 못해도 띄우기는 막지 않고 목록을 그대로 두며, 다음 쓰기는 한다', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    mkdirSync(`${file}.tmp`)
+    // 디렉토리 위로는 rename 하지 못한다.
+    mkdirSync(file)
     const store = createLauncherStore(file)
     expect(await store.launched(join(dir, 'a'), 'claude')).toEqual({ ok: true })
     expect(await store.read()).toEqual({ recent: [], favorites: [], command: null })
     expect(await store.forget(join(dir, 'a'))).toEqual({ recent: [], favorites: [], command: null })
-    rmSync(`${file}.tmp`, { recursive: true })
+    rmSync(file, { recursive: true })
     expect(await store.launched(join(dir, 'b'), 'claude')).toEqual({ ok: true })
     expect(saved()).toEqual({ recent: [join(dir, 'b')], favorites: [], command: 'claude' })
   })

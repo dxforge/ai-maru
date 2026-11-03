@@ -155,6 +155,11 @@ export type StateStore = {
    * 위해서다. 쓰지 못하면 던지고 끝내지 않은 채로 둔다.
    */
   finish(outcome: Outcome): void
+  /**
+   * 쓰지 않고 끝낸다. `finish` 가 던진 뒤에도 끄는 쪽이 부른다. 끄는 동안 pty 가 끝나 pane 이 닫힌 화면을 타이머가
+   * 쓰면, 디스크에 남은 마지막 상태가 그 화면으로 바뀌기 때문이다.
+   */
+  stop(): void
   current(): StateFile
   /** `view()`·`layout()` 은 `current()` 와 달리 복사하지 않는다. 받은 쪽은 고치지 않는다. */
   view(): Readonly<ViewPrefs>
@@ -217,6 +222,11 @@ export function createStateStore(o: {
     apply()
     changed()
   }
+  const stop = (): void => {
+    finished = true
+    clearTimeout(timer)
+    timer = undefined
+  }
   return {
     setScreen: (next) => update(() => (screen = next)),
     // 넘겨받은 표를 그대로 둔다 — 부르는 쪽(`jobs.list()`)이 이미 복사해 준다.
@@ -238,10 +248,9 @@ export function createStateStore(o: {
       const next = dropped(state, outcome)
       writeJsonAtomicSync(o.path, next)
       state = next
-      finished = true
-      clearTimeout(timer)
-      timer = undefined
+      stop()
     },
+    stop,
     current: () => {
       applyScreen()
       return structuredClone(state)

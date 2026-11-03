@@ -4,6 +4,7 @@ import { killPty, killPtys } from '../src/main/pty'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import { STATE_VERSIONS } from '../src/shared/screen'
 import {
+  blockStateWrites,
   canvasTitles,
   canvasWidth,
   clickMenu,
@@ -555,8 +556,7 @@ test('화면을 저장하지 못하면 maru app restart 는 실패하고 앱은 
   launch,
   dataDir
 }) => {
-  // 임시 파일 자리에 디렉토리가 있으면 쓰기가 실패한다.
-  mkdirSync(join(dataDir, 'state.json.tmp'))
+  blockStateWrites(dataDir)
   const { page } = await launch()
   await run(page, '"$MARU_CLI" app restart; echo "cli=$?"', 'cli=1')
   await run(page, 'echo still-$((1+1))', 'still-2')
