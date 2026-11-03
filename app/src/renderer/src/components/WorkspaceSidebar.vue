@@ -676,8 +676,14 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
   transform: rotate(35deg);
 }
 
+/* 꽂힌 핀은 채운 즐겨찾기 별(`.favorite.on`)과 같은 색을 쓴다. 별은 색을 `.workspace-head` 에서 물려받는다. */
 .pin.on {
-  color: var(--accent);
+  color: var(--muted);
+}
+
+.group:hover .pin.on,
+.pin-card:hover .pin.on {
+  color: var(--fg);
 }
 
 .pin.on,
