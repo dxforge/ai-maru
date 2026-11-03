@@ -150,6 +150,29 @@ test('재시작 뒤 job 이 남고, 재시작 동안 끝난 job 의 알림이 �
   expect(sockets(dataDir)).toEqual([])
 })
 
+test('나중에 붙은 monitor 가 받은 알림은 재시작 뒤 다시 붙은 monitor 에 또 가지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  const events = join(dataDir, 'events')
+  await run(
+    page,
+    `maru job new --name z sh -c 'exit 4'; ${untilExited('z')}; maru job list`,
+    /z\s+exited 4/
+  )
+  await monitorInto(page, events)
+  await expect.poll(() => jobEvents(events)).toEqual([exited('z', 4)])
+  await restartWith(app)
+  const { page: shown } = await launch()
+  await shown.locator('.xterm-screen').click()
+  // 다시 보낸 z 의 알림은 늘 w 의 알림보다 먼저 닿는다. 그래서 w 가 닿았을 때 z 가 하나뿐이면 다시 보내지 않은 것이다.
+  await run(shown, `maru job new --name w sh -c 'exit 5'; echo started-$((1+1))`, 'started-2')
+  await expect
+    .poll(() => jobEvents(events), { timeout: 15_000 })
+    .toEqual([exited('z', 4), exited('w', 5)])
+})
+
 test('재시작 전에 끝난 job 도 다시 뜬 앱에서 출력을 읽는다', async ({ launch }) => {
   const { app, page } = await launch()
   await run(

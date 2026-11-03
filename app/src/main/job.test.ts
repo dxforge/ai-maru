@@ -497,6 +497,39 @@ describe('창에 보이는 표', () => {
     expect(t.changes()).toBe(6)
   })
 
+  it('구독해 붙여 둔 알림을 보내면 pending 을 지운 뒤 changed 를 부르고, 보낼 것이 없거나 또 못 보내면 부르지 않는다', async () => {
+    const t = setup()
+    t.listening.clear()
+    const id = await t.start({ name: 'build' })
+    await t.exit(id, { code: 0, signal: null })
+    let saved: JobRecord[] = []
+    t.deps.changed = () => void (saved = t.jobs.list())
+    t.jobs.subscribed(A)
+    t.listening.add(B)
+    t.jobs.subscribed(B)
+    expect(saved).toEqual([])
+    t.listening.add(A)
+    t.jobs.subscribed(A)
+    expect(saved.map((j) => j.pending)).toEqual([false])
+    saved = []
+    t.jobs.subscribed(A)
+    expect(saved).toEqual([])
+  })
+
+  it('detach 뒤에 구독하면 붙여 둔 알림을 보내지 않고 다음 앱에 남긴다', async () => {
+    const t = setup()
+    t.listening.clear()
+    const id = await t.start({ name: 'build' })
+    await t.exit(id, { code: 0, signal: null })
+    const before = t.changes()
+    t.jobs.detach()
+    t.listening.add(A)
+    t.jobs.subscribed(A)
+    expect(t.emitted).toEqual([])
+    expect(t.changes()).toBe(before)
+    expect(t.jobs.list().map((j) => j.pending)).toEqual([true])
+  })
+
   it('kill 은 부른 cell 없이 pty 로 끄고 지우며, 없는 pty 는 그냥 지나간다', async () => {
     const t = setup()
     const c = await t.start({ name: 'c' }, C)
