@@ -945,6 +945,36 @@ test('별을 누른 workspace 를 닫고 같은 디렉토리를 다시 열어 �
   await expectFavoriteNames(launched, ['app'])
 })
 
+test('별을 누르면 첫 pane 이 cd 로 옮겨 간 디렉토리를 넣고, 처음 연 디렉토리에서 연 다른 workspace 에는 별이 붙지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const b = project(dataDir, 'proj-b')
+  // 셸이 cwd 를 알려야 workspace 이름과 즐겨찾기 디렉토리가 cd 를 따라간다.
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: zshHome(dataDir) })
+  const { app, page } = launched
+  await openLauncher(launched)
+  await page.keyboard.type(a)
+  await toCommands(page, a)
+  await page.keyboard.type('shell')
+  await expect(labels(page)).toHaveText(['shell'])
+  await page.keyboard.press('Enter')
+  await activeTerminal(page)
+  await run(page, `cd ${b} && echo moved-$((1+1))`, 'moved-2')
+  await expect(workspaceNames(page).nth(1)).toHaveText('proj-b')
+  await renameSelected(app, page, 'app')
+  await clickMenu(app, 'toggle-favorite-workspace')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+
+  await launchAt(launched, a)
+  await expect(star(page, 2)).not.toHaveClass(/\bon\b/)
+  await openLauncher(launched)
+  await expect(favoriteRows(page).locator('.name')).toHaveText(['app'])
+  await expect(favoriteRows(page).locator('.path')).toHaveText([b])
+})
+
 test('Favorites 에서 Enter 로 연 workspace 는 별이 붙고 재시작해도 남으며, 그 줄에서 다시 Enter 하면 새로 열지 않고 접혀 있어도 펴서 그 workspace 로 간다', async ({
   launch,
   dataDir

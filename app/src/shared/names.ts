@@ -59,15 +59,13 @@ export function workspaceName(w: NamedWorkspace<Named>, home?: string): string {
 }
 
 /**
- * 즐겨찾기에 넣을 workspace 의 디렉토리다. 자동 이름을 짓는 pane(첫 cell 의 첫 pane)을 연 디렉토리를 쓴다. cd 로 들어간
- * 하위 디렉토리에 끌리지 않게 하기 위해서다. 연 디렉토리를 모르는 pane(앱을 처음 켤 때 디렉토리 없이 연 pane 등)은
- * 화면에 보이는 cwd 로 대신한다.
+ * 즐겨찾기에 넣을 workspace 의 디렉토리다. 자동 이름을 짓는 pane(첫 cell 의 첫 pane)의 cwd 를 쓰고, cwd 를 모르면 그 pane 을
+ * 연 디렉토리를 쓴다. 사이드바에 보이는 디렉토리와 같은 것이 들어가게 하기 위해서다.
  */
 export function workspaceDir(
   w: NamedWorkspace<{ startDir?: string; cwd?: string }>
 ): string | undefined {
-  const p = w.cells[0].panes[0]
-  return p.startDir ?? p.cwd
+  return startDirOf(w.cells[0].panes[0])
 }
 
 /**
