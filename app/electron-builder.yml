@@ -32,6 +32,12 @@ extraResources:
   # 재시작 전 앱이 설치된 번들의 상태 파일 형식 버전을 읽는다(src/main/restart.ts).
   - from: resources/state-versions.json
     to: state-versions.json
+# 다른 프로세스가 앱 바이너리를 Node 로 띄워 앱에 준 macOS 권한을 빌려 쓰지 못하게, Node 로 실행하는 경로를 끈다.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
 mac:
   target: dir
   category: public.app-category.developer-tools
