@@ -59,6 +59,18 @@ export function workspaceName(w: NamedWorkspace<Named>, home?: string): string {
 }
 
 /**
+ * 즐겨찾기에 넣을 workspace 의 디렉토리다. 자동 이름을 짓는 pane(첫 cell 의 첫 pane)을 연 디렉토리를 쓴다. cd 로 들어간
+ * 하위 디렉토리에 끌리지 않게 하기 위해서다. 연 디렉토리를 모르는 pane(앱을 처음 켤 때 디렉토리 없이 연 pane 등)은
+ * 화면에 보이는 cwd 로 대신한다.
+ */
+export function workspaceDir(
+  w: NamedWorkspace<{ startDir?: string; cwd?: string }>
+): string | undefined {
+  const p = w.cells[0].panes[0]
+  return p.startDir ?? p.cwd
+}
+
+/**
  * 이름 입력창이 포커스를 잃어 확정할 때 저장할 이름이다. 앞뒤 공백을 자른 값이 입력창을 열 때의 이름(`opened`)과 같으면
  * null(취소)이다. workspace 줄을 빠르게 두 번 눌러 고치기가 뜻하지 않게 열렸을 때, 다른 곳을 누르기만 해도 보이던
  * 자동 이름이 `name` 으로 고정되지 않게 하기 위해서다. Enter 는 같은 이름이어도 확정하므로 이 함수를 거치지 않는다.

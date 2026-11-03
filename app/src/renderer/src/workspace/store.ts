@@ -151,13 +151,13 @@ export function createWorkspaces(
     }
   }
 
-  function createWorkspace(cell: Cell): Workspace {
-    return { key: nextKey++, id: workspaceId(), cells: [cell] }
+  function createWorkspace(cell: Cell, name?: string): Workspace {
+    return { key: nextKey++, id: workspaceId(), cells: [cell], ...(name && { name }) }
   }
 
-  function open(startDir?: string, extra: PaneCommand = {}): void {
+  function open(startDir?: string, extra: PaneCommand = {}, name?: string): void {
     const c = createCell({ startDir, ...extra })
-    list.value.push(createWorkspace(c))
+    list.value.push(createWorkspace(c, name))
     selectedKey.value = c.key
   }
 

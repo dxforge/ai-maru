@@ -38,6 +38,7 @@ const {
   notification,
   urgent,
   unread,
+  favorites = new Set(),
   folded,
   collapsed,
   jobs = [],
@@ -54,6 +55,8 @@ const {
   urgent: ReadonlyMap<number, ProgramStatusState>
   /** 읽지 않은 알림이 있는 pane 을 든 workspace 의 key */
   unread: ReadonlySet<number>
+  /** 즐겨찾기에 든 workspace 의 key */
+  favorites?: ReadonlySet<number>
   folded: ReadonlySet<number>
   collapsed: boolean
   jobs?: readonly JobView[]
@@ -73,6 +76,7 @@ const emit = defineEmits<{
   startRename: [workspace: number]
   /** `name` 이 null 이면 취소다. `refocus` 면 터미널에 포커스를 돌려준다. */
   endRename: [workspace: number, name: string | null, refocus: boolean]
+  toggleFavorite: [workspace: number]
 }>()
 
 // `groups` 밖에 둔다. `groups` 안에 두면 job 표가 바뀔 때마다 job 과 상관없는 pane 줄까지 다시 만들기 때문이다.
@@ -235,6 +239,8 @@ const cellDragged = (cell: number): boolean =>
   dragged.value?.kind === 'cell' && dragged.value.cell === cell
 const workspaceDragged = (workspace: number): boolean =>
   dragged.value?.kind === 'workspace' && dragged.value.workspace === workspace
+const favoriteLabel = (workspace: number): string =>
+  favorites.has(workspace) ? 'Remove from Favorites' : 'Add to Favorites'
 </script>
 
 <template>
@@ -275,6 +281,21 @@ const workspaceDragged = (workspace: number): boolean =>
           /></span>
           <span class="workspace-name">{{ name }}</span>
           <span v-if="dot" class="unread-dot" />
+          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 별의 pointerdown·click·dblclick 이 헤더의 끌기·접기·이름 고치기로 전해지지 않게 막는다. -->
+          <span class="favorite-slot" :class="{ on: favorites.has(w.key) }"
+            ><span
+              v-tooltip="favoriteLabel(w.key)"
+              role="button"
+              class="favorite nerd-icon"
+              :class="{ on: favorites.has(w.key) }"
+              :aria-label="favoriteLabel(w.key)"
+              :aria-pressed="favorites.has(w.key)"
+              @pointerdown.stop
+              @click.stop="emit('toggleFavorite', w.key)"
+              @dblclick.stop
+              >{{ favorites.has(w.key) ? ICONS.starFull : ICONS.starEmpty }}</span
+            ></span
+          >
           <FoldChevron class="chevron" :open="!wf" />
         </button>
         <div
@@ -433,6 +454,49 @@ const workspaceDragged = (workspace: number): boolean =>
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.favorite-slot {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+/* 즐겨찾기가 아닌 workspace 의 별은 hover·focus 때만 보이므로 이름 폭을 줄이지 않는다. 접은 사이드바에서 이름이 별 폭만큼
+   더 잘리지 않게 하기 위해서다. 별의 자리는 이름보다 먼저 0 까지 준다. 자리가 줄면 별은 자리의 오른쪽 끝에 붙은 채 왼쪽으로
+   넘쳐 이름 끝 글자를 가린다. 이름 뒤에 빈 폭이 있으면 별은 이름 뒤에 선다. 자리의 왼쪽 margin 은 헤더의 gap 을 빼고, 별의
+   왼쪽 margin 이 그 gap 을 별 앞에 다시 둔다. */
+.favorite-slot:not(.on) {
+  flex: 0 1000 auto;
+  min-width: 0;
+  justify-content: flex-end;
+  margin-left: calc(-1 * var(--space-4));
+}
+
+.favorite-slot:not(.on) .favorite {
+  flex: none;
+  margin-left: var(--space-4);
+  background-color: var(--side);
+}
+
+.favorite {
+  visibility: hidden;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-1);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.favorite.on,
+.workspace-head:hover .favorite,
+.workspace-head:focus-visible .favorite {
+  visibility: visible;
+}
+
+/* 이름 위에 겹친 별은 바탕색으로 이름을 가리므로, hover 색은 바탕색 위에 덧칠한다. */
+.favorite:hover {
+  background-image: linear-gradient(var(--hover), var(--hover));
 }
 
 /* 상태 아이콘이 없는 접은 workspace 는 이름 뒤에 점(`.unread-dot`, `style.css`)을 붙여 위로 올린다. 이름은 길면 말줄임으로

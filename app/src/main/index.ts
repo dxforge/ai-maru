@@ -654,6 +654,19 @@ function start(): void {
   ipcMain.handle('launcher:forget', (_event, dir: unknown) =>
     typeof dir === 'string' ? launcher.forget(dir) : launcher.read()
   )
+  ipcMain.handle('launcher:favorite-add', (_event, dir: unknown, name: unknown) =>
+    typeof dir === 'string' && typeof name === 'string'
+      ? launcher.addFavorite(dir, name)
+      : launcher.read()
+  )
+  ipcMain.handle('launcher:favorite-forget', (_event, dir: unknown) =>
+    typeof dir === 'string' ? launcher.forgetFavorite(dir) : launcher.read()
+  )
+  ipcMain.handle('launcher:favorite-rename', (_event, dir: unknown, name: unknown) =>
+    typeof dir === 'string' && typeof name === 'string'
+      ? launcher.renameFavorite(dir, name)
+      : launcher.read()
+  )
   ipcMain.handle('launcher:dirs', (_event, dir: unknown) =>
     typeof dir === 'string' ? listDirs(dir) : []
   )

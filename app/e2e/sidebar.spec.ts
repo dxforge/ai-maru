@@ -1197,3 +1197,46 @@ test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 이름이 �
   await expect(head).toHaveAttribute('data-tooltip', 'proj')
   await expect(workspaceNames(page)).toHaveText(['notes'])
 })
+
+test('즐겨찾기 별은 연 디렉토리가 즐겨찾기인 workspace 에 늘 보이고 아니면 머리 줄에 마우스가 있을 때만 보이며, 누르기는 접기·이름 고치기·끌기로 번지지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'sub')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  await newWorkspace(launched, 2)
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await newWorkspace(launched, 3)
+  const star = (i: number) => workspaceHeads(page).nth(i).locator('.favorite')
+  for (const i of [0, 1, 2]) await expect(star(i)).toBeHidden()
+
+  await workspaceHeads(page).nth(0).hover()
+  await expect(star(0)).toBeVisible()
+  await expect(star(0)).toHaveAttribute('aria-label', 'Add to Favorites')
+  await expect(star(2)).toBeHidden()
+  await star(0).click()
+  await expect(star(0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(star(0)).toHaveAttribute('aria-label', 'Remove from Favorites')
+  await expect(workspaceHeads(page).nth(0)).toHaveAttribute('aria-expanded', 'true')
+  await star(0).dispatchEvent('dblclick')
+  await expect(nameInput(page)).toHaveCount(0)
+
+  // 별에서 눌러 다른 workspace 위로 끌어도 workspace 를 옮기지 않는다.
+  await grabHandle(page, star(0), 0)
+  const b = (await workspaceHeads(page).nth(2).boundingBox())!
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height * 0.75, { steps: 6 })
+  await expect(page.locator('.sidebar .dragging')).toHaveCount(0)
+  await page.mouse.up()
+  for (const i of [0, 1, 2])
+    await expect(workspaceHeads(page).nth(i)).toHaveAttribute('aria-expanded', 'true')
+
+  // 첫 workspace 와 같은 디렉토리에서 연 둘째 workspace 도 즐겨찾기로 보이고, 하위 디렉토리에서 연 셋째는 아니다.
+  await panes(page).nth(0).hover()
+  await expect(star(0)).toBeVisible()
+  await expect(star(1)).toBeVisible()
+  await expect(star(1)).toHaveAttribute('aria-pressed', 'true')
+  await expect(star(2)).toBeHidden()
+  await run(page, 'echo star-$((1+1))', 'star-2')
+})

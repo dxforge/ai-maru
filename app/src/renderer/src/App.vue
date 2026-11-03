@@ -12,7 +12,7 @@ import {
 } from 'vue'
 import { available, commands, type CommandId } from '../../shared/commands'
 import { PANE_MIN } from '../../shared/layout'
-import { cellLabel, windowTitle } from '../../shared/names'
+import { cellLabel, windowTitle, workspaceDir, workspaceName } from '../../shared/names'
 import type { JobView } from '../../shared/job'
 import type { PaneReply } from '../../shared/pane'
 import type { ProgramStatusRecord } from '../../shared/program-status'
@@ -34,7 +34,8 @@ import TerminalView from './components/TerminalView.vue'
 import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
 import { commandArgv } from './config/launcher'
-import { SHELL } from '../../shared/launcher'
+import { findFavorite, SHELL } from '../../shared/launcher'
+import { createFavorites, favoriteToggle } from './launcher/favorites'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { activeTheme, windowTheme } from './themes'
@@ -252,10 +253,14 @@ async function closePane(): Promise<void> {
   }
 }
 
+function selectedWorkspace() {
+  const c = workspaces.selected()
+  return c && workspaces.workspaceOf(c.key)
+}
+
 // 마지막 cell 이 닫히면 store 가 workspace 를 지운다. cell 의 job 은 cell 이 닫힐 때 main 이 끈다.
 async function closeWorkspace(): Promise<void> {
-  const c = workspaces.selected()
-  const w = c && workspaces.workspaceOf(c.key)
+  const w = selectedWorkspace()
   if (!w) return
   const panes = w.cells.flatMap((x) => x.panes.map((p) => p.key))
   if ((await window.maru.confirmCloseWorkspace(w.id)).close) for (const p of panes) removePane(p)
@@ -368,7 +373,10 @@ function startRename(key: number): void {
   renaming.value = key
 }
 function endRename(key: number, name: string | null, refocus: boolean): void {
-  if (name !== null) workspaces.rename(key, name)
+  if (name !== null) {
+    workspaces.rename(key, name)
+    renameFavorite(key)
+  }
   // 다른 workspace 의 고치기를 시작해 이 입력창이 빠졌으면 새 고치기는 그대로 둔다.
   if (renaming.value !== key) return
   renaming.value = null
@@ -381,6 +389,38 @@ watch(
     if (gone) renaming.value = null
   }
 )
+
+const favorites = createFavorites()
+const favoriteKeys = computed(
+  () =>
+    new Set(
+      workspaces.list.value
+        .filter((w) => findFavorite(favorites.list.value, workspaceDir(w)))
+        .map((w) => w.key)
+    )
+)
+function toggleFavorite(key: number): void {
+  const w = workspaces.list.value.find((x) => x.key === key)
+  if (!w) return
+  const action = favoriteToggle(favorites.list.value, workspaceDir(w), workspaceName(w, home))
+  if (action.kind === 'unknown') {
+    toasts.put('favorite', {
+      level: 'warning',
+      title: "Couldn't add to Favorites",
+      lines: ["The workspace's directory isn't known yet."]
+    })
+    return
+  }
+  toasts.close('favorite')
+  if (action.kind === 'forget') void favorites.forget(action.dir)
+  else void favorites.add(action.dir, action.name)
+}
+function renameFavorite(key: number): void {
+  const w = workspaces.list.value.find((x) => x.key === key)
+  const favorite = w && findFavorite(favorites.list.value, workspaceDir(w))
+  if (w && favorite) void favorites.rename(favorite.dir, workspaceName(w, home))
+}
+
 const SIDEBAR_WIDTH = 280
 const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
 // 토스트는 사이드바 안쪽 양옆 12px 을 비운다.
@@ -771,11 +811,11 @@ const SPLIT_OF: Partial<Record<LaunchWhere, SplitDirection>> = {
   'split-down': 'down'
 }
 
-function launch({ dir, command, where }: Launch): void {
+function launch({ dir, command, where, name }: Launch): void {
   const pane = command === SHELL ? {} : ({ command: commandArgv(command), keep: true } as const)
   const split = SPLIT_OF[where]
   if (where === 'cell') workspaces.openCell(dir, pane)
-  else if (where === 'workspace') workspaces.open(dir, pane)
+  else if (where === 'workspace') workspaces.open(dir, pane, name)
   // 목록을 띄운 뒤 창이 작아졌으면 자리가 없을 수 있어 다시 본다.
   else if (split) splitSelected(split, { startDir: dir, ...pane })
   closeOverlay()
@@ -800,9 +840,12 @@ const handlers: Record<CommandId, () => void> = {
   'close-pane': () => void closePane(),
   'close-workspace': () => void closeWorkspace(),
   'rename-workspace': () => {
-    const c = workspaces.selected()
-    const w = c && workspaces.workspaceOf(c.key)
+    const w = selectedWorkspace()
     if (w) startRename(w.key)
+  },
+  'toggle-favorite-workspace': () => {
+    const w = selectedWorkspace()
+    if (w) toggleFavorite(w.key)
   },
   'next-cell': () => stepCell(1),
   'previous-cell': () => stepCell(-1),
@@ -946,6 +989,7 @@ void window.maru.restoreScreen().then((r) => {
         :notification="ptyStates.notification"
         :urgent="urgent"
         :unread="unread"
+        :favorites="favoriteKeys"
         :folded="folded"
         :jobs="jobs"
         :now="now"
@@ -959,6 +1003,7 @@ void window.maru.restoreScreen().then((r) => {
         @move-workspace="moveWorkspace"
         @start-rename="startRename"
         @end-rename="endRename"
+        @toggle-favorite="toggleFavorite"
       />
     </div>
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />
@@ -1064,6 +1109,7 @@ void window.maru.restoreScreen().then((r) => {
       :position="config.layout.value.palette"
       :commands="config.launcher.value.commands"
       :home="home"
+      :favorites="favorites"
       @launch="launch"
       @close="closeOverlay('launcher')"
     />
@@ -1074,6 +1120,7 @@ void window.maru.restoreScreen().then((r) => {
       :commands="config.launcher.value.commands"
       :home="home"
       :at="launchAt"
+      :favorites="favorites"
       @launch="launch"
       @close="closeOverlay('launch')"
     />

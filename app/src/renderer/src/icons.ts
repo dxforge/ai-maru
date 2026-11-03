@@ -16,6 +16,8 @@ export const ICONS = {
   expandAll: '\uEB95',
   collapseAll: '\uEAC5',
   gear: '\uEAF8',
+  starEmpty: '\uEA6A',
+  starFull: '\uEB59',
   running: '\uEB2C'
 } as const
 

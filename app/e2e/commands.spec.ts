@@ -68,7 +68,8 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['launch-split-down', 'Launch Split Down…', null],
     ['close-pane', 'Close Pane', 'Command+W'],
     ['close-workspace', 'Close Workspace', 'Shift+Command+W'],
-    ['rename-workspace', 'Rename Workspace…', 'Shift+Command+R']
+    ['rename-workspace', 'Rename Workspace…', 'Shift+Command+R'],
+    ['toggle-favorite-workspace', 'Toggle Workspace Favorite', null]
   ])
   expect(menus.view.slice(0, 19)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
@@ -420,11 +421,12 @@ test('팔레트가 아래일 때 ↑·↓ 로 고른 Toggle Canvas 는 Canvas �
   await openPalette(launched)
   await page.keyboard.type('toggle')
   await expect(items(page)).toHaveText([
+    'Toggle Workspace Favorite',
     'Toggle Sidebar⌘B',
     'Toggle Canvas⌥⌘B',
     'Toggle View Mode⌘\\'
   ])
-  for (const i of [1, 2, 0, 1]) {
+  for (const i of [1, 2, 3, 0, 1, 2]) {
     await page.keyboard.press('ArrowUp')
     await expect(items(page).nth(i)).toHaveClass(/selected/)
   }
@@ -435,7 +437,7 @@ test('팔레트가 아래일 때 ↑·↓ 로 고른 Toggle Canvas 는 Canvas �
 
   await openPalette(launched)
   await page.keyboard.type('toggle')
-  for (const i of [2, 1]) {
+  for (const i of [3, 2]) {
     await page.keyboard.press('ArrowDown')
     await expect(items(page).nth(i)).toHaveClass(/selected/)
   }

@@ -1,4 +1,4 @@
-import { SHELL } from '../../../shared/launcher'
+import { findFavorite, SHELL, type Favorite } from '../../../shared/launcher'
 import { foldCase, matchesWords } from '../../../shared/commands'
 import { tildePath } from '../workspace/cwd'
 
@@ -21,16 +21,60 @@ export function pathQuery(input: string, home: string | undefined): PathQuery | 
   return { prefix, fragment: input.slice(slash + 1), parent: expandPath(prefix, home) }
 }
 
-export type Row = { path: string; label: string }
+/** `name` 은 즐겨찾기 행에만 있다. */
+export type Row = { path: string; label: string; name?: string }
 
+/** 즐겨찾기에 든 디렉토리는 즐겨찾기 묶음에 보이므로 빼고 준다. */
 export function filterRecent(
   recent: readonly string[],
   query: string,
-  home: string | undefined
+  home: string | undefined,
+  favorites: readonly Favorite[] = []
 ): Row[] {
   return recent
+    .filter((path) => !findFavorite(favorites, path))
     .map((path) => ({ path, label: tildePath(path, home) }))
     .filter((r) => matchesWords(r.label, query))
+}
+
+export function filterFavorites(
+  favorites: readonly Favorite[],
+  query: string,
+  home: string | undefined
+): Row[] {
+  return favorites
+    .map(({ dir, name }) => ({ path: dir, label: tildePath(dir, home), name }))
+    .filter((r) => matchesWords(`${r.name} ${r.label}`, query))
+}
+
+/**
+ * 디렉토리 단계에서 처음 고르는 행의 자리(`[...favorites, ...recent]` 에서)다. 입력이 비었으면 즐겨찾기를 건너뛰고 최근
+ * 목록의 첫 행을 고른다. ⌘P 를 열고 Enter 를 두 번 누르면 즐겨찾기가 아닌 디렉토리 가운데 마지막에 연 것이 열려야 하기
+ * 때문이다. 최근 목록이 비었으면 첫 즐겨찾기를 고른다. 입력이 있으면 맞는 행 가운데 맨 앞을 고른다.
+ */
+export function firstDirRow(favorites: number, recent: number, query: string): number {
+  return query.trim() === '' && recent > 0 ? favorites : 0
+}
+
+export type ListEntry = { title: string } | { row: Row; index: number }
+
+/**
+ * 디렉토리 단계 목록의 DOM 순서다. 즐겨찾기 행이 있으면 즐겨찾기와 최근 목록을 묶음 제목과 함께 나누고, 없으면 제목 없이
+ * 최근 목록만 둔다. `index` 는 `[...favorites, ...recent]` 에서의 자리다. 아래 팔레트의 목록은 column-reverse 라 제목을
+ * 묶음 뒤에 두어야 화면에서 묶음 위에 선다.
+ */
+export function listEntries(
+  favorites: readonly Row[],
+  recent: readonly Row[],
+  bottom: boolean
+): ListEntry[] {
+  const rows = (list: readonly Row[], from: number): ListEntry[] =>
+    list.map((row, i) => ({ row, index: from + i }))
+  if (!favorites.length) return rows(recent, 0)
+  const group = (title: string, list: ListEntry[]): ListEntry[] =>
+    bottom ? [...list, { title }] : [{ title }, ...list]
+  const fav = group('Favorites', rows(favorites, 0))
+  return recent.length ? [...fav, ...group('Recent', rows(recent, favorites.length))] : fav
 }
 
 /**

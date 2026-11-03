@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import type { Favorite } from '../src/shared/launcher'
 import {
   activeHeader,
   activeTerminal,
@@ -18,6 +19,7 @@ import {
   run,
   stubDialog,
   test,
+  workspaceHeads,
   workspaceNames,
   writeConfig,
   zshHome,
@@ -49,6 +51,39 @@ function section(page: Page) {
   return launcher(page).locator('.section')
 }
 
+function groupTitles(page: Page) {
+  return launcher(page).locator('.group-title')
+}
+
+function favoriteRows(page: Page) {
+  return launcher(page).locator('.item.favorite')
+}
+
+function recentLabels(page: Page) {
+  return launcher(page).locator('.item:not(.favorite) .path')
+}
+
+function star(page: Page, i: number) {
+  return workspaceHeads(page).nth(i).locator('.favorite')
+}
+
+const nameInput = (page: Page) => page.locator('.sidebar .workspace-name-input')
+
+async function renameSelected(app: ElectronApplication, page: Page, name: string): Promise<void> {
+  await clickMenu(app, 'rename-workspace')
+  await expect(nameInput(page)).toBeFocused()
+  await nameInput(page).fill(name)
+  await page.keyboard.press('Enter')
+  await expect(nameInput(page)).toHaveCount(0)
+}
+
+async function expectFavoriteNames(launched: Launched, names: string[]): Promise<void> {
+  await openLauncher(launched)
+  await expect(favoriteRows(launched.page).locator('.name')).toHaveText(names)
+  await launched.page.keyboard.press('Escape')
+  await expect(launcher(launched.page)).toHaveCount(0)
+}
+
 async function toCommands(page: Page, label: string): Promise<void> {
   await page.keyboard.press('Enter')
   await expect(section(page).locator('.path')).toHaveText(label)
@@ -71,8 +106,13 @@ async function delayHandler(app: ElectronApplication, channel: string, ms = 800)
   )
 }
 
-function writeLauncherState(dataDir: string, recent: string[], command: string): void {
-  writeFileSync(join(dataDir, 'launcher.json'), JSON.stringify({ recent, command }))
+function writeLauncherState(
+  dataDir: string,
+  recent: string[],
+  command: string,
+  favorites: Favorite[] = []
+): void {
+  writeFileSync(join(dataDir, 'launcher.json'), JSON.stringify({ recent, favorites, command }))
 }
 
 async function finish(page: Page): Promise<void> {
@@ -711,4 +751,138 @@ test('최근 목록이 오기 전에 누른 Enter 는 목록과 기억한 명령
   await expect(launcher(launched.page)).toHaveCount(0)
   await activeTerminal(launched.page)
   await expect(rows(launched.page)).toContainText(`B-ran-in-${dir}`)
+})
+
+test('사이드바 별로 넣은 workspace 는 닫은 뒤에도 런처의 Favorites 묶음에 이름과 경로로 남고, Enter 로 열면 그 이름이 붙으며 ⌘Enter 로 연 cell 에는 붙지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const b = project(dataDir, 'proj-b')
+  const first = await launch()
+  const { app, page } = first
+  await launchAt(first, b)
+  await finish(page)
+  await launchAt(first, a)
+  await renameSelected(app, page, 'atlas')
+  await expect(workspaceNames(page).nth(1)).toHaveText('atlas')
+  await workspaceHeads(page).nth(1).hover()
+  await star(page, 1).click()
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await finish(page)
+
+  await openLauncher(first)
+  await expect(groupTitles(page)).toHaveText(['Favorites', 'Recent'])
+  await expect(section(page)).toHaveCount(0)
+  await expect(favoriteRows(page).locator('.name')).toHaveText(['atlas'])
+  await expect(favoriteRows(page).locator('.path')).toHaveText([a])
+  await expect(recentLabels(page)).toHaveText([b])
+  // 아래 런처는 목록을 뒤집어 그리므로 즐겨찾기가 입력창 쪽에 서고, 묶음 제목은 저마다 묶음 위에 선다.
+  const y = async (l: Locator) => (await l.boundingBox())!.y
+  const [favoriteTitle, recentTitle] = [groupTitles(page).nth(0), groupTitles(page).nth(1)]
+  expect(await y(favoriteTitle)).toBeLessThan(await y(favoriteRows(page).nth(0)))
+  expect(await y(recentTitle)).toBeLessThan(await y(recentLabels(page).nth(0)))
+  expect(await y(recentLabels(page).nth(0))).toBeLessThan(await y(favoriteTitle))
+
+  await page.keyboard.type('ATLAS')
+  await expect(items(page)).toHaveCount(1)
+  await expect(items(page).nth(0)).toHaveClass(/favorite/)
+  await toCommands(page, a)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await activeTerminal(page)
+  await expect(workspaceNames(page)).toHaveCount(2)
+  await expect(workspaceNames(page).nth(1)).toHaveText('atlas')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await expect(rows(page)).toContainText(`A-ran-in-${a}`)
+  await finish(page)
+
+  // 즐겨찾기로 연 디렉토리도 최근 목록에 들지만 Recent 묶음에는 겹쳐 보이지 않는다.
+  await openLauncher(first)
+  await expect(recentLabels(page)).toHaveText([b])
+  await page.keyboard.type('atlas')
+  await toCommands(page, a)
+  await page.keyboard.press('Meta+Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await activeTerminal(page)
+  await expect(cellItems(page)).toHaveCount(2)
+  await expect(workspaceNames(page)).toHaveCount(1)
+  await expect(workspaceNames(page)).not.toHaveText(['atlas'])
+  await expect(rows(page)).toContainText(`A-ran-in-${a}`)
+  await finish(page)
+  await app.close()
+
+  const again = await launch()
+  await openLauncher(again)
+  await expect(favoriteRows(again.page).locator('.name')).toHaveText(['atlas'])
+  await expect(favoriteRows(again.page).locator('.path')).toHaveText([a])
+})
+
+test('런처에서 ⇧⌘⌫ 로 뺀 즐겨찾기는 최근 목록에 있는 디렉토리면 Recent 로 돌아가고, 사이드바의 별도 꺼진다', async ({
+  launch,
+  dataDir
+}) => {
+  const [cmd] = useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const b = project(dataDir, 'proj-b')
+  writeLauncherState(dataDir, [b], cmd, [{ dir: a, name: 'atlas' }])
+  const launched = await launch()
+  const { page } = launched
+  await openLauncher(launched)
+  await expect(recentLabels(page)).toHaveText([b])
+  await expect(items(page).nth(0)).toHaveClass(/favorite/)
+  await expect(items(page).nth(0).locator('.remove')).toHaveAttribute(
+    'aria-label',
+    'Remove from Favorites'
+  )
+  // 즐겨찾기가 있어도 처음 선택은 최근 목록의 첫 행이다. 아래 팔레트는 목록을 뒤집어 그리므로 ArrowDown 이 즐겨찾기 쪽으로 간다.
+  await expect(selected(page)).toHaveText(b)
+  await page.keyboard.press('ArrowDown')
+  await expect(items(page).nth(0)).toHaveClass(/selected/)
+  await toCommands(page, a)
+  await page.keyboard.press('Enter')
+  await activeTerminal(page)
+  await expect(workspaceNames(page).nth(1)).toHaveText('atlas')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await expect(star(page, 0)).not.toHaveClass(/\bon\b/)
+
+  await openLauncher(launched)
+  await expect(selected(page)).toHaveText(b)
+  await page.keyboard.press('ArrowDown')
+  await expect(items(page).nth(0)).toHaveClass(/selected/)
+  await page.keyboard.press('Shift+Meta+Backspace')
+  await expect(favoriteRows(page)).toHaveCount(0)
+  await expect(groupTitles(page)).toHaveCount(0)
+  await expect(section(page)).toHaveText('Recent')
+  await expect(labels(page)).toHaveText([a, b])
+  await expect(star(page, 1)).not.toHaveClass(/\bon\b/)
+})
+
+test('이름을 고치지 않은 workspace 는 자동 이름으로 즐겨찾기에 들고, 이름을 고치면 즐겨찾기 이름도 바뀌며 비우면 그때의 자동 이름이 된다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { app, page } = launched
+  await launchAt(launched, a)
+  // 자동 이름은 셸이 cwd 를 알린 뒤에 디렉토리 이름이 된다. 그 전에 넣으면 그때 보이던 이름이 들어간다.
+  const auto = 'proj-a'
+  await expect(workspaceNames(page).nth(1)).toHaveText(auto)
+  await clickMenu(app, 'toggle-favorite-workspace')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await expectFavoriteNames(launched, [auto])
+
+  await renameSelected(app, page, 'atlas')
+  await expectFavoriteNames(launched, ['atlas'])
+  await renameSelected(app, page, '')
+  await expect(workspaceNames(page).nth(1)).toHaveText(auto)
+  await expectFavoriteNames(launched, [auto])
+
+  await clickMenu(app, 'toggle-favorite-workspace')
+  await expect(star(page, 1)).not.toHaveClass(/\bon\b/)
+  await expectFavoriteNames(launched, [])
+  await expect(rows(page)).toContainText(`A-ran-in-${a}`)
 })
