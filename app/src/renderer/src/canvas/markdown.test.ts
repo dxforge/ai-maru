@@ -9,6 +9,21 @@ function render(...blocks: string[]): HTMLElement {
   return el
 }
 
+// 앱 CSS 가 걸리거나 창 위에 뜨거나 앱 UI 처럼 보일 수 있는 요소·속성
+const UNSAFE = [
+  'div, span, style, script, dialog, form, button, textarea, select, img, iframe',
+  'input:not([type="checkbox"][disabled])',
+  '[style], [id], [popover], [popovertarget], [class]:not(code[class^="language-"])'
+].join(', ')
+
+function unsafe(el: HTMLElement): string[] {
+  return [...el.querySelectorAll('*')]
+    .filter(
+      (e) => e.matches(UNSAFE) || e.getAttributeNames().some((n) => /^(on|data-|aria-)/.test(n))
+    )
+    .map((e) => e.outerHTML)
+}
+
 describe('renderMarkdown', () => {
   it('markdown 을 HTML 로 그린다', () => {
     const el = render('# Title', 'some **bold** text')
@@ -16,68 +31,115 @@ describe('renderMarkdown', () => {
     expect(el.querySelector('strong')?.textContent).toBe('bold')
   })
 
-  it('블록 HTML 은 요소로 만들지 않고 글자 그대로 보인다', () => {
-    const block =
-      '<div class="palette-backdrop">\n<style>.xterm { visibility: hidden }</style>\n</div>'
-    const el = render('before', block, '<dialog open>dialog-body</dialog>', 'after')
-    expect(el.querySelectorAll('div, style, dialog')).toHaveLength(0)
-    expect(el.textContent).toContain('<div class="palette-backdrop">')
-    expect(el.textContent).toContain('<dialog open>dialog-body</dialog>')
+  it('앱 class·popover·dialog·입력창·style 은 요소나 속성으로 남지 않는다', () => {
+    const el = render(
+      '<div class="palette-backdrop">\n<style>.xterm { visibility: hidden }</style>\n</div>',
+      '<dialog open>dialog-body</dialog>',
+      'a <form><input name="q"><button popovertarget="p">go</button></form> b',
+      'c <span style="position: fixed; inset: 0">overlay</span> <b popover id="x">pop</b> d',
+      '<p class="palette-backdrop" data-x="1" aria-hidden="true">p</p>',
+      '<input type="checkbox"> <input type="checkbox" disabled class="x">',
+      'after'
+    )
+    expect(unsafe(el)).toEqual([])
+    expect(el.querySelectorAll('input')).toHaveLength(1)
+    expect(el.textContent).not.toContain('visibility')
+    expect(el.textContent).toContain('dialog-body')
+    expect(el.textContent).toContain('overlay')
+    expect(el.querySelector('b')?.textContent).toBe('pop')
     expect(el.textContent).toContain('after')
   })
 
-  it('인라인 HTML 은 요소로 만들지 않고 글자 그대로 보인다', () => {
+  it.each([
+    ['textarea 블록의 빈 줄', '<textarea>\n\n<div class="palette-backdrop">x</div>\n</textarea>'],
+    ['script 블록의 빈 줄', '<script>\n\n<div class="palette-backdrop">x</div>\n</script>'],
+    ['pre 블록의 빈 줄', '<pre>\n\n<dialog open>x</dialog>\n</pre>'],
+    ['div 블록', '<div class="palette-backdrop">\n\n**x**\n\n</div>'],
+    ['여러 줄 주석', '<!--\n-->\n<dialog open>x</dialog>'],
+    ['목록 안', '- <div class="palette-backdrop">x</div>'],
+    ['인용 안', '> <dialog open>x</dialog>'],
+    ['표 머리 칸', '| <form><button>x</button></form> |\n| - |\n| c |'],
+    ['setext heading', '<span style="position: fixed">x</span>\n==='],
+    ['kbd 뒤의 heading', 'x <kbd>\n# <div class="palette-backdrop">x</div>'],
+    ['pre 뒤의 블록', 'x <pre>\n\n<input placeholder="fake">'],
+    ['a 닫는 태그 뒤', '<a href="x">a</a> <dialog open>x</dialog>'],
+    [
+      '링크 글자 안의 a',
+      '[<a href="javascript:alert(1)" class="palette-backdrop">in</a>](https://x)'
+    ],
+    ['코드 블록 info string', '```palette-backdrop popover\nx\n```'],
+    ['title 속성의 따옴표', '[t](https://x "a\\" onmouseover=\\"alert(1)")']
+  ])('%s 에서도 막는다', (_, src) => {
+    const el = render(src)
+    expect(unsafe(el)).toEqual([])
+    expect(el.querySelector('.palette-backdrop')).toBeNull()
+  })
+
+  it('javascript·data·vbscript 링크는 주소를 지운다', () => {
     const el = render(
-      'a <form><input name="q"><button popovertarget="p">go</button></form> b',
-      'c <span style="position: fixed; inset: 0">overlay</span> d'
+      '[j](javascript:alert(1)) [d](data:text/html,x) [v](vbscript:x) <a href="javascript:alert(2)">r</a>'
     )
-    expect(el.querySelectorAll('form, input, button, span')).toHaveLength(0)
-    expect(el.querySelector('p')?.textContent).toBe(
-      'a <form><input name="q"><button popovertarget="p">go</button></form> b'
-    )
-    expect(el.textContent).toContain('<span style="position: fixed; inset: 0">overlay</span>')
+    expect([...el.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual([
+      null,
+      null,
+      null,
+      null
+    ])
   })
 
-  it('kbd·code·pre·script 태그 뒤의 글자와 태그도 글자 그대로 보인다', () => {
+  it('글자 꾸밈·접기 태그는 요소로 그린다', () => {
     const el = render(
-      'x <kbd><div/class="palette-backdrop"><input/placeholder="fake">',
-      'x <code><dialog/open>over',
-      'x <pre><img/src="x">',
-      'x <script><div/style="position:fixed;inset:0">cover',
-      '| a |\n| - |\n| <kbd><dialog/open>d |',
-      '# T <kbd><b/x>bold',
-      '[<code><input/x>](https://x)'
+      '<kbd>⌘</kbd> H<sub>2</sub>O x<sup>2</sup> <mark>m</mark> <s>s</s> <ins>n</ins> <b>b</b> <i>i</i><br>next',
+      '<details open>\n<summary>요약</summary>\n\n**본문**\n\n</details>'
     )
-    expect(
-      el.querySelectorAll('div, input, dialog, img, b, kbd, code, pre, script, [style]')
-    ).toHaveLength(0)
-    expect(el.textContent).toContain(
-      'x <kbd><div/class="palette-backdrop"><input/placeholder="fake">'
+    for (const tag of ['kbd', 'sub', 'sup', 'mark', 's', 'ins', 'b', 'i', 'br']) {
+      expect(el.querySelector(tag), tag).not.toBeNull()
+    }
+    expect(el.querySelector('details')?.hasAttribute('open')).toBe(true)
+    expect(el.querySelector('details summary')?.textContent).toBe('요약')
+    expect(el.querySelector('details strong')?.textContent).toBe('본문')
+  })
+
+  it('markdown 이 만드는 class·속성은 남는다', () => {
+    const el = render(
+      '```ts\nconst x = 1\n```',
+      '3. three',
+      '| a |\n| :-: |\n| b |',
+      '- [x] done\n- [ ] todo',
+      '[t](https://x "title")'
     )
-    expect(el.querySelector('td')?.textContent).toBe('<kbd><dialog/open>d')
-    expect(el.querySelector('a')?.textContent).toBe('<code><input/x>')
+    expect(el.querySelector('pre code')?.className).toBe('language-ts')
+    expect(el.querySelector('ol')?.getAttribute('start')).toBe('3')
+    expect(el.querySelector('td')?.getAttribute('align')).toBe('center')
+    const boxes = [...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"][disabled]')]
+    expect(boxes.map((b) => b.checked)).toEqual([true, false])
+    expect(el.querySelector('a')?.getAttribute('title')).toBe('title')
   })
 
-  it('a 태그 뒤의 주소도 보통 글자처럼 링크가 된다', () => {
-    const el = render('<a href="x"> https://example.com')
-    expect(el.querySelector('a')?.getAttribute('href')).toBe('https://example.com')
+  it('code 의 language- class 말고는 class 를 지운다', () => {
+    const el = render('<code class="language-js">a</code> <code class="language-js x">b</code>')
+    expect([...el.querySelectorAll('code')].map((c) => c.getAttribute('class'))).toEqual([
+      'language-js',
+      null
+    ])
   })
 
-  it('HTML 블록과 태그 안의 문자 참조는 풀지 않고 적힌 그대로 보인다', () => {
-    const el = render('<p>&amp; &lt;</p>', 'x <a title="&copy;">&copy;</a>')
-    expect(el.textContent).toContain('<p>&amp; &lt;</p>')
-    expect(el.textContent).toContain('<a title="&copy;">©</a>')
+  it('HTML 주석은 보이지 않는다', () => {
+    const el = render('before <!-- inline --> after', '<!--\nblock\n-->', 'end')
+    expect(el.textContent).not.toMatch(/inline|block|<!--/)
+    expect(el.innerHTML).not.toContain('<!--')
+    expect(el.textContent).toContain('before')
+    expect(el.textContent).toContain('end')
   })
 
-  it('스크립트·이벤트 처리기·javascript 링크를 실행할 수 없게 둔다', () => {
+  it('스크립트·이벤트 처리기를 실행할 수 없게 둔다', () => {
     const el = render(
       '<img src="x" onerror="window.pwned = 1">',
       '<script>window.pwned = 2</script>',
-      '[link](javascript:alert(1))',
       'after'
     )
     expect(el.querySelectorAll('script, img, [onerror]')).toHaveLength(0)
-    expect(el.querySelector('a')?.getAttribute('href')).toBeNull()
+    expect(el.textContent).not.toContain('pwned')
     expect(el.textContent).toContain('after')
   })
 
@@ -92,8 +154,9 @@ describe('firstHeading', () => {
   it.each([
     '# Tom &amp; *J &lt;3&gt;* [&copy;](https://x) &#38; `&amp;` \\&amp;',
     '# <em>e</em> &amp; *<b>굵게</b>*',
-    '# T <kbd><b/x>bold &amp;',
-    '# [<a href="https://x">in</a>](https://y)'
+    '# T <kbd>⌘ &amp;</kbd> &amp;',
+    '# [<a href="https://x">in</a>](https://y)',
+    '# a <!-- c --> b'
   ])('본문 heading 과 같은 글자다: %s', (src) => {
     expect(firstHeading(src)).toBe(render(src).querySelector('h1')?.textContent)
   })
