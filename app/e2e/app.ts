@@ -613,6 +613,10 @@ export function cellGroups(page: Page) {
   return page.locator('.sidebar .group')
 }
 
+export function cellPin(page: Page, i: number) {
+  return cellGroups(page).nth(i).locator(':scope > .pin')
+}
+
 export function workspaceNames(page: Page) {
   return page.locator('.sidebar .workspace-name')
 }

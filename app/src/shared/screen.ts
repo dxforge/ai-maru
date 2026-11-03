@@ -36,6 +36,8 @@ type CellOf<P> = {
   fontSize?: number
   /** columns 보기에서 늘어선 pane 하나가 받는 터미널 열 수. 없으면 설정 파일의 `layout.column-cols` 다. */
   paneCols?: number
+  /** 이 cell 이 맡은 핀의 디렉토리. workspace 가 가리키는 즐겨찾기 항목의 `pins` 가운데 하나다. */
+  pin?: string
 }
 
 /**
@@ -176,14 +178,24 @@ function parseScreenPane(v: unknown): ScreenPane | null {
 
 function parseCell<P>(v: unknown, parsePane: (x: unknown) => P | null): CellOf<P> | null {
   if (!isObj(v) || !isKey(v.key) || typeof v.id !== 'string' || !isKey(v.focused)) return null
-  const { fontSize, paneCols } = v
+  const { fontSize, paneCols, pin } = v
+  if (!optString(pin)) return null
   if (fontSize !== undefined && !(typeof fontSize === 'number' && Number.isFinite(fontSize)))
     return null
   if (paneCols !== undefined && !(isKey(paneCols) && paneCols > 0)) return null
   const panes = parseList(v.panes, parsePane)
   const layout = parseLayout(v.layout)
   if (!panes || !layout) return null
-  return compact({ key: v.key, id: v.id, panes, layout, focused: v.focused, fontSize, paneCols })
+  return compact({
+    key: v.key,
+    id: v.id,
+    panes,
+    layout,
+    focused: v.focused,
+    fontSize,
+    paneCols,
+    pin
+  })
 }
 
 function parseWorkspaces<P>(

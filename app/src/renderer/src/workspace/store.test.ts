@@ -4,7 +4,13 @@ import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/pr
 import { isPtyId } from '../../../shared/pty'
 import type { PtyState } from '../../../shared/pty-state'
 import { parseScreen } from '../../../shared/screen'
-import { createWorkspaces, focusedPane, orderedPanes, type WorkspacesScreen } from './store'
+import {
+  createWorkspaces,
+  focusedPane,
+  orderedPanes,
+  pinnedCount,
+  type WorkspacesScreen
+} from './store'
 
 type Workspaces = ReturnType<typeof createWorkspaces>
 
@@ -84,6 +90,7 @@ describe('snapshot·restore', () => {
     ws.setPaneCols(selected(ws).key, 110)
     ws.rename(ws.list.value[1].key, '리뷰')
     ws.setFavorite(ws.list.value[1].key, 'f-1')
+    ws.pinCell(ws.list.value[1].cells[0].key, '/b')
     ws.select(ws.cells()[0].key)
     return ws
   }
@@ -99,6 +106,7 @@ describe('snapshot·restore', () => {
     expect(to.cells().map((w) => w.paneCols)).toEqual([undefined, 110])
     expect(to.list.value.map((w) => w.name)).toEqual([undefined, '리뷰'])
     expect(to.list.value.map((w) => w.favorite)).toEqual([undefined, 'f-1'])
+    expect(to.cells().map((c) => c.pin)).toEqual([undefined, '/b'])
   })
 
   it('pty 없이 되살린 pane 은 새 pty id 로 저장한 cwd 에서 셸을 띄우고, 명령·keep·제목은 버린다', () => {
@@ -1452,5 +1460,113 @@ describe('rename', () => {
     const ws = opened(1)
     ws.rename(999, '리뷰')
     expect(ws.list.value[0]).not.toHaveProperty('name')
+  })
+})
+
+describe('pin', () => {
+  /** cell 넷인 workspace 하나. 첫 cell 의 디렉토리는 `/d-0`, 나머지는 `/n-1`… 이다. */
+  function four() {
+    const ws = opened(1)
+    for (let i = 1; i < 4; i++) ws.openCell(`/n-${i}`)
+    return ws
+  }
+  const dirs = (ws: Workspaces) => ws.list.value[0].cells.map((c) => c.panes[0].startDir)
+  const pins = (ws: Workspaces) => ws.list.value[0].cells.map((c) => c.pin)
+
+  it('pinCell 은 cell 에 핀을 달고 핀 묶음 끝으로 옮긴다', () => {
+    const ws = four()
+    const [, b, , d] = keys(ws)
+    ws.pinCell(d, '/n-3')
+    ws.pinCell(b, '/n-1')
+    expect(dirs(ws)).toEqual(['/n-3', '/n-1', '/d-0', '/n-2'])
+    expect(pins(ws)).toEqual(['/n-3', '/n-1', undefined, undefined])
+    expect(pinnedCount(ws.list.value[0])).toBe(2)
+  })
+
+  it('unpinDir 는 같은 핀을 맡은 cell 의 핀을 모두 지우고 핀이 없는 묶음 앞으로 옮긴다', () => {
+    const ws = four()
+    const [a, b, c] = keys(ws)
+    ws.pinCell(a, '/p')
+    ws.pinCell(b, '/q')
+    ws.pinCell(c, '/p/')
+    ws.unpinDir(ws.list.value[0].key, '/p')
+    expect(dirs(ws)).toEqual(['/n-1', '/d-0', '/n-2', '/n-3'])
+    expect(pins(ws)).toEqual(['/q', undefined, undefined, undefined])
+    expect(ws.list.value[0].cells[1]).not.toHaveProperty('pin')
+  })
+
+  it('openPinned 은 그 workspace 의 핀 묶음 끝에 핀을 맡은 셸 cell 을 넣어 선택한다', () => {
+    const ws = opened(2)
+    const [w] = wsKeys(ws)
+    ws.select(ws.list.value[0].cells[0].key)
+    ws.openCell('/x')
+    ws.pinCell(ws.list.value[0].cells[0].key, '/d-0')
+    ws.select(ws.list.value[1].cells[0].key)
+    const key = ws.openPinned(w, '/p')
+    const cells = ws.list.value[0].cells
+    expect(cells.map((c) => c.pin)).toEqual(['/d-0', '/p', undefined])
+    expect(cells[1].key).toBe(key)
+    expect(cells[1].panes[0]).toMatchObject({ startDir: '/p' })
+    expect(cells[1].panes[0]).not.toHaveProperty('command')
+    expect(selected(ws).key).toBe(key)
+    expect(ws.openPinned(999, '/p')).toBeUndefined()
+  })
+
+  it('openCell 은 핀 묶음 안의 cell 을 골라도 새 cell 을 핀이 없는 묶음 앞에 넣는다', () => {
+    const ws = four()
+    const [a, b] = keys(ws)
+    ws.pinCell(a, '/d-0')
+    ws.pinCell(b, '/n-1')
+    ws.select(a)
+    ws.openCell('/new')
+    expect(dirs(ws)).toEqual(['/d-0', '/n-1', '/new', '/n-2', '/n-3'])
+  })
+
+  it('clearPins 는 그 workspace 의 핀을 모두 지우고 순서는 그대로 둔다', () => {
+    const ws = four()
+    const [, b] = keys(ws)
+    ws.pinCell(b, '/n-1')
+    ws.clearPins(ws.list.value[0].key)
+    expect(dirs(ws)).toEqual(['/n-1', '/d-0', '/n-2', '/n-3'])
+    expect(pins(ws)).toEqual([undefined, undefined, undefined, undefined])
+  })
+
+  it('다른 workspace 로 옮긴 cell 은 핀을 놓고 그곳의 핀 묶음 뒤에 놓인다', () => {
+    const ws = opened(2)
+    ws.openCell('/y')
+    const [w1, w2] = wsKeys(ws)
+    const [a, , y] = keys(ws)
+    ws.pinCell(y, '/y')
+    ws.pinCell(a, '/d-0')
+    ws.moveCell(y, { workspace: w1, index: 0 })
+    expect(ws.list.value[0].cells.map((c) => c.pin)).toEqual(['/d-0', undefined])
+    expect(ws.list.value[0].cells[1].key).toBe(y)
+    expect(wsKeys(ws)).toEqual([w1, w2])
+  })
+
+  it('cell 둘인 workspace 에서 새 workspace 로 옮긴 cell 도 핀을 놓는다', () => {
+    const ws = opened(1)
+    ws.openCell('/y')
+    const [a] = keys(ws)
+    ws.pinCell(a, '/d-0')
+    ws.moveCell(a, 'new')
+    expect(ws.list.value[1].cells[0].key).toBe(a)
+    expect(ws.list.value[1].cells[0]).not.toHaveProperty('pin')
+  })
+
+  it('cell 하나인 workspace 를 통째로 옮기면 핀은 그대로다', () => {
+    const ws = opened(2)
+    const [a] = keys(ws)
+    ws.pinCell(a, '/d-0')
+    ws.moveCell(a, 'new')
+    expect(ws.list.value[1].cells[0]).toMatchObject({ key: a, pin: '/d-0' })
+  })
+
+  it('open 에 준 핀은 새 workspace 의 cell 이 맡는다', () => {
+    const ws = createWorkspaces()
+    ws.open('/a', {}, undefined, 'f-1', '/a')
+    ws.open('/b', {}, undefined, 'f-2')
+    expect(ws.cells().map((c) => c.pin)).toEqual(['/a', undefined])
+    expect(ws.cells()[1]).not.toHaveProperty('pin')
   })
 })

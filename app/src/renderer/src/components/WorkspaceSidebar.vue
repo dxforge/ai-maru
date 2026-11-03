@@ -21,14 +21,24 @@ import {
   type Span
 } from '../workspace/sidebarDrag'
 import {
+  closedPins,
   jobRow,
   paneRow,
   workspaceMarks,
   type JobRow,
+  type PinRow,
   type Row,
   type RowSource
 } from '../workspace/sidebarRows'
-import { focusedPane, orderedPanes, type Cell, type Pane, type Workspace } from '../workspace/store'
+import PinIcon from './PinIcon.vue'
+import {
+  focusedPane,
+  orderedPanes,
+  pinnedCount,
+  type Cell,
+  type Pane,
+  type Workspace
+} from '../workspace/store'
 
 const {
   workspaces,
@@ -39,6 +49,7 @@ const {
   urgent,
   unread,
   favorites = new Set(),
+  pins = new Map(),
   folded,
   collapsed,
   jobs = [],
@@ -57,6 +68,8 @@ const {
   unread: ReadonlySet<number>
   /** 즐겨찾기에 든 workspace 의 key */
   favorites?: ReadonlySet<number>
+  /** 즐겨찾기에 든 workspace 의 key 에서 그 즐겨찾기 항목의 핀으로 */
+  pins?: ReadonlyMap<number, readonly string[]>
   folded: ReadonlySet<number>
   collapsed: boolean
   jobs?: readonly JobView[]
@@ -77,6 +90,9 @@ const emit = defineEmits<{
   /** `name` 이 null 이면 취소다. `refocus` 면 터미널에 포커스를 돌려준다. */
   endRename: [workspace: number, name: string | null, refocus: boolean]
   toggleFavorite: [workspace: number]
+  togglePin: [cell: number]
+  openPin: [workspace: number, dir: string]
+  unpin: [workspace: number, dir: string]
 }>()
 
 // `groups` 밖에 둔다. `groups` 안에 두면 job 표가 바뀔 때마다 job 과 상관없는 pane 줄까지 다시 만들기 때문이다.
@@ -91,20 +107,42 @@ const jobsByCell = computed(() => {
   return map
 })
 
-function cellGroup(src: RowSource, c: DeepReadonly<Cell>, base: DeepReadonly<Pane> | undefined) {
+function cellGroup(
+  src: RowSource,
+  c: DeepReadonly<Cell>,
+  base: DeepReadonly<Pane> | undefined,
+  index: number,
+  favorite: boolean
+) {
   const selected = c.key === selectedKey
   const current = focusedPane(c)
   return {
+    kind: 'cell' as const,
     c,
+    index,
     selected,
+    pinned: favorite && c.pin !== undefined,
     rows: orderedPanes(c).map((p) => paneRow(src, p, selected && p === current, base))
   }
+}
+
+type Item = ReturnType<typeof cellGroup> | ({ kind: 'pin' } & PinRow)
+
+function items(src: RowSource, w: DeepReadonly<Workspace>): Item[] {
+  const base = labelBase(w)
+  const favorite = favorites.has(w.key)
+  const cells = w.cells.map((c, i) => cellGroup(src, c, base, i, favorite))
+  const at = pinnedCount(w)
+  const closed = closedPins(pins.get(w.key) ?? [], w.cells, home).map((p): Item => ({
+    kind: 'pin',
+    ...p
+  }))
+  return [...cells.slice(0, at), ...closed, ...cells.slice(at)]
 }
 
 const groups = computed(() => {
   const src: RowSource = { shown, command, notification, home, shell }
   return workspaces.map((w) => {
-    const base = labelBase(w)
     const f = folded.has(w.key)
     const auto = autoWorkspaceName(w, home)
     return {
@@ -113,7 +151,7 @@ const groups = computed(() => {
       auto,
       folded: f,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
-      cells: f ? [] : w.cells.map((c) => cellGroup(src, c, base))
+      items: f ? [] : items(src, w)
     }
   })
 })
@@ -154,18 +192,24 @@ function spans(): SidebarSpans {
       list.value!.querySelectorAll<HTMLElement>(':scope > .workspace'),
       (el) => {
         const key = Number(el.dataset.workspace)
+        const w = workspaces.find((x) => x.key === key)
         return {
           ...spanOf(el),
           key,
           head: spanOf(el.querySelector(':scope > .workspace-head')!),
-          count: workspaces.find((w) => w.key === key)?.cells.length ?? 0,
-          cells: Array.from(el.querySelectorAll(':scope > .group'), spanOf)
+          count: w?.cells.length ?? 0,
+          cells: Array.from(el.querySelectorAll(':scope > .group'), spanOf),
+          pinned: w ? pinnedCount(w) : 0,
+          closed: closedSpan(Array.from(el.querySelectorAll(':scope > .pin-card'), spanOf))
         }
       }
     ),
     newWorkspace: slot ? spanOf(slot) : undefined
   }
 }
+
+const closedSpan = (s: Span[]): Span | undefined =>
+  s.length ? { top: s[0].top, bottom: s[s.length - 1].bottom } : undefined
 
 function drag(what: Dragged, source: HTMLElement, from: PointerEvent): DragSession {
   const r = source.getBoundingClientRect()
@@ -224,7 +268,8 @@ function drag(what: Dragged, source: HTMLElement, from: PointerEvent): DragSessi
 // 손잡이는 클릭 동작이 없으므로 누르자마자 끌기를 시작한다.
 function grabCell(e: PointerEvent, workspace: number, cell: number, index: number): void {
   const card = (e.currentTarget as HTMLElement).closest<HTMLElement>('.group')!
-  trackPointer(e, 0, () => drag({ kind: 'cell', cell, workspace, index }, card, e))
+  const what = { kind: 'cell', cell, workspace, index } as const
+  trackPointer(e, 0, () => drag(what, card, e))
 }
 
 /** 이름 줄은 누른 뒤 이만큼 움직이면 끌기로 보고, 그 전에 떼면 접기·펴기다. */
@@ -241,6 +286,7 @@ const workspaceDragged = (workspace: number): boolean =>
   dragged.value?.kind === 'workspace' && dragged.value.workspace === workspace
 const favoriteLabel = (workspace: number): string =>
   favorites.has(workspace) ? 'Remove from Favorites' : 'Add to Favorites'
+const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
 </script>
 
 <template>
@@ -248,7 +294,7 @@ const favoriteLabel = (workspace: number): string =>
     <div class="titlebar" />
     <div ref="list" v-overlay-scroll="'y'" class="list">
       <div
-        v-for="({ w, name, auto, folded: wf, state, notified, dot, cells }, wi) in groups"
+        v-for="({ w, name, auto, folded: wf, state, notified, dot, items: entries }, wi) in groups"
         :key="w.key"
         class="workspace"
         :class="{ dragging: workspaceDragged(w.key) }"
@@ -298,70 +344,108 @@ const favoriteLabel = (workspace: number): string =>
           >
           <FoldChevron class="chevron" :open="!wf" />
         </button>
-        <div
-          v-for="({ c, selected, rows }, ci) in cells"
-          :key="c.key"
-          class="group"
-          :class="{ selected, dragging: cellDragged(c.key) }"
+        <template
+          v-for="item in entries"
+          :key="item.kind === 'cell' ? item.c.key : `pin:${item.dir}`"
         >
-          <span
-            class="grip"
-            aria-hidden="true"
-            @mousedown.prevent
-            @pointerdown="grabCell($event, w.key, c.key, ci)"
-          />
-          <button
-            v-for="r in rows"
-            :key="r.pane"
-            v-tooltip="paneTip(r)"
-            class="row pane-row"
-            :class="[r.state ?? ['shell', commandClass(r.command)], { focused: r.focused }]"
-            :aria-label="r.aria"
-            @mousedown.prevent
-            @click="emit('focus', c.key, r.pane)"
-          >
-            <span
-              v-tooltip="r.state && STATE_LABELS[r.state]"
-              class="state status-icon"
-              :class="{ 'nerd-icon': !('state' in r.icon), unread: r.notice }"
-              ><StatusIcon v-if="'state' in r.icon" :state="r.icon.state" /><template v-else>{{
-                'agent' in r.icon ? r.icon.agent : r.icon.glyph
-              }}</template></span
-            >
-            <span class="title">{{ r.text }}</span>
-            <span v-if="r.place" class="tail place"
-              ><span v-if="r.place.name" class="name">{{ r.place.name }}</span
-              ><span v-if="r.place.branch" class="branch"
-                ><span class="nerd-icon">{{ ICONS.branch }}</span
-                ><span class="branch-name">{{ r.place.branch }}</span></span
-              ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
-            >
-            <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
-              commandTail(r.command, now)
-            }}</span>
-          </button>
-          <div
-            v-for="j in jobsByCell.get(c.id)"
-            :key="j.pty"
-            v-tooltip="j.tip"
-            class="row job-row"
-            :class="{ exited: j.exited }"
-          >
-            <span class="state nerd-icon">{{ ICONS.gear }}</span>
-            <span class="title">{{ j.text }}</span>
-            <span v-if="j.ports" class="tail ports">{{ j.ports }}</span>
-            <span class="tail time">{{ jobTime(j) }}</span>
+          <div v-if="item.kind === 'pin'" class="pin-card">
             <button
-              v-tooltip="j.exited ? 'Remove' : 'Stop'"
-              class="tail kill nerd-icon"
-              :aria-label="j.exited ? `Remove ${j.text}` : `Stop ${j.text}`"
+              v-tooltip="item.path"
+              class="row closed-pin"
+              :aria-label="`Open ${item.name}`"
               @mousedown.prevent
-              @click="emit('killJob', j.pty)"
+              @click="emit('openPin', w.key, item.dir)"
             >
-              {{ ICONS.close }}
+              <span class="state nerd-icon">{{ ICONS.terminal }}</span>
+              <span class="title">{{ item.name }}</span>
+              <span class="tail">{{ item.path }}</span>
+            </button>
+            <button
+              v-tooltip="pinLabel(true)"
+              class="pin on"
+              :aria-label="`Unpin ${item.name}`"
+              aria-pressed="true"
+              @mousedown.prevent
+              @click="emit('unpin', w.key, item.dir)"
+            >
+              <PinIcon :filled="true" />
             </button>
           </div>
-        </div>
+          <div
+            v-else
+            class="group"
+            :class="{ selected: item.selected, dragging: cellDragged(item.c.key) }"
+          >
+            <span
+              class="grip"
+              aria-hidden="true"
+              @mousedown.prevent
+              @pointerdown="grabCell($event, w.key, item.c.key, item.index)"
+            />
+            <button
+              v-for="r in item.rows"
+              :key="r.pane"
+              v-tooltip="paneTip(r)"
+              class="row pane-row"
+              :class="[r.state ?? ['shell', commandClass(r.command)], { focused: r.focused }]"
+              :aria-label="r.aria"
+              @mousedown.prevent
+              @click="emit('focus', item.c.key, r.pane)"
+            >
+              <span
+                v-tooltip="r.state && STATE_LABELS[r.state]"
+                class="state status-icon"
+                :class="{ 'nerd-icon': !('state' in r.icon), unread: r.notice }"
+                ><StatusIcon v-if="'state' in r.icon" :state="r.icon.state" /><template v-else>{{
+                  'agent' in r.icon ? r.icon.agent : r.icon.glyph
+                }}</template></span
+              >
+              <span class="title">{{ r.text }}</span>
+              <span v-if="r.place" class="tail place"
+                ><span v-if="r.place.name" class="name">{{ r.place.name }}</span
+                ><span v-if="r.place.branch" class="branch"
+                  ><span class="nerd-icon">{{ ICONS.branch }}</span
+                  ><span class="branch-name">{{ r.place.branch }}</span></span
+                ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
+              >
+              <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
+                commandTail(r.command, now)
+              }}</span>
+            </button>
+            <div
+              v-for="j in jobsByCell.get(item.c.id)"
+              :key="j.pty"
+              v-tooltip="j.tip"
+              class="row job-row"
+              :class="{ exited: j.exited }"
+            >
+              <span class="state nerd-icon">{{ ICONS.gear }}</span>
+              <span class="title">{{ j.text }}</span>
+              <span v-if="j.ports" class="tail ports">{{ j.ports }}</span>
+              <span class="tail time">{{ jobTime(j) }}</span>
+              <button
+                v-tooltip="j.exited ? 'Remove' : 'Stop'"
+                class="tail kill nerd-icon"
+                :aria-label="j.exited ? `Remove ${j.text}` : `Stop ${j.text}`"
+                @mousedown.prevent
+                @click="emit('killJob', j.pty)"
+              >
+                {{ ICONS.close }}
+              </button>
+            </div>
+            <button
+              v-tooltip="pinLabel(item.pinned)"
+              class="pin"
+              :class="{ on: item.pinned }"
+              :aria-label="pinLabel(item.pinned)"
+              :aria-pressed="item.pinned"
+              @mousedown.prevent
+              @click="emit('togglePin', item.c.key)"
+            >
+              <PinIcon :filled="item.pinned" />
+            </button>
+          </div>
+        </template>
       </div>
       <div
         v-if="dragged?.kind === 'cell'"
@@ -511,20 +595,100 @@ const favoriteLabel = (workspace: number): string =>
   border-top: 1px solid var(--line);
 }
 
-.group:last-child {
+.group:last-child,
+.pin-card:last-child {
   margin-bottom: 0;
 }
 
-.group {
+/* 핀이 박스 모서리 밖으로 나오므로 박스는 넘친 것을 자르지 않고, 줄의 바탕색은 박스의 첫 줄과 마지막 줄의 모서리를 깎아
+   박스 안에 둔다. */
+.group,
+.pin-card {
   position: relative;
   margin: 0 var(--space-3) var(--space-3);
   border-radius: var(--radius-2);
-  overflow: hidden;
+}
+
+.grip + .row,
+.closed-pin {
+  border-top-left-radius: var(--radius-2);
+  border-top-right-radius: var(--radius-2);
+}
+
+.group > .row:nth-last-child(2),
+.closed-pin {
+  border-bottom-left-radius: var(--radius-2);
+  border-bottom-right-radius: var(--radius-2);
+}
+
+.group {
   background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
 
 .group.selected {
   background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.closed-pin {
+  color: var(--faint);
+}
+
+/* 테두리 대신 안쪽으로 그은 outline 이라 박스 높이가 열린 cell 과 같다. */
+.pin-card {
+  outline: 1px dashed color-mix(in srgb, var(--fg) 18%, transparent);
+  outline-offset: -1px;
+}
+
+.closed-pin:hover {
+  background: var(--hover);
+}
+
+.closed-pin .tail {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-1);
+}
+
+/* 압정처럼 박스의 오른쪽 위 모서리에 비스듬히 꽂는다. 줄 폭을 쓰지 않아 이름이 핀 때문에 더 잘리지 않는다. */
+.pin {
+  position: absolute;
+  top: -7px;
+  right: -5px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--faint);
+  visibility: hidden;
+}
+
+.pin svg {
+  width: 13px;
+  height: 13px;
+  transform: rotate(35deg);
+}
+
+/* 꽂힌 핀은 채운 즐겨찾기 별(`.favorite.on`)과 같은 색을 쓴다. 별은 색을 `.workspace-head` 에서 물려받는다. */
+.pin.on {
+  color: var(--muted);
+}
+
+.group:hover .pin.on,
+.pin-card:hover .pin.on {
+  color: var(--fg);
+}
+
+.pin.on,
+.group:hover .pin {
+  visibility: visible;
+}
+
+.pin:not(.on):hover {
+  color: var(--fg);
 }
 
 button {

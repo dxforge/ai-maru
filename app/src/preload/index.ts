@@ -119,6 +119,13 @@ const api = {
     ipcRenderer.invoke('launcher:favorite-forget', id),
   renameFavorite: (id: string, name: string): Promise<LauncherState> =>
     ipcRenderer.invoke('launcher:favorite-rename', id, name),
+  addPin: (id: string, dir: string): Promise<LauncherState> =>
+    ipcRenderer.invoke('launcher:pin-add', id, dir),
+  removePin: (id: string, dir: string): Promise<LauncherState> =>
+    ipcRenderer.invoke('launcher:pin-remove', id, dir),
+  /** 셸을 띄울 수 없는 디렉토리면 그 이유를 돌려준다. */
+  notDirectory: (dir: string): Promise<string | null> =>
+    ipcRenderer.invoke('launcher:not-directory', dir),
   /** `dir` 의 하위 디렉토리 이름. 읽지 못하면 빈 목록이다. */
   listDirs: (dir: string): Promise<string[]> => ipcRenderer.invoke('launcher:dirs', dir),
   /** pty 에서 셸 말고 도는 프로그램이 있으면 main 이 확인 창을 띄운다. */

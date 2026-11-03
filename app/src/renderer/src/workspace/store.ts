@@ -1,5 +1,6 @@
 import { readonly, ref } from 'vue'
 import { sameGitHead, type GitHead } from '../../../shared/git'
+import { samePath } from '../../../shared/launcher'
 import { focusedPane } from '../../../shared/names'
 import type { ProgramStatusState } from '../../../shared/program-status'
 import type { PtyState } from '../../../shared/pty-state'
@@ -78,8 +79,17 @@ export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
  */
 export type Cell = Omit<ScreenCell, 'panes'> & { panes: Pane[] }
 
-/** `cells` 는 비지 않는다 — 마지막 cell 이 닫히면 workspace 도 닫힌다. */
+/**
+ * `cells` 는 비지 않는다 — 마지막 cell 이 닫히면 workspace 도 닫힌다. 핀을 맡은 cell(`pin`)이 앞에 모이고 그 뒤에 나머지
+ * cell 이 온다. 사이드바가 핀 꽂은 것을 위에 보이는데, cell 을 넘기는 순서와 터미널 화면의 순서도 그와 같게 하기 위해서다.
+ */
 export type Workspace = Omit<ScreenWorkspace, 'cells'> & { cells: Cell[] }
+
+/** 핀을 맡은 cell 의 수. 핀을 맡지 않은 cell 은 이 자리부터 온다. */
+export function pinnedCount(w: { cells: readonly { pin?: string }[] }): number {
+  const i = w.cells.findIndex((c) => c.pin === undefined)
+  return i < 0 ? w.cells.length : i
+}
 
 export { focusedPane }
 
@@ -171,9 +181,11 @@ export function createWorkspaces(
     startDir?: string,
     extra: PaneCommand = {},
     name?: string,
-    favorite?: string
+    favorite?: string,
+    pin?: string
   ): void {
     const c = createCell({ startDir, ...extra })
+    if (pin !== undefined) c.pin = pin
     list.value.push(createWorkspace(c, name, favorite))
     selectedKey.value = c.key
   }
@@ -198,8 +210,48 @@ export function createWorkspaces(
 
   function insertCell(w: Workspace, at: number, init: PaneInit): Cell {
     const c = createCell(init)
-    w.cells.splice(at, 0, c)
+    w.cells.splice(Math.max(at, pinnedCount(w)), 0, c)
     return c
+  }
+
+  /** `workspace` 의 핀 묶음 끝에 `dir` 에서 셸을 띄우는 cell 을 넣고 선택한다. 그 cell 이 핀 `dir` 을 맡는다. */
+  function openPinned(workspace: number, dir: string): number | undefined {
+    const w = list.value.find((x) => x.key === workspace)
+    if (!w) return undefined
+    const c = insertCell(w, pinnedCount(w), { startDir: dir })
+    c.pin = dir
+    selectedKey.value = c.key
+    return c.key
+  }
+
+  /** cell 이 핀 `dir` 을 맡게 하고 핀 묶음 끝으로 옮긴다. */
+  function pinCell(key: number, dir: string): void {
+    const w = workspaceOf(key)
+    if (!w) return
+    const [c] = w.cells.splice(
+      w.cells.findIndex((x) => x.key === key),
+      1
+    )
+    c.pin = dir
+    w.cells.splice(pinnedCount(w), 0, c)
+  }
+
+  /** `workspace` 에서 핀 `dir` 을 맡은 cell 의 핀을 지우고, 그 cell 들을 핀이 없는 묶음 앞으로 옮긴다. */
+  function unpinDir(workspace: number, dir: string): void {
+    const w = list.value.find((x) => x.key === workspace)
+    if (!w) return
+    const owners = w.cells.filter((c) => c.pin !== undefined && samePath(c.pin, dir))
+    for (const c of owners.reverse()) {
+      w.cells.splice(w.cells.indexOf(c), 1)
+      delete c.pin
+      w.cells.splice(pinnedCount(w), 0, c)
+    }
+  }
+
+  /** 즐겨찾기에서 빠진 workspace 의 핀은 남지 않는다. 핀 묶음이 그대로 핀이 없는 묶음의 앞이 되므로 순서는 그대로다. */
+  function clearPins(workspace: number): void {
+    const w = list.value.find((x) => x.key === workspace)
+    if (w) for (const c of w.cells) delete c.pin
   }
 
   function openCell(startDir?: string, extra: PaneCommand = {}): void {
@@ -260,14 +312,27 @@ export function createWorkspaces(
     if (to === 'new') {
       // 새 workspace 를 만들지 않는 것은 닫기 확인이 보는 workspace id 를 바꾸지 않기 위해서다.
       if (from.cells.length === 1) return moveWorkspace(from.key, list.value.length)
-      list.value.push(createWorkspace(detach(from, at)))
+      list.value.push(createWorkspace(leave(from, at)))
       return
     }
     const dest = list.value.find((w) => w.key === to.workspace)
     // cell 이 하나뿐인 workspace 안에서 그 cell 을 옮기면 아무것도 하지 않는다. `detach` 가 cell 을 빼면서 그 workspace 를
     // 목록에서 지우므로, 그대로 넣으면 cell 이 목록에 없는 workspace 에 들어가 사라지기 때문이다.
     if (!dest || (dest === from && from.cells.length === 1)) return
-    dest.cells.splice(dest === from && at < to.index ? to.index - 1 : to.index, 0, detach(from, at))
+    if (dest !== from) {
+      const c = leave(from, at)
+      dest.cells.splice(Math.max(to.index, pinnedCount(dest)), 0, c)
+      return
+    }
+    dest.cells.splice(at < to.index ? to.index - 1 : to.index, 0, detach(from, at))
+  }
+
+  // 핀은 workspace 의 즐겨찾기 항목에 붙으므로, 다른 workspace 로 옮긴 cell 은 핀을 놓는다. 옮기기 전 workspace 에는 그 핀이
+  // 닫힌 핀 줄로 남는다.
+  function leave(w: Workspace, at: number): Cell {
+    const c = detach(w, at)
+    delete c.pin
+    return c
   }
 
   function detach(w: Workspace, at: number): Cell {
@@ -517,6 +582,10 @@ export function createWorkspaces(
     moveWorkspace,
     rename,
     setFavorite,
+    openPinned,
+    pinCell,
+    unpinDir,
+    clearPins,
     split,
     splitFrom,
     pane,

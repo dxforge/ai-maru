@@ -1,9 +1,18 @@
 import { shallowRef } from 'vue'
-import { favoriteById, samePath, type Favorite } from '../../../shared/launcher'
+import {
+  favoriteById,
+  samePath,
+  withoutPin,
+  withPin,
+  type Favorite
+} from '../../../shared/launcher'
 import { randomId } from '../../../shared/pty'
 
-/** 즐겨찾기 목록이다. 사이드바의 별과 런처가 같은 목록을 본다. */
-export function createFavorites() {
+/**
+ * 즐겨찾기 목록이다. 사이드바의 별과 런처가 같은 목록을 본다. `onForget` 은 항목을 빼기 직전에 그 `id` 로 불린다. 별과
+ * 런처 어느 쪽에서 빼든 같은 정리를 하기 위해서다.
+ */
+export function createFavorites(onForget: (id: string) => void = () => {}) {
   const list = shallowRef<readonly Favorite[]>([])
   // 처음 읽은 값이 그 뒤에 바꾼 목록보다 늦게 오면 쓰지 않는다.
   let changed = false
@@ -25,6 +34,7 @@ export function createFavorites() {
     set((await window.maru.addFavorite(favorite)).favorites)
   }
   async function forget(id: string): Promise<void> {
+    onForget(id)
     set((await window.maru.forgetFavorite(id)).favorites)
   }
 
@@ -46,11 +56,58 @@ export function createFavorites() {
     },
     async rename(id: string, name: string): Promise<void> {
       set((await window.maru.renameFavorite(id, name)).favorites)
+    },
+    // 목록에 먼저 반영한다. main 이 답하기 전에도 닫힌 핀 줄이 보이고 사라지게 하기 위해서다.
+    async pin(id: string, dir: string): Promise<void> {
+      set(list.value.map((f) => (f.id === id ? withPin(f, dir) : f)))
+      set((await window.maru.addPin(id, dir)).favorites)
+    },
+    async unpin(id: string, dir: string): Promise<void> {
+      set(list.value.map((f) => (f.id === id ? withoutPin(f, dir) : f)))
+      set((await window.maru.removePin(id, dir)).favorites)
     }
   }
 }
 
 export type Favorites = ReturnType<typeof createFavorites>
+
+export type PinToggle = { kind: 'pin' | 'unpin'; dir: string } | { kind: 'unknown' }
+
+/**
+ * cell 의 핀을 누르면 할 일이다. cell 이 맡은 핀(`pin`)이 즐겨찾기의 `pins` 에 있으면 그 핀을 뺀다. 즐겨찾기가 아니거나
+ * `pins` 에 없는 낡은 `pin` 이면 첫 pane 의 지금 디렉토리(`cwd`)로 꽂는다. `cwd` 를 모르면 `unknown` 이다.
+ */
+export function pinToggle(
+  favorite: Favorite | undefined,
+  pin: string | undefined,
+  cwd: string | undefined
+): PinToggle {
+  if (pin !== undefined && favorite?.pins?.some((p) => samePath(p, pin)))
+    return { kind: 'unpin', dir: pin }
+  return cwd === undefined ? { kind: 'unknown' } : { kind: 'pin', dir: cwd }
+}
+
+type PinnableCell = { key: number; pin?: string; panes: readonly { cwd?: string }[] }
+
+/**
+ * 핀이 있는 즐겨찾기 항목에 workspace 를 이을 때, 핀마다 아직 핀을 맡지 않은 cell 가운데 첫 pane 이 그 디렉토리에 있는
+ * 첫 cell 이 그 핀을 맡는다. 같은 디렉토리가 열린 cell 과 닫힌 핀 줄로 두 번 보이지 않게 하기 위해서다.
+ */
+export function pinsOnLink(
+  pins: readonly string[],
+  cells: readonly PinnableCell[]
+): { cell: number; dir: string }[] {
+  const taken = new Set<number>()
+  return pins.flatMap((dir) => {
+    const c = cells.find((x) => {
+      const cwd = x.panes[0]?.cwd
+      return x.pin === undefined && !taken.has(x.key) && cwd !== undefined && samePath(cwd, dir)
+    })
+    if (!c) return []
+    taken.add(c.key)
+    return [{ cell: c.key, dir }]
+  })
+}
 
 type ToggledWorkspace = { dir: string | undefined; name: string; favorite?: string }
 type Loading = { kind: 'loading' }
