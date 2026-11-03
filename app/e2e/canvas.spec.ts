@@ -498,7 +498,11 @@ test('고전 스크롤바 설정에서도 Canvas 의 스크롤바는 자리를 �
   const bar = scroller.locator('> .os-scrollbar-vertical')
   await expect(bar).toHaveClass(/os-scrollbar-auto-hide-hidden/)
   const box = (await bar.boundingBox())!
-  const [before, height] = await scroller.evaluate((el) => [el.scrollTop, el.clientHeight])
+  // clientHeight 는 정수로 반올림되지만 한 페이지는 소수 높이만큼 넘어간다.
+  const [before, height] = await scroller.evaluate((el) => [
+    el.scrollTop,
+    el.getBoundingClientRect().height
+  ])
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeCloseTo(before + height, 0)
 })
@@ -658,6 +662,11 @@ test('터미널에서 보낸 문서는 그 cell 을 고른 동안 보이고, 드
   await expect(viewMenu(page).locator('[data-cell]')).toHaveCount(2)
   await expect(cellChoice(page, first)).not.toContainText('closed')
   await expect(cellChoice(page, second)).toContainText('closed')
+  await expect(viewMenu(page).locator('.group-name')).toHaveCount(1)
+  const title = (await cellChoice(page, second).locator('.pane-title').boundingBox())!
+  const place = cellChoice(page, second).locator('.place')
+  await expect(place).toHaveText('second')
+  expect((await place.boundingBox())!.x).toBeGreaterThan(title.x + title.width)
   await cellChoice(page, second).click()
   await expect(viewMenu(page)).toHaveCount(0)
   await expect(titles(page)).toHaveText(['Second'])
@@ -667,12 +676,38 @@ test('터미널에서 보낸 문서는 그 cell 을 고른 동안 보이고, 드
   await viewMenu(page).locator('.all').click()
   await expect(titles(page)).toHaveText(['Second', 'First'])
   await expect(page.locator('.canvas .card .owner')).toHaveCount(2)
+  await expect(page.locator('.canvas .card .owner .workspace')).toHaveCount(2)
   await run(page, 'echo typed-$((1+1))', 'typed-2')
 
   await viewButton(page).click()
   const box = (await rows(page).boundingBox())!
   await page.mouse.click(box.x + 10, box.y + 10)
   await expect(viewMenu(page)).toHaveCount(0)
+})
+
+test('위치가 길어도 드롭다운 버튼과 목록에 pane 이름이 보인다', async ({ launch, dataDir }) => {
+  const dir = `a-directory-${'x'.repeat(150)}`
+  const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: zshHome(dataDir, dir) })
+  await page.keyboard.type(`cd ~/${dir}\n`)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first' })
+  await expect(viewButton(page)).toContainText('a-directory')
+  expect((await viewButton(page).locator('.pane-title').boundingBox())!.width).toBeGreaterThan(10)
+  await viewButton(page).click()
+  const item = viewMenu(page).locator('[data-cell]')
+  expect((await item.locator('.pane-title').boundingBox())!.width).toBeGreaterThan(10)
+})
+
+test('Canvas 헤더는 제목 줄만 창 드래그 영역이라 드롭다운 줄은 누른 것을 받는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  await openCanvas(launched)
+  const region = (selector: string) =>
+    launched.page
+      .locator(selector)
+      .evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-app-region'))
+  expect(await region('.canvas .title-row')).toBe('drag')
+  expect(await region('.canvas .picker')).not.toBe('drag')
 })
 
 test('두 cell 이 같은 id 로 보낸 문서는 따로 남고, 접기와 ✕ 는 그 cell 의 문서에만 미친다', async ({

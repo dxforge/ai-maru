@@ -7,6 +7,7 @@ import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/pr
 import type { PtyNotification } from '../../../shared/pty-state'
 import { commandClass, ICONS, STATE_LABELS } from '../icons'
 import FoldChevron from './FoldChevron.vue'
+import PlaceLabel from './PlaceLabel.vue'
 import StatusIcon from './StatusIcon.vue'
 import WorkspaceNameInput from './WorkspaceNameInput.vue'
 import { commandLabel, commandTail, elapsed, notificationText } from '../workspace/display'
@@ -279,7 +280,7 @@ const favoriteLabel = (workspace: number): string =>
             :class="[state, { unread: notified }]"
             ><StatusIcon :state="state"
           /></span>
-          <span class="workspace-name">{{ name }}</span>
+          <span class="workspace-name workspace-title">{{ name }}</span>
           <span v-if="dot" class="unread-dot" />
           <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 별의 pointerdown·click·dblclick 이 헤더의 끌기·접기·이름 고치기로 전해지지 않게 막는다. -->
           <span class="favorite-slot" :class="{ on: favorites.has(w.key) }"
@@ -329,13 +330,7 @@ const favoriteLabel = (workspace: number): string =>
               }}</template></span
             >
             <span class="title">{{ r.text }}</span>
-            <span v-if="r.place" class="tail place"
-              ><span v-if="r.place.name" class="name">{{ r.place.name }}</span
-              ><span v-if="r.place.branch" class="branch"
-                ><span class="nerd-icon">{{ ICONS.branch }}</span
-                ><span class="branch-name">{{ r.place.branch }}</span></span
-              ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
-            >
+            <PlaceLabel v-if="r.place" class="tail place" :place="r.place" />
             <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
               commandTail(r.command, now)
             }}</span>
@@ -450,10 +445,6 @@ const favoriteLabel = (workspace: number): string =>
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: var(--text-1);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .favorite-slot {
@@ -552,35 +543,6 @@ button {
   background: var(--hover);
 }
 
-.name,
-.branch-name,
-.sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.name {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-.branch {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  /* 저장소 이름이 길어 줄어들어도 branch 아이콘(11px)은 남긴다. */
-  min-width: 11px;
-}
-
-.branch .nerd-icon {
-  flex: none;
-}
-
-.sub {
-  flex: none;
-  max-width: 50%;
-}
-
 .row {
   display: flex;
   align-items: center;
@@ -650,13 +612,8 @@ button {
 }
 
 .place {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
   flex: 0 1 auto;
-  min-width: 0;
   max-width: 60%;
-  font-size: var(--text-1);
 }
 
 .job-row {

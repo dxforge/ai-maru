@@ -1,7 +1,18 @@
 import { resolveObjectURL } from 'node:buffer'
 import { describe, expect, it } from 'vitest'
 import type { CanvasItem } from '../../../shared/canvas'
-import { clockTime, createCanvas, docKey, openCells, type Canvas, type OpenCell } from './store'
+import type { Layout } from '../../../shared/layout'
+import { programName, type ProgramStatusRecord } from '../../../shared/program-status'
+import {
+  clockTime,
+  createCanvas,
+  docKey,
+  groupChoices,
+  openCells,
+  type Canvas,
+  type CellChoice,
+  type OpenCell
+} from './store'
 
 const md = (id: string, text: string, title?: string): CanvasItem => ({
   id,
@@ -236,14 +247,17 @@ const owned = (id: string, cell?: string, text = id): CanvasItem => ({
 const shownTexts = (c: Canvas): [string | undefined, string][] =>
   c.shown.value.map((d) => [d.cell, d.kind === 'markdown' ? d.text : d.title])
 
-const named = (id: string, workspace: string, cell: string, branch?: string): OpenCell => ({
+const named = (id: string, workspace: string, title: string): OpenCell => ({
   id,
-  name: { workspace, cell: branch === undefined ? { name: cell } : { name: cell, branch } }
+  group: `w-${workspace}`,
+  name: { workspace, title, more: 0 }
 })
 
-const A = named('c-a', 'ws', 'app', 'main')
+const A = named('c-a', 'ws', 'app')
 const B = named('c-b', 'ws', 'core')
 const C = named('c-c', 'other', 'docs')
+
+const flat = (c: Canvas): CellChoice[] => c.choices.value.flatMap((g) => g.cells)
 
 const shownIds = (c: Canvas): string[] => c.shown.value.map((d) => d.id)
 
@@ -269,6 +283,17 @@ describe('cell 별 보기', () => {
     c.sync({ cells: [A, B], current: 'c-b' })
     expect(c.viewCell.value).toBe('c-b')
     expect(shownIds(c)).toEqual(['b'])
+  })
+
+  it('같은 이름의 cell 목록을 다시 받으면 고를 목록을 새로 만들지 않고, 이름이 바뀌면 새로 만든다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    const before = c.choices.value
+    c.sync({ cells: [{ ...A }, { ...B }], current: 'c-b' })
+    expect(c.choices.value).toBe(before)
+    expect(c.viewCell.value).toBe('c-b')
+    c.sync({ cells: [A, named('c-b', 'ws', 'renamed')], current: 'c-b' })
+    expect(flat(c).map((x) => x.name.title)).toEqual(['app', 'renamed'])
   })
 
   it('선택된 cell 이 없으면 현재 cell 보기에는 아무 문서도 없다', () => {
@@ -316,35 +341,42 @@ describe('cell 별 보기', () => {
     expect(c.docs.value.map((d) => d.id)).toEqual(['b'])
   })
 
-  it('고를 cell 은 열린 cell 을 받은 순서대로 모두 두고, 그 뒤에 문서가 남은 닫힌 cell 을 둔다', () => {
+  it('고를 cell 은 workspace 로 묶어 열린 cell 을 모두 두고, 그 뒤에 문서가 남은 닫힌 cell 을 둔다', () => {
     const c = createCanvas()
     c.sync({ cells: [A, B, C], current: 'c-a' })
     c.put(owned('b', 'c-b'))
     c.put(owned('c', 'c-c'))
     c.sync({ cells: [A], current: 'c-a' })
     expect(c.choices.value).toEqual([
-      { ...A, closed: false },
-      { ...B, closed: true },
-      { ...C, closed: true }
+      {
+        id: 'w-ws',
+        workspace: 'ws',
+        cells: [
+          { ...A, closed: false },
+          { ...B, closed: true }
+        ]
+      },
+      { id: 'w-other', workspace: 'other', cells: [{ ...C, closed: true }] }
     ])
     c.remove(k('b', 'c-b'))
-    expect(c.choices.value.map((x) => x.id)).toEqual(['c-a', 'c-c'])
+    expect(flat(c).map((x) => x.id)).toEqual(['c-a', 'c-c'])
   })
 
   it('닫힌 cell 은 닫히기 직전의 이름을 쓰고, 다시 열리면 닫힌 cell 이 아니다', () => {
     const c = createCanvas()
     c.sync({ cells: [A, B], current: 'c-a' })
     c.put(owned('b', 'c-b'))
-    const moved = named('c-b', 'other', 'core', 'fix')
+    const moved = named('c-b', 'other', 'fix')
     c.sync({ cells: [A, moved], current: 'c-a' })
     c.sync({ cells: [A], current: 'c-a' })
     expect(c.nameOf('c-b')).toEqual(moved.name)
-    expect(c.choices.value.find((x) => x.id === 'c-b')).toEqual({ ...moved, closed: true })
+    expect(c.choices.value.map((g) => g.workspace)).toEqual(['ws', 'other'])
+    expect(flat(c).find((x) => x.id === 'c-b')).toEqual({ ...moved, closed: true })
     expect(c.isClosed('c-b')).toBe(true)
     expect(c.isClosed('c-a')).toBe(false)
     c.sync({ cells: [A, B], current: 'c-a' })
     expect(c.nameOf('c-b')).toEqual(B.name)
-    expect(c.choices.value.filter((x) => x.closed)).toEqual([])
+    expect(flat(c).filter((x) => x.closed)).toEqual([])
     expect(c.isClosed('c-b')).toBe(false)
   })
 
@@ -364,12 +396,12 @@ describe('cell 별 보기', () => {
     c.sync({ cells: [A], current: 'c-a' })
     c.choose({ cell: 'c-b' })
     c.remove(k('b', 'c-b'))
-    expect(c.choices.value).toEqual([
+    expect(flat(c)).toEqual([
       { ...A, closed: false },
       { ...B, closed: true }
     ])
     c.choose('all')
-    expect(c.choices.value.map((x) => x.id)).toEqual(['c-a'])
+    expect(flat(c).map((x) => x.id)).toEqual(['c-a'])
   })
 
   it('모두 펼치기·모두 접기는 지금 보기의 문서에만 미친다', () => {
@@ -465,33 +497,169 @@ describe('cell 별 보기', () => {
 })
 
 describe('openCells', () => {
-  it('workspace 순서, 그 안의 cell 순서로 workspace 이름과 cell 의 포커스된 pane 이름을 붙인다', () => {
-    const home = '/Users/me'
-    const pane = (key: number, cwd: string, git?: { repo: string; branch: string }) => ({
-      key,
-      cwd,
-      ...(git && { git: { ...git, common: `${cwd}/.git` } })
-    })
+  const home = '/Users/me'
+  type Head = { repo: string; branch?: string; sub?: string }
+  const pane = (
+    key: number,
+    cwd: string | undefined,
+    more: { git?: Head; title?: string } = {}
+  ) => ({
+    key,
+    ptyId: `p-${key}`,
+    ...(cwd !== undefined && { cwd }),
+    ...(more.title !== undefined && { title: more.title }),
+    ...(more.git && { git: { ...more.git, common: `/r/${more.git.repo}/.git` } })
+  })
+  const cell = <P extends { key: number }>(id: string, panes: P[], layout?: Layout) => ({
+    id,
+    panes,
+    layout:
+      layout ??
+      panes
+        .slice(1)
+        .reduce<Layout>((first, p) => ({ split: 'right', first, second: { pane: p.key } }), {
+          pane: panes[0].key
+        })
+  })
+  const src = (records: Record<string, string> = {}, commands: Record<string, string> = {}) => ({
+    shown: (pty?: string) =>
+      pty && records[pty] ? ({ app: records[pty] } as ProgramStatusRecord) : undefined,
+    command: (pty?: string) =>
+      pty && commands[pty] ? { running: true as const, text: commands[pty] } : undefined,
+    home,
+    shell: '/bin/zsh'
+  })
+
+  it('workspace 순서, 그 안의 cell 순서로 workspace 이름과 첫 pane 의 사이드바 줄 이름·위치를 붙인다', () => {
+    const app = { repo: 'app', branch: 'main' }
     const cells = openCells(
       [
         {
+          id: 'w-1',
           cells: [
-            {
-              id: 'c-1',
-              focused: 2,
-              panes: [pane(1, home), pane(2, '/r/app', { repo: 'app', branch: 'main' })]
-            },
-            { id: 'c-2', focused: 3, panes: [pane(3, '/tmp/x')] }
+            cell('c-1', [pane(1, '/r/app', { git: app, title: 'Fix the menu' })]),
+            cell('c-2', [pane(2, '/r/app/wt', { git: { ...app, branch: 'fix' } }), pane(3, home)]),
+            cell('c-3', [pane(4, '/r/core', { git: { repo: 'core', branch: 'main' } })])
           ]
         },
-        { name: 'Named', cells: [{ id: 'c-3', focused: 4, panes: [pane(4, '/r/core')] }] }
+        { id: 'w-2', cells: [cell('c-4', [pane(5, home), pane(6, '/tmp'), pane(7, '/')])] }
       ],
-      home
+      src()
     )
     expect(cells).toEqual([
-      { id: 'c-1', name: { workspace: '~', cell: { name: 'app', branch: 'main' } } },
-      { id: 'c-2', name: { workspace: '~', cell: { name: 'x' } } },
-      { id: 'c-3', name: { workspace: 'Named', cell: { name: 'core' } } }
+      {
+        id: 'c-1',
+        group: 'w-1',
+        name: { workspace: 'app', title: 'Fix the menu', more: 0, place: { branch: 'main' } }
+      },
+      {
+        id: 'c-2',
+        group: 'w-1',
+        name: { workspace: 'app', title: 'zsh', more: 1, place: { branch: 'fix' } }
+      },
+      {
+        id: 'c-3',
+        group: 'w-1',
+        name: { workspace: 'app', title: 'zsh', more: 0, place: { name: 'core', branch: 'main' } }
+      },
+      {
+        id: 'c-4',
+        group: 'w-2',
+        name: { workspace: '~', title: 'zsh', more: 2, place: { name: '~' } }
+      }
+    ])
+  })
+
+  it('포커스된 pane 이 아니라 첫 pane 을 쓰고, 이름은 사이드바처럼 프로그램·명령을 따른다', () => {
+    const cells = openCells(
+      [
+        {
+          id: 'w-1',
+          cells: [
+            cell('c-1', [pane(1, '/tmp/a'), pane(2, '/tmp/b')]),
+            cell('c-2', [pane(3, '/tmp/c')])
+          ]
+        }
+      ],
+      src({ 'p-1': 'claude' }, { 'p-3': 'pnpm dev' })
+    )
+    expect(cells.map((c) => [c.name.title, c.name.place])).toEqual([
+      [programName('claude'), { name: 'a' }],
+      ['pnpm dev', { name: 'c' }]
+    ])
+  })
+
+  it('먼저 연 pane 이 아니라 화면에 놓인 순서로 첫 pane 을 쓴다', () => {
+    const cells = openCells(
+      [
+        {
+          id: 'w-1',
+          cells: [
+            cell('c-1', [pane(1, '/tmp/a'), pane(2, '/tmp/b')], {
+              split: 'right',
+              first: { pane: 2 },
+              second: { pane: 1 }
+            })
+          ]
+        }
+      ],
+      src()
+    )
+    expect(cells.map((c) => [c.name.place, c.name.more])).toEqual([[{ name: 'b' }, 1]])
+  })
+
+  it('이름을 바꾼 workspace 는 위치에 저장소 이름을 다 적고, cwd 를 모르는 pane 은 위치가 없다', () => {
+    const cells = openCells(
+      [
+        {
+          id: 'w-1',
+          name: 'Named',
+          cells: [
+            cell('c-1', [pane(1, '/r/app', { git: { repo: 'app', branch: 'main' } })]),
+            cell('c-2', [pane(2, undefined)])
+          ]
+        }
+      ],
+      src()
+    )
+    expect(cells.map((c) => c.name)).toEqual([
+      { workspace: 'Named', title: 'zsh', more: 0, place: { name: 'app', branch: 'main' } },
+      { workspace: 'Named', title: 'zsh', more: 0 }
+    ])
+  })
+})
+
+describe('groupChoices', () => {
+  const choice = (id: string, group: string, closed: boolean, workspace = group): CellChoice => ({
+    id,
+    group,
+    name: { workspace, title: id, more: 0 },
+    closed
+  })
+
+  it('받은 순서로 workspace 를 묶고, 닫힌 cell 은 그 workspace 의 열린 cell 뒤에 둔다', () => {
+    const groups = groupChoices([
+      choice('a1', 'a', false),
+      choice('b1', 'b', false),
+      choice('a2', 'a', false),
+      choice('a3', 'a', true, 'old name'),
+      choice('b2', 'b', true)
+    ])
+    expect(groups.map((g) => [g.workspace, g.cells.map((c) => c.id)])).toEqual([
+      ['a', ['a1', 'a2', 'a3']],
+      ['b', ['b1', 'b2']]
+    ])
+  })
+
+  it('없어진 workspace 의 닫힌 cell 은 남긴 이름으로 묶음을 만들어 뒤에 둔다', () => {
+    const groups = groupChoices([
+      choice('x1', 'x', true, 'gone'),
+      choice('a1', 'a', false),
+      choice('x2', 'x', true, 'gone')
+    ])
+    expect(groups.map((g) => [g.id, g.workspace, g.cells.map((c) => c.id)])).toEqual([
+      ['a', 'a', ['a1']],
+      ['x', 'gone', ['x1', 'x2']]
     ])
   })
 })
