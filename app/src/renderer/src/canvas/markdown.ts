@@ -12,12 +12,56 @@ const marked = new Marked({
   }
 })
 
+// 문서 안의 HTML 은 아래 목록의 태그·속성만 남긴다. 빼야 할 것이 앱 CSS 가 걸리는 class 말고도 브라우저가
+// 패널 밖 창 위에 띄우는 `popover` 속성·`dialog` 태그까지 여러 갈래라, 나열하면 하나를 빠뜨리기 쉽기 때문이다.
+const ALLOWED_TAGS = [
+  // `marked` 가 markdown 에서 만드는 태그
+  ...['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'br'],
+  ...['ul', 'ol', 'li', 'input', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+  ...['a', 'em', 'strong', 'del'],
+  // markdown 에 없어 HTML 로 적는 글자 꾸밈·접기
+  ...['kbd', 'sub', 'sup', 'mark', 's', 'ins', 'b', 'i', 'details', 'summary']
+]
+// `type`·`checked`·`disabled` 는 작업 목록의 checkbox, `align` 은 표 정렬, `start` 는 번호 목록의 시작 번호다.
+// `href` 의 `javascript:` 같은 주소는 DOMPurify 의 기본 URI 검사가 지운다.
+const ALLOWED_ATTR = [
+  'href',
+  'title',
+  'class',
+  'align',
+  'start',
+  'type',
+  'checked',
+  'disabled',
+  'open'
+]
+
+let purify: typeof DOMPurify | undefined
+
+// 처음 그릴 때 만든다. DOM 이 없는 환경(`store.ts` 를 읽는 node 테스트)에서는 hook 을 달 수 없기 때문이다.
+function sanitizer(): typeof DOMPurify {
+  if (purify) return purify
+  purify = DOMPurify()
+  // `class` 는 코드 블록의 `language-*` 만 남긴다. 앱의 class 를 붙이면 앱 CSS 가 걸리기 때문이다.
+  purify.addHook('uponSanitizeAttribute', (node, data) => {
+    if (data.attrName !== 'class') return
+    data.keepAttr = node.nodeName === 'CODE' && /^language-\S+$/.test(data.attrValue)
+  })
+  // `input` 은 작업 목록(`- [ ]`)이 만드는 비활성 checkbox 만 남긴다.
+  purify.addHook('uponSanitizeElement', (node, data) => {
+    if (data.tagName !== 'input') return
+    const el = node as Element
+    if (el.getAttribute('type') !== 'checkbox' || !el.hasAttribute('disabled')) el.remove()
+  })
+  return purify
+}
+
 export function renderMarkdown(text: string): string {
-  // 패널 안의 HTML 이지만 스타일은 문서 전체에 걸려 터미널을 가리거나 덮을 수 있다.
-  // dialog·popover 는 패널이 아니라 창을 기준으로 떠서 터미널 위에 겹친다.
-  return DOMPurify.sanitize(marked.parse(text, { async: false }), {
-    FORBID_TAGS: ['style', 'img', 'dialog'],
-    FORBID_ATTR: ['style', 'popover', 'popovertarget']
+  return sanitizer().sanitize(marked.parse(text, { async: false }), {
+    ALLOWED_TAGS,
+    ALLOWED_ATTR,
+    ALLOW_DATA_ATTR: false,
+    ALLOW_ARIA_ATTR: false
   })
 }
 
