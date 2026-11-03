@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Favorite, LauncherState } from '../../../shared/launcher'
-import { createFavorites, favoriteToggle, pinToggle } from './favorites'
+import { createFavorites, favoriteToggle, pinsOnLink, pinToggle } from './favorites'
 
 const app: Favorite = { id: 'f-1', dir: '/work/app', name: 'app' }
 
@@ -178,5 +178,22 @@ describe('pinToggle', () => {
 
   it('꽂을 디렉토리를 모르면 unknown 이다', () => {
     expect(pinToggle(pinned, undefined, undefined)).toEqual({ kind: 'unknown' })
+  })
+})
+
+describe('pinsOnLink', () => {
+  const cell = (key: number, cwd?: string, pin?: string) => ({ key, pin, panes: [{ cwd }] })
+
+  it('핀마다 첫 pane 이 그 디렉토리에 있는 첫 cell 이 맡고, 순서는 pins 의 순서다', () => {
+    const cells = [cell(1, '/p'), cell(2, '/p/api/'), cell(3, '/p/api'), cell(4, '/p/web')]
+    expect(pinsOnLink(['/p/web', '/p/api'], cells)).toEqual([
+      { cell: 4, dir: '/p/web' },
+      { cell: 2, dir: '/p/api' }
+    ])
+  })
+
+  it('맞는 cell 이 없거나, 이미 핀을 맡았거나, 디렉토리를 모르는 cell 은 맡지 않는다', () => {
+    const cells = [cell(1, '/p/api', '/q'), cell(2, undefined), cell(3, '/p')]
+    expect(pinsOnLink(['/p/api', '/r'], cells)).toEqual([])
   })
 })

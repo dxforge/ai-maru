@@ -56,11 +56,12 @@ function cellDrop(
   const w = ws[i]
   if (!w) return undefined
   const folded = w.cells.length === 0
-  const index = folded ? w.count : y < w.head.bottom ? 0 : before(w.cells, y)
   const same = w.key === d.workspace
-  if (same && (index === d.index || index === d.index + 1)) return undefined
   // 핀 묶음과 핀이 없는 묶음을 넘어 놓지 않는다. 다른 workspace 로 옮긴 cell 은 핀을 놓으므로 핀이 없는 묶음에만 놓인다.
   const pinned = same && d.index < w.pinned
+  const head = pinned ? 0 : w.pinned
+  const index = folded ? w.count : y < w.head.bottom ? head : before(w.cells, y)
+  if (same && (index === d.index || index === d.index + 1)) return undefined
   if (pinned ? index > w.pinned : index < w.pinned) return undefined
   return {
     drop: { kind: 'cell', workspace: w.key, index },

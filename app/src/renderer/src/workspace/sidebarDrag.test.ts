@@ -160,6 +160,19 @@ describe('dropAt — 핀', () => {
     expect(dropAt(from, spans, 220)?.drop).toEqual({ kind: 'cell', workspace: 2, index: 1 })
   })
 
+  it('핀이 있는 workspace 의 이름 줄 위면 그 cell 이 놓일 수 있는 묶음의 맨 앞이다', () => {
+    expect(dropAt(cell(1, 1), spans, 160)).toEqual({
+      drop: { kind: 'cell', workspace: 2, index: 1 },
+      line: 207
+    })
+    expect(dropAt(cell(2, 1), spans, 10)).toEqual({
+      drop: { kind: 'cell', workspace: 1, index: 1 },
+      line: 99
+    })
+    expect(dropAt(cell(1, 0, 7), spans, 10)).toBeUndefined()
+    expect(dropAt(cell(2, 1), spans, 160)).toBeUndefined()
+  })
+
   it('핀 묶음 안에서는 옮기고, 핀 묶음 끝의 선은 닫힌 핀 줄 위에 긋는다', () => {
     const two: SidebarSpans = {
       workspaces: [

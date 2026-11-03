@@ -35,7 +35,7 @@ import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
 import { commandArgv } from './config/launcher'
 import { favoriteById, samePath, SHELL } from '../../shared/launcher'
-import { createFavorites, pinToggle } from './launcher/favorites'
+import { createFavorites, pinsOnLink, pinToggle } from './launcher/favorites'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { activeTheme, windowTheme } from './themes'
@@ -439,6 +439,10 @@ function toggleFavorite(key: number): string | undefined {
   if (action.kind === 'forget') return undefined
   const id = action.kind === 'link' ? action.id : action.favorite.id
   workspaces.setFavorite(key, id)
+  if (action.kind === 'link') {
+    const pins = favoriteById(favorites.list.value, id)?.pins ?? []
+    for (const p of pinsOnLink(pins, w.cells)) workspaces.pinCell(p.cell, p.dir)
+  }
   return id
 }
 

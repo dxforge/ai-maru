@@ -87,6 +87,28 @@ export function pinToggle(
   return cwd === undefined ? { kind: 'unknown' } : { kind: 'pin', dir: cwd }
 }
 
+type PinnableCell = { key: number; pin?: string; panes: readonly { cwd?: string }[] }
+
+/**
+ * 핀이 있는 즐겨찾기 항목에 workspace 를 이을 때, 핀마다 아직 핀을 맡지 않은 cell 가운데 첫 pane 이 그 디렉토리에 있는
+ * 첫 cell 이 그 핀을 맡는다. 같은 디렉토리가 열린 cell 과 닫힌 핀 줄로 두 번 보이지 않게 하기 위해서다.
+ */
+export function pinsOnLink(
+  pins: readonly string[],
+  cells: readonly PinnableCell[]
+): { cell: number; dir: string }[] {
+  const taken = new Set<number>()
+  return pins.flatMap((dir) => {
+    const c = cells.find((x) => {
+      const cwd = x.panes[0]?.cwd
+      return x.pin === undefined && !taken.has(x.key) && cwd !== undefined && samePath(cwd, dir)
+    })
+    if (!c) return []
+    taken.add(c.key)
+    return [{ cell: c.key, dir }]
+  })
+}
+
 type ToggledWorkspace = { dir: string | undefined; name: string; favorite?: string }
 type Loading = { kind: 'loading' }
 
