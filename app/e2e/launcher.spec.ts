@@ -7,6 +7,7 @@ import {
   activeTerminal,
   cellGroups,
   cellItems,
+  cellPin,
   cellViews,
   clickMenu,
   dialogCalls,
@@ -846,7 +847,7 @@ test('런처에서 ⇧⌘⌫ 로 즐겨찾기를 빼면 Favorites 묶음이 없�
   await expect(workspaceNames(page).nth(1)).toHaveText('atlas')
   await expect(star(page, 1)).toHaveClass(/\bon\b/)
   await expect(star(page, 0)).not.toHaveClass(/\bon\b/)
-  const pin = cellItems(page).nth(1).locator('.pin')
+  const pin = cellPin(page, 1)
   await expect(pin).toHaveAttribute('aria-pressed', 'true')
 
   await openLauncher(launched)

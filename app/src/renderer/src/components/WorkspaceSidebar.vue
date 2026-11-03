@@ -359,16 +359,16 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
               <span class="state nerd-icon">{{ ICONS.terminal }}</span>
               <span class="title">{{ item.name }}</span>
               <span class="tail">{{ item.path }}</span>
-              <span class="pin-slot on"
-                ><span
-                  v-tooltip="pinLabel(true)"
-                  role="button"
-                  class="pin on"
-                  :aria-label="`Unpin ${item.name}`"
-                  aria-pressed="true"
-                  @click.stop="emit('unpin', w.key, item.dir)"
-                  ><PinIcon :filled="true" /></span
-              ></span>
+            </button>
+            <button
+              v-tooltip="pinLabel(true)"
+              class="pin on"
+              :aria-label="`Unpin ${item.name}`"
+              aria-pressed="true"
+              @mousedown.prevent
+              @click="emit('unpin', w.key, item.dir)"
+            >
+              <PinIcon :filled="true" />
             </button>
           </div>
           <div
@@ -383,7 +383,7 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
               @pointerdown="grabCell($event, w.key, item.c.key, item.index)"
             />
             <button
-              v-for="(r, ri) in item.rows"
+              v-for="r in item.rows"
               :key="r.pane"
               v-tooltip="paneTip(r)"
               class="row pane-row"
@@ -411,18 +411,6 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
               <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
                 commandTail(r.command, now)
               }}</span>
-              <!-- pane 줄이 button 이라 그 안에 button 을 넣지 못한다. 핀의 click 이 pane 선택으로 전해지지 않게 막는다. -->
-              <span v-if="ri === 0" class="pin-slot" :class="{ on: item.pinned }"
-                ><span
-                  v-tooltip="pinLabel(item.pinned)"
-                  role="button"
-                  class="pin"
-                  :class="{ on: item.pinned }"
-                  :aria-label="pinLabel(item.pinned)"
-                  :aria-pressed="item.pinned"
-                  @click.stop="emit('togglePin', item.c.key)"
-                  ><PinIcon :filled="item.pinned" /></span
-              ></span>
             </button>
             <div
               v-for="j in jobsByCell.get(item.c.id)"
@@ -445,6 +433,17 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
                 {{ ICONS.close }}
               </button>
             </div>
+            <button
+              v-tooltip="pinLabel(item.pinned)"
+              class="pin"
+              :class="{ on: item.pinned }"
+              :aria-label="pinLabel(item.pinned)"
+              :aria-pressed="item.pinned"
+              @mousedown.prevent
+              @click="emit('togglePin', item.c.key)"
+            >
+              <PinIcon :filled="item.pinned" />
+            </button>
           </div>
         </template>
       </div>
@@ -541,41 +540,27 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
   text-transform: uppercase;
 }
 
-.favorite-slot,
-.pin-slot {
+.favorite-slot {
   flex: none;
   align-self: stretch;
   display: flex;
   align-items: center;
 }
 
-.favorite-slot {
-  --slot-gap: var(--space-4);
-}
-
-.pin-slot {
-  --slot-gap: var(--space-2);
-}
-
 /* 즐겨찾기가 아닌 workspace 의 별은 hover·focus 때만 보이므로 이름 폭을 줄이지 않는다. 접은 사이드바에서 이름이 별 폭만큼
    더 잘리지 않게 하기 위해서다. 별의 자리는 이름보다 먼저 0 까지 준다. 자리가 줄면 별은 자리의 오른쪽 끝에 붙은 채 왼쪽으로
    넘쳐 이름 끝 글자를 가린다. 이름 뒤에 빈 폭이 있으면 별은 이름 뒤에 선다. 자리의 왼쪽 margin 은 헤더의 gap 을 빼고, 별의
    왼쪽 margin 이 그 gap 을 별 앞에 다시 둔다. */
-.favorite-slot:not(.on),
-.pin-slot:not(.on) {
+.favorite-slot:not(.on) {
   flex: 0 1000 auto;
   min-width: 0;
   justify-content: flex-end;
-  margin-left: calc(-1 * var(--slot-gap));
-}
-
-.favorite-slot:not(.on) .favorite,
-.pin-slot:not(.on) .pin {
-  flex: none;
-  margin-left: var(--slot-gap);
+  margin-left: calc(-1 * var(--space-4));
 }
 
 .favorite-slot:not(.on) .favorite {
+  flex: none;
+  margin-left: var(--space-4);
   background-color: var(--side);
 }
 
@@ -619,25 +604,43 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
   margin-bottom: 0;
 }
 
+/* 핀이 박스 모서리 밖으로 나오므로 박스는 넘친 것을 자르지 않고, 줄의 바탕색은 박스의 첫 줄과 마지막 줄의 모서리를 깎아
+   박스 안에 둔다. */
 .group,
 .pin-card {
   position: relative;
   margin: 0 var(--space-3) var(--space-3);
   border-radius: var(--radius-2);
-  overflow: hidden;
+}
+
+.grip + .row,
+.closed-pin {
+  border-top-left-radius: var(--radius-2);
+  border-top-right-radius: var(--radius-2);
+}
+
+.group > .row:nth-last-child(2),
+.closed-pin {
+  border-bottom-left-radius: var(--radius-2);
+  border-bottom-right-radius: var(--radius-2);
 }
 
 .group {
-  --tint: color-mix(in srgb, var(--fg) 4%, transparent);
-  background: var(--tint);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
 
 .group.selected {
-  --tint: color-mix(in srgb, var(--fg) 8%, transparent);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
 .closed-pin {
   color: var(--faint);
+}
+
+/* 테두리 대신 안쪽으로 그은 outline 이라 박스 높이가 열린 cell 과 같다. */
+.pin-card {
+  outline: 1px dashed color-mix(in srgb, var(--fg) 18%, transparent);
+  outline-offset: -1px;
 }
 
 .closed-pin:hover {
@@ -653,27 +656,24 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
   font-size: var(--text-1);
 }
 
-/* 핀이 없는 cell 의 핀도 별과 같이 이름 폭을 줄이지 않고, 자리가 모자라면 이름 끝 위에 겹친다. 겹친 핀은 줄의 바탕색을
-   겹겹이 다시 칠해 이름을 가린다. */
-.pin-slot:not(.on) .pin {
-  background:
-    linear-gradient(var(--row, transparent), var(--row, transparent)),
-    linear-gradient(var(--tint), var(--tint)), var(--side);
-}
-
+/* 압정처럼 박스의 오른쪽 위 모서리에 비스듬히 꽂는다. 줄 폭을 쓰지 않아 이름이 핀 때문에 더 잘리지 않는다. */
 .pin {
-  visibility: hidden;
+  position: absolute;
+  top: -7px;
+  right: -5px;
+  z-index: 2;
   display: grid;
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: var(--radius-1);
   color: var(--faint);
+  visibility: hidden;
 }
 
 .pin svg {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
+  transform: rotate(35deg);
 }
 
 .pin.on {
@@ -681,13 +681,12 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
 }
 
 .pin.on,
-.pane-row:hover .pin,
-.pane-row:focus-visible .pin {
+.group:hover .pin {
   visibility: visible;
 }
 
-.pin:hover {
-  box-shadow: inset 0 0 0 9px var(--hover);
+.pin:not(.on):hover {
+  color: var(--fg);
 }
 
 button {
@@ -708,8 +707,7 @@ button {
 /* 손잡이는 첫 행 위에 겹친 형제 요소라, 마우스가 손잡이 위에 있으면 첫 행은 :hover 를 잃는다. */
 .pane-row:hover,
 .group:not(.dragging) > .grip:hover + .pane-row:not(.focused) {
-  --row: var(--hover);
-  background: var(--row);
+  background: var(--hover);
 }
 
 .name,
@@ -793,8 +791,7 @@ button {
 }
 
 .pane-row.focused {
-  --row: var(--selected);
-  background: var(--row);
+  background: var(--selected);
 }
 
 .pane-row.focused .title {
