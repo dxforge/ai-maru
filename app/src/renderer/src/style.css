@@ -63,6 +63,34 @@
   transition: opacity 0.15s;
 }
 
+/* popover 기본 스타일의 가운데 정렬(`inset`·`margin`)을 풀어, `tooltip.ts` 가 정한 `left`·`top` 에 놓는다. */
+.tooltip {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  margin: 0;
+  overflow: visible;
+  max-width: 360px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+  background: var(--raised);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+  color: var(--fg);
+  font:
+    var(--text-2) / 1.4 var(--font-ui),
+    sans-serif;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  user-select: none;
+}
+
+.tooltip kbd {
+  margin-left: var(--space-5);
+  white-space: nowrap;
+}
+
 html,
 body,
 #app {
@@ -248,7 +276,8 @@ body,
   background: var(--selected);
 }
 
-.palette kbd {
+.palette kbd,
+.tooltip kbd {
   font: inherit;
   color: var(--muted);
 }

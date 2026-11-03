@@ -256,9 +256,9 @@ const workspaceDragged = (workspace: number): boolean =>
         </div>
         <button
           v-else
+          v-tooltip="auto"
           class="workspace-head"
           :class="{ folded: wf }"
-          :title="auto"
           :aria-label="wf ? `Expand ${name}` : `Collapse ${name}`"
           :aria-expanded="!wf"
           @mousedown.prevent
@@ -268,9 +268,9 @@ const workspaceDragged = (workspace: number): boolean =>
         >
           <span
             v-if="state"
+            v-tooltip="STATE_LABELS[state]"
             class="state status-icon"
             :class="[state, { unread: notified }]"
-            :title="STATE_LABELS[state]"
             ><StatusIcon :state="state"
           /></span>
           <span class="workspace-name">{{ name }}</span>
@@ -292,17 +292,17 @@ const workspaceDragged = (workspace: number): boolean =>
           <button
             v-for="r in rows"
             :key="r.pane"
+            v-tooltip="paneTip(r)"
             class="row pane-row"
             :class="[r.state ?? ['shell', commandClass(r.command)], { focused: r.focused }]"
-            :title="paneTip(r)"
             :aria-label="r.aria"
             @mousedown.prevent
             @click="emit('focus', c.key, r.pane)"
           >
             <span
+              v-tooltip="r.state && STATE_LABELS[r.state]"
               class="state status-icon"
               :class="{ 'nerd-icon': !('state' in r.icon), unread: r.notice }"
-              :title="r.state && STATE_LABELS[r.state]"
               ><StatusIcon v-if="'state' in r.icon" :state="r.icon.state" /><template v-else>{{
                 'agent' in r.icon ? r.icon.agent : r.icon.glyph
               }}</template></span
@@ -322,18 +322,18 @@ const workspaceDragged = (workspace: number): boolean =>
           <div
             v-for="j in jobsByCell.get(c.id)"
             :key="j.pty"
+            v-tooltip="j.tip"
             class="row job-row"
             :class="{ exited: j.exited }"
-            :title="j.tip"
           >
             <span class="state nerd-icon">{{ ICONS.gear }}</span>
             <span class="title">{{ j.text }}</span>
             <span v-if="j.ports" class="tail ports">{{ j.ports }}</span>
             <span class="tail time">{{ jobTime(j) }}</span>
             <button
+              v-tooltip="j.exited ? 'Remove' : 'Stop'"
               class="tail kill nerd-icon"
               :aria-label="j.exited ? `Remove ${j.text}` : `Stop ${j.text}`"
-              :title="j.exited ? 'Remove' : 'Stop'"
               @mousedown.prevent
               @click="emit('killJob', j.pty)"
             >

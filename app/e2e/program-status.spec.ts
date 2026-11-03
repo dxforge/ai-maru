@@ -97,8 +97,11 @@ test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상�
   await page.keyboard.type(status('working'))
   await expect(paneRows(page)).toHaveClass(/working/)
   await expect(paneRows(page).locator('.title')).toHaveText('Claude')
-  await expect(paneRows(page).locator('.state')).toHaveAttribute('title', 'Working')
-  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Working')
+  await expect(paneRows(page).locator('.state')).toHaveAttribute('data-tooltip', 'Working')
+  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute(
+    'data-tooltip',
+    'Working'
+  )
   await expect(activeHeader(page)).toHaveClass(/working/)
   await page.keyboard.type("printf '\\e]0;task-%s\\a' $((6*7))\n")
   await expect(paneRows(page).locator('.title')).toHaveText('task-42')
@@ -110,7 +113,7 @@ test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상�
   await expect(activeHeader(page)).toHaveClass(/blocked/)
   await page.keyboard.type(status('done'))
   await expect(paneRows(page)).toHaveClass(/done/)
-  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Done')
+  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('data-tooltip', 'Done')
   await page.keyboard.type(status('idle'))
   await expect(paneRows(page)).toHaveClass(/idle/)
   await expect(activeHeader(page)).toHaveClass(/idle/)
@@ -161,7 +164,10 @@ test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아�
   await expect(paneRows(page).locator('.title')).toHaveText('make')
   await expect(paneRows(page)).toHaveAttribute('aria-label', /^Working: make, /)
   await expect(activeHeader(page).locator('.title')).toHaveText('make')
-  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute('title', 'Working')
+  await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute(
+    'data-tooltip',
+    'Working'
+  )
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
 })
 
