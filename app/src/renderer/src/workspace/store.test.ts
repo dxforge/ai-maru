@@ -62,11 +62,10 @@ function full(saved: WorkspacesScreen): [WorkspacesScreen, Record<number, string
   return [saved, ptys]
 }
 
-/** 재시작 전 pane 은 모두 pty 를 띄운 것으로 둔다 — 되살린 store 는 cwd 가 없는 pane 에 시작 디렉토리를 화면 cwd 로 단다. */
+/** 재시작 전 pane 은 모두 pty 를 띄운 것으로 둔다. */
 function restarted(from: Workspaces): Workspaces {
   for (const c of from.cells())
-    for (const p of c.panes)
-      if (p.cwd === undefined) from.setSpawnedCwd(p.key, p.startDir ?? '/home')
+    for (const p of c.panes) if (p.cwd === undefined) from.setSpawnedDir(p.key, '/home')
   const to = createWorkspaces()
   to.restore(...full(from.snapshot()))
   return to
@@ -123,7 +122,8 @@ describe('snapshot·restore', () => {
       expect(p.attach).toBeUndefined()
       expect(p.command).toBeUndefined()
       expect(p.keep).toBeUndefined()
-      expect(p.startDir).toBe(before[i].cwd ?? before[i].startDir)
+      expect(p.startDir).toBe(before[i].cwd)
+      expect(p.cwd).toBe(before[i].cwd)
     }
     const vim = before.find((p) => p.title === 'vim')!
     expect(after.find((p) => p.key === vim.key)!.title).toBeUndefined()
@@ -134,7 +134,7 @@ describe('snapshot·restore', () => {
   it('pty 가 없어 새 셸을 띄운 pane 은 명령·keep·제목을 버리고 되살린 cwd 를 시작 디렉토리로 삼는다', () => {
     const from = createWorkspaces()
     from.open('/start', { command: ['claude'], keep: true })
-    from.setSpawnedCwd(selected(from).panes[0].key, '/saved')
+    from.setSpawnedDir(selected(from).panes[0].key, '/saved')
     const to = createWorkspaces()
     to.restore(...full(from.snapshot()))
     const key = selected(to).panes[0].key
@@ -147,19 +147,20 @@ describe('snapshot·restore', () => {
 
   it('되살린 pane 은 pty 에 붙고, 스냅샷에는 붙기와 화면 cwd 의 재료를 싣지 않는다', () => {
     const to = restarted(arranged())
-    to.setSpawnedCwd(to.cells()[0].panes[0].key, '/spawned')
+    to.setSpawnedDir(to.cells()[0].panes[0].key, '/spawned')
     expect(to.cells().flatMap((w) => w.panes.map((p) => p.attach))).toEqual([true, true, true])
     for (const w of to.snapshot().workspaces)
       for (const c of w.cells)
         for (const p of c.panes)
-          for (const k of ['attach', 'restoredCwd', 'spawnedCwd'])
+          for (const k of ['attach', 'restoredTitle', 'startDir'])
             expect(Object.keys(p)).not.toContain(k)
+    expect(to.snapshot().workspaces[0].cells[0].panes[0].cwd).toBe('/spawned')
   })
 
   it('스냅샷은 git 을 싣고, 되살린 store 는 저장한 cwd 의 git 을 다시 읽는다', async () => {
     const from = createWorkspaces(async () => ({ repo: 'r', branch: 'old' }))
     from.open('/r')
-    from.setSpawnedCwd(selected(from).panes[0].key, '/r')
+    from.setSpawnedDir(selected(from).panes[0].key, '/r')
     await new Promise((resolve) => setTimeout(resolve))
     const saved = from.snapshot()
     expect(saved.workspaces[0].cells[0].panes[0].git).toEqual({ repo: 'r', branch: 'old' })
@@ -387,17 +388,17 @@ describe('workspaces', () => {
     expect(ws.selected()).toBeUndefined()
   })
 
-  it('화면 cwd 는 foreground cwd, 셸 cwd, 띄운 디렉토리, 시작 디렉토리 순서로 고르고, 상태가 바뀌기 전에는 비어 있다', () => {
+  it('화면 cwd 는 foreground cwd, 셸 cwd, 셸이 뜬 디렉토리 순서로 고르고, 만들 때부터 요청한 디렉토리다', () => {
     const src = source()
     const ws = createWorkspaces(undefined, src)
     ws.open('/a')
     const pane = () => firstPanes(ws)[0]
     expect(pane().startDir).toBe('/a')
-    expect(pane().cwd).toBeUndefined()
+    expect(pane().cwd).toBe('/a')
     src.set(ws, pane().ptyId, {})
     expect(pane().cwd).toBe('/a')
-    ws.setSpawnedCwd(pane().key, '/home')
-    expect(pane().cwd).toBe('/home')
+    ws.setSpawnedDir(pane().key, '/home')
+    expect([pane().startDir, pane().cwd]).toEqual(['/home', '/home'])
     src.set(ws, pane().ptyId, { cwd: '/shell', cwdReports: 1 })
     expect(pane().cwd).toBe('/shell')
     src.set(ws, pane().ptyId, { foregroundCwd: '/fg' })
@@ -406,23 +407,27 @@ describe('workspaces', () => {
     expect(pane().cwd).toBe('/home')
   })
 
-  it('되살린 pane 은 상태가 오기 전과 셸 cwd 가 없을 때 되살린 cwd 를 띄운 디렉토리보다 먼저 쓴다', () => {
+  it('되살린 pane 은 상태가 오기 전과 셸 cwd 가 없을 때 저장한 cwd 를 쓰고, 새 셸을 띄우면 host 가 띄운 디렉토리를 쓴다', () => {
     const src = source()
     const from = createWorkspaces(undefined, src)
-    from.open('/start')
-    src.set(from, selected(from).panes[0].ptyId, { cwd: '/saved', cwdReports: 1 })
+    from.open('~/work/start')
+    src.set(from, selected(from).panes[0].ptyId, { cwd: '~/work/app', cwdReports: 1 })
     const to = createWorkspaces(undefined, src)
     const saved = from.snapshot()
     src.drop(from, selected(from).panes[0].ptyId)
     to.restore(...full(saved))
     const pane = () => selected(to).panes[0]
-    expect(pane().cwd).toBe('/saved')
-    to.setSpawnedCwd(pane().key, '/spawned')
-    expect(pane().cwd).toBe('/saved')
+    expect([pane().startDir, pane().cwd]).toEqual(['~/work/app', '~/work/app'])
     src.set(to, pane().ptyId, { cwd: '/live', cwdReports: 1 })
     expect(pane().cwd).toBe('/live')
     src.set(to, pane().ptyId, { cwd: null })
-    expect(pane().cwd).toBe('/saved')
+    expect(pane().cwd).toBe('~/work/app')
+    // 붙을 pty 가 없어(gone) host 가 새 셸을 띄운다. 저장한 디렉토리가 없어져 host 는 `$HOME` 에서 띄운다.
+    src.drop(to, pane().ptyId)
+    to.respawned(pane().key)
+    expect(pane().cwd).toBe('~/work/app')
+    to.setSpawnedDir(pane().key, '/home')
+    expect([pane().startDir, pane().cwd]).toEqual(['/home', '/home'])
   })
 
   it('setFontSize 는 그 cell 의 글꼴 크기만 바꾸고, undefined 면 지운다', () => {
@@ -522,6 +527,20 @@ describe('git', () => {
     report({ cwd: '/c', cwdReports: 3 })
     await r.answer('/c', null)
     expect(selected(ws).panes[0].git).toBeUndefined()
+  })
+
+  it('디렉토리를 주고 연 pane 은 상태가 오기 전에 그 저장소를 읽고, 셸이 같은 디렉토리를 처음 보고하면 다시 읽지 않는다', async () => {
+    const r = reader()
+    const src = source()
+    const ws = createWorkspaces(r.read, src)
+    ws.open('~/work/app')
+    const p = selected(ws).panes[0]
+    expect(r.pending.map((q) => q.cwd)).toEqual(['~/work/app'])
+    await r.answer('~/work/app', { repo: 'app', branch: 'main' })
+    expect(selected(ws).panes[0].git).toEqual({ repo: 'app', branch: 'main' })
+    ws.setSpawnedDir(p.key, '~/work/app')
+    src.set(ws, p.ptyId, { cwd: '~/work/app', cwdReports: 1 })
+    expect(r.pending).toHaveLength(1)
   })
 
   it('셸이 같은 디렉토리를 다시 보고하면 다시 읽고, 답이 거꾸로 와도 나중에 청한 답이 남는다', async () => {
@@ -663,7 +682,7 @@ describe('git', () => {
     async (_, spawned, at, first) => {
       const r = reader()
       const { ws, p, report } = setup(r.read)
-      ws.setSpawnedCwd(p.key, spawned)
+      ws.setSpawnedDir(p.key, spawned)
       const git = { repo: 'repo', branch: 'main', ...at }
       await r.answer(spawned, git)
       report({ cwd: first, cwdReports: 1 })
@@ -674,7 +693,7 @@ describe('git', () => {
   it('되살린 pane 은 셸이 처음 보고한 cwd 로 저장한 git 을 지우지 않는다', async () => {
     const from = createWorkspaces(async () => ({ repo: 'r', branch: 'old' }))
     from.open('/r')
-    from.setSpawnedCwd(selected(from).panes[0].key, '/r')
+    from.setSpawnedDir(selected(from).panes[0].key, '/r')
     await new Promise((resolve) => setTimeout(resolve))
     const r = reader()
     const src = source()
@@ -738,7 +757,7 @@ describe('panes', () => {
     })
   })
 
-  it('cwd 를 아직 모르는 pane 을 나누면 그 pane 의 시작 디렉토리에서 시작한다', () => {
+  it('pty 상태가 오기 전에 나누면 그 pane 을 연 디렉토리에서 시작한다', () => {
     const ws = createWorkspaces()
     ws.open('/start')
     ws.split('down')
@@ -805,7 +824,7 @@ describe('panes', () => {
     const ws = opened(1)
     const before = JSON.stringify(ws.cells())
     ws.closePane(999)
-    ws.setSpawnedCwd(999, '/x')
+    ws.setSpawnedDir(999, '/x')
     ws.applyState('p-x')
     ws.focusPane(999)
     expect(JSON.stringify(ws.cells())).toBe(before)
@@ -849,6 +868,7 @@ describe('panes', () => {
       key: pane,
       ptyId: expect.any(String),
       startDir: '/x',
+      cwd: '/x',
       command: ['ls', '-l']
     })
     expect(w.focused).toBe(from)

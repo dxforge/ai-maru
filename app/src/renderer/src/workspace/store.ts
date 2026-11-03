@@ -1,6 +1,6 @@
 import { readonly, ref } from 'vue'
 import { sameGitHead, type GitHead } from '../../../shared/git'
-import { focusedPane, startDirOf } from '../../../shared/names'
+import { focusedPane } from '../../../shared/names'
 import type { ProgramStatusState } from '../../../shared/program-status'
 import type { PtyState } from '../../../shared/pty-state'
 import type {
@@ -25,11 +25,13 @@ import {
 } from './layout'
 
 /**
- * `startDir` 는 셸을 띄울 때 요청한 디렉토리, `command` 는 셸이 실행하고 끝날 명령이다. `keep` 은 런처로 띄운 pane 에
- * 붙는다. 그 pane 은 명령이 실패해도 닫히지 않고 남는다(`ScreenPane`). `cwd`·`title` 은 화면에 보일 값으로
- * `paneCwd`·`paneTitle` 이 고르고, `restoredCwd`·`restoredTitle`·`spawnedCwd` 는 그 재료다. `attach` 는 재시작으로
- * 되살린 pane 이 떠 있는 pty 에 붙어야 할 때 true 다. `gitRoot` 는 `git` 을 읽은 cwd 에서 구한 작업 트리 최상위
- * 경로이고, 구하지 못했으면 없다.
+ * `startDir` 는 셸이 뜬(또는 뜰) 디렉토리로, pty 상태가 cwd 를 주지 않을 때 `paneCwd` 가 화면 cwd 로 쓴다. 만들 때 요청한 디렉토리에서
+ * 시작해, host 가 실제로 띄운 디렉토리(`setSpawnedDir`)나 되살린 cwd(`restore`)로 바뀐다. 셸을 띄울 때(`TerminalView`)와
+ * `paneCwd` 만 읽고, 디렉토리가 필요한 나머지는 `cwd` 를 읽는다. `command` 는 셸이 실행하고 끝날 명령이다. `keep` 은
+ * 런처로 띄운 pane 에 붙는다. 그 pane 은 명령이 실패해도 닫히지 않고 남는다(`ScreenPane`). `cwd`·`title` 은 화면에 보일
+ * 값으로 `paneCwd`·`paneTitle` 이 고르고, `restoredTitle` 은 그 재료다. `cwd` 는 만들 때부터 채워 `startDir` 가 있으면 비지
+ * 않는다. `attach` 는 재시작으로 되살린 pane 이 떠 있는 pty 에 붙어야 할 때 true 다. `gitRoot` 는 `git` 을 읽은 cwd 에서
+ * 구한 작업 트리 최상위 경로이고, 구하지 못했으면 없다.
  */
 export type Pane = {
   key: number
@@ -42,16 +44,15 @@ export type Pane = {
   git?: GitHead
   gitRoot?: string
   attach?: boolean
-  restoredCwd?: string
   restoredTitle?: string
-  spawnedCwd?: string
 }
 
 /**
  * snapshot 에 싣지 않는 pane 필드. `attach` 는 `restore` 가 정하고, `gitRoot` 는 `git` 을 다시 읽으면 생긴다. 나머지는
- * 화면에 보이는 `cwd`·`title` 의 재료다.
+ * 화면에 보이는 `cwd`·`title` 의 재료다. `startDir` 는 저장하지 않고 `restore` 가 저장된 `cwd` 로 채운다. `cwd` 는
+ * `startDir` 가 있으면 비지 않으므로, `cwd` 만 저장해도 잃는 디렉토리가 없다.
  */
-const UNSAVED = new Set(['attach', 'gitRoot', 'restoredCwd', 'restoredTitle', 'spawnedCwd'])
+const UNSAVED = new Set(['attach', 'gitRoot', 'restoredTitle', 'startDir'])
 
 /**
  * `git` 을 읽은 cwd 에서 `sub` 를 떼어 작업 트리 최상위 경로를 구한다. `sub` 는 심링크를 푼 경로로 세므로, cwd 의
@@ -80,7 +81,7 @@ export type Cell = Omit<ScreenCell, 'panes'> & { panes: Pane[] }
 /** `cells` 는 비지 않는다 — 마지막 cell 이 닫히면 workspace 도 닫힌다. */
 export type Workspace = Omit<ScreenWorkspace, 'cells'> & { cells: Cell[] }
 
-export { focusedPane, startDirOf }
+export { focusedPane }
 
 /**
  * `WorkspaceSidebar.vue` 가 cell 의 pane 을 이 순서로 나열한다. `stepPane` 은 같은 순서를 `panes(layout)` 으로 직접
@@ -139,15 +140,20 @@ export function createWorkspaces(
     return list.value.find((w) => w.cells.some((c) => c.key === cell))
   }
 
+  function newPane(init: PaneInit): Pane {
+    const p: Pane = { key: nextKey++, ptyId: ptyId(), ...init }
+    refresh(p)
+    return p
+  }
+
   function createCell(init: PaneInit): Cell {
-    const pane = nextKey++
-    const key = nextKey++
+    const pane = newPane(init)
     return {
-      key,
+      key: nextKey++,
       id: cellId(),
-      panes: [{ key: pane, ptyId: ptyId(), ...init }],
-      layout: { pane },
-      focused: pane
+      panes: [pane],
+      layout: { pane: pane.key },
+      focused: pane.key
     }
   }
 
@@ -295,7 +301,7 @@ export function createWorkspaces(
     const c = selected()
     if (!c) return
     const from = focusedPane(c)
-    c.focused = splitFrom(from.key, direction, init ?? { startDir: startDirOf(from) })
+    c.focused = splitFrom(from.key, direction, init ?? { startDir: from.cwd })
   }
 
   function splitFrom(
@@ -305,8 +311,9 @@ export function createWorkspaces(
     full = false
   ): number {
     const c = owner(from)!
-    const pane = nextKey++
-    c.panes.push({ key: pane, ptyId: ptyId(), ...init })
+    const p = newPane(init)
+    c.panes.push(p)
+    const pane = p.key
     c.layout = full
       ? splitRoot(c.layout, pane, direction)
       : splitPane(c.layout, from, pane, direction)
@@ -405,10 +412,14 @@ export function createWorkspaces(
     if (p) refresh(p)
   }
 
-  function setSpawnedCwd(key: number, cwd: string): void {
+  /**
+   * host 가 셸을 실제로 띄운 디렉토리 `dir` 을 `startDir` 에 넣는다. 요청한 디렉토리가 없거나, 절대 경로가 아니거나,
+   * 디렉토리가 아니거나, 들어갈 권한이 없으면 `dir` 은 `$HOME` 이다(`main/pty.ts` 의 `startDir`).
+   */
+  function setSpawnedDir(key: number, dir: string): void {
     const p = pane(key)
     if (!p) return
-    p.spawnedCwd = cwd
+    p.startDir = dir
     refresh(p)
   }
 
@@ -419,7 +430,6 @@ export function createWorkspaces(
     delete p.command
     delete p.keep
     p.restoredTitle = undefined
-    p.startDir = p.restoredCwd ?? p.startDir
     refresh(p)
   }
 
@@ -476,9 +486,8 @@ export function createWorkspaces(
   ): void {
     const restorePane = (p: LayoutPane): Pane => {
       const pty = ptys?.[p.key]
-      if (pty) return { ...p, ptyId: pty, attach: true, restoredCwd: p.cwd, restoredTitle: p.title }
-      const fresh: Pane = { key: p.key, ptyId: ptyId(), startDir: p.cwd ?? p.startDir }
-      if (p.cwd !== undefined) fresh.restoredCwd = fresh.cwd = p.cwd
+      if (pty) return { ...p, ptyId: pty, startDir: p.cwd, attach: true, restoredTitle: p.title }
+      const fresh: Pane = { key: p.key, ptyId: ptyId(), startDir: p.cwd }
       if (p.git) fresh.git = p.git
       return fresh
     }
@@ -520,7 +529,7 @@ export function createWorkspaces(
     owner,
     workspaceOf,
     applyState,
-    setSpawnedCwd,
+    setSpawnedDir,
     respawned,
     setFontSize,
     setPaneCols,

@@ -13,17 +13,11 @@ const state = (over: Partial<PtyState>): PtyState => ({
 })
 
 describe('paneCwd', () => {
-  it('foreground cwd, 셸 cwd, 되살린 cwd, 띄운 디렉토리, 시작 디렉토리 순서로 고른다', () => {
-    const all = {
-      state: state({ foregroundCwd: '/fg', cwd: '/shell' }),
-      restoredCwd: '/restored',
-      spawnedCwd: '/spawned',
-      startDir: '/start'
-    }
+  it('foreground cwd, 셸 cwd, 셸이 뜬 디렉토리 순서로 고른다', () => {
+    const all = { state: state({ foregroundCwd: '/fg', cwd: '/shell' }), startDir: '/start' }
     expect(paneCwd(all)).toBe('/fg')
     expect(paneCwd({ ...all, state: state({ cwd: '/shell' }) })).toBe('/shell')
-    expect(paneCwd({ ...all, state: state({}) })).toBe('/restored')
-    expect(paneCwd({ ...all, state: undefined, restoredCwd: undefined })).toBe('/spawned')
+    expect(paneCwd({ ...all, state: state({}) })).toBe('/start')
     expect(paneCwd({ startDir: '/start' })).toBe('/start')
     expect(paneCwd({})).toBeUndefined()
   })

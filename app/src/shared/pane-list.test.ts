@@ -38,7 +38,7 @@ const git = (branch: string) => ({ repo: 'ai-maru', branch })
 const SHELL = '/bin/zsh'
 
 describe('paneRows', () => {
-  it('모든 pane 을 화면 순서대로, 사이드바와 같은 이름으로 돌려주고 dir 은 cwd 가 없으면 시작 디렉토리다', () => {
+  it('모든 pane 을 화면 순서대로, 사이드바와 같은 이름으로 돌려주고 dir 은 cwd 이며 cwd 를 모르면 빈 문자열이다', () => {
     const workspaces = [
       {
         key: 1,
@@ -58,7 +58,7 @@ describe('paneRows', () => {
           )
         ]
       },
-      { key: 8, id: 'w-8', cells: [cell(9, [{ key: 10, ptyId: 'p-c', startDir: '/tmp/notes' }])] }
+      { key: 8, id: 'w-8', cells: [cell(9, [{ key: 10, ptyId: 'p-c' }])] }
     ]
     const states = new Map([
       ['p-a', state([record('claude-code', { message: 'reading' })])],
@@ -122,7 +122,7 @@ describe('paneRows', () => {
         workspace: 'Shell',
         cell: 'c-9',
         title: 'Claude',
-        dir: '/tmp/notes',
+        dir: '',
         message: ''
       }
     ])

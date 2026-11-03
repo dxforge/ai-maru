@@ -22,7 +22,6 @@ const screen: ScreenState = {
             {
               key: 0,
               ptyId: 'p-0000000a',
-              startDir: '/a',
               cwd: '/b',
               title: 't',
               git: { repo: 'r', branch: 'main', common: '/r/.git', sub: 'app' }
@@ -173,6 +172,20 @@ describe('splitScreen · parseLayoutPart', () => {
     const { layout } = splitScreen(named)
     expect(layout.workspaces[0].name).toBe('리뷰')
     expect(parseLayoutPart(JSON.parse(JSON.stringify(layout)))!.workspaces[0].name).toBe('리뷰')
+  })
+
+  it('옛 앱이 `startDir` 에 저장한 디렉토리는 `cwd` 가 없는 pane 에서만 `cwd` 로 읽는다', () => {
+    const { layout } = splitScreen(screen)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 옛 앱의 필드를 일부러 더한다.
+    const old: Record<string, any> = JSON.parse(JSON.stringify(layout))
+    const [shown, unknown] = old.workspaces[0].cells[0].panes
+    shown.startDir = '~/work/old'
+    unknown.startDir = '~/work/app'
+    const panes = parseLayoutPart(old)!.workspaces[0].cells[0].panes
+    expect(panes[0]).toMatchObject({ cwd: '/b' })
+    expect(panes[1]).toEqual({ key: 2, command: ['sh', '-c', 'true'], cwd: '~/work/app' })
+    unknown.startDir = 1
+    expect(parseLayoutPart(old)).toBeNull()
   })
 
   it('버전이 다르거나 모양이 틀리면 null', () => {
