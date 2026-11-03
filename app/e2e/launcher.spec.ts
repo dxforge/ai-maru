@@ -7,6 +7,7 @@ import {
   activeTerminal,
   cellGroups,
   cellItems,
+  cellViews,
   clickMenu,
   dialogCalls,
   expect,
@@ -777,7 +778,7 @@ test('사이드바 별로 넣은 workspace 는 닫은 뒤에도 런처의 Favori
   await expect(section(page)).toHaveCount(0)
   await expect(favoriteRows(page).locator('.name')).toHaveText(['atlas'])
   await expect(favoriteRows(page).locator('.path')).toHaveText([a])
-  await expect(recentLabels(page)).toHaveText([b])
+  await expect(recentLabels(page)).toHaveText([a, b])
   // 아래 런처는 목록을 뒤집어 그리므로 즐겨찾기가 입력창 쪽에 서고, 묶음 제목은 저마다 묶음 위에 선다.
   const y = async (l: Locator) => (await l.boundingBox())!.y
   const [favoriteTitle, recentTitle] = [groupTitles(page).nth(0), groupTitles(page).nth(1)]
@@ -798,9 +799,8 @@ test('사이드바 별로 넣은 workspace 는 닫은 뒤에도 런처의 Favori
   await expect(rows(page)).toContainText(`A-ran-in-${a}`)
   await finish(page)
 
-  // 즐겨찾기로 연 디렉토리도 최근 목록에 들지만 Recent 묶음에는 겹쳐 보이지 않는다.
   await openLauncher(first)
-  await expect(recentLabels(page)).toHaveText([b])
+  await expect(recentLabels(page)).toHaveText([a, b])
   await page.keyboard.type('atlas')
   await toCommands(page, a)
   await page.keyboard.press('Meta+Enter')
@@ -819,14 +819,14 @@ test('사이드바 별로 넣은 workspace 는 닫은 뒤에도 런처의 Favori
   await expect(favoriteRows(again.page).locator('.path')).toHaveText([a])
 })
 
-test('런처에서 ⇧⌘⌫ 로 뺀 즐겨찾기는 최근 목록에 있는 디렉토리면 Recent 로 돌아가고, 사이드바의 별도 꺼진다', async ({
+test('런처에서 ⇧⌘⌫ 로 즐겨찾기를 빼면 Favorites 묶음이 없어지고 사이드바의 별도 꺼진다', async ({
   launch,
   dataDir
 }) => {
   const [cmd] = useTool(dataDir)
   const a = project(dataDir, 'proj-a')
   const b = project(dataDir, 'proj-b')
-  writeLauncherState(dataDir, [b], cmd, [{ dir: a, name: 'atlas' }])
+  writeLauncherState(dataDir, [b], cmd, [{ id: 'f-1', dir: a, name: 'atlas' }])
   const launched = await launch()
   const { page } = launched
   await openLauncher(launched)
@@ -848,7 +848,8 @@ test('런처에서 ⇧⌘⌫ 로 뺀 즐겨찾기는 최근 목록에 있는 디
   await expect(star(page, 0)).not.toHaveClass(/\bon\b/)
 
   await openLauncher(launched)
-  await expect(selected(page)).toHaveText(b)
+  await expect(recentLabels(page)).toHaveText([a, b])
+  await expect(selected(page)).toHaveText(a)
   await page.keyboard.press('ArrowDown')
   await expect(items(page).nth(0)).toHaveClass(/selected/)
   await page.keyboard.press('Shift+Meta+Backspace')
@@ -885,4 +886,173 @@ test('이름을 고치지 않은 workspace 는 자동 이름으로 즐겨찾기�
   await expect(star(page, 1)).not.toHaveClass(/\bon\b/)
   await expectFavoriteNames(launched, [])
   await expect(rows(page)).toContainText(`A-ran-in-${a}`)
+})
+
+test('같은 디렉토리의 workspace 가운데 별을 누른 workspace 만 즐겨찾기가 되고, 이름을 고치면 그 workspace 의 줄만 바뀌며, 둘 다 넣으면 줄이 둘이다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { app, page } = launched
+  await launchAt(launched, a)
+  await launchAt(launched, a)
+  await expect(workspaceNames(page).nth(1)).toHaveText('proj-a')
+  await expect(workspaceNames(page).nth(2)).toHaveText('proj-a')
+  await workspaceHeads(page).nth(1).hover()
+  await star(page, 1).click()
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await expect(star(page, 2)).not.toHaveClass(/\bon\b/)
+
+  await renameSelected(app, page, 'review')
+  await expectFavoriteNames(launched, ['proj-a'])
+  await cellItems(page).nth(1).click()
+  await renameSelected(app, page, 'app')
+  await expectFavoriteNames(launched, ['app'])
+
+  await workspaceHeads(page).nth(2).hover()
+  await star(page, 2).click()
+  await expect(star(page, 2)).toHaveClass(/\bon\b/)
+  await openLauncher(launched)
+  await expect(favoriteRows(page).locator('.name')).toHaveText(['app', 'review'])
+  await expect(favoriteRows(page).locator('.path')).toHaveText([a, a])
+})
+
+test('별을 누른 workspace 를 닫고 같은 디렉토리를 다시 열어 같은 이름에서 별을 누르면 남은 줄을 다시 쓰고, 이름을 고치면 그 줄이 바뀐다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const launched = await launch()
+  const { app, page } = launched
+  await launchAt(launched, a)
+  await expect(workspaceNames(page).nth(1)).toHaveText('proj-a')
+  await clickMenu(app, 'toggle-favorite-workspace')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await stubDialog(app, 0)
+  await clickMenu(app, 'close-workspace')
+  await expect(workspaceHeads(page)).toHaveCount(1)
+
+  await launchAt(launched, a)
+  await expect(workspaceNames(page).nth(1)).toHaveText('proj-a')
+  await expect(star(page, 1)).not.toHaveClass(/\bon\b/)
+  await clickMenu(app, 'toggle-favorite-workspace')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+  await expectFavoriteNames(launched, ['proj-a'])
+  await renameSelected(app, page, 'app')
+  await expectFavoriteNames(launched, ['app'])
+})
+
+test('별을 누르면 첫 pane 이 cd 로 옮겨 간 디렉토리를 넣고, 처음 연 디렉토리에서 연 다른 workspace 에는 별이 붙지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  const b = project(dataDir, 'proj-b')
+  // 셸이 cwd 를 알려야 workspace 이름과 즐겨찾기 디렉토리가 cd 를 따라간다.
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: zshHome(dataDir) })
+  const { app, page } = launched
+  await openLauncher(launched)
+  await page.keyboard.type(a)
+  await toCommands(page, a)
+  await page.keyboard.type('shell')
+  await expect(labels(page)).toHaveText(['shell'])
+  await page.keyboard.press('Enter')
+  await activeTerminal(page)
+  await run(page, `cd ${b} && echo moved-$((1+1))`, 'moved-2')
+  await expect(workspaceNames(page).nth(1)).toHaveText('proj-b')
+  await renameSelected(app, page, 'app')
+  await clickMenu(app, 'toggle-favorite-workspace')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+
+  await launchAt(launched, a)
+  await expect(star(page, 2)).not.toHaveClass(/\bon\b/)
+  await openLauncher(launched)
+  await expect(favoriteRows(page).locator('.name')).toHaveText(['app'])
+  await expect(favoriteRows(page).locator('.path')).toHaveText([b])
+})
+
+test('Favorites 에서 Enter 로 연 workspace 는 별이 붙고 재시작해도 남으며, 그 줄에서 다시 Enter 하면 명령 단계 없이 접혀 있어도 펴서 그 workspace 로 간다', async ({
+  launch,
+  dataDir
+}) => {
+  const [cmd] = useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  writeLauncherState(dataDir, [], cmd, [{ id: 'f-1', dir: a, name: 'app' }])
+  const first = await launch()
+  const { app, page } = first
+  await openLauncher(first)
+  await expect(items(page).nth(0)).toHaveClass(/favorite/)
+  await toCommands(page, a)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await activeTerminal(page)
+  await expect(workspaceNames(page).nth(1)).toHaveText('app')
+  await expect(star(page, 1)).toHaveClass(/\bon\b/)
+
+  // 경로를 쳐서 같은 디렉토리를 열면 즐겨찾기와 잇지 않는다.
+  await launchAt(first, a)
+  await expect(workspaceNames(page)).toHaveCount(3)
+  await expect(star(page, 2)).not.toHaveClass(/\bon\b/)
+  await expect(cellViews(page).nth(2)).toHaveClass(/selected/)
+
+  await workspaceHeads(page).nth(1).click()
+  await expect(workspaceHeads(page).nth(1)).toHaveAttribute('aria-expanded', 'false')
+  // 처음 고른 행은 Recent 의 같은 디렉토리 줄이다. 아래 런처는 목록을 뒤집어 그리므로 ArrowDown 이 즐겨찾기로 간다.
+  await openLauncher(first)
+  await expect(selected(page)).toHaveText(a)
+  await page.keyboard.press('ArrowDown')
+  await expect(items(page).nth(0)).toHaveClass(/selected/)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+  await expect(workspaceHeads(page).nth(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect(workspaceNames(page)).toHaveCount(3)
+  await expect(cellItems(page)).toHaveCount(3)
+  await restartWith(app)
+
+  const again = await launch()
+  await expect(workspaceNames(again.page)).toHaveCount(3)
+  await expect(star(again.page, 1)).toHaveClass(/\bon\b/)
+  await expect(star(again.page, 2)).not.toHaveClass(/\bon\b/)
+})
+
+test('이어진 workspace 가 열려 있어도 Recent 의 같은 디렉토리 줄은 이름 없는 새 workspace 를 열고, 즐겨찾기 줄은 디렉토리가 없어져도 그 workspace 로 간다', async ({
+  launch,
+  dataDir
+}) => {
+  const [cmd] = useTool(dataDir)
+  const a = project(dataDir, 'proj-a')
+  writeLauncherState(dataDir, [], cmd, [{ id: 'f-1', dir: a, name: 'atlas' }])
+  const launched = await launch()
+  const { page } = launched
+  await openLauncher(launched)
+  await toCommands(page, a)
+  await page.keyboard.press('Enter')
+  await activeTerminal(page)
+  await expect(workspaceNames(page).nth(1)).toHaveText('atlas')
+  await expect(rows(page)).toContainText(`A-ran-in-${a}`)
+
+  await openLauncher(launched)
+  await expect(recentLabels(page)).toHaveText([a])
+  await expect(selected(page)).toHaveText(a)
+  await toCommands(page, a)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await activeTerminal(page)
+  await expect(workspaceNames(page)).toHaveCount(3)
+  await expect(workspaceNames(page).nth(2)).toHaveText('proj-a')
+  await expect(star(page, 2)).not.toHaveClass(/\bon\b/)
+
+  rmSync(a, { recursive: true })
+  await openLauncher(launched)
+  await page.keyboard.type('atlas')
+  await expect(items(page)).toHaveCount(1)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+  await expect(workspaceNames(page)).toHaveCount(3)
 })

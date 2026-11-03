@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findFavorite, samePath } from './launcher'
+import { favoriteById, samePath } from './launcher'
 
 describe('samePath', () => {
   it('treats NFD and NFC spellings of a name as the same directory', () => {
@@ -16,14 +16,18 @@ describe('samePath', () => {
   })
 })
 
-describe('findFavorite', () => {
-  const favorites = [{ dir: '/w/atlas/server', name: 'atlas' }]
+describe('favoriteById', () => {
+  const favorites = [
+    { id: 'f-1', dir: '/work/app', name: 'app' },
+    { id: 'f-2', dir: '/work/app', name: 'app review' }
+  ]
 
-  it('finds the favorite for a directory typed with ..', () => {
-    expect(findFavorite(favorites, '/w/atlas/x/../server')).toBe(favorites[0])
+  it('finds the entry with the id among entries of the same directory', () => {
+    expect(favoriteById(favorites, 'f-2')).toBe(favorites[1])
   })
 
-  it('finds nothing for an unknown directory', () => {
-    expect(findFavorite(favorites, undefined)).toBeUndefined()
+  it('finds nothing for an unknown or missing id', () => {
+    expect(favoriteById(favorites, 'f-3')).toBeUndefined()
+    expect(favoriteById(favorites, undefined)).toBeUndefined()
   })
 })

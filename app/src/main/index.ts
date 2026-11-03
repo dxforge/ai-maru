@@ -41,7 +41,7 @@ import { isDevReload } from './navigation'
 import { createPanes } from './pane'
 import { createWindowReady } from './window-ready'
 import { createJobs, JOB_REPLY_MS } from './job'
-import { createLauncherStore, listDirs } from './launcher'
+import { createLauncherStore, isFavorite, listDirs } from './launcher'
 import { longestExistingPaths, openLink, type LinkOpener } from './links'
 import { createPortWatch, readPorts } from './ports'
 import { checkRestart, restartDialog, restartRefusal, type RestartCheck } from './restart'
@@ -654,17 +654,15 @@ function start(): void {
   ipcMain.handle('launcher:forget', (_event, dir: unknown) =>
     typeof dir === 'string' ? launcher.forget(dir) : launcher.read()
   )
-  ipcMain.handle('launcher:favorite-add', (_event, dir: unknown, name: unknown) =>
-    typeof dir === 'string' && typeof name === 'string'
-      ? launcher.addFavorite(dir, name)
-      : launcher.read()
+  ipcMain.handle('launcher:favorite-add', (_event, favorite: unknown) =>
+    isFavorite(favorite) ? launcher.addFavorite(favorite) : launcher.read()
   )
-  ipcMain.handle('launcher:favorite-forget', (_event, dir: unknown) =>
-    typeof dir === 'string' ? launcher.forgetFavorite(dir) : launcher.read()
+  ipcMain.handle('launcher:favorite-forget', (_event, id: unknown) =>
+    typeof id === 'string' ? launcher.forgetFavorite(id) : launcher.read()
   )
-  ipcMain.handle('launcher:favorite-rename', (_event, dir: unknown, name: unknown) =>
-    typeof dir === 'string' && typeof name === 'string'
-      ? launcher.renameFavorite(dir, name)
+  ipcMain.handle('launcher:favorite-rename', (_event, id: unknown, name: unknown) =>
+    typeof id === 'string' && typeof name === 'string'
+      ? launcher.renameFavorite(id, name)
       : launcher.read()
   )
   ipcMain.handle('launcher:dirs', (_event, dir: unknown) =>

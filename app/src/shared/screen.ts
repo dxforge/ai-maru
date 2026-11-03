@@ -39,8 +39,19 @@ type CellOf<P> = {
   paneCols?: number
 }
 
-/** `name` 은 사용자가 바꾼 이름이다. 없으면 첫 cell 의 첫 pane 으로 이름을 짓는다(`workspaceName`). */
-type WorkspaceOf<P> = { key: number; id: string; name?: string; cells: CellOf<P>[] }
+/**
+ * `name` 은 사용자가 바꾼 이름이다. 없으면 첫 cell 의 첫 pane 으로 이름을 짓는다(`workspaceName`). `favorite` 은 이
+ * workspace 가 가리키는 즐겨찾기 항목의 `id` 다. 그 항목이 즐겨찾기에서 빠져도 지우지 않고 둔다. 즐겨찾기 목록이 workspace
+ * 복원보다 늦게 읽히면 아직 읽지 않은 항목을 빠진 것으로 보고 링크를 지우게 되기 때문이다. `id` 는 무작위라 뒤에 생긴 항목과
+ * 겹치지 않는다.
+ */
+type WorkspaceOf<P> = {
+  key: number
+  id: string
+  name?: string
+  favorite?: string
+  cells: CellOf<P>[]
+}
 
 export type ScreenCell = CellOf<ScreenPane>
 export type ScreenWorkspace = WorkspaceOf<ScreenPane>
@@ -188,7 +199,8 @@ function parseWorkspaces<P>(
       const cells = parseList(w.cells, (c) => parseCell(c, parsePane))
       // `rename`(`store.ts`)이 빈 이름을 받으면 이름을 지우는 것과 맞춰, 비었거나 공백뿐인 이름은 이름이 없는 것으로 본다.
       const name = typeof w.name === 'string' && w.name.trim() ? w.name : undefined
-      return cells && compact({ key: w.key, id: w.id, name, cells })
+      const favorite = typeof w.favorite === 'string' ? w.favorite : undefined
+      return cells && compact({ key: w.key, id: w.id, name, favorite, cells })
     },
     true
   )

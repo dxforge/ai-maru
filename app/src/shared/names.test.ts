@@ -131,16 +131,14 @@ describe('workspaceDir', () => {
     cells: cells.map((panes) => ({ panes }))
   })
 
-  it('첫 cell 의 첫 pane 을 연 디렉토리를 쓰고, cd 로 옮긴 cwd 나 다른 pane 은 보지 않는다', () => {
+  it('첫 cell 의 첫 pane 이 cd 로 옮겨 간 cwd 를 쓰고, 다른 pane 은 보지 않는다', () => {
     expect(
-      workspaceDir(
-        ws([{ startDir: '/a', cwd: '/a/sub' }, { startDir: '/b' }], [{ startDir: '/c' }])
-      )
-    ).toBe('/a')
+      workspaceDir(ws([{ startDir: '/a', cwd: '/b' }, { cwd: '/c' }], [{ startDir: '/d' }]))
+    ).toBe('/b')
   })
 
-  it('연 디렉토리를 모르면 그 pane 의 cwd 를 쓴다', () => {
-    expect(workspaceDir(ws([{ cwd: '/a/sub' }, { startDir: '/b' }]))).toBe('/a/sub')
+  it('cwd 를 모르면 그 pane 을 연 디렉토리를 쓴다', () => {
+    expect(workspaceDir(ws([{ startDir: '/a' }, { cwd: '/b' }]))).toBe('/a')
   })
 
   it('둘 다 모르면 없다', () => {

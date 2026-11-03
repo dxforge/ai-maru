@@ -1198,7 +1198,7 @@ test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 이름이 �
   await expect(workspaceNames(page)).toHaveText(['notes'])
 })
 
-test('즐겨찾기 별은 연 디렉토리가 즐겨찾기인 workspace 에 늘 보이고 아니면 머리 줄에 마우스가 있을 때만 보이며, 누르기는 접기·이름 고치기·끌기로 번지지 않는다', async ({
+test('즐겨찾기 별은 즐겨찾기에 넣은 workspace 에 늘 보이고 아니면 머리 줄에 마우스가 있을 때만 보이며, 누르기는 접기·이름 고치기·끌기로 번지지 않는다', async ({
   launch,
   dataDir
 }) => {
@@ -1232,11 +1232,10 @@ test('즐겨찾기 별은 연 디렉토리가 즐겨찾기인 workspace 에 늘 
   for (const i of [0, 1, 2])
     await expect(workspaceHeads(page).nth(i)).toHaveAttribute('aria-expanded', 'true')
 
-  // 첫 workspace 와 같은 디렉토리에서 연 둘째 workspace 도 즐겨찾기로 보이고, 하위 디렉토리에서 연 셋째는 아니다.
+  // 첫 workspace 와 같은 디렉토리에서 연 둘째 workspace 는 즐겨찾기로 보이지 않는다.
   await panes(page).nth(0).hover()
   await expect(star(0)).toBeVisible()
-  await expect(star(1)).toBeVisible()
-  await expect(star(1)).toHaveAttribute('aria-pressed', 'true')
+  await expect(star(1)).toBeHidden()
   await expect(star(2)).toBeHidden()
   await run(page, 'echo star-$((1+1))', 'star-2')
 })

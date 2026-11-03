@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  entryKey,
   expandPath,
   filterFavorites,
   filterRecent,
@@ -74,39 +75,40 @@ describe('filterRecent', () => {
     const nfd = `${HOME}/${'프로젝트'.normalize('NFD')}`
     expect(filterRecent([nfd], '프로젝트', HOME).map((r) => r.path)).toEqual([nfd])
   })
-
-  it('즐겨찾기에 든 디렉토리는 표기가 달라도 빼고 준다', () => {
-    const nfd = `${HOME}/${'프로젝트'.normalize('NFD')}`
-    const favorites = [
-      { dir: '/opt/Tools', name: 'tools' },
-      { dir: `${HOME}/프로젝트`.normalize('NFC'), name: 'p' }
-    ]
-    expect(filterRecent([...recent, nfd], '', HOME, favorites).map((r) => r.path)).toEqual([
-      `${HOME}/work/ai-maru`,
-      `${HOME}/notes`
-    ])
-  })
 })
 
 describe('filterFavorites', () => {
   const favorites = [
-    { dir: `${HOME}/src/atlas/server`, name: 'atlas' },
-    { dir: '/opt/Tools', name: 'Toolbox' }
+    { id: 'f-1', dir: `${HOME}/work/app`, name: 'app' },
+    { id: 'f-2', dir: '/opt/Tools', name: 'Toolbox' },
+    { id: 'f-3', dir: `${HOME}/work/app`, name: 'app review' }
   ]
   const names = (query: string) => filterFavorites(favorites, query, HOME).map((r) => r.name)
 
-  it('빈 입력이면 전부를 넣은 순서대로, 이름과 ~ 로 줄인 경로로 준다', () => {
+  it('빈 입력이면 같은 디렉토리의 항목까지 전부를 넣은 순서대로, 이름과 ~ 로 줄인 경로와 id 로 준다', () => {
     expect(filterFavorites(favorites, '', HOME)).toEqual([
-      { path: `${HOME}/src/atlas/server`, label: '~/src/atlas/server', name: 'atlas' },
-      { path: '/opt/Tools', label: '/opt/Tools', name: 'Toolbox' }
+      { path: `${HOME}/work/app`, label: '~/work/app', name: 'app', id: 'f-1' },
+      { path: '/opt/Tools', label: '/opt/Tools', name: 'Toolbox', id: 'f-2' },
+      { path: `${HOME}/work/app`, label: '~/work/app', name: 'app review', id: 'f-3' }
     ])
   })
 
   it('단어마다 이름이나 경로에 든 것만 남긴다', () => {
-    expect(names('ATLAS')).toEqual(['atlas'])
-    expect(names('server')).toEqual(['atlas'])
+    expect(names('APP')).toEqual(['app', 'app review'])
+    expect(names('review')).toEqual(['app review'])
     expect(names('toolbox opt')).toEqual(['Toolbox'])
-    expect(names('atlas opt')).toEqual([])
+    expect(names('app opt')).toEqual([])
+  })
+})
+
+describe('entryKey', () => {
+  it('같은 디렉토리의 즐겨찾기 행을 id 로 가르고, 최근 목록 행과 겹치지 않는다', () => {
+    const keys = [
+      { path: '/work/app', label: '~/work/app', name: 'app', id: 'f-1' },
+      { path: '/work/app', label: '~/work/app', name: 'app review', id: 'f-2' },
+      { path: '/work/app', label: '~/work/app' }
+    ].map(entryKey)
+    expect(new Set(keys).size).toBe(3)
   })
 })
 

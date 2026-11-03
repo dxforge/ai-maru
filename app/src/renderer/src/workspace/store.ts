@@ -151,13 +151,24 @@ export function createWorkspaces(
     }
   }
 
-  function createWorkspace(cell: Cell, name?: string): Workspace {
-    return { key: nextKey++, id: workspaceId(), cells: [cell], ...(name && { name }) }
+  function createWorkspace(cell: Cell, name?: string, favorite?: string): Workspace {
+    return {
+      key: nextKey++,
+      id: workspaceId(),
+      cells: [cell],
+      ...(name && { name }),
+      ...(favorite && { favorite })
+    }
   }
 
-  function open(startDir?: string, extra: PaneCommand = {}, name?: string): void {
+  function open(
+    startDir?: string,
+    extra: PaneCommand = {},
+    name?: string,
+    favorite?: string
+  ): void {
     const c = createCell({ startDir, ...extra })
-    list.value.push(createWorkspace(c, name))
+    list.value.push(createWorkspace(c, name, favorite))
     selectedKey.value = c.key
   }
 
@@ -273,6 +284,11 @@ export function createWorkspaces(
     const trimmed = name.trim()
     if (trimmed) w.name = trimmed
     else delete w.name
+  }
+
+  function setFavorite(key: number, favorite: string): void {
+    const w = list.value.find((x) => x.key === key)
+    if (w) w.favorite = favorite
   }
 
   function split(direction: SplitDirection, init?: PaneInit): void {
@@ -491,6 +507,7 @@ export function createWorkspaces(
     moveCell,
     moveWorkspace,
     rename,
+    setFavorite,
     split,
     splitFrom,
     pane,

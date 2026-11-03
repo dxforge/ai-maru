@@ -4,7 +4,7 @@ import type { ConfigRead } from '../shared/config'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
 import type { JobView } from '../shared/job'
-import type { LaunchResult, LauncherState } from '../shared/launcher'
+import type { Favorite, LaunchResult, LauncherState } from '../shared/launcher'
 import type { FoundPath, LinkOpenResult, PathCandidates } from '../shared/link'
 import type { CellNewRequest, CloseAnswer, PaneNewRequest, PaneReply } from '../shared/pane'
 import type { Restore, ScreenState, ViewPrefs } from '../shared/screen'
@@ -113,12 +113,12 @@ const api = {
   launchedCommand: (command: string): Promise<void> =>
     ipcRenderer.invoke('launcher:command', command),
   forgetLaunch: (dir: string): Promise<LauncherState> => ipcRenderer.invoke('launcher:forget', dir),
-  addFavorite: (dir: string, name: string): Promise<LauncherState> =>
-    ipcRenderer.invoke('launcher:favorite-add', dir, name),
-  forgetFavorite: (dir: string): Promise<LauncherState> =>
-    ipcRenderer.invoke('launcher:favorite-forget', dir),
-  renameFavorite: (dir: string, name: string): Promise<LauncherState> =>
-    ipcRenderer.invoke('launcher:favorite-rename', dir, name),
+  addFavorite: (favorite: Favorite): Promise<LauncherState> =>
+    ipcRenderer.invoke('launcher:favorite-add', favorite),
+  forgetFavorite: (id: string): Promise<LauncherState> =>
+    ipcRenderer.invoke('launcher:favorite-forget', id),
+  renameFavorite: (id: string, name: string): Promise<LauncherState> =>
+    ipcRenderer.invoke('launcher:favorite-rename', id, name),
   /** `dir` 의 하위 디렉토리 이름. 읽지 못하면 빈 목록이다. */
   listDirs: (dir: string): Promise<string[]> => ipcRenderer.invoke('launcher:dirs', dir),
   /** pty 에서 셸 말고 도는 프로그램이 있으면 main 이 확인 창을 띄운다. */

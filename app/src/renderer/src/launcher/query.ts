@@ -1,4 +1,4 @@
-import { findFavorite, SHELL, type Favorite } from '../../../shared/launcher'
+import { SHELL, type Favorite } from '../../../shared/launcher'
 import { foldCase, matchesWords } from '../../../shared/commands'
 import { tildePath } from '../workspace/cwd'
 
@@ -21,18 +21,23 @@ export function pathQuery(input: string, home: string | undefined): PathQuery | 
   return { prefix, fragment: input.slice(slash + 1), parent: expandPath(prefix, home) }
 }
 
-/** `name` 은 즐겨찾기 행에만 있다. */
-export type Row = { path: string; label: string; name?: string }
+/** `name`·`id` 는 즐겨찾기 행에만 있다. */
+export type Row = { path: string; label: string; name?: string; id?: string }
 
-/** 즐겨찾기에 든 디렉토리는 즐겨찾기 묶음에 보이므로 빼고 준다. */
+/** 목록 행의 key 다. 같은 디렉토리의 즐겨찾기 항목이 여럿일 수 있어 즐겨찾기 행은 `id` 로 구별한다. */
+export const entryKey = (row: Row): string =>
+  row.id === undefined ? `recent:${row.path}` : `favorite:${row.id}`
+
+/**
+ * 즐겨찾기에 든 디렉토리도 빼지 않는다. 즐겨찾기 행은 그 이름의 workspace 를 열거나 그리로 가고, 최근 목록 행은 그
+ * 디렉토리로 이름 없는 새 workspace 를 열기 때문이다.
+ */
 export function filterRecent(
   recent: readonly string[],
   query: string,
-  home: string | undefined,
-  favorites: readonly Favorite[] = []
+  home: string | undefined
 ): Row[] {
   return recent
-    .filter((path) => !findFavorite(favorites, path))
     .map((path) => ({ path, label: tildePath(path, home) }))
     .filter((r) => matchesWords(r.label, query))
 }
@@ -43,14 +48,13 @@ export function filterFavorites(
   home: string | undefined
 ): Row[] {
   return favorites
-    .map(({ dir, name }) => ({ path: dir, label: tildePath(dir, home), name }))
+    .map(({ id, dir, name }) => ({ path: dir, label: tildePath(dir, home), name, id }))
     .filter((r) => matchesWords(`${r.name} ${r.label}`, query))
 }
 
 /**
  * 디렉토리 단계에서 처음 고르는 행의 자리(`[...favorites, ...recent]` 에서)다. 입력이 비었으면 즐겨찾기를 건너뛰고 최근
- * 목록의 첫 행을 고른다. ⌘P 를 열고 Enter 를 두 번 누르면 즐겨찾기가 아닌 디렉토리 가운데 마지막에 연 것이 열려야 하기
- * 때문이다. 최근 목록이 비었으면 첫 즐겨찾기를 고른다. 입력이 있으면 맞는 행 가운데 맨 앞을 고른다.
+ * 목록의 첫 행을 고른다. ⌘P 를 열고 Enter 를 두 번 누르면 마지막에 연 디렉토리가 열려야 하기 때문이다.
  */
 export function firstDirRow(favorites: number, recent: number, query: string): number {
   return query.trim() === '' && recent > 0 ? favorites : 0

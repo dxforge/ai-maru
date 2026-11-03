@@ -34,8 +34,8 @@ import TerminalView from './components/TerminalView.vue'
 import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
 import { commandArgv } from './config/launcher'
-import { findFavorite, SHELL } from '../../shared/launcher'
-import { createFavorites, favoriteToggle } from './launcher/favorites'
+import { favoriteById, SHELL } from '../../shared/launcher'
+import { createFavorites } from './launcher/favorites'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { activeTheme, windowTheme } from './themes'
@@ -212,6 +212,12 @@ async function focusSelected(): Promise<void> {
 function selectCell(key: number): void {
   workspaces.select(key)
   void focusSelected().then(() => revealFocused(true))
+}
+
+function showWorkspace(w: { key: number; cells: readonly { key: number }[] }): void {
+  const cell = w.cells.find((c) => c.key === workspaces.selectedKey.value) ?? w.cells[0]
+  folded.delete(w.key)
+  selectCell(cell.key)
 }
 
 function stepCell(by: 1 | -1): void {
@@ -395,14 +401,21 @@ const favoriteKeys = computed(
   () =>
     new Set(
       workspaces.list.value
-        .filter((w) => findFavorite(favorites.list.value, workspaceDir(w)))
+        .filter((w) => favoriteById(favorites.list.value, w.favorite))
         .map((w) => w.key)
     )
+)
+const linkedFavorites = computed(
+  () => new Set(workspaces.list.value.flatMap((w) => w.favorite ?? []))
 )
 function toggleFavorite(key: number): void {
   const w = workspaces.list.value.find((x) => x.key === key)
   if (!w) return
-  const action = favoriteToggle(favorites.list.value, workspaceDir(w), workspaceName(w, home))
+  const action = favorites.toggle(
+    { dir: workspaceDir(w), name: workspaceName(w, home), favorite: w.favorite },
+    linkedFavorites.value
+  )
+  if (action.kind === 'loading') return
   if (action.kind === 'unknown') {
     toasts.put('favorite', {
       level: 'warning',
@@ -412,13 +425,13 @@ function toggleFavorite(key: number): void {
     return
   }
   toasts.close('favorite')
-  if (action.kind === 'forget') void favorites.forget(action.dir)
-  else void favorites.add(action.dir, action.name)
+  if (action.kind === 'link') workspaces.setFavorite(key, action.id)
+  else if (action.kind === 'add') workspaces.setFavorite(key, action.favorite.id)
 }
 function renameFavorite(key: number): void {
   const w = workspaces.list.value.find((x) => x.key === key)
-  const favorite = w && findFavorite(favorites.list.value, workspaceDir(w))
-  if (w && favorite) void favorites.rename(favorite.dir, workspaceName(w, home))
+  const favorite = w && favoriteById(favorites.list.value, w.favorite)
+  if (w && favorite) void favorites.rename(favorite.id, workspaceName(w, home))
 }
 
 const SIDEBAR_WIDTH = 280
@@ -811,13 +824,24 @@ const SPLIT_OF: Partial<Record<LaunchWhere, SplitDirection>> = {
   'split-down': 'down'
 }
 
-function launch({ dir, command, where, name }: Launch): void {
+// 즐겨찾기 항목 하나는 열린 workspace 하나만 가리킨다.
+function launch({ dir, command, where, name, favorite }: Launch): void {
   const pane = command === SHELL ? {} : ({ command: commandArgv(command), keep: true } as const)
   const split = SPLIT_OF[where]
   if (where === 'cell') workspaces.openCell(dir, pane)
-  else if (where === 'workspace') workspaces.open(dir, pane, name)
+  else if (where === 'workspace') {
+    const linked = favorite && workspaces.list.value.find((w) => w.favorite === favorite)
+    if (linked) showWorkspace(linked)
+    else workspaces.open(dir, pane, name, favorite)
+  }
   // 목록을 띄운 뒤 창이 작아졌으면 자리가 없을 수 있어 다시 본다.
   else if (split) splitSelected(split, { startDir: dir, ...pane })
+  closeOverlay()
+}
+
+function showFavorite(favorite: string): void {
+  const linked = workspaces.list.value.find((w) => w.favorite === favorite)
+  if (linked) showWorkspace(linked)
   closeOverlay()
 }
 
@@ -1110,7 +1134,9 @@ void window.maru.restoreScreen().then((r) => {
       :commands="config.launcher.value.commands"
       :home="home"
       :favorites="favorites"
+      :linked="linkedFavorites"
       @launch="launch"
+      @show-favorite="showFavorite"
       @close="closeOverlay('launcher')"
     />
     <LauncherPalette
