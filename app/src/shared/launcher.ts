@@ -39,7 +39,3 @@ export function favoriteById(
 ): Favorite | undefined {
   return id === undefined ? undefined : favorites.find((f) => f.id === id)
 }
-
-export function findFavorite(favorites: readonly Favorite[], dir: string): Favorite | undefined {
-  return favorites.find((f) => samePath(f.dir, dir))
-}

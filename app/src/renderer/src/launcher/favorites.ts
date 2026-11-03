@@ -7,23 +7,42 @@ export function createFavorites() {
   const list = shallowRef<readonly Favorite[]>([])
   // 처음 읽은 값이 그 뒤에 바꾼 목록보다 늦게 오면 쓰지 않는다.
   let changed = false
+  let loaded = false
   const set = (favorites: readonly Favorite[]): void => {
     changed = true
     list.value = favorites
   }
-  void window.maru.launcherState().then((s) => {
-    if (!changed) list.value = s.favorites
-  })
+  void window.maru
+    .launcherState()
+    .then((s) => {
+      if (!changed) list.value = s.favorites
+    })
+    .finally(() => (loaded = true))
+
+  // main 이 답하기 전에 목록에 먼저 넣는다. 그 사이에 별을 다시 누르면 이 항목을 빼야 하기 때문이다.
+  async function add(favorite: Favorite): Promise<void> {
+    set([...list.value, favorite])
+    set((await window.maru.addFavorite(favorite)).favorites)
+  }
+  async function forget(id: string): Promise<void> {
+    set((await window.maru.forgetFavorite(id)).favorites)
+  }
 
   return {
     list,
-    // main 이 답하기 전에 목록에 먼저 넣는다. 그 사이에 별을 다시 누르면 이 항목을 빼야 하기 때문이다.
-    async add(favorite: Favorite): Promise<void> {
-      set([...list.value, favorite])
-      set((await window.maru.addFavorite(favorite)).favorites)
-    },
-    async forget(id: string): Promise<void> {
-      set((await window.maru.forgetFavorite(id)).favorites)
+    add,
+    forget,
+    /**
+     * 별을 누른 workspace 의 즐겨찾기를 `favoriteToggle` 대로 빼거나 넣고, 할 일을 돌려준다. workspace 에 링크를 거는
+     * 것은 부른 쪽의 일이다. 처음 읽은 목록이 오기 전에는 아무것도 하지 않고 `loading` 을 돌려준다. 빈 목록으로 판정하면
+     * 이어진 workspace 의 항목을 못 찾아 같은 항목을 새로 넣기 때문이다.
+     */
+    toggle(workspace: ToggledWorkspace, linked: ReadonlySet<string>): FavoriteToggle | Loading {
+      if (!loaded) return { kind: 'loading' }
+      const action = favoriteToggle(list.value, workspace, linked)
+      if (action.kind === 'forget') void forget(action.id)
+      else if (action.kind === 'add') void add(action.favorite)
+      return action
     },
     async rename(id: string, name: string): Promise<void> {
       set((await window.maru.renameFavorite(id, name)).favorites)
@@ -32,6 +51,9 @@ export function createFavorites() {
 }
 
 export type Favorites = ReturnType<typeof createFavorites>
+
+type ToggledWorkspace = { dir: string | undefined; name: string; favorite?: string }
+type Loading = { kind: 'loading' }
 
 export type FavoriteToggle =
   | { kind: 'unknown' }
@@ -47,7 +69,7 @@ export type FavoriteToggle =
  */
 export function favoriteToggle(
   favorites: readonly Favorite[],
-  workspace: { dir: string | undefined; name: string; favorite?: string },
+  workspace: ToggledWorkspace,
   linked: ReadonlySet<string>
 ): FavoriteToggle {
   const current = favoriteById(favorites, workspace.favorite)

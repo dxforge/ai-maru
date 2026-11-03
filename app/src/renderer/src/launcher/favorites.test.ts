@@ -69,7 +69,7 @@ describe('favoriteToggle', () => {
 describe('createFavorites', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  function stub(): { resolveRead: (s: LauncherState) => void } {
+  function stub() {
     let resolveRead!: (s: LauncherState) => void
     const read = new Promise<LauncherState>((r) => (resolveRead = r))
     const after = (favorites: Favorite[]): LauncherState => ({
@@ -77,16 +77,49 @@ describe('createFavorites', () => {
       favorites,
       command: null
     })
+    const addFavorite = vi.fn(async (favorite: Favorite) => after([app, favorite]))
+    const forgetFavorite = vi.fn(async () => after([]))
     vi.stubGlobal('window', {
       maru: {
         launcherState: () => read,
-        addFavorite: async (favorite: Favorite) => after([app, favorite]),
-        forgetFavorite: async () => after([]),
+        addFavorite,
+        forgetFavorite,
         renameFavorite: async (id: string, name: string) => after([{ ...app, id, name }])
       }
     })
-    return { resolveRead }
+    return { resolveRead, addFavorite, forgetFavorite }
   }
+
+  it('neither adds nor forgets on a toggle before the saved list arrives, then toggles the saved entry', async () => {
+    const { resolveRead, addFavorite, forgetFavorite } = stub()
+    const favorites = createFavorites()
+    const linked = { dir: '/work/app', name: 'app', favorite: 'f-1' }
+    expect(favorites.toggle(linked, new Set(['f-1']))).toEqual({ kind: 'loading' })
+    expect(favorites.toggle({ dir: '/work/lib', name: 'lib' }, new Set())).toEqual({
+      kind: 'loading'
+    })
+    expect(addFavorite).not.toHaveBeenCalled()
+    expect(forgetFavorite).not.toHaveBeenCalled()
+    expect(favorites.list.value).toEqual([])
+
+    resolveRead({ recent: [], favorites: [app], command: null })
+    await vi.waitFor(() => expect(favorites.list.value).toEqual([app]))
+    expect(favorites.toggle(linked, new Set(['f-1']))).toEqual({ kind: 'forget', id: 'f-1' })
+    expect(forgetFavorite).toHaveBeenCalledWith('f-1')
+    expect(addFavorite).not.toHaveBeenCalled()
+  })
+
+  it('adds the new entry on a toggle after the saved list arrives', async () => {
+    const { resolveRead, addFavorite } = stub()
+    const favorites = createFavorites()
+    resolveRead({ recent: [], favorites: [], command: null })
+    await vi.waitFor(() =>
+      expect(favorites.toggle({ dir: '/work/app', name: 'app' }, new Set()).kind).toBe('add')
+    )
+    expect(addFavorite).toHaveBeenCalledWith(
+      expect.objectContaining({ dir: '/work/app', name: 'app' })
+    )
+  })
 
   it('loads the saved list', async () => {
     const { resolveRead } = stub()

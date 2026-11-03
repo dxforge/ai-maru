@@ -75,19 +75,6 @@ describe('filterRecent', () => {
     const nfd = `${HOME}/${'프로젝트'.normalize('NFD')}`
     expect(filterRecent([nfd], '프로젝트', HOME).map((r) => r.path)).toEqual([nfd])
   })
-
-  it('즐겨찾기에 든 디렉토리는 표기가 달라도 빼고 준다', () => {
-    const nfd = `${HOME}/${'프로젝트'.normalize('NFD')}`
-    const favorites = [
-      { id: 'f-1', dir: '/opt/Tools', name: 'tools' },
-      { id: 'f-2', dir: `${HOME}/프로젝트`.normalize('NFC'), name: 'p' },
-      { id: 'f-3', dir: `${HOME}/프로젝트`.normalize('NFC'), name: 'p review' }
-    ]
-    expect(filterRecent([...recent, nfd], '', HOME, favorites).map((r) => r.path)).toEqual([
-      `${HOME}/work/ai-maru`,
-      `${HOME}/notes`
-    ])
-  })
 })
 
 describe('filterFavorites', () => {

@@ -35,7 +35,7 @@ import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
 import { commandArgv } from './config/launcher'
 import { favoriteById, SHELL } from '../../shared/launcher'
-import { createFavorites, favoriteToggle } from './launcher/favorites'
+import { createFavorites } from './launcher/favorites'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { activeTheme, windowTheme } from './themes'
@@ -405,15 +405,17 @@ const favoriteKeys = computed(
         .map((w) => w.key)
     )
 )
+const linkedFavorites = computed(
+  () => new Set(workspaces.list.value.flatMap((w) => w.favorite ?? []))
+)
 function toggleFavorite(key: number): void {
   const w = workspaces.list.value.find((x) => x.key === key)
   if (!w) return
-  const linked = new Set(workspaces.list.value.flatMap((x) => x.favorite ?? []))
-  const action = favoriteToggle(
-    favorites.list.value,
+  const action = favorites.toggle(
     { dir: workspaceDir(w), name: workspaceName(w, home), favorite: w.favorite },
-    linked
+    linkedFavorites.value
   )
+  if (action.kind === 'loading') return
   if (action.kind === 'unknown') {
     toasts.put('favorite', {
       level: 'warning',
@@ -423,12 +425,8 @@ function toggleFavorite(key: number): void {
     return
   }
   toasts.close('favorite')
-  if (action.kind === 'forget') void favorites.forget(action.id)
-  else if (action.kind === 'link') workspaces.setFavorite(key, action.id)
-  else {
-    workspaces.setFavorite(key, action.favorite.id)
-    void favorites.add(action.favorite)
-  }
+  if (action.kind === 'link') workspaces.setFavorite(key, action.id)
+  else if (action.kind === 'add') workspaces.setFavorite(key, action.favorite.id)
 }
 function renameFavorite(key: number): void {
   const w = workspaces.list.value.find((x) => x.key === key)
@@ -841,6 +839,12 @@ function launch({ dir, command, where, name, favorite }: Launch): void {
   closeOverlay()
 }
 
+function showFavorite(favorite: string): void {
+  const linked = workspaces.list.value.find((w) => w.favorite === favorite)
+  if (linked) showWorkspace(linked)
+  closeOverlay()
+}
+
 function openLaunch(where: LaunchWhere): void {
   const split = SPLIT_OF[where]
   if (split && !canSplit(split)) return closeOverlay()
@@ -1130,7 +1134,9 @@ void window.maru.restoreScreen().then((r) => {
       :commands="config.launcher.value.commands"
       :home="home"
       :favorites="favorites"
+      :linked="linkedFavorites"
       @launch="launch"
+      @show-favorite="showFavorite"
       @close="closeOverlay('launcher')"
     />
     <LauncherPalette

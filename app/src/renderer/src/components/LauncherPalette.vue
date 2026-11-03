@@ -56,22 +56,25 @@ const WHERE_LABELS: Record<LaunchWhere, string> = {
 
 /**
  * `at` 을 주면 디렉토리 단계 없이 그 디렉토리의 명령 단계로 열고, 고른 명령은 `at.where` 에 띄운다. 셸은 그 자리를 여는
- * 키로 열면 되므로 목록에 두지 않는다.
+ * 키로 열면 되므로 목록에 두지 않는다. `linked` 는 열린 workspace 가 가리키는 즐겨찾기 항목의 `id` 다. 그 항목을 고르면
+ * 명령 단계 없이 `showFavorite` 를 보낸다.
  */
 const {
   position,
   commands,
   home = undefined,
   at = undefined,
-  favorites
+  favorites,
+  linked = new Set()
 } = defineProps<{
   position: Position
   commands: readonly string[]
   home?: string
   at?: { dir?: string; where: LaunchWhere }
   favorites: Favorites
+  linked?: ReadonlySet<string>
 }>()
-const emit = defineEmits<{ launch: [launch: Launch]; close: [] }>()
+const emit = defineEmits<{ launch: [launch: Launch]; showFavorite: [id: string]; close: [] }>()
 
 const input = useTemplateRef<HTMLInputElement>('input')
 const query = ref('')
@@ -135,7 +138,7 @@ const favoriteRows = computed(() =>
   pathMode.value ? [] : filterFavorites(favorites.list.value, query.value, home)
 )
 const dirRows = computed<Row[]>(() => {
-  if (!pathMode.value) return filterRecent(recent.value, query.value, home, favorites.list.value)
+  if (!pathMode.value) return filterRecent(recent.value, query.value, home)
   const q = path.value
   if (!q || dirs.value?.parent !== q.parent) return []
   return matchDirs(dirs.value.names, q.fragment).map((name) => ({
@@ -231,6 +234,12 @@ async function choose(given?: Row): Promise<void> {
   if (chosen.value) return
   const row = given ?? target()
   if (row === undefined) return
+  // 이미 열린 workspace 로 가므로 띄울 명령을 고를 일이 없다. `launched` 를 부르지 않으므로 디렉토리가 없어졌어도 오류
+  // 없이 그 workspace 로 간다. 고르지 않은 명령을 기본 명령으로 저장하지도 않는다.
+  if (row.id !== undefined && linked.has(row.id)) {
+    emit('showFavorite', row.id)
+    return
+  }
   chosen.value = {
     dir: row.path,
     label: row.label.replace(/(?<=.)\/+$/, ''),
