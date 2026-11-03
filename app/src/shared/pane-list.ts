@@ -1,4 +1,4 @@
-import { startDirOf, workspaceName } from './names'
+import { workspaceName } from './names'
 import type { PaneRow } from './pane'
 import { commandView, paneName } from './pane-name'
 import { shownRecord } from './program-status'
@@ -30,7 +30,7 @@ export function paneRows(
           workspace,
           cell: c.id,
           title: paneName(p, r, shell, commandView(s)),
-          dir: startDirOf(p) ?? '',
+          dir: p.cwd ?? '',
           message: r?.message ?? ''
         })
       }

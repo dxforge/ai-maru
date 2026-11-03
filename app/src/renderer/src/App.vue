@@ -65,7 +65,6 @@ import { unreadWorkspaces, urgentStates } from './workspace/status'
 import {
   createWorkspaces,
   focusedPane,
-  startDirOf,
   type Cell,
   type PaneInit,
   type PlaceError
@@ -152,17 +151,17 @@ function stepWidth(by: 1 | -1): void {
   workspaces.setPaneCols(c.key, stepPaneColsOverride(c.paneCols, by, config.layout.value))
 }
 
-function startDir(): string | undefined {
+function focusedDir(): string | undefined {
   const c = workspaces.selected()
-  return c && startDirOf(focusedPane(c))
+  return c && focusedPane(c).cwd
 }
 
 function newWorkspace(): void {
-  workspaces.open(startDir())
+  workspaces.open(focusedDir())
 }
 
 function newCell(): void {
-  workspaces.openCell(startDir())
+  workspaces.openCell(focusedDir())
 }
 
 type Terminal = InstanceType<typeof TerminalView>
@@ -297,7 +296,7 @@ function removePane(pane: number, message = 'the pane was closed before its pty 
 
 function onSpawned(pane: number, pty: string, dir: string | undefined): void {
   answerPaneRequest(pane, { pty })
-  if (dir !== undefined) workspaces.setSpawnedCwd(pane, dir)
+  if (dir !== undefined) workspaces.setSpawnedDir(pane, dir)
 }
 
 // ⌘D 로 나눈 pane 은 오류를 보인 채 남지만, `maru pane new`·`maru cell new` 의 pane 은 띄운 쪽이 이유를
@@ -848,7 +847,7 @@ function showFavorite(favorite: string): void {
 function openLaunch(where: LaunchWhere): void {
   const split = SPLIT_OF[where]
   if (split && !canSplit(split)) return closeOverlay()
-  launchAt.value = { dir: startDir(), where }
+  launchAt.value = { dir: focusedDir(), where }
   overlay.value = 'launch'
 }
 
@@ -1084,7 +1083,7 @@ void window.maru.restoreScreen().then((r) => {
                 :ref="(t) => setTerminal(p.key, t)"
                 :pty-id="p.ptyId"
                 :cell-id="c.id"
-                :start-dir="p.attach ? (p.restoredCwd ?? p.startDir) : p.startDir"
+                :start-dir="p.startDir"
                 :command="p.command"
                 :attach="p.attach"
                 :keep="p.keep"

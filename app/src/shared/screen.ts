@@ -18,7 +18,6 @@ export const STATE_VERSIONS: { layout: number; sessions: number; view: number } 
  */
 export type LayoutPane = {
   key: number
-  startDir?: string
   command?: string[]
   keep?: true
   cwd?: string
@@ -160,10 +159,10 @@ function parseLayoutPane(v: unknown): LayoutPane | null {
   const keep = v.keep === true || undefined
   return compact({
     key: v.key,
-    startDir: v.startDir,
     command,
     keep,
-    cwd: v.cwd,
+    // 옛 앱은 pane 을 띄운 디렉토리를 `startDir` 에 따로 저장했다. `cwd` 를 모르던 pane 은 그 디렉토리로 되살린다.
+    cwd: v.cwd ?? v.startDir,
     title: v.title,
     git
   })
