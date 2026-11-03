@@ -35,6 +35,10 @@ type Deps = {
   put: (params: Record<string, unknown>) => Promise<{ id: string }>
   version: string
 }
+type SenderDeps = Omit<Deps, 'put'> & {
+  /** `pty` 는 `maru mcp` 를 띄운 pty 다. */
+  put: (params: Record<string, unknown>, pty: string) => Promise<{ id: string }>
+}
 
 class RpcError extends Error {
   constructor(
@@ -110,11 +114,11 @@ async function handle(msg: Message, deps: Deps): Promise<Message | null> {
   }
 }
 
-export function mcpHandlers(deps: Deps): Handlers {
+export function mcpHandlers(deps: SenderDeps): Handlers {
   return {
-    'mcp.message': async (params) => {
+    'mcp.message': async (params, pty) => {
       if (!isObject(params.message)) throw new InvalidParams('params.message must be an object')
-      const message = await handle(params.message, deps)
+      const message = await handle(params.message, { ...deps, put: (p) => deps.put(p, pty) })
       return message && { message }
     }
   }

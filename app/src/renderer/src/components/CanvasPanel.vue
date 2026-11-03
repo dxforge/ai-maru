@@ -3,7 +3,9 @@ import { ref, useTemplateRef, watch } from 'vue'
 import { clockTime, type Canvas } from '../canvas/store'
 import { ICONS } from '../icons'
 import CanvasDoc from './CanvasDoc.vue'
+import CanvasViewMenu from './CanvasViewMenu.vue'
 import CardStream from './CardStream.vue'
+import CellName from './CellName.vue'
 
 const { canvas, width, resizing } = defineProps<{
   canvas: Canvas
@@ -62,7 +64,7 @@ function onTransition(e: TransitionEvent): void {
     @mouseleave="canvas.hold(false)"
   >
     <header class="bar">
-      <span>Canvas</span>
+      <CanvasViewMenu :canvas="canvas" />
       <span class="actions">
         <button
           class="expand-all"
@@ -85,8 +87,10 @@ function onTransition(e: TransitionEvent): void {
         </button>
       </span>
     </header>
+    <!-- 보기를 바꾸면 다시 만든다. 그대로 두면 새로 보이는 문서를 모두 방금 온 문서로 강조하기 때문이다. -->
     <CardStream
-      :items="canvas.docs.value"
+      :key="String(canvas.viewCell.value)"
+      :items="canvas.shown.value"
       :expanded="canvas.expanded"
       :held="canvas.held.value"
       :style="frozen === undefined ? {} : { width: `${frozen}px` }"
@@ -94,7 +98,13 @@ function onTransition(e: TransitionEvent): void {
       @remove="canvas.remove"
       @flush="canvas.flush"
     >
-      <template #meta="{ item }">{{ clockTime(item.at) }}</template>
+      <template #meta="{ item }"
+        ><CellName
+          v-if="canvas.viewCell.value === null"
+          class="owner"
+          :name="canvas.nameOf(item.cell)"
+        />{{ clockTime(item.at) }}</template
+      >
       <template #body="{ item }"><CanvasDoc :doc="item" /></template>
     </CardStream>
   </aside>
@@ -138,9 +148,12 @@ function onTransition(e: TransitionEvent): void {
 }
 
 .bar {
+  position: relative;
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-4) var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--line);
   font-size: var(--text-2);
@@ -161,6 +174,7 @@ button {
 }
 
 .actions {
+  flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -176,6 +190,16 @@ button {
 .collapse-all:hover,
 .close:hover {
   color: var(--fg);
+}
+
+.owner {
+  display: inline-block;
+  max-width: 18em;
+  margin-right: var(--space-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .reopen {

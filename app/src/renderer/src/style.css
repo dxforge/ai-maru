@@ -256,3 +256,27 @@ body,
 .palette .empty {
   color: var(--muted);
 }
+
+/* Canvas 의 「더」 팝오버와 보기 드롭다운처럼 버튼을 늘어놓은 작은 메뉴다. 자리는 쓰는 쪽이 정한다. */
+.popup-menu {
+  overflow-y: auto;
+  padding: var(--space-2) 0;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  font-size: var(--text-3);
+  color: var(--fg);
+}
+
+/* 글자 크기와 색은 위에 둔다. 버튼은 컴포넌트의 `button { font: inherit; color: inherit }` 으로 물려받는다. */
+.popup-menu button {
+  width: 100%;
+  padding: var(--space-2) var(--space-5);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.popup-menu button:hover {
+  background: var(--hover);
+}

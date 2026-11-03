@@ -271,7 +271,7 @@ onBeforeUnmount(() => {
           >{{ held }} new
         </button>
       </Transition>
-      <div v-if="popover" v-overlay-scroll="'y'" class="popover" :class="popover">
+      <div v-if="popover" v-overlay-scroll="'y'" class="popover popup-menu" :class="popover">
         <button
           v-for="it in popoverItems"
           :key="it.id"
@@ -546,12 +546,6 @@ button {
   right: 10px;
   z-index: 2;
   max-height: 60%;
-  overflow-y: auto;
-  padding: var(--space-2) 0;
-  background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-2);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
 }
 
 .popover.top {
@@ -564,17 +558,7 @@ button {
 
 .popover button {
   display: block;
-  width: 100%;
-  padding: var(--space-2) var(--space-5);
   overflow: hidden;
-  text-align: left;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-3);
-  color: var(--fg);
-}
-
-.popover button:hover {
-  background: var(--hover);
 }
 </style>

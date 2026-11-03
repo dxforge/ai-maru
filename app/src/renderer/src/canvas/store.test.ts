@@ -1,7 +1,7 @@
 import { resolveObjectURL } from 'node:buffer'
 import { describe, expect, it } from 'vitest'
 import type { CanvasItem } from '../../../shared/canvas'
-import { clockTime, createCanvas, type Canvas } from './store'
+import { clockTime, createCanvas, openCells, type Canvas, type OpenCell } from './store'
 
 const md = (id: string, text: string, title?: string): CanvasItem => ({
   id,
@@ -112,6 +112,7 @@ describe('createCanvas', () => {
 
   it('여러 문서를 함께 펼치고, 모두 접기·모두 펼치기는 모든 문서를 접고 펼친다', () => {
     const c = createCanvas()
+    c.choose('all')
     c.put(md('a', 'A'))
     c.put(md('b', 'B'))
     c.expand('a', false)
@@ -127,6 +128,7 @@ describe('createCanvas', () => {
   it('붙잡은 동안 온 문서는 새 문서도 고친 문서도 넣지 않고 수만 세며, 놓으면 받은 순서와 받은 시각으로 넣는다', () => {
     let t = 1000
     const c = createCanvas(() => t)
+    c.choose('all')
     c.put(md('a', 'A'))
     c.hold(true)
     t = 2000
@@ -146,6 +148,7 @@ describe('createCanvas', () => {
 
   it('쌓인 문서를 지금 넣어도 붙잡은 채라, 그 뒤에 온 문서는 다시 쌓인다', () => {
     const c = createCanvas()
+    c.choose('all')
     c.put(md('a', 'A'))
     c.hold(true)
     c.put(md('b', 'B'))
@@ -214,6 +217,214 @@ describe('createCanvas', () => {
     expect(c.open.value).toBe(false)
     c.toggle()
     expect(c.open.value).toBe(true)
+  })
+})
+
+const owned = (id: string, cell?: string): CanvasItem => ({
+  ...md(id, id),
+  pty: 'p-1',
+  ...(cell === undefined ? {} : { cell })
+})
+
+const named = (id: string, workspace: string, cell: string, branch?: string): OpenCell => ({
+  id,
+  name: { workspace, cell: branch === undefined ? { name: cell } : { name: cell, branch } }
+})
+
+const A = named('c-a', 'ws', 'app', 'main')
+const B = named('c-b', 'ws', 'core')
+const C = named('c-c', 'other', 'docs')
+
+const shownIds = (c: Canvas): string[] => c.shown.value.map((d) => d.id)
+
+describe('cell 별 보기', () => {
+  it('문서에 보낸 pty 와 cell 을 붙이고, 소속이 없으면 붙이지 않는다', () => {
+    const c = createCanvas()
+    c.put(owned('a', 'c-a'))
+    c.put(md('n', 'N'))
+    expect(docOf(c, 'a')).toMatchObject({ pty: 'p-1', cell: 'c-a' })
+    expect(docOf(c, 'n')).not.toHaveProperty('pty')
+    expect(docOf(c, 'n')).not.toHaveProperty('cell')
+  })
+
+  it('처음 보기는 현재 cell 이고, 선택된 cell 을 따라 그 cell 의 문서만 보인다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('a', 'c-a'))
+    c.put(owned('b', 'c-b'))
+    c.put(owned('n'))
+    expect(c.view.value).toBe('current')
+    expect(c.viewCell.value).toBe('c-a')
+    expect(shownIds(c)).toEqual(['a'])
+    c.sync({ cells: [A, B], current: 'c-b' })
+    expect(c.viewCell.value).toBe('c-b')
+    expect(shownIds(c)).toEqual(['b'])
+  })
+
+  it('선택된 cell 이 없으면 현재 cell 보기에는 아무 문서도 없다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [] })
+    c.put(owned('a', 'c-a'))
+    c.put(owned('n'))
+    expect(c.viewCell.value).toBeUndefined()
+    expect(shownIds(c)).toEqual([])
+  })
+
+  it('모든 문서 보기는 소속이 없는 문서까지 모두 보이고, 선택이 바뀌어도 그대로다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('a', 'c-a'))
+    c.put(owned('b', 'c-b'))
+    c.put(owned('n'))
+    c.choose('all')
+    expect(c.viewCell.value).toBeNull()
+    expect(shownIds(c)).toEqual(['n', 'b', 'a'])
+    c.sync({ cells: [A, B], current: 'c-b' })
+    expect(c.view.value).toBe('all')
+    expect(shownIds(c)).toEqual(['n', 'b', 'a'])
+  })
+
+  it('고른 cell 의 보기는 선택이 바뀌어도 그 cell 의 문서만 보인다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('a', 'c-a'))
+    c.put(owned('b', 'c-b'))
+    c.choose({ cell: 'c-b' })
+    expect(shownIds(c)).toEqual(['b'])
+    c.sync({ cells: [A, B], current: 'c-a' })
+    expect(c.viewCell.value).toBe('c-b')
+    expect(shownIds(c)).toEqual(['b'])
+  })
+
+  it('새 문서가 와도 보기는 바뀌지 않는다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.choose({ cell: 'c-a' })
+    c.put(owned('b', 'c-b'))
+    expect(c.view.value).toEqual({ cell: 'c-a' })
+    expect(shownIds(c)).toEqual([])
+    expect(c.docs.value.map((d) => d.id)).toEqual(['b'])
+  })
+
+  it('고를 cell 은 열린 cell 을 받은 순서대로 모두 두고, 그 뒤에 문서가 남은 닫힌 cell 을 둔다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B, C], current: 'c-a' })
+    c.put(owned('b', 'c-b'))
+    c.put(owned('c', 'c-c'))
+    c.sync({ cells: [A], current: 'c-a' })
+    expect(c.choices.value).toEqual([
+      { ...A, closed: false },
+      { ...B, closed: true },
+      { ...C, closed: true }
+    ])
+    c.remove('b')
+    expect(c.choices.value.map((x) => x.id)).toEqual(['c-a', 'c-c'])
+  })
+
+  it('닫힌 cell 은 닫히기 직전의 이름을 쓰고, 다시 열리면 닫힌 cell 이 아니다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('b', 'c-b'))
+    const moved = named('c-b', 'other', 'core', 'fix')
+    c.sync({ cells: [A, moved], current: 'c-a' })
+    c.sync({ cells: [A], current: 'c-a' })
+    expect(c.nameOf('c-b')).toEqual(moved.name)
+    expect(c.choices.value.find((x) => x.id === 'c-b')).toEqual({ ...moved, closed: true })
+    expect(c.isClosed('c-b')).toBe(true)
+    expect(c.isClosed('c-a')).toBe(false)
+    c.sync({ cells: [A, B], current: 'c-a' })
+    expect(c.nameOf('c-b')).toEqual(B.name)
+    expect(c.choices.value.filter((x) => x.closed)).toEqual([])
+    expect(c.isClosed('c-b')).toBe(false)
+  })
+
+  it('닫힌 cell 을 고른 보기는 그 cell 에 남은 문서를 보인다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('b', 'c-b'))
+    c.sync({ cells: [A], current: 'c-a' })
+    c.choose({ cell: 'c-b' })
+    expect(shownIds(c)).toEqual(['b'])
+  })
+
+  it('고른 닫힌 cell 은 문서가 모두 지워져도 고를 cell 에 남고, 다른 보기로 바꾸면 빠진다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('b', 'c-b'))
+    c.sync({ cells: [A], current: 'c-a' })
+    c.choose({ cell: 'c-b' })
+    c.remove('b')
+    expect(c.choices.value).toEqual([
+      { ...A, closed: false },
+      { ...B, closed: true }
+    ])
+    c.choose('all')
+    expect(c.choices.value.map((x) => x.id)).toEqual(['c-a'])
+  })
+
+  it('모두 펼치기·모두 접기는 지금 보기의 문서에만 미친다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('a', 'c-a'))
+    c.put(owned('b', 'c-b'))
+    c.collapseAll()
+    expect([...c.expanded]).toEqual(['b'])
+    c.expand('b', false)
+    c.expandAll()
+    expect([...c.expanded]).toEqual(['a'])
+  })
+
+  it('소속이 없거나 모르는 cell 은 이름이 없다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A], current: 'c-a' })
+    expect(c.nameOf('c-a')).toEqual(A.name)
+    expect(c.nameOf(undefined)).toBeUndefined()
+    expect(c.nameOf('c-x')).toBeUndefined()
+  })
+
+  it('붙잡은 동안 쌓인 문서는 지금 보기에 드는 것만 센다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('a', 'c-a'))
+    c.hold(true)
+    c.put(owned('a2', 'c-a'))
+    c.put(owned('b', 'c-b'))
+    c.put(owned('n'))
+    expect(c.held.value).toBe(1)
+    c.choose('all')
+    expect(c.held.value).toBe(3)
+  })
+})
+
+describe('openCells', () => {
+  it('workspace 순서, 그 안의 cell 순서로 workspace 이름과 cell 의 포커스된 pane 이름을 붙인다', () => {
+    const home = '/Users/me'
+    const pane = (key: number, cwd: string, git?: { repo: string; branch: string }) => ({
+      key,
+      cwd,
+      ...(git && { git: { ...git, common: `${cwd}/.git` } })
+    })
+    const cells = openCells(
+      [
+        {
+          cells: [
+            {
+              id: 'c-1',
+              focused: 2,
+              panes: [pane(1, home), pane(2, '/r/app', { repo: 'app', branch: 'main' })]
+            },
+            { id: 'c-2', focused: 3, panes: [pane(3, '/tmp/x')] }
+          ]
+        },
+        { name: 'Named', cells: [{ id: 'c-3', focused: 4, panes: [pane(4, '/r/core')] }] }
+      ],
+      home
+    )
+    expect(cells).toEqual([
+      { id: 'c-1', name: { workspace: '~', cell: { name: 'app', branch: 'main' } } },
+      { id: 'c-2', name: { workspace: '~', cell: { name: 'x' } } },
+      { id: 'c-3', name: { workspace: 'Named', cell: { name: 'core' } } }
+    ])
   })
 })
 

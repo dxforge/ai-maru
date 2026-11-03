@@ -49,17 +49,21 @@ function opener(over: Partial<LinkOpener> = {}) {
   const external: string[] = []
   const paths: string[] = []
   const docs: CanvasDoc[] = []
+  const senders: string[] = []
   const o: LinkOpener = {
     openExternal: async (url) => void external.push(url),
     openPath: async (path) => {
       paths.push(path)
       return ''
     },
-    putCanvas: async (doc) => void docs.push(doc),
+    putCanvas: async (doc, pty) => {
+      docs.push(doc)
+      senders.push(pty)
+    },
     foregroundCwd: async () => null,
     ...over
   }
-  return { o, external, paths, docs }
+  return { o, external, paths, docs, senders }
 }
 
 describe('openLink', () => {
@@ -76,12 +80,13 @@ describe('openLink', () => {
     })
   })
 
-  it('.md 는 Canvas 에 띄운다 — id 는 경로, 제목은 파일 이름', async () => {
+  it('.md 는 링크를 누른 pane 의 문서로 Canvas 에 띄운다 — id 는 경로, 제목은 파일 이름', async () => {
     const path = join(dir, 'note.md')
     writeFileSync(path, '# hi')
-    const { o, docs, paths } = opener()
-    expect(await openLink(path, 'p-1', o)).toEqual({ ok: true })
+    const { o, docs, paths, senders } = opener()
+    expect(await openLink(path, 'p-3', o)).toEqual({ ok: true })
     expect(docs).toEqual([{ id: path, kind: 'markdown', text: '# hi', title: 'note.md' }])
+    expect(senders).toEqual(['p-3'])
     expect(paths).toEqual([])
   })
 

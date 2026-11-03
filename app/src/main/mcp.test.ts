@@ -6,20 +6,22 @@ import { CANVAS_PUT_TOOL, mcpHandlers } from './mcp'
 import { createWindowReady } from './window-ready'
 
 function hub(
-  put: (params: Record<string, unknown>) => Promise<{ id: string }> = async () => ({
+  put: (params: Record<string, unknown>, pty: string) => Promise<{ id: string }> = async () => ({
     id: 'doc'
   })
 ) {
   const calls: Record<string, unknown>[] = []
+  const ptys: string[] = []
   const handlers = mcpHandlers({
-    put: (params) => {
+    put: (params, pty) => {
       calls.push(params)
-      return put(params)
+      ptys.push(pty)
+      return put(params, pty)
     },
     version: '1.2.3'
   })
   const send = (message: unknown) => handlers['mcp.message']({ message }, 'p-1') as Promise<unknown>
-  return { send, calls }
+  return { send, calls, ptys }
 }
 
 const call = (args: unknown, name = 'canvas_put') => ({
@@ -111,10 +113,11 @@ describe('mcp.message', () => {
 })
 
 describe('tools/call canvas_put', () => {
-  it('text·id·title 을 canvas.put 처리로 넘기고 문서 id 를 text 로 돌려준다', async () => {
-    const { send, calls } = hub(async () => ({ id: 'd-1' }))
+  it('text·id·title 과 maru mcp 의 pty 를 canvas.put 처리로 넘기고 문서 id 를 text 로 돌려준다', async () => {
+    const { send, calls, ptys } = hub(async () => ({ id: 'd-1' }))
     const res = await send(call({ text: '# hi', id: 'd-1', title: 'T' }))
     expect(calls).toEqual([{ text: '# hi', id: 'd-1', title: 'T' }])
+    expect(ptys).toEqual(['p-1'])
     expect(res).toEqual({
       message: { jsonrpc: '2.0', id: 7, result: { content: [{ type: 'text', text: 'd-1' }] } }
     })
@@ -145,7 +148,13 @@ describe('tools/call canvas_put', () => {
         isDestroyed: () => false,
         webContents: { send: (...a: unknown[]) => sent.push(a) }
       }
-      const { send } = hub(canvasPut(() => win as unknown as BrowserWindow, createWindowReady()))
+      const { send } = hub(
+        canvasPut(
+          () => win as unknown as BrowserWindow,
+          createWindowReady(),
+          () => undefined
+        )
+      )
       expect(await send(call(args))).toEqual(toolError(reason))
       expect(sent).toEqual([])
     }

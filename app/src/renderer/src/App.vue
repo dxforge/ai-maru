@@ -19,7 +19,7 @@ import type { ProgramStatusRecord } from '../../shared/program-status'
 import { clampCanvasWidth, clampSidebarWidth, type ScreenState } from '../../shared/screen'
 import { chords, secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
-import { createCanvas } from './canvas/store'
+import { createCanvas, openCells } from './canvas/store'
 import { createSeenTracker } from './pty/seen'
 import { createPtyStates, syncPtyStates } from './pty/states'
 import { syncJobs } from './workspace/jobs'
@@ -87,6 +87,11 @@ function onLegacyProgramStatus(pty: string, records: ProgramStatusRecord[]): voi
 }
 const home = window.maru.home
 const shell = window.maru.shell
+watch(
+  () => ({ cells: openCells(workspaces.list.value, home), current: workspaces.selected()?.id }),
+  canvas.sync,
+  { immediate: true }
+)
 
 const jobs = shallowRef<JobView[]>([])
 syncJobs((list) => (jobs.value = list), window.maru)
@@ -969,6 +974,7 @@ void window.maru.restoreScreen().then((r) => {
         :key="c.key"
         :ref="(el) => observePanes(c.key, el)"
         class="panes"
+        :data-cell="c.id"
         :class="{ selected }"
         :style="{ width, ...vars }"
       >

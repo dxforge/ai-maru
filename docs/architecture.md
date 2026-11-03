@@ -32,6 +32,8 @@ CLI 서버는 앱이 뜨자마자 요청을 받으므로, 재시작에서 남은
 
 renderer 는 화면을 되살린 다음 tick 에 `pane:ready` 를 보낸다(`App.vue`). 다음 tick 에는 되살린 터미널이 mount 돼 `pty:open` 을 보낸 뒤다. 되살리기 전에 넘기면 renderer 는 부른 pane 을 찾지 못한다. 같은 renderer 의 IPC 는 보낸 순서대로 닿으므로, main 은 쌓아 둔 요청을 넘길 때 되살린 pty 의 cell 을 안다(위의 "main 이 아는 pty 의 cell"). 그래서 `cell.new` 는 부른 pty 의 cell 과 `after`·`before` 로 가리킨 pty 의 cell 을 요청을 받을 때가 아니라 창에 넘길 때 찾는다. 터미널이 mount 될 때 pty 를 열지 않도록 바뀌면, main 은 되살린 pty 의 cell 을 모른 채 넘겨 새 cell 이 새 workspace 로 목록 끝에 놓인다.
 
+Canvas 문서도 같은 이유로, main 은 보낸 pty 의 cell 을 창에 넘길 때 찾는다(`app/src/main/canvas.ts` 의 `ownerOf`). main 은 문서에 보낸 pty 와 그 cell id 를 붙이고(`CanvasOwner`), cell 을 찾지 못하면 pty 만 붙인다. workspace 는 붙이지 않는다. renderer 는 문서를 그 cell 로 거르고, 이름은 그릴 때 cell 이 지금 속한 workspace 로 짓는다. 그래서 cell 을 다른 workspace 로 옮기면 문서의 이름도 따라간다. cell 이 없는 문서는 「All documents」 에서만 보인다.
+
 ## pty 상태는 main 이 구독해 든다
 
 셸 cwd(OSC 7)·제목(OSC 0/2)·foreground cwd·OSC 7501 레코드는 maru-pty 가 해석해 하나의 상태로 든다. main 은 pty 마다 maru-pty 에 `subscribe` 연결을 직접 열어 마지막 상태를 든다(`app/src/main/pty-state.ts`). 이 연결로는 화면 바이트가 오지 않는다. attach 스트림은 renderer 가 붙어 있을 때만 있으므로, 상태를 attach 스트림에서 읽으면 main 은 renderer 가 붙은 동안에만 상태를 갖는다.
