@@ -831,10 +831,15 @@ export function canvasResizer(page: Page): Locator {
   return page.locator('.resizer:has(+ .canvas)')
 }
 
-export async function openCanvas({ app, page }: Launched): Promise<void> {
-  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first' })
+/** Canvas 가 열리며 폭을 늘리는 transition 이 끝나 터미널 폭이 더 바뀌지 않을 때까지 기다린다. */
+export async function canvasSettled(page: Page): Promise<void> {
   await expect(canvasPanel(page)).toBeVisible()
   await expect.poll(() => canvasPanel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
+}
+
+export async function openCanvas({ app, page }: Launched): Promise<void> {
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first' })
+  await canvasSettled(page)
 }
 
 export async function canvasWidth(page: Page): Promise<number> {
