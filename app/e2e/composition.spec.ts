@@ -41,7 +41,7 @@ async function inkTop(page: Page, clip: Box): Promise<number> {
 
 /**
  * `clip` 안의 글자마다 잉크가 시작하는 픽셀 열과 마지막 잉크 픽셀 열을, 넓힌 영역의 왼쪽 끝부터 센 device px 로 잰다.
- * xterm 은 캔버스의 CSS 폭을 정수 px 로 반올림한 뒤 터미널 열 수로 나눠 글자 칸 폭을 셈한다. 그래서 DPR 2 에서 터미널 열
+ * xterm 의 DOM renderer 는 캔버스의 CSS 폭을 정수 px 로 반올림한 뒤 터미널 열 수로 나눠 글자 칸 폭을 셈한다. 그래서 DPR 2 에서 터미널 열
  * 수와 device px 글자 칸 폭이 둘 다 홀수면 글자 칸 폭과 커서의 x 가 device px 경계에 맞지 않는다. 그 x 에서 잘라 찍으면
  * screenshot 배율이 dpr 에서 벗어나 글자 경계가 1 device px 어긋난다. 그래서 잘라 찍는 영역을 device px 경계까지 넓힌다.
  */
@@ -202,14 +202,14 @@ for (const size of [undefined, 13, 15, 16])
           await expect.poll(async () => (await cursor(page)).y).toBeGreaterThan(at.y)
           expect(composing.starts.every((x) => x >= 0)).toBe(true)
           // 터미널 열 수가 홀수면 글자 칸 폭이 정수 device px 가 아니어서, 조합 중인 글자와 확정된 글자의 가로 위치가 1
-          // device px 보다 작게 갈린다. 그러면 글자 가장자리의 옅은 픽셀 하나가 한쪽에서만 잉크로 잡히기도 한다. 그래서 1
-          // device px 안의 차이는 같은 자리로 본다.
+          // device px 보다 작게 갈린다. 그러면 글자 가장자리의 옅은 픽셀 하나가 한쪽에서만 잉크로 잡히기도 한다. 그래서 열
+          // 수를 홀수로 맞춘 케이스만 1 device px 안의 차이를 같은 자리로 본다.
           const want = [...composing.starts, composing.end]
           const committed = await settled(ink)
           const got = [...committed.starts, committed.end]
-          expect(got.map((x, i) => (x >= 0 && Math.abs(x - want[i]) <= 1 ? want[i] : x))).toEqual(
-            want
-          )
+          expect(
+            got.map((x, i) => (odd && x >= 0 && Math.abs(x - want[i]) <= 1 ? want[i] : x))
+          ).toEqual(want)
         })
 
 test('조합창은 설정한 글꼴 크기로 쓴다', async ({ launch, dataDir }) => {
