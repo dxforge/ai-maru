@@ -132,8 +132,7 @@ function items(src: RowSource, w: DeepReadonly<Workspace>): Item[] {
 
 const groups = computed(() => {
   const src: RowSource = { shown, command, notification, home, shell }
-  const head = pinnedCount(workspaces)
-  return workspaces.map((w, i) => {
+  return workspaces.map((w) => {
     const f = folded.has(w.key)
     const auto = autoWorkspaceName(w, home)
     return {
@@ -142,7 +141,6 @@ const groups = computed(() => {
       auto,
       folded: f,
       pinned: !!w.pinned,
-      unpinnedHead: i > 0 && i === head,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       items: f ? [] : items(src, w)
     }
@@ -290,12 +288,11 @@ const favoriteLabel = (favorite: boolean): string =>
     <div ref="list" v-overlay-scroll="'y'" class="list">
       <div
         v-for="(
-          { w, name, auto, folded: wf, pinned, unpinnedHead, state, notified, dot, items: entries },
-          wi
+          { w, name, auto, folded: wf, pinned, state, notified, dot, items: entries }, wi
         ) in groups"
         :key="w.key"
         class="workspace"
-        :class="{ dragging: workspaceDragged(w.key), 'unpinned-head': unpinnedHead }"
+        :class="{ dragging: workspaceDragged(w.key) }"
         :data-workspace="w.key"
       >
         <div v-if="renaming === w.key" class="workspace-head editing">
@@ -604,11 +601,6 @@ const favoriteLabel = (favorite: boolean): string =>
   margin-top: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid var(--line);
-}
-
-.workspace.unpinned-head {
-  margin-top: var(--space-5);
-  padding-top: var(--space-5);
 }
 
 .group:last-child,
