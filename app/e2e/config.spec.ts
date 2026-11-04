@@ -4,6 +4,7 @@ import { LINE_HEIGHT } from '../src/renderer/src/font'
 import {
   activePane,
   activeTerminal,
+  canvasButton,
   clickMenu,
   collapseSidebar,
   configFile,
@@ -282,7 +283,7 @@ test('설정 파일을 읽을 수 없으면 알린다', async ({ launch, dataDir
   await expect(toast(page)).toContainText('Kept the previous settings.')
 })
 
-test('토스트가 떠 있어도 Canvas 헤더의 닫기 버튼으로 Canvas 를 닫는다', async ({
+test('토스트가 떠 있어도 panel bar 의 Canvas 아이콘으로 Canvas 를 닫는다', async ({
   launch,
   dataDir
 }) => {
@@ -291,7 +292,7 @@ test('토스트가 떠 있어도 Canvas 헤더의 닫기 버튼으로 Canvas 를
   const { page } = launched
   await expect(toast(page)).toHaveCount(1)
   await openCanvas(launched)
-  await page.locator('.canvas .close').click()
+  await canvasButton(page).click()
   await expect(page.locator('aside.canvas')).toBeHidden()
   await expect(toast(page)).toHaveCount(1)
 })

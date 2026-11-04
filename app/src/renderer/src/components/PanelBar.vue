@@ -54,7 +54,10 @@ defineEmits<{ run: [id: CommandId] }>()
   flex: none;
   align-self: stretch;
   height: var(--titlebar-height);
-  margin-bottom: var(--space-3);
+  /* 제목 줄 높이에서는 왼쪽 테두리를 덮어, Canvas 제목 줄과 사이에 세로선이 없게 한다.
+     Canvas 가 닫혀도 덮는다. 맨 위 칸 모양이 열림·닫힘에 따라 바뀌지 않게 하려는 것이다. */
+  margin: 0 0 var(--space-1) -1px;
+  background: var(--side);
   border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
 }

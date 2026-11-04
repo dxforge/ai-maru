@@ -2,7 +2,6 @@
 import { ref, useTemplateRef, watch } from 'vue'
 import { clockTime, type Canvas } from '../canvas/store'
 import { ICONS } from '../icons'
-import { commandLabel } from '../../../shared/shortcuts'
 import CanvasDoc from './CanvasDoc.vue'
 import CanvasViewMenu from './CanvasViewMenu.vue'
 import CardStream from './CardStream.vue'
@@ -66,6 +65,10 @@ function onTransition(e: TransitionEvent): void {
     <header class="bar">
       <div class="title-row">
         <span class="workspace-title">Canvas</span>
+      </div>
+      <!-- 카드를 모두 펴고 접는 버튼은 보기 메뉴 옆에 둔다. 이 버튼은 지금 보기에 든 카드에만 작용하기 때문이다. -->
+      <div class="picker">
+        <CanvasViewMenu :canvas="canvas" />
         <span class="actions">
           <button
             v-tooltip="'Expand all'"
@@ -85,18 +88,8 @@ function onTransition(e: TransitionEvent): void {
           >
             <span class="nerd-icon">{{ ICONS.collapseAll }}</span>
           </button>
-          <button
-            v-tooltip="{ text: 'Close Canvas', keys: commandLabel('toggle-canvas') }"
-            class="close"
-            aria-label="Close Canvas"
-            @mousedown.prevent
-            @click="canvas.close()"
-          >
-            <span class="nerd-icon">{{ ICONS.close }}</span>
-          </button>
         </span>
       </div>
-      <div class="picker"><CanvasViewMenu :canvas="canvas" /></div>
     </header>
     <!-- 보기를 바꾸면 다시 만든다. 그대로 두면 새로 보이는 문서를 모두 방금 온 문서로 강조하기 때문이다. -->
     <CardStream
@@ -178,8 +171,6 @@ button {
 .title-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
   height: var(--titlebar-height);
   padding: 0 var(--space-4) 0 calc(2 * var(--space-3));
   border-bottom: 1px solid var(--line);
@@ -188,6 +179,8 @@ button {
 
 .picker {
   display: flex;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
   padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
 }
@@ -200,14 +193,12 @@ button {
 }
 
 .expand-all,
-.collapse-all,
-.close {
+.collapse-all {
   padding: var(--space-1) var(--space-3);
 }
 
 .expand-all:hover,
-.collapse-all:hover,
-.close:hover {
+.collapse-all:hover {
   color: var(--fg);
 }
 
