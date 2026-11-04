@@ -215,6 +215,7 @@ export const OVERLAY_SCROLLBARS = ['-AppleShowScrollBars', 'WhenScrolling']
 export const KEEP_TERMINALS = 0
 export const KEEP_LAYOUT = 1
 export const END_EVERYTHING = 2
+export const CANCEL_QUIT = 3
 
 export function stateFile(dataDir: string): string {
   return join(dataDir, 'state.json')

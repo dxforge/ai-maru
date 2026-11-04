@@ -2,9 +2,12 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { ElectronApplication } from '@playwright/test'
 import { readRecord } from '../src/main/pty'
+import { STATE_VERSIONS } from '../src/shared/screen'
 import {
   answerDialog,
+  CANCEL_QUIT,
   dialogCalls,
+  END_EVERYTHING,
   expect,
   holdDialogs,
   panes,
@@ -63,13 +66,16 @@ test('renderer 가 죽어 대화창을 기다리는 동안 온 maru canvas put �
   const doc = join(dataDir, 'doc.md')
   writeFileSync(doc, '# Doc\n')
   const out = join(dataDir, 'canvas-put')
+  const go = join(dataDir, 'crashed')
   await run(
     page,
-    `(sleep 1; "$MARU_CLI" canvas put --title t '${doc}' >/dev/null 2>&1; echo "code=$?" > '${out}') & echo bg-$((1+1))`,
+    `(while [ ! -e '${go}' ]; do sleep 0.1; done; "$MARU_CLI" canvas put --title t '${doc}' >/dev/null 2>&1; echo "code=$?" > '${out}') & echo bg-$((1+1))`,
     'bg-2'
   )
   await holdDialogs(app)
   await crashRenderer(app)
+  await expect.poll(() => dialogCalls(app).then((c) => c.length)).toBe(1)
+  writeFileSync(go, '')
   await expect
     .poll(() => (existsSync(out) ? readFileSync(out, 'utf8').trim() : null), { timeout: 15_000 })
     .toMatch(/^code=[1-9]/)
@@ -90,5 +96,69 @@ test('renderer 가 죽은 뒤 Quit 을 고르면 끄기 대화창으로 간다',
   expect((await dialogCalls(app))[1].message).toBe('Quit AI Maru?')
   const closed = app.waitForEvent('close')
   await answerDialog(app, 1, 0)
+  await closed
+})
+
+async function quitFromMenu(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ app }) => app.quit())
+}
+
+test('renderer 가 죽은 뒤 Restart 의 호환 확인을 취소해도 메뉴의 Quit 으로 끈다', async ({
+  launch,
+  dataDir
+}) => {
+  const versions = join(dataDir, 'installed-versions.json')
+  writeFileSync(
+    versions,
+    JSON.stringify({ ...STATE_VERSIONS, sessions: STATE_VERSIONS.sessions + 1 })
+  )
+  const { app, page } = await launch({ MARU_STATE_VERSIONS_FILE: versions })
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  await holdDialogs(app)
+  await crashRenderer(app)
+  await expect.poll(() => dialogCalls(app).then((c) => c.length)).toBe(1)
+  await answerDialog(app, 0, 0)
+  await expect.poll(() => dialogCalls(app).then((c) => c.length)).toBe(2)
+  expect((await dialogCalls(app))[1].message).toBe('Restart with layout only?')
+  await answerDialog(app, 1, 1)
+  await quitFromMenu(app)
+  await expect.poll(() => dialogCalls(app).then((c) => c.length)).toBe(3)
+  expect((await dialogCalls(app))[2].message).toBe('Quit AI Maru?')
+  const closed = app.waitForEvent('close')
+  await answerDialog(app, 2, END_EVERYTHING)
+  await closed
+})
+
+test('renderer 가 죽은 뒤 Quit 의 끄기 대화창을 취소해도 메뉴의 Quit 으로 끈다', async ({
+  launch
+}) => {
+  const { app } = await launch()
+  await holdDialogs(app)
+  await crashRenderer(app)
+  await expect.poll(() => dialogCalls(app).then((c) => c.length)).toBe(1)
+  await answerDialog(app, 0, 1)
+  await expect.poll(() => dialogCalls(app).then((c) => c.length)).toBe(2)
+  await answerDialog(app, 1, CANCEL_QUIT)
+  await quitFromMenu(app)
+  await expect.poll(() => dialogCalls(app).then((c) => c.length)).toBe(3)
+  expect((await dialogCalls(app))[2].message).toBe('Quit AI Maru?')
+  const closed = app.waitForEvent('close')
+  await answerDialog(app, 2, END_EVERYTHING)
+  await closed
+})
+
+test('끄기 대화창이 떠 있는 동안 renderer 가 죽으면 crash 대화창의 Quit 은 그대로 두고 먼저 뜬 끄기 대화창으로 끈다', async ({
+  launch
+}) => {
+  const { app } = await launch()
+  await holdDialogs(app)
+  await quitFromMenu(app)
+  await expect.poll(() => dialogCalls(app).then((c) => c.length)).toBe(1)
+  await crashRenderer(app)
+  await expect.poll(() => dialogCalls(app).then((c) => c.length)).toBe(2)
+  expect((await dialogCalls(app))[1].buttons).toEqual(['Restart', 'Quit'])
+  await answerDialog(app, 1, 1)
+  const closed = app.waitForEvent('close')
+  await answerDialog(app, 0, END_EVERYTHING)
   await closed
 })
