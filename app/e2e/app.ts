@@ -190,7 +190,12 @@ async function launchApp(
     executablePath,
     // Playwright 의 기본 colorScheme 은 `prefers-color-scheme` 을 light 로 고정해, renderer 가 `nativeTheme.themeSource` 를 따르지 못한다.
     colorScheme: null,
-    args: [...(executablePath ? [] : ['.']), `--user-data-dir=${dataDir}`, ...args],
+    args: [
+      ...(executablePath ? [] : ['.']),
+      `--user-data-dir=${dataDir}`,
+      ...IGNORE_SAVED_WINDOWS,
+      ...args
+    ],
     env: launchEnv
   })
   // main 의 JS 가 끝난(`exit`) 뒤 Electron 이 하는 뒷정리(Chromium 의 종료 작업, macOS CoreAnalytics 의 exit barrier)는
@@ -206,6 +211,12 @@ async function launchApp(
   await activeTerminal(page)
   return { app, page }
 }
+
+/**
+ * macOS 가 Electron 에 "윈도우를 다시 여는 중 예기치 않게 종료되었다" 는 확인 창을 띄우는 상태가 되면, 그 뒤로 띄우는 앱마다 main 스레드가 `NSPersistentUIRestorer` 의 `NSAlert runModal` 에서 멈춰 창을 열지 못한다.
+ * 이 인자를 주면 macOS 가 창 복원을 건너뛰므로, 그 상태에서도 앱이 확인 창 없이 뜬다.
+ */
+export const IGNORE_SAVED_WINDOWS = ['-ApplePersistenceIgnoreState', 'YES']
 
 // `launch` 에 넘기는 인자로 macOS 의 "스크롤 막대 보기" 설정을 바꾼다. Cocoa 가 `-키 값` 인자를 설정으로 읽기 때문이다.
 export const CLASSIC_SCROLLBARS = ['-AppleShowScrollBars', 'Always']
