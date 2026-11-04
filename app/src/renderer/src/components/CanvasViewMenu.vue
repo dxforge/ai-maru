@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
-import type { Canvas, CanvasView } from '../canvas/store'
+import { viewKey, type Canvas, type CanvasView } from '../canvas/store'
 import { ICONS } from '../icons'
 import CellName from './CellName.vue'
 import FoldChevron from './FoldChevron.vue'
@@ -10,11 +10,11 @@ const { canvas } = defineProps<{ canvas: Canvas }>()
 const root = useTemplateRef<HTMLElement>('root')
 const opened = ref(false)
 
-const keyOf = (v: CanvasView): string => (typeof v === 'string' ? v : `cell:${v.cell}`)
-const checked = (v: CanvasView): boolean => keyOf(v) === keyOf(canvas.view.value)
+const checked = (v: CanvasView): boolean => viewKey(v) === viewKey(canvas.view.value)
 
 const fixed = [
   { view: 'current', text: 'Current cell' },
+  { view: 'workspace', text: 'Current workspace' },
   { view: 'all', text: 'All documents' }
 ] as const
 
@@ -48,7 +48,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOutside, 
       @mousedown.prevent
       @click="opened = !opened"
     >
-      <span v-if="canvas.viewCell.value === null" class="label">All documents</span>
+      <span v-if="canvas.view.value === 'all'" class="label">All documents</span>
+      <span v-else-if="canvas.viewWorkspace.value !== null" class="label">{{
+        canvas.workspaceName.value ?? 'Current workspace'
+      }}</span>
       <template v-else-if="canvas.viewCell.value"
         ><CellName class="label" :name="canvas.nameOf(canvas.viewCell.value)" /><span
           v-if="canvas.isClosed(canvas.viewCell.value)"
@@ -74,7 +77,17 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOutside, 
       </button>
       <hr v-if="canvas.choices.value.length" />
       <div v-for="g in canvas.choices.value" :key="g.id" class="group" role="group">
-        <div class="group-name workspace-title">{{ g.workspace }}</div>
+        <button
+          class="group-name"
+          :data-workspace="g.id"
+          role="menuitemradio"
+          :aria-checked="checked({ workspace: g.id })"
+          @mousedown.prevent
+          @click="choose({ workspace: g.id })"
+        >
+          <span class="check nerd-icon">{{ checked({ workspace: g.id }) ? ICONS.check : '' }}</span
+          ><span class="label workspace-title">{{ g.workspace }}</span>
+        </button>
         <button
           v-for="c in g.cells"
           :key="c.id"
@@ -164,10 +177,10 @@ button {
 }
 
 .group-name {
-  padding: var(--space-3) var(--space-5) var(--space-1) var(--space-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top: var(--space-2);
+}
+
+.group-name .label {
   color: var(--faint);
 }
 

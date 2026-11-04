@@ -7,6 +7,7 @@ import {
   docKey,
   groupChoices,
   openCells,
+  viewKey,
   type Canvas,
   type CellChoice,
   type OpenCell
@@ -402,6 +403,144 @@ describe('cell 별 보기', () => {
     expect(flat(c).map((x) => x.id)).toEqual(['c-a'])
   })
 
+  it('현재 workspace 보기는 선택된 cell 의 workspace 를 따라가, 그 workspace 의 cell 문서만 보인다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B, C], current: 'c-a' })
+    c.put(owned('a', 'c-a'))
+    c.put(owned('b', 'c-b'))
+    c.put(owned('c', 'c-c'))
+    c.put(owned('n'))
+    c.choose('workspace')
+    expect(c.viewWorkspace.value).toBe('w-ws')
+    expect(c.viewCell.value).toBeNull()
+    expect(shownIds(c)).toEqual(['b', 'a'])
+    c.sync({ cells: [A, B, C], current: 'c-c' })
+    expect(c.viewWorkspace.value).toBe('w-other')
+    expect(shownIds(c)).toEqual(['c'])
+  })
+
+  it('현재 workspace 보기는 그 workspace 의 닫힌 cell 에 남은 문서도 보인다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.put(owned('b', 'c-b'))
+    c.sync({ cells: [A], current: 'c-a' })
+    c.choose('workspace')
+    expect(shownIds(c)).toEqual(['b'])
+  })
+
+  it('선택된 cell 이 없으면 현재 workspace 보기에는 아무 문서도 없다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A] })
+    c.put(owned('a', 'c-a'))
+    c.put(owned('n'))
+    c.choose('workspace')
+    expect(c.viewWorkspace.value).toBeUndefined()
+    expect(shownIds(c)).toEqual([])
+  })
+
+  it('고른 workspace 의 보기는 선택이 바뀌어도 그 workspace 의 문서만 보인다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B, C], current: 'c-a' })
+    c.put(owned('a', 'c-a'))
+    c.put(owned('c', 'c-c'))
+    c.choose({ workspace: 'w-other' })
+    expect(shownIds(c)).toEqual(['c'])
+    c.sync({ cells: [A, B, C], current: 'c-b' })
+    expect(c.viewWorkspace.value).toBe('w-other')
+    expect(shownIds(c)).toEqual(['c'])
+  })
+
+  it('고른 workspace 의 cell 이 모두 닫혀 문서가 없어도 그 묶음과 이름이 남고, 다른 보기로 바꾸면 빠진다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B, C], current: 'c-a' })
+    c.choose({ workspace: 'w-other' })
+    c.sync({ cells: [A, B], current: 'c-a' })
+    expect(c.choices.value.map((g) => g.id)).toEqual(['w-ws', 'w-other'])
+    expect(flat(c).find((x) => x.id === 'c-c')).toEqual({ ...C, closed: true })
+    expect(c.workspaceName.value).toBe('other')
+    c.choose('workspace')
+    expect(c.choices.value.map((g) => g.id)).toEqual(['w-ws'])
+  })
+
+  it('고정한 workspace 의 닫힌 cell 은 그 workspace 에 열린 cell 이 있어도 남는다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B], current: 'c-a' })
+    c.choose({ workspace: 'w-ws' })
+    c.sync({ cells: [A], current: 'c-a' })
+    expect(flat(c)).toEqual([
+      { ...A, closed: false },
+      { ...B, closed: true }
+    ])
+  })
+
+  it('고정한 workspace 의 마지막 cell 이 다른 workspace 로 옮겨지면 빈 묶음과 이름이 남고, 다른 보기로 바꾸면 빠진다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, C], current: 'c-a' })
+    c.put(owned('c', 'c-c'))
+    c.choose({ workspace: 'w-other' })
+    c.sync({
+      cells: [A, { ...C, group: 'w-ws', name: { ...C.name, workspace: 'ws' } }],
+      current: 'c-a'
+    })
+    expect(c.choices.value.map((g) => [g.id, g.cells.length])).toEqual([
+      ['w-ws', 2],
+      ['w-other', 0]
+    ])
+    expect(c.workspaceName.value).toBe('other')
+    expect(shownIds(c)).toEqual([])
+    c.choose('all')
+    expect(c.choices.value.map((g) => g.id)).toEqual(['w-ws'])
+  })
+
+  it('workspace 이름은 workspace 보기에서 그 workspace 의 것이고, 다른 보기나 선택된 cell 이 없으면 없다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, C] })
+    c.choose('workspace')
+    expect(c.workspaceName.value).toBeUndefined()
+    c.sync({ cells: [A, C], current: 'c-c' })
+    expect(c.workspaceName.value).toBe('other')
+    c.choose({ workspace: 'w-ws' })
+    expect(c.workspaceName.value).toBe('ws')
+    c.choose({ cell: 'c-a' })
+    expect(c.workspaceName.value).toBeUndefined()
+    c.choose('all')
+    expect(c.workspaceName.value).toBeUndefined()
+  })
+
+  it('workspace 보기에서는 그 workspace 의 문서만 닫힌 패널을 열고, 붙잡은 동안의 개수와 모두 접기도 그 문서에만 미친다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B, C], current: 'c-a' })
+    c.choose('workspace')
+    c.put(owned('c', 'c-c'))
+    c.put(owned('n'))
+    expect(c.open.value).toBe(false)
+    c.put(owned('b', 'c-b'))
+    expect(c.open.value).toBe(true)
+    c.collapseAll()
+    expect([...c.expanded].toSorted()).toEqual([k('c', 'c-c'), k('n')].toSorted())
+    c.hold(true)
+    c.put(owned('a', 'c-a'))
+    c.put(owned('c2', 'c-c'))
+    c.put(owned('n2'))
+    expect(c.held.value).toBe(1)
+  })
+
+  it('보이는 문서의 key 는 따라가는 보기와 그 대상에 고정한 보기가 같고, 선택이 바뀌면 따라 바뀐다', () => {
+    const c = createCanvas()
+    c.sync({ cells: [A, B, C], current: 'c-a' })
+    expect(c.shownKey.value).toBe('cell:c-a')
+    c.choose({ cell: 'c-a' })
+    expect(c.shownKey.value).toBe('cell:c-a')
+    c.choose('workspace')
+    expect(c.shownKey.value).toBe('workspace:w-ws')
+    c.sync({ cells: [A, B, C], current: 'c-c' })
+    expect(c.shownKey.value).toBe('workspace:w-other')
+    c.choose({ workspace: 'w-ws' })
+    expect(c.shownKey.value).toBe('workspace:w-ws')
+    c.choose('all')
+    expect(c.shownKey.value).toBe('all')
+  })
+
   it('모두 펼치기·모두 접기는 지금 보기의 문서에만 미친다', () => {
     const c = createCanvas()
     c.sync({ cells: [A, B], current: 'c-a' })
@@ -491,6 +630,14 @@ describe('cell 별 보기', () => {
     expect(c.held.value).toBe(1)
     c.choose('all')
     expect(c.held.value).toBe(3)
+  })
+})
+
+describe('viewKey', () => {
+  it('따라가는 보기, 고정한 cell, 고정한 workspace 를 서로 다른 key 로 가른다', () => {
+    expect(
+      (['current', 'workspace', 'all', { cell: 'x' }, { workspace: 'x' }] as const).map(viewKey)
+    ).toEqual(['current', 'workspace', 'all', 'cell:x', 'workspace:x'])
   })
 })
 

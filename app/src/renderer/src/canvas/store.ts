@@ -29,8 +29,17 @@ export type CellName = { workspace: string; cell: Label }
 
 export type OpenCell = { id: string; group: string; name: CellName }
 
-/** 「현재 cell」 은 선택된 cell 을 따라가고, `{ cell }` 은 그 cell 에 고정한다. */
-export type CanvasView = 'current' | 'all' | { cell: string }
+/**
+ * `'current'` 는 선택된 cell 을 따라가고, `{ cell }` 은 그 cell 에 고정한다. `'workspace'` 는 선택된 cell 이 속한
+ * workspace 를 따라가고, `{ workspace }` 는 그 workspace 에 고정한다. `{ workspace }` 의 값은 workspace 이름이 아니라
+ * workspace id(`OpenCell.group`)다.
+ */
+export type CanvasView = 'current' | 'workspace' | 'all' | { cell: string } | { workspace: string }
+
+export function viewKey(v: CanvasView): string {
+  if (typeof v === 'string') return v
+  return 'cell' in v ? `cell:${v.cell}` : `workspace:${v.workspace}`
+}
 
 export type CellChoice = OpenCell & { closed: boolean }
 
@@ -80,43 +89,77 @@ export function createCanvas(now: () => number = Date.now) {
   const current = ref<string>()
   // 닫힌 cell 은 workspace 목록에서 빠져 이름을 구할 수 없으므로, 빠지기 직전의 이름을 기억해 둔다.
   const closed = reactive(new Map<string, OpenCell>())
+  // workspace 는 마지막 cell 이 다른 workspace 로 옮겨지면 닫힌 cell 없이 목록에서 빠지므로, 이름을 따로 기억해 둔다.
+  const workspaceNames = new Map<string, string>()
 
   /** 열린 cell 과 선택된 cell 이 바뀔 때마다 부른다. */
   function sync(next: { cells: readonly OpenCell[]; current?: string }): void {
     const ids = new Set(next.cells.map((c) => c.id))
     for (const c of cells.value) if (!ids.has(c.id)) closed.set(c.id, c)
     for (const id of ids) closed.delete(id)
+    for (const c of next.cells) workspaceNames.set(c.group, c.name.workspace)
     // `App.vue` 의 watch 는 다른 cell 을 고를 때도 `sync` 를 부른다. 목록이 그대로이면 `cells` 를 바꾸지 않는다. 바꾸면 `cells` 를 읽는 `choices` 와 드롭다운이 다시 그려지기 때문이다.
     if (JSON.stringify(next.cells) !== JSON.stringify(cells.value)) cells.value = next.cells
     current.value = next.current
   }
 
-  /** 보기가 고른 cell 의 id. 「모든 문서」 면 null, 「현재 cell」 인데 선택된 cell 이 없으면 undefined 다. */
-  const viewCell = computed((): string | null | undefined => {
+  function cellOf(cell: string | undefined): OpenCell | undefined {
+    if (cell === undefined) return undefined
+    return cells.value.find((c) => c.id === cell) ?? closed.get(cell)
+  }
+
+  const target = computed((): 'all' | { cell: string } | { workspace: string } | undefined => {
     const v = view.value
-    if (v === 'all') return null
-    return v === 'current' ? current.value : v.cell
+    if (v === 'current') return current.value === undefined ? undefined : { cell: current.value }
+    if (v === 'workspace') {
+      const workspace = cellOf(current.value)?.group
+      return workspace === undefined ? undefined : { workspace }
+    }
+    return v
+  })
+
+  /** 보기가 고른 cell 의 id. cell 보기가 아니면 null, 「현재 cell」 인데 선택된 cell 이 없으면 undefined 다. */
+  const viewCell = computed((): string | null | undefined => {
+    const t = target.value
+    if (typeof t === 'object' && 'cell' in t) return t.cell
+    return view.value === 'current' ? undefined : null
+  })
+
+  /** 보기가 고른 workspace 의 id. workspace 보기가 아니면 null, 「현재 workspace」 인데 선택된 cell 이 없으면 undefined 다. */
+  const viewWorkspace = computed((): string | null | undefined => {
+    const t = target.value
+    if (typeof t === 'object' && 'workspace' in t) return t.workspace
+    return view.value === 'workspace' ? undefined : null
   })
 
   function inView(entry: CanvasEntry): boolean {
-    const cell = viewCell.value
-    return cell === null || (cell !== undefined && entry.cell === cell)
+    const t = target.value
+    if (t === undefined) return false
+    if (t === 'all') return true
+    return 'cell' in t ? entry.cell === t.cell : cellOf(entry.cell)?.group === t.workspace
   }
 
-  function nameOf(cell: string | undefined): CellName | undefined {
-    if (cell === undefined) return undefined
-    return (cells.value.find((c) => c.id === cell) ?? closed.get(cell))?.name
-  }
-
-  // 고른 닫힌 cell 은 문서가 모두 지워져도 남긴다. 빠지면 드롭다운에 체크된 항목이 없어지기 때문이다.
-  const choices = computed((): ChoiceGroup[] =>
-    groupChoices([
+  // 고른 닫힌 cell 과, 고정한 workspace 의 닫힌 cell 은 문서가 모두 지워져도 남긴다. 빠지면 드롭다운에 체크된 항목이
+  // 없어지기 때문이다. `'workspace'` 보기의 workspace 에는 선택된 열린 cell 이 늘 있어 그 그룹이 빠지지 않으므로, 그
+  // workspace 의 닫힌 cell 은 문서가 없으면 넣지 않는다.
+  const choices = computed((): ChoiceGroup[] => {
+    const fixed = view.value === 'workspace' ? null : viewWorkspace.value
+    const groups = groupChoices([
       ...cells.value.map((c) => ({ ...c, closed: false })),
       ...[...closed.values()]
-        .filter((c) => c.id === viewCell.value || docs.value.some((d) => d.cell === c.id))
+        .filter(
+          (c) =>
+            c.id === viewCell.value || c.group === fixed || docs.value.some((d) => d.cell === c.id)
+        )
         .map((c) => ({ ...c, closed: true }))
     ])
-  )
+    // 고정한 workspace 가 cell 없이 목록에서 빠졌으면 `cells` 가 빈 `ChoiceGroup` 으로 남긴다. 빠지면 드롭다운에 체크된
+    // 항목이 없어지기 때문이다.
+    const name = typeof fixed === 'string' ? workspaceNames.get(fixed) : undefined
+    if (typeof fixed === 'string' && name !== undefined && !groups.some((g) => g.id === fixed))
+      groups.push({ id: fixed, workspace: name, cells: [] })
+    return groups
+  })
 
   // 지금 보기에 들지 않는 문서로는 닫힌 패널을 열지 않는다. 열어도 그 문서는 보이지 않고 터미널 영역만 좁아지기 때문이다.
   function put(item: CanvasItem): void {
@@ -178,8 +221,19 @@ export function createCanvas(now: () => number = Date.now) {
     held: computed(() => held.value.filter(inView).length),
     view: readonly(view),
     viewCell,
+    viewWorkspace,
+    /** 보기가 고른 workspace 의 이름. workspace 보기가 아니거나 선택된 cell 이 없으면 undefined 다. */
+    workspaceName: computed((): string | undefined => {
+      const ws = viewWorkspace.value
+      return typeof ws === 'string' ? choices.value.find((g) => g.id === ws)?.workspace : undefined
+    }),
+    // 거르는 대상이 같은 보기는 같은 key 다. 따라가는 보기는 지금 따라간 cell 또는 workspace 의 key 를 쓰므로,
+    // `'current'` 와 그 cell 에 고정한 `{ cell }` 은 key 가 같다.
+    shownKey: computed((): string =>
+      target.value === undefined ? viewKey(view.value) : viewKey(target.value)
+    ),
     choices,
-    nameOf,
+    nameOf: (cell: string | undefined): CellName | undefined => cellOf(cell)?.name,
     isClosed: (cell: string): boolean => closed.has(cell),
     sync,
     choose: (v: CanvasView): void => void (view.value = v),
