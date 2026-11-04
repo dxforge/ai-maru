@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import {
   attachFromOutside,
+  canvasButton,
   canvasPanel,
   canvasResizer,
   canvasWidth,
@@ -35,7 +36,6 @@ const panel = canvasPanel
 const titles = (page: Page) => page.locator('.canvas .cards .title')
 const markdown = (page: Page) => page.locator('.canvas .markdown')
 const card = (page: Page, id: string) => page.locator(`.canvas .card[data-id="${id}"]`)
-const canvasButton = (page: Page) => page.locator('.panel-bar [data-panel="canvas"]')
 
 test('문서가 없어도 panel bar 의 Canvas 아이콘이 보이고, 아이콘이나 메뉴로 열고 닫으면 아이콘의 눌림 표시와 툴팁이 따라간다', async ({
   launch
@@ -145,7 +145,7 @@ test('닫으면 셸이 보는 폭이 넓어지고, panel bar 의 Canvas 아이�
   await expect(canvasButton(page)).toHaveAttribute('aria-pressed', 'true')
   const opened = await shellSize(page)
 
-  await page.locator('.canvas .close').click()
+  await canvasButton(page).click()
   await expect(panel(page)).toBeHidden()
   await expect(canvasButton(page)).toHaveAttribute('aria-pressed', 'false')
   await expect.poll(async () => (await shellSize(page)).cols).toBeGreaterThan(opened.cols)
@@ -153,7 +153,7 @@ test('닫으면 셸이 보는 폭이 넓어지고, panel bar 의 Canvas 아이�
   await expect(panel(page)).toBeVisible()
   await expect(card(page, 'a').locator('.markdown')).toHaveText('first')
 
-  await page.locator('.canvas .close').click()
+  await canvasButton(page).click()
   await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
   await expect(panel(page)).toBeVisible()
   await expect(canvasButton(page)).toHaveAttribute('aria-pressed', 'true')
@@ -281,7 +281,7 @@ test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터�
   await card(page, 'b').locator('.remove').click()
   await expect(titles(page)).toHaveText(['A'])
   await typesIntoTerminal()
-  await page.locator('.canvas .close').click()
+  await canvasButton(page).click()
   await typesIntoTerminal()
   await canvasButton(page).click()
   await expect(panel(page)).toBeVisible()
@@ -307,7 +307,7 @@ test('다른 클라이언트가 터미널을 넓게 잡고 있어도 패널을 �
   await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
   await titles(page).filter({ hasText: 'A' }).click()
   await expect(markdown(page)).toHaveText(['second'])
-  await page.locator('.canvas .close').click()
+  await canvasButton(page).click()
   await expect(panel(page)).toBeHidden()
 })
 
@@ -460,7 +460,7 @@ test('닫힌 패널에 새 문서가 들어와 다시 열려도 읽던 내용이
   await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBe(3000)
   const before = await reading()
 
-  await page.locator('.canvas .close').click()
+  await canvasButton(page).click()
   await expect(panel(page)).toBeHidden()
   await settle(page)
   await putCanvas(app, { id: 'c', kind: 'markdown', text: 'new', title: 'C' })

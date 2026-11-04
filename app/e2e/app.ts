@@ -819,6 +819,10 @@ export function canvasPanel(page: Page): Locator {
   return page.locator('.canvas')
 }
 
+export function canvasButton(page: Page): Locator {
+  return page.locator('.panel-bar [data-panel="canvas"]')
+}
+
 export function canvasTitles(page: Page): Locator {
   return page.locator('.canvas .cards .title')
 }
