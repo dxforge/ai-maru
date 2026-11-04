@@ -141,16 +141,27 @@ async function expectRevealed(page: Page): Promise<void> {
   await expectInstantPlace(page)
 }
 
+/**
+ * 앱의 스크롤이 브라우저가 `scrollIntoView` 로 셈한 자리에 다다를 때까지 기다린다. `inView` 만 기다리면 스크롤이
+ * 몇 px 남은 마지막 프레임에 이 검사를 할 수 있기 때문이다. 셈한 자리는 pane 과 영역 끝 사이에 `scroll-padding` 만큼
+ * 여백을 남겨, 그 여백이 다 줄기 전에 pane 이 영역 안에 든다. `scrollIntoView` 로 옮긴 `scrollLeft` 는 같은 task 안에서
+ * 원래 자리로 되돌린다. 되돌리지 않으면 앱이 그 변화를 사용자의 스크롤로 보고 진행 중인 스크롤을 멈춘다.
+ */
 async function expectInstantPlace(page: Page): Promise<void> {
-  const [before, after] = await page.evaluate(() => {
-    const area = document.querySelector('.terminals')!
-    const before = area.scrollLeft
-    document
-      .querySelector('.terminal-view.active')!
-      .scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
-    return [before, area.scrollLeft]
-  })
-  expect(after).toBe(before)
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const area = document.querySelector('.terminals')!
+        const left = area.scrollLeft
+        document
+          .querySelector('.terminal-view.active')!
+          .scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+        const place = area.scrollLeft
+        area.scrollLeft = left
+        return place - left
+      })
+    )
+    .toBe(0)
 }
 
 async function scrollbarHeight(page: Page): Promise<number> {
