@@ -19,6 +19,7 @@ import {
   expect,
   gridRows,
   hostPid,
+  IGNORE_SAVED_WINDOWS,
   panes,
   resizeBy,
   rows,
@@ -40,10 +41,14 @@ test('두 번째 실행은 pty 를 더 띄우지 않고 끝난다', async ({ lau
   await page.keyboard.type('echo one-$((0+1))\n')
   await expect(rows(page)).toContainText('one-1')
 
-  const second = spawnSync(electronBin as unknown as string, ['.', `--user-data-dir=${dataDir}`], {
-    env: { ...process.env, MARU_UNOBTRUSIVE: '1' },
-    timeout: 15_000
-  })
+  const second = spawnSync(
+    electronBin as unknown as string,
+    ['.', `--user-data-dir=${dataDir}`, ...IGNORE_SAVED_WINDOWS],
+    {
+      env: { ...process.env, MARU_UNOBTRUSIVE: '1' },
+      timeout: 15_000
+    }
+  )
   const stderr = second.stderr.toString()
   // timeout 의 SIGTERM 에도 Electron 은 0 으로 끝나므로 스스로 끝났는지를 함께 본다.
   expect(
