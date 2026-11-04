@@ -217,7 +217,7 @@ describe('createCanvas', () => {
     c.put(md('b', 'B'))
     c.expand(k('b'), false)
     c.close()
-    c.reopen()
+    c.toggle()
     expect(c.open.value).toBe(true)
     expect([...c.expanded]).toEqual(keys('a'))
   })

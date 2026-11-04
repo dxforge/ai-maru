@@ -16,6 +16,7 @@ import {
   openCanvas,
   OVERLAY_SCROLLBARS,
   putCanvas,
+  resizeBy,
   rows,
   run,
   serveRenderer,
@@ -34,12 +35,33 @@ const panel = canvasPanel
 const titles = (page: Page) => page.locator('.canvas .cards .title')
 const markdown = (page: Page) => page.locator('.canvas .markdown')
 const card = (page: Page, id: string) => page.locator(`.canvas .card[data-id="${id}"]`)
-const reopen = (page: Page) => page.locator('.reopen')
+const canvasButton = (page: Page) => page.locator('.panel-bar [data-panel="canvas"]')
 
-test('문서가 없으면 패널도, 다시 여는 띠도 없다', async ({ launch }) => {
-  const { page } = await launch()
-  await expect(panel(page)).toBeHidden()
-  await expect(reopen(page)).toHaveCount(0)
+test('문서가 없어도 panel bar 의 Canvas 아이콘이 보이고, 아이콘이나 메뉴로 열고 닫으면 아이콘의 눌림 표시와 툴팁이 따라간다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const expectOpen = async (open: boolean): Promise<void> => {
+    await expect(panel(page)).toBeVisible({ visible: open })
+    await expect(canvasButton(page)).toHaveAttribute('aria-pressed', String(open))
+    await expect(canvasButton(page)).toHaveAttribute(
+      'data-tooltip',
+      open ? 'Close Canvas' : 'Open Canvas'
+    )
+  }
+  await expect(canvasButton(page)).toBeVisible()
+  await expect(canvasButton(page)).toHaveAttribute('data-tooltip-keys', '⌥⌘B')
+  await expectOpen(false)
+
+  await canvasButton(page).click()
+  await expectOpen(true)
+  await canvasButton(page).click()
+  await expectOpen(false)
+
+  await clickMenu(app, 'toggle-canvas')
+  await expectOpen(true)
+  await clickMenu(app, 'toggle-canvas')
+  await expectOpen(false)
 })
 
 test('마크다운을 넣으면 패널이 열려 GFM 으로 렌더되고, 셸이 보는 폭이 줄어든다', async ({
@@ -113,25 +135,28 @@ test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 새 그�
   await expect(titles(page)).toHaveCount(1)
 })
 
-test('닫으면 띠만 남아 셸이 보는 폭이 넓어지고, 띠를 누르거나 문서가 오면 다시 열린다', async ({
+test('닫으면 셸이 보는 폭이 넓어지고, panel bar 의 Canvas 아이콘을 누르거나 문서가 오면 다시 열린다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   const before = await shellSize(page)
   await putCanvas(app, { id: 'a', kind: 'markdown', text: 'first', title: 'A' })
   await expect.poll(async () => (await shellSize(page)).cols).toBeLessThan(before.cols)
+  await expect(canvasButton(page)).toHaveAttribute('aria-pressed', 'true')
   const opened = await shellSize(page)
 
   await page.locator('.canvas .close').click()
   await expect(panel(page)).toBeHidden()
+  await expect(canvasButton(page)).toHaveAttribute('aria-pressed', 'false')
   await expect.poll(async () => (await shellSize(page)).cols).toBeGreaterThan(opened.cols)
-  await reopen(page).click()
+  await canvasButton(page).click()
   await expect(panel(page)).toBeVisible()
-  await expect(reopen(page)).toHaveCount(0)
+  await expect(card(page, 'a').locator('.markdown')).toHaveText('first')
 
   await page.locator('.canvas .close').click()
   await putCanvas(app, { id: 'b', kind: 'markdown', text: 'second', title: 'B' })
   await expect(panel(page)).toBeVisible()
+  await expect(canvasButton(page)).toHaveAttribute('aria-pressed', 'true')
   await expect(card(page, 'b').locator('.markdown')).toHaveText('second')
 })
 
@@ -258,7 +283,11 @@ test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터�
   await typesIntoTerminal()
   await page.locator('.canvas .close').click()
   await typesIntoTerminal()
-  await reopen(page).click()
+  await canvasButton(page).click()
+  await expect(panel(page)).toBeVisible()
+  await typesIntoTerminal()
+  await canvasButton(page).click()
+  await expect(panel(page)).toBeHidden()
   await typesIntoTerminal()
 })
 
@@ -777,7 +806,7 @@ test('왼쪽 경계를 끌어 Canvas 폭을 바꾸고, 터미널 영역이 0 이
   launch
 }) => {
   const launched = await launch()
-  const { page } = launched
+  const { app, page } = launched
   await openCanvas(launched)
   const beforeCols = (await shellSize(page)).cols
 
@@ -786,9 +815,15 @@ test('왼쪽 경계를 끌어 Canvas 폭을 바꾸고, 터미널 영역이 0 이
   await dragHandle(page, canvasResizer(page), -3000)
 
   await expect.poll(async () => (await page.locator('.terminals').boundingBox())!.width).toBe(0)
-  const innerWidth = await page.evaluate(() => window.innerWidth)
   const box = (await panel(page).boundingBox())!
-  expect(box.x + box.width).toBe(innerWidth)
+  const bar = (await page.locator('.panel-bar').boundingBox())!
+  expect(box.x + box.width).toBe(bar.x)
+
+  // 정한 폭(`canvasWidth`)이 보이는 폭보다 크면, 창을 넓힐 때 Canvas 가 그만큼 넓어진다. 그래서 창을 넓혀도 Canvas 폭이
+  // 그대로이고, 넓어진 만큼 터미널 영역이 생기는지 본다.
+  await resizeBy(app, 200, 0)
+  await expect.poll(async () => (await page.locator('.terminals').boundingBox())!.width).toBe(200)
+  expect(await canvasWidth(page)).toBe(box.width)
 })
 
 test('Canvas 경계를 끄는 동안에는 폭이 transition 없이 바로 따라가고, 왼쪽 버튼으로만 끌린다', async ({

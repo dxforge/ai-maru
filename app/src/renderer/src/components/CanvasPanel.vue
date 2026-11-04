@@ -14,7 +14,6 @@ const { canvas, width, resizing } = defineProps<{
   resizing: boolean
 }>()
 
-// 이 컴포넌트는 루트가 둘이라 `$el` 로 패널을 가리킬 수 없다.
 const panel = useTemplateRef<HTMLElement>('panel')
 defineExpose({ panel })
 
@@ -121,15 +120,6 @@ function onTransition(e: TransitionEvent): void {
       <template #body="{ item }"><CanvasDoc :doc="item" /></template>
     </CardStream>
   </aside>
-  <button
-    v-if="!canvas.open.value && canvas.docs.value.length"
-    v-tooltip="{ text: 'Open Canvas', keys: commandLabel('toggle-canvas') }"
-    class="reopen"
-    @mousedown.prevent
-    @click="canvas.reopen()"
-  >
-    Canvas
-  </button>
 </template>
 
 <style scoped>
@@ -190,7 +180,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  height: 36px;
+  height: var(--titlebar-height);
   padding: 0 var(--space-4) 0 calc(2 * var(--space-3));
   border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
@@ -226,13 +216,5 @@ button {
   overflow: hidden;
   margin-right: var(--space-3);
   vertical-align: bottom;
-}
-
-.reopen {
-  flex: none;
-  writing-mode: vertical-rl;
-  padding: var(--space-5) var(--space-2);
-  font-size: var(--text-2);
-  color: var(--muted);
 }
 </style>

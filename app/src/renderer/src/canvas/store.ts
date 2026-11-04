@@ -242,7 +242,6 @@ export function createCanvas(now: () => number = Date.now) {
     expandAll: (): void => docs.value.filter(inView).forEach((d) => expanded.add(d.key)),
     collapseAll: (): void => docs.value.filter(inView).forEach((d) => expanded.delete(d.key)),
     close: (): void => setOpen(false),
-    reopen: (): void => setOpen(true),
     toggle: (): void => setOpen(!open.value)
   }
 }

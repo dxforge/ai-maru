@@ -20,6 +20,8 @@
   --text-2: 12px;
   --text-3: 13px;
   --text-4: 14px;
+  /* 사이드바·Canvas·panel bar 맨 위 줄의 높이다. 세 줄의 아래 선이 같은 높이에 놓이도록 이 값 하나로 맞춘다. */
+  --titlebar-height: 36px;
   /* 이 값에 대체 글꼴을 넣지 않는다. 사이드바가 `--font-ui` 와 `sans-serif` 사이에 아이콘 글꼴을 끼우기 때문이다. 대체 글꼴은
      쓰는 쪽이 뒤에 붙인다. */
   --font-ui: system-ui;

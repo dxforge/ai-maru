@@ -484,7 +484,7 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
 
 .titlebar {
   flex: none;
-  height: 36px;
+  height: var(--titlebar-height);
   border-bottom: 1px solid var(--line);
 }
 
