@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { activePane, canvasTitles, expect, panes, rows, split, test } from './app'
+import { activePane, canvasSettled, canvasTitles, expect, panes, rows, split, test } from './app'
 
 /** 경로를 셸 인자로 감싸는 규칙의 케이스는 `paths.test.ts` 가 sh·bash·zsh 를 실제로 돌려 잰다. 여기서는 드롭하거나 붙여넣은 경로를 셸이 경로마다 인자 하나로 읽는지만 본다. */
 function makeFiles(dataDir: string): string[] {
@@ -214,6 +214,10 @@ test('Finder 에서 복사하거나 드롭한 이미지 파일은 경로로 붙�
   await armPrintf(page)
   await copyFiles([copied], defer)
   await paste(app)
+  // 붙여넣은 이미지가 Canvas 를 여는 동안 드롭하면 드롭 지점을 Canvas 가 덮어 터미널이 드롭을 받지 못한다.
+  // 붙여넣은 문서가 Canvas 에 뜨기 전에 드롭하면 두 문서의 순서도 바뀔 수 있다.
+  await expect(canvasTitles(page)).toHaveText(['copied.png'])
+  await canvasSettled(page)
   await dropFiles(page, 0, [dropped])
   expect(await readArgs(page, out)).toEqual([copied, dropped, 'END'])
   await expect(canvasTitles(page)).toHaveText(['dropped.png', 'copied.png'])
