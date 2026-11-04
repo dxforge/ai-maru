@@ -32,6 +32,7 @@ import {
   cellGroups,
   cellItems,
   cellFavorite,
+  CLASSIC_SCROLLBARS,
   cellPlaces,
   dialogCalls,
   END_EVERYTHING,
@@ -1436,6 +1437,52 @@ test('즐겨찾기는 cell 줄과 닫힌 줄의 별에서 빼고, workspace 의 
   await pin.click()
   await expect(pin).toHaveAttribute('aria-pressed', 'false')
   await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+})
+
+/**
+ * 좌표 (x, y) 가 창 끌기 영역(`drag`)인지, 밑의 요소가 마우스를 받는 자리(`no-drag`)인지를 Chromium 과 Electron 이 정하는
+ * 규칙대로 계산한다. 테스트가 보내는 마우스 이벤트는 OS 의 창 끌기 처리를 거치지 않고 페이지에 바로 가서, 실제 마우스가
+ * 영역에 막히는 것을 볼 수 없기 때문이다. 규칙: DOM 순서로 보이는 박스마다 영역을 모으고, 겹치면 z-index 와 상관없이
+ * DOM 에서 뒤의 것이 이긴다.
+ */
+function appRegionAt(page: Page, x: number, y: number): Promise<string> {
+  return page.evaluate(
+    ({ x, y }) => {
+      let region = 'none'
+      for (const el of Array.from(document.querySelectorAll('*'))) {
+        const style = getComputedStyle(el)
+        const mode = style.getPropertyValue('-webkit-app-region')
+        if (mode === 'none' || style.visibility !== 'visible') continue
+        const r = el.getBoundingClientRect()
+        if (r.width && r.height && x >= r.left && x < r.right && y >= r.top && y < r.bottom) {
+          region = mode
+        }
+      }
+      return region
+    },
+    { x, y }
+  )
+}
+
+test('고전 스크롤바 설정에서도 cell 의 별 가운데는 창 끌기 영역이 아니어서 별이 보이고 눌리고, 목록 아래 끝은 창 끌기 영역으로 남는다', async ({
+  launch
+}) => {
+  const { page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  await expect(page.locator('.sidebar .list > .os-scrollbar-vertical')).toHaveCount(1)
+  // 즐겨찾기는 첫 pane 의 디렉토리를 알아야 넣을 수 있다.
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  await cellItems(page).nth(0).hover()
+  const star = cellFavorite(page, 0)
+  const box = (await star.boundingBox())!
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  await star.hover()
+  await expect(star).toBeVisible()
+  expect(await appRegionAt(page, center.x, center.y)).toBe('no-drag')
+  await star.click()
+  await expect(star).toHaveAttribute('aria-pressed', 'true')
+  // 목록 아래 끝에는 쓰지 않는 가로 스크롤바가 보이지 않은 채 깔려 있다.
+  const list = (await page.locator('.sidebar .list').boundingBox())!
+  expect(await appRegionAt(page, list.x + list.width / 2, list.y + list.height - 4)).toBe('drag')
 })
 
 test('팔레트의 Toggle Cell Favorite 는 고른 cell 을 즐겨찾기에 넣고, 디렉토리가 없어진 닫힌 줄을 누르면 열지 않고 이유를 보인다', async ({
