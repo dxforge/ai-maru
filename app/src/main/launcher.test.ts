@@ -25,7 +25,6 @@ describe('createLauncherStore', () => {
   it('파일이 없으면 빈 목록이다', async () => {
     expect(await createLauncherStore(file).read()).toEqual({
       recent: [],
-      favorites: [],
       command: null
     })
   })
@@ -40,7 +39,6 @@ describe('createLauncherStore', () => {
       writeFileSync(file, text)
       expect(await createLauncherStore(file).read()).toEqual({
         recent: [],
-        favorites: [],
         command: null
       })
     })
@@ -53,11 +51,10 @@ describe('createLauncherStore', () => {
     await store.launched(a, 'claude')
     await store.launched(b, 'claude')
     expect(await store.launched(a, 'codex')).toEqual({ ok: true })
-    expect(await store.read()).toEqual({ recent: [a, b], favorites: [], command: 'codex' })
-    expect(saved()).toEqual({ recent: [a, b], favorites: [], command: 'codex' })
+    expect(await store.read()).toEqual({ recent: [a, b], command: 'codex' })
+    expect(saved()).toEqual({ recent: [a, b], command: 'codex' })
     expect(await createLauncherStore(file).read()).toEqual({
       recent: [a, b],
-      favorites: [],
       command: 'codex'
     })
   })
@@ -87,7 +84,7 @@ describe('createLauncherStore', () => {
       ok: false,
       reason: `Permission denied: ${closed}`
     })
-    expect(await store.read()).toEqual({ recent: [a], favorites: [], command: 'claude' })
+    expect(await store.read()).toEqual({ recent: [a], command: 'claude' })
   })
 
   it('launchedCommand 는 명령만 기억하고 최근 목록은 바꾸지 않는다', async () => {
@@ -95,8 +92,8 @@ describe('createLauncherStore', () => {
     const a = join(dir, 'a')
     await store.launched(a, 'claude')
     await store.launchedCommand('codex')
-    expect(await store.read()).toEqual({ recent: [a], favorites: [], command: 'codex' })
-    expect(saved()).toEqual({ recent: [a], favorites: [], command: 'codex' })
+    expect(await store.read()).toEqual({ recent: [a], command: 'codex' })
+    expect(saved()).toEqual({ recent: [a], command: 'codex' })
   })
 
   it('forget 은 그 경로만 지운다', async () => {
@@ -105,8 +102,8 @@ describe('createLauncherStore', () => {
     const b = join(dir, 'b')
     await store.launched(a, 'claude')
     await store.launched(b, 'claude')
-    expect(await store.forget(a)).toEqual({ recent: [b], favorites: [], command: 'claude' })
-    expect(saved()).toEqual({ recent: [b], favorites: [], command: 'claude' })
+    expect(await store.forget(a)).toEqual({ recent: [b], command: 'claude' })
+    expect(saved()).toEqual({ recent: [b], command: 'claude' })
   })
 
   it('동시에 부른 쓰기가 서로를 덮지 않는다', async () => {
@@ -132,7 +129,7 @@ describe('createLauncherStore', () => {
     await store.launched(hangul, 'claude')
     await store.launched(join(dir, '프로젝트'.normalize('NFC')), 'claude')
     expect((await store.read()).recent).toHaveLength(2)
-    expect(await store.forget(hangul)).toEqual({ recent: [a], favorites: [], command: 'claude' })
+    expect(await store.forget(hangul)).toEqual({ recent: [a], command: 'claude' })
   })
 
   it('쓰지 못해도 띄우기는 막지 않고 목록을 그대로 두며, 다음 쓰기는 한다', async () => {
@@ -141,184 +138,27 @@ describe('createLauncherStore', () => {
     mkdirSync(file)
     const store = createLauncherStore(file)
     expect(await store.launched(join(dir, 'a'), 'claude')).toEqual({ ok: true })
-    expect(await store.read()).toEqual({ recent: [], favorites: [], command: null })
-    expect(await store.forget(join(dir, 'a'))).toEqual({ recent: [], favorites: [], command: null })
+    expect(await store.read()).toEqual({ recent: [], command: null })
+    expect(await store.forget(join(dir, 'a'))).toEqual({ recent: [], command: null })
     rmSync(file, { recursive: true })
     expect(await store.launched(join(dir, 'b'), 'claude')).toEqual({ ok: true })
-    expect(saved()).toEqual({ recent: [join(dir, 'b')], favorites: [], command: 'claude' })
-  })
-})
-
-describe('createLauncherStore 의 즐겨찾기', () => {
-  it('favorites 키가 없는 파일은 최근 목록을 살리고 즐겨찾기를 비운다', async () => {
-    writeFileSync(file, JSON.stringify({ recent: ['/x'], command: 'claude' }))
-    expect(await createLauncherStore(file).read()).toEqual({
-      recent: ['/x'],
-      favorites: [],
-      command: 'claude'
-    })
+    expect(saved()).toEqual({ recent: [join(dir, 'b')], command: 'claude' })
   })
 
-  it('파일의 즐겨찾기를 읽고, 모르는 키는 버린다', async () => {
+  it('예전 판이 쓴 favorites 키는 읽지 않고, 다음에 쓸 때 뺀다', async () => {
+    const a = join(dir, 'a')
     writeFileSync(
       file,
       JSON.stringify({
-        recent: [],
-        favorites: [{ id: 'f-1', dir: '/work/app', name: 'app', extra: 1 }],
-        command: null
+        recent: ['/x'],
+        favorites: [{ id: 'f-1', dir: '/w', name: 'w', pins: ['/w/x'] }],
+        command: 'claude'
       })
     )
-    expect((await createLauncherStore(file).read()).favorites).toEqual([
-      { id: 'f-1', dir: '/work/app', name: 'app' }
-    ])
-  })
-
-  for (const [label, favorites] of [
-    ['favorites 가 배열이 아니면', '{}'],
-    ['항목이 객체가 아니면', '["/x"]'],
-    ['name 이 없으면', '[{"id":"f-1","dir":"/x"}]'],
-    ['id 가 없으면', '[{"dir":"/x","name":"x"}]'],
-    ['id 가 문자열이 아니면', '[{"id":1,"dir":"/x","name":"x"}]'],
-    ['dir 이 문자열이 아니면', '[{"id":"f-1","dir":1,"name":"x"}]']
-  ]) {
-    it(`${label} 빈 목록으로 시작한다`, async () => {
-      writeFileSync(file, `{"recent":["/y"],"favorites":${favorites},"command":null}`)
-      expect(await createLauncherStore(file).read()).toEqual({
-        recent: [],
-        favorites: [],
-        command: null
-      })
-    })
-  }
-
-  it('넣은 순서대로 쌓고 파일에 쓰며, 최근 목록과 명령은 그대로 둔다', async () => {
     const store = createLauncherStore(file)
-    const a = join(dir, 'a')
-    const b = join(dir, 'b')
+    expect(await store.read()).toEqual({ recent: ['/x'], command: 'claude' })
     await store.launched(a, 'claude')
-    await store.addFavorite({ id: 'f-b', dir: b, name: 'bee' })
-    expect(await store.addFavorite({ id: 'f-a', dir: a, name: 'ay' })).toEqual({
-      recent: [a],
-      favorites: [
-        { id: 'f-b', dir: b, name: 'bee' },
-        { id: 'f-a', dir: a, name: 'ay' }
-      ],
-      command: 'claude'
-    })
-    expect(saved()).toEqual(await store.read())
-    expect((await createLauncherStore(file).read()).favorites).toHaveLength(2)
-  })
-
-  it('같은 디렉토리를 다른 id 로 여러 번 넣을 수 있고, 경로는 풀어서 둔다', async () => {
-    const store = createLauncherStore(file)
-    const a = join(dir, 'a')
-    await store.addFavorite({ id: 'f-1', dir: a, name: 'app' })
-    await store.addFavorite({ id: 'f-2', dir: `${a}/../a/.`, name: 'app review' })
-    expect((await store.read()).favorites).toEqual([
-      { id: 'f-1', dir: a, name: 'app' },
-      { id: 'f-2', dir: a, name: 'app review' }
-    ])
-  })
-
-  it('이미 든 id 는 다시 넣지 않는다', async () => {
-    const store = createLauncherStore(file)
-    await store.addFavorite({ id: 'f-1', dir: join(dir, 'a'), name: 'app' })
-    await store.addFavorite({ id: 'f-1', dir: join(dir, 'b'), name: 'other' })
-    expect((await store.read()).favorites).toEqual([
-      { id: 'f-1', dir: join(dir, 'a'), name: 'app' }
-    ])
-  })
-
-  it('상대경로는 넣지 않는다', async () => {
-    const store = createLauncherStore(file)
-    expect((await store.addFavorite({ id: 'f-1', dir: 'a', name: 'a' })).favorites).toEqual([])
-  })
-
-  it('빼기와 이름 바꾸기는 id 로 찾고, 같은 디렉토리의 다른 항목은 건드리지 않는다', async () => {
-    const store = createLauncherStore(file)
-    const a = join(dir, 'a')
-    await store.addFavorite({ id: 'f-1', dir: a, name: 'app' })
-    await store.addFavorite({ id: 'f-2', dir: a, name: 'old' })
-    expect((await store.renameFavorite('f-2', 'new')).favorites).toEqual([
-      { id: 'f-1', dir: a, name: 'app' },
-      { id: 'f-2', dir: a, name: 'new' }
-    ])
-    expect((await store.forgetFavorite('f-2')).favorites).toEqual([
-      { id: 'f-1', dir: a, name: 'app' }
-    ])
-    expect(saved()).toEqual(await store.read())
-  })
-
-  it('없는 즐겨찾기를 빼거나 이름을 바꾸면 목록이 그대로다', async () => {
-    const store = createLauncherStore(file)
-    const a = join(dir, 'a')
-    await store.addFavorite({ id: 'f-1', dir: a, name: 'app' })
-    await store.renameFavorite('f-2', 'other')
-    await store.forgetFavorite('f-2')
-    expect((await store.read()).favorites).toEqual([{ id: 'f-1', dir: a, name: 'app' }])
-  })
-})
-
-describe('createLauncherStore 의 핀', () => {
-  it('핀은 그 즐겨찾기에 넣은 순서대로 쌓고, 경로는 풀어 두며 같은 디렉토리는 다시 넣지 않는다', async () => {
-    const store = createLauncherStore(file)
-    const a = join(dir, 'a')
-    await store.addFavorite({ id: 'f-1', dir: a, name: 'app' })
-    await store.addFavorite({ id: 'f-2', dir: a, name: 'other' })
-    await store.addPin('f-1', join(a, 'y'))
-    await store.addPin('f-1', join(a, 'x', '..', 'x'))
-    await store.addPin('f-1', join(a, 'y') + '/')
-    expect((await store.read()).favorites).toEqual([
-      { id: 'f-1', dir: a, name: 'app', pins: [join(a, 'y'), join(a, 'x')] },
-      { id: 'f-2', dir: a, name: 'other' }
-    ])
-    expect(saved()).toEqual(await store.read())
-  })
-
-  it('상대경로와 없는 즐겨찾기에는 핀을 넣지 않는다', async () => {
-    const store = createLauncherStore(file)
-    await store.addFavorite({ id: 'f-1', dir: join(dir, 'a'), name: 'app' })
-    await store.addPin('f-1', 'a')
-    await store.addPin('f-2', join(dir, 'a'))
-    expect((await store.read()).favorites).toEqual([
-      { id: 'f-1', dir: join(dir, 'a'), name: 'app' }
-    ])
-  })
-
-  it('핀을 빼고, 마지막 핀을 빼면 pins 키를 지우되 즐겨찾기는 남긴다', async () => {
-    const store = createLauncherStore(file)
-    const a = join(dir, 'a')
-    await store.addFavorite({ id: 'f-1', dir: a, name: 'app' })
-    await store.addPin('f-1', join(a, 'x'))
-    await store.addPin('f-1', join(a, 'y'))
-    expect((await store.removePin('f-1', join(a, 'x') + '/')).favorites).toEqual([
-      { id: 'f-1', dir: a, name: 'app', pins: [join(a, 'y')] }
-    ])
-    expect((await store.removePin('f-1', join(a, 'y'))).favorites).toEqual([
-      { id: 'f-1', dir: a, name: 'app' }
-    ])
-  })
-
-  it('파일의 핀을 읽고, 문자열 배열이 아니거나 빈 배열인 pins 는 버린다', async () => {
-    writeFileSync(
-      file,
-      JSON.stringify({
-        recent: [],
-        favorites: [
-          { id: 'f-1', dir: '/w', name: 'a', pins: ['/w/x'] },
-          { id: 'f-2', dir: '/w', name: 'b', pins: [1] },
-          { id: 'f-3', dir: '/w', name: 'c', pins: [] },
-          { id: 'f-4', dir: '/w', name: 'd', pins: '/w/x' }
-        ],
-        command: null
-      })
-    )
-    expect((await createLauncherStore(file).read()).favorites).toEqual([
-      { id: 'f-1', dir: '/w', name: 'a', pins: ['/w/x'] },
-      { id: 'f-2', dir: '/w', name: 'b' },
-      { id: 'f-3', dir: '/w', name: 'c' },
-      { id: 'f-4', dir: '/w', name: 'd' }
-    ])
+    expect(saved()).toEqual({ recent: [a, '/x'], command: 'claude' })
   })
 })
 

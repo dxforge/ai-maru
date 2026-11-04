@@ -42,24 +42,20 @@ export function sidebarLabel(p: Named, base: Named | undefined, home?: string): 
   return { ...(branch === undefined ? { name: repo } : { branch }), ...(sub && { sub }) }
 }
 
-type NamedWorkspace<P> = { name?: string; cells: readonly { panes: readonly P[] }[] }
+type NamedWorkspace<P> = { name?: string; dir?: string; cells: readonly { panes: readonly P[] }[] }
 
-/** `home` 을 주면 홈 디렉토리를 `~` 로 쓴다. 사이드바가 pane 줄의 위치(`sidebarLabel`)와 맞추려고 준다. */
+/**
+ * `home` 을 주면 홈 디렉토리를 `~` 로 쓴다. 사이드바가 pane 줄의 위치(`sidebarLabel`)와 맞추려고 준다. cell 이 없는 핀
+ * workspace 는 `dir` 의 디렉토리 이름으로 짓는다. 그 디렉토리가 저장소면 cell 이 있을 때의 저장소 이름과 다를 수 있다.
+ */
 export function autoWorkspaceName(w: NamedWorkspace<Named>, home?: string): string {
-  const p = w.cells[0].panes[0]
+  const p = w.cells[0]?.panes[0]
+  if (!p) return dirLabel(w.dir, home)
   return p.git ? p.git.repo : dirLabel(p.cwd, home)
 }
 
 export function workspaceName(w: NamedWorkspace<Named>, home?: string): string {
   return w.name ?? autoWorkspaceName(w, home)
-}
-
-/**
- * 즐겨찾기에 넣을 workspace 의 디렉토리다. 자동 이름을 짓는 pane(첫 cell 의 첫 pane)의 cwd 를 쓴다. 사이드바에 보이는
- * 디렉토리와 같은 것이 들어가게 하기 위해서다.
- */
-export function workspaceDir(w: NamedWorkspace<{ cwd?: string }>): string | undefined {
-  return w.cells[0].panes[0].cwd
 }
 
 /**
@@ -76,7 +72,7 @@ export function nameOnFocusLoss(typed: string, opened: string): string | null {
  * 저장소 이름을 온전히 적게 한다.
  */
 export function labelBase<P>(w: NamedWorkspace<P>): P | undefined {
-  return w.name === undefined ? w.cells[0].panes[0] : undefined
+  return w.name === undefined ? w.cells[0]?.panes[0] : undefined
 }
 
 export function windowTitle(label: Label): string {

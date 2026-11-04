@@ -21,17 +21,18 @@ import {
   type Span
 } from '../workspace/sidebarDrag'
 import {
-  closedPins,
+  closedRows,
   jobRow,
   paneRow,
   workspaceMarks,
+  type ClosedRow,
   type JobRow,
-  type PinRow,
   type Row,
   type RowSource
 } from '../workspace/sidebarRows'
 import PinIcon from './PinIcon.vue'
 import {
+  favoriteCount,
   focusedPane,
   orderedPanes,
   pinnedCount,
@@ -48,8 +49,6 @@ const {
   notification,
   urgent,
   unread,
-  favorites = new Set(),
-  pins = new Map(),
   folded,
   collapsed,
   jobs = [],
@@ -66,10 +65,6 @@ const {
   urgent: ReadonlyMap<number, ProgramStatusState>
   /** 읽지 않은 알림이 있는 pane 을 든 workspace 의 key */
   unread: ReadonlySet<number>
-  /** 즐겨찾기에 든 workspace 의 key */
-  favorites?: ReadonlySet<number>
-  /** 즐겨찾기에 든 workspace 의 key 에서 그 즐겨찾기 항목의 핀으로 */
-  pins?: ReadonlyMap<number, readonly string[]>
   folded: ReadonlySet<number>
   collapsed: boolean
   jobs?: readonly JobView[]
@@ -89,10 +84,10 @@ const emit = defineEmits<{
   startRename: [workspace: number]
   /** `name` 이 null 이면 취소다. `refocus` 면 터미널에 포커스를 돌려준다. */
   endRename: [workspace: number, name: string | null, refocus: boolean]
-  toggleFavorite: [workspace: number]
-  togglePin: [cell: number]
-  openPin: [workspace: number, dir: string]
-  unpin: [workspace: number, dir: string]
+  togglePin: [workspace: number]
+  toggleFavorite: [cell: number]
+  openDir: [workspace: number, dir: string]
+  removeFavorite: [workspace: number, dir: string]
 }>()
 
 // `groups` 밖에 둔다. `groups` 안에 두면 job 표가 바뀔 때마다 job 과 상관없는 pane 줄까지 다시 만들기 때문이다.
@@ -111,8 +106,7 @@ function cellGroup(
   src: RowSource,
   c: DeepReadonly<Cell>,
   base: DeepReadonly<Pane> | undefined,
-  index: number,
-  favorite: boolean
+  index: number
 ) {
   const selected = c.key === selectedKey
   const current = focusedPane(c)
@@ -121,28 +115,25 @@ function cellGroup(
     c,
     index,
     selected,
-    pinned: favorite && c.pin !== undefined,
+    favorite: c.favorite !== undefined,
     rows: orderedPanes(c).map((p) => paneRow(src, p, selected && p === current, base))
   }
 }
 
-type Item = ReturnType<typeof cellGroup> | ({ kind: 'pin' } & PinRow)
+type Item = ReturnType<typeof cellGroup> | ({ kind: 'closed' } & ClosedRow)
 
 function items(src: RowSource, w: DeepReadonly<Workspace>): Item[] {
   const base = labelBase(w)
-  const favorite = favorites.has(w.key)
-  const cells = w.cells.map((c, i) => cellGroup(src, c, base, i, favorite))
-  const at = pinnedCount(w)
-  const closed = closedPins(pins.get(w.key) ?? [], w.cells, home).map((p): Item => ({
-    kind: 'pin',
-    ...p
-  }))
+  const cells = w.cells.map((c, i) => cellGroup(src, c, base, i))
+  const at = favoriteCount(w)
+  const closed = closedRows(w, home).map((r): Item => ({ kind: 'closed', ...r }))
   return [...cells.slice(0, at), ...closed, ...cells.slice(at)]
 }
 
 const groups = computed(() => {
   const src: RowSource = { shown, command, notification, home, shell }
-  return workspaces.map((w) => {
+  const head = pinnedCount(workspaces)
+  return workspaces.map((w, i) => {
     const f = folded.has(w.key)
     const auto = autoWorkspaceName(w, home)
     return {
@@ -150,6 +141,8 @@ const groups = computed(() => {
       name: w.name ?? auto,
       auto,
       folded: f,
+      pinned: !!w.pinned,
+      unpinnedHead: i > 0 && i === head,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       items: f ? [] : items(src, w)
     }
@@ -188,6 +181,7 @@ const spanOf = (el: Element): Span => {
 function spans(): SidebarSpans {
   const slot = list.value!.querySelector(':scope > .new-workspace')
   return {
+    pinned: pinnedCount(workspaces),
     workspaces: Array.from(
       list.value!.querySelectorAll<HTMLElement>(':scope > .workspace'),
       (el) => {
@@ -199,8 +193,9 @@ function spans(): SidebarSpans {
           head: spanOf(el.querySelector(':scope > .workspace-head')!),
           count: w?.cells.length ?? 0,
           cells: Array.from(el.querySelectorAll(':scope > .group'), spanOf),
-          pinned: w ? pinnedCount(w) : 0,
-          closed: closedSpan(Array.from(el.querySelectorAll(':scope > .pin-card'), spanOf))
+          folded: folded.has(key),
+          favorites: w ? favoriteCount(w) : 0,
+          closed: closedSpan(Array.from(el.querySelectorAll(':scope > .closed-card'), spanOf))
         }
       }
     ),
@@ -284,9 +279,9 @@ const cellDragged = (cell: number): boolean =>
   dragged.value?.kind === 'cell' && dragged.value.cell === cell
 const workspaceDragged = (workspace: number): boolean =>
   dragged.value?.kind === 'workspace' && dragged.value.workspace === workspace
-const favoriteLabel = (workspace: number): string =>
-  favorites.has(workspace) ? 'Remove from Favorites' : 'Add to Favorites'
-const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
+const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin Workspace' : 'Pin Workspace')
+const favoriteLabel = (favorite: boolean): string =>
+  favorite ? 'Remove from Favorites' : 'Add to Favorites'
 </script>
 
 <template>
@@ -294,10 +289,13 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
     <div class="titlebar" />
     <div ref="list" v-overlay-scroll="'y'" class="list">
       <div
-        v-for="({ w, name, auto, folded: wf, state, notified, dot, items: entries }, wi) in groups"
+        v-for="(
+          { w, name, auto, folded: wf, pinned, unpinnedHead, state, notified, dot, items: entries },
+          wi
+        ) in groups"
         :key="w.key"
         class="workspace"
-        :class="{ dragging: workspaceDragged(w.key) }"
+        :class="{ dragging: workspaceDragged(w.key), 'unpinned-head': unpinnedHead }"
         :data-workspace="w.key"
       >
         <div v-if="renaming === w.key" class="workspace-head editing">
@@ -327,48 +325,48 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
           /></span>
           <span class="workspace-name workspace-title">{{ name }}</span>
           <span v-if="dot" class="unread-dot" />
-          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 별의 pointerdown·click·dblclick 이 헤더의 끌기·접기·이름 고치기로 전해지지 않게 막는다. -->
-          <span class="favorite-slot" :class="{ on: favorites.has(w.key) }"
+          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 핀의 pointerdown·click·dblclick 이 헤더의 끌기·접기·이름 고치기로 전해지지 않게 막는다. -->
+          <span class="pin-slot" :class="{ on: pinned }"
             ><span
-              v-tooltip="favoriteLabel(w.key)"
+              v-tooltip="pinLabel(pinned)"
               role="button"
-              class="favorite nerd-icon"
-              :class="{ on: favorites.has(w.key) }"
-              :aria-label="favoriteLabel(w.key)"
-              :aria-pressed="favorites.has(w.key)"
+              class="pin"
+              :class="{ on: pinned }"
+              :aria-label="pinLabel(pinned)"
+              :aria-pressed="pinned"
               @pointerdown.stop
-              @click.stop="emit('toggleFavorite', w.key)"
+              @click.stop="emit('togglePin', w.key)"
               @dblclick.stop
-              >{{ favorites.has(w.key) ? ICONS.starFull : ICONS.starEmpty }}</span
-            ></span
-          >
+              ><PinIcon :filled="pinned" /></span
+          ></span>
           <FoldChevron class="chevron" :open="!wf" />
         </button>
         <template
           v-for="item in entries"
-          :key="item.kind === 'cell' ? item.c.key : `pin:${item.dir}`"
+          :key="item.kind === 'cell' ? item.c.key : `closed:${item.dir}`"
         >
-          <div v-if="item.kind === 'pin'" class="pin-card">
+          <div v-if="item.kind === 'closed'" class="closed-card">
             <button
               v-tooltip="item.path"
-              class="row closed-pin"
+              class="row closed-row"
               :aria-label="`Open ${item.name}`"
               @mousedown.prevent
-              @click="emit('openPin', w.key, item.dir)"
+              @click="emit('openDir', w.key, item.dir)"
             >
               <span class="state nerd-icon">{{ ICONS.terminal }}</span>
               <span class="title">{{ item.name }}</span>
               <span class="tail">{{ item.path }}</span>
             </button>
             <button
-              v-tooltip="pinLabel(true)"
-              class="pin on"
-              :aria-label="`Unpin ${item.name}`"
+              v-if="item.favorite"
+              v-tooltip="favoriteLabel(true)"
+              class="favorite on"
+              :aria-label="`Remove ${item.name} from Favorites`"
               aria-pressed="true"
               @mousedown.prevent
-              @click="emit('unpin', w.key, item.dir)"
+              @click="emit('removeFavorite', w.key, item.dir)"
             >
-              <PinIcon :filled="true" />
+              <span class="nerd-icon">{{ ICONS.starFull }}</span>
             </button>
           </div>
           <div
@@ -434,15 +432,15 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
               </button>
             </div>
             <button
-              v-tooltip="pinLabel(item.pinned)"
-              class="pin"
-              :class="{ on: item.pinned }"
-              :aria-label="pinLabel(item.pinned)"
-              :aria-pressed="item.pinned"
+              v-tooltip="favoriteLabel(item.favorite)"
+              class="favorite"
+              :class="{ on: item.favorite }"
+              :aria-label="favoriteLabel(item.favorite)"
+              :aria-pressed="item.favorite"
               @mousedown.prevent
-              @click="emit('togglePin', item.c.key)"
+              @click="emit('toggleFavorite', item.c.key)"
             >
-              <PinIcon :filled="item.pinned" />
+              <span class="nerd-icon">{{ item.favorite ? ICONS.starFull : ICONS.starEmpty }}</span>
             </button>
           </div>
         </template>
@@ -536,46 +534,52 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
   text-overflow: ellipsis;
 }
 
-.favorite-slot {
+.pin-slot {
   flex: none;
   align-self: stretch;
   display: flex;
   align-items: center;
 }
 
-/* 즐겨찾기가 아닌 workspace 의 별은 hover·focus 때만 보이므로 이름 폭을 줄이지 않는다. 접은 사이드바에서 이름이 별 폭만큼
-   더 잘리지 않게 하기 위해서다. 별의 자리는 이름보다 먼저 0 까지 준다. 자리가 줄면 별은 자리의 오른쪽 끝에 붙은 채 왼쪽으로
-   넘쳐 이름 끝 글자를 가린다. 이름 뒤에 빈 폭이 있으면 별은 이름 뒤에 선다. 자리의 왼쪽 margin 은 헤더의 gap 을 빼고, 별의
-   왼쪽 margin 이 그 gap 을 별 앞에 다시 둔다. */
-.favorite-slot:not(.on) {
+/* 핀이 없는 workspace 의 핀은 hover·focus 때만 보이므로 이름 폭을 줄이지 않는다. 접은 사이드바에서 이름이 핀 폭만큼 더
+   잘리지 않게 하기 위해서다. 핀의 자리는 이름보다 먼저 0 까지 준다. 자리가 줄면 핀은 자리의 오른쪽 끝에 붙은 채 왼쪽으로
+   넘쳐 이름 끝 글자를 가린다. 이름 뒤에 빈 폭이 있으면 핀은 이름 뒤에 선다. 자리의 왼쪽 margin 은 헤더의 gap 을 빼고, 핀의
+   왼쪽 margin 이 그 gap 을 핀 앞에 다시 둔다. */
+.pin-slot:not(.on) {
   flex: 0 1000 auto;
   min-width: 0;
   justify-content: flex-end;
   margin-left: calc(-1 * var(--space-4));
 }
 
-.favorite-slot:not(.on) .favorite {
+.pin-slot:not(.on) .pin {
   flex: none;
   margin-left: var(--space-4);
   background-color: var(--side);
 }
 
-.favorite {
+.pin {
+  display: flex;
+  align-items: center;
+  height: 20px;
   visibility: hidden;
   padding: 0 var(--space-1);
   border-radius: var(--radius-1);
-  font-size: 12px;
-  line-height: 20px;
 }
 
-.favorite.on,
-.workspace-head:hover .favorite,
-.workspace-head:focus-visible .favorite {
+.pin svg {
+  width: 12px;
+  height: 12px;
+}
+
+.pin.on,
+.workspace-head:hover .pin,
+.workspace-head:focus-visible .pin {
   visibility: visible;
 }
 
-/* 이름 위에 겹친 별은 바탕색으로 이름을 가리므로, hover 색은 바탕색 위에 덧칠한다. */
-.favorite:hover {
+/* 이름 위에 겹친 핀은 바탕색으로 이름을 가리므로, hover 색은 바탕색 위에 덧칠한다. */
+.pin:hover {
   background-image: linear-gradient(var(--hover), var(--hover));
 }
 
@@ -595,28 +599,33 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
   border-top: 1px solid var(--line);
 }
 
+.workspace.unpinned-head {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+}
+
 .group:last-child,
-.pin-card:last-child {
+.closed-card:last-child {
   margin-bottom: 0;
 }
 
-/* 핀이 박스 모서리 밖으로 나오므로 박스는 넘친 것을 자르지 않고, 줄의 바탕색은 박스의 첫 줄과 마지막 줄의 모서리를 깎아
+/* 별이 박스 모서리 밖으로 나오므로 박스는 넘친 것을 자르지 않고, 줄의 바탕색은 박스의 첫 줄과 마지막 줄의 모서리를 깎아
    박스 안에 둔다. */
 .group,
-.pin-card {
+.closed-card {
   position: relative;
   margin: 0 var(--space-3) var(--space-3);
   border-radius: var(--radius-2);
 }
 
 .grip + .row,
-.closed-pin {
+.closed-row {
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
 }
 
 .group > .row:nth-last-child(2),
-.closed-pin {
+.closed-row {
   border-bottom-left-radius: var(--radius-2);
   border-bottom-right-radius: var(--radius-2);
 }
@@ -629,21 +638,21 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
   background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
-.closed-pin {
+.closed-row {
   color: var(--faint);
 }
 
 /* 테두리 대신 안쪽으로 그은 outline 이라 박스 높이가 열린 cell 과 같다. */
-.pin-card {
+.closed-card {
   outline: 1px dashed color-mix(in srgb, var(--fg) 18%, transparent);
   outline-offset: -1px;
 }
 
-.closed-pin:hover {
+.closed-row:hover {
   background: var(--hover);
 }
 
-.closed-pin .tail {
+.closed-row .tail {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 60%;
@@ -652,8 +661,8 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
   font-size: var(--text-1);
 }
 
-/* 압정처럼 박스의 오른쪽 위 모서리에 비스듬히 꽂는다. 줄 폭을 쓰지 않아 이름이 핀 때문에 더 잘리지 않는다. */
-.pin {
+/* 박스의 오른쪽 위 모서리에 걸쳐 그린다. 줄 폭을 쓰지 않아 이름이 별 때문에 더 잘리지 않는다. */
+.favorite {
   position: absolute;
   top: -7px;
   right: -5px;
@@ -663,31 +672,26 @@ const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin' : 'Pin')
   width: 18px;
   height: 18px;
   color: var(--faint);
+  font-size: 12px;
   visibility: hidden;
 }
 
-.pin svg {
-  width: 13px;
-  height: 13px;
-  transform: rotate(35deg);
-}
-
-/* 꽂힌 핀은 채운 즐겨찾기 별(`.favorite.on`)과 같은 색을 쓴다. 별은 색을 `.workspace-head` 에서 물려받는다. */
-.pin.on {
+/* 즐겨찾기 별은 workspace 핀(`.pin.on`)과 같은 색을 쓴다. 핀은 색을 `.workspace-head` 에서 물려받는다. */
+.favorite.on {
   color: var(--muted);
 }
 
-.group:hover .pin.on,
-.pin-card:hover .pin.on {
+.group:hover .favorite.on,
+.closed-card:hover .favorite.on {
   color: var(--fg);
 }
 
-.pin.on,
-.group:hover .pin {
+.favorite.on,
+.group:hover .favorite {
   visibility: visible;
 }
 
-.pin:not(.on):hover {
+.favorite:not(.on):hover {
   color: var(--fg);
 }
 

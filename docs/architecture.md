@@ -2,7 +2,7 @@
 
 ## 화면의 층
 
-창은 workspace 목록을 보인다. workspace 는 cell 을 묶는다. cell 은 헤더·pane 배치·글꼴 크기·columns 폭·job 을 갖고, 선택과 single 보기의 단위다. pane 은 터미널 하나다. cell 의 마지막 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이 닫히면 workspace 가 닫힌다.
+창은 workspace 목록을 보인다. workspace 는 cell 을 묶는다. cell 은 헤더·pane 배치·글꼴 크기·columns 폭·job 을 갖고, 선택과 single 보기의 단위다. pane 은 터미널 하나다. cell 의 마지막 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이 닫히면 workspace 가 닫힌다. 핀을 꽂은 workspace 는 마지막 cell 이 닫혀도 남는다. cell 이 없는 workspace 는 핀을 빼면 닫힌다.
 
 ## pty 를 여는 순서
 

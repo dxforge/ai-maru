@@ -50,7 +50,11 @@ describe('parseScreen', () => {
   it.each<[string, (s: Record<string, any>) => void]>([
     ['pty id 모양이 아님', (s) => (s.workspaces[0].cells[0].panes[0].ptyId = '../x')],
     ['pane 이 없는 cell', (s) => (s.workspaces[0].cells[0].panes = [])],
-    ['cell 이 없는 workspace', (s) => (s.workspaces[0].cells = [])],
+    ['핀이 없는데 cell 이 없는 workspace', (s) => (s.workspaces[0].cells = [])],
+    ['workspace 핀이 true 가 아님', (s) => (s.workspaces[0].pinned = 1)],
+    ['workspace dir 이 문자열이 아님', (s) => (s.workspaces[0].dir = 1)],
+    ['즐겨찾기 목록이 배열이 아님', (s) => (s.workspaces[0].favorites = '/a')],
+    ['즐겨찾기 목록에 문자열이 아닌 것이 있음', (s) => (s.workspaces[0].favorites = ['/a', 1])],
     ['workspace id 가 문자열이 아님', (s) => (s.workspaces[0].id = 1)],
     ['workspace 이름이 문자열이 아님', (s) => (s.workspaces[0].name = 1)],
     ['cell id 가 문자열이 아님', (s) => (s.workspaces[0].cells[0].id = 1)],
@@ -70,7 +74,7 @@ describe('parseScreen', () => {
     ['pane 폭이 정수가 아님', (s) => (s.workspaces[0].cells[0].paneCols = 110.5)],
     ['pane 폭이 0', (s) => (s.workspaces[0].cells[0].paneCols = 0)],
     ['pane 폭이 음수', (s) => (s.workspaces[0].cells[0].paneCols = -5)],
-    ['핀이 문자열이 아님', (s) => (s.workspaces[0].cells[0].pin = 1)],
+    ['cell 즐겨찾기가 문자열이 아님', (s) => (s.workspaces[0].cells[0].favorite = 1)],
     ['keep 이 true 가 아님', (s) => (s.workspaces[0].cells[0].panes[1].keep = false)]
   ])('%s 이면 null', (_, spoil) => {
     const s = clone()
@@ -97,11 +101,20 @@ describe('parseScreen', () => {
     expect(parseScreen(s)!.workspaces[0].cells[0].paneCols).toBe(110)
   })
 
-  it('cell 의 핀은 없어도 되고, 있으면 그대로 돌려준다', () => {
+  it('cell 의 즐겨찾기는 없어도 되고, 있으면 그대로 돌려준다', () => {
     const s = clone() as ScreenState
-    s.workspaces[0].cells[0].pin = '/work/app'
-    expect(parseScreen(s)!.workspaces[0].cells[0].pin).toBe('/work/app')
-    expect(parseScreen(clone())!.workspaces[0].cells[0]).not.toHaveProperty('pin')
+    s.workspaces[0].cells[0].favorite = '/work/app'
+    expect(parseScreen(s)!.workspaces[0].cells[0].favorite).toBe('/work/app')
+    expect(parseScreen(clone())!.workspaces[0].cells[0]).not.toHaveProperty('favorite')
+  })
+
+  it('예전 판이 쓴 cell 의 pin 과 workspace 의 favorite 은 버린다', () => {
+    const s = clone()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 예전 판의 키를 넣는다.
+    const w = (s as any).workspaces[0]
+    w.favorite = 'f-1'
+    w.cells[0].pin = '/work/app'
+    expect(parseScreen(s)).toEqual(screen)
   })
 
   it('workspace 이름은 없어도 되고, 있으면 그대로 돌려준다', () => {
@@ -121,15 +134,32 @@ describe('parseScreen', () => {
     )
   })
 
-  it('workspace 의 즐겨찾기 id 는 문자열이면 옮기고, 아니면 버린다', () => {
+  it('핀 workspace 는 cell 없이도 받고, 핀·dir·즐겨찾기를 레이아웃까지 옮긴다', () => {
     const s = clone() as ScreenState
-    s.workspaces[0].favorite = 'f-1'
-    expect(parseScreen(s)!.workspaces[0].favorite).toBe('f-1')
+    Object.assign(s.workspaces[0], {
+      pinned: true,
+      dir: '/work/app',
+      favorites: ['/work/app', '/work/lib'],
+      cells: []
+    })
+    const parsed = parseScreen(s)!.workspaces[0]
+    expect(parsed).toEqual({
+      key: 1,
+      id: 'w-00000001',
+      pinned: true,
+      dir: '/work/app',
+      favorites: ['/work/app', '/work/lib'],
+      cells: []
+    })
     const { layout } = splitScreen(s)
-    expect(parseLayoutPart(JSON.parse(JSON.stringify(layout)))!.workspaces[0].favorite).toBe('f-1')
-    expect(parseScreen(clone())!.workspaces[0]).not.toHaveProperty('favorite')
-    ;(s.workspaces[0] as { favorite: unknown }).favorite = 1
-    expect(parseScreen(s)!.workspaces[0]).not.toHaveProperty('favorite')
+    expect(parseLayoutPart(JSON.parse(JSON.stringify(layout)))!.workspaces[0]).toEqual(parsed)
+  })
+
+  it('핀·dir·즐겨찾기는 없어도 되고, 빈 즐겨찾기 목록은 키를 없앤다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].favorites = []
+    const w = parseScreen(s)!.workspaces[0]
+    for (const k of ['pinned', 'dir', 'favorites']) expect(w).not.toHaveProperty(k)
   })
 
   it('Canvas 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {

@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  entryKey,
   expandPath,
-  filterFavorites,
   filterRecent,
-  firstDirRow,
   joinDir,
-  listEntries,
   matchDirs,
   pathQuery,
   pickCommand,
@@ -74,96 +70,6 @@ describe('filterRecent', () => {
   it('NFD 로 저장된 한글 경로도 NFC 로 친 단어로 거른다', () => {
     const nfd = `${HOME}/${'프로젝트'.normalize('NFD')}`
     expect(filterRecent([nfd], '프로젝트', HOME).map((r) => r.path)).toEqual([nfd])
-  })
-})
-
-describe('filterFavorites', () => {
-  const favorites = [
-    { id: 'f-1', dir: `${HOME}/work/app`, name: 'app' },
-    { id: 'f-2', dir: '/opt/Tools', name: 'Toolbox' },
-    { id: 'f-3', dir: `${HOME}/work/app`, name: 'app review' }
-  ]
-  const names = (query: string) => filterFavorites(favorites, query, HOME).map((r) => r.name)
-
-  it('빈 입력이면 같은 디렉토리의 항목까지 전부를 넣은 순서대로, 이름과 ~ 로 줄인 경로와 id 로 준다', () => {
-    expect(filterFavorites(favorites, '', HOME)).toEqual([
-      { path: `${HOME}/work/app`, label: '~/work/app', name: 'app', id: 'f-1' },
-      { path: '/opt/Tools', label: '/opt/Tools', name: 'Toolbox', id: 'f-2' },
-      { path: `${HOME}/work/app`, label: '~/work/app', name: 'app review', id: 'f-3' }
-    ])
-  })
-
-  it('단어마다 이름이나 경로에 든 것만 남긴다', () => {
-    expect(names('APP')).toEqual(['app', 'app review'])
-    expect(names('review')).toEqual(['app review'])
-    expect(names('toolbox opt')).toEqual(['Toolbox'])
-    expect(names('app opt')).toEqual([])
-  })
-})
-
-describe('entryKey', () => {
-  it('같은 디렉토리의 즐겨찾기 행을 id 로 가르고, 최근 목록 행과 겹치지 않는다', () => {
-    const keys = [
-      { path: '/work/app', label: '~/work/app', name: 'app', id: 'f-1' },
-      { path: '/work/app', label: '~/work/app', name: 'app review', id: 'f-2' },
-      { path: '/work/app', label: '~/work/app' }
-    ].map(entryKey)
-    expect(new Set(keys).size).toBe(3)
-  })
-})
-
-describe('listEntries', () => {
-  const fav = [{ path: '/f', label: '/f', name: 'f' }]
-  const recent = [
-    { path: '/a', label: '/a' },
-    { path: '/b', label: '/b' }
-  ]
-
-  it('즐겨찾기가 없으면 묶음 제목 없이 최근 목록만 둔다', () => {
-    expect(listEntries([], recent, false)).toEqual([
-      { row: recent[0], index: 0 },
-      { row: recent[1], index: 1 }
-    ])
-  })
-
-  it('위 팔레트는 묶음 제목을 묶음 앞에 두고, index 는 즐겨찾기부터 이어 센다', () => {
-    expect(listEntries(fav, recent, false)).toEqual([
-      { title: 'Favorites' },
-      { row: fav[0], index: 0 },
-      { title: 'Recent' },
-      { row: recent[0], index: 1 },
-      { row: recent[1], index: 2 }
-    ])
-  })
-
-  it('아래 팔레트는 목록이 뒤집혀 그려지므로 묶음 제목을 묶음 뒤에 둔다', () => {
-    expect(listEntries(fav, recent, true)).toEqual([
-      { row: fav[0], index: 0 },
-      { title: 'Favorites' },
-      { row: recent[0], index: 1 },
-      { row: recent[1], index: 2 },
-      { title: 'Recent' }
-    ])
-  })
-
-  it('최근 목록이 비면 Recent 제목을 두지 않는다', () => {
-    expect(listEntries(fav, [], false)).toEqual([{ title: 'Favorites' }, { row: fav[0], index: 0 }])
-  })
-})
-
-describe('firstDirRow', () => {
-  it('입력이 비면 즐겨찾기를 건너뛰고 최근 목록의 첫 행을 고른다', () => {
-    expect(firstDirRow(2, 3, '')).toBe(2)
-    expect(firstDirRow(2, 3, '  ')).toBe(2)
-    expect(firstDirRow(0, 3, '')).toBe(0)
-  })
-
-  it('최근 목록이 비면 첫 즐겨찾기를 고른다', () => {
-    expect(firstDirRow(2, 0, '')).toBe(0)
-  })
-
-  it('입력이 있으면 맞는 행 가운데 맨 앞을 고른다', () => {
-    expect(firstDirRow(2, 3, 'atlas')).toBe(0)
   })
 })
 

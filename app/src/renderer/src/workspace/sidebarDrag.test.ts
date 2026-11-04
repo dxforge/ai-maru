@@ -10,6 +10,7 @@ import {
 
 // 사이드바의 모양을 따른다: 이름 줄 30px, cell 카드 30px, 카드 사이 6px, workspace 사이 6px·선·6px.
 const SPANS: SidebarSpans = {
+  pinned: 0,
   workspaces: [
     {
       key: 1,
@@ -21,7 +22,8 @@ const SPANS: SidebarSpans = {
         { top: 30, bottom: 60 },
         { top: 66, bottom: 96 }
       ],
-      pinned: 0
+      folded: false,
+      favorites: 0
     },
     {
       key: 2,
@@ -30,7 +32,8 @@ const SPANS: SidebarSpans = {
       head: { top: 108, bottom: 138 },
       count: 1,
       cells: [{ top: 138, bottom: 168 }],
-      pinned: 0
+      folded: false,
+      favorites: 0
     },
     {
       key: 3,
@@ -39,7 +42,8 @@ const SPANS: SidebarSpans = {
       head: { top: 180, bottom: 210 },
       count: 3,
       cells: [],
-      pinned: 0
+      folded: true,
+      favorites: 0
     }
   ],
   newWorkspace: { top: 218, bottom: 248 }
@@ -92,7 +96,7 @@ describe('dropAt — cell', () => {
   })
 
   it('New Workspace 칸이 없으면 마지막 workspace 아래도 그 workspace 다', () => {
-    const spans = { workspaces: SPANS.workspaces }
+    const spans = { pinned: 0, workspaces: SPANS.workspaces }
     expect(dropAt(cell(1, 0), spans, 400)?.drop).toEqual({ kind: 'cell', workspace: 3, index: 3 })
   })
 
@@ -104,14 +108,15 @@ describe('dropAt — cell', () => {
   })
 
   it('workspace 가 없으면 New Workspace 칸 밖에서는 아무것도 주지 않는다', () => {
-    expect(dropAt(cell(1, 0), { workspaces: [] }, 10)).toBeUndefined()
+    expect(dropAt(cell(1, 0), { pinned: 0, workspaces: [] }, 10)).toBeUndefined()
   })
 })
 
-describe('dropAt — 핀', () => {
-  // workspace 1 은 앞 cell 하나가 핀을 맡았고, 그 아래 66~96 에 닫힌 핀 줄이 있고, 102~132 에 나머지 cell 이 있다.
-  // workspace 2 는 핀을 맡은 cell 하나와 나머지 cell 하나다.
+describe('dropAt — 즐겨찾기', () => {
+  // workspace 1 은 앞 cell 하나가 즐겨찾기를 맡았고, 그 아래 66~96 에 닫힌 줄이 있고, 102~132 에 나머지 cell 이 있다.
+  // workspace 2 는 즐겨찾기 cell 하나와 나머지 cell 하나다.
   const spans: SidebarSpans = {
+    pinned: 2,
     workspaces: [
       {
         key: 1,
@@ -123,7 +128,8 @@ describe('dropAt — 핀', () => {
           { top: 30, bottom: 60 },
           { top: 102, bottom: 132 }
         ],
-        pinned: 1,
+        folded: false,
+        favorites: 1,
         closed: { top: 66, bottom: 96 }
       },
       {
@@ -136,16 +142,17 @@ describe('dropAt — 핀', () => {
           { top: 174, bottom: 204 },
           { top: 210, bottom: 240 }
         ],
-        pinned: 1
+        folded: false,
+        favorites: 1
       }
     ]
   }
 
-  it('핀을 맡은 cell 은 같은 workspace 의 핀이 없는 묶음에 놓지 않는다', () => {
+  it('즐겨찾기 cell 은 같은 workspace 의 즐겨찾기가 아닌 묶음에 놓지 않는다', () => {
     expect(dropAt(cell(1, 0, 7), spans, 125)).toBeUndefined()
   })
 
-  it('핀이 없는 cell 은 핀 묶음에 놓지 않고, 핀이 없는 묶음 앞의 선은 닫힌 핀 줄 아래에 긋는다', () => {
+  it('즐겨찾기가 아닌 cell 은 즐겨찾기 묶음에 놓지 않고, 나머지 묶음 앞의 선은 닫힌 줄 아래에 긋는다', () => {
     const from = cell(2, 1)
     expect(dropAt(from, spans, 35)).toBeUndefined()
     expect(dropAt(from, spans, 110)).toEqual({
@@ -154,13 +161,22 @@ describe('dropAt — 핀', () => {
     })
   })
 
-  it('핀을 맡은 cell 도 다른 workspace 에는 핀이 없는 묶음에만 놓는다', () => {
+  it('즐겨찾기 cell 을 다른 workspace 에 놓으면 어디에 놓아도 그곳 즐겨찾기 묶음의 끝이다', () => {
     const from = cell(1, 0, 7)
-    expect(dropAt(from, spans, 180)).toBeUndefined()
-    expect(dropAt(from, spans, 220)?.drop).toEqual({ kind: 'cell', workspace: 2, index: 1 })
+    const end = { drop: { kind: 'cell', workspace: 2, index: 1 }, line: 207 }
+    expect(dropAt(from, spans, 160)).toEqual(end)
+    expect(dropAt(from, spans, 180)).toEqual(end)
+    expect(dropAt(from, spans, 235)).toEqual(end)
   })
 
-  it('핀이 있는 workspace 의 이름 줄 위면 그 cell 이 놓일 수 있는 묶음의 맨 앞이다', () => {
+  it('즐겨찾기 cell 을 닫힌 줄이 있는 다른 workspace 에 놓으면 선은 닫힌 줄 위에 긋는다', () => {
+    expect(dropAt(cell(2, 0, 7), spans, 110)).toEqual({
+      drop: { kind: 'cell', workspace: 1, index: 1 },
+      line: 63
+    })
+  })
+
+  it('즐겨찾기가 있는 workspace 의 이름 줄 위면 그 cell 이 놓일 수 있는 묶음의 맨 앞이다', () => {
     expect(dropAt(cell(1, 1), spans, 160)).toEqual({
       drop: { kind: 'cell', workspace: 2, index: 1 },
       line: 207
@@ -173,8 +189,9 @@ describe('dropAt — 핀', () => {
     expect(dropAt(cell(2, 1), spans, 160)).toBeUndefined()
   })
 
-  it('핀 묶음 안에서는 옮기고, 핀 묶음 끝의 선은 닫힌 핀 줄 위에 긋는다', () => {
+  it('즐겨찾기 묶음 안에서는 옮기고, 즐겨찾기 묶음 끝의 선은 닫힌 줄 위에 긋는다', () => {
     const two: SidebarSpans = {
+      pinned: 1,
       workspaces: [
         {
           key: 1,
@@ -187,7 +204,8 @@ describe('dropAt — 핀', () => {
             { top: 66, bottom: 96 },
             { top: 138, bottom: 168 }
           ],
-          pinned: 2,
+          folded: false,
+          favorites: 2,
           closed: { top: 102, bottom: 132 }
         }
       ]
@@ -195,6 +213,30 @@ describe('dropAt — 핀', () => {
     expect(dropAt(cell(1, 0, 7), two, 90)).toEqual({
       drop: { kind: 'cell', workspace: 1, index: 2 },
       line: 99
+    })
+  })
+
+  it('cell 이 없는 핀 workspace 에는 닫힌 줄 아래에 놓는다', () => {
+    const empty: SidebarSpans = {
+      pinned: 0,
+      workspaces: [
+        { ...SPANS.workspaces[0] },
+        {
+          key: 4,
+          top: 102,
+          bottom: 168,
+          head: { top: 108, bottom: 138 },
+          count: 0,
+          cells: [],
+          folded: false,
+          favorites: 0,
+          closed: { top: 138, bottom: 168 }
+        }
+      ]
+    }
+    expect(dropAt(cell(1, 0), empty, 150)).toEqual({
+      drop: { kind: 'cell', workspace: 4, index: 0 },
+      line: 171
     })
   })
 })
@@ -212,6 +254,17 @@ describe('dropAt — workspace', () => {
     expect(dropAt(ws(1), SPANS, 60)).toBeUndefined()
     expect(dropAt(ws(1), SPANS, 140)).toBeUndefined()
     expect(dropAt(ws(1), SPANS, 200)).toBeDefined()
+  })
+
+  it('핀 묶음과 핀이 없는 묶음을 넘어 놓지 않는다', () => {
+    const pinned: SidebarSpans = { ...SPANS, pinned: 1 }
+    expect(dropAt(ws(0), pinned, 200)).toBeUndefined()
+    expect(dropAt(ws(2), pinned, 10)).toBeUndefined()
+    expect(dropAt(ws(2), pinned, 60)).toEqual({ drop: { kind: 'workspace', index: 1 }, line: 99 })
+    const two: SidebarSpans = { ...SPANS, pinned: 2 }
+    expect(dropAt(ws(1), two, 10)).toEqual({ drop: { kind: 'workspace', index: 0 }, line: -3 })
+    expect(dropAt(ws(0), two, 140)).toEqual({ drop: { kind: 'workspace', index: 2 }, line: 171 })
+    expect(dropAt(ws(0), two, 200)).toBeUndefined()
   })
 })
 

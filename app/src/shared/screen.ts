@@ -36,21 +36,22 @@ type CellOf<P> = {
   fontSize?: number
   /** columns 보기에서 늘어선 pane 하나가 받는 터미널 열 수. 없으면 설정 파일의 `layout.column-cols` 다. */
   paneCols?: number
-  /** 이 cell 이 맡은 핀의 디렉토리. workspace 가 가리키는 즐겨찾기 항목의 `pins` 가운데 하나다. */
-  pin?: string
+  /** 이 cell 이 맡은 즐겨찾기 디렉토리. 그 workspace 의 `favorites` 가운데 하나다. */
+  favorite?: string
 }
 
 /**
- * `name` 은 사용자가 바꾼 이름이다. 없으면 첫 cell 의 첫 pane 으로 이름을 짓는다(`workspaceName`). `favorite` 은 이
- * workspace 가 가리키는 즐겨찾기 항목의 `id` 다. 그 항목이 즐겨찾기에서 빠져도 지우지 않고 둔다. 즐겨찾기 목록이 workspace
- * 복원보다 늦게 읽히면 아직 읽지 않은 항목을 빠진 것으로 보고 링크를 지우게 되기 때문이다. `id` 는 무작위라 뒤에 생긴 항목과
- * 겹치지 않는다.
+ * `name` 은 사용자가 바꾼 이름이다. 없으면 첫 cell 의 첫 pane 으로 이름을 짓고, cell 이 없으면 `dir` 로 짓는다
+ * (`workspaceName`). `pinned` 인 workspace 는 마지막 cell 을 닫아도 남고, 그때 닫은 cell 의 디렉토리를 `dir` 에 적는다.
+ * cell 이 없는 workspace 는 `pinned` 일 때만 있다. `favorites` 는 즐겨찾기 디렉토리의 절대경로로, 넣은 순서다.
  */
 type WorkspaceOf<P> = {
   key: number
   id: string
   name?: string
-  favorite?: string
+  pinned?: true
+  dir?: string
+  favorites?: string[]
   cells: CellOf<P>[]
 }
 
@@ -105,6 +106,8 @@ type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isKey = (v: unknown): v is number => Number.isInteger(v)
 const optString = (v: unknown): v is string | undefined => v === undefined || typeof v === 'string'
+const isStrings = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((a): a is string => typeof a === 'string')
 
 function compact<T extends object>(o: T): T {
   for (const k of Object.keys(o) as (keyof T)[]) if (o[k] === undefined) delete o[k]
@@ -150,11 +153,7 @@ function parseLayoutPane(v: unknown): LayoutPane | null {
   )
     return null
   const { command } = v
-  if (
-    command !== undefined &&
-    !(Array.isArray(command) && command.every((a): a is string => typeof a === 'string'))
-  )
-    return null
+  if (command !== undefined && !isStrings(command)) return null
   const git = v.git === undefined ? undefined : parseGit(v.git)
   if (git === null) return null
   if (v.keep !== undefined && v.keep !== true) return null
@@ -178,8 +177,8 @@ function parseScreenPane(v: unknown): ScreenPane | null {
 
 function parseCell<P>(v: unknown, parsePane: (x: unknown) => P | null): CellOf<P> | null {
   if (!isObj(v) || !isKey(v.key) || typeof v.id !== 'string' || !isKey(v.focused)) return null
-  const { fontSize, paneCols, pin } = v
-  if (!optString(pin)) return null
+  const { fontSize, paneCols, favorite } = v
+  if (!optString(favorite)) return null
   if (fontSize !== undefined && !(typeof fontSize === 'number' && Number.isFinite(fontSize)))
     return null
   if (paneCols !== undefined && !(isKey(paneCols) && paneCols > 0)) return null
@@ -194,7 +193,7 @@ function parseCell<P>(v: unknown, parsePane: (x: unknown) => P | null): CellOf<P
     focused: v.focused,
     fontSize,
     paneCols,
-    pin
+    favorite
   })
 }
 
@@ -206,12 +205,26 @@ function parseWorkspaces<P>(
     v,
     (w): WorkspaceOf<P> | null => {
       if (!isObj(w) || !isKey(w.key) || typeof w.id !== 'string') return null
-      if (w.name !== undefined && typeof w.name !== 'string') return null
-      const cells = parseList(w.cells, (c) => parseCell(c, parsePane))
+      const { name: given, pinned, dir, favorites } = w
+      if (!optString(given) || !optString(dir)) return null
+      if (pinned !== undefined && pinned !== true) return null
+      if (favorites !== undefined && !isStrings(favorites)) return null
+      const isPinned = pinned === true
+      const cells = parseList(w.cells, (c) => parseCell(c, parsePane), isPinned)
       // `rename`(`store.ts`)이 빈 이름을 받으면 이름을 지우는 것과 맞춰, 비었거나 공백뿐인 이름은 이름이 없는 것으로 본다.
-      const name = typeof w.name === 'string' && w.name.trim() ? w.name : undefined
-      const favorite = typeof w.favorite === 'string' ? w.favorite : undefined
-      return cells && compact({ key: w.key, id: w.id, name, favorite, cells })
+      const name = given?.trim() ? given : undefined
+      return (
+        cells &&
+        compact({
+          key: w.key,
+          id: w.id,
+          name,
+          pinned: isPinned || undefined,
+          dir,
+          favorites: favorites?.length ? favorites : undefined,
+          cells
+        })
+      )
     },
     true
   )

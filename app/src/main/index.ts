@@ -42,7 +42,7 @@ import { createPanes } from './pane'
 import { createWindowReady } from './window-ready'
 import { createJobs, JOB_REPLY_MS } from './job'
 import { removeTmpFiles } from './json-file'
-import { createLauncherStore, isFavorite, listDirs, notDirectory } from './launcher'
+import { createLauncherStore, listDirs, notDirectory } from './launcher'
 import { longestExistingPaths, openLink, type LinkOpener } from './links'
 import { createPortWatch, readPorts } from './ports'
 import { checkRestart, restartDialog, restartRefusal, type RestartCheck } from './restart'
@@ -265,10 +265,10 @@ function viewPrefs(): ViewPrefs {
   return { viewMode, sidebar, folded, canvas }
 }
 
-function openPanes(): number {
+function openWorkspaces(): LayoutPart['workspaces'] {
   const screen = parseScreen(lastScreen)
   const layout: Pick<LayoutPart, 'workspaces'> | null = screen ?? store?.layout() ?? null
-  return (layout?.workspaces ?? []).flatMap((w) => w.cells.flatMap((c) => c.panes)).length
+  return layout?.workspaces ?? []
 }
 
 const DEFAULT_WINDOW_THEME: WindowTheme = {
@@ -448,9 +448,12 @@ function confirmQuit(): void {
   if (quitCheck) return
   quitCheck = (async () => {
     if (!quitPermission.allowed()) {
-      const open = openPanes()
+      const workspaces = openWorkspaces()
+      const open = workspaces.flatMap((w) => w.cells.flatMap((c) => c.panes)).length
       if (open === 0) {
-        quitWith('end')
+        // pane 이 없어도 cell 이 없는 핀 workspace 가 남아 있으면 레이아웃을 남긴다. 다음 실행에도 핀 workspace 가 있어야
+        // 하기 때문이다.
+        quitWith(workspaces.length ? 'layout' : 'end')
       } else {
         const { panes } = screenPanes(parseScreen(lastScreen))
         const running = {
@@ -657,25 +660,6 @@ function start(): void {
   )
   ipcMain.handle('launcher:forget', (_event, dir: unknown) =>
     typeof dir === 'string' ? launcher.forget(dir) : launcher.read()
-  )
-  ipcMain.handle('launcher:favorite-add', (_event, favorite: unknown) =>
-    isFavorite(favorite) ? launcher.addFavorite(favorite) : launcher.read()
-  )
-  ipcMain.handle('launcher:favorite-forget', (_event, id: unknown) =>
-    typeof id === 'string' ? launcher.forgetFavorite(id) : launcher.read()
-  )
-  ipcMain.handle('launcher:favorite-rename', (_event, id: unknown, name: unknown) =>
-    typeof id === 'string' && typeof name === 'string'
-      ? launcher.renameFavorite(id, name)
-      : launcher.read()
-  )
-  ipcMain.handle('launcher:pin-add', (_event, id: unknown, dir: unknown) =>
-    typeof id === 'string' && typeof dir === 'string' ? launcher.addPin(id, dir) : launcher.read()
-  )
-  ipcMain.handle('launcher:pin-remove', (_event, id: unknown, dir: unknown) =>
-    typeof id === 'string' && typeof dir === 'string'
-      ? launcher.removePin(id, dir)
-      : launcher.read()
   )
   ipcMain.handle('launcher:not-directory', (_event, dir: unknown) =>
     typeof dir === 'string' ? notDirectory(dir) : 'not a directory path'

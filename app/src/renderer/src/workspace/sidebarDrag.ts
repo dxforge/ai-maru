@@ -22,13 +22,19 @@ export type WorkspaceSpan = Span & {
   /** 접힌 workspace 는 `cells` 가 비어 있어 cell 수를 따로 싣는다. */
   count: number
   cells: Span[]
-  /** 핀을 맡은 cell 의 수. 이 cell 들이 `cells` 의 앞에 온다. */
-  pinned: number
-  /** 핀을 맡은 cell 과 나머지 cell 사이에 놓인 닫힌 핀 줄들의 자리. 없으면 비운다. */
+  folded: boolean
+  /** 즐겨찾기 cell 의 수. 이 cell 들이 `cells` 의 앞에 온다. */
+  favorites: number
+  /** 즐겨찾기 cell 과 나머지 cell 사이에 놓인 닫힌 줄들의 자리. 없으면 비운다. */
   closed?: Span
 }
 
-export type SidebarSpans = { workspaces: WorkspaceSpan[]; newWorkspace?: Span }
+export type SidebarSpans = {
+  workspaces: WorkspaceSpan[]
+  /** 핀 workspace 의 수. 이 workspace 들이 `workspaces` 의 앞에 온다. */
+  pinned: number
+  newWorkspace?: Span
+}
 
 /** 놓을 곳과 그 자리를 보일 선의 y. 새 workspace 칸에는 선 대신 그 칸을 밝히므로 `line` 이 없다. */
 export type DropAt = { drop: Drop; line?: number }
@@ -55,24 +61,27 @@ function cellDrop(
   const i = ws.findIndex((w, j) => j === ws.length - 1 || y < (w.bottom + ws[j + 1].top) / 2)
   const w = ws[i]
   if (!w) return undefined
-  const folded = w.cells.length === 0
   const same = w.key === d.workspace
-  // 핀 묶음과 핀이 없는 묶음을 넘어 놓지 않는다. 다른 workspace 로 옮긴 cell 은 핀을 놓으므로 핀이 없는 묶음에만 놓인다.
-  const pinned = same && d.index < w.pinned
-  const head = pinned ? 0 : w.pinned
-  const index = folded ? w.count : y < w.head.bottom ? head : before(w.cells, y)
+  const favorite = d.index < (ws.find((x) => x.key === d.workspace)?.favorites ?? 0)
+  // 즐겨찾기 묶음과 나머지 묶음을 넘어 놓지 않는다. `moveCell`(`store.ts`)이 다른 workspace 로 옮긴 즐겨찾기 cell 을 그곳
+  // 즐겨찾기 묶음 끝에 놓으므로, 그 자리에만 놓는다.
+  let index: number
+  if (favorite && !same) index = w.favorites
+  else if (w.folded) index = w.count
+  else if (y < w.head.bottom) index = favorite ? 0 : w.favorites
+  else index = before(w.cells, y)
   if (same && (index === d.index || index === d.index + 1)) return undefined
-  if (pinned ? index > w.pinned : index < w.pinned) return undefined
+  if (favorite ? index > w.favorites : index < w.favorites) return undefined
   return {
     drop: { kind: 'cell', workspace: w.key, index },
-    line: cellLine(w, index, pinned, folded)
+    line: cellLine(w, index, favorite)
   }
 }
 
-function cellLine(w: WorkspaceSpan, index: number, pinned: boolean, folded: boolean): number {
-  if (folded) return w.head.bottom + HALF_GAP
-  if (w.closed && index === w.pinned)
-    return pinned ? w.closed.top - HALF_GAP : w.closed.bottom + HALF_GAP
+function cellLine(w: WorkspaceSpan, index: number, favorite: boolean): number {
+  if (w.folded) return w.head.bottom + HALF_GAP
+  if (w.closed && index === w.favorites)
+    return favorite ? w.closed.top - HALF_GAP : w.closed.bottom + HALF_GAP
   return gapLine(w.cells, index, w.head.bottom - HALF_GAP)
 }
 
@@ -83,6 +92,8 @@ function workspaceDrop(
 ): DropAt | undefined {
   const index = before(s.workspaces, y)
   if (index === d.index || index === d.index + 1) return undefined
+  // 핀 묶음과 핀이 없는 묶음을 넘어 놓지 않는다.
+  if (d.index < s.pinned ? index > s.pinned : index < s.pinned) return undefined
   return {
     drop: { kind: 'workspace', index },
     line: gapLine(s.workspaces, index, (s.workspaces[0]?.top ?? 0) - HALF_GAP)

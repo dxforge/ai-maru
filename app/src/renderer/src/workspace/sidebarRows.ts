@@ -1,6 +1,5 @@
 import type { DeepReadonly } from 'vue'
 import { jobName, type JobView } from '../../../shared/job'
-import { samePath } from '../../../shared/launcher'
 import { sidebarLabel, type SidebarLabel } from '../../../shared/names'
 import { paneName, type CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
@@ -8,7 +7,7 @@ import type { PtyNotification } from '../../../shared/pty-state'
 import { AGENT_ICONS, commandIcon, STATE_LABELS } from '../icons'
 import { tildePath } from './cwd'
 import { commandLabel, notificationText } from './display'
-import type { Pane } from './store'
+import { holdsFavorite, type Pane } from './store'
 
 /** pane 줄 앞 칸에 그리는 것이다. `agent` 와 `glyph` 는 Nerd Font 글자이고, `state` 는 `StatusIcon` 으로 그린다. */
 export type PaneIcon = { agent: string } | { state: ProgramStatusState } | { glyph: string }
@@ -112,22 +111,30 @@ export function workspaceMarks(
   return { state, notified: unread, dot: unread && !state }
 }
 
-export type PinRow = { dir: string; name: string; path: string }
+/** `favorite` 가 아니면 cell 이 없는 핀 workspace 의 디렉토리 줄이다. */
+export type ClosedRow = { dir: string; name: string; path: string; favorite: boolean }
+
+type ClosedSource = {
+  dir?: string
+  favorites?: readonly string[]
+  cells: readonly { favorite?: string }[]
+}
 
 /**
- * workspace 의 닫힌 핀 줄이다. `pins` 는 workspace 가 가리키는 즐겨찾기 항목의 핀으로, 그 순서대로 둔다. 열린 cell 이
- * 맡은(`pin`) 디렉토리는 빼서 같은 디렉토리가 열린 cell 과 닫힌 줄로 두 번 보이지 않게 한다.
+ * workspace 의 닫힌 줄이다. 즐겨찾기 디렉토리 가운데 열린 cell 이 맡지(`favorite`) 않은 것을 넣은 순서대로 둔다. 같은
+ * 디렉토리가 열린 cell 과 닫힌 줄로 두 번 보이지 않게 하기 위해서다. cell 도 즐겨찾기도 없는 workspace 는 `dir` 줄 하나를
+ * 둔다.
  */
-export function closedPins(
-  pins: readonly string[],
-  cells: readonly { pin?: string }[],
-  home?: string
-): PinRow[] {
-  return pins
-    .filter((dir) => !cells.some((c) => c.pin !== undefined && samePath(c.pin, dir)))
-    .map((dir) => ({
-      dir,
-      name: sidebarLabel({ cwd: dir }, undefined, home).name!,
-      path: tildePath(dir, home)
-    }))
+export function closedRows(w: ClosedSource, home?: string): ClosedRow[] {
+  const row = (dir: string, favorite: boolean): ClosedRow => ({
+    dir,
+    name: sidebarLabel({ cwd: dir }, undefined, home).name!,
+    path: tildePath(dir, home),
+    favorite
+  })
+  const favorites = w.favorites ?? []
+  if (!w.cells.length && !favorites.length) return w.dir === undefined ? [] : [row(w.dir, false)]
+  return favorites
+    .filter((dir) => !w.cells.some((c) => holdsFavorite(c, dir)))
+    .map((dir) => row(dir, true))
 }

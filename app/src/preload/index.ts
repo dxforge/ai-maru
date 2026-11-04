@@ -4,7 +4,7 @@ import type { ConfigRead } from '../shared/config'
 import type { CommandId } from '../shared/commands'
 import type { GitHead } from '../shared/git'
 import type { JobView } from '../shared/job'
-import type { Favorite, LaunchResult, LauncherState } from '../shared/launcher'
+import type { LaunchResult, LauncherState } from '../shared/launcher'
 import type { FoundPath, LinkOpenResult, PathCandidates } from '../shared/link'
 import type { CellNewRequest, CloseAnswer, PaneNewRequest, PaneReply } from '../shared/pane'
 import type { Restore, ScreenState, ViewPrefs } from '../shared/screen'
@@ -113,16 +113,6 @@ const api = {
   launchedCommand: (command: string): Promise<void> =>
     ipcRenderer.invoke('launcher:command', command),
   forgetLaunch: (dir: string): Promise<LauncherState> => ipcRenderer.invoke('launcher:forget', dir),
-  addFavorite: (favorite: Favorite): Promise<LauncherState> =>
-    ipcRenderer.invoke('launcher:favorite-add', favorite),
-  forgetFavorite: (id: string): Promise<LauncherState> =>
-    ipcRenderer.invoke('launcher:favorite-forget', id),
-  renameFavorite: (id: string, name: string): Promise<LauncherState> =>
-    ipcRenderer.invoke('launcher:favorite-rename', id, name),
-  addPin: (id: string, dir: string): Promise<LauncherState> =>
-    ipcRenderer.invoke('launcher:pin-add', id, dir),
-  removePin: (id: string, dir: string): Promise<LauncherState> =>
-    ipcRenderer.invoke('launcher:pin-remove', id, dir),
   /** 셸을 띄울 수 없는 디렉토리면 그 이유를 돌려준다. */
   notDirectory: (dir: string): Promise<string | null> =>
     ipcRenderer.invoke('launcher:not-directory', dir),

@@ -6,6 +6,7 @@ import type { PtyState } from '../../../shared/pty-state'
 import { parseScreen } from '../../../shared/screen'
 import {
   createWorkspaces,
+  favoriteCount,
   focusedPane,
   orderedPanes,
   pinnedCount,
@@ -60,6 +61,10 @@ const keys = (ws: Workspaces) => ws.cells().map((c) => c.key)
 const firstPanes = (ws: Workspaces) => ws.cells().map((c) => c.panes[0])
 const wsKeys = (ws: Workspaces) => ws.list.value.map((w) => w.key)
 const selected = (ws: Workspaces) => ws.selected()!
+/** cell 의 pane 을 모두 닫아 cell 을 닫는다. */
+function shut(ws: Workspaces, key: number) {
+  for (const p of [...ws.cells().find((c) => c.key === key)!.panes]) ws.closePane(p.key)
+}
 
 function full(saved: WorkspacesScreen): [WorkspacesScreen, Record<number, string>] {
   const ptys: Record<number, string> = {}
@@ -89,8 +94,11 @@ describe('snapshot·restore', () => {
     ws.setFontSize(selected(ws).key, 18)
     ws.setPaneCols(selected(ws).key, 110)
     ws.rename(ws.list.value[1].key, '리뷰')
-    ws.setFavorite(ws.list.value[1].key, 'f-1')
-    ws.pinCell(ws.list.value[1].cells[0].key, '/b')
+    ws.togglePin(ws.list.value[0].key)
+    ws.toggleFavorite(ws.list.value[1].cells[0].key)
+    ws.open('/d-2')
+    ws.togglePin(ws.list.value[2].key)
+    shut(ws, selected(ws).key)
     ws.select(ws.cells()[0].key)
     return ws
   }
@@ -104,9 +112,12 @@ describe('snapshot·restore', () => {
     expect([pane.cwd, pane.title]).toEqual(['/moved', 'vim'])
     expect(to.cells().map((w) => w.fontSize)).toEqual([undefined, 18])
     expect(to.cells().map((w) => w.paneCols)).toEqual([undefined, 110])
-    expect(to.list.value.map((w) => w.name)).toEqual([undefined, '리뷰'])
-    expect(to.list.value.map((w) => w.favorite)).toEqual([undefined, 'f-1'])
-    expect(to.cells().map((c) => c.pin)).toEqual([undefined, '/b'])
+    expect(to.list.value.map((w) => w.name)).toEqual([undefined, '리뷰', undefined])
+    expect(to.list.value.map((w) => w.pinned)).toEqual([true, true, true])
+    expect(to.list.value.map((w) => w.favorites)).toEqual([undefined, ['/d-1'], undefined])
+    expect(to.list.value.map((w) => w.dir)).toEqual([undefined, undefined, '/d-2'])
+    expect(to.list.value[2].cells).toEqual([])
+    expect(to.cells().map((c) => c.favorite)).toEqual([undefined, '/d-1'])
   })
 
   it('pty 없이 되살린 pane 은 새 pty id 로 저장한 cwd 에서 셸을 띄우고, 명령·keep·제목은 버린다', () => {
@@ -1390,33 +1401,7 @@ describe('moveCell·moveWorkspace', () => {
   })
 })
 
-describe('favorite', () => {
-  it('open 에 준 즐겨찾기 id 를 새 workspace 가 가리킨다', () => {
-    const ws = createWorkspaces()
-    ws.open('/work/app', {}, 'app', 'f-1')
-    ws.open('/work/app')
-    expect(ws.list.value.map((w) => w.favorite)).toEqual(['f-1', undefined])
-    expect(ws.list.value[1]).not.toHaveProperty('favorite')
-  })
-
-  it('setFavorite 는 그 workspace 만 바꾼다', () => {
-    const ws = opened(2)
-    const [, b] = wsKeys(ws)
-    ws.setFavorite(b, 'f-2')
-    expect(ws.list.value.map((w) => w.favorite)).toEqual([undefined, 'f-2'])
-  })
-})
-
 describe('rename', () => {
-  it('open 에 준 이름은 새 workspace 의 이름이 되고, 빈 이름이면 붙이지 않는다', () => {
-    const ws = createWorkspaces()
-    ws.open('/a', {}, '리뷰')
-    ws.open('/b', {}, '')
-    ws.open('/c')
-    expect(ws.list.value.map((w) => w.name)).toEqual(['리뷰', undefined, undefined])
-    expect(ws.list.value[1]).not.toHaveProperty('name')
-  })
-
   it('앞뒤 공백을 잘라 이름으로 두고, 다른 workspace 는 건드리지 않는다', () => {
     const ws = opened(2)
     const [a, b] = wsKeys(ws)
@@ -1463,110 +1448,330 @@ describe('rename', () => {
   })
 })
 
-describe('pin', () => {
+describe('workspace 핀', () => {
+  const pinned = (ws: Workspaces) => ws.list.value.map((w) => w.pinned ?? false)
+
+  it('togglePin 은 핀을 꽂은 workspace 를 핀 묶음 끝으로, 뺀 workspace 를 핀이 없는 묶음 앞으로 옮긴다', () => {
+    const ws = opened(4)
+    const [a, b, c, d] = wsKeys(ws)
+    ws.togglePin(c)
+    ws.togglePin(a)
+    expect(wsKeys(ws)).toEqual([c, a, b, d])
+    expect(pinned(ws)).toEqual([true, true, false, false])
+    expect(pinnedCount(ws.list.value)).toBe(2)
+    ws.togglePin(c)
+    expect(wsKeys(ws)).toEqual([a, c, b, d])
+    expect(ws.list.value[1]).not.toHaveProperty('pinned')
+  })
+
+  it('새 workspace 는 핀이 없는 묶음 끝에 온다', () => {
+    const ws = opened(2)
+    const [a, b] = wsKeys(ws)
+    ws.togglePin(b)
+    ws.open('/new')
+    expect(wsKeys(ws).slice(0, 2)).toEqual([b, a])
+    expect(ws.list.value[2].cells[0].panes[0].startDir).toBe('/new')
+  })
+
+  it('핀 workspace 는 마지막 cell 을 닫아도 남고, 닫은 cell 첫 pane 의 cwd 를 dir 에 적으며, 선택은 다른 workspace 로 간다', () => {
+    const src = source()
+    const ws = createWorkspaces(undefined, src)
+    ws.open('/d-0')
+    ws.open('/d-1')
+    const [a, b] = wsKeys(ws)
+    ws.togglePin(b)
+    const cell = selected(ws)
+    src.set(ws, cell.panes[0].ptyId, { cwd: '/moved', cwdReports: 1 })
+    shut(ws, cell.key)
+    expect(wsKeys(ws)).toEqual([b, a])
+    expect(ws.list.value[0]).toMatchObject({ pinned: true, dir: '/moved', cells: [] })
+    expect(selected(ws).key).toBe(ws.list.value[1].cells[0].key)
+  })
+
+  it('핀이 없는 workspace 는 마지막 cell 과 함께 닫히고 dir 을 적지 않는다', () => {
+    const ws = opened(2)
+    shut(ws, ws.cells()[1].key)
+    expect(ws.list.value).toHaveLength(1)
+    expect(ws.list.value[0]).not.toHaveProperty('dir')
+  })
+
+  it('핀을 빼면 cell 이 없는 workspace 는 닫는다', () => {
+    const ws = opened(2)
+    const [a, b] = wsKeys(ws)
+    ws.togglePin(a)
+    shut(ws, ws.cells()[0].key)
+    ws.togglePin(a)
+    expect(wsKeys(ws)).toEqual([b])
+  })
+
+  it('step 은 cell 이 없는 workspace 를 건너뛴다', () => {
+    const ws = opened(3)
+    const [, b] = wsKeys(ws)
+    const [x, , z] = keys(ws)
+    ws.togglePin(b)
+    shut(ws, ws.list.value[0].cells[0].key)
+    ws.select(x)
+    expect(ws.step(1)).toBe(z)
+    expect(ws.step(-1)).toBe(z)
+  })
+
+  it('moveWorkspace 는 핀 묶음을 넘어 옮기지 않고 그 묶음의 끝에 둔다', () => {
+    const ws = opened(4)
+    const [a, b, c, d] = wsKeys(ws)
+    ws.togglePin(a)
+    ws.togglePin(b)
+    ws.moveWorkspace(a, 4)
+    expect(wsKeys(ws)).toEqual([b, a, c, d])
+    ws.moveWorkspace(d, 0)
+    expect(wsKeys(ws)).toEqual([b, a, d, c])
+  })
+
+  it('discard 는 cell 이 없는 workspace 만 목록에서 뺀다', () => {
+    const ws = opened(2)
+    const [a, b] = wsKeys(ws)
+    ws.togglePin(a)
+    ws.discard(a)
+    ws.discard(b)
+    expect(wsKeys(ws)).toEqual([a, b])
+    shut(ws, ws.list.value[0].cells[0].key)
+    ws.discard(a)
+    expect(wsKeys(ws)).toEqual([b])
+  })
+
+  it('핀 workspace 의 하나뿐인 cell 을 새 workspace 로 옮기면 새 workspace 를 만들고 핀 workspace 는 빈 채로 남는다', () => {
+    const ws = opened(2)
+    const [a, b] = wsKeys(ws)
+    const [x] = keys(ws)
+    ws.togglePin(a)
+    ws.moveCell(x, 'new')
+    expect(wsKeys(ws).slice(0, 2)).toEqual([a, b])
+    expect(ws.list.value[0]).toMatchObject({ cells: [], dir: '/d-0' })
+    expect(ws.list.value[2].cells.map((c) => c.key)).toEqual([x])
+    expect(ws.list.value[2]).not.toHaveProperty('pinned')
+  })
+
+  it('cell 이 없는 핀 workspace 로도 cell 을 옮길 수 있다', () => {
+    const ws = opened(2)
+    ws.openCell('/y')
+    const [a] = wsKeys(ws)
+    const [x, , y] = keys(ws)
+    ws.togglePin(a)
+    shut(ws, x)
+    ws.moveCell(y, { workspace: a, index: 0 })
+    expect(ws.list.value[0].cells.map((c) => c.key)).toEqual([y])
+  })
+})
+
+describe('cell 즐겨찾기', () => {
   /** cell 넷인 workspace 하나. 첫 cell 의 디렉토리는 `/d-0`, 나머지는 `/n-1`… 이다. */
   function four() {
     const ws = opened(1)
     for (let i = 1; i < 4; i++) ws.openCell(`/n-${i}`)
     return ws
   }
-  const dirs = (ws: Workspaces) => ws.list.value[0].cells.map((c) => c.panes[0].startDir)
-  const pins = (ws: Workspaces) => ws.list.value[0].cells.map((c) => c.pin)
+  const dirs = (ws: Workspaces, i = 0) => ws.list.value[i].cells.map((c) => c.panes[0].startDir)
+  const marks = (ws: Workspaces, i = 0) => ws.list.value[i].cells.map((c) => c.favorite)
 
-  it('pinCell 은 cell 에 핀을 달고 핀 묶음 끝으로 옮긴다', () => {
-    const ws = four()
+  it('toggleFavorite 은 첫 pane 의 cwd 를 즐겨찾기에 넣고 즐겨찾기 묶음 끝으로 옮기며 workspace 에 핀을 꽂는다', () => {
+    const ws = opened(1)
+    for (let i = 1; i < 4; i++) ws.openCell(`/n-${i}`)
+    ws.open('/other')
+    const [w, other] = wsKeys(ws)
     const [, b, , d] = keys(ws)
-    ws.pinCell(d, '/n-3')
-    ws.pinCell(b, '/n-1')
-    expect(dirs(ws)).toEqual(['/n-3', '/n-1', '/d-0', '/n-2'])
-    expect(pins(ws)).toEqual(['/n-3', '/n-1', undefined, undefined])
-    expect(pinnedCount(ws.list.value[0])).toBe(2)
+    ws.togglePin(other)
+    expect(ws.toggleFavorite(d)).toBe(true)
+    expect(ws.toggleFavorite(b)).toBe(true)
+    expect(wsKeys(ws)).toEqual([other, w])
+    expect(ws.list.value[1]).toMatchObject({ pinned: true, favorites: ['/n-3', '/n-1'] })
+    expect(dirs(ws, 1)).toEqual(['/n-3', '/n-1', '/d-0', '/n-2'])
+    expect(marks(ws, 1)).toEqual(['/n-3', '/n-1', undefined, undefined])
+    expect(favoriteCount(ws.list.value[1])).toBe(2)
   })
 
-  it('unpinDir 는 같은 핀을 맡은 cell 의 핀을 모두 지우고 핀이 없는 묶음 앞으로 옮긴다', () => {
+  it('첫 pane 의 cwd 를 모르면 false 이고 아무것도 바꾸지 않는다', () => {
+    const ws = createWorkspaces()
+    ws.open()
+    expect(ws.toggleFavorite(ws.cells()[0].key)).toBe(false)
+    expect(ws.list.value[0]).not.toHaveProperty('pinned')
+    expect(ws.list.value[0]).not.toHaveProperty('favorites')
+    expect(ws.cells()[0]).not.toHaveProperty('favorite')
+  })
+
+  it('즐겨찾기 cell 을 다시 누르면 즐겨찾기에서 빼 즐겨찾기가 아닌 묶음 앞으로 옮기고, 핀은 그대로다', () => {
     const ws = four()
-    const [a, b, c] = keys(ws)
-    ws.pinCell(a, '/p')
-    ws.pinCell(b, '/q')
-    ws.pinCell(c, '/p/')
-    ws.unpinDir(ws.list.value[0].key, '/p')
+    const [a, b] = keys(ws)
+    ws.toggleFavorite(a)
+    ws.toggleFavorite(b)
+    ws.toggleFavorite(a)
     expect(dirs(ws)).toEqual(['/n-1', '/d-0', '/n-2', '/n-3'])
-    expect(pins(ws)).toEqual(['/q', undefined, undefined, undefined])
-    expect(ws.list.value[0].cells[1]).not.toHaveProperty('pin')
+    expect(marks(ws)).toEqual(['/n-1', undefined, undefined, undefined])
+    expect(ws.list.value[0]).toMatchObject({ pinned: true, favorites: ['/n-1'] })
+    ws.toggleFavorite(b)
+    expect(ws.list.value[0]).not.toHaveProperty('favorites')
   })
 
-  it('openPinned 은 그 workspace 의 핀 묶음 끝에 핀을 맡은 셸 cell 을 넣어 선택한다', () => {
+  it('이미 즐겨찾기인 디렉토리면 그 항목을 같이 맡고, 빼면 그 디렉토리를 맡은 cell 이 모두 놓는다', () => {
+    const ws = opened(1)
+    ws.openCell('/p')
+    ws.openCell('/p/')
+    ws.openCell('/q')
+    const [, b, c, d] = keys(ws)
+    ws.toggleFavorite(b)
+    ws.toggleFavorite(d)
+    ws.toggleFavorite(c)
+    expect(ws.list.value[0].favorites).toEqual(['/p', '/q'])
+    expect(marks(ws)).toEqual(['/p', '/q', '/p', undefined])
+    ws.toggleFavorite(b)
+    expect(ws.list.value[0].favorites).toEqual(['/q'])
+    expect(marks(ws)).toEqual(['/q', undefined, undefined, undefined])
+  })
+
+  it('removeFavorite 는 닫힌 즐겨찾기도 뺀다', () => {
+    const ws = four()
+    const [a] = keys(ws)
+    ws.toggleFavorite(a)
+    shut(ws, a)
+    expect(ws.list.value[0].favorites).toEqual(['/d-0'])
+    ws.removeFavorite(ws.list.value[0].key, '/d-0/')
+    expect(ws.list.value[0]).not.toHaveProperty('favorites')
+  })
+
+  it('workspace 핀을 빼도 즐겨찾기는 남는다', () => {
+    const ws = four()
+    const [a] = keys(ws)
+    ws.toggleFavorite(a)
+    ws.togglePin(ws.list.value[0].key)
+    expect(ws.list.value[0]).not.toHaveProperty('pinned')
+    expect(ws.list.value[0].favorites).toEqual(['/d-0'])
+    expect(marks(ws)[0]).toBe('/d-0')
+  })
+
+  it('openIn 은 즐겨찾기 묶음 끝에 셸 cell 을 넣어 선택하고, 즐겨찾기 디렉토리면 그 cell 이 즐겨찾기를 맡는다', () => {
     const ws = opened(2)
     const [w] = wsKeys(ws)
     ws.select(ws.list.value[0].cells[0].key)
     ws.openCell('/x')
-    ws.pinCell(ws.list.value[0].cells[0].key, '/d-0')
+    ws.openCell('/p')
+    const [a, , p] = ws.list.value[0].cells.map((c) => c.key)
+    ws.toggleFavorite(a)
+    ws.toggleFavorite(p)
+    shut(ws, p)
     ws.select(ws.list.value[1].cells[0].key)
-    const key = ws.openPinned(w, '/p')
-    const cells = ws.list.value[0].cells
-    expect(cells.map((c) => c.pin)).toEqual(['/d-0', '/p', undefined])
-    expect(cells[1].key).toBe(key)
-    expect(cells[1].panes[0]).toMatchObject({ startDir: '/p' })
-    expect(cells[1].panes[0]).not.toHaveProperty('command')
+    const key = ws.openIn(w, '/p/')
+    expect(marks(ws)).toEqual(['/d-0', '/p', undefined])
+    expect(ws.list.value[0].cells[1].key).toBe(key)
+    expect(ws.list.value[0].cells[1].panes[0]).toMatchObject({ startDir: '/p/' })
+    expect(ws.list.value[0].cells[1].panes[0]).not.toHaveProperty('command')
     expect(selected(ws).key).toBe(key)
-    expect(ws.openPinned(999, '/p')).toBeUndefined()
+    const plain = ws.openIn(w, '/other')
+    expect(ws.list.value[0].cells[2].key).toBe(plain)
+    expect(ws.list.value[0].cells[2]).not.toHaveProperty('favorite')
+    expect(ws.openIn(999, '/p')).toBeUndefined()
   })
 
-  it('openCell 은 핀 묶음 안의 cell 을 골라도 새 cell 을 핀이 없는 묶음 앞에 넣는다', () => {
+  it('openIn 은 cell 이 없는 핀 workspace 에 셸 cell 을 연다', () => {
+    const ws = opened(2)
+    const [a] = wsKeys(ws)
+    ws.togglePin(a)
+    shut(ws, ws.cells()[0].key)
+    const key = ws.openIn(a, '/d-0')
+    expect(ws.list.value[0].cells.map((c) => c.key)).toEqual([key])
+    expect(ws.list.value[0].cells[0]).not.toHaveProperty('favorite')
+  })
+
+  it('openCell 은 즐겨찾기 묶음 안의 cell 을 골라도 새 cell 을 즐겨찾기가 아닌 묶음 앞에 넣는다', () => {
     const ws = four()
     const [a, b] = keys(ws)
-    ws.pinCell(a, '/d-0')
-    ws.pinCell(b, '/n-1')
+    ws.toggleFavorite(a)
+    ws.toggleFavorite(b)
     ws.select(a)
     ws.openCell('/new')
     expect(dirs(ws)).toEqual(['/d-0', '/n-1', '/new', '/n-2', '/n-3'])
   })
 
-  it('clearPins 는 그 workspace 의 핀을 모두 지우고 순서는 그대로 둔다', () => {
-    const ws = four()
-    const [, b] = keys(ws)
-    ws.pinCell(b, '/n-1')
-    ws.clearPins(ws.list.value[0].key)
-    expect(dirs(ws)).toEqual(['/n-1', '/d-0', '/n-2', '/n-3'])
-    expect(pins(ws)).toEqual([undefined, undefined, undefined, undefined])
+  it('다른 workspace 로 옮긴 즐겨찾기 cell 은 즐겨찾기를 가지고 가 그곳 즐겨찾기 묶음 끝에 놓이고, 그 workspace 에 핀을 꽂는다', () => {
+    const ws = opened(2)
+    ws.openCell('/y')
+    ws.openCell('/z')
+    const [w1, w2] = wsKeys(ws)
+    const [a, , y] = keys(ws)
+    ws.toggleFavorite(a)
+    ws.togglePin(w1)
+    ws.toggleFavorite(y)
+    expect(wsKeys(ws)).toEqual([w2, w1])
+    ws.moveCell(y, { workspace: w1, index: 2 })
+    expect(wsKeys(ws)).toEqual([w2, w1])
+    expect(ws.list.value[1]).toMatchObject({ pinned: true, favorites: ['/d-0', '/y'] })
+    expect(dirs(ws, 1)).toEqual(['/d-0', '/y'])
+    expect(marks(ws, 1)).toEqual(['/d-0', '/y'])
+    expect(ws.list.value[0]).not.toHaveProperty('favorites')
   })
 
-  it('다른 workspace 로 옮긴 cell 은 핀을 놓고 그곳의 핀 묶음 뒤에 놓인다', () => {
+  it('옮긴 cell 과 같은 디렉토리를 맡은 cell 이 남으면 원래 workspace 의 즐겨찾기는 남는다', () => {
+    const ws = opened(1)
+    ws.openCell('/p')
+    ws.openCell('/p')
+    ws.open('/other')
+    const [, b, c] = keys(ws)
+    ws.toggleFavorite(b)
+    ws.toggleFavorite(c)
+    ws.moveCell(c, 'new')
+    expect(ws.list.value[0].favorites).toEqual(['/p'])
+    expect(ws.list.value[1]).toMatchObject({ pinned: true, favorites: ['/p'] })
+  })
+
+  it('같은 workspace 안에서 옮긴 cell 은 즐겨찾기 묶음과 나머지 묶음을 넘지 않고 두 묶음 사이에 놓인다', () => {
+    const ws = opened(1)
+    ws.openCell('/x')
+    ws.openCell('/y')
+    const [w] = wsKeys(ws)
+    const [a, b, c] = keys(ws)
+    ws.toggleFavorite(a)
+    ws.toggleFavorite(b)
+    ws.moveCell(c, { workspace: w, index: 1 })
+    expect(keys(ws)).toEqual([a, b, c])
+    ws.moveCell(a, { workspace: w, index: 3 })
+    expect(keys(ws)).toEqual([b, a, c])
+    expect(marks(ws)).toEqual(['/x', '/d-0', undefined])
+  })
+
+  it('즐겨찾기가 아닌 cell 을 다른 workspace 로 옮기면 그곳의 즐겨찾기 묶음 뒤에 놓인다', () => {
     const ws = opened(2)
     ws.openCell('/y')
     const [w1, w2] = wsKeys(ws)
     const [a, , y] = keys(ws)
-    ws.pinCell(y, '/y')
-    ws.pinCell(a, '/d-0')
+    ws.toggleFavorite(a)
     ws.moveCell(y, { workspace: w1, index: 0 })
-    expect(ws.list.value[0].cells.map((c) => c.pin)).toEqual(['/d-0', undefined])
+    expect(marks(ws)).toEqual(['/d-0', undefined])
     expect(ws.list.value[0].cells[1].key).toBe(y)
     expect(wsKeys(ws)).toEqual([w1, w2])
   })
 
-  it('cell 둘인 workspace 에서 새 workspace 로 옮긴 cell 도 핀을 놓는다', () => {
+  it('새 workspace 로 옮긴 즐겨찾기 cell 은 새 workspace 의 즐겨찾기가 되고, 새 workspace 에 핀을 꽂는다', () => {
     const ws = opened(1)
     ws.openCell('/y')
+    ws.open('/other')
+    const [w, other] = wsKeys(ws)
     const [a] = keys(ws)
-    ws.pinCell(a, '/d-0')
+    ws.toggleFavorite(a)
     ws.moveCell(a, 'new')
-    expect(ws.list.value[1].cells[0].key).toBe(a)
-    expect(ws.list.value[1].cells[0]).not.toHaveProperty('pin')
+    expect(wsKeys(ws).slice(0, 1)).toEqual([w])
+    const moved = ws.list.value[1]
+    expect(moved.cells.map((c) => c.key)).toEqual([a])
+    expect(moved).toMatchObject({ pinned: true, favorites: ['/d-0'] })
+    expect(ws.list.value[0]).not.toHaveProperty('favorites')
+    expect(wsKeys(ws)[2]).toBe(other)
   })
 
-  it('cell 하나인 workspace 를 통째로 옮기면 핀은 그대로다', () => {
+  it('핀이 없고 cell 하나인 workspace 를 통째로 옮기면 즐겨찾기는 그대로다', () => {
     const ws = opened(2)
+    const [w] = wsKeys(ws)
     const [a] = keys(ws)
-    ws.pinCell(a, '/d-0')
+    ws.toggleFavorite(a)
+    ws.togglePin(w)
     ws.moveCell(a, 'new')
-    expect(ws.list.value[1].cells[0]).toMatchObject({ key: a, pin: '/d-0' })
-  })
-
-  it('open 에 준 핀은 새 workspace 의 cell 이 맡는다', () => {
-    const ws = createWorkspaces()
-    ws.open('/a', {}, undefined, 'f-1', '/a')
-    ws.open('/b', {}, undefined, 'f-2')
-    expect(ws.cells().map((c) => c.pin)).toEqual(['/a', undefined])
-    expect(ws.cells()[1]).not.toHaveProperty('pin')
+    expect(wsKeys(ws)[1]).toBe(w)
+    expect(ws.list.value[1]).toMatchObject({ favorites: ['/d-0'] })
+    expect(ws.list.value[1].cells[0]).toMatchObject({ key: a, favorite: '/d-0' })
   })
 })

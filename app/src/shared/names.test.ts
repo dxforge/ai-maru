@@ -7,7 +7,6 @@ import {
   nameOnFocusLoss,
   sidebarLabel,
   windowTitle,
-  workspaceDir,
   workspaceName
 } from './names'
 
@@ -107,6 +106,18 @@ describe('autoWorkspaceName', () => {
   it('바꾼 이름이 있어도 첫 pane 으로 짓는다', () => {
     expect(autoWorkspaceName(ws({ cwd: '/tmp/notes' }, '리뷰'))).toBe('notes')
   })
+
+  it('cell 이 없으면 dir 의 디렉토리 이름이고, 홈이면 ~, dir 도 없으면 Shell 이다', () => {
+    expect(autoWorkspaceName({ dir: '/r/ai-maru', cells: [] })).toBe('ai-maru')
+    expect(autoWorkspaceName({ dir: '/h/u', cells: [] }, '/h/u')).toBe('~')
+    expect(autoWorkspaceName({ cells: [] })).toBe('Shell')
+  })
+
+  it('cell 이 있으면 dir 을 보지 않는다', () => {
+    expect(autoWorkspaceName({ dir: '/r/old', cells: [{ panes: [{ cwd: '/tmp/notes' }] }] })).toBe(
+      'notes'
+    )
+  })
 })
 
 describe('workspaceName', () => {
@@ -123,22 +134,7 @@ describe('workspaceName', () => {
   it('바꾼 이름이 있으면 pane 의 위치와 상관없이 그 이름이다', () => {
     expect(workspaceName(ws('리뷰'))).toBe('리뷰')
     expect(workspaceName(ws('ai-maru'))).toBe('ai-maru')
-  })
-})
-
-describe('workspaceDir', () => {
-  const ws = (...cells: { cwd?: string }[][]) => ({
-    cells: cells.map((panes) => ({ panes }))
-  })
-
-  it('첫 cell 의 첫 pane 의 cwd 를 쓰고, 다른 pane 은 보지 않는다', () => {
-    expect(workspaceDir(ws([{ cwd: '~/work/app' }, { cwd: '/c' }], [{ cwd: '/d' }]))).toBe(
-      '~/work/app'
-    )
-  })
-
-  it('그 pane 의 cwd 를 모르면 없다', () => {
-    expect(workspaceDir(ws([{}, { cwd: '/b' }]))).toBeUndefined()
+    expect(workspaceName({ name: '리뷰', dir: '/r/ai-maru', cells: [] })).toBe('리뷰')
   })
 })
 
@@ -165,6 +161,10 @@ describe('labelBase', () => {
 
   it('바꾼 이름이 있으면 없다', () => {
     expect(labelBase({ name: '리뷰', cells: [{ panes: [first] }] })).toBeUndefined()
+  })
+
+  it('cell 이 없으면 없다', () => {
+    expect(labelBase({ cells: [] })).toBeUndefined()
   })
 })
 
