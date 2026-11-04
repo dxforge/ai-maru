@@ -1488,6 +1488,34 @@ describe('workspace 핀', () => {
     expect(selected(ws).key).toBe(ws.list.value[1].cells[0].key)
   })
 
+  it('끝난 셸의 상태가 cell 을 닫기 전에 지워져도 핀 workspace 의 dir 은 셸이 뜬 디렉토리가 아닌 마지막 cwd 다', () => {
+    const src = source()
+    const ws = createWorkspaces(undefined, src)
+    ws.open('/d-0')
+    const [a] = wsKeys(ws)
+    ws.togglePin(a)
+    const cell = selected(ws)
+    ws.setSpawnedDir(cell.panes[0].key, '/home')
+    src.set(ws, cell.panes[0].ptyId, { cwd: '/home/sub', cwdReports: 1 })
+    src.drop(ws, cell.panes[0].ptyId)
+    expect(cell.panes[0].cwd).toBe('/home/sub')
+    shut(ws, cell.key)
+    expect(ws.list.value[0]).toMatchObject({ pinned: true, dir: '/home/sub', cells: [] })
+  })
+
+  it('상태가 지워져 남긴 마지막 cwd 는 같은 pane 에 새 셸이 뜨면 셸이 뜬 디렉토리로 바뀐다', () => {
+    const src = source()
+    const ws = createWorkspaces(undefined, src)
+    ws.open('/d-0')
+    const pane = () => firstPanes(ws)[0]
+    ws.setSpawnedDir(pane().key, '/home')
+    src.set(ws, pane().ptyId, { cwd: '/home/sub', cwdReports: 1 })
+    src.drop(ws, pane().ptyId)
+    expect(pane().cwd).toBe('/home/sub')
+    ws.respawned(pane().key)
+    expect(pane().cwd).toBe('/home')
+  })
+
   it('핀이 없는 workspace 는 마지막 cell 과 함께 닫히고 dir 을 적지 않는다', () => {
     const ws = opened(2)
     shut(ws, ws.cells()[1].key)
