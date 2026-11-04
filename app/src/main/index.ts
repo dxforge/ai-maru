@@ -336,7 +336,7 @@ function relaunch(): void {
 
 function restartOutcome(check: RestartCheck): Outcome {
   if (check.ok) return 'keep'
-  return check.reason === 'incompatible' && check.result === 'empty' ? 'end' : 'layout'
+  return check.reason === 'incompatible' && check.result === 'empty' ? 'empty' : 'layout'
 }
 
 async function restartFromMenu(): Promise<void> {
@@ -625,7 +625,7 @@ function start(): void {
     const records = await Promise.all(alive.map((pty) => readRecord(ptyDir(), pty)))
     const protocols = new Map(alive.map((pty, i) => [pty, records[i]?.protocol_version ?? null]))
     const p = restorePlan(read, (pty) => (protocols.has(pty) ? protocols.get(pty) : undefined))
-    if (p.mode !== 'full') store?.discard(p.mode === 'empty' ? 'end' : 'layout')
+    if (p.mode !== 'full') store?.discard(p.mode === 'empty' ? 'empty' : 'layout')
     return p
   })()
   // `killPtys` 는 `keep` 에 없는 pty 를 모두 끄므로, 새 pty 는 이 정리가 끝난 뒤에 띄운다.

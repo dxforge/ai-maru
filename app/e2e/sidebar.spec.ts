@@ -34,7 +34,9 @@ import {
   cellFavorite,
   cellPlaces,
   dialogCalls,
+  END_EVERYTHING,
   newCell,
+  sockets,
   stubDialog,
   workspaceHeads,
   workspaceNames,
@@ -1317,6 +1319,38 @@ test('cell 이 없는 핀 workspace 만 남기고 끝내도 다음 실행에 그
   await clickMenu(again.app, 'close-workspace')
   await expect(workspaceNames(again.page)).toHaveCount(1)
   await expect(workspaceNames(again.page)).not.toHaveText(['atlas'])
+})
+
+test('End everything 으로 끄면 터미널을 끝내고, 핀 workspace 는 이름·즐겨찾기와 함께 cell 없이 남으며 핀 없는 workspace 는 남지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'sub')
+  const shell = { SHELL: '/bin/zsh', HOME: home }
+  const launched = await launch(shell)
+  const { app, page } = launched
+  await clickMenu(app, 'rename-workspace')
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('atlas')
+  await page.keyboard.press('Enter')
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await cellItems(page).nth(0).hover()
+  await cellFavorite(page, 0).click()
+  await expect(workspaceHeads(page).nth(0).locator('.pin')).toHaveAttribute('aria-pressed', 'true')
+  await newWorkspace(launched, 2)
+  await stubDialog(app, END_EVERYTHING)
+  const closed = app.waitForEvent('close')
+  await app.evaluate(({ app }) => app.quit())
+  await closed
+  expect(sockets(dataDir)).toEqual([])
+
+  const again = await launch(shell)
+  await expect(workspaceNames(again.page)).toHaveCount(2)
+  await expect(workspaceNames(again.page).nth(0)).toHaveText('atlas')
+  await expect(closedRows(again.page)).toHaveCount(1)
+  await expect(closedRows(again.page)).toContainText('sub')
+  await expect(cellItems(again.page)).toHaveCount(1)
+  await run(again.page, 'echo up-$((1+1))', 'up-2')
 })
 
 test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell 이 위로 오며, 닫으면 닫힌 줄로 남고 누르면 그 디렉토리에 셸 cell 을 연다. 재시작 뒤에도 남는다', async ({
