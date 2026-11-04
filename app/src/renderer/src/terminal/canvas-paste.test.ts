@@ -14,6 +14,7 @@ describe('hasImage', () => {
 
 const key = (over: Partial<Parameters<typeof isImagePasteKey>[0]>) => ({
   type: 'keydown',
+  repeat: false,
   key: 'v',
   code: 'KeyV',
   ctrlKey: true,
@@ -36,6 +37,11 @@ describe('isImagePasteKey', () => {
     // Dvorak 의 KeyV 자리는 k 다.
     expect(isImagePasteKey(key({ key: 'k' }))).toBe(false)
     expect(isImagePasteKey(key({ key: 'v', code: 'Period' }))).toBe(true)
+  })
+
+  it('누르고 있어 반복되는 keydown 은 false', () => {
+    expect(isImagePasteKey(key({ repeat: true }))).toBe(false)
+    expect(isImagePasteKey(key({ key: 'ㅍ', repeat: true }))).toBe(false)
   })
 
   it('⌘V·keyup·다른 modifier 를 함께 쥔 것은 false', () => {
