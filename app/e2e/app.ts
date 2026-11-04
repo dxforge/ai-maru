@@ -259,6 +259,37 @@ export async function stubDialog(app: ElectronApplication, response: number): Pr
   }, response)
 }
 
+/**
+ * `stubDialog` 와 같되 `answerDialog` 를 부를 때까지 답을 미룬다. 답을 바로 돌려주면 그 답으로 앱이 끝나 `dialogCalls` 로
+ * 대화창이 불린 것을 볼 수 없는 경우에 쓴다.
+ */
+export async function holdDialogs(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ dialog }) => {
+    const calls: unknown[] = []
+    const answers: ((response: number) => void)[] = []
+    Object.assign(globalThis, { dialogCalls: calls, dialogAnswers: answers })
+    dialog.showMessageBox = ((opts: unknown) =>
+      new Promise((resolve) => {
+        calls.push(opts)
+        answers.push((response) => resolve({ response, checkboxChecked: false }))
+      })) as typeof dialog.showMessageBox
+  })
+}
+
+export async function answerDialog(
+  app: ElectronApplication,
+  i: number,
+  response: number
+): Promise<void> {
+  await app.evaluate(
+    (_, [i, response]) =>
+      (globalThis as unknown as { dialogAnswers: ((r: number) => void)[] }).dialogAnswers[i](
+        response
+      ),
+    [i, response] as const
+  )
+}
+
 export type DialogCall = { message: string; detail: string; buttons: string[] }
 
 export function dialogCalls(app: ElectronApplication): Promise<DialogCall[]> {

@@ -116,3 +116,29 @@ export function restartRefusal(check: Incompatible): string {
   const result = check.result === 'layout' ? 'with the layout only' : 'with an empty screen'
   return `${restartDetail(check)} Pass --kill-ptys to restart ${result}.`
 }
+
+export type RendererGone = { reason: string; exitCode: number }
+
+export type RendererGoneChoice = 'restart' | 'quit'
+
+export function rendererGoneDialog(
+  gone: RendererGone,
+  canRestart: boolean
+): Dialog & { cancelId: number; choices: (RendererGoneChoice | null)[] } {
+  const why = `The process for this window ended (reason: ${gone.reason}; exit code: ${gone.exitCode}).`
+  if (!canRestart)
+    return {
+      message: 'The window stopped working.',
+      detail: `${why} AI Maru can't restart itself when started by the dev server.`,
+      buttons: ['Quit', 'Cancel'],
+      cancelId: 1,
+      choices: ['quit', null]
+    }
+  return {
+    message: 'The window stopped working. Restart AI Maru?',
+    detail: `${why} Restarting reopens the window and, when possible, reattaches to the running terminals.`,
+    buttons: ['Restart', 'Quit'],
+    cancelId: 1,
+    choices: ['restart', 'quit']
+  }
+}

@@ -46,7 +46,14 @@ import { removeTmpFiles } from './json-file'
 import { createLauncherStore, listDirs, notDirectory } from './launcher'
 import { longestExistingPaths, openLink, type LinkOpener } from './links'
 import { createPortWatch, readPorts } from './ports'
-import { checkRestart, restartDialog, restartRefusal, type RestartCheck } from './restart'
+import {
+  checkRestart,
+  rendererGoneDialog,
+  restartDialog,
+  restartRefusal,
+  type RendererGone,
+  type RestartCheck
+} from './restart'
 import {
   appSocketPath,
   capturePty,
@@ -340,7 +347,7 @@ function restartOutcome(check: RestartCheck): Outcome {
   return check.reason === 'incompatible' && check.result === 'empty' ? 'empty' : 'layout'
 }
 
-async function restartFromMenu(): Promise<void> {
+async function restartByUser(): Promise<void> {
   const check = await restartCheck()
   if (!check.ok && check.reason === 'dev_server') return
   if (!check.ok && !(await confirm(restartDialog(check)))) return
@@ -351,6 +358,32 @@ async function restartFromMenu(): Promise<void> {
     return
   }
   relaunch()
+}
+
+function forgetDocument(): void {
+  windowReady.unready()
+  viewedPty = null
+}
+
+let askingAfterCrash = false
+
+async function rendererGone(gone: RendererGone): Promise<void> {
+  console.error('maru: renderer gone', gone.reason, gone.exitCode)
+  forgetDocument()
+  // 종료가 정해진 뒤 창이 닫히며 renderer 가 끝나는 것은 묻지 않는다.
+  if (outcome || askingAfterCrash) return
+  askingAfterCrash = true
+  try {
+    const { choices, ...options } = rendererGoneDialog(gone, !devServer)
+    const { response } = await dialog.showMessageBox({ type: 'warning', ...options, defaultId: 0 })
+    // 대화창이 떠 있는 동안 메뉴의 Restart 나 끄기 대화창에서 종료가 정해졌으면 그 종료를 따른다.
+    if (outcome) return
+    const chosen = choices[response]
+    if (chosen === 'restart') await restartByUser()
+    else if (chosen === 'quit') confirmQuit()
+  } finally {
+    askingAfterCrash = false
+  }
 }
 
 const restartHandlers: Handlers = {
@@ -524,10 +557,8 @@ function createWindow(state: WindowState | null): void {
     openExternal(url)
   })
   // `will-navigate` 가 navigation 을 막으면 문서가 그대로이므로, 새 문서로 바뀐 뒤(`did-navigate`)에 `unready` 를 부른다.
-  win.webContents.on('did-navigate', () => {
-    windowReady.unready()
-    viewedPty = null
-  })
+  win.webContents.on('did-navigate', forgetDocument)
+  win.webContents.on('render-process-gone', (_event, details) => void rendererGone(details))
   win.webContents.setWindowOpenHandler(({ url }) => {
     openExternal(url)
     return { action: 'deny' }
@@ -696,7 +727,7 @@ function start(): void {
       app.quit()
     })
   }
-  ipcMain.on('app:restart', () => void restartFromMenu())
+  ipcMain.on('app:restart', () => void restartByUser())
   const cli = cliAccess()
   const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
   // pane 의 셸과 같은 환경(LANG 보정 포함)으로 job 을 띄운다.
@@ -884,6 +915,10 @@ function start(): void {
   })
 
   app.on('window-all-closed', () => app.quit())
+  app.on('child-process-gone', (_event, details) => {
+    if (details.type === 'GPU')
+      console.error('maru: GPU process gone', details.reason, details.exitCode)
+  })
   app.on('before-quit', (event) => {
     if (mayQuit()) return
     event.preventDefault()
@@ -938,7 +973,7 @@ function start(): void {
   // 재시작은 renderer 를 거치지 않는다. renderer 가 멈췄을 때도 메뉴로 재시작할 수 있어야 하기 때문이다.
   installCommandMenu(
     (id) =>
-      id === 'restart' ? void restartFromMenu() : mainWindow()?.webContents.send('command:run', id),
+      id === 'restart' ? void restartByUser() : mainWindow()?.webContents.send('command:run', id),
     { canRestart: !devServer }
   )
   createWindow(read.view.window ?? null)

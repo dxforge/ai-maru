@@ -9,7 +9,7 @@ export interface WindowReady {
 
 /**
  * renderer 가 리스너를 달기 전에 보낸 IPC 는 받는 쪽이 없어 버려진다(`docs/architecture.md` 의 "창에 보내는 요청은
- * 창이 준비된 뒤에 넘긴다"). 호출하는 쪽은 창이 준비됐다고 알리면 `ready` 를, 창이 새 문서로 바뀌면 `unready` 를
+ * 창이 준비된 뒤에 넘긴다"). 호출하는 쪽은 창이 준비됐다고 알리면 `ready` 를, 창이 새 문서로 바뀌거나 renderer 가 죽으면 `unready` 를
  * 부른다. 쌓인 `deliver` 는 온 순서대로 부른다.
  */
 export function createWindowReady(): WindowReady {
