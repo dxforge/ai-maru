@@ -482,7 +482,7 @@ const favoriteLabel = (favorite: boolean): string =>
 
 .titlebar {
   flex: none;
-  height: 36px;
+  height: var(--titlebar-height);
   border-bottom: 1px solid var(--line);
 }
 

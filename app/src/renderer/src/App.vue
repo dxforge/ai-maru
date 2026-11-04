@@ -28,6 +28,8 @@ import CommandPalette from './components/CommandPalette.vue'
 import LauncherPalette, { type Launch, type LaunchWhere } from './components/LauncherPalette.vue'
 import { createChordKeys } from './chord'
 import PaneHeader from './components/PaneHeader.vue'
+import PanelBar, { type Panel } from './components/PanelBar.vue'
+import { FileText } from '@lucide/vue'
 import StatusIcon from './components/StatusIcon.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import TerminalView from './components/TerminalView.vue'
@@ -71,6 +73,16 @@ import {
 
 const canvas = createCanvas()
 window.maru.onCanvasPut(canvas.put)
+
+const barPanels = computed((): Panel[] => [
+  {
+    id: 'canvas',
+    title: 'Canvas',
+    icon: FileText,
+    open: canvas.open.value,
+    command: 'toggle-canvas'
+  }
+])
 
 const ptyStates = createPtyStates()
 const workspaces = createWorkspaces(window.maru.gitHead, ptyStates)
@@ -462,9 +474,10 @@ const canvasWidth = ref(prefs.canvas?.width)
 const canvasPanel = useTemplateRef<InstanceType<typeof CanvasPanel>>('canvasPanel')
 
 function resizeCanvas(e: PointerEvent): void {
-  const from = canvasPanel.value!.panel!.getBoundingClientRect().width + e.clientX
+  const box = canvasPanel.value!.panel!.getBoundingClientRect()
+  const from = box.width + e.clientX
   // 정한 폭(`canvasWidth`)이 보이는 폭보다 커지지 않게, 터미널 영역의 폭이 0 이 되는 데서 멈춘다.
-  const max = window.innerWidth - side.value!.getBoundingClientRect().width
+  const max = box.right - side.value!.getBoundingClientRect().width
   drag(e, 'canvas', (m) => (canvasWidth.value = Math.min(max, clampCanvasWidth(from - m.clientX))))
 }
 
@@ -512,8 +525,7 @@ const panesKeys = new WeakMap<Element, number>()
 // 여러 번 바뀐다. 그동안은 재지 않고, 끝난 뒤 다시 잰다.
 const panels = (): Element[] => [side.value, canvasPanel.value?.panel].filter((el) => !!el)
 // `transitionrun` 은 transition 이 생긴 다음 프레임에 온다. 그래서 그것으로 움직임을 알면, 그 전 프레임의 크기로 터미널을
-// 한 번 더 맞춘다. Canvas 를 닫을 때 다시 여는 띠가 바로 자리를 잡는 프레임이 그렇다. transition 은 스타일을 계산할 때
-// 생기므로, `panesObserver` 콜백이 돌 때는 `getAnimations()` 에 이미 있다.
+// 한 번 더 맞춘다. transition 은 스타일을 계산할 때 생기므로, `panesObserver` 콜백이 돌 때는 `getAnimations()` 에 이미 있다.
 // 폭이 아닌 transition 은 보지 않는다. Canvas 가 닫힐 때의 visibility 는 늘 180ms 를 다 채워, 되돌아가느라 일찍 끝난
 // 폭의 `transitionend` 를 놓치게 한다.
 const PANEL_SIZES = ['width', 'flex-basis']
@@ -1103,6 +1115,7 @@ void window.maru.restoreScreen().then((r) => {
       :width="canvasWidth"
       :resizing="resizing === 'canvas'"
     />
+    <PanelBar :panels="barPanels" @run="runCommand" />
     <ToastStack :toasts="toasts.list.value" :width="toastWidth" @close="toasts.close" />
     <CommandPalette
       v-if="overlay === 'palette'"
