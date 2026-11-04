@@ -495,6 +495,13 @@ const favoriteLabel = (favorite: boolean): string =>
   padding: var(--space-3) 0;
 }
 
+/* 라이브러리가 그린 세로 스크롤바는 사이드바의 `drag` 를 물려받고 DOM 에서 cell 뒤에 붙는다. drag 영역은 z-index 와
+   상관없이 DOM 에서 뒤의 것이 앞의 것을 덮으므로, 그대로 두면 스크롤바 띠가 그 밑의 별을 창 끌기 영역으로 덮는다.
+   스크롤바는 누르는 컨트롤이라 no-drag 로 둔다. */
+.list > :deep(.os-scrollbar-vertical) {
+  -webkit-app-region: no-drag;
+}
+
 .workspace-head {
   width: 100%;
   gap: var(--space-4);
