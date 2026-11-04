@@ -10,6 +10,7 @@ import {
   checkRestart,
   installedVersions,
   ptyProtocol,
+  rendererGoneDialog,
   restartDialog,
   restartRefusal,
   type Incompatible
@@ -169,5 +170,25 @@ describe('restartDialog · restartRefusal', () => {
   it('CLI 메시지는 플래그를 주면 어떻게 되는지 적는다', () => {
     expect(restartRefusal(protocol)).toMatch(/Pass --kill-ptys to restart with the layout only\.$/)
     expect(restartRefusal(layout)).toMatch(/Pass --kill-ptys to restart with an empty screen\.$/)
+  })
+})
+
+describe('rendererGoneDialog', () => {
+  const gone = { reason: 'oom', exitCode: 9 }
+
+  it('재시작할 수 있으면 Restart 와 Quit 을 주고 죽은 이유를 적는다', () => {
+    const d = rendererGoneDialog(gone, true)
+    expect(d.choices).toEqual(['restart', 'quit'])
+    expect(d.buttons).toHaveLength(2)
+    expect(d.choices[d.cancelId]).toBe('quit')
+    expect(d.detail).toContain('reason: oom; exit code: 9')
+  })
+
+  it('dev server 가 띄운 앱이면 Restart 없이 Quit 과 그대로 두기만 준다', () => {
+    const d = rendererGoneDialog(gone, false)
+    expect(d.choices).toEqual(['quit', null])
+    expect(d.buttons).toHaveLength(2)
+    expect(d.choices[d.cancelId]).toBeNull()
+    expect(d.detail).toContain('reason: oom; exit code: 9')
   })
 })
