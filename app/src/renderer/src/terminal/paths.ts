@@ -17,10 +17,16 @@ function quote(path: string): string {
   return `$'${body}'`
 }
 
+/**
+ * paste·drop 으로 받은 File 의 경로 가운데 디스크에 있는 것. 클립보드 이미지처럼 디스크에 없는 File 은 경로가 `''` 다.
+ * 드롭한 경로는 디스크의 이름 그대로 오지만, Finder 복사의 file URL 은 디스크의 이름이 NFC 여도 NFD 로 온다.
+ * 같은 파일을 드롭하든 붙여넣든 같은 글자로 붙고 같은 Canvas 문서가 되게 NFC 로 맞춘다.
+ */
+export function diskPaths(paths: readonly string[]): string[] {
+  return paths.filter((p) => p !== '').map((p) => p.normalize('NFC'))
+}
+
 /** 이어서 치는 글자가 마지막 경로에 붙지 않게 끝에 공백을 둔다. */
 export function pastePaths(paths: readonly string[]): string {
-  // 드롭한 경로는 디스크의 이름 그대로 오지만, Finder 복사의 file URL 은 디스크의 이름이 NFC 여도 NFD 로 온다.
-  // 같은 파일을 드롭하든 붙여넣든 같은 글자로 붙게 NFC 로 맞춘다.
-  const quoted = paths.filter((p) => p !== '').map((p) => quote(p.normalize('NFC')))
-  return quoted.length ? `${quoted.join(' ')} ` : ''
+  return paths.length ? `${paths.map(quote).join(' ')} ` : ''
 }

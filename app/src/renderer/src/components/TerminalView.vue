@@ -26,7 +26,8 @@ import { sameFont, type TerminalFont } from '../config/terminal'
 import { alignComposition } from '../terminal/composition'
 import { baseLayoutKeySequence, kittyFlags } from '../terminal/kitty'
 import { createLinkHandler, registerLinkProvider } from '../terminal/links'
-import { pastePaths } from '../terminal/paths'
+import { hasImage, isImagePasteKey } from '../terminal/canvas-paste'
+import { diskPaths, pastePaths } from '../terminal/paths'
 import { SCROLLBAR_WIDTH } from '../workspace/columns'
 import type { Size } from '../workspace/grid'
 
@@ -127,6 +128,8 @@ function trackComposition(textarea: HTMLTextAreaElement): void {
   })
 }
 term.attachCustomKeyEventHandler((e) => {
+  // ⌃V 는 막지 않고 pty 에 그대로 보낸다. Claude Code 가 이 키를 받아 클립보드의 이미지를 직접 읽기 때문이다.
+  if (isImagePasteKey(e)) window.maru.pasteClipboardToCanvas(ptyId)
   const input = terminalInput(e)
   if (input !== undefined) {
     if (e.type === 'keydown') sendInput(input)
@@ -290,9 +293,10 @@ watch(
 )
 
 function pasteFiles(files: FileList | undefined): boolean {
-  const text = pastePaths(Array.from(files ?? [], window.maru.pathForFile))
-  if (!text) return false
-  term.paste(text)
+  const paths = diskPaths(Array.from(files ?? [], window.maru.pathForFile))
+  if (!paths.length) return false
+  term.paste(pastePaths(paths))
+  window.maru.pasteFilesToCanvas(ptyId, paths)
   return true
 }
 function onDragOver(e: DragEvent): void {
@@ -309,9 +313,13 @@ function onDrop(e: DragEvent): void {
 // 경로가 없으면 막지 않는다. 이미지만 든 클립보드에서 xterm 이 보내는 빈 bracketed paste 를 받아야 Claude Code 가
 // 클립보드의 이미지를 읽기 때문이다.
 function onPaste(e: ClipboardEvent): void {
-  if (!pasteFiles(e.clipboardData?.files)) return
-  e.preventDefault()
-  e.stopPropagation()
+  if (pasteFiles(e.clipboardData?.files)) {
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
+  const types = Array.from(e.clipboardData?.items ?? [], (item) => item.type)
+  if (hasImage(types)) window.maru.pasteClipboardToCanvas(ptyId)
 }
 
 let conn: PtyConnection | undefined

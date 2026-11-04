@@ -34,6 +34,14 @@ renderer 는 화면을 되살린 다음 tick 에 `pane:ready` 를 보낸다(`App
 
 Canvas 문서도 같은 이유로, main 은 보낸 pty 의 cell 을 창에 넘길 때 찾는다(`app/src/main/canvas.ts` 의 `ownerOf`). main 은 문서에 보낸 pty 와 그 cell id 를 붙이고(`CanvasOwner`), cell 을 찾지 못하면 pty 만 붙인다. workspace 는 붙이지 않는다. renderer 가 문서의 이름을 그릴 때 cell 이 지금 속한 workspace 로 짓기 때문이다. 그래서 cell 을 다른 workspace 로 옮기면 문서의 이름도 따라간다. renderer 는 문서를 (cell, id) 로 구별하므로, 다른 cell 이 같은 id 로 보낸 문서는 따로 둔다.
 
+## 터미널에 붙인 이미지는 터미널에 가는 내용을 바꾸지 않고 Canvas 에도 넣는다
+
+이미지가 pane 에 들어오는 경로는 셋이다. renderer(`TerminalView.vue`)가 경로마다 main 에 요청하고, main(`app/src/main/canvas.ts` 의 `canvasPaste`)이 붙인 pty 의 cell 에 문서를 넣는다. 어느 프로그램이 도는지는 보지 않는다.
+
+- 경로가 있는 파일(Finder 에서 복사해 ⌘V, 끌어다 놓기): 터미널에는 경로를 붙인다. main 은 그 가운데 이미지 확장자인 파일을 넣고, 문서 id 는 그 경로다.
+- 이미지만 든 클립보드의 ⌘V: paste 이벤트를 막지 않는다. xterm 이 보내는 빈 bracketed paste 를 받아 Claude Code 가 클립보드의 이미지를 읽기 때문이다. main 은 클립보드의 `image/png` 를 읽어 붙일 때마다 새 문서로 넣는다.
+- ⌃V: paste 이벤트가 없고 `\x16` 이 그대로 pty 로 간다. Claude Code 는 이 키를 받아 클립보드를 직접 읽는다. renderer 는 keydown 을 보고 ⌘V 와 같은 요청을 보낸다.
+
 ## pty 상태는 main 이 구독해 든다
 
 셸 cwd(OSC 7)·제목(OSC 0/2)·foreground cwd·OSC 7501 레코드는 maru-pty 가 해석해 하나의 상태로 든다. main 은 pty 마다 maru-pty 에 `subscribe` 연결을 직접 열어 마지막 상태를 든다(`app/src/main/pty-state.ts`). 이 연결로는 화면 바이트가 오지 않는다. attach 스트림은 renderer 가 붙어 있을 때만 있으므로, 상태를 attach 스트림에서 읽으면 main 은 renderer 가 붙은 동안에만 상태를 갖는다.

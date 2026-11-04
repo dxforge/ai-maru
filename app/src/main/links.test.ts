@@ -95,7 +95,9 @@ describe('openLink', () => {
     writeFileSync(path, 'x')
     const { o, docs } = opener()
     expect(await openLink(`file://${path}`, 'p-1', o)).toEqual({ ok: true })
-    expect(docs).toEqual([{ id: path, kind: 'image', path }])
+    expect(docs).toEqual([
+      { id: path, kind: 'image', name: 'shot.PNG', mime: 'image/png', bytes: Buffer.from('x') }
+    ])
   })
 
   it('그 밖의 파일과 디렉토리는 OS 기본 앱으로 열고, OS 가 거절하면 그 이유를 준다', async () => {

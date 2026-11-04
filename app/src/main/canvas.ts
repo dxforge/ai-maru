@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import type { BrowserWindow } from 'electron'
-import type { CanvasDoc, CanvasItem, CanvasMarkdown, CanvasOwner } from '../shared/canvas'
+import type { CanvasDoc, CanvasImage, CanvasMarkdown, CanvasOwner } from '../shared/canvas'
 import { InvalidParams } from './cli-server'
 import { WINDOW_WAIT_MS, type WindowReady } from './window-ready'
 
@@ -17,13 +17,66 @@ const IMAGE_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml'
 }
 
+const imageType = (path: string): string | undefined => IMAGE_TYPES[extname(path).toLowerCase()]
+
+/** 이미지 파일을 부른 때의 내용으로 읽는다. id 는 경로라, 같은 cell 에서 같은 파일을 다시 넣으면 그 문서를 바꾼다. */
+async function imageFile(path: string, mime: string): Promise<CanvasImage> {
+  return { id: path, kind: 'image', name: basename(path), mime, bytes: await readFile(path) }
+}
+
 /** Canvas 가 그릴 수 있는 파일(`.md`·이미지)이면 그 문서. id 는 경로라, 같은 cell 에서 같은 파일을 다시 열면 그 문서를 바꾼다. */
 export async function canvasDocFor(path: string): Promise<CanvasDoc | null> {
-  const ext = extname(path).toLowerCase()
-  if (ext === '.md') {
+  if (extname(path).toLowerCase() === '.md') {
     return { id: path, kind: 'markdown', text: await readFile(path, 'utf8'), title: basename(path) }
   }
-  return ext in IMAGE_TYPES ? { id: path, kind: 'image', path } : null
+  const mime = imageType(path)
+  return mime ? imageFile(path, mime) : null
+}
+
+/** Electron `clipboard.read()` 의 항목 가운데 쓰는 것. */
+export type ClipboardEntry = {
+  types: readonly string[]
+  getType(type: 'image/png'): Promise<unknown>
+}
+
+// macOS 클립보드에 TIFF 만 있어도 Electron 은 `image/png` 로 바꿔 준다(Electron 45.1 에서 확인했다).
+async function clipboardPng(
+  read: () => Promise<readonly ClipboardEntry[]>
+): Promise<Uint8Array | null> {
+  const entry = (await read()).find((e) => e.types.includes('image/png'))
+  const blob = await entry?.getType('image/png')
+  return blob instanceof Blob ? Buffer.from(await blob.arrayBuffer()) : null
+}
+
+/** 터미널에 붙이거나 끌어다 놓은 이미지를 Canvas 에 넣는다. 터미널에 가는 내용은 renderer 가 따로 정한다. */
+export function canvasPaste(
+  window: () => BrowserWindow | undefined,
+  windowReady: WindowReady,
+  cellOf: CellOf,
+  readClipboard: () => Promise<readonly ClipboardEntry[]>
+) {
+  const put = (doc: CanvasDoc, pty: string): Promise<void> =>
+    putCanvas(window, windowReady, doc, ownerOf(pty, cellOf))
+  return {
+    /** 못 읽는 경로가 있어도 나머지 이미지는 넣는다. 못 넣은 것은 끝에 모아 throw 한다. */
+    async files(pty: string, paths: readonly string[]): Promise<void> {
+      const failed: unknown[] = []
+      for (const path of paths) {
+        const mime = imageType(path)
+        if (!mime) continue
+        await imageFile(path, mime)
+          .then((doc) => put(doc, pty))
+          .catch((e: unknown) => failed.push(e))
+      }
+      if (failed.length) throw new AggregateError(failed, 'some pasted images were not put')
+    },
+    async clipboard(pty: string): Promise<void> {
+      const bytes = await clipboardPng(readClipboard)
+      if (!bytes) return
+      const id = `clipboard:${randomUUID()}`
+      await put({ id, kind: 'image', name: 'Pasted image', mime: 'image/png', bytes }, pty)
+    }
+  }
 }
 
 export type CellOf = (pty: string) => string | undefined
@@ -45,7 +98,6 @@ export async function putCanvas(
   doc: CanvasDoc,
   owner: () => CanvasOwner
 ): Promise<void> {
-  const item = await toItem(doc)
   let unqueue = (): void => {}
   let timer: NodeJS.Timeout | undefined
   try {
@@ -58,7 +110,7 @@ export async function putCanvas(
         const win = window()
         if (!win || win.isDestroyed()) return reject(new Error('no window to show the document in'))
         try {
-          win.webContents.send('canvas:put', { ...item, ...owner() })
+          win.webContents.send('canvas:put', { ...doc, ...owner() })
           resolve()
         } catch (e) {
           reject(e)
@@ -94,18 +146,5 @@ export function canvasPut(
     }
     await putCanvas(window, windowReady, doc, ownerOf(pty, cellOf))
     return { id: doc.id }
-  }
-}
-
-async function toItem(doc: CanvasDoc): Promise<CanvasItem> {
-  if (doc.kind === 'markdown') return doc
-  const mime = IMAGE_TYPES[extname(doc.path).toLowerCase()]
-  if (!mime) throw new Error(`not an image file: ${doc.path}`)
-  return {
-    id: doc.id,
-    kind: 'image',
-    name: basename(doc.path),
-    mime,
-    bytes: await readFile(doc.path)
   }
 }
