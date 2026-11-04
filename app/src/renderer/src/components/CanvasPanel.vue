@@ -101,7 +101,7 @@ function onTransition(e: TransitionEvent): void {
     </header>
     <!-- 보기를 바꾸면 다시 만든다. 그대로 두면 새로 보이는 문서를 모두 방금 온 문서로 강조하기 때문이다. -->
     <CardStream
-      :key="String(canvas.viewCell.value)"
+      :key="canvas.shownKey.value"
       :items="canvas.shown.value"
       :expanded="canvas.expanded"
       :held="canvas.held.value"
@@ -114,7 +114,7 @@ function onTransition(e: TransitionEvent): void {
         ><CellName
           v-if="canvas.viewCell.value === null"
           class="owner"
-          workspace
+          :workspace="canvas.view.value === 'all'"
           :name="canvas.nameOf(item.cell)"
         />{{ clockTime(item.at) }}</template
       >

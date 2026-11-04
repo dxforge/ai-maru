@@ -12,6 +12,7 @@ import {
   grabHandle,
   expect,
   newCell,
+  newWorkspace,
   openCanvas,
   OVERLAY_SCROLLBARS,
   putCanvas,
@@ -22,6 +23,7 @@ import {
   sockets,
   test,
   watchTerminalWidths,
+  workspaceNames,
   zshHome
 } from './app'
 
@@ -681,6 +683,47 @@ test('터미널에서 보낸 문서는 그 cell 을 고른 동안 보이고, 드
   const box = (await rows(page).boundingBox())!
   await page.mouse.click(box.x + 10, box.y + 10)
   await expect(viewMenu(page)).toHaveCount(0)
+})
+
+test('드롭다운의 workspace 이름을 누르면 그 workspace 의 문서로 고정되고, 현재 workspace 는 선택된 cell 의 workspace 를 따라간다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: zshHome(dataDir, 'second') })
+  const { app, page } = launched
+  await putCanvas(app, { id: 'one', kind: 'markdown', text: 'one', title: 'One' })
+  const first = await selectedCell(page)
+  await newCell(launched, 2)
+  await putCanvas(app, { id: 'two', kind: 'markdown', text: 'two', title: 'Two' })
+  await newWorkspace(launched, 3)
+  await page.keyboard.type('cd ~/second\n')
+  await expect(workspaceNames(page)).toContainText(['second'])
+  await putCanvas(app, { id: 'three', kind: 'markdown', text: 'three', title: 'Three' })
+  await expect(titles(page)).toHaveText(['Three'])
+
+  await viewButton(page).click()
+  await expect(viewMenu(page).locator('.group-name')).toHaveCount(2)
+  const firstGroup = viewMenu(page)
+    .locator('.group', { has: page.locator(`[data-cell="${first}"]`) })
+    .locator('.group-name')
+  const firstName = (await firstGroup.locator('.label').textContent())!
+  expect(firstName).not.toBe('second')
+  await firstGroup.click()
+  await expect(viewMenu(page)).toHaveCount(0)
+  await expect(titles(page)).toHaveText(['Two', 'One'])
+  await expect(viewButton(page).locator('.label')).toHaveText(firstName)
+  await expect(page.locator('.canvas .card .owner')).toHaveCount(2)
+  await expect(page.locator('.canvas .card .owner .workspace')).toHaveCount(0)
+  await viewButton(page).click()
+  await expect(firstGroup).toHaveAttribute('aria-checked', 'true')
+
+  await viewMenu(page).locator('.workspace').click()
+  await expect(titles(page)).toHaveText(['Three'])
+  await expect(viewButton(page).locator('.label')).toHaveText('second')
+  await cellItems(page).first().click()
+  expect(await selectedCell(page)).toBe(first)
+  await expect(titles(page)).toHaveText(['Two', 'One'])
+  await expect(viewButton(page).locator('.label')).toHaveText(firstName)
 })
 
 test('Canvas 헤더는 제목 줄만 창 드래그 영역이라 드롭다운 줄은 누른 것을 받는다', async ({
