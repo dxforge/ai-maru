@@ -14,38 +14,24 @@ import { commandArgv } from '../config/launcher'
 import { ICONS, programIcon } from '../icons'
 import {
   expandPath,
-  filterFavorites,
   filterRecent,
-  firstDirRow,
   isPathInput,
   joinDir,
-  listEntries,
   matchDirs,
   pathQuery,
   pickCommand,
   commandChoices,
   commandList,
-  entryKey,
   type Row
 } from '../launcher/query'
 import { SHELL } from '../../../shared/launcher'
-import type { Favorites } from '../launcher/favorites'
 import { tildePath } from '../workspace/cwd'
 import { arrowIndex, closeOnFocusLoss, revealSelected } from './palette'
 
 export type LaunchWhere = 'workspace' | 'cell' | 'split-right' | 'split-down'
 
-/**
- * `dir` 이 없으면 pane 을 여는 쪽이 정한 디렉토리(홈)에서 띄운다. `name`·`favorite` 은 즐겨찾기로 열 때 그 항목의
- * 이름과 `id` 다.
- */
-export type Launch = {
-  dir?: string
-  command: string
-  where: LaunchWhere
-  name?: string
-  favorite?: string
-}
+/** `dir` 이 없으면 pane 을 여는 쪽이 정한 디렉토리(홈)에서 띄운다. */
+export type Launch = { dir?: string; command: string; where: LaunchWhere }
 
 const WHERE_LABELS: Record<LaunchWhere, string> = {
   workspace: 'New Workspace',
@@ -56,25 +42,20 @@ const WHERE_LABELS: Record<LaunchWhere, string> = {
 
 /**
  * `at` 을 주면 디렉토리 단계 없이 그 디렉토리의 명령 단계로 열고, 고른 명령은 `at.where` 에 띄운다. 셸은 그 자리를 여는
- * 키로 열면 되므로 목록에 두지 않는다. `linked` 는 열린 workspace 가 가리키는 즐겨찾기 항목의 `id` 다. 그 항목을 고르면
- * 명령 단계 없이 `showFavorite` 를 보낸다.
+ * 키로 열면 되므로 목록에 두지 않는다.
  */
 const {
   position,
   commands,
   home = undefined,
-  at = undefined,
-  favorites,
-  linked = new Set()
+  at = undefined
 } = defineProps<{
   position: Position
   commands: readonly string[]
   home?: string
   at?: { dir?: string; where: LaunchWhere }
-  favorites: Favorites
-  linked?: ReadonlySet<string>
 }>()
-const emit = defineEmits<{ launch: [launch: Launch]; showFavorite: [id: string]; close: [] }>()
+const emit = defineEmits<{ launch: [launch: Launch]; close: [] }>()
 
 const input = useTemplateRef<HTMLInputElement>('input')
 const query = ref('')
@@ -92,13 +73,7 @@ const loaded = window.maru.launcherState().then((state) => {
 watch(list, (l) => (command.value = pickCommand(l, command.value)))
 
 /** 디렉토리를 고른 뒤의 명령 단계. `query` 는 돌아갈 때 되살릴 디렉토리 단계의 입력이다. */
-const chosen = shallowRef<{
-  dir?: string
-  label: string
-  query: string
-  name?: string
-  favorite?: string
-} | null>(
+const chosen = shallowRef<{ dir?: string; label: string; query: string } | null>(
   at
     ? { dir: at.dir, label: at.dir === undefined ? '~' : tildePath(at.dir, home), query: '' }
     : null
@@ -134,10 +109,7 @@ const commandRows = computed(() =>
   }))
 )
 
-const favoriteRows = computed(() =>
-  pathMode.value ? [] : filterFavorites(favorites.list.value, query.value, home)
-)
-const dirRows = computed<Row[]>(() => {
+const rows = computed<Row[]>(() => {
   if (!pathMode.value) return filterRecent(recent.value, query.value, home)
   const q = path.value
   if (!q || dirs.value?.parent !== q.parent) return []
@@ -146,11 +118,6 @@ const dirRows = computed<Row[]>(() => {
     label: q.prefix + name
   }))
 })
-const rows = computed<Row[]>(() => [...favoriteRows.value, ...dirRows.value])
-const entries = computed(() =>
-  listEntries(favoriteRows.value, dirRows.value, position === 'bottom')
-)
-
 // `/` 로 끝난 경로는 그 디렉토리를 다 친 것이므로 후보를 고르지 않고(-1) Enter 가 친 경로를 연다. 셸에서 `cd ~/a/` 를
 // 치고 Enter 를 누르면 `~/a` 로 가는 것과 같다.
 function initialIndex(): number {
@@ -161,8 +128,7 @@ function initialIndex(): number {
           0,
           commandRows.value.findIndex((r) => r.command === command.value)
         )
-  if (path.value?.fragment === '') return -1
-  return firstDirRow(favoriteRows.value.length, dirRows.value.length, query.value)
+  return path.value?.fragment === '' ? -1 : 0
 }
 const index = ref(initialIndex())
 // 최근 목록과 기억한 명령은 런처를 연 뒤에 온다. 온 뒤에 첫 선택을 다시 두어, 디렉토리 단계에서는 최근 목록의 첫 행을,
@@ -181,16 +147,12 @@ const count = computed(() => (chosen.value ? commandRows.value.length : rows.val
 const empty = computed(() => {
   if (chosen.value) return 'No matching commands'
   if (pathMode.value) return 'Enter opens the typed path'
-  return recent.value.length || favorites.list.value.length
-    ? 'No matching directories'
-    : 'No recent directories'
+  return recent.value.length ? 'No matching directories' : 'No recent directories'
 })
 
-// 즐겨찾기 묶음이 보이면 목록 안의 묶음 제목이 헤더를 대신한다.
 const section = computed(() => {
   if (chosen.value) return chosen.value.label
-  if (pathMode.value) return 'Open directory'
-  return favoriteRows.value.length ? null : 'Recent'
+  return pathMode.value ? 'Open directory' : 'Recent'
 })
 
 const focus = (): void => input.value?.focus()
@@ -205,7 +167,6 @@ function target(): Row | undefined {
 }
 
 async function launch(dir: string | undefined, cmd: string, cell: boolean): Promise<void> {
-  const { name, favorite } = chosen.value ?? {}
   if (launching) return
   launching = true
   try {
@@ -220,7 +181,7 @@ async function launch(dir: string | undefined, cmd: string, cell: boolean): Prom
       problem.value = r.reason
       return
     }
-    emit('launch', { dir, command: cmd, where: cell ? 'cell' : 'workspace', name, favorite })
+    emit('launch', { dir, command: cmd, where: cell ? 'cell' : 'workspace' })
   } finally {
     launching = false
   }
@@ -234,19 +195,7 @@ async function choose(given?: Row): Promise<void> {
   if (chosen.value) return
   const row = given ?? target()
   if (row === undefined) return
-  // 이미 열린 workspace 로 가므로 띄울 명령을 고를 일이 없다. `launched` 를 부르지 않으므로 디렉토리가 없어졌어도 오류
-  // 없이 그 workspace 로 간다. 고르지 않은 명령을 기본 명령으로 저장하지도 않는다.
-  if (row.id !== undefined && linked.has(row.id)) {
-    emit('showFavorite', row.id)
-    return
-  }
-  chosen.value = {
-    dir: row.path,
-    label: row.label.replace(/(?<=.)\/+$/, ''),
-    query: query.value,
-    name: row.name,
-    favorite: row.id
-  }
+  chosen.value = { dir: row.path, label: row.label.replace(/(?<=.)\/+$/, ''), query: query.value }
   query.value = ''
 }
 
@@ -278,13 +227,9 @@ onMounted(() => window.addEventListener('blur', resetMeta))
 onUnmounted(() => window.removeEventListener('blur', resetMeta))
 
 async function forget(row: Row): Promise<void> {
-  if (row.id === undefined) recent.value = (await window.maru.forgetLaunch(row.path)).recent
-  else await favorites.forget(row.id)
+  recent.value = (await window.maru.forgetLaunch(row.path)).recent
   index.value = Math.min(index.value, Math.max(0, rows.value.length - 1))
 }
-
-const removeLabel = (row: Row): string =>
-  row.id === undefined ? 'Remove from recent' : 'Remove from Favorites'
 
 function atEnd(el: HTMLInputElement): boolean {
   return el.selectionStart === el.value.length && el.selectionEnd === el.value.length
@@ -301,7 +246,7 @@ function onKeydown(e: KeyboardEvent): void {
     index.value = (e.key === 'ArrowDown') === (position === 'top') ? 0 : n - 1
   else if (moved !== undefined) index.value = moved
   else if (e.key === 'Enter') void enter(e.metaKey)
-  // ⌘⌫ 는 입력창에서 커서 앞을 줄 처음까지 지우는 키라, 최근 목록·즐겨찾기의 행 지우기는 ⇧⌘⌫ 에 둔다.
+  // ⌘⌫ 는 입력창에서 커서 앞을 줄 처음까지 지우는 키라, 최근 목록의 행 지우기는 ⇧⌘⌫ 에 둔다.
   else if (e.key === 'Backspace' && e.metaKey && e.shiftKey && row && !pathMode.value)
     void forget(row)
   else if (e.key === 'Backspace' && chosen.value && query.value === '') back()
@@ -325,9 +270,7 @@ function onKeydown(e: KeyboardEvent): void {
         v-model="query"
         class="query"
         :placeholder="
-          chosen
-            ? 'Choose a command'
-            : 'Filter favorites and recent directories, or type a path from ~ or /'
+          chosen ? 'Choose a command' : 'Filter recent directories, or type a path from ~ or /'
         "
         spellcheck="false"
         @keydown="onKeydown"
@@ -353,35 +296,28 @@ function onKeydown(e: KeyboardEvent): void {
       </ul>
       <ul v-else ref="list" v-overlay-scroll="'y'" class="list">
         <li v-if="problem" class="problem">{{ problem }}</li>
-        <template v-for="e in entries" :key="'title' in e ? e.title : entryKey(e.row)">
-          <li v-if="'title' in e" class="group-title label">{{ e.title }}</li>
-          <li
-            v-else
-            class="item"
-            :class="{ selected: e.index === index, favorite: e.row.id !== undefined }"
-            @mousemove="index = e.index"
-            @click="choose(e.row)"
+        <li
+          v-for="(r, i) in rows"
+          :key="r.path"
+          class="item"
+          :class="{ selected: i === index }"
+          @mousemove="index = i"
+          @click="choose(r)"
+        >
+          <span class="path">{{ r.label }}</span>
+          <button
+            v-if="!pathMode"
+            v-tooltip="{ text: 'Remove from recent', keys: '⇧⌘⌫' }"
+            class="remove nerd-icon"
+            aria-label="Remove from recent"
+            @click.stop="forget(r)"
           >
-            <span v-if="e.row.id !== undefined" class="favorite-row"
-              ><span class="star nerd-icon">{{ ICONS.starFull }}</span
-              ><span class="name">{{ e.row.name }}</span
-              ><span class="path">{{ e.row.label }}</span></span
-            >
-            <span v-else class="path">{{ e.row.label }}</span>
-            <button
-              v-if="!pathMode"
-              v-tooltip="{ text: removeLabel(e.row), keys: '⇧⌘⌫' }"
-              class="remove nerd-icon"
-              :aria-label="removeLabel(e.row)"
-              @click.stop="forget(e.row)"
-            >
-              {{ ICONS.close }}
-            </button>
-          </li>
-        </template>
+            {{ ICONS.close }}
+          </button>
+        </li>
         <li v-if="!rows.length" class="empty">{{ empty }}</li>
       </ul>
-      <div v-if="section !== null" class="section">
+      <div class="section">
         <span class="path" :class="{ label: !chosen }">{{ section }}</span>
         <span v-if="chosen" class="where">{{
           WHERE_LABELS[at?.where ?? (meta ? 'cell' : 'workspace')]
@@ -460,39 +396,6 @@ function onKeydown(e: KeyboardEvent): void {
 
 .remove:hover {
   color: var(--fg);
-}
-
-.group-title {
-  padding: var(--space-2) var(--space-5) var(--space-1);
-  color: var(--muted);
-  font-size: var(--text-1);
-  font-weight: 600;
-}
-
-.favorite-row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.favorite-row .star {
-  flex: none;
-  width: 16px;
-  color: var(--muted);
-  text-align: center;
-}
-
-.favorite-row .name {
-  flex: none;
-  max-width: 50%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.favorite-row .path {
-  color: var(--muted);
 }
 
 .path {

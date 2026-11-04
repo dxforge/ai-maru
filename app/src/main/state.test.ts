@@ -7,6 +7,7 @@ import { splitScreen, STATE_VERSIONS, type ScreenState } from '../shared/screen'
 import type { JobRecord } from './job'
 import {
   createStateStore,
+  pinnedOnly,
   readState,
   removeOldStateFiles,
   restorePlan,
@@ -252,7 +253,8 @@ describe('createStateStore', () => {
   it.each([
     ['keep', { layout, sessions }],
     ['layout', { layout, sessions: null }],
-    ['end', { layout: null, sessions: null }]
+    ['end', { layout: null, sessions: null }],
+    ['empty', { layout: null, sessions: null }]
   ] as const)('finish(%s) 는 바로 쓰고 view 는 남긴다', (outcome, expected) => {
     const s = store(full)
     s.finish(outcome)
@@ -306,11 +308,87 @@ describe('createStateStore', () => {
     expect(existsSync(path)).toBe(false)
   })
 
+  it('finish(end) 는 핀 workspace 를 cell 없이 남기고, finish(empty) 는 핀 workspace 도 남기지 않는다', () => {
+    const pinned = { ...layout.workspaces[0], pinned: true as const, name: 'atlas' }
+    const withPin = { ...full, layout: { ...layout, workspaces: [pinned] } }
+    store(withPin).finish('empty')
+    expect(saved()).toEqual({ layout: null, sessions: null, view })
+    const s = store(withPin)
+    s.finish('end')
+    expect(saved()).toEqual({
+      layout: {
+        ...layout,
+        workspaces: [
+          { key: 3, id: 'w-00000001', name: 'atlas', pinned: true, dir: '/tmp', cells: [] }
+        ],
+        selected: null
+      },
+      sessions: null,
+      view
+    })
+  })
+
   it('discard 는 판정이 버린 부분을 비운다', () => {
     const s = store(full)
     s.discard('layout')
     expect(s.current()).toMatchObject({ layout, sessions: null })
     s.discard('end')
     expect(s.current()).toMatchObject({ layout: null, sessions: null })
+  })
+})
+
+describe('pinnedOnly', () => {
+  const cell = layout.workspaces[0].cells[0]
+  const ws = (key: number, extra: object, cells = [cell]) => ({
+    key,
+    id: `w-0000000${key}`,
+    cells,
+    ...extra
+  })
+
+  it('핀 없는 workspace 를 빼고, 핀 workspace 의 이름·즐겨찾기를 남긴 채 dir 을 첫 cell 의 첫 pane 의 cwd 로 적는다', () => {
+    const second = { ...cell, key: 9, panes: [{ key: 10, cwd: '/var' }] }
+    const out = pinnedOnly({
+      ...layout,
+      workspaces: [
+        ws(1, { pinned: true, name: 'atlas', favorites: ['/tmp'], dir: '/old' }, [cell, second]),
+        ws(2, {})
+      ],
+      selected: 1
+    })
+    expect(out).toEqual({
+      ...layout,
+      workspaces: [
+        {
+          key: 1,
+          id: 'w-00000001',
+          name: 'atlas',
+          pinned: true,
+          favorites: ['/tmp'],
+          dir: '/tmp',
+          cells: []
+        }
+      ],
+      selected: null
+    })
+  })
+
+  it('cell 이 없던 핀 workspace 는 dir 을 그대로 두고, 첫 pane 의 cwd 를 모르면 dir 을 지운다', () => {
+    const unknown = { ...cell, panes: [{ key: 0 }] }
+    const out = pinnedOnly({
+      ...layout,
+      workspaces: [
+        ws(1, { pinned: true, dir: '/old' }, []),
+        ws(2, { pinned: true, dir: '/old' }, [unknown])
+      ]
+    })
+    expect(out?.workspaces).toEqual([
+      { key: 1, id: 'w-00000001', pinned: true, dir: '/old', cells: [] },
+      { key: 2, id: 'w-00000002', pinned: true, cells: [] }
+    ])
+  })
+
+  it('핀 workspace 가 없으면 null 이다', () => {
+    expect(pinnedOnly({ ...layout, workspaces: [ws(1, {}), ws(2, {}, [])] })).toBeNull()
   })
 })

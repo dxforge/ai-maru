@@ -2,7 +2,7 @@
 
 ## 화면의 층
 
-창은 workspace 목록을 보인다. workspace 는 cell 을 묶는다. cell 은 헤더·pane 배치·글꼴 크기·columns 폭·job 을 갖고, 선택과 single 보기의 단위다. pane 은 터미널 하나다. cell 의 마지막 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이 닫히면 workspace 가 닫힌다.
+창은 workspace 목록을 보인다. workspace 는 cell 을 묶는다. cell 은 헤더·pane 배치·글꼴 크기·columns 폭·job 을 갖고, 선택과 single 보기의 단위다. pane 은 터미널 하나다. cell 의 마지막 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이 닫히면 workspace 가 닫힌다. 핀을 꽂은 workspace 는 마지막 cell 이 닫혀도 남는다. cell 이 없는 workspace 는 핀을 빼면 닫힌다.
 
 ## pty 를 여는 순서
 
@@ -80,7 +80,7 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 뜰 때는 묻지 않고 하나를 고른다. `layout` 을 읽지 못하면 빈 화면이다. `layout` 은 읽었는데 `sessions` 가 없거나 읽지 못했거나, `sessions` 의 살아 있는 pty 가운데 프로토콜 버전이 다른 것이 하나라도 있으면 레이아웃만 되살린다. 레이아웃만 되살리면 남은 pty 를 모두 끄고, pane 마다 저장한 cwd 에서 새 셸을 띄운다. 명령은 다시 돌리지 않는다. 둘 다 되면 전체 복원이다. `sessions` 의 pty 만 남기고, 되살린 pane 은 `pty:open` 의 `attach` 로 pty 를 띄우지 않고 붙는다. 붙을 pty 가 이미 끝났으면 pty host 가 `gone` 을 보낸 뒤 같은 pty id 로 저장한 cwd 에서 새 셸을 띄우고, pane 은 그 이유를 터미널에 쓴다. `layout`·`sessions` 가 있는데 읽지 못했거나 pty 프로토콜 버전이 달라 버렸으면 toast 로 알린다. 비어 있으면(끄기·재시작에서 고른 결과, OS 종료·시그널) 알리지 않는다.
 
-⌘Q·메뉴의 Quit·창 닫기는 pane 이 하나라도 있으면 늘 묻는다: Keep terminals / Keep layout only / End everything / Cancel. Keep terminals 는 pty 를 끄지 않는다. Keep layout only 는 `sessions` 를, End everything 은 `layout`·`sessions` 를 비워 쓰고 pty 를 끈다. 고른 결과를 쓴 뒤의 변경은 쓰지 않는다 — pty 가 끝나며 renderer 가 pane 을 닫아도 고른 결과가 남는다. OS 종료(`powerMonitor` 의 `shutdown`)와 SIGTERM·SIGINT·SIGHUP 은 묻지 않고 Keep layout only 로 끝낸다. pty 는 OS 와 함께 끝나거나 이 앱이 끈다.
+⌘Q·메뉴의 Quit·창 닫기는 pane 이 하나라도 있으면 늘 묻는다: Keep terminals / Keep layout only / End everything / Cancel. Keep terminals 는 pty 를 끄지 않는다. Keep layout only 는 `sessions` 를 비워 쓰고 pty 를 끈다. End everything 은 `sessions` 를 비우고 `layout` 에는 핀 workspace 만 cell 없이 남겨 쓴 뒤 pty 를 끈다. 고른 결과를 쓴 뒤의 변경은 쓰지 않는다 — pty 가 끝나며 renderer 가 pane 을 닫아도 고른 결과가 남는다. OS 종료(`powerMonitor` 의 `shutdown`)와 SIGTERM·SIGINT·SIGHUP 은 묻지 않고 Keep layout only 로 끝낸다. pty 는 OS 와 함께 끝나거나 이 앱이 끈다.
 
 재시작은 pty 를 남긴다. 재시작 전에 설치된 번들의 `maru-pty --protocol-version` 과 `state-versions.json`(세 부분의 형식 버전)을 지금 앱의 것과 견주어(`app/src/main/restart.ts`) 다시 뜬 앱이 전체 복원을 할 수 있으면 묻지 않는다. 할 수 없으면 레이아웃만 되살려 재시작할지(pty 프로토콜·`sessions` 형식이 다를 때), 빈 화면으로 재시작할지(`layout` 형식이 다를 때) 묻는다. 고르면 그 결과를 쓰고 pty 를 끈 뒤 다시 뜬다. 재시작은 renderer 에게 묻지 않으므로 renderer 가 멈춰 있어도 재시작한다.
 

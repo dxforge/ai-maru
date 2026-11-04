@@ -1,43 +1,17 @@
 import { constants } from 'node:fs'
 import { access, readdir, readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import {
-  samePath,
-  withoutPin,
-  withPin,
-  type LaunchResult,
-  type LauncherState,
-  type Favorite
-} from '../shared/launcher'
+import { samePath, type LaunchResult, type LauncherState } from '../shared/launcher'
 import { writeJsonAtomic } from './json-file'
 
-const EMPTY: LauncherState = { recent: [], favorites: [], command: null }
+const EMPTY: LauncherState = { recent: [], command: null }
 
-export function isFavorite(v: unknown): v is Favorite {
-  if (typeof v !== 'object' || v === null) return false
-  const { id, dir, name } = v as Record<string, unknown>
-  return typeof id === 'string' && typeof dir === 'string' && typeof name === 'string'
-}
-
-function parsePins(v: unknown): string[] | undefined {
-  return Array.isArray(v) && v.every((p) => typeof p === 'string') && v.length ? v : undefined
-}
-
-// `favorites` 를 더하기 전에 쓴 파일에는 그 키가 없다. `pins` 도 그렇다.
 function parseState(v: unknown): LauncherState | null {
   if (typeof v !== 'object' || v === null) return null
-  const { recent, favorites = [], command } = v as Record<string, unknown>
+  const { recent, command } = v as Record<string, unknown>
   if (!Array.isArray(recent) || !recent.every((p) => typeof p === 'string')) return null
-  if (!Array.isArray(favorites) || !favorites.every(isFavorite)) return null
   if (command !== null && typeof command !== 'string') return null
-  return {
-    recent,
-    favorites: favorites.map(({ id, dir, name, pins }: Favorite) => {
-      const kept = parsePins(pins)
-      return kept ? { id, dir, name, pins: kept } : { id, dir, name }
-    }),
-    command
-  }
+  return { recent, command }
 }
 
 async function readState(path: string): Promise<LauncherState> {
@@ -86,39 +60,6 @@ export function createLauncherStore(path: string) {
     },
     forget(dir: string): Promise<LauncherState> {
       return update((s) => ({ ...s, recent: s.recent.filter((p) => !samePath(p, dir)) }))
-    },
-    /** 상대경로는 main 의 작업 디렉토리를 기준으로 읽히므로 받지 않는다. */
-    addFavorite({ id, dir, name }: Favorite): Promise<LauncherState> {
-      if (!isAbsolute(dir)) return current()
-      const at = resolve(dir)
-      return update((s) =>
-        s.favorites.some((f) => f.id === id)
-          ? s
-          : { ...s, favorites: [...s.favorites, { id, dir: at, name }] }
-      )
-    },
-    forgetFavorite(id: string): Promise<LauncherState> {
-      return update((s) => ({ ...s, favorites: s.favorites.filter((f) => f.id !== id) }))
-    },
-    renameFavorite(id: string, name: string): Promise<LauncherState> {
-      return update((s) => ({
-        ...s,
-        favorites: s.favorites.map((f) => (f.id === id ? { ...f, name } : f))
-      }))
-    },
-    addPin(id: string, dir: string): Promise<LauncherState> {
-      if (!isAbsolute(dir)) return current()
-      const at = resolve(dir)
-      return update((s) => ({
-        ...s,
-        favorites: s.favorites.map((f) => (f.id === id ? withPin(f, at) : f))
-      }))
-    },
-    removePin(id: string, dir: string): Promise<LauncherState> {
-      return update((s) => ({
-        ...s,
-        favorites: s.favorites.map((f) => (f.id === id ? withoutPin(f, dir) : f))
-      }))
     }
   }
 }

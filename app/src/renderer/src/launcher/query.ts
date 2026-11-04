@@ -1,4 +1,4 @@
-import { SHELL, type Favorite } from '../../../shared/launcher'
+import { SHELL } from '../../../shared/launcher'
 import { foldCase, matchesWords } from '../../../shared/commands'
 import { tildePath } from '../workspace/cwd'
 
@@ -21,17 +21,8 @@ export function pathQuery(input: string, home: string | undefined): PathQuery | 
   return { prefix, fragment: input.slice(slash + 1), parent: expandPath(prefix, home) }
 }
 
-/** `name`·`id` 는 즐겨찾기 행에만 있다. */
-export type Row = { path: string; label: string; name?: string; id?: string }
+export type Row = { path: string; label: string }
 
-/** 목록 행의 key 다. 같은 디렉토리의 즐겨찾기 항목이 여럿일 수 있어 즐겨찾기 행은 `id` 로 구별한다. */
-export const entryKey = (row: Row): string =>
-  row.id === undefined ? `recent:${row.path}` : `favorite:${row.id}`
-
-/**
- * 즐겨찾기에 든 디렉토리도 빼지 않는다. 즐겨찾기 행은 그 이름의 workspace 를 열거나 그리로 가고, 최근 목록 행은 그
- * 디렉토리로 이름 없는 새 workspace 를 열기 때문이다.
- */
 export function filterRecent(
   recent: readonly string[],
   query: string,
@@ -40,45 +31,6 @@ export function filterRecent(
   return recent
     .map((path) => ({ path, label: tildePath(path, home) }))
     .filter((r) => matchesWords(r.label, query))
-}
-
-export function filterFavorites(
-  favorites: readonly Favorite[],
-  query: string,
-  home: string | undefined
-): Row[] {
-  return favorites
-    .map(({ id, dir, name }) => ({ path: dir, label: tildePath(dir, home), name, id }))
-    .filter((r) => matchesWords(`${r.name} ${r.label}`, query))
-}
-
-/**
- * 디렉토리 단계에서 처음 고르는 행의 자리(`[...favorites, ...recent]` 에서)다. 입력이 비었으면 즐겨찾기를 건너뛰고 최근
- * 목록의 첫 행을 고른다. ⌘O 를 열고 Enter 를 두 번 누르면 마지막에 연 디렉토리가 열려야 하기 때문이다.
- */
-export function firstDirRow(favorites: number, recent: number, query: string): number {
-  return query.trim() === '' && recent > 0 ? favorites : 0
-}
-
-export type ListEntry = { title: string } | { row: Row; index: number }
-
-/**
- * 디렉토리 단계 목록의 DOM 순서다. 즐겨찾기 행이 있으면 즐겨찾기와 최근 목록을 묶음 제목과 함께 나누고, 없으면 제목 없이
- * 최근 목록만 둔다. `index` 는 `[...favorites, ...recent]` 에서의 자리다. 아래 팔레트의 목록은 column-reverse 라 제목을
- * 묶음 뒤에 두어야 화면에서 묶음 위에 선다.
- */
-export function listEntries(
-  favorites: readonly Row[],
-  recent: readonly Row[],
-  bottom: boolean
-): ListEntry[] {
-  const rows = (list: readonly Row[], from: number): ListEntry[] =>
-    list.map((row, i) => ({ row, index: from + i }))
-  if (!favorites.length) return rows(recent, 0)
-  const group = (title: string, list: ListEntry[]): ListEntry[] =>
-    bottom ? [...list, { title }] : [{ title }, ...list]
-  const fav = group('Favorites', rows(favorites, 0))
-  return recent.length ? [...fav, ...group('Recent', rows(recent, favorites.length))] : fav
 }
 
 /**

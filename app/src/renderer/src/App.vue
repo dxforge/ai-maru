@@ -12,7 +12,7 @@ import {
 } from 'vue'
 import { available, commands, type CommandId } from '../../shared/commands'
 import { PANE_MIN } from '../../shared/layout'
-import { cellLabel, windowTitle, workspaceDir, workspaceName } from '../../shared/names'
+import { cellLabel, windowTitle } from '../../shared/names'
 import type { JobView } from '../../shared/job'
 import type { PaneReply } from '../../shared/pane'
 import type { ProgramStatusRecord } from '../../shared/program-status'
@@ -34,8 +34,7 @@ import TerminalView from './components/TerminalView.vue'
 import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
 import { commandArgv } from './config/launcher'
-import { favoriteById, samePath, SHELL } from '../../shared/launcher'
-import { createFavorites, pinsOnLink, pinToggle } from './launcher/favorites'
+import { SHELL } from '../../shared/launcher'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
 import { activeTheme, windowTheme } from './themes'
@@ -213,12 +212,6 @@ function selectCell(key: number): void {
   void focusSelected().then(() => revealFocused(true))
 }
 
-function showWorkspace(w: { key: number; cells: readonly { key: number }[] }): void {
-  const cell = w.cells.find((c) => c.key === workspaces.selectedKey.value) ?? w.cells[0]
-  folded.delete(w.key)
-  selectCell(cell.key)
-}
-
 function stepCell(by: 1 | -1): void {
   const key = workspaces.step(by)
   if (key !== undefined) selectCell(key)
@@ -263,12 +256,16 @@ function selectedWorkspace() {
   return c && workspaces.workspaceOf(c.key)
 }
 
-// 마지막 cell 이 닫히면 store 가 workspace 를 지운다. cell 의 job 은 cell 이 닫힐 때 main 이 끈다.
+// 마지막 cell 이 닫히면 store 가 핀이 없는 workspace 를 지운다. 핀 workspace 는 빈 채로 남으므로 이어서 목록에서 뺀다.
+// cell 의 job 은 cell 이 닫힐 때 main 이 끈다.
 async function closeWorkspace(): Promise<void> {
   const w = selectedWorkspace()
   if (!w) return
   const panes = w.cells.flatMap((x) => x.panes.map((p) => p.key))
-  if ((await window.maru.confirmCloseWorkspace(w.id)).close) for (const p of panes) removePane(p)
+  if ((await window.maru.confirmCloseWorkspace(w.id)).close) {
+    for (const p of panes) removePane(p)
+    workspaces.discard(w.key)
+  }
   void focusSelected()
 }
 
@@ -378,10 +375,7 @@ function startRename(key: number): void {
   renaming.value = key
 }
 function endRename(key: number, name: string | null, refocus: boolean): void {
-  if (name !== null) {
-    workspaces.rename(key, name)
-    renameFavorite(key)
-  }
+  if (name !== null) workspaces.rename(key, name)
   // 다른 workspace 의 고치기를 시작해 이 입력창이 빠졌으면 새 고치기는 그대로 둔다.
   if (renaming.value !== key) return
   renaming.value = null
@@ -395,112 +389,38 @@ watch(
   }
 )
 
-const favorites = createFavorites((id) => {
-  for (const w of workspaces.list.value) if (w.favorite === id) workspaces.clearPins(w.key)
-})
-const favoriteKeys = computed(
-  () =>
-    new Set(
-      workspaces.list.value
-        .filter((w) => favoriteById(favorites.list.value, w.favorite))
-        .map((w) => w.key)
-    )
-)
-const linkedFavorites = computed(
-  () => new Set(workspaces.list.value.flatMap((w) => w.favorite ?? []))
-)
-const favoritePins = computed(
-  () =>
-    new Map(
-      workspaces.list.value.flatMap((w) => {
-        const pins = favoriteById(favorites.list.value, w.favorite)?.pins
-        return pins ? [[w.key, pins] as const] : []
-      })
-    )
-)
-/** 별을 누른 뒤 workspace 가 가리키는 즐겨찾기 항목의 `id` 다. 즐겨찾기에서 뺐거나 넣지 못했으면 undefined 다. */
-function toggleFavorite(key: number): string | undefined {
-  const w = workspaces.list.value.find((x) => x.key === key)
-  if (!w) return undefined
-  const action = favorites.toggle(
-    { dir: workspaceDir(w), name: workspaceName(w, home), favorite: w.favorite },
-    linkedFavorites.value
-  )
-  if (action.kind === 'loading') return undefined
-  if (action.kind === 'unknown') {
+// cell 의 자리를 옮기면 터미널이 포커스를 잃어, 드래그로 옮길 때처럼 되돌린다.
+function toggleFavorite(cell: number): void {
+  if (!workspaces.toggleFavorite(cell)) {
     toasts.put('favorite', {
       level: 'warning',
-      title: "Couldn't add to Favorites",
-      lines: ["The workspace's directory isn't known yet."]
-    })
-    return undefined
-  }
-  toasts.close('favorite')
-  if (action.kind === 'forget') return undefined
-  const id = action.kind === 'link' ? action.id : action.favorite.id
-  workspaces.setFavorite(key, id)
-  if (action.kind === 'link') {
-    const pins = favoriteById(favorites.list.value, id)?.pins ?? []
-    for (const p of pinsOnLink(pins, w.cells)) workspaces.pinCell(p.cell, p.dir)
-  }
-  return id
-}
-
-// 핀은 workspace 의 즐겨찾기 항목에 붙으므로, 즐겨찾기가 아닌 workspace 에서는 즐겨찾기에 먼저 넣는다.
-function togglePin(cell: number): void {
-  const w = workspaces.workspaceOf(cell)
-  const c = w?.cells.find((x) => x.key === cell)
-  if (!w || !c) return
-  const favorite = favoriteById(favorites.list.value, w.favorite)
-  const action = pinToggle(favorite, c.pin, c.panes[0].cwd)
-  if (action.kind === 'unpin') {
-    unpin(w.key, action.dir)
-    void focusSelected()
-    return
-  }
-  if (action.kind === 'unknown') {
-    toasts.put('pin', {
-      level: 'warning',
-      title: "Couldn't pin the cell",
+      title: "Couldn't favorite the cell",
       lines: ["The first pane's directory isn't known yet."]
     })
     return
   }
-  toasts.close('pin')
-  const id = favorite?.id ?? toggleFavorite(w.key)
-  if (id === undefined) return
-  workspaces.pinCell(cell, action.dir)
-  void favorites.pin(id, action.dir)
-  // cell 의 자리를 옮기면 터미널이 포커스를 잃어, 드래그로 옮길 때처럼 되돌린다.
+  toasts.close('favorite')
   void focusSelected()
 }
 
-function unpin(workspace: number, dir: string): void {
-  const w = workspaces.list.value.find((x) => x.key === workspace)
-  const favorite = w && favoriteById(favorites.list.value, w.favorite)
-  if (!favorite) return
-  workspaces.unpinDir(workspace, dir)
-  void favorites.unpin(favorite.id, dir)
+function togglePin(workspace: number): void {
+  workspaces.togglePin(workspace)
+  void focusSelected()
 }
 
-async function openPin(workspace: number, dir: string): Promise<void> {
+async function openIn(workspace: number, dir: string): Promise<void> {
   const reason = await window.maru.notDirectory(dir)
   if (reason) {
-    toasts.put('pin', {
+    toasts.put('favorite', {
       level: 'warning',
-      title: "Couldn't open the pinned directory",
+      title: "Couldn't open the favorite directory",
       lines: [reason]
     })
     return
   }
-  toasts.close('pin')
-  const key = workspaces.openPinned(workspace, dir)
+  toasts.close('favorite')
+  const key = workspaces.openIn(workspace, dir)
   if (key !== undefined) selectCell(key)
-}
-function renameFavorite(key: number): void {
-  const w = workspaces.list.value.find((x) => x.key === key)
-  const favorite = w && favoriteById(favorites.list.value, w.favorite)
-  if (w && favorite) void favorites.rename(favorite.id, workspaceName(w, home))
 }
 
 const SIDEBAR_WIDTH = 280
@@ -893,31 +813,13 @@ const SPLIT_OF: Partial<Record<LaunchWhere, SplitDirection>> = {
   'split-down': 'down'
 }
 
-// 즐겨찾기 항목 하나는 열린 workspace 하나만 가리킨다.
-function launch({ dir, command, where, name, favorite }: Launch): void {
+function launch({ dir, command, where }: Launch): void {
   const pane = command === SHELL ? {} : ({ command: commandArgv(command), keep: true } as const)
   const split = SPLIT_OF[where]
   if (where === 'cell') workspaces.openCell(dir, pane)
-  else if (where === 'workspace') {
-    const linked = favorite && workspaces.list.value.find((w) => w.favorite === favorite)
-    if (linked) showWorkspace(linked)
-    else workspaces.open(dir, pane, name, favorite, pinFor(favorite, dir))
-  }
+  else if (where === 'workspace') workspaces.open(dir, pane)
   // 목록을 띄운 뒤 창이 작아졌으면 자리가 없을 수 있어 다시 본다.
   else if (split) splitSelected(split, { startDir: dir, ...pane })
-  closeOverlay()
-}
-
-// 즐겨찾기로 연 workspace 의 첫 cell 이 핀의 디렉토리에서 열리면 그 핀을 맡는다. 같은 디렉토리가 닫힌 핀 줄로도 보이지 않게
-// 하기 위해서다.
-function pinFor(favorite: string | undefined, dir: string | undefined): string | undefined {
-  if (dir === undefined) return undefined
-  return favoriteById(favorites.list.value, favorite)?.pins?.find((p) => samePath(p, dir))
-}
-
-function showFavorite(favorite: string): void {
-  const linked = workspaces.list.value.find((w) => w.favorite === favorite)
-  if (linked) showWorkspace(linked)
   closeOverlay()
 }
 
@@ -943,13 +845,13 @@ const handlers: Record<CommandId, () => void> = {
     const w = selectedWorkspace()
     if (w) startRename(w.key)
   },
-  'toggle-favorite-workspace': () => {
+  'toggle-pin-workspace': () => {
     const w = selectedWorkspace()
-    if (w) toggleFavorite(w.key)
+    if (w) togglePin(w.key)
   },
-  'toggle-pin-cell': () => {
+  'toggle-favorite-cell': () => {
     const key = workspaces.selectedKey.value
-    if (key !== null) togglePin(key)
+    if (key !== null) toggleFavorite(key)
   },
   'next-cell': () => stepCell(1),
   'previous-cell': () => stepCell(-1),
@@ -1051,9 +953,9 @@ void window.maru.restoreScreen().then((r) => {
   if (r?.layout?.workspaces.length) {
     workspaces.restore(r.layout, r.ptys)
     for (const key of prefs.folded ?? []) folded.add(key)
-  } else {
-    workspaces.open()
   }
+  // cell 이 없는 핀 workspace 만 되살렸으면 고를 cell 이 없으므로, 레이아웃이 없을 때처럼 터미널 하나를 연다.
+  if (!workspaces.cells().length) workspaces.open()
   if (r?.notice) toasts.put('restore', restoreToast(r.notice))
   // 되살린 cell 은 아직 그려지기 전이라 잰 것이 없다. cell 을 다 잰 뒤 `flush: 'post'` 인 스크롤 watch 가 먼저
   // 돌도록, `settled` 는 그다음 프레임에 켠다.
@@ -1093,8 +995,6 @@ void window.maru.restoreScreen().then((r) => {
         :notification="ptyStates.notification"
         :urgent="urgent"
         :unread="unread"
-        :favorites="favoriteKeys"
-        :pins="favoritePins"
         :folded="folded"
         :jobs="jobs"
         :now="now"
@@ -1108,10 +1008,10 @@ void window.maru.restoreScreen().then((r) => {
         @move-workspace="moveWorkspace"
         @start-rename="startRename"
         @end-rename="endRename"
-        @toggle-favorite="toggleFavorite"
         @toggle-pin="togglePin"
-        @open-pin="openPin"
-        @unpin="unpin"
+        @toggle-favorite="toggleFavorite"
+        @open-dir="openIn"
+        @remove-favorite="workspaces.removeFavorite"
       />
     </div>
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />
@@ -1217,10 +1117,7 @@ void window.maru.restoreScreen().then((r) => {
       :position="config.layout.value.palette"
       :commands="config.launcher.value.commands"
       :home="home"
-      :favorites="favorites"
-      :linked="linkedFavorites"
       @launch="launch"
-      @show-favorite="showFavorite"
       @close="closeOverlay('launcher')"
     />
     <LauncherPalette
@@ -1230,7 +1127,6 @@ void window.maru.restoreScreen().then((r) => {
       :commands="config.launcher.value.commands"
       :home="home"
       :at="launchAt"
-      :favorites="favorites"
       @launch="launch"
       @close="closeOverlay('launch')"
     />

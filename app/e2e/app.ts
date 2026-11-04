@@ -199,7 +199,7 @@ async function launchApp(
   await app.evaluate(() => {
     process.once('exit', () => process.kill(process.pid, 'SIGKILL'))
   })
-  // 끄기는 늘 묻는다. 묻는 것을 재지 않는 테스트가 확인 창에 막히지 않게, pty 를 끄고 아무것도 남기지 않는 End everything 으로 답한다.
+  // 끄기는 늘 묻는다. 묻는 것을 재지 않는 테스트가 확인 창에 막히지 않게, pty 를 끄고 핀 workspace 만 남기는 End everything 으로 답한다.
   await stubDialog(app, END_EVERYTHING)
   const page = await app.firstWindow()
   // single 보기에서는 고르지 않은 cell 이 숨으므로, 맨 앞 cell 이 아니라 고른 cell 의 터미널을 기다린다.
@@ -613,8 +613,8 @@ export function cellGroups(page: Page) {
   return page.locator('.sidebar .group')
 }
 
-export function cellPin(page: Page, i: number) {
-  return cellGroups(page).nth(i).locator(':scope > .pin')
+export function cellFavorite(page: Page, i: number) {
+  return cellGroups(page).nth(i).locator(':scope > .favorite')
 }
 
 export function workspaceNames(page: Page) {
