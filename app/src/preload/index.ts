@@ -91,6 +91,12 @@ const api = {
   /** 줄을 넘어 이어 붙인 경로 후보마다 있는 가장 긴 것. 상대경로는 `openLink` 와 같은 기준으로 푼다. */
   longestExistingPaths: (groups: PathCandidates[], ptyId: string): Promise<FoundPath[]> =>
     ipcRenderer.invoke('link:longest-existing', groups, ptyId),
+  /** 붙이거나 끌어다 놓은 파일 가운데 이미지를 `ptyId` 의 cell 의 Canvas 문서로 넣는다. */
+  pasteFilesToCanvas: (ptyId: string, paths: string[]): void =>
+    ipcRenderer.send('canvas:paste-files', ptyId, paths),
+  /** 클립보드에 이미지가 있으면 `ptyId` 의 cell 의 Canvas 문서로 넣는다. */
+  pasteClipboardToCanvas: (ptyId: string): void =>
+    ipcRenderer.send('canvas:paste-clipboard', ptyId),
   setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),
   saveScreen: (screen: ScreenState): void => ipcRenderer.send('screen:state', screen),
   /** 앱이 뜬 뒤 첫 문서만 되살릴 것을 받는다. 다음 문서는 null 을 받아 빈 workspace 로 시작한다. */

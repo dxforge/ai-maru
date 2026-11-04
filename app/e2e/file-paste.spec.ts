@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { activePane, expect, panes, rows, split, test } from './app'
+import { activePane, canvasTitles, expect, panes, rows, split, test } from './app'
 
 /** 경로를 셸 인자로 감싸는 규칙의 케이스는 `paths.test.ts` 가 sh·bash·zsh 를 실제로 돌려 잰다. 여기서는 드롭하거나 붙여넣은 경로를 셸이 경로마다 인자 하나로 읽는지만 본다. */
 function makeFiles(dataDir: string): string[] {
@@ -131,23 +131,91 @@ test('Finder 에서 복사한 파일을 붙여넣으면 경로로 붙고, 텍스
   expect(await readArgs(page, text)).toEqual(['plain-textEND'])
 })
 
-test('이미지만 든 클립보드를 붙여넣으면 경로를 넣지 않고 xterm 이 빈 bracketed paste 를 보낸다', async ({
-  launch,
-  dataDir
-}) => {
-  const { app, page } = await launch()
-  const png = join(dataDir, 'shot.png')
+function writePng(dataDir: string, name: string): string {
+  const png = join(dataDir, name)
   writeFileSync(png, Buffer.from(PNG_1X1, 'base64'))
+  return png
+}
+
+function copyImage(png: string): void {
   execFileSync('osascript', [
     '-e',
     `set the clipboard to (read (POSIX file "${png}") as «class PNGf»)`
   ])
+}
 
-  const out = join(dataDir, 'raw-out')
+async function armRaw(page: Page, out: string, bracketed: boolean): Promise<void> {
+  const [on, off] = bracketed ? [`printf '\\033[?2004h'; `, `; printf '\\033[?2004l'`] : ['', '']
   await page.keyboard.type(
-    `printf '\\033[?2004h'; stty raw -echo; echo armed-$((1+1)); perl -e 'alarm 2; sysread STDIN,$b,64; print $b' > '${out}'; stty sane; printf '\\033[?2004l'\n`
+    `${on}stty raw -echo; echo armed-$((1+1)); perl -e 'alarm 2; sysread STDIN,$b,64; print $b' > '${out}'; stty sane${off}\n`
   )
   await expect(rows(page)).toContainText('armed-2')
+}
+
+const rawInput = (out: string) => () => existsSync(out) && readFileSync(out, 'latin1')
+
+const canvasImageWidths = (page: Page) =>
+  page
+    .locator('.canvas .image')
+    .evaluateAll((imgs) => imgs.map((img) => (img as HTMLImageElement).naturalWidth))
+
+test('이미지만 든 클립보드를 붙여넣으면 경로를 넣지 않고 xterm 이 빈 bracketed paste 를 보내며, Canvas 에 그 이미지가 뜬다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  copyImage(writePng(dataDir, 'shot.png'))
+
+  const out = join(dataDir, 'raw-out')
+  await armRaw(page, out, true)
   await paste(app)
-  await expect.poll(() => existsSync(out) && readFileSync(out, 'latin1')).toBe('\x1b[200~\x1b[201~')
+  await expect.poll(rawInput(out)).toBe('\x1b[200~\x1b[201~')
+  await expect(canvasTitles(page)).toHaveText(['Pasted image'])
+  await expect.poll(() => canvasImageWidths(page)).toEqual([1])
+})
+
+test('같은 클립보드 이미지를 두 번 붙여넣으면 Canvas 에 문서가 둘 남는다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  copyImage(writePng(dataDir, 'shot.png'))
+  await paste(app)
+  await expect(canvasTitles(page)).toHaveText(['Pasted image'])
+  await paste(app)
+  await expect(canvasTitles(page)).toHaveText(['Pasted image', 'Pasted image'])
+})
+
+test('⌃V 는 그대로 프로그램에 가고, 클립보드의 이미지가 Canvas 에 뜬다', async ({
+  launch,
+  dataDir
+}) => {
+  const { page } = await launch()
+  copyImage(writePng(dataDir, 'shot.png'))
+
+  const out = join(dataDir, 'raw-out')
+  await armRaw(page, out, false)
+  await page.keyboard.press('Control+v')
+  await expect.poll(rawInput(out)).toBe('\x16')
+  await expect(canvasTitles(page)).toHaveText(['Pasted image'])
+  await expect.poll(() => canvasImageWidths(page)).toEqual([1])
+})
+
+test('Finder 에서 복사하거나 드롭한 이미지 파일은 경로로 붙고, Canvas 에 파일 이름으로 뜬다', async ({
+  launch,
+  dataDir,
+  defer
+}) => {
+  const { app, page } = await launch()
+  const copied = writePng(dataDir, 'copied.png')
+  const dropped = writePng(dataDir, 'dropped.png')
+
+  const out = join(dataDir, 'paste-out')
+  await armPrintf(page)
+  await copyFiles([copied], defer)
+  await paste(app)
+  await dropFiles(page, 0, [dropped])
+  expect(await readArgs(page, out)).toEqual([copied, dropped, 'END'])
+  await expect(canvasTitles(page)).toHaveText(['dropped.png', 'copied.png'])
+  await expect.poll(() => canvasImageWidths(page)).toEqual([1, 1])
 })

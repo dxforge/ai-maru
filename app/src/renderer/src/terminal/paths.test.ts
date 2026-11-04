@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
-import { pastePaths } from './paths'
+import { diskPaths, pastePaths } from './paths'
 
 const NAMES = [
   '/tmp/plain.png',
@@ -32,13 +32,22 @@ describe('pastePaths', () => {
     expect(pastePaths(['/a/b-c_d.e/f@1+2=3,4%5:6.png'])).toBe('/a/b-c_d.e/f@1+2=3,4%5:6.png ')
   })
 
-  it('한글은 감싸지 않고 NFC 로 바꾼다', () => {
-    const nfd = '/tmp/한글.png'.normalize('NFD')
-    expect(pastePaths([nfd])).toBe(`${'/tmp/한글.png'.normalize('NFC')} `)
+  it('한글은 감싸지 않는다', () => {
+    expect(pastePaths(['/tmp/한글.png'])).toBe('/tmp/한글.png ')
   })
 
-  it('경로 여럿을 공백 하나로 잇고 끝에 공백을 두며, 빈 경로는 뺀다', () => {
-    expect(pastePaths(['/a b', '', '/c'])).toBe('/a\\ b /c ')
-    expect(pastePaths(['', ''])).toBe('')
+  it('경로 여럿을 공백 하나로 잇고 끝에 공백을 둔다', () => {
+    expect(pastePaths(['/a b', '/c'])).toBe('/a\\ b /c ')
+    expect(pastePaths([])).toBe('')
+  })
+})
+
+describe('diskPaths', () => {
+  it('디스크에 없는 File 의 빈 경로를 버리고 NFC 로 맞춘다', () => {
+    const nfd = '/tmp/한글.png'.normalize('NFD')
+    expect(diskPaths(['', '/tmp/a.png', nfd])).toEqual([
+      '/tmp/a.png',
+      '/tmp/한글.png'.normalize('NFC')
+    ])
   })
 })

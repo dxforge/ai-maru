@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   MessageChannelMain,
@@ -16,7 +17,7 @@ import {
   utilityProcess,
   type UtilityProcess
 } from 'electron'
-import { canvasPut, ownerOf, putCanvas, type CellOf } from './canvas'
+import { canvasPaste, canvasPut, ownerOf, putCanvas, type CellOf } from './canvas'
 import {
   closePaneDialog,
   createQuitPermission,
@@ -823,6 +824,15 @@ function start(): void {
       return { ok: false, reason: 'not a link' }
     }
     return openLink(text, pty, linkOpener)
+  })
+  const paste = canvasPaste(mainWindow, windowReady, cellOf, () => clipboard.read())
+  const pasteFailed = (e: unknown): void => console.error('maru: cannot put the pasted image:', e)
+  ipcMain.on('canvas:paste-files', (_event, pty: unknown, paths: unknown) => {
+    if (!isPtyId(pty) || !Array.isArray(paths) || !paths.every((p) => typeof p === 'string')) return
+    paste.files(pty, paths).catch(pasteFailed)
+  })
+  ipcMain.on('canvas:paste-clipboard', (_event, pty: unknown) => {
+    if (isPtyId(pty)) paste.clipboard(pty).catch(pasteFailed)
   })
   ipcMain.handle('link:longest-existing', (_event, groups: unknown, pty: unknown) => {
     if (!Array.isArray(groups) || !groups.every(isPathCandidates) || typeof pty !== 'string') {

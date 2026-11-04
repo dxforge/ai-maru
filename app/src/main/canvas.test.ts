@@ -3,7 +3,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
-import { canvasPut, putCanvas, type CellOf } from './canvas'
+import {
+  canvasDocFor,
+  canvasPaste,
+  canvasPut,
+  putCanvas,
+  type CellOf,
+  type ClipboardEntry
+} from './canvas'
 import { InvalidParams } from './cli-server'
 import { createWindowReady } from './window-ready'
 import type { CanvasOwner } from '../shared/canvas'
@@ -43,52 +50,34 @@ describe('putCanvas', () => {
     await putCanvas(() => win, readyWindow(), doc, noOwner)
     expect(sent).toEqual([['canvas:put', doc]])
   })
+})
 
-  it('이미지는 부른 때의 파일 내용과 이름·형식을 보낸다', async () => {
-    const { win, sent } = fakeWindow()
+describe('canvasDocFor', () => {
+  it('이미지는 부른 때의 파일 내용과 이름·형식을 든다', async () => {
     const path = file('Shot.PNG', [1, 2, 3])
-    await putCanvas(() => win, readyWindow(), { id: 'b', kind: 'image', path }, noOwner)
+    const doc = await canvasDocFor(path)
     writeFileSync(path, Buffer.from([9]))
-    expect(sent).toEqual([
-      [
-        'canvas:put',
-        {
-          id: 'b',
-          kind: 'image',
-          name: 'Shot.PNG',
-          mime: 'image/png',
-          bytes: Buffer.from([1, 2, 3])
-        }
-      ]
-    ])
+    expect(doc).toEqual({
+      id: path,
+      kind: 'image',
+      name: 'Shot.PNG',
+      mime: 'image/png',
+      bytes: Buffer.from([1, 2, 3])
+    })
   })
 
-  it('없는 파일이면 throw 하고 아무것도 보내지 않는다', async () => {
-    const { win, sent } = fakeWindow()
-    const path = join(dir, 'none.png')
-    await expect(
-      putCanvas(() => win, readyWindow(), { id: 'c', kind: 'image', path }, noOwner)
-    ).rejects.toThrow()
-    expect(sent).toEqual([])
+  it('없는 이미지 파일이면 throw 한다', async () => {
+    await expect(canvasDocFor(join(dir, 'none.png'))).rejects.toThrow()
   })
 
-  it('디렉토리면 throw 하고 아무것도 보내지 않는다', async () => {
-    const { win, sent } = fakeWindow()
+  it('이미지 이름의 디렉토리면 throw 한다', async () => {
     const path = join(dir, 'folder.png')
     mkdirSync(path)
-    await expect(
-      putCanvas(() => win, readyWindow(), { id: 'e', kind: 'image', path }, noOwner)
-    ).rejects.toThrow()
-    expect(sent).toEqual([])
+    await expect(canvasDocFor(path)).rejects.toThrow()
   })
 
-  it('이미지 확장자가 아니면 throw 하고 아무것도 보내지 않는다', async () => {
-    const { win, sent } = fakeWindow()
-    const path = file('notes.txt', [1])
-    await expect(
-      putCanvas(() => win, readyWindow(), { id: 'd', kind: 'image', path }, noOwner)
-    ).rejects.toThrow(/not an image/)
-    expect(sent).toEqual([])
+  it('`.md`·이미지가 아니면 문서가 없다', async () => {
+    expect(await canvasDocFor(file('notes.txt', [1]))).toBeNull()
   })
 })
 
@@ -267,5 +256,108 @@ describe('canvasPut', () => {
       expect(err).not.toBeInstanceOf(InvalidParams)
     }
     expect(gone.sent).toEqual([])
+  })
+})
+
+describe('canvasPaste', () => {
+  const inC1: CellOf = () => 'c-1'
+  const text: ClipboardEntry = {
+    types: ['text/plain'],
+    getType: () => Promise.reject(new Error('not on the clipboard'))
+  }
+  const emptyClipboard = () => Promise.resolve([text])
+  const png = (bytes: number[]) => (): Promise<ClipboardEntry[]> =>
+    Promise.resolve([
+      text,
+      {
+        types: ['image/png'],
+        getType: async () => new Blob([new Uint8Array(bytes)], { type: 'image/png' })
+      }
+    ])
+
+  it('클립보드에 PNG 가 없으면 아무것도 넣지 않는다', async () => {
+    const { win, sent } = fakeWindow()
+    await canvasPaste(() => win, readyWindow(), inC1, emptyClipboard).clipboard('p-1')
+    expect(sent).toEqual([])
+  })
+
+  it('클립보드 이미지는 PNG 바이트를 붙인 pty 의 cell 에 Pasted image 로 넣는다', async () => {
+    const { win, sent } = fakeWindow()
+    await canvasPaste(() => win, readyWindow(), inC1, png([1, 2])).clipboard('p-1')
+    expect(sent).toEqual([
+      [
+        'canvas:put',
+        {
+          id: expect.stringMatching(/^clipboard:/),
+          kind: 'image',
+          name: 'Pasted image',
+          mime: 'image/png',
+          bytes: Buffer.from([1, 2]),
+          pty: 'p-1',
+          cell: 'c-1'
+        }
+      ]
+    ])
+  })
+
+  it('같은 클립보드 이미지를 두 번 붙이면 다른 문서 둘이다', async () => {
+    const { win, sent } = fakeWindow()
+    const paste = canvasPaste(() => win, readyWindow(), noCell, png([1]))
+    await paste.clipboard('p-1')
+    await paste.clipboard('p-1')
+    const ids = sent.map(([, v]) => (v as { id: string }).id)
+    expect(ids).toHaveLength(2)
+    expect(ids[0]).not.toBe(ids[1])
+  })
+
+  it('파일은 이미지 확장자인 것만 경로를 id 로, 받은 순서대로 넣는다', async () => {
+    const { win, sent } = fakeWindow()
+    const a = file('a.png', [1])
+    const b = file('b.JPG', [2])
+    const md = file('n.md', [35])
+    await canvasPaste(() => win, readyWindow(), inC1, emptyClipboard).files('p-1', [
+      a,
+      md,
+      join(dir, 'dir'),
+      b
+    ])
+    expect(sent).toEqual([
+      [
+        'canvas:put',
+        {
+          id: a,
+          kind: 'image',
+          name: 'a.png',
+          mime: 'image/png',
+          bytes: Buffer.from([1]),
+          pty: 'p-1',
+          cell: 'c-1'
+        }
+      ],
+      [
+        'canvas:put',
+        {
+          id: b,
+          kind: 'image',
+          name: 'b.JPG',
+          mime: 'image/jpeg',
+          bytes: Buffer.from([2]),
+          pty: 'p-1',
+          cell: 'c-1'
+        }
+      ]
+    ])
+  })
+
+  it('못 읽는 이미지 경로가 앞에 있어도 뒤의 이미지는 넣고, 끝에 실패를 알린다', async () => {
+    const { win, sent } = fakeWindow()
+    const folder = join(dir, 'paste-folder.png')
+    mkdirSync(folder)
+    const after = file('after.png', [2])
+    const error = await canvasPaste(() => win, readyWindow(), inC1, emptyClipboard)
+      .files('p-1', [folder, after])
+      .catch((e: unknown) => e)
+    expect(sent.map(([, item]) => (item as { id: string }).id)).toEqual([after])
+    expect(error).toBeInstanceOf(AggregateError)
   })
 })
