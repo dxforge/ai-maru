@@ -89,7 +89,8 @@ export function createCanvas(now: () => number = Date.now) {
   const current = ref<string>()
   // 닫힌 cell 은 workspace 목록에서 빠져 이름을 구할 수 없으므로, 빠지기 직전의 이름을 기억해 둔다.
   const closed = reactive(new Map<string, OpenCell>())
-  // workspace 는 마지막 cell 이 다른 workspace 로 옮겨지면 닫힌 cell 없이 목록에서 빠지므로, 이름을 따로 기억해 둔다.
+  // 고정한 workspace 의 cell 이 모두 닫히거나 다른 workspace 로 옮겨지면 `choices` 에 그 workspace 의 cell 이 없어 이름을
+  // 구할 수 없으므로, 이름을 따로 기억해 둔다.
   const workspaceNames = new Map<string, string>()
 
   /** 열린 cell 과 선택된 cell 이 바뀔 때마다 부른다. */
@@ -139,22 +140,18 @@ export function createCanvas(now: () => number = Date.now) {
     return 'cell' in t ? entry.cell === t.cell : cellOf(entry.cell)?.group === t.workspace
   }
 
-  // 고른 닫힌 cell 과, 고정한 workspace 의 닫힌 cell 은 문서가 모두 지워져도 남긴다. 빠지면 드롭다운에 체크된 항목이
-  // 없어지기 때문이다. `'workspace'` 보기의 workspace 에는 선택된 열린 cell 이 늘 있어 그 그룹이 빠지지 않으므로, 그
-  // workspace 의 닫힌 cell 은 문서가 없으면 넣지 않는다.
+  // 고른 닫힌 cell 은 문서가 모두 지워져도 남긴다. 빠지면 드롭다운에 체크된 항목이 없어지기 때문이다.
   const choices = computed((): ChoiceGroup[] => {
-    const fixed = view.value === 'workspace' ? null : viewWorkspace.value
     const groups = groupChoices([
       ...cells.value.map((c) => ({ ...c, closed: false })),
       ...[...closed.values()]
-        .filter(
-          (c) =>
-            c.id === viewCell.value || c.group === fixed || docs.value.some((d) => d.cell === c.id)
-        )
+        .filter((c) => c.id === viewCell.value || docs.value.some((d) => d.cell === c.id))
         .map((c) => ({ ...c, closed: true }))
     ])
-    // 고정한 workspace 가 cell 없이 목록에서 빠졌으면 `cells` 가 빈 `ChoiceGroup` 으로 남긴다. 빠지면 드롭다운에 체크된
-    // 항목이 없어지기 때문이다.
+    // 고정한 workspace 의 그룹이 없으면(cell 이 모두 닫혔거나 다른 workspace 로 옮겨졌으면) 빈 `ChoiceGroup` 으로
+    // 남긴다. 빠지면 드롭다운에 체크된 항목이 없어지기 때문이다. `'workspace'` 보기의 workspace 에는 선택된 열린 cell 이
+    // 늘 있어 그 그룹이 빠지지 않는다.
+    const fixed = view.value === 'workspace' ? null : viewWorkspace.value
     const name = typeof fixed === 'string' ? workspaceNames.get(fixed) : undefined
     if (typeof fixed === 'string' && name !== undefined && !groups.some((g) => g.id === fixed))
       groups.push({ id: fixed, workspace: name, cells: [] })

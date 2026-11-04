@@ -450,26 +450,32 @@ describe('cell 별 보기', () => {
     expect(shownIds(c)).toEqual(['c'])
   })
 
-  it('고른 workspace 의 cell 이 모두 닫혀 문서가 없어도 그 묶음과 이름이 남고, 다른 보기로 바꾸면 빠진다', () => {
+  it('고른 workspace 의 cell 이 모두 닫혀 문서가 없어도 빈 묶음과 이름이 남고, 다른 보기로 바꾸면 빠진다', () => {
     const c = createCanvas()
     c.sync({ cells: [A, B, C], current: 'c-a' })
     c.choose({ workspace: 'w-other' })
     c.sync({ cells: [A, B], current: 'c-a' })
-    expect(c.choices.value.map((g) => g.id)).toEqual(['w-ws', 'w-other'])
-    expect(flat(c).find((x) => x.id === 'c-c')).toEqual({ ...C, closed: true })
+    expect(c.choices.value.map((g) => [g.id, g.cells.length])).toEqual([
+      ['w-ws', 2],
+      ['w-other', 0]
+    ])
     expect(c.workspaceName.value).toBe('other')
     c.choose('workspace')
     expect(c.choices.value.map((g) => g.id)).toEqual(['w-ws'])
   })
 
-  it('고정한 workspace 의 닫힌 cell 은 그 workspace 에 열린 cell 이 있어도 남는다', () => {
+  it('workspace 를 고정해도 문서 없는 닫힌 cell 은 고정 전에 닫혔든 고정 중에 닫혔든 고를 cell 에 넣지 않는다', () => {
     const c = createCanvas()
-    c.sync({ cells: [A, B], current: 'c-a' })
+    const D = named('c-d', 'ws', 'docs')
+    const E = named('c-e', 'ws', 'e2e')
+    c.sync({ cells: [A, B, D, E], current: 'c-a' })
+    c.sync({ cells: [A, D, E], current: 'c-a' })
     c.choose({ workspace: 'w-ws' })
+    c.put(owned('d', 'c-d'))
     c.sync({ cells: [A], current: 'c-a' })
     expect(flat(c)).toEqual([
       { ...A, closed: false },
-      { ...B, closed: true }
+      { ...D, closed: true }
     ])
   })
 
