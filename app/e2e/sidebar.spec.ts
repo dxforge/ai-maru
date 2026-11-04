@@ -1241,6 +1241,29 @@ test('workspace 핀은 핀을 꽂은 workspace 에 늘 보이고 아니면 헤�
   await run(page, 'echo pin-$((1+1))', 'pin-2')
 })
 
+test('핀을 꽂거나 빼도 workspace 들의 세로 위치가 그대로다', async ({ launch }) => {
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await newWorkspace(launched, 3)
+  const tops = async () => {
+    const ys: number[] = []
+    for (const i of [0, 1, 2]) ys.push((await workspaceHeads(page).nth(i).boundingBox())!.y)
+    return ys
+  }
+  const before = await tops()
+  const pin = workspaceHeads(page).nth(0).locator('.pin')
+
+  await workspaceHeads(page).nth(0).hover()
+  await pin.click()
+  await expect(pin).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(tops).toEqual(before)
+
+  await pin.click()
+  await expect(pin).toHaveAttribute('aria-pressed', 'false')
+  await expect.poll(tops).toEqual(before)
+})
+
 const closedRows = (page: Page) => page.locator('.sidebar .closed-row')
 
 test('핀을 꽂은 workspace 는 마지막 cell 을 닫아도 이름과 함께 남아 그 디렉토리의 줄을 보이고, 누르면 그 디렉토리에 셸 cell 을 열며, 재시작 뒤에도 남고 핀을 빼면 닫힌다', async ({
