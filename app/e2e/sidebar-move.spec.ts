@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import {
+  cellFavorite,
   cellViews,
   clickMenu,
   collapseSidebar,
@@ -15,6 +16,7 @@ import {
   test,
   toggleView,
   workspaceHeads,
+  zshHome,
   type Launched
 } from './app'
 
@@ -97,6 +99,61 @@ test('손잡이로 cell 을 끌어 같은 workspace 의 다른 자리에 놓으�
 
   await clickMenu(app, 'next-cell')
   await expect(cards(page).nth(1)).toHaveClass(/selected/)
+})
+
+test('즐겨찾기 cell 도 끌어 즐겨찾기가 아닌 cell 뒤에 놓으면 그 자리에 놓이고 즐겨찾기로 남는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await arrange(launched, [['alpha', 'bravo', 'charlie']])
+  await cards(page).nth(0).hover()
+  await cellFavorite(page, 0).click()
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+
+  await grabHandle(page, grip(page, 0), 0)
+  await moveTo(page, cards(page).nth(1), 0.75)
+  await expect(line(page)).toBeVisible()
+  await page.mouse.up()
+
+  await expect.poll(() => shape(page)).toEqual([['bravo', 'alpha', 'charlie']])
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'false')
+})
+
+test('닫힌 즐겨찾기 줄은 열린 즐겨찾기 cell 보다 앞에 있고, 그 위에 놓으면 첫 자리에 놓이며 선은 닫힌 줄과 첫 cell 사이에 보인다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: zshHome(dataDir, 'sub') })
+  const { page } = launched
+  await arrange(launched, [['alpha', 'bravo', 'charlie']])
+  await cards(page).nth(0).locator('.pane-row').click()
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  for (const i of [0, 1]) {
+    await cards(page).nth(i).hover()
+    await cellFavorite(page, i).click()
+    await expect(cellFavorite(page, i)).toHaveAttribute('aria-pressed', 'true')
+  }
+  await page.keyboard.type('exit\n')
+  const closed = page.locator('.sidebar .closed-card')
+  await expect(closed).toHaveCount(1)
+  await expect.poll(() => shape(page)).toEqual([['bravo', 'charlie']])
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  const above = (await closed.boundingBox())!
+  expect(above.y + above.height).toBeLessThanOrEqual((await cards(page).nth(0).boundingBox())!.y)
+
+  await grabHandle(page, grip(page, 1), 0)
+  await moveTo(page, closed, 0.5)
+  await expect(line(page)).toBeVisible()
+  const at = (await line(page).boundingBox())!.y
+  expect(at).toBeGreaterThanOrEqual(above.y + above.height)
+  expect(at).toBeLessThanOrEqual((await cards(page).nth(0).boundingBox())!.y)
+  await page.mouse.up()
+
+  await expect.poll(() => shape(page)).toEqual([['charlie', 'bravo']])
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
+  await expect(closed).toHaveCount(1)
 })
 
 test('끄는 동안에만 목록 끝에 New Workspace 칸이 보이고, 거기 놓으면 그 cell 하나로 된 workspace 를 목록 끝에 만든다', async ({

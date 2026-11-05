@@ -1387,7 +1387,7 @@ test('End everything 으로 끄면 터미널을 끝내고, 핀 workspace 는 이
   await run(again.page, 'echo up-$((1+1))', 'up-2')
 })
 
-test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell 이 위로 오며, 닫으면 닫힌 줄로 남고 누르면 뜬 런처에서 고른 셸을 그 디렉토리에 연다. 재시작 뒤에도 남는다', async ({
+test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell 이 제자리에 있으며 키는 그 터미널로 간다. 닫으면 닫힌 줄로 남고 누르면 뜬 런처에서 고른 셸을 첫 자리의 cell 로 그 디렉토리에 연다. 재시작 뒤에도 남는다', async ({
   launch,
   dataDir
 }) => {
@@ -1397,27 +1397,34 @@ test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell
   const { app, page } = launched
   await run(page, 'echo up-$((1+1))', 'up-2')
   await newCell(launched, 2)
+  await newCell(launched, 3)
+  await newWorkspace(launched, 4)
+  await run(page, 'echo two-$((1+1))', 'two-2')
+  await newCell(launched, 5)
   await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
-  const pin = workspaceHeads(page).nth(0).locator('.pin')
-  await expect(pin).toBeHidden()
+  await expect(workspaceHeads(page).nth(1).locator('.pin')).toBeHidden()
 
-  await cellItems(page).nth(1).hover()
-  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'false')
-  await cellFavorite(page, 1).click()
-  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
-  await expect(cellItems(page).nth(0)).toContainText('sub')
-  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'false')
+  // 핀이 꽂힌 workspace 는 핀 묶음으로 옮겨 가 목록의 맨 앞에 오고, 그 터미널들도 DOM 에서 앞으로 옮겨진다.
+  await cellItems(page).nth(4).hover()
+  await expect(cellFavorite(page, 4)).toHaveAttribute('aria-pressed', 'false')
+  await cellFavorite(page, 4).click()
+  const pin = workspaceHeads(page).nth(0).locator('.pin')
   await expect(pin).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellItems(page).nth(1)).toContainText('sub')
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'false')
+  await run(page, 'echo kept-$((1+1))', 'kept-2')
 
   await page.keyboard.type('exit\n')
-  await expect(cellItems(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(4)
   await expect(closedRows(page)).toHaveCount(1)
   await expect(closedRows(page)).toContainText('sub')
 
   await reopenShell(page, closedRows(page))
-  await expect(cellItems(page)).toHaveCount(2)
+  await expect(cellItems(page)).toHaveCount(5)
   await expect(closedRows(page)).toHaveCount(0)
   await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'false')
   await run(page, 'pwd', `${home}/sub`)
 
   await page.keyboard.type('exit\n')
@@ -1425,7 +1432,7 @@ test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell
   await restartWith(app)
 
   const again = await launch(shell)
-  await expect(cellItems(again.page)).toHaveCount(1)
+  await expect(cellItems(again.page)).toHaveCount(4)
   await expect(closedRows(again.page)).toHaveCount(1)
   await expect(closedRows(again.page)).toContainText('sub')
 })
@@ -1446,17 +1453,18 @@ test('즐겨찾기는 cell 줄과 닫힌 줄의 별에서 빼고, workspace 의 
 
   await cellItems(page).nth(1).hover()
   await cellFavorite(page, 1).click()
-  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
-  await cellFavorite(page, 0).click()
-  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'false')
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
+  await cellFavorite(page, 1).click()
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'false')
   await expect(closedRows(page)).toHaveCount(0)
-  // 즐겨찾기를 빼며 cell 이 자리를 옮겨도 키는 고른 cell 의 터미널로 간다.
+  // 다른 cell 의 별을 눌러도 키는 고른 cell 의 터미널로 간다.
   await run(page, 'echo un-$((1+1))', 'un-2')
   await expect(pin).toHaveAttribute('aria-pressed', 'true')
 
   await cellItems(page).nth(2).hover()
   await cellFavorite(page, 2).click()
-  await expect(cellItems(page).nth(0)).toContainText('lib')
+  await expect(cellFavorite(page, 2)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellItems(page).nth(2)).toContainText('lib')
   await page.keyboard.type('exit\n')
   await expect(closedRows(page)).toHaveCount(1)
   await page.locator('.sidebar .closed-card > .favorite').click()
@@ -1465,11 +1473,11 @@ test('즐겨찾기는 cell 줄과 닫힌 줄의 별에서 빼고, workspace 의 
 
   await cellItems(page).nth(1).hover()
   await cellFavorite(page, 1).click()
-  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
   await workspaceHeads(page).nth(0).hover()
   await pin.click()
   await expect(pin).toHaveAttribute('aria-pressed', 'false')
-  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
 })
 
 /**
@@ -1532,8 +1540,8 @@ test('팔레트의 Toggle Cell Favorite 는 고른 cell 을 즐겨찾기에 넣�
   await openPalette(launched)
   await page.keyboard.type('cell favorite')
   await page.keyboard.press('Enter')
-  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
-  await expect(cellItems(page).nth(0)).toContainText('gone')
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellItems(page).nth(1)).toContainText('gone')
   await run(page, 'echo cmd-$((1+1))', 'cmd-2')
 
   await page.keyboard.type('exit\n')
@@ -1569,7 +1577,7 @@ test('닫힌 즐겨찾기 줄을 누르면 그 줄 바로 아래에 줄의 폭�
   await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
   await cellItems(page).nth(1).hover()
   await cellFavorite(page, 1).click()
-  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
   await page.keyboard.type('exit\n')
   await expect(closedRows(page)).toHaveCount(1)
   const card = page.locator('.sidebar .closed-card')
@@ -1681,7 +1689,7 @@ test('닫힌 줄의 런처를 닫은 뒤 디렉토리 단계부터 연 런처는
   await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
   await cellItems(page).nth(1).hover()
   await cellFavorite(page, 1).click()
-  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
   await page.keyboard.type('exit\n')
   await expect(closedRows(page)).toHaveCount(1)
   await closedRows(page).click()

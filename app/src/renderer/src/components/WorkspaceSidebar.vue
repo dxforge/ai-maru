@@ -33,7 +33,6 @@ import {
 } from '../workspace/sidebarRows'
 import PinIcon from './PinIcon.vue'
 import {
-  favoriteCount,
   focusedPane,
   orderedPanes,
   pinnedCount,
@@ -125,10 +124,8 @@ type Item = ReturnType<typeof cellGroup> | ({ kind: 'closed' } & ClosedRow)
 
 function items(src: RowSource, w: DeepReadonly<Workspace>): Item[] {
   const base = labelBase(w)
-  const cells = w.cells.map((c, i) => cellGroup(src, c, base, i))
-  const at = favoriteCount(w)
   const closed = closedRows(w, home).map((r): Item => ({ kind: 'closed', ...r }))
-  return [...cells.slice(0, at), ...closed, ...cells.slice(at)]
+  return [...closed, ...w.cells.map((c, i) => cellGroup(src, c, base, i))]
 }
 
 const groups = computed(() => {
@@ -192,6 +189,7 @@ function spans(): SidebarSpans {
       (el) => {
         const key = Number(el.dataset.workspace)
         const w = workspaces.find((x) => x.key === key)
+        const closed = el.querySelectorAll<HTMLElement>(':scope > .closed-card')
         return {
           ...spanOf(el),
           key,
@@ -199,17 +197,13 @@ function spans(): SidebarSpans {
           count: w?.cells.length ?? 0,
           cells: Array.from(el.querySelectorAll(':scope > .group'), spanOf),
           folded: folded.has(key),
-          favorites: w ? favoriteCount(w) : 0,
-          closed: closedSpan(Array.from(el.querySelectorAll(':scope > .closed-card'), spanOf))
+          closedBottom: closed.length ? spanOf(closed[closed.length - 1]).bottom : undefined
         }
       }
     ),
     newWorkspace: slot ? spanOf(slot) : undefined
   }
 }
-
-const closedSpan = (s: Span[]): Span | undefined =>
-  s.length ? { top: s[0].top, bottom: s[s.length - 1].bottom } : undefined
 
 function drag(what: Dragged, source: HTMLElement, from: PointerEvent): DragSession {
   const r = source.getBoundingClientRect()
