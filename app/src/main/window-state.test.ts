@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it } from 'vitest'
 import {
+  initialPlacement,
   parseWindowState,
   restoreWindowState,
   trackWindowState,
@@ -104,6 +105,23 @@ describe('windowBounds', () => {
 
   it('저장한 상태가 없으면 null', () => {
     expect(windowBounds(null, [main])).toBeNull()
+  })
+})
+
+describe('initialPlacement', () => {
+  const primary = { x: 0, y: 25, width: 1440, height: 875 }
+
+  it('되살린 자리가 없는 e2e 의 창은 주 모니터 작업 영역의 왼쪽 위에 둔다', () => {
+    expect(initialPlacement(null, true, primary)).toEqual({ x: 0, y: 25 })
+  })
+
+  it('되살린 자리가 있으면 e2e 의 창이어도 그 자리를 준다', () => {
+    expect(initialPlacement(BOUNDS, true, primary)).toEqual(BOUNDS)
+    expect(initialPlacement(BOUNDS, false, primary)).toEqual(BOUNDS)
+  })
+
+  it('되살린 자리가 없는 사용자의 창은 자리를 정하지 않는다', () => {
+    expect(initialPlacement(null, false, primary)).toEqual({})
   })
 })
 

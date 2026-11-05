@@ -295,17 +295,9 @@ test('창을 옮긴 뒤 앱이 강제로 끝나도 다음 실행은 옮긴 자�
   expect(await win(second.app, 'getBounds')).toEqual(placed)
 })
 
-test('테스트로 띄운 창은 화면에 올리지 않고, 되살릴 자리가 없으면 주 모니터 안에 둔다', async ({
-  launch
-}) => {
+test('테스트로 띄운 창은 화면에 올리지 않는다', async ({ launch }) => {
   const { app } = await launch()
   expect(await win(app, 'isVisible')).toBe(false)
-  const bounds = await win(app, 'getBounds')
-  const area = await app.evaluate(({ screen }) => screen.getPrimaryDisplay().workArea)
-  expect(bounds.x).toBeGreaterThanOrEqual(area.x)
-  expect(bounds.y).toBeGreaterThanOrEqual(area.y)
-  expect(bounds.x + bounds.width).toBeLessThanOrEqual(area.x + area.width)
-  expect(bounds.y + bounds.height).toBeLessThanOrEqual(area.y + area.height)
 })
 
 test('테스트로 띄운 창은 최대화·최대화 풀기·최소화해도 화면에 올리지 않는다', async ({

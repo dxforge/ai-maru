@@ -92,6 +92,7 @@ import {
   type StateStore
 } from './state'
 import {
+  initialPlacement,
   restoreWindowState,
   trackWindowState,
   windowBounds,
@@ -534,7 +535,6 @@ function openExternal(url: string): void {
 function createWindow(state: WindowState | null): void {
   const displays = screen.getAllDisplays().map((d) => d.bounds)
   const restored = windowBounds(state, displays)
-  const primary = screen.getPrimaryDisplay().workArea
   const win = new BrowserWindow({
     width: 1000,
     height: 700,
@@ -544,8 +544,7 @@ function createWindow(state: WindowState | null): void {
     // 자리를 되살리지 않은 e2e 의 창은 주 모니터에 둔다. 배율을 고정해도 창이 놓인 모니터에 따라 결과가 달라지는 테스트가 있기
     // 때문이다(`composition.spec.ts` 의 webgl DPR 1 케이스는 외장 HiDPI 모니터에서 실패한다). Electron 의 기본 배치가 어느
     // 모니터에 창을 놓는지는 확인하지 않았다.
-    ...(unobtrusive ? { x: primary.x, y: primary.y } : {}),
-    ...restored,
+    ...initialPlacement(restored, unobtrusive, screen.getPrimaryDisplay().workArea),
     show: !unobtrusive,
     focusable: !unobtrusive,
     backgroundColor: (theme ?? DEFAULT_WINDOW_THEME).background,

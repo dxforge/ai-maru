@@ -53,6 +53,15 @@ export function windowBounds(state: WindowState | null, displays: Rectangle[]): 
   return displays.some((d) => contains(d, bounds)) ? bounds : null
 }
 
+export function initialPlacement(
+  restored: Rectangle | null,
+  unobtrusive: boolean,
+  primary: Rectangle
+): Partial<Rectangle> {
+  if (restored) return restored
+  return unobtrusive ? { x: primary.x, y: primary.y } : {}
+}
+
 export function restoreWindowState(win: StatefulWindow, state: WindowState | null): void {
   if (state?.isMaximized) win.maximize()
   if (state?.isFullScreen) win.setFullScreen(true)
