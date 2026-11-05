@@ -50,6 +50,7 @@ import {
   checkRestart,
   rendererGoneDialog,
   restartDialog,
+  restartOutcome,
   restartRefusal,
   type RendererGone,
   type RestartCheck
@@ -80,11 +81,13 @@ import { createPtyStates } from './pty-state'
 import { createSeen } from './seen'
 import {
   createStateStore,
+  initialState,
   readState,
   removeOldStateFiles,
   restorePlan,
   sessionPtys,
   stateFile,
+  type FinishOptions,
   type Outcome,
   type StateStore
 } from './state'
@@ -100,6 +103,7 @@ import { isPathCandidates } from '../shared/link'
 import { paneRows } from '../shared/pane-list'
 import type { CloseAnswer, PaneReply } from '../shared/pane'
 import {
+  joinLayout,
   parseScreen,
   screenPanes,
   type LayoutPart,
@@ -305,7 +309,7 @@ function restartCheck(): Promise<RestartCheck> {
 }
 
 /** 쓰지 못하면 던진다. 다음에 뜬 앱이 고른 결과를 모르기 때문이다. */
-function finishWith(o: Outcome): void {
+function finishWith(o: Outcome, options?: FinishOptions): void {
   if (outcome) return
   try {
     if (savedWindow) store?.setWindow(savedWindow())
@@ -314,7 +318,7 @@ function finishWith(o: Outcome): void {
   }
   if (o === 'keep') jobs?.detach()
   try {
-    store?.finish(o)
+    store?.finish(o, options)
   } catch (err) {
     if (o === 'keep') jobs?.resume()
     throw err
@@ -343,17 +347,13 @@ function relaunch(): void {
   app.quit()
 }
 
-function restartOutcome(check: RestartCheck): Outcome {
-  if (check.ok) return 'keep'
-  return check.reason === 'incompatible' && check.result === 'empty' ? 'empty' : 'layout'
-}
-
 async function restartByUser(): Promise<void> {
   const check = await restartCheck()
   if (!check.ok && check.reason === 'dev_server') return
   if (!check.ok && !(await confirm(restartDialog(check)))) return
   try {
-    finishWith(restartOutcome(check))
+    const next = restartOutcome(check)
+    finishWith(next.outcome, { dropPins: next.dropPins })
   } catch (err) {
     dialog.showErrorBox('Cannot restart', err instanceof Error ? err.message : String(err))
     return
@@ -399,12 +399,11 @@ const restartHandlers: Handlers = {
       )
     }
     if (!check.ok && !kill) {
-      throw new CliError(-32001, 'ptys_would_end', restartRefusal(check), {
-        ptys: check.ptys,
-        result: check.result
-      })
+      const { code, message } = restartRefusal(check)
+      throw new CliError(-32001, code, message, { ptys: check.ptys, result: check.result })
     }
-    finishWith(restartOutcome(check))
+    const next = restartOutcome(check)
+    finishWith(next.outcome, { dropPins: next.dropPins })
     return new AfterReply(null, relaunch)
   }
 }
@@ -483,12 +482,9 @@ function confirmQuit(): void {
   if (quitCheck) return
   quitCheck = (async () => {
     if (!quitPermission.allowed()) {
-      const workspaces = openWorkspaces()
-      const open = workspaces.flatMap((w) => w.cells.flatMap((c) => c.panes)).length
+      const open = openWorkspaces().flatMap((w) => w.cells.flatMap((c) => c.panes)).length
       if (open === 0) {
-        // pane 이 없어도 cell 이 없는 핀 workspace 가 남아 있으면 레이아웃을 남긴다. 다음 실행에도 핀 workspace 가 있어야
-        // 하기 때문이다.
-        quitWith(workspaces.length ? 'layout' : 'end')
+        quitWith('end')
       } else {
         const { panes } = screenPanes(parseScreen(lastScreen))
         const running = {
@@ -649,13 +645,9 @@ function start(): void {
   removeOldStateFiles(userData)
   const launcherFile = join(userData, 'launcher.json')
   for (const file of [stateFile(userData), launcherFile]) removeTmpFiles(file)
-  const layout = read.layout.kind === 'ok' ? read.layout.value : null
-  const sessions = read.sessions.kind === 'ok' ? read.sessions.value : null
-  store = createStateStore({
-    path: stateFile(userData),
-    debounceMs: STATE_DEBOUNCE_MS,
-    initial: { layout, sessions, view: read.view }
-  })
+  const initial = initialState(read)
+  const { layout, pins, sessions } = initial
+  store = createStateStore({ path: stateFile(userData), debounceMs: STATE_DEBOUNCE_MS, initial })
   applyTheme(read.view.theme ?? DEFAULT_WINDOW_THEME)
   ipcMain.on('theme:apply', (_event, t: unknown) => {
     const parsed = parseWindowTheme(t)
@@ -667,7 +659,8 @@ function start(): void {
     const records = await Promise.all(alive.map((pty) => readRecord(ptyDir(), pty)))
     const protocols = new Map(alive.map((pty, i) => [pty, records[i]?.protocol_version ?? null]))
     const p = restorePlan(read, (pty) => (protocols.has(pty) ? protocols.get(pty) : undefined))
-    if (p.mode !== 'full') store?.discard(p.mode === 'empty' ? 'empty' : 'layout')
+    // `layout` 을 읽지 못한 `empty` 는 `initialState` 가 이미 비웠다.
+    if (p.mode === 'layout') store?.discard('layout')
     return p
   })()
   // `killPtys` 는 `keep` 에 없는 pty 를 모두 끄므로, 새 pty 는 이 정리가 끝난 뒤에 띄운다.
@@ -677,7 +670,7 @@ function start(): void {
     for (const id of keep) ptyStates.watch(id)
   })
   let toRestore: Promise<Restore> | null = plan.then((p) => ({
-    layout: p.mode === 'empty' ? null : layout,
+    layout: joinLayout(layout, pins),
     ptys:
       p.mode === 'full' && sessions
         ? Object.fromEntries(sessions.ptys.map(({ pane, pty }) => [pane, pty]))

@@ -3,12 +3,14 @@ import { join } from 'node:path'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import {
   parseLayoutPart,
+  parsePinsPart,
   parseViewPrefs,
   parseScreen,
   splitScreen,
   STATE_VERSIONS,
   type LayoutPart,
-  type Restore,
+  type PinsPart,
+  type RestoreNotice,
   type ViewPrefs
 } from '../shared/screen'
 import { parseWindowTheme, type WindowTheme } from '../shared/theme'
@@ -18,15 +20,18 @@ import { writeJsonAtomicSync } from './json-file'
 import { parseWindowState, type WindowState } from './window-state'
 
 /**
- * `state.json` 은 상태가 바뀔 때마다 쓰고 다음에 뜬 앱이 읽는다. 두 앱의 빌드가 다를 수 있어 세 부분에 따로 버전
+ * `state.json` 은 상태가 바뀔 때마다 쓰고 다음에 뜬 앱이 읽는다. 두 앱의 빌드가 다를 수 있어 네 부분에 따로 버전
  * (`STATE_VERSIONS`)을 두고 따로 읽는다. 잃었을 때의 결과가 부분마다 다르기 때문이다.
- * - `layout` — workspace·cell·pane 의 배치. 잃으면 빈 화면으로 뜬다.
+ * - `layout` — workspace·cell·pane 의 배치. 잃으면 핀 workspace 만 cell 없이 뜬다.
+ * - `pins` — 핀 workspace 의 순서와 이름·`dir`·즐겨찾기. 잃으면 배치는 되살리지만 핀 workspace 는 핀·이름·즐겨찾기를
+ *   잃고, cell 이 없던 핀 workspace 는 사라진다.
  * - `sessions` — pane 마다 붙은 pty 와 job 표. 잃으면 레이아웃만 되살리고 pane 마다 새 셸을 띄운다. 둘은 함께 잇거나
  *   함께 버린다 — pane 의 pty 만 잇고 job 표를 버리면 job 을 띄운 claude 가 종료 알림을 받지 못한다.
  * - `view` — 보기 설정과 창. 필드마다 따로 읽어 틀린 필드만 버린다.
  */
 export type StateFile = {
   layout: LayoutPart | null
+  pins: PinsPart | null
   sessions: SessionsPart | null
   view: ViewPart
 }
@@ -45,6 +50,7 @@ type Part<T> = { kind: 'absent' } | { kind: 'bad' } | { kind: 'ok'; value: T }
 
 export type ReadState = {
   layout: Part<LayoutPart>
+  pins: Part<PinsPart>
   sessions: Part<SessionsPart>
   view: ViewPart
 }
@@ -88,12 +94,19 @@ function part<T>(v: unknown, parse: (v: unknown) => T | null): Part<T> {
   return value === null ? { kind: 'bad' } : { kind: 'ok', value }
 }
 
+const unread = (kind: 'absent' | 'bad'): ReadState => ({
+  layout: { kind },
+  pins: { kind },
+  sessions: { kind },
+  view: parseViewPart(null)
+})
+
 export function readState(path: string): ReadState {
   let text: string
   try {
     text = readFileSync(path, 'utf8')
   } catch {
-    return { layout: { kind: 'absent' }, sessions: { kind: 'absent' }, view: parseViewPart(null) }
+    return unread('absent')
   }
   let v: unknown
   try {
@@ -101,16 +114,28 @@ export function readState(path: string): ReadState {
   } catch {
     v = null
   }
-  if (!isObj(v))
-    return { layout: { kind: 'bad' }, sessions: { kind: 'bad' }, view: parseViewPart(null) }
+  if (!isObj(v)) return unread('bad')
   return {
     layout: part(v.layout, parseLayoutPart),
+    pins: part(v.pins, parsePinsPart),
     sessions: part(v.sessions, parseSessionsPart),
     view: parseViewPart(v.view)
   }
 }
 
-type RestorePlan = { mode: 'full' | 'layout' | 'empty'; notice: Restore['notice'] }
+const okValue = <T>(p: Part<T>): T | null => (p.kind === 'ok' ? p.value : null)
+
+export function initialState(read: ReadState): StateFile {
+  const state: StateFile = {
+    layout: okValue(read.layout),
+    pins: okValue(read.pins),
+    sessions: okValue(read.sessions),
+    view: read.view
+  }
+  return read.layout.kind === 'ok' ? state : withoutLayout(state)
+}
+
+type RestorePlan = { mode: 'full' | 'layout' | 'empty'; notice: RestoreNotice[] }
 
 /** 끝난 job 의 pty 도 넣는다. job 은 `--keep` 으로 떠, 끝난 뒤에도 `maru job read` 가 그 pty 의 화면을 읽기 때문이다. */
 export function sessionPtys(s: SessionsPart): string[] {
@@ -123,25 +148,32 @@ export function sessionPtys(s: SessionsPart): string[] {
  * pane 이 어긋나기 때문이다.
  */
 export function restorePlan(
+  read: Pick<ReadState, 'layout' | 'pins' | 'sessions'>,
+  protocolOf: (pty: string) => number | null | undefined
+): RestorePlan {
+  const plan = layoutPlan(read, protocolOf)
+  return read.pins.kind === 'bad' ? { ...plan, notice: [...plan.notice, 'pins'] } : plan
+}
+
+function layoutPlan(
   read: Pick<ReadState, 'layout' | 'sessions'>,
   protocolOf: (pty: string) => number | null | undefined
 ): RestorePlan {
   if (read.layout.kind !== 'ok')
-    return { mode: 'empty', notice: read.layout.kind === 'bad' ? 'layout' : null }
-  if (read.sessions.kind === 'absent') return { mode: 'layout', notice: null }
-  if (read.sessions.kind === 'bad') return { mode: 'layout', notice: 'sessions' }
+    return { mode: 'empty', notice: read.layout.kind === 'bad' ? ['layout'] : [] }
+  if (read.sessions.kind === 'absent') return { mode: 'layout', notice: [] }
+  if (read.sessions.kind === 'bad') return { mode: 'layout', notice: ['sessions'] }
   const differs = sessionPtys(read.sessions.value).some((pty) => {
     const v = protocolOf(pty)
     return v !== undefined && v !== PROTOCOL_VERSION
   })
-  return differs ? { mode: 'layout', notice: 'protocol' } : { mode: 'full', notice: null }
+  return differs ? { mode: 'layout', notice: ['protocol'] } : { mode: 'full', notice: [] }
 }
 
-/**
- * `keep` 은 pty 를 남기고, `layout` 은 `sessions` 를 비운다. `end` 는 `sessions` 를 비우고 `layout` 에서 핀 workspace 만
- * cell 없이 남긴다(`pinnedOnly`). `empty` 는 `layout`·`sessions` 를 비운다. `view` 는 늘 남는다.
- */
-export type Outcome = 'keep' | 'layout' | 'end' | 'empty'
+/** `keep` 은 pty 를 남기고, `layout` 은 `sessions` 를 비운다. `end` 는 `layout`·`sessions` 를 비운다. `view` 는 늘 남는다. */
+export type Outcome = 'keep' | 'layout' | 'end'
+
+export type FinishOptions = { dropPins?: boolean }
 
 export type StateStore = {
   /** renderer 가 보낸 화면을 그대로 받는다. 자주 오므로 쓸 때 `parseScreen` 으로 검사하고, 틀리면 버린다. */
@@ -156,7 +188,7 @@ export type StateStore = {
    * 고른 결과로 바로 쓰고, 그 뒤의 변경은 버린다. 끄는 동안 pty 가 끝나 pane 이 닫혀도 고른 결과가 남게 하기
    * 위해서다. 쓰지 못하면 던지고 끝내지 않은 채로 둔다.
    */
-  finish(outcome: Outcome): void
+  finish(outcome: Outcome, options?: FinishOptions): void
   /**
    * 쓰지 않고 끝낸다. `finish` 가 던진 뒤에도 끄는 쪽이 부른다. 끄는 동안 pty 가 끝나 pane 이 닫힌 화면을 타이머가
    * 쓰면, 디스크에 남은 마지막 상태가 그 화면으로 바뀌기 때문이다.
@@ -168,35 +200,13 @@ export type StateStore = {
   layout(): Readonly<LayoutPart> | null
 }
 
-/**
- * 핀 workspace 만 cell 을 모두 닫은 모양으로 남긴다. cell 이 있던 workspace 의 `dir` 은 첫 cell 의 첫 pane 의 cwd 다.
- * cell 이 있는 동안 `autoWorkspaceName`(`shared/names.ts`)이 그 pane 으로 이름을 짓기 때문이다. 핀 workspace 가 없으면 null 이다.
- */
-export function pinnedOnly(layout: LayoutPart): LayoutPart | null {
-  const workspaces = layout.workspaces
-    .filter((w) => w.pinned)
-    .map((w) => {
-      if (!w.cells.length) return w
-      const dir = w.cells[0].panes[0]?.cwd
-      const next = { ...w, cells: [] }
-      if (dir === undefined) delete next.dir
-      else next.dir = dir
-      return next
-    })
-  return workspaces.length ? { ...layout, workspaces, selected: null } : null
-}
-
-function droppedLayout(layout: LayoutPart | null, outcome: Outcome): LayoutPart | null {
-  if (outcome === 'empty') return null
-  return outcome === 'end' && layout ? pinnedOnly(layout) : layout
+function withoutLayout(state: StateFile): StateFile {
+  return { ...state, layout: null, sessions: null }
 }
 
 function dropped(state: StateFile, outcome: Outcome): StateFile {
-  return {
-    ...state,
-    sessions: outcome === 'keep' ? state.sessions : null,
-    layout: droppedLayout(state.layout, outcome)
-  }
+  if (outcome === 'keep') return state
+  return outcome === 'layout' ? { ...state, sessions: null } : withoutLayout(state)
 }
 
 export function createStateStore(o: {
@@ -215,7 +225,7 @@ export function createStateStore(o: {
     const parsed = parseScreen(screen)
     screen = undefined
     if (!parsed) return
-    const { layout, ptys } = splitScreen(parsed)
+    const { layout, pins, ptys } = splitScreen(parsed)
     const { viewMode, sidebar, canvas } = parsed
     const view: ViewPart = {
       ...state.view,
@@ -225,7 +235,7 @@ export function createStateStore(o: {
     }
     if (canvas) view.canvas = { ...canvas }
     else delete view.canvas
-    state = { layout, sessions: { ...sessions(), ptys }, view }
+    state = { layout, pins, sessions: { ...sessions(), ptys }, view }
   }
   const write = (): void => {
     clearTimeout(timer)
@@ -267,10 +277,11 @@ export function createStateStore(o: {
       enabled = true
       changed()
     },
-    finish(outcome) {
+    finish(outcome, options) {
       if (finished) return
       applyScreen()
-      const next = dropped(state, outcome)
+      const kept = dropped(state, outcome)
+      const next = options?.dropPins ? { ...kept, pins: null } : kept
       writeJsonAtomicSync(o.path, next)
       state = next
       stop()

@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
+import { STATE_VERSIONS } from '../src/shared/screen'
 import {
   activeHeader,
   blockStateWrites,
@@ -254,7 +255,10 @@ test('Keep layout only 로 끄면 pty 를 끄고, 다음 실행은 같은 배치
   await first.app.evaluate(({ app }) => app.quit())
   await closed
   expect(sockets(dataDir)).toEqual([])
-  expect(readState(dataDir)).toMatchObject({ sessions: null, layout: { version: 1 } })
+  expect(readState(dataDir)).toMatchObject({
+    sessions: null,
+    layout: { version: STATE_VERSIONS.layout }
+  })
 
   const { page } = await launch(zsh)
   await expect(panes(page)).toHaveCount(2)
@@ -355,5 +359,8 @@ test('macOS 가 로그아웃·재시동으로 앱을 끝낼 때는 묻지 않고
   })
   await closed
   expect(sockets(dataDir)).toEqual([])
-  expect(readState(dataDir)).toMatchObject({ sessions: null, layout: { version: 1 } })
+  expect(readState(dataDir)).toMatchObject({
+    sessions: null,
+    layout: { version: STATE_VERSIONS.layout }
+  })
 })

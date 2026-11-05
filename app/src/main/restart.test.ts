@@ -12,6 +12,7 @@ import {
   ptyProtocol,
   rendererGoneDialog,
   restartDialog,
+  restartOutcome,
   restartRefusal,
   type Incompatible
 } from './restart'
@@ -55,13 +56,10 @@ describe('ptyProtocol', () => {
 })
 
 describe('installedVersions', () => {
-  it('세 버전이 모두 정수면 읽고, 파일이 없거나 틀리면 null 이다', async () => {
-    expect(await installedVersions(versions({ layout: 2, sessions: 1, view: 3, x: 1 }))).toEqual({
-      layout: 2,
-      sessions: 1,
-      view: 3
-    })
-    expect(await installedVersions(versions({ layout: 2, sessions: 1 }))).toBeNull()
+  it('부분마다의 버전이 모두 정수면 읽고, 파일이 없거나 틀리거나 pins 가 없는 옛 빌드의 파일이면 null 이다', async () => {
+    const all = { layout: 2, sessions: 1, view: 3, pins: 4 }
+    expect(await installedVersions(versions({ ...all, x: 1 }))).toEqual(all)
+    expect(await installedVersions(versions({ layout: 2, sessions: 1, view: 3 }))).toBeNull()
     expect(await installedVersions(versions('{nope'))).toBeNull()
     expect(await installedVersions(join(dir, 'missing.json'))).toBeNull()
   })
@@ -121,19 +119,67 @@ describe('checkRestart', () => {
     })
   })
 
-  it('layout 형식이 다르거나 형식 버전 파일이 없으면 빈 화면이다', async () => {
+  it('pins 형식만 다르면 pty 에 다시 붙는 복원이고, 꺼질 pty 는 없다', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'maru-live-'))
+    const server = await livePty(d, 'p-0000000a')
+    try {
+      const file = versions({ ...STATE_VERSIONS, pins: STATE_VERSIONS.pins + 1 })
+      expect(await check(fakeBin(String(PROTOCOL_VERSION)), file, d)).toEqual({
+        ok: false,
+        reason: 'incompatible',
+        result: 'full',
+        ptys: 0,
+        formats: ['pins']
+      })
+    } finally {
+      server.close()
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  it('layout 형식이 다르거나 형식 버전 파일이 없으면 cell 을 모두 닫는다', async () => {
     const bin = fakeBin(String(PROTOCOL_VERSION))
     const file = versions({ ...STATE_VERSIONS, layout: STATE_VERSIONS.layout + 1 })
     expect(await check(bin, file)).toMatchObject({ result: 'empty', formats: ['layout'] })
     expect(await check(bin, join(dir, 'missing.json'))).toMatchObject({
       result: 'empty',
-      formats: ['layout', 'sessions'],
+      formats: ['layout', 'sessions', 'pins'],
       formatsUnknown: true
     })
     expect(
       restartDialog((await check(bin, join(dir, 'missing.json'))) as Incompatible).detail
     ).toBe(
-      "The installed app's saved-state format couldn't be determined. The app will start with an empty screen."
+      "The installed app's saved-state format couldn't be determined. All cells will close. Pinned workspaces will be unpinned and lose their custom names and favorites. Those with no cells will be removed."
+    )
+  })
+})
+
+describe('restartOutcome', () => {
+  const incompatible = (
+    result: Incompatible['result'],
+    formats: Incompatible['formats'] = []
+  ): Incompatible => ({ ok: false, reason: 'incompatible', result, ptys: 0, formats })
+
+  it('pins 만 잃는 재시작은 pty 를 남긴다', () => {
+    expect(restartOutcome({ ok: true })).toEqual({ outcome: 'keep', dropPins: false })
+    expect(restartOutcome(incompatible('full', ['pins']))).toEqual({
+      outcome: 'keep',
+      dropPins: true
+    })
+    expect(restartOutcome(incompatible('layout', ['sessions']))).toEqual({
+      outcome: 'layout',
+      dropPins: false
+    })
+    expect(restartOutcome(incompatible('empty', ['layout']))).toEqual({
+      outcome: 'end',
+      dropPins: false
+    })
+  })
+
+  it('pins 형식이 다르면 어느 결과든 pins 를 비운다 — 다시 뜬 앱이 읽지 못한 pins 를 알리지 않게', () => {
+    expect(restartOutcome(incompatible('layout', ['sessions', 'pins'])).dropPins).toBe(true)
+    expect(restartOutcome(incompatible('empty', ['layout', 'sessions', 'pins'])).dropPins).toBe(
+      true
     )
   })
 })
@@ -154,6 +200,13 @@ describe('restartDialog · restartRefusal', () => {
     ptys: 1,
     formats: ['layout', 'sessions']
   }
+  const pins: Incompatible = {
+    ok: false,
+    reason: 'incompatible',
+    result: 'full',
+    ptys: 0,
+    formats: ['pins']
+  }
 
   it('결과에 맞는 버튼과 이유를 준다', () => {
     expect(restartDialog(protocol)).toEqual({
@@ -161,15 +214,37 @@ describe('restartDialog · restartRefusal', () => {
       detail: `The installed app uses pty protocol version 9, while this app uses version ${PROTOCOL_VERSION}. This will end 2 terminals. The panes will reopen with new shells in their last directories.`,
       buttons: ['Restart with layout only', 'Cancel']
     })
-    expect(restartDialog(layout).buttons).toEqual(['Restart with an empty screen', 'Cancel'])
+    expect(restartDialog(layout).buttons).toEqual(['Restart and close all cells', 'Cancel'])
     expect(restartDialog(layout).detail).toBe(
-      'The installed app uses a different format for the saved layout and terminal sessions. This will end 1 terminal. The app will start with an empty screen.'
+      'The installed app uses a different format for the saved layout and terminal sessions. This will end 1 terminal. All cells will close.'
+    )
+    expect(restartDialog(pins)).toEqual({
+      message: 'Restart without workspace pins?',
+      detail:
+        'The installed app uses a different format for the saved workspace pins. Pinned workspaces will be unpinned and lose their custom names and favorites. Those with no cells will be removed.',
+      buttons: ['Restart without workspace pins', 'Cancel']
+    })
+    expect(restartDialog({ ...layout, formats: ['layout', 'sessions', 'pins'] }).detail).toMatch(
+      /^The installed app uses a different format for the saved layout, terminal sessions and workspace pins\./
     )
   })
 
   it('CLI 메시지는 플래그를 주면 어떻게 되는지 적는다', () => {
-    expect(restartRefusal(protocol)).toMatch(/Pass --kill-ptys to restart with the layout only\.$/)
-    expect(restartRefusal(layout)).toMatch(/Pass --kill-ptys to restart with an empty screen\.$/)
+    expect(restartRefusal(protocol).message).toMatch(
+      /Pass --kill-ptys to restart with the layout only\.$/
+    )
+    expect(restartRefusal(layout).message).toMatch(
+      /Pass --kill-ptys to restart and close all cells\.$/
+    )
+    expect(restartRefusal(pins).message).toMatch(
+      /Pass --kill-ptys to restart without workspace pins\.$/
+    )
+  })
+
+  it('pty 를 끄지 않고 pins 만 잃으면 pins_would_be_lost 로 거절한다', () => {
+    expect(restartRefusal(pins).code).toBe('pins_would_be_lost')
+    expect(restartRefusal(protocol).code).toBe('ptys_would_end')
+    expect(restartRefusal(layout).code).toBe('ptys_would_end')
   })
 })
 
