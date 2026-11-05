@@ -53,6 +53,12 @@ export function windowBounds(state: WindowState | null, displays: Rectangle[]): 
   return displays.some((d) => contains(d, bounds)) ? bounds : null
 }
 
+export function offscreenPosition(displays: Rectangle[]): { x: number; y: number } | null {
+  if (displays.length === 0) return null
+  const rightmost = displays.reduce((a, b) => (b.x + b.width > a.x + a.width ? b : a))
+  return { x: rightmost.x + rightmost.width, y: rightmost.y + rightmost.height }
+}
+
 export function restoreWindowState(win: StatefulWindow, state: WindowState | null): void {
   if (state?.isMaximized) win.maximize()
   if (state?.isFullScreen) win.setFullScreen(true)

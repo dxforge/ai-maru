@@ -89,6 +89,7 @@ import {
   type StateStore
 } from './state'
 import {
+  offscreenPosition,
   restoreWindowState,
   trackWindowState,
   windowBounds,
@@ -537,10 +538,11 @@ function openExternal(url: string): void {
 
 function createWindow(state: WindowState | null): void {
   const displays = screen.getAllDisplays().map((d) => d.bounds)
+  const restored = windowBounds(state, displays)
   const win = new BrowserWindow({
     width: 1000,
     height: 700,
-    ...windowBounds(state, displays),
+    ...restored,
     show: !unobtrusive,
     focusable: !unobtrusive,
     backgroundColor: (theme ?? DEFAULT_WINDOW_THEME).background,
@@ -567,6 +569,14 @@ function createWindow(state: WindowState | null): void {
     win.setOpacity(0)
     win.setIgnoreMouseEvents(true)
     win.showInactive()
+    // 투명하고 마우스 이벤트를 무시하는 e2e 창도 실제 커서가 지나가거나 머물면 hover 와 mouseleave 를 받는다.
+    // Canvas 처럼 hover 로 동작이 바뀌는 테스트는 사용자의 커서 위치에 따라 결과가 달라진다. 저장한 자리를 되살렸으면 옮기지 않는다. 그 자리를 되살리는지 보는 테스트가 있기 때문이다.
+    // 생성자에 준 자리는 macOS 가 창 전체가 화면 안에 들도록 되돌리므로, 창을 띄운 뒤에 옮긴다. 띄운 뒤에 옮겨도 macOS 는 창의 일부를 화면 끝에 남긴다.
+    // 맨 오른쪽 화면의 오른쪽 아래 모서리로 옮기면 남는 부분이 창 왼쪽 위 40x32 로 줄고, 그 자리는 hover 로 동작하지 않는 사이드바 제목 줄이다.
+    // `--force-device-scale-factor` 로 배율을 고정한 실행은 옮기지 않는다. DPR 1 로 고정한 창이 2x 화면에 놓이면 WebGL renderer 가 그린 글자가 1px 어긋나기 때문이다.
+    const fixedScale = app.commandLine.hasSwitch('force-device-scale-factor')
+    const spot = restored || fixedScale ? null : offscreenPosition(displays)
+    if (spot) win.setPosition(spot.x, spot.y)
   }
   win.on('close', (event) => {
     if (mayQuit()) return
