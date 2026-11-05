@@ -1697,6 +1697,26 @@ describe('cell 즐겨찾기', () => {
     expect(ws.openIn(999, '/p')).toBeUndefined()
   })
 
+  it('openIn 에 명령을 주면 그 명령의 pane 으로 같은 자리에 열고, 즐겨찾기 디렉토리면 즐겨찾기를 맡는다', () => {
+    const ws = opened(2)
+    const [w] = wsKeys(ws)
+    ws.select(ws.list.value[0].cells[0].key)
+    ws.openCell('/p')
+    const [a, p] = ws.list.value[0].cells.map((c) => c.key)
+    ws.toggleFavorite(a)
+    ws.toggleFavorite(p)
+    shut(ws, p)
+    const key = ws.openIn(w, '/p', { command: ['claude'], keep: true })
+    expect(marks(ws)).toEqual(['/d-0', '/p'])
+    expect(ws.list.value[0].cells[1].key).toBe(key)
+    expect(ws.list.value[0].cells[1].panes[0]).toMatchObject({
+      startDir: '/p',
+      command: ['claude'],
+      keep: true
+    })
+    expect(selected(ws).key).toBe(key)
+  })
+
   it('openIn 은 cell 이 없는 핀 workspace 에 셸 cell 을 연다', () => {
     const ws = opened(2)
     const [a] = wsKeys(ws)

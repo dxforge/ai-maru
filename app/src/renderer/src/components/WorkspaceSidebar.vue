@@ -6,6 +6,7 @@ import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { commandClass, ICONS, STATE_LABELS } from '../icons'
+import { anchorWidth, type Anchor } from '../launcher/anchor'
 import FoldChevron from './FoldChevron.vue'
 import StatusIcon from './StatusIcon.vue'
 import WorkspaceNameInput from './WorkspaceNameInput.vue'
@@ -86,7 +87,7 @@ const emit = defineEmits<{
   endRename: [workspace: number, name: string | null, refocus: boolean]
   togglePin: [workspace: number]
   toggleFavorite: [cell: number]
-  openDir: [workspace: number, dir: string]
+  openDir: [workspace: number, dir: string, anchor: Anchor]
   removeFavorite: [workspace: number, dir: string]
 }>()
 
@@ -151,6 +152,12 @@ const groups = computed(() => {
 function jobTime(j: JobRow): string {
   if (j.exited) return 'exited'
   return j.started === undefined ? '' : elapsed(now - j.started)
+}
+
+function openDir(e: MouseEvent, workspace: number, dir: string): void {
+  const box = (e.currentTarget as HTMLElement).closest('.closed-card')!.getBoundingClientRect()
+  const width = anchorWidth(box.width, nav.value!.getBoundingClientRect().width)
+  emit('openDir', workspace, dir, { left: box.left, top: box.top, bottom: box.bottom, width })
 }
 
 // 이름 자리에서 잘릴 수 있는 명령을 툴팁에 다 보인다. 돈 시간이 들어가므로 `groups` 밖에서 만든다.
@@ -348,7 +355,7 @@ const favoriteLabel = (favorite: boolean): string =>
               class="row closed-row"
               :aria-label="`Open ${item.name}`"
               @mousedown.prevent
-              @click="emit('openDir', w.key, item.dir)"
+              @click="openDir($event, w.key, item.dir)"
             >
               <span class="state nerd-icon">{{ ICONS.terminal }}</span>
               <span class="title">{{ item.name }}</span>

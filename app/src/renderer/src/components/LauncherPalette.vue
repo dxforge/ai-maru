@@ -25,6 +25,7 @@ import {
   type Row
 } from '../launcher/query'
 import { SHELL } from '../../../shared/launcher'
+import { placeAnchored, type Anchor, type Placement } from '../launcher/anchor'
 import { tildePath } from '../workspace/cwd'
 import { arrowIndex, closeOnFocusLoss, revealSelected } from './palette'
 
@@ -42,7 +43,9 @@ const WHERE_LABELS: Record<LaunchWhere, string> = {
 
 /**
  * `at` 을 주면 디렉토리 단계 없이 그 디렉토리의 명령 단계로 열고, 고른 명령은 `at.where` 에 띄운다. 셸은 그 자리를 여는
- * 키로 열면 되므로 목록에 두지 않는다.
+ * 키로 열면 되므로 `at.shell` 이 아니면 목록에 두지 않는다. `at.anchor` 를 주면 창 아래 가운데(`position` 이 `top` 이면 위
+ * 가운데)가 아니라 그 박스 바로 아래에 박스 폭으로 띄운다. 아래에 다 들어가지 않고 위가 더 넓으면 박스 위에 띄운다. 이때
+ * 디렉토리와 자리를 적는 줄은 숨긴다. 박스가 이미 그 디렉토리를 보이기 때문이다.
  */
 const {
   position,
@@ -53,14 +56,14 @@ const {
   position: Position
   commands: readonly string[]
   home?: string
-  at?: { dir?: string; where: LaunchWhere }
+  at?: { dir?: string; where: LaunchWhere; shell?: boolean; anchor?: Anchor }
 }>()
 const emit = defineEmits<{ launch: [launch: Launch]; close: [] }>()
 
 const input = useTemplateRef<HTMLInputElement>('input')
 const query = ref('')
 const recent = shallowRef<readonly string[]>([])
-const list = computed(() => commandList(commands, !at))
+const list = computed(() => commandList(commands, !at || at.shell === true))
 /** 마지막으로 띄운 명령. 명령 단계에서 처음 고르는 행이다. */
 const command = ref(commands[0])
 const problem = ref<string | null>(null)
@@ -155,6 +158,39 @@ const section = computed(() => {
   return pathMode.value ? 'Open directory' : 'Recent'
 })
 
+const panel = useTemplateRef<HTMLElement>('panel')
+/**
+ * `at.anchor` 로 띄운 런처의 자리다. 줄지 않은 높이를 재야 정할 수 있어 DOM 에 넣은 뒤에 정한다. 정한 자리는 화면에 그리기
+ * 전에 반영되므로 처음 자리를 숨기지 않는다. 숨기면 `onMounted` 의 `focus` 가 입력창에 들지 않는다.
+ */
+const placed = shallowRef<Placement | null>(null)
+onMounted(() => {
+  const el = panel.value
+  const items = el?.querySelector('.list')
+  if (!at?.anchor || !el || !items) return
+  const natural = el.offsetHeight - items.clientHeight + items.scrollHeight
+  placed.value = placeAnchored(at.anchor, { width: innerWidth, height: innerHeight }, natural)
+})
+/** 입력창이 놓인 쪽이다. 박스 아래에 뜨면 박스에 붙는 위쪽이고, 위로 뒤집히면 아래쪽이다. */
+const side = computed<Position>(() => {
+  if (!at?.anchor) return position
+  return placed.value?.side === 'above' ? 'bottom' : 'top'
+})
+const panelStyle = computed(() => {
+  const a = at?.anchor
+  if (!a) return undefined
+  const p = placed.value
+  const box = { position: 'absolute', margin: 0 } as const
+  if (!p) return { ...box, left: `${a.left}px`, top: `${a.bottom}px`, width: `${a.width}px` }
+  return {
+    ...box,
+    left: `${p.left}px`,
+    width: `${p.width}px`,
+    maxHeight: `${p.maxHeight}px`,
+    [p.side === 'below' ? 'top' : 'bottom']: `${p.offset}px`
+  }
+})
+
 const focus = (): void => input.value?.focus()
 defineExpose({ focus })
 onMounted(focus)
@@ -240,10 +276,10 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.isComposing) return
   const row = chosen.value ? undefined : rows.value[index.value]
   const n = count.value
-  const moved = arrowIndex(e.key, index.value, n, position)
+  const moved = arrowIndex(e.key, index.value, n, side.value)
   // 아무것도 고르지 않았을 때는 화면에서 입력줄 쪽 끝이 출발점이라, 다음 후보 쪽 화살표는 첫 후보로 간다.
   if (moved !== undefined && index.value < 0)
-    index.value = (e.key === 'ArrowDown') === (position === 'top') ? 0 : n - 1
+    index.value = (e.key === 'ArrowDown') === (side.value === 'top') ? 0 : n - 1
   else if (moved !== undefined) index.value = moved
   else if (e.key === 'Enter') void enter(e.metaKey)
   // ⌘⌫ 는 입력창에서 커서 앞을 줄 처음까지 지우는 키라, 최근 목록의 행 지우기는 ⇧⌘⌫ 에 둔다.
@@ -263,8 +299,13 @@ function onKeydown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="palette-backdrop" :class="position" @mousedown.self.prevent="emit('close')">
-    <div class="palette launcher" @mousedown="(e) => e.target !== input && e.preventDefault()">
+  <div class="palette-backdrop" :class="side" @mousedown.self.prevent="emit('close')">
+    <div
+      ref="panel"
+      class="palette launcher"
+      :style="panelStyle"
+      @mousedown="(e) => e.target !== input && e.preventDefault()"
+    >
       <input
         ref="input"
         v-model="query"
@@ -317,7 +358,7 @@ function onKeydown(e: KeyboardEvent): void {
         </li>
         <li v-if="!rows.length" class="empty">{{ empty }}</li>
       </ul>
-      <div class="section">
+      <div v-if="!at?.anchor" class="section">
         <span class="path" :class="{ label: !chosen }">{{ section }}</span>
         <span v-if="chosen" class="where">{{
           WHERE_LABELS[at?.where ?? (meta ? 'cell' : 'workspace')]

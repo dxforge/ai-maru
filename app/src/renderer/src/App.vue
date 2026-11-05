@@ -36,6 +36,7 @@ import TerminalView from './components/TerminalView.vue'
 import ToastStack from './components/ToastStack.vue'
 import { missingFonts } from './config/fonts'
 import { commandArgv } from './config/launcher'
+import type { Anchor } from './launcher/anchor'
 import { SHELL } from '../../shared/launcher'
 import { configToast, createConfig } from './config/store'
 import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/terminal'
@@ -67,6 +68,7 @@ import {
   createWorkspaces,
   focusedPane,
   type Cell,
+  type PaneCommand,
   type PaneInit,
   type PlaceError
 } from './workspace/store'
@@ -420,7 +422,7 @@ function togglePin(workspace: number): void {
   void focusSelected()
 }
 
-async function openIn(workspace: number, dir: string): Promise<void> {
+async function isDirectory(dir: string): Promise<boolean> {
   const reason = await window.maru.notDirectory(dir)
   if (reason) {
     toasts.put('favorite', {
@@ -428,11 +430,22 @@ async function openIn(workspace: number, dir: string): Promise<void> {
       title: "Couldn't open the favorite directory",
       lines: [reason]
     })
-    return
+    return false
   }
   toasts.close('favorite')
-  const key = workspaces.openIn(workspace, dir)
+  return true
+}
+
+async function openIn(workspace: number, dir: string, pane: PaneCommand): Promise<void> {
+  if (!(await isDirectory(dir))) return
+  const key = workspaces.openIn(workspace, dir, pane)
   if (key !== undefined) selectCell(key)
+}
+
+async function openClosed(workspace: number, dir: string, anchor: Anchor): Promise<void> {
+  if (!(await isDirectory(dir))) return
+  launchAt.value = { dir, where: 'cell', favoriteOf: workspace, shell: true, anchor }
+  overlay.value = 'launch'
 }
 
 const SIDEBAR_WIDTH = 280
@@ -802,7 +815,11 @@ function keepHorizontalScroll(e: WheelEvent): void {
 
 type Overlay = 'palette' | 'launcher' | 'launch'
 const overlay = ref<Overlay | null>(null)
-const launchAt = ref<{ dir?: string; where: LaunchWhere }>({ where: 'cell' })
+/** `favoriteOf` 가 있으면 사이드바의 닫힌 줄이 띄운 런처다. 고른 명령은 그 workspace 의 즐겨찾기 cell 묶음 끝에 연다. */
+type LaunchAt =
+  | { dir?: string; where: LaunchWhere; favoriteOf?: undefined }
+  | { dir: string; where: 'cell'; favoriteOf: number; shell: true; anchor: Anchor }
+const launchAt = ref<LaunchAt>({ where: 'cell' })
 const palette = useTemplateRef<InstanceType<typeof CommandPalette>>('palette')
 const launcher = useTemplateRef<InstanceType<typeof LauncherPalette>>('launcher')
 
@@ -825,10 +842,12 @@ const SPLIT_OF: Partial<Record<LaunchWhere, SplitDirection>> = {
   'split-down': 'down'
 }
 
-function launch({ dir, command, where }: Launch): void {
+/** `at` 은 디렉토리 단계 없이 띄운 런처의 `launchAt` 이다. 디렉토리 단계부터 연 런처는 넘기지 않는다. */
+function launch({ dir, command, where }: Launch, at?: LaunchAt): void {
   const pane = command === SHELL ? {} : ({ command: commandArgv(command), keep: true } as const)
   const split = SPLIT_OF[where]
-  if (where === 'cell') workspaces.openCell(dir, pane)
+  if (at?.favoriteOf !== undefined) void openIn(at.favoriteOf, at.dir, pane)
+  else if (where === 'cell') workspaces.openCell(dir, pane)
   else if (where === 'workspace') workspaces.open(dir, pane)
   // 목록을 띄운 뒤 창이 작아졌으면 자리가 없을 수 있어 다시 본다.
   else if (split) splitSelected(split, { startDir: dir, ...pane })
@@ -1022,7 +1041,7 @@ void window.maru.restoreScreen().then((r) => {
         @end-rename="endRename"
         @toggle-pin="togglePin"
         @toggle-favorite="toggleFavorite"
-        @open-dir="openIn"
+        @open-dir="openClosed"
         @remove-favorite="workspaces.removeFavorite"
       />
     </div>
@@ -1135,12 +1154,12 @@ void window.maru.restoreScreen().then((r) => {
     />
     <LauncherPalette
       v-else-if="overlay === 'launch'"
-      :key="launchAt.where"
+      :key="launchAt.favoriteOf === undefined ? launchAt.where : 'favorite'"
       :position="config.layout.value.palette"
       :commands="config.launcher.value.commands"
       :home="home"
       :at="launchAt"
-      @launch="launch"
+      @launch="(l) => launch(l, launchAt)"
       @close="closeOverlay('launch')"
     />
   </div>

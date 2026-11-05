@@ -87,7 +87,7 @@ export type Restore = {
   notice: 'layout' | 'sessions' | 'protocol' | null
 }
 
-const SIDEBAR_WIDTH = { min: 200, max: 480 }
+export const SIDEBAR_WIDTH = { min: 200, max: 480 }
 const CANVAS_MIN_WIDTH = 240
 
 /**

@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
@@ -42,6 +42,7 @@ import {
   workspaceHeads,
   workspaceNames,
   toast,
+  writeConfig,
   zshHome
 } from './app'
 
@@ -1265,8 +1266,17 @@ test('핀을 꽂거나 빼도 workspace 들의 세로 위치가 그대로다', a
 })
 
 const closedRows = (page: Page) => page.locator('.sidebar .closed-row')
+const launcher = (page: Page) => page.locator('.palette.launcher')
 
-test('핀을 꽂은 workspace 는 마지막 cell 을 닫아도 이름과 함께 남아 그 디렉토리의 줄을 보이고, 누르면 그 디렉토리에 셸 cell 을 열며, 재시작 뒤에도 남고 핀을 빼면 닫힌다', async ({
+async function reopenShell(page: Page, row: Locator): Promise<void> {
+  await row.click()
+  await expect(launcher(page)).toBeVisible()
+  await page.keyboard.type('shell')
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+}
+
+test('핀을 꽂은 workspace 는 마지막 cell 을 닫아도 이름과 함께 남아 그 디렉토리의 줄을 보이고, 누르면 뜬 런처에서 고른 셸을 그 디렉토리에 열며, 재시작 뒤에도 남고 핀을 빼면 닫힌다', async ({
   launch,
   dataDir
 }) => {
@@ -1294,7 +1304,7 @@ test('핀을 꽂은 workspace 는 마지막 cell 을 닫아도 이름과 함께 
   await expect(closedRows(page)).toContainText('sub')
   await expect(page.locator('.sidebar .closed-card .favorite')).toHaveCount(0)
 
-  await closedRows(page).click()
+  await reopenShell(page, closedRows(page))
   await expect(cellItems(page)).toHaveCount(2)
   await expect(closedRows(page)).toHaveCount(0)
   await expect(workspaceNames(page)).toHaveText(['atlas', 'sub'])
@@ -1338,7 +1348,7 @@ test('cell 이 없는 핀 workspace 만 남기고 끝내도 다음 실행에 그
   await expect(cellItems(again.page)).toHaveCount(1)
   await run(again.page, 'echo up-$((1+1))', 'up-2')
 
-  await closedRows(again.page).click()
+  await reopenShell(again.page, closedRows(again.page))
   await expect(cellItems(again.page)).toHaveCount(2)
   await clickMenu(again.app, 'close-workspace')
   await expect(workspaceNames(again.page)).toHaveCount(1)
@@ -1377,7 +1387,7 @@ test('End everything 으로 끄면 터미널을 끝내고, 핀 workspace 는 이
   await run(again.page, 'echo up-$((1+1))', 'up-2')
 })
 
-test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell 이 위로 오며, 닫으면 닫힌 줄로 남고 누르면 그 디렉토리에 셸 cell 을 연다. 재시작 뒤에도 남는다', async ({
+test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell 이 위로 오며, 닫으면 닫힌 줄로 남고 누르면 뜬 런처에서 고른 셸을 그 디렉토리에 연다. 재시작 뒤에도 남는다', async ({
   launch,
   dataDir
 }) => {
@@ -1404,7 +1414,7 @@ test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell
   await expect(closedRows(page)).toHaveCount(1)
   await expect(closedRows(page)).toContainText('sub')
 
-  await closedRows(page).click()
+  await reopenShell(page, closedRows(page))
   await expect(cellItems(page)).toHaveCount(2)
   await expect(closedRows(page)).toHaveCount(0)
   await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
@@ -1508,7 +1518,7 @@ test('고전 스크롤바 설정에서도 cell 의 별 가운데는 창 끌기 �
   expect(await appRegionAt(page, list.x + list.width / 2, list.y + list.height - 4)).toBe('drag')
 })
 
-test('팔레트의 Toggle Cell Favorite 는 고른 cell 을 즐겨찾기에 넣고, 디렉토리가 없어진 닫힌 줄을 누르면 열지 않고 이유를 보인다', async ({
+test('팔레트의 Toggle Cell Favorite 는 고른 cell 을 즐겨찾기에 넣고, 디렉토리가 없어진 닫힌 줄을 누르면 런처를 띄우지 않고 이유를 보인다', async ({
   launch,
   dataDir
 }) => {
@@ -1531,6 +1541,164 @@ test('팔레트의 Toggle Cell Favorite 는 고른 cell 을 즐겨찾기에 넣�
   rmSync(join(home, 'gone'), { recursive: true })
   await closedRows(page).click()
   await expect(toast(page)).toContainText("Couldn't open the favorite directory")
+  await expect(launcher(page)).toHaveCount(0)
   await expect(cellItems(page)).toHaveCount(1)
   await expect(closedRows(page)).toHaveCount(1)
+})
+
+function useTool(dataDir: string): string {
+  const bin = join(dataDir, 'tool')
+  writeFileSync(bin, '#!/bin/sh\necho "ran-in-$(pwd -P)"\nexec sleep 60\n')
+  chmodSync(bin, 0o755)
+  writeConfig(dataDir, `[launcher]\ncommands = ["${bin}"]\n`)
+  return bin
+}
+
+const box = async (el: Locator) => (await el.boundingBox())!
+
+test('닫힌 즐겨찾기 줄을 누르면 그 줄 바로 아래에 줄의 폭으로 셸이 든 명령 목록이 뜨되 아래 줄을 밀지 않고, Esc 는 아무것도 띄우지 않으며, 고른 명령은 즐겨찾기를 맡은 cell 로 그 디렉토리에 뜬다', async ({
+  launch,
+  dataDir
+}) => {
+  const bin = useTool(dataDir)
+  const home = zshHome(dataDir, 'sub')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  await newCell(launched, 2)
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await cellItems(page).nth(1).hover()
+  await cellFavorite(page, 1).click()
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.type('exit\n')
+  await expect(closedRows(page)).toHaveCount(1)
+  const card = page.locator('.sidebar .closed-card')
+  const next = cellItems(page).nth(0)
+  const before = await box(next)
+
+  await closedRows(page).click()
+  await expect(launcher(page)).toBeVisible()
+  await expect(launcher(page).locator('.item .path')).toHaveText([bin, 'shell'])
+  await expect(launcher(page).locator('.item.selected .path')).toHaveText(bin)
+  const c = await box(card)
+  const l = await box(launcher(page))
+  expect(l.x).toBeCloseTo(c.x, 0)
+  expect(l.width).toBeCloseTo(c.width, 0)
+  expect(l.y).toBeGreaterThanOrEqual(c.y + c.height)
+  expect(l.y).toBeLessThan(c.y + c.height + 4)
+  expect(await box(next)).toEqual(before)
+
+  await page.keyboard.press('Escape')
+  await expect(launcher(page)).toHaveCount(0)
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect(closedRows(page)).toHaveCount(1)
+
+  await closedRows(page).click()
+  await expect(launcher(page).locator('.item.selected .path')).toHaveText(bin)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await expect(cellItems(page)).toHaveCount(2)
+  await expect(closedRows(page)).toHaveCount(0)
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
+  await expect(rows(page)).toContainText(`ran-in-${home}/sub`)
+})
+
+test('사이드바를 접으면 닫힌 줄의 런처가 펼친 최소 폭일 때의 줄 폭으로 뜨고, 목록을 스크롤해 창 아래 끝에 온 줄에서는 줄 위로 뒤집혀 뜬다', async ({
+  launch,
+  dataDir
+}) => {
+  // 런처를 창 위에 띄우는 설정이어야 뒤집힌 런처의 화살표 방향이 설정과 갈린다.
+  writeConfig(dataDir, '[layout]\npalette = "top"\n')
+  const home = zshHome(dataDir, 'sub')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { app, page } = launched
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  for (let n = 2; n <= 3; n++) await newCell(launched, n)
+  // 핀을 꽂은 workspace 는 핀 workspace 들의 뒤로 가므로, 닫힌 줄이 목록 끝에 남도록 첫 workspace 에 먼저 핀을 꽂는다.
+  const pin = workspaceHeads(page).nth(0).locator('.pin')
+  await workspaceHeads(page).nth(0).hover()
+  await pin.click()
+  await expect(pin).toHaveAttribute('aria-pressed', 'true')
+  await newWorkspace(launched, 4)
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await cellItems(page).nth(3).hover()
+  await cellFavorite(page, 3).click()
+  await expect(cellFavorite(page, 3)).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.type('exit\n')
+  await expect(closedRows(page)).toHaveCount(1)
+  const card = page.locator('.sidebar .closed-card')
+  const open = await sidebarWidth(page)
+
+  await collapseSidebar(app, page)
+  await closedRows(page).click()
+  await expect(launcher(page)).toBeVisible()
+  const c = await box(card)
+  const l = await box(launcher(page))
+  expect(l.x).toBeCloseTo(c.x, 0)
+  expect(l.width).toBeCloseTo(c.width + SIDEBAR_MIN_WIDTH - (await sidebarWidth(page)), 0)
+  expect(l.y).toBeGreaterThanOrEqual(c.y + c.height)
+  await page.keyboard.press('Escape')
+  await expect(launcher(page)).toHaveCount(0)
+  await clickMenu(app, 'toggle-sidebar')
+  await expect(page.locator('.sidebar')).not.toHaveClass(/collapsed/)
+  await expect.poll(() => sidebarWidth(page)).toBe(open)
+
+  const list = page.locator('.sidebar .list')
+  const height = await page.evaluate(() => window.innerHeight)
+  const unscrolled = await box(card)
+  await resizeBy(app, 0, -(height - unscrolled.y + 20))
+  await expect.poll(() => list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  await list.evaluate((el) => (el.scrollTop = el.scrollHeight))
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  const row = await box(card)
+  expect(row.y).toBeLessThan(unscrolled.y)
+
+  await closedRows(page).click()
+  await expect(launcher(page)).toBeVisible()
+  const flipped = await box(launcher(page))
+  expect(flipped.x).toBeCloseTo(row.x, 0)
+  expect(flipped.width).toBeCloseTo(row.width, 0)
+  expect(flipped.y + flipped.height).toBeLessThanOrEqual(row.y)
+  expect(flipped.y + flipped.height).toBeGreaterThan(row.y - 4)
+  // 뒤집힌 런처는 입력창이 줄 쪽인 아래에 오고, 화살표도 설정한 위가 아니라 이 방향을 따라 위쪽이 다음 후보다.
+  const input = await box(launcher(page).locator('.query'))
+  expect(input.y).toBeGreaterThan((await box(launcher(page).locator('.list'))).y)
+  await expect(launcher(page).locator('.item.selected .path')).toHaveText('claude')
+  await page.keyboard.press('ArrowUp')
+  await expect(launcher(page).locator('.item.selected .path')).toHaveText('codex')
+})
+
+test('닫힌 줄의 런처를 닫은 뒤 디렉토리 단계부터 연 런처는 고른 디렉토리를 고른 자리에 띄우고 닫힌 줄을 남긴다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'sub', 'other')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { app, page } = launched
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  await newCell(launched, 2)
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await cellItems(page).nth(1).hover()
+  await cellFavorite(page, 1).click()
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.type('exit\n')
+  await expect(closedRows(page)).toHaveCount(1)
+  await closedRows(page).click()
+  await expect(launcher(page)).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(launcher(page)).toHaveCount(0)
+
+  await clickMenu(app, 'launcher')
+  await expect(launcher(page).locator('.query')).toBeFocused()
+  await page.keyboard.type(`${home}/other`)
+  await page.keyboard.press('Enter')
+  await expect(launcher(page).locator('.section')).toContainText('New Workspace')
+  await page.keyboard.type('shell')
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await expect(workspaceNames(page)).toHaveCount(2)
+  await expect(workspaceNames(page).nth(1)).toHaveText('other')
+  await expect(closedRows(page)).toHaveCount(1)
+  await run(page, 'echo at-$PWD', `at-${home}/other`)
 })
