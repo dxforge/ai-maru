@@ -4,12 +4,13 @@ import { samePath } from '../../../shared/launcher'
 import { focusedPane } from '../../../shared/names'
 import type { ProgramStatusState } from '../../../shared/program-status'
 import type { PtyState } from '../../../shared/pty-state'
-import type {
-  LayoutPane,
-  LayoutPart,
-  ScreenCell,
-  ScreenState,
-  ScreenWorkspace
+import {
+  layoutKeys,
+  type LayoutPane,
+  type SavedLayout,
+  type ScreenCell,
+  type ScreenState,
+  type ScreenWorkspace
 } from '../../../shared/screen'
 import { newPtyId, randomId } from '../../../shared/pty'
 import { paneCwd, paneTitle } from './display'
@@ -592,10 +593,7 @@ export function createWorkspaces(
    * `ptys` 에 없는 pane 은 저장한 cwd 에서 새 셸을 띄운다. 명령은 다시 돌리지 않고, 앞의 프로그램이 정한 제목도
    * 쓰지 않는다.
    */
-  function restore(
-    layout: Pick<LayoutPart, 'workspaces' | 'selected'>,
-    ptys: Readonly<Record<number, string>> | null
-  ): void {
+  function restore(layout: SavedLayout, ptys: Readonly<Record<number, string>> | null): void {
     const restorePane = (p: LayoutPane): Pane => {
       const pty = ptys?.[p.key]
       if (pty) return { ...p, ptyId: pty, startDir: p.cwd, attach: true, restoredTitle: p.title }
@@ -608,11 +606,7 @@ export function createWorkspaces(
       cells: w.cells.map((c) => ({ ...c, panes: c.panes.map(restorePane) }))
     }))
     selectedKey.value = layout.selected
-    const keys = layout.workspaces.flatMap((w) => [
-      w.key,
-      ...w.cells.flatMap((c) => [c.key, ...c.panes.map((p) => p.key)])
-    ])
-    nextKey = Math.max(nextKey, ...keys.map((k) => k + 1))
+    nextKey = Math.max(nextKey, ...layoutKeys(layout.workspaces).map((k) => k + 1))
     // main 의 상태가 화면보다 먼저 왔을 수 있다. 저장한 git 은 재시작하는 동안 바뀌었을 수 있어 다시 읽는다.
     for (const c of cells())
       for (const p of c.panes) if (!refresh(p) && p.cwd) readGitFor(p.key, p.cwd)

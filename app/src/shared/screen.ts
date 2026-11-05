@@ -9,7 +9,11 @@ import { isPtyId } from './pty'
  * 앱은 모르는 버전의 부분을 버린다. 없어도 되는 필드를 더할 때는 올리지 않는다. 그 필드는 해당 parse 함수에서도 옮긴다.
  * parse 함수는 아는 필드만 옮기고, 선택 필드는 빠뜨려도 타입 검사를 통과하기 때문이다.
  */
-export const STATE_VERSIONS: { layout: number; sessions: number; view: number } = versions
+export const STATE_VERSIONS: { layout: number; sessions: number; view: number; pins: number } =
+  versions
+
+/** 핀·즐겨찾기를 `layout` 의 workspace 에 두던 형식이다. `readState`(`main/state.ts`)가 읽어 `pins` 로 옮긴다. */
+const PINS_IN_LAYOUT_VERSION = 1
 
 /**
  * `cwd`·`title`·`git` 은 저장할 때 화면에 보이던 값이다. main 은 `maru pane list` 의 이름을 이 값으로 짓고, 다시 뜬
@@ -57,9 +61,19 @@ type WorkspaceOf<P> = {
 
 export type ScreenCell = CellOf<ScreenPane>
 export type ScreenWorkspace = WorkspaceOf<ScreenPane>
-type LayoutWorkspace = WorkspaceOf<LayoutPane>
+type SavedWorkspace = WorkspaceOf<LayoutPane>
 
-/** renderer 가 화면이 바뀔 때마다 main 에 보내는 화면이다. main 은 이것을 `state.json` 의 세 부분으로 나눠 쓴다. */
+/**
+ * `layout` 의 workspace 다. 핀 workspace 는 `key`·`id`·`cells` 만 두고, `id` 로 `pins` 의 항목과 잇는다. 핀 workspace 는
+ * cell 이 없어도 key 를 남기려고 여기에 두므로 `cells` 가 비어 있을 수 있다. 핀이 없는 workspace 는 이름·`dir`·
+ * `favorites` 도 여기에 둔다. `layout` 을 잃으면 어차피 함께 사라지기 때문이다.
+ */
+type LayoutWorkspace = Omit<SavedWorkspace, 'pinned'>
+
+/** `pins` 의 항목이다. `dir` 은 cell 이 있으면 첫 cell 의 첫 pane 의 cwd 다. `layout` 만 잃으면 그 디렉토리로 이름을 짓는다. */
+type PinnedWorkspace = Pick<SavedWorkspace, 'id' | 'name' | 'dir' | 'favorites'>
+
+/** renderer 가 화면이 바뀔 때마다 main 에 보내는 화면이다. main 은 이것을 `state.json` 의 네 부분으로 나눠 쓴다. */
 export type ScreenState = {
   workspaces: ScreenWorkspace[]
   /** 선택한 cell 의 key 다. */
@@ -77,12 +91,21 @@ export type LayoutPart = {
   selected: number | null
 }
 
+/** `state.json` 의 `pins`. 핀 workspace 를 사이드바의 순서대로 둔다. */
+export type PinsPart = {
+  version: number
+  workspaces: PinnedWorkspace[]
+}
+
+/** `layout`·`pins` 를 `joinLayout` 으로 이은, renderer 가 되살릴 workspace 목록이다. */
+export type SavedLayout = { workspaces: SavedWorkspace[]; selected: number | null }
+
 /**
  * 뜰 때 main 이 renderer 에 주는 복원할 것이다. `ptys` 는 pane key 마다 붙을 pty 이고, null 이면 모든 pane 이 새 셸을
  * 띄운다. `notice` 는 사용자가 고르지 않았는데 세션이나 레이아웃을 잃은 이유다.
  */
 export type Restore = {
-  layout: LayoutPart | null
+  layout: SavedLayout | null
   ptys: Record<number, string> | null
   notice: 'layout' | 'sessions' | 'protocol' | null
 }
@@ -197,34 +220,37 @@ function parseCell<P>(v: unknown, parsePane: (x: unknown) => P | null): CellOf<P
   })
 }
 
+function parseWorkspaceFields(w: unknown): PinnedWorkspace | null {
+  if (!isObj(w) || typeof w.id !== 'string') return null
+  const { name: given, dir, favorites } = w
+  if (!optString(given) || !optString(dir)) return null
+  if (favorites !== undefined && !isStrings(favorites)) return null
+  // `rename`(`store.ts`)이 빈 이름을 받으면 이름을 지우는 것과 맞춰, 비었거나 공백뿐인 이름은 이름이 없는 것으로 본다.
+  const name = given?.trim() ? given : undefined
+  return compact({ id: w.id, name, dir, favorites: favorites?.length ? favorites : undefined })
+}
+
+/**
+ * `pinnable` 이면 `pinned` 를 읽고, cell 이 빈 workspace 는 핀일 때만 받는다. 아니면(`layout`) `pinned` 를 읽지 않고
+ * cell 이 빈 workspace 도 받는다. 핀인지는 `pins` 에 있으므로, 핀이 없는데 cell 이 빈 workspace 는 `joinLayout` 이
+ * 버린다.
+ */
 function parseWorkspaces<P>(
   v: unknown,
-  parsePane: (x: unknown) => P | null
+  parsePane: (x: unknown) => P | null,
+  pinnable: boolean
 ): WorkspaceOf<P>[] | null {
   return parseList(
     v,
     (w): WorkspaceOf<P> | null => {
-      if (!isObj(w) || !isKey(w.key) || typeof w.id !== 'string') return null
-      const { name: given, pinned, dir, favorites } = w
-      if (!optString(given) || !optString(dir)) return null
-      if (pinned !== undefined && pinned !== true) return null
-      if (favorites !== undefined && !isStrings(favorites)) return null
-      const isPinned = pinned === true
-      const cells = parseList(w.cells, (c) => parseCell(c, parsePane), isPinned)
-      // `rename`(`store.ts`)이 빈 이름을 받으면 이름을 지우는 것과 맞춰, 비었거나 공백뿐인 이름은 이름이 없는 것으로 본다.
-      const name = given?.trim() ? given : undefined
-      return (
-        cells &&
-        compact({
-          key: w.key,
-          id: w.id,
-          name,
-          pinned: isPinned || undefined,
-          dir,
-          favorites: favorites?.length ? favorites : undefined,
-          cells
-        })
-      )
+      if (!isObj(w) || !isKey(w.key)) return null
+      const fields = parseWorkspaceFields(w)
+      const { pinned } = w
+      if (!fields || (pinnable && pinned !== undefined && pinned !== true)) return null
+      const isPinned = pinnable && pinned === true
+      const allowEmpty = isPinned || !pinnable
+      const cells = parseList(w.cells, (c) => parseCell(c, parsePane), allowEmpty)
+      return cells && compact({ key: w.key, ...fields, pinned: isPinned || undefined, cells })
     },
     true
   )
@@ -233,7 +259,7 @@ function parseWorkspaces<P>(
 export function parseScreen(v: unknown): ScreenState | null {
   if (!isObj(v)) return null
   const { selected, sidebar } = v
-  const workspaces = parseWorkspaces(v.workspaces, parseScreenPane)
+  const workspaces = parseWorkspaces(v.workspaces, parseScreenPane, true)
   if (!workspaces) return null
   if (selected !== null && !isKey(selected)) return null
   const prefs = parseViewPrefs(v)
@@ -249,16 +275,51 @@ export function parseScreen(v: unknown): ScreenState | null {
   })
 }
 
-export function parseLayoutPart(v: unknown): LayoutPart | null {
-  if (!isObj(v) || v.version !== STATE_VERSIONS.layout) return null
-  const workspaces = parseWorkspaces(v.workspaces, parseLayoutPane)
+function parseSaved(v: unknown, version: number, pinnable: boolean): SavedLayout | null {
+  if (!isObj(v) || v.version !== version) return null
+  const workspaces = parseWorkspaces(v.workspaces, parseLayoutPane, pinnable)
   if (!workspaces) return null
   if (v.selected !== null && !isKey(v.selected)) return null
-  return { version: STATE_VERSIONS.layout, workspaces, selected: v.selected }
+  return { workspaces, selected: v.selected }
 }
 
-export function splitScreen(screen: ScreenState): {
-  layout: LayoutPart
+export function parseLayoutPart(v: unknown): LayoutPart | null {
+  const saved = parseSaved(v, STATE_VERSIONS.layout, false)
+  return saved && { version: STATE_VERSIONS.layout, ...saved }
+}
+
+/** 핀·즐겨찾기를 `layout` 에 두던 형식이면 `layout`·`pins` 로 나눠 준다. 그 형식이 아니거나 읽지 못하면 null 이다. */
+export function parsePinsInLayout(v: unknown): SplitLayout | null {
+  const saved = parseSaved(v, PINS_IN_LAYOUT_VERSION, true)
+  return saved && splitLayout(saved)
+}
+
+export function parsePinsPart(v: unknown): PinsPart | null {
+  if (!isObj(v) || v.version !== STATE_VERSIONS.pins) return null
+  const workspaces = parseList(v.workspaces, parseWorkspaceFields, true)
+  return workspaces && { version: STATE_VERSIONS.pins, workspaces }
+}
+
+type SplitLayout = { layout: LayoutPart; pins: PinsPart }
+
+function splitLayout({ workspaces, selected }: SavedLayout): SplitLayout {
+  const pins: PinnedWorkspace[] = []
+  const laid = workspaces.map(({ pinned, ...w }): LayoutWorkspace => {
+    if (!pinned) return w
+    const { key, id, name, favorites, cells } = w
+    // cell 이 있으면 첫 cell 의 첫 pane 의 cwd 를 `dir` 로 적는다. cell 이 있는 동안 `autoWorkspaceName`(`shared/names.ts`)이
+    // 그 pane 으로 이름을 짓기 때문이다.
+    const dir = cells.length ? cells[0].panes[0]?.cwd : w.dir
+    pins.push(compact({ id, name, dir, favorites }))
+    return { key, id, cells }
+  })
+  return {
+    layout: { version: STATE_VERSIONS.layout, workspaces: laid, selected },
+    pins: { version: STATE_VERSIONS.pins, workspaces: pins }
+  }
+}
+
+export function splitScreen(screen: ScreenState): SplitLayout & {
   ptys: { pane: number; pty: string }[]
 } {
   const ptys: { pane: number; pty: string }[] = []
@@ -272,10 +333,49 @@ export function splitScreen(screen: ScreenState): {
       })
     }))
   }))
-  return {
-    layout: { version: STATE_VERSIONS.layout, workspaces, selected: screen.selected },
-    ptys
+  return { ...splitLayout({ workspaces, selected: screen.selected }), ptys }
+}
+
+/**
+ * cell 의 즐겨찾기 표시는 그 workspace 의 `favorites` 에 있을 때만 남긴다. `pins` 를 잃으면 `favorites` 가 비어, cell 에
+ * 남은 표시가 없는 즐겨찾기를 가리키기 때문이다. 표시를 지운 cell 은 즐겨찾기 cell 뒤로 옮긴다. 즐겨찾기 cell 이 앞에
+ * 모여 있어야 하기 때문이다(`favoriteCount`).
+ */
+function keepFavorites(w: SavedWorkspace): SavedWorkspace {
+  const cells = w.cells.map((c) =>
+    c.favorite === undefined || w.favorites?.includes(c.favorite)
+      ? c
+      : compact({ ...c, favorite: undefined })
+  )
+  const marked = cells.filter((c) => c.favorite !== undefined)
+  return { ...w, cells: [...marked, ...cells.filter((c) => c.favorite === undefined)] }
+}
+
+/** workspace·cell·pane 의 key 는 카운터 하나로 매기므로 셋을 모두 준다. */
+export function layoutKeys(
+  workspaces: { key: number; cells: { key: number; panes: { key: number }[] }[] }[]
+): number[] {
+  return workspaces.flatMap((w) => [
+    w.key,
+    ...w.cells.flatMap((c) => [c.key, ...c.panes.map((p) => p.key)])
+  ])
+}
+
+export function joinLayout(layout: LayoutPart | null, pins: PinsPart | null): SavedLayout | null {
+  const laid = layout?.workspaces ?? []
+  const byId = new Map(laid.map((w) => [w.id, w]))
+  let next = Math.max(-1, ...layoutKeys(laid)) + 1
+  const ids = new Set<string>()
+  const pinned: SavedWorkspace[] = []
+  for (const p of pins?.workspaces ?? []) {
+    if (ids.has(p.id)) continue
+    ids.add(p.id)
+    const w = byId.get(p.id)
+    pinned.push({ ...p, key: w?.key ?? next++, pinned: true, cells: w?.cells ?? [] })
   }
+  const rest = laid.filter((w) => !ids.has(w.id) && w.cells.length)
+  const workspaces = [...pinned, ...rest].map(keepFavorites)
+  return workspaces.length ? { workspaces, selected: layout?.selected ?? null } : null
 }
 
 export function screenPanes(

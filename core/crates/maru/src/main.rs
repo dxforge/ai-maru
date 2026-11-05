@@ -455,7 +455,8 @@ enum AppCommand {
     ///
     /// Refuses when the installed app cannot reattach to the running terminals or read the
     /// saved state. Pass --kill-ptys to end the terminals and restart with the layout only, or
-    /// with an empty screen if the saved layout cannot be read.
+    /// restart and close all cells if the installed app uses a different or unknown layout
+    /// format.
     Restart {
         /// Restart even if the terminals would end.
         #[arg(long)]

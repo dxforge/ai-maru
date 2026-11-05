@@ -32,7 +32,7 @@ export async function installedVersions(path: string): Promise<typeof STATE_VERS
 export type Incompatible = {
   ok: false
   reason: 'incompatible'
-  /** 다시 뜬 앱이 할 수 있는 복원 — `layout` 이면 레이아웃만, `empty` 면 빈 화면이다. */
+  /** 다시 뜬 앱이 할 수 있는 복원 — `layout` 이면 레이아웃만, `empty` 면 cell 을 모두 닫는다. */
   result: 'layout' | 'empty'
   ptys: number
   /** 설치된 `maru-pty` 의 프로토콜이 다르고 살아 있는 pty 가 있을 때만 있다. 버전을 알 수 없으면 null 이다. */
@@ -102,18 +102,18 @@ function restartDetail(check: Incompatible): string {
   const after =
     check.result === 'layout'
       ? 'The panes will reopen with new shells in their last directories.'
-      : 'The app will start with an empty screen.'
+      : 'All cells will close.'
   return [...reasons(check), ...ending, after].join(' ')
 }
 
 export function restartDialog(check: Incompatible): Dialog {
   const action =
-    check.result === 'layout' ? 'Restart with layout only' : 'Restart with an empty screen'
+    check.result === 'layout' ? 'Restart with layout only' : 'Restart and close all cells'
   return { message: `${action}?`, detail: restartDetail(check), buttons: [action, 'Cancel'] }
 }
 
 export function restartRefusal(check: Incompatible): string {
-  const result = check.result === 'layout' ? 'with the layout only' : 'with an empty screen'
+  const result = check.result === 'layout' ? 'with the layout only' : 'and close all cells'
   return `${restartDetail(check)} Pass --kill-ptys to restart ${result}.`
 }
 

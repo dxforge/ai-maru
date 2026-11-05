@@ -6,7 +6,7 @@ export function restoreToast(notice: NonNullable<Restore['notice']>): Toast {
     return {
       level: 'warning',
       title: "Couldn't restore the workspace layout",
-      lines: ["The saved layout couldn't be read, so AI Maru started with an empty screen."]
+      lines: ["The saved layout couldn't be read, so AI Maru didn't reopen the cells."]
     }
   const why =
     notice === 'protocol'

@@ -37,6 +37,7 @@ import {
   typesInto,
   cellGroups,
   workspaceHeads,
+  cellFavorite,
   cellItems,
   cellPlaces,
   cellViews,
@@ -290,11 +291,22 @@ test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살
   await run(page, 'echo back-$((1+1))', 'back-2')
 })
 
-test('state.json 의 layout 을 읽지 못하면 pty 를 끄고 빈 화면으로 뜨며 알린다', async ({
+const closedRows = (page: Launched['page']) => page.locator('.sidebar .closed-row')
+
+test('state.json 의 layout 을 읽지 못하면 pty 를 끄고, 핀 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리며 알린다', async ({
   launch,
   dataDir
 }) => {
-  const first = await launch()
+  const shell = { SHELL: '/bin/zsh', HOME: zshHome(dataDir, 'sub') }
+  const first = await launch(shell)
+  await clickMenu(first.app, 'rename-workspace')
+  await expect(first.page.locator('.sidebar .workspace-name-input')).toBeFocused()
+  await first.page.keyboard.type('atlas')
+  await first.page.keyboard.press('Enter')
+  await run(first.page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await cellItems(first.page).nth(0).hover()
+  await cellFavorite(first.page, 0).click()
+  await expect(cellFavorite(first.page, 0)).toHaveAttribute('aria-pressed', 'true')
   await newWorkspace(first, 2)
   await restartWith(first.app)
   const saved = readState(dataDir)
@@ -302,11 +314,49 @@ test('state.json 의 layout 을 읽지 못하면 pty 를 끄고 빈 화면으로
   writeFileSync(stateFile(dataDir), JSON.stringify(saved))
   const old = sockets(dataDir)
 
-  const { page } = await launch()
+  const { page } = await launch(shell)
   await expect(toast(page)).toContainText("Couldn't restore the workspace layout")
+  await expect(workspaceNames(page)).toHaveCount(2)
+  await expect(workspaceNames(page).nth(0)).toHaveText('atlas')
+  await expect(closedRows(page)).toHaveCount(1)
+  await expect(closedRows(page)).toContainText('sub')
   await expect(cellItems(page)).toHaveCount(1)
   await run(page, 'echo empty-$((1+1))', 'empty-2')
   for (const sock of old) expect(sockets(dataDir)).not.toContain(sock)
+})
+
+test('핀을 layout 에 두던 빌드가 쓴 state.json 이면 핀 workspace 를 되살리고 pins 로 옮겨 쓴다', async ({
+  launch,
+  dataDir
+}) => {
+  const pinned = { id: 'w-00000001', name: 'atlas', dir: dataDir, favorites: [dataDir] }
+  writeFileSync(
+    stateFile(dataDir),
+    JSON.stringify({
+      layout: {
+        version: 1,
+        workspaces: [{ key: 0, ...pinned, pinned: true, cells: [] }],
+        selected: null
+      },
+      sessions: null,
+      view: null
+    })
+  )
+
+  const { page } = await launch()
+  await expect(workspaceNames(page)).toHaveCount(2)
+  await expect(workspaceNames(page).nth(0)).toHaveText('atlas')
+  await expect(closedRows(page)).toHaveCount(1)
+  await run(page, 'echo moved-$((1+1))', 'moved-2')
+  await expect
+    .poll(() => readState(dataDir))
+    .toMatchObject({
+      layout: {
+        version: STATE_VERSIONS.layout,
+        workspaces: [{ key: 0, id: pinned.id, cells: [] }, {}]
+      },
+      pins: { version: STATE_VERSIONS.pins, workspaces: [pinned] }
+    })
 })
 
 test('재시작 뒤 maru pane new 가 되살린 pane 을 나눈다', async ({ launch }) => {
@@ -494,14 +544,17 @@ test('pty 프로토콜이 달라도 확인하면 pty 를 끄고 재시작하고,
   await stubDialog(app, 0)
   await restartWith(app)
   expect(sockets(dataDir)).toEqual([])
-  expect(readState(dataDir)).toMatchObject({ sessions: null, layout: { version: 1 } })
+  expect(readState(dataDir)).toMatchObject({
+    sessions: null,
+    layout: { version: STATE_VERSIONS.layout }
+  })
 
   const again = await launch()
   await expect(panes(again.page)).toHaveCount(2)
   await expect(toast(again.page)).toHaveCount(0)
 })
 
-test('layout 형식이 다른 빌드로는 빈 화면으로 재시작할지 묻고, 확인하면 다음 실행은 빈 화면이며 알리지 않는다', async ({
+test('layout 형식이 다른 빌드로는 cell 을 모두 닫고 재시작할지 묻고, 확인하면 다음 실행은 새 workspace 하나로 뜨며 알리지 않는다', async ({
   launch,
   dataDir
 }) => {
@@ -513,9 +566,9 @@ test('layout 형식이 다른 빌드로는 빈 화면으로 재시작할지 묻�
     .poll(() => dialogCalls(first.app))
     .toMatchObject([
       {
-        message: 'Restart with an empty screen?',
+        message: 'Restart and close all cells?',
         detail: expect.stringContaining('a different format for the saved layout.'),
-        buttons: ['Restart with an empty screen', 'Cancel']
+        buttons: ['Restart and close all cells', 'Cancel']
       }
     ])
   await stubDialog(first.app, 0)
@@ -549,7 +602,10 @@ test('버전이 달라도 maru app restart --kill-ptys 는 레이아웃만 남�
   const { app, page } = await launch(otherProtocolBin(dataDir))
   await shellUp(page, 0)
   await restartWith(app, () => page.keyboard.type('"$MARU_CLI" app restart --kill-ptys\n'))
-  expect(readState(dataDir)).toMatchObject({ sessions: null, layout: { version: 1 } })
+  expect(readState(dataDir)).toMatchObject({
+    sessions: null,
+    layout: { version: STATE_VERSIONS.layout }
+  })
 })
 
 test('화면을 저장하지 못하면 maru app restart 는 실패하고 앱은 그대로다', async ({

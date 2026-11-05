@@ -55,13 +55,10 @@ describe('ptyProtocol', () => {
 })
 
 describe('installedVersions', () => {
-  it('세 버전이 모두 정수면 읽고, 파일이 없거나 틀리면 null 이다', async () => {
-    expect(await installedVersions(versions({ layout: 2, sessions: 1, view: 3, x: 1 }))).toEqual({
-      layout: 2,
-      sessions: 1,
-      view: 3
-    })
-    expect(await installedVersions(versions({ layout: 2, sessions: 1 }))).toBeNull()
+  it('부분마다의 버전이 모두 정수면 읽고, 파일이 없거나 틀리거나 pins 가 없는 옛 빌드의 파일이면 null 이다', async () => {
+    const all = { layout: 2, sessions: 1, view: 3, pins: 4 }
+    expect(await installedVersions(versions({ ...all, x: 1 }))).toEqual(all)
+    expect(await installedVersions(versions({ layout: 2, sessions: 1, view: 3 }))).toBeNull()
     expect(await installedVersions(versions('{nope'))).toBeNull()
     expect(await installedVersions(join(dir, 'missing.json'))).toBeNull()
   })
@@ -121,7 +118,7 @@ describe('checkRestart', () => {
     })
   })
 
-  it('layout 형식이 다르거나 형식 버전 파일이 없으면 빈 화면이다', async () => {
+  it('layout 형식이 다르거나 형식 버전 파일이 없으면 cell 을 모두 닫는다', async () => {
     const bin = fakeBin(String(PROTOCOL_VERSION))
     const file = versions({ ...STATE_VERSIONS, layout: STATE_VERSIONS.layout + 1 })
     expect(await check(bin, file)).toMatchObject({ result: 'empty', formats: ['layout'] })
@@ -132,9 +129,7 @@ describe('checkRestart', () => {
     })
     expect(
       restartDialog((await check(bin, join(dir, 'missing.json'))) as Incompatible).detail
-    ).toBe(
-      "The installed app's saved-state format couldn't be determined. The app will start with an empty screen."
-    )
+    ).toBe("The installed app's saved-state format couldn't be determined. All cells will close.")
   })
 })
 
@@ -161,15 +156,15 @@ describe('restartDialog · restartRefusal', () => {
       detail: `The installed app uses pty protocol version 9, while this app uses version ${PROTOCOL_VERSION}. This will end 2 terminals. The panes will reopen with new shells in their last directories.`,
       buttons: ['Restart with layout only', 'Cancel']
     })
-    expect(restartDialog(layout).buttons).toEqual(['Restart with an empty screen', 'Cancel'])
+    expect(restartDialog(layout).buttons).toEqual(['Restart and close all cells', 'Cancel'])
     expect(restartDialog(layout).detail).toBe(
-      'The installed app uses a different format for the saved layout and terminal sessions. This will end 1 terminal. The app will start with an empty screen.'
+      'The installed app uses a different format for the saved layout and terminal sessions. This will end 1 terminal. All cells will close.'
     )
   })
 
   it('CLI 메시지는 플래그를 주면 어떻게 되는지 적는다', () => {
     expect(restartRefusal(protocol)).toMatch(/Pass --kill-ptys to restart with the layout only\.$/)
-    expect(restartRefusal(layout)).toMatch(/Pass --kill-ptys to restart with an empty screen\.$/)
+    expect(restartRefusal(layout)).toMatch(/Pass --kill-ptys to restart and close all cells\.$/)
   })
 })
 

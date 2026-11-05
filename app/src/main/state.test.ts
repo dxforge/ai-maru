@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PROTOCOL_VERSION } from '../shared/protocol'
-import { splitScreen, STATE_VERSIONS, type ScreenState } from '../shared/screen'
+import { splitScreen, STATE_VERSIONS, type PinsPart, type ScreenState } from '../shared/screen'
 import type { JobRecord } from './job'
 import {
   createStateStore,
-  pinnedOnly,
+  initialState,
   readState,
   removeOldStateFiles,
   restorePlan,
@@ -60,7 +60,14 @@ const view = {
   window: { x: 1, y: 2, width: 800, height: 600, isMaximized: false, isFullScreen: true },
   theme: { background: '#101010', mode: 'dark' as const }
 }
-const full: StateFile = { layout, sessions, view }
+const unfolded: Partial<typeof view> = { ...view }
+delete unfolded.folded
+// `pins` 는 `screen` 의 workspace 와 맞추지 않는다 — store 는 `layout`·`pins` 가 서로 맞는지 보지 않는다.
+const pins: PinsPart = {
+  version: STATE_VERSIONS.pins,
+  workspaces: [{ id: 'w-00000009', name: 'atlas', favorites: ['/tmp'] }]
+}
+const full: StateFile = { layout, pins, sessions, view }
 
 let dir: string
 let path: string
@@ -77,25 +84,34 @@ const write = (v: unknown): void => writeFileSync(path, JSON.stringify(v))
 const saved = (): StateFile => JSON.parse(readFileSync(path, 'utf8'))
 
 describe('readState', () => {
-  it('세 부분을 읽는다', () => {
+  it('네 부분을 읽는다', () => {
     write(full)
     expect(readState(path)).toEqual({
       layout: { kind: 'ok', value: layout },
+      pins: { kind: 'ok', value: pins },
       sessions: { kind: 'ok', value: sessions },
       view
     })
   })
 
   it('파일이 없거나 부분이 null 이면 absent 다', () => {
-    const empty = { layout: { kind: 'absent' }, sessions: { kind: 'absent' } }
+    const empty = {
+      layout: { kind: 'absent' },
+      pins: { kind: 'absent' },
+      sessions: { kind: 'absent' }
+    }
     expect(readState(path)).toEqual({ ...empty, view: { version: STATE_VERSIONS.view } })
-    write({ layout: null, sessions: null, view })
+    write({ layout: null, pins: null, sessions: null, view })
     expect(readState(path)).toEqual({ ...empty, view })
   })
 
-  it('JSON 이 깨졌으면 layout·sessions 는 bad 다', () => {
+  it('JSON 이 깨졌으면 layout·pins·sessions 는 bad 다', () => {
     writeFileSync(path, '{nope')
-    expect(readState(path)).toMatchObject({ layout: { kind: 'bad' }, sessions: { kind: 'bad' } })
+    expect(readState(path)).toMatchObject({
+      layout: { kind: 'bad' },
+      pins: { kind: 'bad' },
+      sessions: { kind: 'bad' }
+    })
   })
 
   it('한 부분의 버전이 달라도 다른 부분은 읽는다', () => {
@@ -106,11 +122,55 @@ describe('readState', () => {
       view
     })
     write({ ...full, layout: { ...layout, version: STATE_VERSIONS.layout + 1 } })
-    expect(readState(path)).toMatchObject({ layout: { kind: 'bad' }, sessions: { kind: 'ok' } })
+    expect(readState(path)).toMatchObject({
+      layout: { kind: 'bad' },
+      pins: { kind: 'ok' },
+      sessions: { kind: 'ok' }
+    })
+    write({ ...full, pins: { ...pins, version: STATE_VERSIONS.pins + 1 } })
+    expect(readState(path)).toMatchObject({
+      layout: { kind: 'ok' },
+      pins: { kind: 'bad' },
+      sessions: { kind: 'ok' }
+    })
     write({ ...full, view: { ...view, version: STATE_VERSIONS.view + 1 } })
     expect(readState(path)).toMatchObject({
       layout: { kind: 'ok' },
       view: { version: STATE_VERSIONS.view }
+    })
+  })
+
+  it('핀을 layout 에 두던 형식이면 pins 로 옮겨 읽고, 파일의 pins 는 쓰지 않는다', () => {
+    const w = layout.workspaces[0]
+    const old = {
+      version: 1,
+      workspaces: [{ ...w, name: 'atlas', pinned: true, favorites: ['/tmp'] }],
+      selected: layout.selected
+    }
+    write({ ...full, layout: old })
+    expect(readState(path)).toMatchObject({
+      layout: {
+        kind: 'ok',
+        value: { ...layout, workspaces: [{ key: w.key, id: w.id, cells: w.cells }] }
+      },
+      pins: {
+        kind: 'ok',
+        value: {
+          version: STATE_VERSIONS.pins,
+          workspaces: [{ id: w.id, name: 'atlas', dir: '/tmp', favorites: ['/tmp'] }]
+        }
+      },
+      sessions: { kind: 'ok', value: sessions }
+    })
+  })
+
+  it('핀을 layout 에 두던 형식이 틀렸으면 layout 은 bad 이고, pins 는 파일의 pins 로 읽는다', () => {
+    write({ ...full, layout: { version: 1, workspaces: 'x', selected: null }, pins: undefined })
+    expect(readState(path)).toMatchObject({ layout: { kind: 'bad' }, pins: { kind: 'absent' } })
+    write({ ...full, layout: { version: 1, workspaces: 'x', selected: null } })
+    expect(readState(path)).toMatchObject({
+      layout: { kind: 'bad' },
+      pins: { kind: 'ok', value: pins }
     })
   })
 
@@ -130,6 +190,28 @@ describe('readState', () => {
       canvas: view.canvas
     })
   })
+})
+
+describe('initialState', () => {
+  const ok = <T>(value: T) => ({ kind: 'ok' as const, value })
+
+  it('읽은 부분은 그대로 담고, 읽지 못한 부분은 비운다', () => {
+    const read: ReadState = {
+      layout: ok(layout),
+      pins: { kind: 'bad' },
+      sessions: ok(sessions),
+      view
+    }
+    expect(initialState(read)).toEqual({ layout, pins: null, sessions, view })
+  })
+
+  it.each(['absent', 'bad'] as const)(
+    'layout 이 %s 면 접은 workspace 도 지운다 — 핀 workspace 가 새로 받을 key 와 겹치지 않게',
+    (kind) => {
+      const read: ReadState = { layout: { kind }, pins: ok(pins), sessions: ok(sessions), view }
+      expect(initialState(read)).toEqual({ layout: null, pins, sessions: null, view: unfolded })
+    }
+  )
 })
 
 describe('removeOldStateFiles', () => {
@@ -200,7 +282,7 @@ describe('sessionPtys', () => {
 
 describe('createStateStore', () => {
   const MS = 500
-  const store = (initial: StateFile = { layout: null, sessions: null, view }) =>
+  const store = (initial: StateFile = { layout: null, pins: null, sessions: null, view }) =>
     createStateStore({ path, debounceMs: MS, initial })
 
   it('enable 전의 변경은 쓰지 않고, enable 뒤 debounce 가 지나면 한 번에 쓴다', () => {
@@ -216,6 +298,7 @@ describe('createStateStore', () => {
     vi.advanceTimersByTime(1)
     expect(saved()).toEqual({
       layout,
+      pins: { version: STATE_VERSIONS.pins, workspaces: [] },
       sessions,
       view: {
         version: view.version,
@@ -251,14 +334,13 @@ describe('createStateStore', () => {
   })
 
   it.each([
-    ['keep', { layout, sessions }],
-    ['layout', { layout, sessions: null }],
-    ['end', { layout: null, sessions: null }],
-    ['empty', { layout: null, sessions: null }]
-  ] as const)('finish(%s) 는 바로 쓰고 view 는 남긴다', (outcome, expected) => {
+    ['keep', { layout, sessions, view }],
+    ['layout', { layout, sessions: null, view }],
+    ['end', { layout: null, sessions: null, view: unfolded }]
+  ] as const)('finish(%s) 는 바로 쓰고 pins·view 는 남긴다', (outcome, expected) => {
     const s = store(full)
     s.finish(outcome)
-    expect(saved()).toEqual({ ...expected, view })
+    expect(saved()).toEqual({ ...expected, pins })
   })
 
   it('finish 뒤의 변경은 버린다 — 끄며 닫힌 pane 이 고른 결과를 덮지 않는다', () => {
@@ -269,7 +351,7 @@ describe('createStateStore', () => {
     s.setScreen({ ...screen, workspaces: [] })
     s.setJobs([])
     vi.advanceTimersByTime(MS)
-    expect(saved()).toEqual({ layout, sessions: null, view })
+    expect(saved()).toEqual({ layout, pins, sessions: null, view })
   })
 
   it('쓰지 못하면 finish 가 던지고, 끝내지 않은 채로 둔다', () => {
@@ -278,7 +360,7 @@ describe('createStateStore', () => {
     expect(() => s.finish('keep')).toThrow()
     rmSync(path, { recursive: true })
     s.finish('end')
-    expect(saved()).toEqual({ layout: null, sessions: null, view })
+    expect(saved()).toEqual({ layout: null, pins, sessions: null, view: unfolded })
   })
 
   it('finish 가 던져도 끝내지 않았으므로 그 뒤의 변경을 타이머가 쓴다 — 끄지 않고 이어 쓰는 경우', () => {
@@ -308,23 +390,16 @@ describe('createStateStore', () => {
     expect(existsSync(path)).toBe(false)
   })
 
-  it('finish(end) 는 핀 workspace 를 cell 없이 남기고, finish(empty) 는 핀 workspace 도 남기지 않는다', () => {
-    const pinned = { ...layout.workspaces[0], pinned: true as const, name: 'atlas' }
-    const withPin = { ...full, layout: { ...layout, workspaces: [pinned] } }
-    store(withPin).finish('empty')
-    expect(saved()).toEqual({ layout: null, sessions: null, view })
-    const s = store(withPin)
-    s.finish('end')
-    expect(saved()).toEqual({
-      layout: {
-        ...layout,
-        workspaces: [
-          { key: 3, id: 'w-00000001', name: 'atlas', pinned: true, dir: '/tmp', cells: [] }
-        ],
-        selected: null
-      },
-      sessions: null,
-      view
+  it('화면의 핀 workspace 는 pins 에, 배치는 layout 에 나눠 담는다', () => {
+    const w = { ...screen.workspaces[0], name: 'atlas', pinned: true as const, favorites: ['/tmp'] }
+    const s = store(full)
+    s.setScreen({ ...screen, workspaces: [w] })
+    expect(s.current()).toMatchObject({
+      layout: { workspaces: [{ key: 3, id: 'w-00000001', cells: layout.workspaces[0].cells }] },
+      pins: {
+        version: STATE_VERSIONS.pins,
+        workspaces: [{ id: 'w-00000001', name: 'atlas', dir: '/tmp', favorites: ['/tmp'] }]
+      }
     })
   })
 
@@ -333,62 +408,6 @@ describe('createStateStore', () => {
     s.discard('layout')
     expect(s.current()).toMatchObject({ layout, sessions: null })
     s.discard('end')
-    expect(s.current()).toMatchObject({ layout: null, sessions: null })
-  })
-})
-
-describe('pinnedOnly', () => {
-  const cell = layout.workspaces[0].cells[0]
-  const ws = (key: number, extra: object, cells = [cell]) => ({
-    key,
-    id: `w-0000000${key}`,
-    cells,
-    ...extra
-  })
-
-  it('핀 없는 workspace 를 빼고, 핀 workspace 의 이름·즐겨찾기를 남긴 채 dir 을 첫 cell 의 첫 pane 의 cwd 로 적는다', () => {
-    const second = { ...cell, key: 9, panes: [{ key: 10, cwd: '/var' }] }
-    const out = pinnedOnly({
-      ...layout,
-      workspaces: [
-        ws(1, { pinned: true, name: 'atlas', favorites: ['/tmp'], dir: '/old' }, [cell, second]),
-        ws(2, {})
-      ],
-      selected: 1
-    })
-    expect(out).toEqual({
-      ...layout,
-      workspaces: [
-        {
-          key: 1,
-          id: 'w-00000001',
-          name: 'atlas',
-          pinned: true,
-          favorites: ['/tmp'],
-          dir: '/tmp',
-          cells: []
-        }
-      ],
-      selected: null
-    })
-  })
-
-  it('cell 이 없던 핀 workspace 는 dir 을 그대로 두고, 첫 pane 의 cwd 를 모르면 dir 을 지운다', () => {
-    const unknown = { ...cell, panes: [{ key: 0 }] }
-    const out = pinnedOnly({
-      ...layout,
-      workspaces: [
-        ws(1, { pinned: true, dir: '/old' }, []),
-        ws(2, { pinned: true, dir: '/old' }, [unknown])
-      ]
-    })
-    expect(out?.workspaces).toEqual([
-      { key: 1, id: 'w-00000001', pinned: true, dir: '/old', cells: [] },
-      { key: 2, id: 'w-00000002', pinned: true, cells: [] }
-    ])
-  })
-
-  it('핀 workspace 가 없으면 null 이다', () => {
-    expect(pinnedOnly({ ...layout, workspaces: [ws(1, {}), ws(2, {}, [])] })).toBeNull()
+    expect(s.current()).toMatchObject({ layout: null, pins, sessions: null, view: unfolded })
   })
 })
