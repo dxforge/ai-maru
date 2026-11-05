@@ -3,6 +3,7 @@ import type { GitHead } from '../../../shared/git'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import { isPtyId } from '../../../shared/pty'
 import type { PtyState } from '../../../shared/pty-state'
+import { autoWorkspaceName } from '../../../shared/names'
 import { parseScreen } from '../../../shared/screen'
 import {
   createWorkspaces,
@@ -74,8 +75,7 @@ function full(saved: WorkspacesScreen): [WorkspacesScreen, Record<number, string
 
 /** 재시작 전 pane 은 모두 pty 를 띄운 것으로 둔다. */
 function restarted(from: Workspaces): Workspaces {
-  for (const c of from.cells())
-    for (const p of c.panes) if (p.cwd === undefined) from.setSpawnedDir(p.key, '/home')
+  for (const c of from.cells()) for (const p of c.panes) from.setSpawnedDir(p.key, p.cwd ?? '/home')
   const to = createWorkspaces()
   to.restore(...full(from.snapshot()))
   return to
@@ -114,7 +114,7 @@ describe('snapshot·restore', () => {
     expect(to.list.value.map((w) => w.name)).toEqual([undefined, '리뷰', undefined])
     expect(to.list.value.map((w) => w.pinned)).toEqual([true, true, true])
     expect(to.list.value.map((w) => w.favorites)).toEqual([undefined, ['/d-1'], undefined])
-    expect(to.list.value.map((w) => w.dir)).toEqual([undefined, undefined, '/d-2'])
+    expect(to.list.value.map((w) => w.dir)).toEqual(['/d-0', '/d-1', '/d-2'])
     expect(to.list.value[2].cells).toEqual([])
     expect(to.cells().map((c) => c.favorite)).toEqual([undefined, '/d-1'])
   })
@@ -752,6 +752,16 @@ describe('git', () => {
     await r.answer('/a', { repo: 'a', branch: 'main', sub: '' })
     expect(selected(ws).panes[0].gitRoot).toBe('/a')
     expect(Object.keys(ws.snapshot().workspaces[0].cells[0].panes[0])).not.toContain('gitRoot')
+  })
+
+  it('작업 트리 안에서 cd 하면 git 을 다시 읽기 전에도 workspace 이름은 저장소 이름이다', async () => {
+    const r = reader()
+    const { ws, report } = setup(r.read)
+    report({ cwd: '/wt/foo', cwdReports: 1 })
+    await r.answer('/wt/foo', { repo: 'ai-maru', branch: 'main', sub: '' })
+    expect(autoWorkspaceName(ws.list.value[0])).toBe('ai-maru')
+    report({ cwd: '/wt/foo/app', cwdReports: 2 })
+    expect(autoWorkspaceName(ws.list.value[0])).toBe('ai-maru')
   })
 })
 
@@ -1496,7 +1506,7 @@ describe('workspace 핀', () => {
     expect(ws.list.value[2].cells[0].panes[0].startDir).toBe('/new')
   })
 
-  it('핀 workspace 는 마지막 cell 을 닫아도 남고, 닫은 cell 첫 pane 의 cwd 를 dir 에 적으며, 선택은 다른 workspace 로 간다', () => {
+  it('핀 workspace 는 마지막 cell 을 닫아도 남고, dir 이 아직 없으면 닫은 cell 첫 pane 의 cwd 를 적으며, 선택은 다른 workspace 로 간다', () => {
     const src = source()
     const ws = createWorkspaces(undefined, src)
     ws.open('/d-0')
@@ -1511,7 +1521,7 @@ describe('workspace 핀', () => {
     expect(selected(ws).key).toBe(ws.list.value[1].cells[0].key)
   })
 
-  it('끝난 셸의 상태가 cell 을 닫기 전에 지워져도 핀 workspace 의 dir 은 셸이 뜬 디렉토리가 아닌 마지막 cwd 다', () => {
+  it('workspace 의 dir 은 첫 셸이 뜬 디렉토리로 정하고, 그 셸이 cd 하거나 cell 을 닫아도 바뀌지 않는다', () => {
     const src = source()
     const ws = createWorkspaces(undefined, src)
     ws.open('/d-0')
@@ -1522,8 +1532,9 @@ describe('workspace 핀', () => {
     src.set(ws, cell.panes[0].ptyId, { cwd: '/home/sub', cwdReports: 1 })
     src.drop(ws, cell.panes[0].ptyId)
     expect(cell.panes[0].cwd).toBe('/home/sub')
+    expect(ws.list.value[0].dir).toBe('/home')
     shut(ws, cell.key)
-    expect(ws.list.value[0]).toMatchObject({ pinned: true, dir: '/home/sub', cells: [] })
+    expect(ws.list.value[0]).toMatchObject({ pinned: true, dir: '/home', cells: [] })
   })
 
   it('상태가 지워져 남긴 마지막 cwd 는 같은 pane 에 새 셸이 뜨면 셸이 뜬 디렉토리로 바뀐다', () => {
@@ -1638,7 +1649,7 @@ describe('workspace 핀', () => {
     expect(wsKeys(ws)).toEqual([b])
   })
 
-  it('핀 workspace 의 하나뿐인 cell 을 새 workspace 로 옮기면 새 workspace 를 만들고 핀 workspace 는 빈 채로 남는다', () => {
+  it('핀 workspace 의 하나뿐인 cell 을 새 workspace 로 옮기면 새 workspace 를 만들고 핀 workspace 는 빈 채로 남는다 — dir 이 없던 핀 workspace 는 그 cell 의 cwd 를 적는다', () => {
     const ws = opened(2)
     const [a, b] = wsKeys(ws)
     const [x] = keys(ws)
@@ -1659,6 +1670,99 @@ describe('workspace 핀', () => {
     shut(ws, x)
     ws.moveCell(y, { workspace: a, index: 0 })
     expect(ws.list.value[0].cells.map((c) => c.key)).toEqual([y])
+  })
+})
+
+describe('workspace dir', () => {
+  it('첫 cell 의 첫 pane 의 셸이 뜬 디렉토리로 정하고, 요청한 디렉토리가 아니다', () => {
+    const ws = createWorkspaces()
+    ws.open('/gone')
+    ws.setSpawnedDir(selected(ws).panes[0].key, '/home')
+    expect(ws.list.value[0].dir).toBe('/home')
+  })
+
+  it('나눈 pane·다음 cell 의 셸이나 다시 뜬 셸은 정한 dir 을 바꾸지 않는다', () => {
+    const ws = createWorkspaces()
+    ws.open('/root')
+    const first = selected(ws).panes[0].key
+    ws.setSpawnedDir(first, '/root')
+    ws.split('right')
+    ws.setSpawnedDir(selected(ws).focused, '/other')
+    ws.openCell('/next')
+    ws.setSpawnedDir(selected(ws).panes[0].key, '/next')
+    ws.setSpawnedDir(first, '/home')
+    expect(ws.list.value[0].dir).toBe('/root')
+  })
+
+  it('첫 pane 이 cd 해도 dir 과 저장한 dir 은 그대로다', () => {
+    const src = source()
+    const ws = createWorkspaces(undefined, src)
+    ws.open('/root')
+    const p = selected(ws).panes[0]
+    ws.setSpawnedDir(p.key, '/root')
+    src.set(ws, p.ptyId, { cwd: '/root/sub', cwdReports: 1 })
+    expect(ws.snapshot().workspaces[0].dir).toBe('/root')
+  })
+
+  it('cell 을 새 workspace 로 옮기면 새 workspace 의 dir 은 그 cell 의 지금 cwd 다', () => {
+    const src = source()
+    const ws = createWorkspaces(undefined, src)
+    ws.open('/root')
+    ws.openCell('/root')
+    const c = selected(ws)
+    src.set(ws, c.panes[0].ptyId, { cwd: '/elsewhere', cwdReports: 1 })
+    ws.moveCell(c.key, 'new')
+    expect(ws.list.value[1].dir).toBe('/elsewhere')
+  })
+
+  it('홈에서 뜬 workspace 의 dir 은 홈이다가, 첫 pane 이 홈 밖으로 처음 간 디렉토리로 정한다', () => {
+    const src = source()
+    const ws = createWorkspaces(undefined, src, undefined, undefined, undefined, undefined, '/h/')
+    ws.open()
+    const p = selected(ws).panes[0]
+    ws.setSpawnedDir(p.key, '/h')
+    expect(ws.list.value[0].dir).toBe('/h')
+    src.set(ws, p.ptyId, { cwd: '/h/mono', cwdReports: 1 })
+    src.set(ws, p.ptyId, { cwd: '/h/mono/app', cwdReports: 2 })
+    expect(ws.list.value[0].dir).toBe('/h/mono')
+  })
+
+  it('홈인 dir 을 되살린 뒤 첫 pane 이 홈 밖으로 가면 그 디렉토리로 정한다', () => {
+    const from = createWorkspaces()
+    from.open('/h')
+    const saved = from.snapshot()
+    saved.workspaces[0].dir = '/h'
+    const src = source()
+    const to = createWorkspaces(undefined, src, undefined, undefined, undefined, undefined, '/h')
+    to.restore(...full(saved))
+    expect(to.list.value[0].dir).toBe('/h')
+    src.set(to, selected(to).panes[0].ptyId, { cwd: '/h/proj', cwdReports: 1 })
+    expect(to.list.value[0].dir).toBe('/h/proj')
+  })
+
+  it('홈에서 닫은 핀 workspace 의 dir 은 홈이고, 다시 열어 홈 밖으로 가면 그 디렉토리로 정한다', () => {
+    const src = source()
+    const ws = createWorkspaces(undefined, src, undefined, undefined, undefined, undefined, '/h')
+    ws.open()
+    const p = selected(ws).panes[0]
+    ws.setSpawnedDir(p.key, '/h')
+    ws.togglePin(ws.list.value[0].key)
+    ws.closePane(p.key)
+    expect(ws.list.value[0]).toMatchObject({ dir: '/h', cells: [] })
+    ws.openIn(ws.list.value[0].key, '/h')
+    src.set(ws, selected(ws).panes[0].ptyId, { cwd: '/h/proj', cwdReports: 1 })
+    expect(ws.list.value[0].dir).toBe('/h/proj')
+  })
+
+  it('dir 이 없는 화면을 되살리면 첫 cell 의 첫 pane 의 cwd 로 채운다', () => {
+    const from = createWorkspaces()
+    from.open('/root')
+    const saved = from.snapshot()
+    saved.workspaces[0].cells[0].panes[0].cwd = '/root/sub'
+    delete saved.workspaces[0].dir
+    const to = createWorkspaces()
+    to.restore(...full(saved))
+    expect(to.list.value[0].dir).toBe('/root/sub')
   })
 })
 

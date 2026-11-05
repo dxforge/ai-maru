@@ -87,7 +87,15 @@ const barPanels = computed((): Panel[] => [
 ])
 
 const ptyStates = createPtyStates()
-const workspaces = createWorkspaces(window.maru.gitHead, ptyStates)
+const workspaces = createWorkspaces(
+  window.maru.gitHead,
+  ptyStates,
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  window.maru.home
+)
 syncPtyStates((pty, entry) => {
   ptyStates.apply(pty, entry)
   workspaces.applyState(pty)

@@ -6,6 +6,7 @@ import {
   labelBase,
   nameOnFocusLoss,
   sidebarLabel,
+  type Named,
   windowTitle,
   workspaceName
 } from './names'
@@ -113,10 +114,31 @@ describe('autoWorkspaceName', () => {
     expect(autoWorkspaceName({ cells: [] })).toBe('Shell')
   })
 
-  it('cell 이 있으면 dir 을 보지 않는다', () => {
-    expect(autoWorkspaceName({ dir: '/r/old', cells: [{ panes: [{ cwd: '/tmp/notes' }] }] })).toBe(
-      'notes'
-    )
+  it('dir 이 아직 없으면 첫 pane 으로 짓는다', () => {
+    expect(
+      autoWorkspaceName({
+        cells: [{ panes: [{ cwd: '/r/x', git: { repo: 'ai-maru', sub: 'x' } }] }]
+      })
+    ).toBe('ai-maru')
+    expect(autoWorkspaceName({ cells: [{ panes: [{ cwd: '/tmp/notes' }] }] })).toBe('notes')
+  })
+
+  it('cell 이 있어도 dir 로 짓고, dir 이 첫 pane 의 작업 트리 안이면 저장소 이름이다', () => {
+    const at = (cwd: string, sub: string) => ({ cwd, git: { repo: 'ai-maru', sub } })
+    const named = (dir: string, pane: Named) =>
+      autoWorkspaceName({ dir, cells: [{ panes: [pane] }] })
+    expect(named('/mono', { cwd: '/tmp/notes' })).toBe('mono')
+    expect(named('/mono', at('/mono/ai-maru', ''))).toBe('mono')
+    expect(named('/mono/ai-maru', at('/mono/ai-maru/app', 'app'))).toBe('ai-maru')
+    expect(named('/mono/ai-maru/app', at('/mono/ai-maru', ''))).toBe('ai-maru')
+    expect(named('/mono/ai-maru2', at('/mono/ai-maru', ''))).toBe('ai-maru2')
+    expect(named('/mono', at('/mono/ai-maru/a/b', 'a/b'))).toBe('mono')
+    const stale = {
+      cwd: '/wt/foo/app',
+      git: { repo: 'ai-maru', sub: '' },
+      gitRoot: '/wt/foo'
+    }
+    expect(named('/wt/foo', stale)).toBe('ai-maru')
   })
 })
 
@@ -165,6 +187,12 @@ describe('labelBase', () => {
 
   it('cell 이 없으면 없다', () => {
     expect(labelBase({ cells: [] })).toBeUndefined()
+  })
+
+  it('dir 이 첫 pane 의 작업 트리 밖이면 없다', () => {
+    const pane = { cwd: '/mono/ai-maru', git: { repo: 'ai-maru', sub: '' } }
+    expect(labelBase({ dir: '/mono', cells: [{ panes: [pane] }] })).toBeUndefined()
+    expect(labelBase({ dir: '/mono/ai-maru', cells: [{ panes: [pane] }] })).toBe(pane)
   })
 })
 

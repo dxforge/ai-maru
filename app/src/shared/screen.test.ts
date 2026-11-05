@@ -218,7 +218,7 @@ describe('splitScreen', () => {
     expect(t.selected).toBe('c-00000001')
     expect(t.workspaces).toEqual({
       version: STATE_VERSIONS.workspaces,
-      rows: [{ id: 'w-00000001', dir: '/b' }]
+      rows: [{ id: 'w-00000001' }]
     })
     expect(t.cells).toEqual({
       version: STATE_VERSIONS.cells,
@@ -293,7 +293,7 @@ describe('joinTables', () => {
         id: 'w-0000000a',
         name: 'atlas',
         pinned: true,
-        dir: '/old',
+        dir: '/work',
         favorites: ['/work/app'],
         cells: [at(1, '/work/app', '/work/app'), at(3, '/work/lib')]
       },
@@ -315,10 +315,9 @@ describe('joinTables', () => {
   const join = (t = tables(), selected: string | undefined = 'c-3') =>
     joinTables(t, selected, () => 'n-new')
 
-  it('세 표를 모두 읽으면 화면이 그대로 돌아온다 — cell 이 있는 workspace 의 dir 은 첫 pane 의 cwd 다', () => {
-    const [first, empty, review] = full.workspaces.map(strip)
+  it('세 표를 모두 읽으면 화면이 그대로 돌아온다', () => {
     expect(join()).toEqual({
-      workspaces: [{ ...first, dir: '/work/app' }, empty, { ...review, dir: '/r' }],
+      workspaces: full.workspaces.map(strip),
       selected: 3
     })
   })
@@ -364,7 +363,7 @@ describe('joinTables', () => {
           id: 'w-0000000a',
           name: 'atlas',
           pinned: true,
-          dir: '/work/app',
+          dir: '/work',
           favorites: ['/work/app'],
           cells: []
         },
@@ -380,9 +379,9 @@ describe('joinTables', () => {
     expect(
       out.workspaces.flatMap((w) => w.cells.map((c) => [c.id, c.panes, c.layout, c.focused]))
     ).toEqual([
-      ['c-1', [{ key: 2, id: 'n-new0', cwd: '/work/app' }], { pane: 2 }, 2],
-      ['c-3', [{ key: 4, id: 'n-new1', cwd: '/work/app' }], { pane: 4 }, 4],
-      ['c-7', [{ key: 8, id: 'n-new2', cwd: '/r' }], { pane: 8 }, 8]
+      ['c-1', [{ key: 2, id: 'n-new0', cwd: '/work' }], { pane: 2 }, 2],
+      ['c-3', [{ key: 4, id: 'n-new1', cwd: '/work' }], { pane: 4 }, 4],
+      ['c-7', [{ key: 8, id: 'n-new2' }], { pane: 8 }, 8]
     ])
     expect(out.workspaces[0].cells[0].favorite).toBe('/work/app')
     expect(out.selected).toBe(3)
@@ -407,7 +406,7 @@ describe('joinTables', () => {
     const rows = t.panes!.rows.map((p) => (p.id === 'n-4' ? { ...p, cell: 'c-1' } : p))
     const cells = join({ ...t, panes: { ...t.panes!, rows } })!.workspaces[0].cells
     expect(cells[0].panes.map((p) => p.id)).toEqual(['n-2'])
-    expect(cells[1].panes).toEqual([{ key: 4, id: 'n-new', cwd: '/work/app' }])
+    expect(cells[1].panes).toEqual([{ key: 4, id: 'n-new', cwd: '/work' }])
   })
 
   it('배치가 같은 pane 을 두 번 가리키면 그 cell 을 새 pane 하나로 연다', () => {
