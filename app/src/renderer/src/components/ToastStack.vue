@@ -3,7 +3,7 @@ import { ICONS } from '../icons'
 import type { ToastEntry } from '../toast/store'
 
 const { toasts, width } = defineProps<{ toasts: readonly ToastEntry[]; width: number }>()
-const emit = defineEmits<{ close: [id: string] }>()
+const emit = defineEmits<{ close: [id: string]; act: [id: string] }>()
 </script>
 
 <template>
@@ -14,6 +14,9 @@ const emit = defineEmits<{ close: [id: string] }>()
         <div class="title">{{ t.title }}</div>
         <div v-for="(line, i) in t.lines" :key="i" class="line">{{ line }}</div>
         <div v-if="t.detail" class="detail">{{ t.detail }}</div>
+        <button v-if="t.action" class="action" @click="emit('act', t.id)">
+          {{ t.action.label }}
+        </button>
       </div>
       <button class="close nerd-icon" aria-label="Dismiss" @click="emit('close', t.id)">
         {{ ICONS.close }}
@@ -63,6 +66,10 @@ const emit = defineEmits<{ close: [id: string] }>()
   color: var(--waiting);
 }
 
+.info .icon {
+  color: var(--muted);
+}
+
 /* 줄이 많아도 닫기 버튼이 창 밖으로 나가지 않게 내용만 스크롤한다. 80px 는 토스트의 위아래 padding·border 와
    창 아래 여백을 더한 값보다 넉넉히 잡은 값이다. */
 .body {
@@ -105,5 +112,19 @@ const emit = defineEmits<{ close: [id: string] }>()
 .close:hover {
   background: var(--hover);
   color: var(--fg);
+}
+
+.action {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+}
+
+.action:hover {
+  text-decoration: underline;
 }
 </style>

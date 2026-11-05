@@ -12,7 +12,7 @@ import {
 } from 'vue'
 import { available, commands, type CommandId } from '../../shared/commands'
 import { PANE_MIN } from '../../shared/layout'
-import { cellLabel, windowTitle } from '../../shared/names'
+import { cellLabel, windowTitle, workspaceName } from '../../shared/names'
 import type { JobView } from '../../shared/job'
 import type { PaneReply } from '../../shared/pane'
 import type { ProgramStatusRecord } from '../../shared/program-status'
@@ -418,8 +418,25 @@ function toggleFavorite(cell: number): void {
   void focusSelected()
 }
 
+const UNDO_TIMEOUT = 8000
+
 function togglePin(workspace: number): void {
-  workspaces.togglePin(workspace)
+  const removed = workspaces.togglePin(workspace)
+  if (removed) {
+    toasts.put('unpin', {
+      level: 'info',
+      title: `Removed '${workspaceName(removed.workspace, home)}'`,
+      lines: [],
+      action: { label: 'Undo', run: () => workspaces.reinstate(removed) },
+      timeout: UNDO_TIMEOUT
+    })
+  }
+  void focusSelected()
+}
+
+// 토스트의 버튼을 누르면 포커스가 버튼으로 가므로, 동작한 뒤 터미널로 돌려준다.
+function actToast(id: string): void {
+  toasts.act(id)
   void focusSelected()
 }
 
@@ -1136,7 +1153,12 @@ void window.maru.restoreScreen().then((r) => {
       :resizing="resizing === 'canvas'"
     />
     <PanelBar :panels="barPanels" @run="runCommand" />
-    <ToastStack :toasts="toasts.list.value" :width="toastWidth" @close="toasts.close" />
+    <ToastStack
+      :toasts="toasts.list.value"
+      :width="toastWidth"
+      @close="toasts.close"
+      @act="actToast"
+    />
     <CommandPalette
       v-if="overlay === 'palette'"
       ref="palette"

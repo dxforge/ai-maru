@@ -10,6 +10,7 @@ export const ICONS = {
   branch: '\uEA68',
   error: '\uEA87',
   warning: '\uEA6C',
+  info: '\uEA74',
   close: '\uEA76',
   arrowUp: '\uEAA1',
   check: '\uEAB2',
