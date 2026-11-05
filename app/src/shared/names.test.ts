@@ -133,6 +133,12 @@ describe('autoWorkspaceName', () => {
     expect(named('/mono/ai-maru/app', at('/mono/ai-maru', ''))).toBe('ai-maru')
     expect(named('/mono/ai-maru2', at('/mono/ai-maru', ''))).toBe('ai-maru2')
     expect(named('/mono', at('/mono/ai-maru/a/b', 'a/b'))).toBe('mono')
+    const stale = {
+      cwd: '/wt/foo/app',
+      git: { repo: 'ai-maru', sub: '' },
+      gitRoot: '/wt/foo'
+    }
+    expect(named('/wt/foo', stale)).toBe('ai-maru')
   })
 })
 

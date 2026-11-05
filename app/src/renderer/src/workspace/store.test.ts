@@ -3,6 +3,7 @@ import type { GitHead } from '../../../shared/git'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import { isPtyId } from '../../../shared/pty'
 import type { PtyState } from '../../../shared/pty-state'
+import { autoWorkspaceName } from '../../../shared/names'
 import { parseScreen } from '../../../shared/screen'
 import {
   createWorkspaces,
@@ -751,6 +752,16 @@ describe('git', () => {
     await r.answer('/a', { repo: 'a', branch: 'main', sub: '' })
     expect(selected(ws).panes[0].gitRoot).toBe('/a')
     expect(Object.keys(ws.snapshot().workspaces[0].cells[0].panes[0])).not.toContain('gitRoot')
+  })
+
+  it('작업 트리 안에서 cd 하면 git 을 다시 읽기 전에도 workspace 이름은 저장소 이름이다', async () => {
+    const r = reader()
+    const { ws, report } = setup(r.read)
+    report({ cwd: '/wt/foo', cwdReports: 1 })
+    await r.answer('/wt/foo', { repo: 'ai-maru', branch: 'main', sub: '' })
+    expect(autoWorkspaceName(ws.list.value[0])).toBe('ai-maru')
+    report({ cwd: '/wt/foo/app', cwdReports: 2 })
+    expect(autoWorkspaceName(ws.list.value[0])).toBe('ai-maru')
   })
 })
 

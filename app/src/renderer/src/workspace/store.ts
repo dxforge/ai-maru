@@ -1,7 +1,7 @@
 import { readonly, ref } from 'vue'
 import { sameGitHead, type GitHead } from '../../../shared/git'
 import { samePath } from '../../../shared/launcher'
-import { focusedPane } from '../../../shared/names'
+import { focusedPane, gitRootOf } from '../../../shared/names'
 import type { ProgramStatusState } from '../../../shared/program-status'
 import type { PtyState } from '../../../shared/pty-state'
 import {
@@ -56,18 +56,6 @@ export type Pane = {
  * `startDir` 가 있으면 비지 않으므로, `cwd` 만 저장해도 잃는 디렉토리가 없다.
  */
 const UNSAVED = new Set(['attach', 'gitRoot', 'restoredTitle', 'startDir'])
-
-/**
- * `git` 을 읽은 cwd 에서 `sub` 를 떼어 작업 트리 최상위 경로를 구한다. `sub` 는 심링크를 푼 경로로 세므로, cwd 의
- * 끝이 `sub` 와 다르면 구하지 않는다.
- */
-function gitRootOf(cwd: string, sub: string | undefined): string | undefined {
-  if (sub === undefined) return undefined
-  // 끝의 `/` 를 뗀다. 저장소가 `/` 면 루트가 빈 문자열이 되어 `within` 이 모든 절대 경로를 그 안으로 본다.
-  const dir = cwd.replace(/\/+$/, '')
-  if (sub === '') return dir
-  return dir.endsWith(`/${sub}`) ? dir.slice(0, -sub.length - 1) : undefined
-}
 
 function within(cwd: string, root: string | undefined): boolean {
   return root !== undefined && (cwd === root || cwd.startsWith(`${root}/`))
@@ -540,7 +528,7 @@ export function createWorkspaces(
   function applyState(ptyId: string): void {
     const p = paneByPty(ptyId)
     // main 은 끝난 pty 의 상태를 지우고, 그러면 cwd 는 셸을 띄운 디렉토리로 돌아간다. 그 알림이 셸의 exit 보다 먼저 오면
-    // `dir` 이 아직 없는 핀 workspace 에서는 cell 을 닫는 `detach` 가 그 디렉토리를 workspace 의 디렉토리로 적으므로, 상태가 지워졌을 때는 마지막 cwd 를 둔다.
+    // `dir` 이 없거나 홈인 핀 workspace 에서는 cell 을 닫는 `detach` 가 그 디렉토리를 workspace 의 디렉토리로 적으므로, 상태가 지워졌을 때는 마지막 cwd 를 둔다.
     if (p) refresh(p, source.get(ptyId) === undefined)
   }
 

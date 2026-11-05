@@ -1,7 +1,10 @@
 import type { GitHead } from './git'
 
-/** cell·workspace 이름의 재료. `cwd` 는 그 pane 의 화면에 보이는 cwd 다. */
-export type Named = { cwd?: string; git?: GitHead }
+/**
+ * cell·workspace 이름의 재료. `cwd` 는 그 pane 의 화면에 보이는 cwd 다. `gitRoot` 는 `git` 을 읽은 cwd 에서 구한 작업 트리
+ * 최상위 경로다.
+ */
+export type Named = { cwd?: string; git?: GitHead; gitRoot?: string }
 
 export function focusedPane<P extends { key: number }>(c: {
   readonly panes: readonly P[]
@@ -51,12 +54,18 @@ type NamedWorkspace<P> = { name?: string; dir?: string; cells: readonly { panes:
 function repoPane<P extends Named>(w: NamedWorkspace<P>): P | undefined {
   const p = w.cells[0]?.panes[0]
   if (!p || w.dir === undefined) return p
-  const top = p.git && p.cwd && gitTop(p.cwd, p.git.sub)
+  // `cd` 한 뒤 `git` 을 다시 읽기 전에는 `git.sub` 이 옛 cwd 의 것이라, 새 cwd 로 구하면 작업 트리 안에서도 이름이 깜빡인다.
+  const top = p.git && (p.gitRoot ?? (p.cwd && gitRootOf(p.cwd, p.git.sub)))
   return top !== undefined && (w.dir === top || w.dir.startsWith(`${top}/`)) ? p : undefined
 }
 
-function gitTop(cwd: string, sub: string | undefined): string | undefined {
+/**
+ * `git` 을 읽은 cwd 에서 `sub` 를 떼어 작업 트리 최상위 경로를 구한다. `sub` 는 심링크를 푼 경로로 세므로, cwd 의
+ * 끝이 `sub` 와 다르면 구하지 않는다.
+ */
+export function gitRootOf(cwd: string, sub: string | undefined): string | undefined {
   if (sub === undefined) return undefined
+  // 끝의 `/` 를 뗀다. 저장소가 `/` 면 루트가 빈 문자열이 되어 store 의 `within` 이 모든 절대 경로를 그 안으로 본다.
   const dir = cwd.replace(/\/+$/, '')
   if (sub === '') return dir
   return dir.endsWith(`/${sub}`) ? dir.slice(0, -sub.length - 1) : undefined
