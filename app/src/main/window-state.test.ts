@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it } from 'vitest'
 import {
-  offscreenPosition,
   parseWindowState,
   restoreWindowState,
   trackWindowState,
@@ -105,25 +104,6 @@ describe('windowBounds', () => {
 
   it('저장한 상태가 없으면 null', () => {
     expect(windowBounds(null, [main])).toBeNull()
-  })
-})
-
-describe('offscreenPosition', () => {
-  const main = { x: 0, y: 0, width: 1440, height: 900 }
-
-  it('오른쪽 끝이 가장 먼 모니터의 오른쪽 아래 모서리를 준다', () => {
-    const right = { x: 1440, y: -200, width: 1920, height: 1080 }
-    const below = { x: 200, y: 900, width: 1280, height: 800 }
-    expect(offscreenPosition([main, right, below])).toEqual({ x: 3360, y: 880 })
-    expect(offscreenPosition([right, below, main])).toEqual({ x: 3360, y: 880 })
-  })
-
-  it('모니터가 하나면 그 모니터의 오른쪽 아래 모서리를 준다', () => {
-    expect(offscreenPosition([main])).toEqual({ x: 1440, y: 900 })
-  })
-
-  it('모니터가 없으면 null', () => {
-    expect(offscreenPosition([])).toBeNull()
   })
 })
 

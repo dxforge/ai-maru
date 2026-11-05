@@ -24,6 +24,7 @@ type Method =
   | 'getNormalBounds'
   | 'isMaximized'
   | 'isMinimized'
+  | 'isVisible'
   | 'maximize'
   | 'minimize'
   | 'unmaximize'
@@ -294,35 +295,41 @@ test('창을 옮긴 뒤 앱이 강제로 끝나도 다음 실행은 옮긴 자�
   expect(await win(second.app, 'getBounds')).toEqual(placed)
 })
 
-test('테스트용 창은 화면 밖으로 옮겨, 화면에 남는 부분이 사이드바 제목 줄 안에 든다', async ({
+test('테스트로 띄운 창은 화면에 올리지 않고, 되살릴 자리가 없으면 주 모니터 안에 둔다', async ({
   launch
 }) => {
-  const launched = await launch()
-  await openCanvas(launched)
-  const titlebar = (await launched.page.locator('.sidebar > .titlebar').boundingBox())!
-  const { content, displays } = await launched.app.evaluate(({ BrowserWindow, screen }) => ({
-    content: BrowserWindow.getAllWindows()[0].getContentBounds(),
-    displays: screen.getAllDisplays().map((d) => d.bounds)
-  }))
-  const visible = displays.flatMap((d) => {
-    const left = Math.max(content.x, d.x)
-    const top = Math.max(content.y, d.y)
-    const right = Math.min(content.x + content.width, d.x + d.width)
-    const bottom = Math.min(content.y + content.height, d.y + d.height)
-    if (left >= right || top >= bottom) return []
-    return [
-      {
-        x: left - content.x,
-        y: top - content.y,
-        right: right - content.x,
-        bottom: bottom - content.y
-      }
-    ]
+  const { app } = await launch()
+  expect(await win(app, 'isVisible')).toBe(false)
+  const bounds = await win(app, 'getBounds')
+  const area = await app.evaluate(({ screen }) => screen.getPrimaryDisplay().workArea)
+  expect(bounds.x).toBeGreaterThanOrEqual(area.x)
+  expect(bounds.y).toBeGreaterThanOrEqual(area.y)
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(area.x + area.width)
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(area.y + area.height)
+})
+
+test('테스트로 띄운 창은 최대화·최대화 풀기·최소화해도 화면에 올리지 않는다', async ({
+  launch
+}) => {
+  const { app } = await launch()
+  await win(app, 'maximize')
+  // 잠깐 보였다가 숨는 창도 걸러야 하므로 기다리지 않고 바로 잰다.
+  expect(await win(app, 'isVisible')).toBe(false)
+  await expect.poll(() => win(app, 'isMaximized')).toBe(true)
+  await win(app, 'unmaximize')
+  await expect.poll(() => win(app, 'isMaximized')).toBe(false)
+  expect(await win(app, 'isVisible')).toBe(false)
+  await win(app, 'minimize')
+  await expect.poll(() => win(app, 'isMinimized')).toBe(true)
+  expect(await win(app, 'isVisible')).toBe(false)
+})
+
+test('테스트로 띄운 창은 최대화로 되살려도 화면에 올리지 않는다', async ({ launch, dataDir }) => {
+  writeView(dataDir, {
+    viewMode: 'single',
+    window: { x: 0, y: 0, width: 640, height: 420, isMaximized: true, isFullScreen: false }
   })
-  for (const r of visible) {
-    expect(r.x).toBeGreaterThanOrEqual(titlebar.x)
-    expect(r.y).toBeGreaterThanOrEqual(titlebar.y)
-    expect(r.right).toBeLessThanOrEqual(titlebar.x + titlebar.width)
-    expect(r.bottom).toBeLessThanOrEqual(titlebar.y + titlebar.height)
-  }
+  const { app } = await launch()
+  await expect.poll(() => win(app, 'isMaximized')).toBe(true)
+  expect(await win(app, 'isVisible')).toBe(false)
 })

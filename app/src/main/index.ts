@@ -92,7 +92,6 @@ import {
   type StateStore
 } from './state'
 import {
-  offscreenPosition,
   restoreWindowState,
   trackWindowState,
   windowBounds,
@@ -535,9 +534,17 @@ function openExternal(url: string): void {
 function createWindow(state: WindowState | null): void {
   const displays = screen.getAllDisplays().map((d) => d.bounds)
   const restored = windowBounds(state, displays)
+  const primary = screen.getPrimaryDisplay().workArea
   const win = new BrowserWindow({
     width: 1000,
     height: 700,
+    // 화면에 올린 창은 실제 커서가 창 위에 있거나 지나가면 OS 의 마우스 이벤트를 받는다. 그러면 hover 로 동작이 바뀌는 테스트의
+    // 결과가 사용자의 커서 위치에 따라 달라지므로, e2e 의 창(`unobtrusive`)은 끝까지 띄우지 않는다. Playwright 가 띄우지 않은
+    // 창의 페이지도 보이고 포커스된 것으로 다루므로, 그 창에서도 그리기·입력·스크린샷이 된다.
+    // 자리를 되살리지 않은 e2e 의 창은 주 모니터에 둔다. 배율을 고정해도 창이 놓인 모니터에 따라 결과가 달라지는 테스트가 있기
+    // 때문이다(`composition.spec.ts` 의 webgl DPR 1 케이스는 외장 HiDPI 모니터에서 실패한다). Electron 의 기본 배치가 어느
+    // 모니터에 창을 놓는지는 확인하지 않았다.
+    ...(unobtrusive ? { x: primary.x, y: primary.y } : {}),
     ...restored,
     show: !unobtrusive,
     focusable: !unobtrusive,
@@ -549,6 +556,15 @@ function createWindow(state: WindowState | null): void {
       devTools: !app.isPackaged
     }
   })
+  if (unobtrusive) {
+    // `maximize()` 는 띄우지 않은 창도 띄우므로, e2e 의 창은 `maximize()` 를 부른 직후에 다시 숨긴다. 숨겨도 최대화 상태는 그대로다.
+    // `show` 이벤트에서 숨기면 이벤트가 오기 전에 부른 `minimize()` 가 풀린다.
+    const maximize = win.maximize.bind(win)
+    win.maximize = () => {
+      maximize()
+      win.hide()
+    }
+  }
   win.webContents.on('will-navigate', (event, url) => {
     if (isDevReload(url, win.webContents.getURL(), process.env.ELECTRON_RENDERER_URL)) return
     event.preventDefault()
@@ -561,19 +577,6 @@ function createWindow(state: WindowState | null): void {
     openExternal(url)
     return { action: 'deny' }
   })
-  if (unobtrusive) {
-    win.setOpacity(0)
-    win.setIgnoreMouseEvents(true)
-    win.showInactive()
-    // 투명하고 마우스 이벤트를 무시하는 e2e 창도 실제 커서가 지나가거나 머물면 hover 와 mouseleave 를 받는다.
-    // Canvas 처럼 hover 로 동작이 바뀌는 테스트는 사용자의 커서 위치에 따라 결과가 달라진다. 저장한 자리를 되살렸으면 옮기지 않는다. 그 자리를 되살리는지 보는 테스트가 있기 때문이다.
-    // 생성자에 준 자리는 macOS 가 창 전체가 화면 안에 들도록 되돌리므로, 창을 띄운 뒤에 옮긴다. 띄운 뒤에 옮겨도 macOS 는 창의 일부를 화면 끝에 남긴다.
-    // 맨 오른쪽 화면의 오른쪽 아래 모서리로 옮기면 남는 부분이 창 왼쪽 위 40x32 로 줄고, 그 자리는 hover 로 동작하지 않는 사이드바 제목 줄이다.
-    // `--force-device-scale-factor` 로 배율을 고정한 실행은 옮기지 않는다. DPR 1 로 고정한 창이 2x 화면에 놓이면 WebGL renderer 가 그린 글자가 1px 어긋나기 때문이다.
-    const fixedScale = app.commandLine.hasSwitch('force-device-scale-factor')
-    const spot = restored || fixedScale ? null : offscreenPosition(displays)
-    if (spot) win.setPosition(spot.x, spot.y)
-  }
   win.on('close', (event) => {
     if (mayQuit()) return
     event.preventDefault()
