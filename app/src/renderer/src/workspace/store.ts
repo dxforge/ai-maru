@@ -495,11 +495,11 @@ export function createWorkspaces(
    * pane 에는 프롬프트가 뜨지 않아 루트 레코드의 상태가 바뀔 때 읽는다. 한 턴에 `msg` 만 다른 working 보고가 여러 번
    * 오므로 레코드가 올 때마다 읽지는 않는다. 제목도 다시 고른다. git 을 읽었으면 true 다.
    */
-  function refresh(p: Pane): boolean {
+  function refresh(p: Pane, keepCwd = false): boolean {
     const state = source.get(p.ptyId)
     const title = paneTitle({ state, restoredTitle: p.restoredTitle, old: source.isOld(p.ptyId) })
     if (p.title !== title) p.title = title
-    const cwd = paneCwd({ ...p, state })
+    const cwd = keepCwd && p.cwd !== undefined ? p.cwd : paneCwd({ ...p, state })
     const before = seen.get(p.key)
     const now = {
       reports: state?.cwdReports,
@@ -527,7 +527,9 @@ export function createWorkspaces(
   /** main 이 그 pty 의 상태를 바꾸거나 지웠다. */
   function applyState(ptyId: string): void {
     const p = paneByPty(ptyId)
-    if (p) refresh(p)
+    // main 은 끝난 pty 의 상태를 지우고, 그러면 cwd 는 셸을 띄운 디렉토리로 돌아간다. 그 알림이 셸의 exit 보다 먼저 오면
+    // cell 을 닫는 `detach` 가 그 디렉토리를 핀 workspace 의 디렉토리로 적으므로, 상태가 지워졌을 때는 마지막 cwd 를 둔다.
+    if (p) refresh(p, source.get(ptyId) === undefined)
   }
 
   /**
