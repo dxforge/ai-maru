@@ -50,6 +50,7 @@ import {
   checkRestart,
   rendererGoneDialog,
   restartDialog,
+  restartOutcome,
   restartRefusal,
   type RendererGone,
   type RestartCheck
@@ -345,11 +346,6 @@ function relaunch(): void {
   app.quit()
 }
 
-function restartOutcome(check: RestartCheck): Outcome {
-  if (check.ok) return 'keep'
-  return check.reason === 'incompatible' && check.result === 'empty' ? 'end' : 'layout'
-}
-
 async function restartByUser(): Promise<void> {
   const check = await restartCheck()
   if (!check.ok && check.reason === 'dev_server') return
@@ -401,7 +397,8 @@ const restartHandlers: Handlers = {
       )
     }
     if (!check.ok && !kill) {
-      throw new CliError(-32001, 'ptys_would_end', restartRefusal(check), {
+      const code = check.result === 'full' ? 'pins_would_be_lost' : 'ptys_would_end'
+      throw new CliError(-32001, code, restartRefusal(check), {
         ptys: check.ptys,
         result: check.result
       })
@@ -485,12 +482,9 @@ function confirmQuit(): void {
   if (quitCheck) return
   quitCheck = (async () => {
     if (!quitPermission.allowed()) {
-      const workspaces = openWorkspaces()
-      const open = workspaces.flatMap((w) => w.cells.flatMap((c) => c.panes)).length
+      const open = openWorkspaces().flatMap((w) => w.cells.flatMap((c) => c.panes)).length
       if (open === 0) {
-        // pane 이 없어도 cell 이 없는 핀 workspace 가 남아 있으면 레이아웃을 남긴다. 다음 실행이 같은 key 로 되살려
-        // 접어 둔 workspace 를 다시 접기 때문이다.
-        quitWith(workspaces.length ? 'layout' : 'end')
+        quitWith('end')
       } else {
         const { panes } = screenPanes(parseScreen(lastScreen))
         const running = {

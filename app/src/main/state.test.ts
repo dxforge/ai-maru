@@ -37,7 +37,7 @@ const screen: ScreenState = {
     }
   ],
   selected: 1,
-  sidebar: { open: false, width: 300, folded: [3] },
+  sidebar: { open: false, width: 300, folded: ['w-00000001'] },
   viewMode: 'columns'
 }
 
@@ -55,13 +55,11 @@ const view = {
   version: STATE_VERSIONS.view,
   viewMode: 'single' as const,
   sidebar: { open: true, width: 250 },
-  folded: [3],
+  folded: ['w-00000001'],
   canvas: { width: 400 },
   window: { x: 1, y: 2, width: 800, height: 600, isMaximized: false, isFullScreen: true },
   theme: { background: '#101010', mode: 'dark' as const }
 }
-const unfolded: Partial<typeof view> = { ...view }
-delete unfolded.folded
 // `pins` 는 `screen` 의 workspace 와 맞추지 않는다 — store 는 `layout`·`pins` 가 서로 맞는지 보지 않는다.
 const pins: PinsPart = {
   version: STATE_VERSIONS.pins,
@@ -140,40 +138,6 @@ describe('readState', () => {
     })
   })
 
-  it('핀을 layout 에 두던 형식이면 pins 로 옮겨 읽고, 파일의 pins 는 쓰지 않는다', () => {
-    const w = layout.workspaces[0]
-    const old = {
-      version: 1,
-      workspaces: [{ ...w, name: 'atlas', pinned: true, favorites: ['/tmp'] }],
-      selected: layout.selected
-    }
-    write({ ...full, layout: old })
-    expect(readState(path)).toMatchObject({
-      layout: {
-        kind: 'ok',
-        value: { ...layout, workspaces: [{ key: w.key, id: w.id, cells: w.cells }] }
-      },
-      pins: {
-        kind: 'ok',
-        value: {
-          version: STATE_VERSIONS.pins,
-          workspaces: [{ id: w.id, name: 'atlas', dir: '/tmp', favorites: ['/tmp'] }]
-        }
-      },
-      sessions: { kind: 'ok', value: sessions }
-    })
-  })
-
-  it('핀을 layout 에 두던 형식이 틀렸으면 layout 은 bad 이고, pins 는 파일의 pins 로 읽는다', () => {
-    write({ ...full, layout: { version: 1, workspaces: 'x', selected: null }, pins: undefined })
-    expect(readState(path)).toMatchObject({ layout: { kind: 'bad' }, pins: { kind: 'absent' } })
-    write({ ...full, layout: { version: 1, workspaces: 'x', selected: null } })
-    expect(readState(path)).toMatchObject({
-      layout: { kind: 'bad' },
-      pins: { kind: 'ok', value: pins }
-    })
-  })
-
   it('sessions 의 job 표나 pty 가 틀리면 sessions 를 통째로 버린다', () => {
     write({ ...full, sessions: { ...sessions, jobs: [{ ...job, pty: 'x' }] } })
     expect(readState(path).sessions).toEqual({ kind: 'bad' })
@@ -206,10 +170,10 @@ describe('initialState', () => {
   })
 
   it.each(['absent', 'bad'] as const)(
-    'layout 이 %s 면 접은 workspace 도 지운다 — 핀 workspace 가 새로 받을 key 와 겹치지 않게',
+    'layout 이 %s 면 sessions 도 비우고, 접은 workspace 는 남긴다 — 접힘은 workspace 의 id 로 둔다',
     (kind) => {
       const read: ReadState = { layout: { kind }, pins: ok(pins), sessions: ok(sessions), view }
-      expect(initialState(read)).toEqual({ layout: null, pins, sessions: null, view: unfolded })
+      expect(initialState(read)).toEqual({ layout: null, pins, sessions: null, view })
     }
   )
 })
@@ -227,28 +191,32 @@ describe('removeOldStateFiles', () => {
 
 describe('restorePlan', () => {
   const ok = <T>(value: T) => ({ kind: 'ok' as const, value })
-  const read = (l: ReadState['layout'], s: ReadState['sessions']) => ({ layout: l, sessions: s })
+  const read = (
+    l: ReadState['layout'],
+    s: ReadState['sessions'],
+    p: ReadState['pins'] = ok(pins)
+  ) => ({ layout: l, pins: p, sessions: s })
   const live = (): number => PROTOCOL_VERSION
 
   it('layout 이 없으면 빈 화면, 읽지 못했으면 알린다', () => {
     expect(restorePlan(read({ kind: 'absent' }, ok(sessions)), live)).toEqual({
       mode: 'empty',
-      notice: null
+      notice: []
     })
     expect(restorePlan(read({ kind: 'bad' }, ok(sessions)), live)).toEqual({
       mode: 'empty',
-      notice: 'layout'
+      notice: ['layout']
     })
   })
 
   it('sessions 가 없으면 알리지 않고, 읽지 못했으면 알리며 레이아웃만 복원한다', () => {
     expect(restorePlan(read(ok(layout), { kind: 'absent' }), live)).toEqual({
       mode: 'layout',
-      notice: null
+      notice: []
     })
     expect(restorePlan(read(ok(layout), { kind: 'bad' }), live)).toEqual({
       mode: 'layout',
-      notice: 'sessions'
+      notice: ['sessions']
     })
   })
 
@@ -257,7 +225,7 @@ describe('restorePlan', () => {
       pty === job.pty ? PROTOCOL_VERSION + 1 : PROTOCOL_VERSION
     expect(restorePlan(read(ok(layout), ok(sessions)), other)).toEqual({
       mode: 'layout',
-      notice: 'protocol'
+      notice: ['protocol']
     })
     const unknown = (pty: string): number | null => (pty === job.pty ? null : PROTOCOL_VERSION)
     expect(restorePlan(read(ok(layout), ok(sessions)), unknown).mode).toBe('layout')
@@ -268,7 +236,22 @@ describe('restorePlan', () => {
       pty === job.pty ? undefined : PROTOCOL_VERSION
     expect(restorePlan(read(ok(layout), ok(sessions)), dead)).toEqual({
       mode: 'full',
-      notice: null
+      notice: []
+    })
+  })
+
+  it('pins 를 읽지 못했으면 알리고, 복원은 layout·sessions 대로 한다 — 없으면 알리지 않는다', () => {
+    expect(restorePlan(read(ok(layout), ok(sessions), { kind: 'bad' }), live)).toEqual({
+      mode: 'full',
+      notice: ['pins']
+    })
+    expect(restorePlan(read({ kind: 'bad' }, ok(sessions), { kind: 'bad' }), live)).toEqual({
+      mode: 'empty',
+      notice: ['layout', 'pins']
+    })
+    expect(restorePlan(read(ok(layout), ok(sessions), { kind: 'absent' }), live)).toEqual({
+      mode: 'full',
+      notice: []
     })
   })
 })
@@ -304,7 +287,7 @@ describe('createStateStore', () => {
         version: view.version,
         viewMode: 'columns',
         sidebar: { open: false, width: 300 },
-        folded: [3],
+        folded: ['w-00000001'],
         window: view.window,
         theme: view.theme
       }
@@ -336,7 +319,7 @@ describe('createStateStore', () => {
   it.each([
     ['keep', { layout, sessions, view }],
     ['layout', { layout, sessions: null, view }],
-    ['end', { layout: null, sessions: null, view: unfolded }]
+    ['end', { layout: null, sessions: null, view }]
   ] as const)('finish(%s) 는 바로 쓰고 pins·view 는 남긴다', (outcome, expected) => {
     const s = store(full)
     s.finish(outcome)
@@ -360,7 +343,7 @@ describe('createStateStore', () => {
     expect(() => s.finish('keep')).toThrow()
     rmSync(path, { recursive: true })
     s.finish('end')
-    expect(saved()).toEqual({ layout: null, pins, sessions: null, view: unfolded })
+    expect(saved()).toEqual({ layout: null, pins, sessions: null, view })
   })
 
   it('finish 가 던져도 끝내지 않았으므로 그 뒤의 변경을 타이머가 쓴다 — 끄지 않고 이어 쓰는 경우', () => {
@@ -408,6 +391,6 @@ describe('createStateStore', () => {
     s.discard('layout')
     expect(s.current()).toMatchObject({ layout, sessions: null })
     s.discard('end')
-    expect(s.current()).toMatchObject({ layout: null, pins, sessions: null, view: unfolded })
+    expect(s.current()).toMatchObject({ layout: null, pins, sessions: null, view })
   })
 })

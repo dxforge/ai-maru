@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   joinLayout,
   parseLayoutPart,
-  parsePinsInLayout,
   parsePinsPart,
   parseScreen,
   parseViewPrefs,
@@ -393,7 +392,7 @@ describe('splitScreen · joinLayout', () => {
     expect(cells.map((c) => c.favorite)).toEqual([undefined, undefined])
   })
 
-  it('표시를 지운 cell 은 남은 즐겨찾기 cell 뒤로 옮긴다 — 즐겨찾기 cell 이 앞에 모여 있다', () => {
+  it('표시를 지워도 cell 의 자리는 그대로다', () => {
     const { layout } = split()
     const cells = [at(41, '/a', '/a'), at(43, '/b', '/b'), at(45, '/c')].map(stripCell)
     const one = { ...layout, workspaces: [{ key: 40, id: 'w-0000000e', cells }] }
@@ -403,9 +402,30 @@ describe('splitScreen · joinLayout', () => {
     }
     const out = joinLayout(one, pins)!.workspaces[0].cells
     expect(out.map((c) => [c.key, c.favorite])).toEqual([
-      [43, '/b'],
       [41, undefined],
+      [43, '/b'],
       [45, undefined]
+    ])
+  })
+
+  it('즐겨찾기 cell 이 다른 cell 뒤에 있어도 split·join 을 거친 뒤 자리가 그대로다', () => {
+    const w = {
+      key: 50,
+      id: 'w-0000000f',
+      pinned: true as const,
+      dir: '/work/a',
+      favorites: ['/work/b'],
+      cells: [at(51, '/work/a'), at(53, '/work/b', '/work/b'), at(55, '/work/c')]
+    }
+    const { layout, pins } = splitScreen({ ...screen, workspaces: [w], selected: 53 })
+    const out = joinLayout(
+      parseLayoutPart(reread(layout)),
+      parsePinsPart(reread(pins))
+    )!.workspaces[0].cells
+    expect(out.map((c) => [c.key, c.favorite])).toEqual([
+      [51, undefined],
+      [53, '/work/b'],
+      [55, undefined]
     ])
   })
 
@@ -437,56 +457,6 @@ describe('parsePinsPart', () => {
     ['목록이 아니면', { ...pins, workspaces: 'w' }]
   ])('%s null', (_, v) => {
     expect(parsePinsPart(v)).toBeNull()
-  })
-})
-
-describe('parsePinsInLayout', () => {
-  const old = {
-    version: 1,
-    workspaces: [
-      {
-        key: 1,
-        id: 'w-00000001',
-        name: 'atlas',
-        pinned: true,
-        dir: '/old',
-        favorites: ['/b'],
-        cells: [{ ...reread(screen.workspaces[0].cells[0]), favorite: '/b' }]
-      },
-      { key: 4, id: 'w-00000002', pinned: true, dir: '/d', cells: [] },
-      { key: 5, id: 'w-00000003', name: '리뷰', cells: reread(screen.workspaces[0].cells) }
-    ],
-    selected: 3
-  }
-
-  it('핀 workspace 를 pins 로 옮기고, layout 에는 배치만 남긴다', () => {
-    const moved = parsePinsInLayout(old)!
-    expect(moved.pins).toEqual({
-      version: STATE_VERSIONS.pins,
-      workspaces: [
-        { id: 'w-00000001', name: 'atlas', dir: '/b', favorites: ['/b'] },
-        { id: 'w-00000002', dir: '/d' }
-      ]
-    })
-    expect(moved.layout.version).toBe(STATE_VERSIONS.layout)
-    expect(moved.layout.workspaces.map((w) => [w.key, w.name, w.cells.length])).toEqual([
-      [1, undefined, 1],
-      [4, undefined, 0],
-      [5, '리뷰', 1]
-    ])
-    expect(moved.layout.workspaces[0].cells[0].favorite).toBe('/b')
-    expect(joinLayout(moved.layout, moved.pins)!.workspaces.map((w) => w.pinned)).toEqual([
-      true,
-      true,
-      undefined
-    ])
-  })
-
-  it('그 형식이 아니거나, 핀이 없는 workspace 의 cell 이 비었으면 null', () => {
-    expect(parsePinsInLayout({ ...old, version: STATE_VERSIONS.layout })).toBeNull()
-    const bare = { key: 6, id: 'w', cells: [] }
-    expect(parsePinsInLayout({ ...old, workspaces: [...old.workspaces, bare] })).toBeNull()
-    expect(parsePinsInLayout(undefined)).toBeNull()
   })
 })
 
@@ -553,8 +523,8 @@ describe('parseViewPrefs', () => {
 
   it('객체가 아니면 빈 설정', () => {
     expect(parseViewPrefs(null)).toEqual({})
-    expect(parseViewPrefs({ folded: [1, 3] })).toEqual({ folded: [1, 3] })
-    expect(parseViewPrefs({ folded: [1, 'x'] })).toEqual({})
+    expect(parseViewPrefs({ folded: ['w-1', 'w-3'] })).toEqual({ folded: ['w-1', 'w-3'] })
+    expect(parseViewPrefs({ folded: [1, 3] })).toEqual({})
     expect(parseViewPrefs([])).toEqual({})
     expect(parseViewPrefs('columns')).toEqual({})
   })

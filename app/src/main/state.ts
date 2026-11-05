@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import {
   parseLayoutPart,
-  parsePinsInLayout,
   parsePinsPart,
   parseViewPrefs,
   parseScreen,
@@ -11,7 +10,7 @@ import {
   STATE_VERSIONS,
   type LayoutPart,
   type PinsPart,
-  type Restore,
+  type RestoreNotice,
   type ViewPrefs
 } from '../shared/screen'
 import { parseWindowTheme, type WindowTheme } from '../shared/theme'
@@ -116,11 +115,9 @@ export function readState(path: string): ReadState {
     v = null
   }
   if (!isObj(v)) return unread('bad')
-  // 핀을 `layout` 에 두던 빌드가 쓴 파일에는 `pins` 가 없다.
-  const moved = parsePinsInLayout(v.layout)
   return {
-    layout: moved ? { kind: 'ok', value: moved.layout } : part(v.layout, parseLayoutPart),
-    pins: moved ? { kind: 'ok', value: moved.pins } : part(v.pins, parsePinsPart),
+    layout: part(v.layout, parseLayoutPart),
+    pins: part(v.pins, parsePinsPart),
     sessions: part(v.sessions, parseSessionsPart),
     view: parseViewPart(v.view)
   }
@@ -138,7 +135,7 @@ export function initialState(read: ReadState): StateFile {
   return read.layout.kind === 'ok' ? state : withoutLayout(state)
 }
 
-type RestorePlan = { mode: 'full' | 'layout' | 'empty'; notice: Restore['notice'] }
+type RestorePlan = { mode: 'full' | 'layout' | 'empty'; notice: RestoreNotice[] }
 
 /** 끝난 job 의 pty 도 넣는다. job 은 `--keep` 으로 떠, 끝난 뒤에도 `maru job read` 가 그 pty 의 화면을 읽기 때문이다. */
 export function sessionPtys(s: SessionsPart): string[] {
@@ -151,21 +148,29 @@ export function sessionPtys(s: SessionsPart): string[] {
  * pane 이 어긋나기 때문이다.
  */
 export function restorePlan(
+  read: Pick<ReadState, 'layout' | 'pins' | 'sessions'>,
+  protocolOf: (pty: string) => number | null | undefined
+): RestorePlan {
+  const plan = layoutPlan(read, protocolOf)
+  return read.pins.kind === 'bad' ? { ...plan, notice: [...plan.notice, 'pins'] } : plan
+}
+
+function layoutPlan(
   read: Pick<ReadState, 'layout' | 'sessions'>,
   protocolOf: (pty: string) => number | null | undefined
 ): RestorePlan {
   if (read.layout.kind !== 'ok')
-    return { mode: 'empty', notice: read.layout.kind === 'bad' ? 'layout' : null }
-  if (read.sessions.kind === 'absent') return { mode: 'layout', notice: null }
-  if (read.sessions.kind === 'bad') return { mode: 'layout', notice: 'sessions' }
+    return { mode: 'empty', notice: read.layout.kind === 'bad' ? ['layout'] : [] }
+  if (read.sessions.kind === 'absent') return { mode: 'layout', notice: [] }
+  if (read.sessions.kind === 'bad') return { mode: 'layout', notice: ['sessions'] }
   const differs = sessionPtys(read.sessions.value).some((pty) => {
     const v = protocolOf(pty)
     return v !== undefined && v !== PROTOCOL_VERSION
   })
-  return differs ? { mode: 'layout', notice: 'protocol' } : { mode: 'full', notice: null }
+  return differs ? { mode: 'layout', notice: ['protocol'] } : { mode: 'full', notice: [] }
 }
 
-/** `keep` 은 pty 를 남기고, `layout` 은 `sessions` 를 비운다. `end` 는 `layout`·`sessions` 와 `view` 의 `folded` 를 비운다. `pins` 는 늘 남는다. */
+/** `keep` 은 pty 를 남기고, `layout` 은 `sessions` 를 비운다. `end` 는 `layout`·`sessions` 를 비운다. `pins`·`view` 는 늘 남는다. */
 export type Outcome = 'keep' | 'layout' | 'end'
 
 export type StateStore = {
@@ -193,14 +198,8 @@ export type StateStore = {
   layout(): Readonly<LayoutPart> | null
 }
 
-/**
- * `layout` 을 비우면 `view` 의 `folded` 도 지운다. 다음에 뜬 앱이 핀 workspace 에 새로 매긴 key 가 지난 실행의 key 와
- * 겹치면 엉뚱한 workspace 가 접히기 때문이다.
- */
 function withoutLayout(state: StateFile): StateFile {
-  const view = { ...state.view }
-  delete view.folded
-  return { ...state, layout: null, sessions: null, view }
+  return { ...state, layout: null, sessions: null }
 }
 
 function dropped(state: StateFile, outcome: Outcome): StateFile {

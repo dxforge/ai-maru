@@ -12,9 +12,6 @@ import { isPtyId } from './pty'
 export const STATE_VERSIONS: { layout: number; sessions: number; view: number; pins: number } =
   versions
 
-/** 핀·즐겨찾기를 `layout` 의 workspace 에 두던 형식이다. `readState`(`main/state.ts`)가 읽어 `pins` 로 옮긴다. */
-const PINS_IN_LAYOUT_VERSION = 1
-
 /**
  * `cwd`·`title`·`git` 은 저장할 때 화면에 보이던 값이다. main 은 `maru pane list` 의 이름을 이 값으로 짓고, 다시 뜬
  * 앱은 pty 의 상태가 오기 전까지 이 값을 보인다. `keep` 은 런처로 띄운 pane 에 붙는다. 앱은 그 pane 의 pty 를
@@ -78,7 +75,11 @@ export type ScreenState = {
   workspaces: ScreenWorkspace[]
   /** 선택한 cell 의 key 다. */
   selected: number | null
-  sidebar: { open: boolean; width: number; folded: number[] }
+  /**
+   * `folded` 는 접힌 workspace 의 `id` 다. key 는 실행마다 새로 매길 수 있어, 저장한 key 가 다음 실행에서 다른
+   * workspace 를 가리킬 수 있기 때문이다.
+   */
+  sidebar: { open: boolean; width: number; folded: string[] }
   viewMode: 'single' | 'columns'
   /** 폭을 끌어 바꾼 적이 없으면 없다 — 그동안은 창 폭에 비례하는 기본 폭을 쓴다. */
   canvas?: { width: number }
@@ -100,27 +101,27 @@ export type PinsPart = {
 /** `layout`·`pins` 를 `joinLayout` 으로 이은, renderer 가 되살릴 workspace 목록이다. */
 export type SavedLayout = { workspaces: SavedWorkspace[]; selected: number | null }
 
+/** 사용자가 고르지 않았는데 잃은 부분이다. `protocol` 은 pty 프로토콜이 달라 `sessions` 를 버린 것이다. */
+export type RestoreNotice = 'layout' | 'pins' | 'sessions' | 'protocol'
+
 /**
  * 뜰 때 main 이 renderer 에 주는 복원할 것이다. `ptys` 는 pane key 마다 붙을 pty 이고, null 이면 모든 pane 이 새 셸을
- * 띄운다. `notice` 는 사용자가 고르지 않았는데 세션이나 레이아웃을 잃은 이유다.
+ * 띄운다. `pins` 는 다른 부분과 함께 잃을 수 있으므로 `notice` 는 목록이다.
  */
 export type Restore = {
   layout: SavedLayout | null
   ptys: Record<number, string> | null
-  notice: 'layout' | 'sessions' | 'protocol' | null
+  notice: RestoreNotice[]
 }
 
 export const SIDEBAR_WIDTH = { min: 200, max: 480 }
 const CANVAS_MIN_WIDTH = 240
 
-/**
- * 첫 화면을 그리기 전에 renderer 가 받는 보기 설정이다. `folded` 는 접힌 workspace 의 key 다. 레이아웃을 되살리지
- * 않으면 가리킬 workspace 가 없어 renderer 가 쓰지 않는다.
- */
+/** 첫 화면을 그리기 전에 renderer 가 받는 보기 설정이다. `folded` 는 접힌 workspace 의 `id` 다. */
 export type ViewPrefs = {
   viewMode?: ScreenState['viewMode']
   sidebar?: { open: boolean; width: number }
-  folded?: number[]
+  folded?: string[]
   canvas?: ScreenState['canvas']
 }
 
@@ -265,7 +266,7 @@ export function parseScreen(v: unknown): ScreenState | null {
   const prefs = parseViewPrefs(v)
   if (!prefs.viewMode || !prefs.sidebar) return null
   if (v.canvas !== undefined && !prefs.canvas) return null
-  if (!isObj(sidebar) || !Array.isArray(sidebar.folded) || !sidebar.folded.every(isKey)) return null
+  if (!isObj(sidebar) || !isStrings(sidebar.folded)) return null
   return compact<ScreenState>({
     workspaces,
     selected,
@@ -275,23 +276,12 @@ export function parseScreen(v: unknown): ScreenState | null {
   })
 }
 
-function parseSaved(v: unknown, version: number, pinnable: boolean): SavedLayout | null {
-  if (!isObj(v) || v.version !== version) return null
-  const workspaces = parseWorkspaces(v.workspaces, parseLayoutPane, pinnable)
+export function parseLayoutPart(v: unknown): LayoutPart | null {
+  if (!isObj(v) || v.version !== STATE_VERSIONS.layout) return null
+  const workspaces = parseWorkspaces(v.workspaces, parseLayoutPane, false)
   if (!workspaces) return null
   if (v.selected !== null && !isKey(v.selected)) return null
-  return { workspaces, selected: v.selected }
-}
-
-export function parseLayoutPart(v: unknown): LayoutPart | null {
-  const saved = parseSaved(v, STATE_VERSIONS.layout, false)
-  return saved && { version: STATE_VERSIONS.layout, ...saved }
-}
-
-/** 핀·즐겨찾기를 `layout` 에 두던 형식이면 `layout`·`pins` 로 나눠 준다. 그 형식이 아니거나 읽지 못하면 null 이다. */
-export function parsePinsInLayout(v: unknown): SplitLayout | null {
-  const saved = parseSaved(v, PINS_IN_LAYOUT_VERSION, true)
-  return saved && splitLayout(saved)
+  return { version: STATE_VERSIONS.layout, workspaces, selected: v.selected }
 }
 
 export function parsePinsPart(v: unknown): PinsPart | null {
@@ -338,8 +328,7 @@ export function splitScreen(screen: ScreenState): SplitLayout & {
 
 /**
  * cell 의 즐겨찾기 표시는 그 workspace 의 `favorites` 에 있을 때만 남긴다. `pins` 를 잃으면 `favorites` 가 비어, cell 에
- * 남은 표시가 없는 즐겨찾기를 가리키기 때문이다. 표시를 지운 cell 은 즐겨찾기 cell 뒤로 옮긴다. 즐겨찾기 cell 이 앞에
- * 모여 있어야 하기 때문이다(`favoriteCount`).
+ * 남은 표시가 없는 즐겨찾기를 가리키기 때문이다.
  */
 function keepFavorites(w: SavedWorkspace): SavedWorkspace {
   const cells = w.cells.map((c) =>
@@ -347,8 +336,7 @@ function keepFavorites(w: SavedWorkspace): SavedWorkspace {
       ? c
       : compact({ ...c, favorite: undefined })
   )
-  const marked = cells.filter((c) => c.favorite !== undefined)
-  return { ...w, cells: [...marked, ...cells.filter((c) => c.favorite === undefined)] }
+  return { ...w, cells }
 }
 
 /** workspace·cell·pane 의 key 는 카운터 하나로 매기므로 셋을 모두 준다. */
@@ -408,7 +396,7 @@ export function parseViewPrefs(v: unknown): ViewPrefs {
   if (viewMode === 'single' || viewMode === 'columns') prefs.viewMode = viewMode
   if (isObj(sidebar) && typeof sidebar.open === 'boolean' && typeof sidebar.width === 'number')
     prefs.sidebar = { open: sidebar.open, width: clampSidebarWidth(sidebar.width) }
-  if (Array.isArray(folded) && folded.every(isKey)) prefs.folded = [...folded]
+  if (isStrings(folded)) prefs.folded = [...folded]
   if (isObj(canvas) && typeof canvas.width === 'number')
     prefs.canvas = { width: clampCanvasWidth(canvas.width) }
   return prefs

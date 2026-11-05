@@ -983,10 +983,8 @@ window.addEventListener('keydown', (e) => {
   if (available(command, window.maru)) runCommand(id)
 })
 
-// 지금 있는 workspace 의 key 만 남긴다. 재시작한 앱은 복원한 key 가운데 가장 큰 값 다음부터 key 를 매기므로, 닫은
-// workspace 의 key 가 접힌 목록에 남으면 새로 연 workspace 가 그 key 를 받아 접힌 채 뜬다.
-function openFolded(): number[] {
-  return workspaces.list.value.map((w) => w.key).filter((k) => folded.has(k))
+function openFolded(): string[] {
+  return workspaces.list.value.filter((w) => folded.has(w.key)).map((w) => w.id)
 }
 
 function screen(): ScreenState {
@@ -1001,11 +999,11 @@ function screen(): ScreenState {
 void window.maru.restoreScreen().then((r) => {
   if (r?.layout?.workspaces.length) {
     workspaces.restore(r.layout, r.ptys)
-    for (const key of prefs.folded ?? []) folded.add(key)
+    for (const w of workspaces.list.value) if (prefs.folded?.includes(w.id)) folded.add(w.key)
   }
   // cell 이 없는 핀 workspace 만 되살렸으면 고를 cell 이 없으므로, 레이아웃이 없을 때처럼 터미널 하나를 연다.
   if (!workspaces.cells().length) workspaces.open()
-  if (r?.notice) toasts.put('restore', restoreToast(r.notice))
+  for (const notice of r?.notice ?? []) toasts.put(`restore-${notice}`, restoreToast(notice))
   // 되살린 cell 은 아직 그려지기 전이라 잰 것이 없다. cell 을 다 잰 뒤 `flush: 'post'` 인 스크롤 watch 가 먼저
   // 돌도록, `settled` 는 그다음 프레임에 켠다.
   const unwatch = watch(
