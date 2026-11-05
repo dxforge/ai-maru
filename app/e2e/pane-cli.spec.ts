@@ -186,6 +186,46 @@ test('maru pane new --cell 은 없는 cell 이면 이유를 찍고 실패하며 
   await expect(cellItems(page)).toHaveCount(1)
 })
 
+test('maru pane new --pane --down 은 가리킨 pane 의 아래로 나누고 포커스는 부른 pane 에 남으며, 없는 pty 면 이유를 찍고 실패한다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await run(page, `P=$(maru pane new --full bash -c 'read x'); echo first-$?`, 'first-0')
+  await run(page, `maru pane new --pane $P --down bash -c 'read x'; echo down-$?`, 'down-0')
+  await expect(panes(page)).toHaveCount(3)
+  const [left, top, bottom] = [await box(page, 0), await box(page, 1), await box(page, 2)]
+  expect(top.x).toBeGreaterThan(left.x + left.width - 1)
+  expect(bottom.x).toBe(top.x)
+  expect(bottom.y).toBeGreaterThan(top.y + top.height - 1)
+  expect(left.y + left.height).toBeCloseTo(bottom.y + bottom.height, 0)
+  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
+
+  await run(page, 'clear; maru pane new --pane p-00000000 true; echo "code-$?"', 'code-1')
+  await expect(rows(page)).toContainText('no pane for pty p-00000000')
+  await expect(panes(page)).toHaveCount(3)
+})
+
+test('maru pane new --pane 은 다른 workspace 의 pane 도, job 에서 불러도 나눈다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  const saved = join(dataDir, 'pty-id')
+  await run(page, `echo "$MARU_PTY_ID" > '${saved}'; echo saved-$((1+1))`, 'saved-2')
+  await newWorkspace(launched, 2)
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+
+  await run(page, `maru pane new --pane $(cat '${saved}') bash -c 'read x'; echo code-$?`, 'code-0')
+  await expect(cellViews(page).nth(0).locator('.pane')).toHaveCount(2)
+  await page.keyboard.type(
+    `maru job new --name opener maru pane new --pane $(cat '${saved}') bash -c 'read x'\n`
+  )
+  await expect(cellViews(page).nth(0).locator('.pane')).toHaveCount(3)
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+  await expect(panes(page)).toHaveCount(1)
+})
+
 test('pty 를 띄우지 못하면 나눈 pane 을 닫고 maru pane new 가 이유와 함께 실패한다', async ({
   launch,
   dataDir

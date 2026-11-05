@@ -81,6 +81,17 @@ describe('pane.new', () => {
     await expect(done).resolves.toEqual({ pty: B })
   })
 
+  it.each([[{}], [{ full: false }]])(
+    'pane 으로 가리킨 pty 를 부른 pty 대신 나눌 pane 으로 넘긴다 %j',
+    async (extra) => {
+      const { handlers, sent, answer } = setup()
+      const done = handlers['pane.new']({ cwd: '/', direction: 'down', pane: B, ...extra }, A)
+      expect(sent[0].arg).toEqual({ pty: B, cwd: '/', direction: 'down', full: false })
+      answer({ pty: 'p-0000000c' })
+      await expect(done).resolves.toEqual({ pty: 'p-0000000c' })
+    }
+  )
+
   it('가리킨 cell 이 창에 없으면 invalid_params', async () => {
     const { handlers, answer } = setup()
     const done = handlers['pane.new']({ cwd: '/', direction: 'right', cell: 'c-0000000b' }, A)
@@ -97,6 +108,11 @@ describe('pane.new', () => {
     [{ cwd: '/', direction: 'right', cell: null }],
     [{ cwd: '/', direction: 'right', full: 'yes' }],
     [{ cwd: '/', direction: 'right', full: 1 }],
+    [{ cwd: '/', direction: 'right', pane: 'c-0000000b' }],
+    [{ cwd: '/', direction: 'right', pane: '' }],
+    [{ cwd: '/', direction: 'right', pane: null }],
+    [{ cwd: '/', direction: 'right', pane: B, full: true }],
+    [{ cwd: '/', direction: 'right', pane: B, cell: 'c-0000000b' }],
     [{ direction: 'right' }],
     [{ cwd: '/', direction: 'left' }],
     [{ cwd: '/', direction: 'right', command: [] }],
