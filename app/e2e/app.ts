@@ -194,6 +194,7 @@ async function launchApp(
       ...(executablePath ? [] : ['.']),
       `--user-data-dir=${dataDir}`,
       ...IGNORE_SAVED_WINDOWS,
+      ...(args.some((a) => a.startsWith(`${SCALE_SWITCH}=`)) ? [] : [`${SCALE_SWITCH}=2`]),
       ...args
     ],
     env: launchEnv
@@ -217,6 +218,9 @@ async function launchApp(
  * 이 인자를 주면 macOS 가 창 복원을 건너뛰므로, 그 상태에서도 앱이 확인 창 없이 뜬다.
  */
 export const IGNORE_SAVED_WINDOWS = ['-ApplePersistenceIgnoreState', 'YES']
+
+/** 창의 배율은 창이 놓인 모니터를 따르므로, 배율을 고정하지 않으면 테스트 결과가 실행하는 Mac 의 모니터 배치에 따라 달라진다. */
+const SCALE_SWITCH = '--force-device-scale-factor'
 
 // `launch` 에 넘기는 인자로 macOS 의 "스크롤 막대 보기" 설정을 바꾼다. Cocoa 가 `-키 값` 인자를 설정으로 읽기 때문이다.
 export const CLASSIC_SCROLLBARS = ['-AppleShowScrollBars', 'Always']

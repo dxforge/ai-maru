@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it } from 'vitest'
 import {
-  offscreenPosition,
+  initialPlacement,
   parseWindowState,
   restoreWindowState,
   trackWindowState,
@@ -108,22 +108,20 @@ describe('windowBounds', () => {
   })
 })
 
-describe('offscreenPosition', () => {
-  const main = { x: 0, y: 0, width: 1440, height: 900 }
+describe('initialPlacement', () => {
+  const primary = { x: 0, y: 25, width: 1440, height: 875 }
 
-  it('오른쪽 끝이 가장 먼 모니터의 오른쪽 아래 모서리를 준다', () => {
-    const right = { x: 1440, y: -200, width: 1920, height: 1080 }
-    const below = { x: 200, y: 900, width: 1280, height: 800 }
-    expect(offscreenPosition([main, right, below])).toEqual({ x: 3360, y: 880 })
-    expect(offscreenPosition([right, below, main])).toEqual({ x: 3360, y: 880 })
+  it('되살린 자리가 없는 e2e 의 창은 주 모니터 작업 영역의 왼쪽 위에 둔다', () => {
+    expect(initialPlacement(null, true, primary)).toEqual({ x: 0, y: 25 })
   })
 
-  it('모니터가 하나면 그 모니터의 오른쪽 아래 모서리를 준다', () => {
-    expect(offscreenPosition([main])).toEqual({ x: 1440, y: 900 })
+  it('되살린 자리가 있으면 e2e 의 창이어도 그 자리를 준다', () => {
+    expect(initialPlacement(BOUNDS, true, primary)).toEqual(BOUNDS)
+    expect(initialPlacement(BOUNDS, false, primary)).toEqual(BOUNDS)
   })
 
-  it('모니터가 없으면 null', () => {
-    expect(offscreenPosition([])).toBeNull()
+  it('되살린 자리가 없는 사용자의 창은 자리를 정하지 않는다', () => {
+    expect(initialPlacement(null, false, primary)).toEqual({})
   })
 })
 

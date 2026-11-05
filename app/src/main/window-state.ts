@@ -53,10 +53,13 @@ export function windowBounds(state: WindowState | null, displays: Rectangle[]): 
   return displays.some((d) => contains(d, bounds)) ? bounds : null
 }
 
-export function offscreenPosition(displays: Rectangle[]): { x: number; y: number } | null {
-  if (displays.length === 0) return null
-  const rightmost = displays.reduce((a, b) => (b.x + b.width > a.x + a.width ? b : a))
-  return { x: rightmost.x + rightmost.width, y: rightmost.y + rightmost.height }
+export function initialPlacement(
+  restored: Rectangle | null,
+  unobtrusive: boolean,
+  primary: Rectangle
+): Partial<Rectangle> {
+  if (restored) return restored
+  return unobtrusive ? { x: primary.x, y: primary.y } : {}
 }
 
 export function restoreWindowState(win: StatefulWindow, state: WindowState | null): void {
