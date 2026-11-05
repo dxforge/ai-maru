@@ -92,7 +92,7 @@ test('저장소 안에서는 저장소 이름과 branch 를, 밖에서는 디렉
   await expect.poll(() => win(app)).toEqual({ title: 'notes', path: join(home, 'notes') })
 })
 
-test('workspace 이름 줄은 첫 cell 의 첫 pane 의 저장소 이름(저장소 밖이면 디렉토리 이름)이고 branch 가 없으며, 접은 사이드바에서도 보인다', async ({
+test('workspace 이름 줄은 첫 pane 이 홈 밖으로 처음 간 디렉토리의 저장소 이름(저장소 밖이면 디렉토리 이름)이고 branch 가 없으며, 첫 cell 이 닫혀도 그대로고 접은 사이드바에서도 보인다', async ({
   launch,
   dataDir
 }) => {
@@ -111,7 +111,7 @@ test('workspace 이름 줄은 첫 cell 의 첫 pane 의 저장소 이름(저장�
   await cellItems(page).nth(0).click()
   await page.keyboard.type('exit\n')
   await expect(cellPlaces(page)).toHaveText(['notes'])
-  await expect(workspaceNames(page)).toHaveText(['notes'])
+  await expect(workspaceNames(page)).toHaveText(['proj'])
 
   await collapseSidebar(app, page)
   await expect(workspaceNames(page)).toBeVisible()
@@ -1007,7 +1007,7 @@ test('workspace 이름 줄을 두 번 누르면 이름을 고치고, Enter 로 �
   await page.keyboard.type('cd ~/notes\n')
   await expect(cellPlaces(page)).toHaveText(['notes'])
   await expect(workspaceNames(page)).toHaveText(['review'])
-  await expect(head).toHaveAttribute('data-tooltip', 'notes')
+  await expect(head).toHaveAttribute('data-tooltip', 'proj')
 })
 
 test('이름을 고치다 Esc 를 누르면 이름이 그대로이고, 비우고 정하면 자동 이름으로 돌아가며, 두 경우 모두 터미널이 입력을 받는다', async ({
@@ -1179,13 +1179,13 @@ test('이름을 고치다 New Cell·Next Cell 로 cell 을 고르거나 사이�
   await run(page, 'echo fold-$((1+1))', 'fold-2')
 })
 
-test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 이름이 셸의 cd 를 계속 따라가고, 같은 이름이라도 Enter 로 정하면 고정한다', async ({
+test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 자동 이름이 첫 pane 의 저장소를 계속 따라가고, 같은 이름이라도 Enter 로 정하면 고정한다', async ({
   launch,
   dataDir
 }) => {
   const home = repoHome(dataDir)
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
-  await page.keyboard.type('cd proj\n')
+  await page.keyboard.type('mkdir -p proj/sub; cd proj/sub\n')
   await expect(workspaceNames(page)).toHaveText(['proj'])
   const head = workspaceHeads(page).nth(0)
 
@@ -1194,15 +1194,15 @@ test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 이름이 �
   await cellItems(page).nth(0).click()
   await expect(nameInput(page)).toHaveCount(0)
   await page.keyboard.type('cd ~/notes\n')
-  await expect(workspaceNames(page)).toHaveText(['notes'])
+  await expect(workspaceNames(page)).toHaveText(['sub'])
 
   await head.dblclick()
-  await expect(nameInput(page)).toHaveValue('notes')
+  await expect(nameInput(page)).toHaveValue('sub')
   await page.keyboard.press('Enter')
   await expect(nameInput(page)).toHaveCount(0)
-  await page.keyboard.type('cd ~/proj\n')
+  await page.keyboard.type('cd ~/proj/sub\n')
   await expect(head).toHaveAttribute('data-tooltip', 'proj')
-  await expect(workspaceNames(page)).toHaveText(['notes'])
+  await expect(workspaceNames(page)).toHaveText(['sub'])
 })
 
 test('workspace 핀은 핀을 꽂은 workspace 에 늘 보이고 아니면 헤더에 마우스가 있을 때만 보이며, 누르기는 접기·이름 고치기·끌기로 번지지 않는다', async ({

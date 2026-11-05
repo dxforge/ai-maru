@@ -49,8 +49,10 @@ type CellOf<P> = {
 }
 
 /**
- * `name` 은 사용자가 바꾼 이름이다. 없으면 첫 cell 의 첫 pane 으로 이름을 짓고, cell 이 없으면 `dir` 로 짓는다
- * (`workspaceName`). `pinned` 인 workspace 는 마지막 cell 을 닫아도 남고, 그때 닫은 cell 의 디렉토리를 `dir` 에 적는다.
+ * `name` 은 사용자가 바꾼 이름이다. 없으면 `workspaceName` 이 짓는다. `dir` 이 첫 pane 의 작업 트리 안이면 그 저장소
+ * 이름, 밖이면 `dir` 의 디렉토리 이름, `dir` 이 아직 없으면 첫 pane 의 저장소나 디렉토리 이름이다. `dir` 은 workspace 의
+ * 디렉토리로, 홈 밖의 디렉토리로 한 번 정하면 바꾸지 않는다. 첫 cell 이 `cd` 하거나 다른 cell 이 첫 자리로 와도
+ * workspace 의 경로가 따라 바뀌지 않게 하기 위해서다. `pinned` 인 workspace 는 마지막 cell 을 닫아도 남는다.
  * cell 이 없는 workspace 는 `pinned` 일 때만 있다. `favorites` 는 즐겨찾기 디렉토리의 절대경로로, 넣은 순서다.
  */
 type WorkspaceOf<P> = {
@@ -85,10 +87,6 @@ export type ScreenState = {
 /** `state.json` 의 표 하나다. 줄의 순서가 화면의 순서다. */
 export type Table<R> = { version: number; rows: R[] }
 
-/**
- * `workspaces` 표의 줄로, 사이드바의 순서다. `dir` 은 cell 이 있으면 첫 cell 의 첫 pane 의 cwd 다. `cells` 표를 잃은
- * 핀 workspace 는 그 디렉토리로 이름을 짓고, `panes` 표를 잃은 cell 은 그 디렉토리에서 셸을 띄운다.
- */
 export type WorkspaceRow = Omit<SavedWorkspace, 'key' | 'cells'>
 
 /** `cells` 표의 줄이다. 같은 `workspace` 의 줄끼리는 줄의 순서가 cell 의 순서다. 배치의 잎은 pane 의 id 다. */
@@ -316,9 +314,7 @@ export function splitScreen(screen: ScreenState): SplitScreen {
   let selected: string | undefined
   for (const { cells: wCells, ...rest } of screen.workspaces) {
     const w = omit(rest, 'key')
-    // 첫 cell 의 첫 pane 의 cwd 를 `dir` 로 적는다. cell 이 있는 동안 `autoWorkspaceName`(`shared/names.ts`)이 그 pane 으로 이름을 짓기 때문이다.
-    const dir = wCells.length ? wCells[0].panes[0]?.cwd : w.dir
-    workspaces.push(compact({ ...w, dir }))
+    workspaces.push(compact(w))
     for (const { key, panes: cPanes, layout, focused, ...c } of wCells) {
       if (key === screen.selected) selected = c.id
       const ids = new Map(cPanes.map((p) => [p.key, p.id]))

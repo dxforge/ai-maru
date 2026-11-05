@@ -131,7 +131,8 @@ export function createWorkspaces(
   ptyId: () => string = newPtyId,
   cellId: () => string = () => randomId('c'),
   workspaceId: () => string = () => randomId('w'),
-  paneId: () => string = () => randomId('n')
+  paneId: () => string = () => randomId('n'),
+  home?: string
 ) {
   const list = ref<Workspace[]>([])
   const selectedKey = ref<number | null>(null)
@@ -177,6 +178,21 @@ export function createWorkspaces(
       focused: pane.key
     }
   }
+
+  const isHome = (dir: string): boolean =>
+    home !== undefined && dir.replace(/\/+$/, '') === home.replace(/\/+$/, '')
+
+  /**
+   * 홈 디렉토리인 `dir` 은 첫 pane 이 홈 밖으로 가면 바꾼다. 앱을 처음 열면 셸이 홈에서 뜨고, 홈으로 고정하면 셸이 어디로
+   * 가든 workspace 이름이 늘 `~` 가 되기 때문이다.
+   */
+  function settleDir(w: Workspace, dir: string | undefined): void {
+    if (dir === undefined || (w.dir !== undefined && !isHome(w.dir))) return
+    w.dir = dir
+  }
+
+  const headOf = (p: Pane): Workspace | undefined =>
+    list.value.find((w) => w.cells[0]?.panes[0] === p)
 
   function createWorkspace(cell: Cell): Workspace {
     return { key: nextKey++, id: workspaceId(), cells: [cell] }
@@ -360,6 +376,7 @@ export function createWorkspaces(
       if (from.cells.length === 1 && !from.pinned) return moveWorkspace(from.key, list.value.length)
       const c = detach(from, at)
       const w = createWorkspace(c)
+      settleDir(w, c.panes[0].cwd)
       list.value.push(w)
       carry(from, c, w)
       return
@@ -384,11 +401,7 @@ export function createWorkspaces(
     const [c] = w.cells.splice(at, 1)
     if (w.cells.length) return c
     if (!w.pinned) list.value.splice(list.value.indexOf(w), 1)
-    else {
-      const dir = c.panes[0].cwd ?? c.panes[0].startDir
-      if (dir === undefined) delete w.dir
-      else w.dir = dir
-    }
+    else settleDir(w, c.panes[0].cwd ?? c.panes[0].startDir)
     return c
   }
 
@@ -505,7 +518,11 @@ export function createWorkspaces(
     const reported =
       before?.reports !== undefined && now.reports !== undefined && now.reports !== before.reports
     const changed = cwd !== p.cwd
-    if (changed) p.cwd = cwd
+    if (changed) {
+      p.cwd = cwd
+      const w = headOf(p)
+      if (w) settleDir(w, cwd)
+    }
     if (cwd === undefined || !(changed || reported || now.program !== before?.program)) return false
     // 작업 트리 밖으로 옮기면 답을 기다리지 않고 이전 저장소를 지운다. reftable 저장소는 `git` 을 실행해 읽으므로 답이
     // 늦게 오고, 그동안 이전 저장소의 이름과 branch 가 보이기 때문이다. 작업 트리 안이면 이름이 깜빡이지 않게 둔다.
@@ -523,7 +540,7 @@ export function createWorkspaces(
   function applyState(ptyId: string): void {
     const p = paneByPty(ptyId)
     // main 은 끝난 pty 의 상태를 지우고, 그러면 cwd 는 셸을 띄운 디렉토리로 돌아간다. 그 알림이 셸의 exit 보다 먼저 오면
-    // cell 을 닫는 `detach` 가 그 디렉토리를 핀 workspace 의 디렉토리로 적으므로, 상태가 지워졌을 때는 마지막 cwd 를 둔다.
+    // `dir` 이 아직 없는 핀 workspace 에서는 cell 을 닫는 `detach` 가 그 디렉토리를 workspace 의 디렉토리로 적으므로, 상태가 지워졌을 때는 마지막 cwd 를 둔다.
     if (p) refresh(p, source.get(ptyId) === undefined)
   }
 
@@ -535,6 +552,8 @@ export function createWorkspaces(
     const p = pane(key)
     if (!p) return
     p.startDir = dir
+    const w = headOf(p)
+    if (w) settleDir(w, dir)
     refresh(p)
   }
 
@@ -603,10 +622,15 @@ export function createWorkspaces(
       if (p.git) fresh.git = p.git
       return fresh
     }
-    list.value = layout.workspaces.map((w) => ({
-      ...w,
-      cells: w.cells.map((c) => ({ ...c, panes: c.panes.map(restorePane) }))
-    }))
+    list.value = layout.workspaces.map((w) => {
+      const r: Workspace = {
+        ...w,
+        cells: w.cells.map((c) => ({ ...c, panes: c.panes.map(restorePane) }))
+      }
+      // pty 에 다시 붙는 pane 은 `setSpawnedDir` 를 부르지 않으므로, `dir` 이 없으면 저장한 cwd 로 정한다.
+      settleDir(r, w.cells[0]?.panes[0]?.cwd)
+      return r
+    })
     selectedKey.value = layout.selected
     nextKey = Math.max(nextKey, ...layoutKeys(layout.workspaces).map((k) => k + 1))
     // main 의 상태가 화면보다 먼저 왔을 수 있다. 저장한 git 은 재시작하는 동안 바뀌었을 수 있어 다시 읽는다.

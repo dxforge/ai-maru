@@ -78,7 +78,8 @@ test('maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순
 
   await split(app, page, 'split-right', 2)
   await typesInto(page, 1, 'second')
-  const plain = await ptyIdOf(page)
+  // ⌘N 은 이 pane 의 디렉토리에서 새 workspace 를 열고 그 디렉토리를 workspace 의 디렉토리로 정하므로, 홈으로 보내 proj-b 로 정해지게 한다.
+  const plain = await ptyIdOf(page, `cd ~; printf '\\e]7;file://%s\\a' "$PWD"; `)
 
   await newWorkspace(launched, 2)
   const second = await enter(page, join(dataDir, 'proj-b'))

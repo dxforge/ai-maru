@@ -445,7 +445,13 @@ describe('createStateStore', () => {
   })
 
   it('화면의 핀 workspace 는 workspaces 표의 줄에 pinned 로 담는다', () => {
-    const w = { ...screen.workspaces[0], name: 'atlas', pinned: true as const, favorites: ['/tmp'] }
+    const w = {
+      ...screen.workspaces[0],
+      name: 'atlas',
+      dir: '/tmp',
+      pinned: true as const,
+      favorites: ['/tmp']
+    }
     const s = store(full)
     s.setScreen({ ...screen, workspaces: [w] })
     expect(s.current()).toMatchObject({

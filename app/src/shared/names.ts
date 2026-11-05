@@ -34,7 +34,7 @@ function sameRepo(a: GitHead, b: GitHead): boolean {
     : a.repo === b.repo
 }
 
-/** workspace 이름(`base`, 그 workspace 의 첫 cell 의 첫 pane)과 다른 부분만 적는다. */
+/** `base` 는 workspace 이름을 지은 pane 으로, `labelBase` 가 고른다. 줄에는 workspace 이름과 다른 부분만 적는다. */
 export function sidebarLabel(p: Named, base: Named | undefined, home?: string): SidebarLabel {
   if (!p.git) return { name: dirLabel(p.cwd, home) }
   const { repo, branch, sub } = p.git
@@ -45,13 +45,30 @@ export function sidebarLabel(p: Named, base: Named | undefined, home?: string): 
 type NamedWorkspace<P> = { name?: string; dir?: string; cells: readonly { panes: readonly P[] }[] }
 
 /**
- * `home` 을 주면 홈 디렉토리를 `~` 로 쓴다. 사이드바가 pane 줄의 위치(`sidebarLabel`)와 맞추려고 준다. cell 이 없는 핀
- * workspace 는 `dir` 의 디렉토리 이름으로 짓는다. 그 디렉토리가 저장소면 cell 이 있을 때의 저장소 이름과 다를 수 있다.
+ * `dir` 이 없거나 첫 pane 의 작업 트리 안에 있을 때만 첫 pane 을 돌려준다. 저장소 여럿을 모은 디렉토리를 workspace 로 연
+ * 경우, 첫 cell 이 그 안의 저장소로 `cd` 해도 그 저장소 이름을 workspace 이름으로 쓰지 않기 위해서다.
+ */
+function repoPane<P extends Named>(w: NamedWorkspace<P>): P | undefined {
+  const p = w.cells[0]?.panes[0]
+  if (!p || w.dir === undefined) return p
+  const top = p.git && p.cwd && gitTop(p.cwd, p.git.sub)
+  return top !== undefined && (w.dir === top || w.dir.startsWith(`${top}/`)) ? p : undefined
+}
+
+function gitTop(cwd: string, sub: string | undefined): string | undefined {
+  if (sub === undefined) return undefined
+  const dir = cwd.replace(/\/+$/, '')
+  if (sub === '') return dir
+  return dir.endsWith(`/${sub}`) ? dir.slice(0, -sub.length - 1) : undefined
+}
+
+/**
+ * `home` 을 주면 홈 디렉토리를 `~` 로 쓴다. 사이드바가 pane 줄의 위치(`sidebarLabel`)와 맞추려고 준다.
  */
 export function autoWorkspaceName(w: NamedWorkspace<Named>, home?: string): string {
-  const p = w.cells[0]?.panes[0]
-  if (!p) return dirLabel(w.dir, home)
-  return p.git ? p.git.repo : dirLabel(p.cwd, home)
+  const p = repoPane(w)
+  if (p?.git) return p.git.repo
+  return dirLabel(w.dir ?? p?.cwd, home)
 }
 
 export function workspaceName(w: NamedWorkspace<Named>, home?: string): string {
@@ -71,8 +88,8 @@ export function nameOnFocusLoss(typed: string, opened: string): string | null {
  * cell·pane 줄이 `sidebarLabel` 에 넘길 `base` 다. 바꾼 이름에는 저장소 이름이 없을 수 있으므로 `base` 를 두지 않고, 줄마다
  * 저장소 이름을 온전히 적게 한다.
  */
-export function labelBase<P>(w: NamedWorkspace<P>): P | undefined {
-  return w.name === undefined ? w.cells[0]?.panes[0] : undefined
+export function labelBase<P extends Named>(w: NamedWorkspace<P>): P | undefined {
+  return w.name === undefined ? repoPane(w) : undefined
 }
 
 export function windowTitle(label: Label): string {
