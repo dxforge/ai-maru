@@ -595,6 +595,10 @@ impl VtTerminal {
         Ok(bar.total.saturating_sub(emitted.max(bar.len)))
     }
 
+    pub fn bracketed_paste(&self) -> Result<bool> {
+        self.mode(ffi::GHOSTTY_MODE_BRACKETED_PASTE)
+    }
+
     fn mode(&self, mode: u16) -> Result<bool> {
         let mut config = ffi::GhosttyTerminalModeConfig { mode, value: false };
         // SAFETY: 이 데이터의 입출력 타입은 `GhosttyTerminalModeConfig*` 다.
@@ -1660,6 +1664,16 @@ mod tests {
                 "lead={lead}: {s:?}"
             );
         }
+    }
+
+    #[test]
+    fn bracketed_paste_follows_mode_2004() {
+        let mut t = term();
+        assert!(!t.bracketed_paste().unwrap());
+        t.write(b"\x1b[?2004h");
+        assert!(t.bracketed_paste().unwrap());
+        t.write(b"\x1b[?2004l");
+        assert!(!t.bracketed_paste().unwrap());
     }
 
     #[test]

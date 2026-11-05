@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PaneReply } from '../shared/pane'
 import { CliError, InvalidParams } from './cli-server'
-import { createPanes, type PaneChannel } from './pane'
+import { createPanes, paneIo, type PaneChannel } from './pane'
 import { createWindowReady } from './window-ready'
 
 const A = 'p-0000000a'
@@ -380,5 +380,73 @@ describe('pane.close', () => {
       InvalidParams
     )
     expect(sent).toEqual([])
+  })
+})
+
+describe('pane.read·pane.send', () => {
+  function io(panes: string[] | null = [A], capture = async (pty: string) => `screen of ${pty}`) {
+    const pasted: [string, string][] = []
+    let exited = false
+    const handlers = paneIo({
+      panes: () => panes,
+      capture,
+      paste: async (pty, text) => {
+        pasted.push([pty, text])
+        return exited ? 'exited' : 'written'
+      }
+    })
+    return { handlers, pasted, exit: () => (exited = true) }
+  }
+
+  it('창의 pane 이면 화면을 읽고 글자를 그대로 넘긴다', async () => {
+    const { handlers, pasted } = io()
+    await expect(handlers['pane.read']({ target: A }, B)).resolves.toEqual({
+      text: `screen of ${A}`
+    })
+    await expect(handlers['pane.send']({ target: A, text: 'ls\r' }, B)).resolves.toBeNull()
+    expect(pasted).toEqual([[A, 'ls\r']])
+  })
+
+  it('창에 없는 pty(job 의 pty 포함)는 no pane 으로 거절한다', async () => {
+    const { handlers, pasted } = io()
+    for (const method of ['pane.read', 'pane.send']) {
+      const done = handlers[method]({ target: B, text: 'x' }, A) as Promise<unknown>
+      await expect(done).rejects.toThrow(new InvalidParams(`no pane for pty ${B}`))
+    }
+    expect(pasted).toEqual([])
+  })
+
+  it('pty id 꼴이 아니거나 글자가 비면 params 오류다', async () => {
+    const { handlers } = io()
+    for (const [method, params] of [
+      ['pane.read', { target: 'x' }],
+      ['pane.send', { target: 'x', text: 'a' }],
+      ['pane.send', { target: A, text: '' }],
+      ['pane.send', { target: A }]
+    ] as const) {
+      const done = handlers[method](params, A) as Promise<unknown>
+      await expect(done).rejects.toBeInstanceOf(InvalidParams)
+    }
+  })
+
+  it('창이 화면을 알리기 전이면 실패한다', async () => {
+    const { handlers } = io(null)
+    const done = handlers['pane.read']({ target: A }, A) as Promise<unknown>
+    await expect(done).rejects.toThrow('the window has not reported its layout yet')
+  })
+
+  it('셸이 끝난 pty 면 실패한다', async () => {
+    const { handlers, exit } = io()
+    exit()
+    const done = handlers['pane.send']({ target: A, text: 'x' }, A) as Promise<unknown>
+    await expect(done).rejects.toThrow(`pty ${A} has exited`)
+  })
+
+  it('pty 가 화면을 돌려주지 못하면 그 오류로 실패한다', async () => {
+    const { handlers } = io([A], async (pty) => {
+      throw new Error(`cannot read pty ${pty}: not_running`)
+    })
+    const done = handlers['pane.read']({ target: A }, A) as Promise<unknown>
+    await expect(done).rejects.toThrow(`cannot read pty ${A}: not_running`)
   })
 })

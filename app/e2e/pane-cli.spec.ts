@@ -298,6 +298,29 @@ test('maru pane close 는 다른 pane 도 자기 pane 도 닫고, 없는 pty 면
   await expect(rows(page)).toContainText('code-1')
 })
 
+test('maru pane new 직후의 pane 에 maru pane send 로 명령을 쓰고 maru pane read 로 그 화면을 읽으며, job 은 거절한다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  // `pane new` 의 답이 창의 layout 보다 먼저 오면 바로 뒤의 read 가 no pane 으로 실패한다.
+  await page.keyboard.type(`ID=$(maru pane new); maru pane read "$ID" >/dev/null; echo "new-$?"\n`)
+  await expect(panes(page)).toHaveCount(2)
+  await expect(rows(page)).toContainText('new-0')
+  await run(
+    page,
+    `maru pane send "$ID" $'echo sent-$((1+1))\\r'; until maru pane read "$ID" | grep -qx sent-2; do sleep 0.2; done; echo read-$((1+1))`,
+    'read-2'
+  )
+  await expect(paneRows(page, 1)).toContainText('sent-2')
+
+  await run(
+    page,
+    'clear; J=$(maru job new sleep 30); maru pane send "$J" x; echo "job-$?"',
+    'job-1'
+  )
+  await expect(rows(page)).toContainText('no pane for pty p-')
+})
+
 test('single 에서 maru pane new --full --down 은 cell 아래쪽 끝에 폭 전체로 붙는다', async ({
   launch
 }) => {

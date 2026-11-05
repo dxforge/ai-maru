@@ -582,6 +582,18 @@ describe('writePtyInput', () => {
     }
   })
 
+  it('요청의 paste 는 받은 값을 따르고 기본값은 false 다', async () => {
+    const s = await framePty((_req, sock) => send(sock, { type: 'input' }))
+    try {
+      await writePtyInput(s.dir, s.id, 'ls\r', 1000, true)
+      await writePtyInput(s.dir, s.id, 'r\r', 1000)
+      expect(s.requests[0]).toMatchObject({ type: 'input', text: 'ls\r', paste: true })
+      expect(s.requests[1]).toMatchObject({ type: 'input', text: 'r\r', paste: false })
+    } finally {
+      s.close()
+    }
+  })
+
   it('답하지 않으면 시간 안에, 다시 보내지 말라는 말과 함께 실패한다', async () => {
     const s = await framePty(() => {})
     try {

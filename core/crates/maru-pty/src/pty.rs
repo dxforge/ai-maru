@@ -1,4 +1,5 @@
 use crate::master::{self, Master};
+use crate::paste::paste_bytes;
 use crate::procinfo;
 use crate::program_status::Records;
 use crate::state::{PaneState, notification_message, same_dir_as};
@@ -433,6 +434,19 @@ impl Pty {
         let mut w = self.writer.lock().unwrap();
         w.write_all(bytes)?;
         w.flush()
+    }
+
+    /// `text` 를 터미널의 붙여넣기처럼 쓴다(`paste::paste_bytes`). mode 를 읽은 뒤 쓰기 전에 프로그램이 mode 를 바꾸면
+    /// 그 전의 mode 로 쓴다.
+    pub fn paste(&self, text: &str) -> std::io::Result<()> {
+        let bracketed = self
+            .screen
+            .lock()
+            .unwrap()
+            .vt
+            .bracketed_paste()
+            .map_err(std::io::Error::other)?;
+        self.write(&paste_bytes(text, bracketed))
     }
 
     /// primary 를 바꾸는 것과 크기를 맞추는 것을 screen 락 하나로 묶는다. 따로 잡으면 그 사이에

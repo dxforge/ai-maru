@@ -324,13 +324,14 @@ export async function writePtyInput(
   dir: string,
   id: string,
   text: string,
-  timeoutMs: number
+  timeoutMs: number,
+  paste = false
 ): Promise<'written' | 'exited'> {
   // 시간이 지나도 입력은 들어가므로 다시 보내지 말라고 알린다(maru-pty 의 `lib.rs`).
   const late =
     `pty ${id} has not taken the input within ${timeoutMs / 1000}s. ` +
     'It gets the input once the program reads it, so do not send it again.'
-  const r = await askWithin(dir, id, { type: 'input', text }, timeoutMs, late)
+  const r = await askWithin(dir, id, { type: 'input', text, paste }, timeoutMs, late)
   if (r.type === 'input') return 'written'
   if (r.code === 'exited') return 'exited'
   throw new Error(`cannot write to pty ${id}: ${String(r.message ?? r.code)}`)

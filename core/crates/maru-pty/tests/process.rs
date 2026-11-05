@@ -878,6 +878,42 @@ fn input_reaches_the_shell_and_is_refused_after_exit() {
         (&json!("error"), &json!("exited")),
         "{refused}"
     );
+    let refused = p.request(json!({
+        "type": "input", "protocol_version": PROTOCOL_VERSION, "text": "late\r", "paste": true,
+    }));
+    assert_eq!(
+        (&refused["type"], &refused["code"]),
+        (&json!("error"), &json!("exited")),
+        "{refused}"
+    );
+}
+
+fn pasted(mode: &str, text: &str, len: usize) -> Vec<u8> {
+    let out = tmpdir();
+    let file = out.path().join("got");
+    let p = start_keep(&format!(
+        "stty raw -echo; printf '\\033[?2004{mode}ready-%d' 2; head -c {len} > '{}'",
+        file.display()
+    ));
+    let (mut c, _, _) = p.attach("observer", 80, 24);
+    c.output_until("ready-2");
+    let req = json!({
+        "type": "input", "protocol_version": PROTOCOL_VERSION, "text": text, "paste": true,
+    });
+    assert_eq!(p.request(req), json!({ "type": "input" }));
+    p.request(status(true));
+    std::fs::read(file).unwrap()
+}
+
+/// 본문을 3000바이트로 둔 것은 raw tty 를 읽는 스크립트가 한 번에 1022바이트씩 받는 것을 쟀기 때문이다. 여러 번에 나눠
+/// 읽혀도 빠짐없이 순서대로 닿는지 본다.
+#[test]
+fn paste_wraps_a_long_body_when_bracketed_paste_is_on_and_writes_it_whole() {
+    let body: String = (0..3000).map(|i| (b'a' + (i % 26) as u8) as char).collect();
+    let text = format!("{body}\r");
+    let wrapped = format!("\x1b[200~{body}\x1b[201~\r");
+    assert_eq!(pasted("h", &text, wrapped.len()), wrapped.as_bytes());
+    assert_eq!(pasted("l", &text, text.len()), text.as_bytes());
 }
 
 #[test]

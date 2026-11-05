@@ -39,7 +39,7 @@ import { mcpHandlers } from './mcp'
 import { installCommandMenu } from './menu'
 import { createMonitor } from './monitor'
 import { isDevReload } from './navigation'
-import { createPanes } from './pane'
+import { createPanes, paneIo } from './pane'
 import { createWindowReady } from './window-ready'
 import { createJobs, JOB_REPLY_MS } from './job'
 import { removeTmpFiles } from './json-file'
@@ -523,6 +523,14 @@ const cliHandlers: Handlers = {
   ...monitor.handlers,
   ...inbox,
   ...panes.handlers,
+  ...paneIo({
+    panes: () => {
+      const screen = parseScreen(lastScreen)
+      return screen && screenPanes(screen).panes.map((p) => p.ptyId)
+    },
+    capture: (pty) => capturePty(ptyDir(), pty, JOB_REPLY_MS),
+    paste: (pty, text) => writePtyInput(ptyDir(), pty, text, JOB_REPLY_MS, true)
+  }),
   ...restartHandlers
 }
 
