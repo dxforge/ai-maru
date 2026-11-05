@@ -293,3 +293,36 @@ test('창을 옮긴 뒤 앱이 강제로 끝나도 다음 실행은 옮긴 자�
   const second = await launch()
   expect(await win(second.app, 'getBounds')).toEqual(placed)
 })
+
+test('테스트용 창은 화면 밖으로 옮겨, 화면에 남는 부분이 사이드바 제목 줄 안에 든다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  await openCanvas(launched)
+  const titlebar = (await launched.page.locator('.sidebar > .titlebar').boundingBox())!
+  const { content, displays } = await launched.app.evaluate(({ BrowserWindow, screen }) => ({
+    content: BrowserWindow.getAllWindows()[0].getContentBounds(),
+    displays: screen.getAllDisplays().map((d) => d.bounds)
+  }))
+  const visible = displays.flatMap((d) => {
+    const left = Math.max(content.x, d.x)
+    const top = Math.max(content.y, d.y)
+    const right = Math.min(content.x + content.width, d.x + d.width)
+    const bottom = Math.min(content.y + content.height, d.y + d.height)
+    if (left >= right || top >= bottom) return []
+    return [
+      {
+        x: left - content.x,
+        y: top - content.y,
+        right: right - content.x,
+        bottom: bottom - content.y
+      }
+    ]
+  })
+  for (const r of visible) {
+    expect(r.x).toBeGreaterThanOrEqual(titlebar.x)
+    expect(r.y).toBeGreaterThanOrEqual(titlebar.y)
+    expect(r.right).toBeLessThanOrEqual(titlebar.x + titlebar.width)
+    expect(r.bottom).toBeLessThanOrEqual(titlebar.y + titlebar.height)
+  }
+})
