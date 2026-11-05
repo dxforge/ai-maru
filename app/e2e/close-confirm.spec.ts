@@ -247,9 +247,7 @@ test('Keep layout only 로 끄면 pty 를 끄고, 다음 실행은 같은 배치
   const first = await launch(zsh)
   await split(first.app, first.page, 'split-right', 2)
   await run(first.page, `cd '${dir}'; X=old; echo moved-$((1+1))`, 'moved-2')
-  await expect
-    .poll(() => readState(dataDir)?.layout?.workspaces?.[0]?.cells?.[0]?.panes?.[1]?.cwd)
-    .toBe(dir)
+  await expect.poll(() => readState(dataDir)?.panes?.rows?.[1]?.cwd).toBe(dir)
   await stubDialog(first.app, KEEP_LAYOUT)
   const closed = first.app.waitForEvent('close')
   await first.app.evaluate(({ app }) => app.quit())
@@ -257,7 +255,8 @@ test('Keep layout only 로 끄면 pty 를 끄고, 다음 실행은 같은 배치
   expect(sockets(dataDir)).toEqual([])
   expect(readState(dataDir)).toMatchObject({
     sessions: null,
-    layout: { version: STATE_VERSIONS.layout }
+    cells: { version: STATE_VERSIONS.cells },
+    panes: { version: STATE_VERSIONS.panes }
   })
 
   const { page } = await launch(zsh)
@@ -279,7 +278,7 @@ test('End everything 으로 끄면 다음 실행은 빈 화면으로 뜨고, 보
   await first.app.evaluate(({ app }) => app.quit())
   await closed
   expect(sockets(dataDir)).toEqual([])
-  expect(readState(dataDir)).toMatchObject({ layout: null, sessions: null })
+  expect(readState(dataDir)).toMatchObject({ cells: null, panes: null, sessions: null })
 
   const { page } = await launch()
   await expect(cellItems(page)).toHaveCount(1)
@@ -313,7 +312,7 @@ test('pane 이 하나도 없으면 묻지 않고 끄고, 다음 실행은 빈 �
   const closed = first.app.waitForEvent('close')
   await first.app.evaluate(({ app }) => app.quit())
   await closed
-  expect(readState(dataDir)).toMatchObject({ layout: null, sessions: null })
+  expect(readState(dataDir)).toMatchObject({ cells: null, panes: null, sessions: null })
 })
 
 test('재시작은 프로그램이 돌아도 끄기를 묻지 않는다', async ({ launch, dataDir }) => {
@@ -361,6 +360,7 @@ test('macOS 가 로그아웃·재시동으로 앱을 끝낼 때는 묻지 않고
   expect(sockets(dataDir)).toEqual([])
   expect(readState(dataDir)).toMatchObject({
     sessions: null,
-    layout: { version: STATE_VERSIONS.layout }
+    cells: { version: STATE_VERSIONS.cells },
+    panes: { version: STATE_VERSIONS.panes }
   })
 })

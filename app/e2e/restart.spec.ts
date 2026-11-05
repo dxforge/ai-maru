@@ -213,9 +213,7 @@ test('재시작 동안 끝난 pty 의 pane 은 이유를 보인 뒤 같은 pane 
   await shellUp(page, 0)
   await shellUp(page, 1)
   await run(page, `cd '${moved}'; X=old; echo in-$((1+1))`, 'in-2')
-  await expect
-    .poll(() => readState(dataDir).layout?.workspaces?.[0]?.cells?.[0]?.panes?.[1]?.cwd)
-    .toBe(moved)
+  await expect.poll(() => readState(dataDir).panes?.rows?.[1]?.cwd).toBe(moved)
   await restartWith(app)
   const second: string = readState(dataDir).sessions.ptys[1].pty
   await killPty(ptyDir(dataDir), second)
@@ -242,8 +240,8 @@ test('명령으로 띄운 pane 의 pty 가 재시작 동안 끝났으면 명령�
   await expect.poll(readResult(ran)).toBe('x')
   await restartWith(app)
   const saved = readState(dataDir)
-  const commandPane = saved.layout.workspaces[0].cells[0].panes[1].key
-  const pty = saved.sessions.ptys.find((p: { pane: number }) => p.pane === commandPane).pty
+  const commandPane = saved.panes.rows[1].id
+  const pty = saved.sessions.ptys.find((p: { pane: string }) => p.pane === commandPane).pty
   await killPty(ptyDir(dataDir), pty)
 
   const { page: again } = await launch()
@@ -253,9 +251,7 @@ test('명령으로 띄운 pane 의 pty 가 재시작 동안 끝났으면 명령�
   await gone.locator('.xterm-screen').click()
   await run(again, 'echo shell-$((1+1))', 'shell-2')
   expect(readFileSync(ran, 'utf8')).toBe('x\n')
-  await expect
-    .poll(() => readState(dataDir).layout.workspaces[0].cells[0].panes[1].command)
-    .toBeUndefined()
+  await expect.poll(() => readState(dataDir).panes.rows[1].command).toBeUndefined()
 })
 
 test('앱이 강제로 끝나도 다음 실행은 살아 있는 셸에 다시 붙는다', async ({ launch, dataDir }) => {
@@ -293,7 +289,7 @@ test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살
 
 const closedRows = (page: Launched['page']) => page.locator('.sidebar .closed-row')
 
-test('state.json 의 layout 을 읽지 못하면 pty 를 끄고, 핀 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리며 알린다', async ({
+test('state.json 의 cells 를 읽지 못하면 pty 를 끄고, 핀 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리며 알린다', async ({
   launch,
   dataDir
 }) => {
@@ -310,12 +306,12 @@ test('state.json 의 layout 을 읽지 못하면 pty 를 끄고, 핀 workspace �
   await newWorkspace(first, 2)
   await restartWith(first.app)
   const saved = readState(dataDir)
-  saved.layout.version = 999
+  saved.cells.version = 999
   writeFileSync(stateFile(dataDir), JSON.stringify(saved))
   const old = sockets(dataDir)
 
   const { page } = await launch(shell)
-  await expect(toast(page)).toContainText("Couldn't restore the workspace layout")
+  await expect(toast(page)).toContainText("Couldn't restore the cells")
   await expect(workspaceNames(page)).toHaveCount(2)
   await expect(workspaceNames(page).nth(0)).toHaveText('atlas')
   await expect(closedRows(page)).toHaveCount(1)
@@ -338,7 +334,33 @@ async function pinAs(launched: Launched, name: string): Promise<void> {
   )
 }
 
-test('state.json 의 pins 를 읽지 못하면 레이아웃과 셸은 되살리고, 핀을 잃었다고 알린다', async ({
+test('state.json 의 panes 를 읽지 못하면 pty 를 끄고, cell 마다 workspace 의 dir 에서 셸 하나를 띄우며 알린다', async ({
+  launch,
+  dataDir
+}) => {
+  // bash 는 cwd 를 알리지 않아, workspace 의 dir 이 생기도록 zsh 로 띄운다.
+  const zsh = { SHELL: '/bin/zsh', HOME: zshHome(dataDir, 'sub') }
+  const sub = join(zsh.HOME, 'sub')
+  const first = await launch(zsh)
+  await run(first.page, `cd '${sub}'; X=old; echo in-$((1+1))`, 'in-2')
+  await expect.poll(() => readState(dataDir).panes?.rows?.[0]?.cwd).toBe(sub)
+  await split(first.app, first.page, 'split-right', 2)
+  await restartWith(first.app)
+  const saved = readState(dataDir)
+  expect(saved.workspaces.rows[0].dir).toBe(sub)
+  saved.panes.version = 999
+  writeFileSync(stateFile(dataDir), JSON.stringify(saved))
+  const old = sockets(dataDir)
+
+  const { page } = await launch(zsh)
+  await expect(toast(page)).toContainText("Couldn't restore the panes")
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect(panes(page)).toHaveCount(1)
+  await run(page, 'echo "at=$PWD x=$X"', `at=${sub} x=`)
+  for (const sock of old) expect(sockets(dataDir)).not.toContain(sock)
+})
+
+test('state.json 의 workspaces 를 읽지 못하면 cell 과 셸은 되살리고, 이름·핀을 잃었다고 알린다', async ({
   launch,
   dataDir
 }) => {
@@ -347,11 +369,11 @@ test('state.json 의 pins 를 읽지 못하면 레이아웃과 셸은 되살리�
   await run(first.page, 'export MARK=kept-$((1+1)) && echo set-$((2+2))', 'set-4')
   await restartWith(first.app)
   const saved = readState(dataDir)
-  saved.pins.version = 999
+  saved.workspaces.version = 999
   writeFileSync(stateFile(dataDir), JSON.stringify(saved))
 
   const { page } = await launch()
-  await expect(toast(page)).toContainText("Couldn't restore workspace pins")
+  await expect(toast(page)).toContainText("Couldn't restore workspace details")
   await expect(workspaceNames(page)).toHaveCount(1)
   await expect(workspaceNames(page).nth(0)).not.toHaveText('atlas')
   await run(page, 'echo $MARK', 'kept-2')
@@ -520,7 +542,7 @@ function otherProtocolBin(dataDir: string): Record<string, string> {
 
 function otherVersions(
   dataDir: string,
-  part: 'layout' | 'sessions' | 'pins'
+  part: 'workspaces' | 'cells' | 'panes' | 'sessions'
 ): Record<string, string> {
   const file = join(dataDir, 'installed-versions.json')
   writeFileSync(file, JSON.stringify({ ...STATE_VERSIONS, [part]: STATE_VERSIONS[part] + 1 }))
@@ -561,7 +583,8 @@ test('pty 프로토콜이 달라도 확인하면 pty 를 끄고 재시작하고,
   expect(sockets(dataDir)).toEqual([])
   expect(readState(dataDir)).toMatchObject({
     sessions: null,
-    layout: { version: STATE_VERSIONS.layout }
+    cells: { version: STATE_VERSIONS.cells },
+    panes: { version: STATE_VERSIONS.panes }
   })
 
   const again = await launch()
@@ -569,11 +592,11 @@ test('pty 프로토콜이 달라도 확인하면 pty 를 끄고 재시작하고,
   await expect(toast(again.page)).toHaveCount(0)
 })
 
-test('layout 형식이 다른 빌드로는 cell 을 모두 닫고 재시작할지 묻고, 확인하면 다음 실행은 새 workspace 하나로 뜨며 알리지 않는다', async ({
+test('cells 형식이 다른 빌드로는 cell 을 모두 닫고 재시작할지 묻고, 확인하면 다음 실행은 새 workspace 하나로 뜨며 알리지 않는다', async ({
   launch,
   dataDir
 }) => {
-  const first = await launch(otherVersions(dataDir, 'layout'))
+  const first = await launch(otherVersions(dataDir, 'cells'))
   await newWorkspace(first, 2)
   await stubDialog(first.app, 1)
   await clickMenu(first.app, 'restart')
@@ -582,13 +605,13 @@ test('layout 형식이 다른 빌드로는 cell 을 모두 닫고 재시작할�
     .toMatchObject([
       {
         message: 'Restart and close all cells?',
-        detail: expect.stringContaining('a different format for the saved layout.'),
+        detail: expect.stringContaining('a different saved-state format for the cells.'),
         buttons: ['Restart and close all cells', 'Cancel']
       }
     ])
   await stubDialog(first.app, 0)
   await restartWith(first.app)
-  expect(readState(dataDir)).toMatchObject({ layout: null, sessions: null })
+  expect(readState(dataDir)).toMatchObject({ cells: null, panes: null, sessions: null })
   expect(sockets(dataDir)).toEqual([])
 
   const { page } = await launch()
@@ -596,11 +619,42 @@ test('layout 형식이 다른 빌드로는 cell 을 모두 닫고 재시작할�
   await expect(toast(page)).toHaveCount(0)
 })
 
-test('pins 형식만 다른 빌드로는 핀을 잃고 재시작할지 묻고, 확인하면 pty 를 남긴 채 재시작한다', async ({
+test('panes 형식이 다른 빌드로는 cell 마다 셸 하나로 재시작할지 묻고, 확인하면 다음 실행은 cell 을 남기고 셸 하나로 뜨며 알리지 않는다', async ({
   launch,
   dataDir
 }) => {
-  const { app, page } = await launch(otherVersions(dataDir, 'pins'))
+  const first = await launch(otherVersions(dataDir, 'panes'))
+  await split(first.app, first.page, 'split-right', 2)
+  await expect(panes(first.page)).toHaveCount(2)
+  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(2)
+  await stubDialog(first.app, 1)
+  await clickMenu(first.app, 'restart')
+  await expect
+    .poll(() => dialogCalls(first.app))
+    .toMatchObject([
+      {
+        message: 'Restart with one shell per cell?',
+        detail: expect.stringContaining('a different saved-state format for the panes.'),
+        buttons: ['Restart with one shell per cell', 'Cancel']
+      }
+    ])
+  await stubDialog(first.app, 0)
+  await restartWith(first.app)
+  expect(readState(dataDir)).toMatchObject({ panes: null, sessions: null })
+  expect(readState(dataDir).cells?.rows).toHaveLength(1)
+  expect(sockets(dataDir)).toEqual([])
+
+  const { page } = await launch()
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect(panes(page)).toHaveCount(1)
+  await expect(toast(page)).toHaveCount(0)
+})
+
+test('workspaces 형식만 다른 빌드로는 핀을 잃고 재시작할지 묻고, 확인하면 pty 를 남긴 채 재시작한다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch(otherVersions(dataDir, 'workspaces'))
   await run(page, 'export MARK=kept-$((1+1)) && echo set-$((2+2))', 'set-4')
   await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(1)
   await stubDialog(app, 1)
@@ -610,7 +664,7 @@ test('pins 형식만 다른 빌드로는 핀을 잃고 재시작할지 묻고, �
     .toMatchObject([
       {
         message: 'Restart without workspace pins?',
-        detail: expect.stringContaining('a different format for the saved workspace pins.'),
+        detail: expect.stringContaining('a different saved-state format for the workspaces.'),
         buttons: ['Restart without workspace pins', 'Cancel']
       }
     ])
@@ -618,7 +672,7 @@ test('pins 형식만 다른 빌드로는 핀을 잃고 재시작할지 묻고, �
   await stubDialog(app, 0)
   await restartWith(app)
   expect(sockets(dataDir)).toHaveLength(1)
-  expect(readState(dataDir).pins).toBeNull()
+  expect(readState(dataDir).workspaces).toBeNull()
 
   const again = await launch()
   await run(again.page, 'echo $MARK', 'kept-2')
@@ -647,7 +701,8 @@ test('버전이 달라도 maru app restart --kill-ptys 는 레이아웃만 남�
   await restartWith(app, () => page.keyboard.type('"$MARU_CLI" app restart --kill-ptys\n'))
   expect(readState(dataDir)).toMatchObject({
     sessions: null,
-    layout: { version: STATE_VERSIONS.layout }
+    cells: { version: STATE_VERSIONS.cells },
+    panes: { version: STATE_VERSIONS.panes }
   })
 })
 

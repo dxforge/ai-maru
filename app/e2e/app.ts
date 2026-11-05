@@ -257,7 +257,8 @@ export function writeView(dataDir: string, view: object): void {
   writeFileSync(
     stateFile(dataDir),
     JSON.stringify({
-      layout: null,
+      cells: null,
+      panes: null,
       sessions: null,
       view: { version: STATE_VERSIONS.view, ...view }
     })

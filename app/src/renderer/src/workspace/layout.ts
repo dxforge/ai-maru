@@ -1,5 +1,6 @@
-import type { Layout, SplitDirection } from '../../../shared/layout'
+import { panes, type Layout, type SplitDirection } from '../../../shared/layout'
 
+export { panes }
 export type { Layout, SplitDirection }
 export type FocusDirection = 'left' | 'right' | 'up' | 'down'
 
@@ -44,10 +45,6 @@ export function removePane(
   const inSecond = removePane(second, target)
   if (inSecond) return { layout: { ...layout, second: inSecond.layout }, next: inSecond.next }
   return null
-}
-
-export function panes(layout: Layout): number[] {
-  return 'pane' in layout ? [layout.pane] : [...panes(layout.first), ...panes(layout.second)]
 }
 
 export function columnCount(layout: Layout): number {

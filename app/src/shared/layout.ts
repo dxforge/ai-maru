@@ -1,6 +1,13 @@
 export type SplitDirection = 'right' | 'down'
 
-export type Layout = { pane: number } | { split: SplitDirection; first: Layout; second: Layout }
+/** 잎은 화면 안에서는 pane 의 key, `state.json` 의 `cells` 표에서는 pane 의 id 다. */
+export type Layout<P = number> =
+  { pane: P } | { split: SplitDirection; first: Layout<P>; second: Layout<P> }
+
+/** 잎을 왼쪽(위)부터 돌려준다. 화면의 pane 순서다. */
+export function panes<P>(layout: Layout<P>): P[] {
+  return 'pane' in layout ? [layout.pane] : [...panes(layout.first), ...panes(layout.second)]
+}
 
 /**
  * pane 하나가 받는 터미널 크기의 하한. 열은 왼쪽 여백·스크롤바를 뺀 터미널 열, 행은 헤더를 뺀 터미널 행이다

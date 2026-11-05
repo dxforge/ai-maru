@@ -1,24 +1,31 @@
 import versions from '../../resources/state-versions.json'
 import type { GitHead } from './git'
-import type { Layout } from './layout'
-import { isPtyId } from './pty'
+import { panes as leaves, type Layout } from './layout'
+import { isPtyId, randomId } from './pty'
 
 /**
- * `state.json` 의 부분마다의 형식 버전이다. 번들의 `state-versions.json` 에서 읽어, 재시작 전 앱이 설치된 빌드의 같은 파일과
- * 견줄 수 있게 한다(`main/restart.ts`). 다음에 뜰 앱이 옛 모양을 읽지 못하게 바꾸면 그 부분의 버전을 올린다 — 다음에 뜬
- * 앱은 모르는 버전의 부분을 버린다. 없어도 되는 필드를 더할 때는 올리지 않는다. 그 필드는 해당 parse 함수에서도 옮긴다.
+ * `state.json` 의 표마다의 형식 버전이다. 번들의 `state-versions.json` 에서 읽어, 재시작 전 앱이 설치된 빌드의 같은 파일과
+ * 견줄 수 있게 한다(`main/restart.ts`). 다음에 뜬 앱은 모르는 버전의 표를 버린다. 버전을 올리는 규칙은
+ * `docs/architecture.md` 의 "끄기·뜨기·재시작" 에 있다. 없어도 되는 필드를 더할 때는 해당 parse 함수에서도 옮긴다.
  * parse 함수는 아는 필드만 옮기고, 선택 필드는 빠뜨려도 타입 검사를 통과하기 때문이다.
  */
-export const STATE_VERSIONS: { layout: number; sessions: number; view: number; pins: number } =
-  versions
+export const STATE_VERSIONS: {
+  workspaces: number
+  cells: number
+  panes: number
+  sessions: number
+  view: number
+} = versions
 
 /**
+ * `id` 는 pane 을 만들 때 정하고 실행이 바뀌어도 그대로다. `key` 는 화면 안의 번호로, 뜰 때마다 새로 매긴다.
  * `cwd`·`title`·`git` 은 저장할 때 화면에 보이던 값이다. main 은 `maru pane list` 의 이름을 이 값으로 짓고, 다시 뜬
  * 앱은 pty 의 상태가 오기 전까지 이 값을 보인다. `keep` 은 런처로 띄운 pane 에 붙는다. 앱은 그 pane 의 pty 를
  * `--keep` 으로 띄우고, 명령이 실패하면(`failedExit`) pane 을 남긴다.
  */
 export type LayoutPane = {
   key: number
+  id: string
   command?: string[]
   keep?: true
   cwd?: string
@@ -60,17 +67,7 @@ export type ScreenCell = CellOf<ScreenPane>
 export type ScreenWorkspace = WorkspaceOf<ScreenPane>
 type SavedWorkspace = WorkspaceOf<LayoutPane>
 
-/**
- * `layout` 의 workspace 다. 핀 workspace 는 `key`·`id`·`cells` 만 두고, `id` 로 `pins` 의 항목과 잇는다. 핀 workspace 는
- * cell 이 없어도 key 를 남기려고 여기에 두므로 `cells` 가 비어 있을 수 있다. 핀이 없는 workspace 는 이름·`dir`·
- * `favorites` 도 여기에 둔다. `layout` 을 잃으면 어차피 함께 사라지기 때문이다.
- */
-type LayoutWorkspace = Omit<SavedWorkspace, 'pinned'>
-
-/** `pins` 의 항목이다. `dir` 은 cell 이 있으면 첫 cell 의 첫 pane 의 cwd 다. `layout` 만 잃으면 그 디렉토리로 이름을 짓는다. */
-type PinnedWorkspace = Pick<SavedWorkspace, 'id' | 'name' | 'dir' | 'favorites'>
-
-/** renderer 가 화면이 바뀔 때마다 main 에 보내는 화면이다. main 은 이것을 `state.json` 의 네 부분으로 나눠 쓴다. */
+/** renderer 가 화면이 바뀔 때마다 main 에 보내는 화면이다. main 은 이것을 `state.json` 의 표로 나눠 쓴다. */
 export type ScreenState = {
   workspaces: ScreenWorkspace[]
   /** 선택한 cell 의 key 다. */
@@ -85,28 +82,36 @@ export type ScreenState = {
   canvas?: { width: number }
 }
 
-/** `state.json` 의 `layout`. pane 이 어느 pty 에 붙는지는 `sessions` 에 있다. */
-export type LayoutPart = {
-  version: number
-  workspaces: LayoutWorkspace[]
-  selected: number | null
+/** `state.json` 의 표 하나다. 줄의 순서가 화면의 순서다. */
+export type Table<R> = { version: number; rows: R[] }
+
+/**
+ * `workspaces` 표의 줄로, 사이드바의 순서다. `dir` 은 cell 이 있으면 첫 cell 의 첫 pane 의 cwd 다. `cells` 표를 잃은
+ * 핀 workspace 는 그 디렉토리로 이름을 짓고, `panes` 표를 잃은 cell 은 그 디렉토리에서 셸을 띄운다.
+ */
+export type WorkspaceRow = Omit<SavedWorkspace, 'key' | 'cells'>
+
+/** `cells` 표의 줄이다. 같은 `workspace` 의 줄끼리는 줄의 순서가 cell 의 순서다. 배치의 잎은 pane 의 id 다. */
+export type CellRow = Omit<CellOf<never>, 'key' | 'panes' | 'layout' | 'focused'> & {
+  workspace: string
+  layout: Layout<string>
+  focused: string
 }
 
-/** `state.json` 의 `pins`. 핀 workspace 를 사이드바의 순서대로 둔다. */
-export type PinsPart = {
-  version: number
-  workspaces: PinnedWorkspace[]
-}
+/** `panes` 표의 줄이다. 같은 `cell` 의 줄끼리는 줄의 순서가 cell 의 `panes` 순서다. */
+export type PaneRow = Omit<LayoutPane, 'key'> & { cell: string }
 
-/** `layout`·`pins` 를 `joinLayout` 으로 이은, renderer 가 되살릴 workspace 목록이다. */
+export type PanePty = { pane: string; pty: string }
+
+/** 표를 `joinTables` 로 이은, renderer 가 되살릴 workspace 목록이다. key 는 0 부터 새로 매긴다. */
 export type SavedLayout = { workspaces: SavedWorkspace[]; selected: number | null }
 
-/** 사용자가 고르지 않았는데 잃은 부분이다. `protocol` 은 pty 프로토콜이 달라 `sessions` 를 버린 것이다. */
-export type RestoreNotice = 'layout' | 'pins' | 'sessions' | 'protocol'
+/** 사용자가 고르지 않았는데 잃은 표다. `protocol` 은 pty 프로토콜이 달라 `sessions` 를 버린 것이다. */
+export type RestoreNotice = 'workspaces' | 'cells' | 'panes' | 'sessions' | 'protocol'
 
 /**
  * 뜰 때 main 이 renderer 에 주는 복원할 것이다. `ptys` 는 pane key 마다 붙을 pty 이고, null 이면 모든 pane 이 새 셸을
- * 띄운다. `pins` 는 다른 부분과 함께 잃을 수 있으므로 `notice` 는 목록이다.
+ * 띄운다. 표는 여럿을 함께 잃을 수 있으므로 `notice` 는 목록이다.
  */
 export type Restore = {
   layout: SavedLayout | null
@@ -133,6 +138,12 @@ const optString = (v: unknown): v is string | undefined => v === undefined || ty
 const isStrings = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((a): a is string => typeof a === 'string')
 
+function omit<T extends object, K extends keyof T>(o: T, ...keys: K[]): Omit<T, K> {
+  const r = { ...o }
+  for (const k of keys) delete r[k]
+  return r
+}
+
 function compact<T extends object>(o: T): T {
   for (const k of Object.keys(o) as (keyof T)[]) if (o[k] === undefined) delete o[k]
   return o
@@ -146,14 +157,16 @@ function parseList<T>(v: unknown, parse: (x: unknown) => T | null, empty = false
 
 // 아래 parse 함수는 검사한 필드만 새 객체로 옮긴다. 받은 객체를 그대로 돌려주면 옛 빌드가 쓴 필드가 메모리에 남아 다음 저장에 다시 쓰인다.
 
-function parseLayout(v: unknown): Layout | null {
+function parseLayout<P>(v: unknown, isLeaf: (x: unknown) => x is P): Layout<P> | null {
   if (!isObj(v)) return null
-  if ('pane' in v) return isKey(v.pane) ? { pane: v.pane } : null
+  if ('pane' in v) return isLeaf(v.pane) ? { pane: v.pane } : null
   if (v.split !== 'right' && v.split !== 'down') return null
-  const first = parseLayout(v.first)
-  const second = parseLayout(v.second)
+  const first = parseLayout(v.first, isLeaf)
+  const second = parseLayout(v.second, isLeaf)
   return first && second ? { split: v.split, first, second } : null
 }
+
+const isString = (v: unknown): v is string => typeof v === 'string'
 
 function parseGit(v: unknown): GitHead | null {
   if (
@@ -167,100 +180,86 @@ function parseGit(v: unknown): GitHead | null {
   return compact({ repo: v.repo, branch: v.branch, common: v.common, sub: v.sub })
 }
 
-function parseLayoutPane(v: unknown): LayoutPane | null {
-  if (
-    !isObj(v) ||
-    !isKey(v.key) ||
-    !optString(v.startDir) ||
-    !optString(v.cwd) ||
-    !optString(v.title)
-  )
-    return null
+function parsePaneFields(v: unknown): Omit<LayoutPane, 'key'> | null {
+  if (!isObj(v) || typeof v.id !== 'string' || !optString(v.cwd) || !optString(v.title)) return null
   const { command } = v
   if (command !== undefined && !isStrings(command)) return null
   const git = v.git === undefined ? undefined : parseGit(v.git)
   if (git === null) return null
   if (v.keep !== undefined && v.keep !== true) return null
   const keep = v.keep === true || undefined
-  return compact({
-    key: v.key,
-    command,
-    keep,
-    // 옛 앱은 pane 을 띄운 디렉토리를 `startDir` 에 따로 저장했다. `cwd` 를 모르던 pane 은 그 디렉토리로 되살린다.
-    cwd: v.cwd ?? v.startDir,
-    title: v.title,
-    git
-  })
+  return compact({ id: v.id, command, keep, cwd: v.cwd, title: v.title, git })
 }
 
 function parseScreenPane(v: unknown): ScreenPane | null {
-  const pane = parseLayoutPane(v)
-  const { ptyId } = v as Obj
-  return pane && isPtyId(ptyId) ? { ...pane, ptyId } : null
+  const pane = parsePaneFields(v)
+  const { key, ptyId } = v as Obj
+  return pane && isKey(key) && isPtyId(ptyId) ? { key, ...pane, ptyId } : null
 }
 
-function parseCell<P>(v: unknown, parsePane: (x: unknown) => P | null): CellOf<P> | null {
-  if (!isObj(v) || !isKey(v.key) || typeof v.id !== 'string' || !isKey(v.focused)) return null
+function parseCellFields(v: Obj): Pick<CellOf<never>, 'fontSize' | 'paneCols' | 'favorite'> | null {
   const { fontSize, paneCols, favorite } = v
   if (!optString(favorite)) return null
   if (fontSize !== undefined && !(typeof fontSize === 'number' && Number.isFinite(fontSize)))
     return null
   if (paneCols !== undefined && !(isKey(paneCols) && paneCols > 0)) return null
-  const panes = parseList(v.panes, parsePane)
-  const layout = parseLayout(v.layout)
-  if (!panes || !layout) return null
-  return compact({
-    key: v.key,
-    id: v.id,
-    panes,
-    layout,
-    focused: v.focused,
-    fontSize,
-    paneCols,
-    favorite
+  return { fontSize, paneCols, favorite }
+}
+
+function parseScreenCell(v: unknown): ScreenCell | null {
+  if (!isObj(v) || !isKey(v.key) || typeof v.id !== 'string' || !isKey(v.focused)) return null
+  const fields = parseCellFields(v)
+  const panes = parseList(v.panes, parseScreenPane)
+  const layout = parseLayout(v.layout, isKey)
+  if (!fields || !panes || !layout) return null
+  return compact({ key: v.key, id: v.id, panes, layout, focused: v.focused, ...fields })
+}
+
+function parseWorkspaceRow(w: unknown): WorkspaceRow | null {
+  if (!isObj(w) || typeof w.id !== 'string') return null
+  const { name: given, dir, favorites, pinned } = w
+  if (!optString(given) || !optString(dir)) return null
+  if (favorites !== undefined && !isStrings(favorites)) return null
+  if (pinned !== undefined && pinned !== true) return null
+  // `rename`(`store.ts`)이 빈 이름을 받으면 이름을 지우는 것과 맞춰, 비었거나 공백뿐인 이름은 이름이 없는 것으로 본다.
+  const name = given?.trim() ? given : undefined
+  return compact<WorkspaceRow>({
+    id: w.id,
+    name,
+    pinned: pinned === true || undefined,
+    dir,
+    favorites: favorites?.length ? favorites : undefined
   })
 }
 
-function parseWorkspaceFields(w: unknown): PinnedWorkspace | null {
-  if (!isObj(w) || typeof w.id !== 'string') return null
-  const { name: given, dir, favorites } = w
-  if (!optString(given) || !optString(dir)) return null
-  if (favorites !== undefined && !isStrings(favorites)) return null
-  // `rename`(`store.ts`)이 빈 이름을 받으면 이름을 지우는 것과 맞춰, 비었거나 공백뿐인 이름은 이름이 없는 것으로 본다.
-  const name = given?.trim() ? given : undefined
-  return compact({ id: w.id, name, dir, favorites: favorites?.length ? favorites : undefined })
+function parseCellRow(v: unknown): CellRow | null {
+  if (!isObj(v) || typeof v.id !== 'string' || typeof v.workspace !== 'string') return null
+  if (typeof v.focused !== 'string') return null
+  const fields = parseCellFields(v)
+  const layout = parseLayout(v.layout, isString)
+  if (!fields || !layout) return null
+  return compact({ id: v.id, workspace: v.workspace, layout, focused: v.focused, ...fields })
 }
 
-/**
- * `pinnable` 이면 `pinned` 를 읽고, cell 이 빈 workspace 는 핀일 때만 받는다. 아니면(`layout`) `pinned` 를 읽지 않고
- * cell 이 빈 workspace 도 받는다. 핀인지는 `pins` 에 있으므로, 핀이 없는데 cell 이 빈 workspace 는 `joinLayout` 이
- * 버린다.
- */
-function parseWorkspaces<P>(
-  v: unknown,
-  parsePane: (x: unknown) => P | null,
-  pinnable: boolean
-): WorkspaceOf<P>[] | null {
-  return parseList(
-    v,
-    (w): WorkspaceOf<P> | null => {
-      if (!isObj(w) || !isKey(w.key)) return null
-      const fields = parseWorkspaceFields(w)
-      const { pinned } = w
-      if (!fields || (pinnable && pinned !== undefined && pinned !== true)) return null
-      const isPinned = pinnable && pinned === true
-      const allowEmpty = isPinned || !pinnable
-      const cells = parseList(w.cells, (c) => parseCell(c, parsePane), allowEmpty)
-      return cells && compact({ key: w.key, ...fields, pinned: isPinned || undefined, cells })
-    },
-    true
-  )
+function parsePaneRow(v: unknown): PaneRow | null {
+  const pane = parsePaneFields(v)
+  const { cell } = v as Obj
+  return pane && typeof cell === 'string' ? { ...pane, cell } : null
 }
 
 export function parseScreen(v: unknown): ScreenState | null {
   if (!isObj(v)) return null
   const { selected, sidebar } = v
-  const workspaces = parseWorkspaces(v.workspaces, parseScreenPane, true)
+  const workspaces = parseList(
+    v.workspaces,
+    (w): ScreenWorkspace | null => {
+      const row = parseWorkspaceRow(w)
+      if (!row || !isKey((w as Obj).key)) return null
+      const cells = parseList((w as Obj).cells, parseScreenCell, row.pinned)
+      return cells && { key: (w as Obj).key as number, ...row, cells }
+    },
+    true
+  )
   if (!workspaces) return null
   if (selected !== null && !isKey(selected)) return null
   const prefs = parseViewPrefs(v)
@@ -276,59 +275,78 @@ export function parseScreen(v: unknown): ScreenState | null {
   })
 }
 
-export function parseLayoutPart(v: unknown): LayoutPart | null {
-  if (!isObj(v) || v.version !== STATE_VERSIONS.layout) return null
-  const workspaces = parseWorkspaces(v.workspaces, parseLayoutPane, false)
-  if (!workspaces) return null
-  if (v.selected !== null && !isKey(v.selected)) return null
-  return { version: STATE_VERSIONS.layout, workspaces, selected: v.selected }
+/** 줄 하나라도 읽지 못하면 표를 잃는다. 일부 줄만 버리면 줄끼리 가리키는 id 가 어긋나기 때문이다. */
+function parseTable<R>(
+  v: unknown,
+  version: number,
+  parseRow: (x: unknown) => R | null
+): Table<R> | null {
+  if (!isObj(v) || v.version !== version) return null
+  const rows = parseList(v.rows, parseRow, true)
+  return rows && { version, rows }
 }
 
-export function parsePinsPart(v: unknown): PinsPart | null {
-  if (!isObj(v) || v.version !== STATE_VERSIONS.pins) return null
-  const workspaces = parseList(v.workspaces, parseWorkspaceFields, true)
-  return workspaces && { version: STATE_VERSIONS.pins, workspaces }
+export const parseWorkspacesTable = (v: unknown): Table<WorkspaceRow> | null =>
+  parseTable(v, STATE_VERSIONS.workspaces, parseWorkspaceRow)
+export const parseCellsTable = (v: unknown): Table<CellRow> | null =>
+  parseTable(v, STATE_VERSIONS.cells, parseCellRow)
+export const parsePanesTable = (v: unknown): Table<PaneRow> | null =>
+  parseTable(v, STATE_VERSIONS.panes, parsePaneRow)
+
+function mapLayout<P, Q>(l: Layout<P>, f: (p: P) => Q): Layout<Q> {
+  return 'pane' in l
+    ? { pane: f(l.pane) }
+    : { split: l.split, first: mapLayout(l.first, f), second: mapLayout(l.second, f) }
 }
 
-type SplitLayout = { layout: LayoutPart; pins: PinsPart }
+export type SplitScreen = {
+  workspaces: Table<WorkspaceRow>
+  cells: Table<CellRow>
+  panes: Table<PaneRow>
+  ptys: PanePty[]
+  /** 선택한 cell 의 id 다. `view` 에 둔다. */
+  selected?: string
+}
 
-function splitLayout({ workspaces, selected }: SavedLayout): SplitLayout {
-  const pins: PinnedWorkspace[] = []
-  const laid = workspaces.map(({ pinned, ...w }): LayoutWorkspace => {
-    if (!pinned) return w
-    const { key, id, name, favorites, cells } = w
-    // cell 이 있으면 첫 cell 의 첫 pane 의 cwd 를 `dir` 로 적는다. cell 이 있는 동안 `autoWorkspaceName`(`shared/names.ts`)이
-    // 그 pane 으로 이름을 짓기 때문이다.
-    const dir = cells.length ? cells[0].panes[0]?.cwd : w.dir
-    pins.push(compact({ id, name, dir, favorites }))
-    return { key, id, cells }
-  })
+export function splitScreen(screen: ScreenState): SplitScreen {
+  const workspaces: WorkspaceRow[] = []
+  const cells: CellRow[] = []
+  const panes: PaneRow[] = []
+  const ptys: PanePty[] = []
+  let selected: string | undefined
+  for (const { cells: wCells, ...rest } of screen.workspaces) {
+    const w = omit(rest, 'key')
+    // 첫 cell 의 첫 pane 의 cwd 를 `dir` 로 적는다. cell 이 있는 동안 `autoWorkspaceName`(`shared/names.ts`)이 그 pane 으로 이름을 짓기 때문이다.
+    const dir = wCells.length ? wCells[0].panes[0]?.cwd : w.dir
+    workspaces.push(compact({ ...w, dir }))
+    for (const { key, panes: cPanes, layout, focused, ...c } of wCells) {
+      if (key === screen.selected) selected = c.id
+      const ids = new Map(cPanes.map((p) => [p.key, p.id]))
+      cells.push({
+        ...c,
+        workspace: w.id,
+        layout: mapLayout(layout, (k) => ids.get(k) ?? ''),
+        focused: ids.get(focused) ?? cPanes[0].id
+      })
+      for (const p of cPanes) {
+        panes.push({ ...omit(p, 'key', 'ptyId'), cell: c.id })
+        ptys.push({ pane: p.id, pty: p.ptyId })
+      }
+    }
+  }
+  const table = <R>(version: number, rows: R[]): Table<R> => ({ version, rows })
   return {
-    layout: { version: STATE_VERSIONS.layout, workspaces: laid, selected },
-    pins: { version: STATE_VERSIONS.pins, workspaces: pins }
+    workspaces: table(STATE_VERSIONS.workspaces, workspaces),
+    cells: table(STATE_VERSIONS.cells, cells),
+    panes: table(STATE_VERSIONS.panes, panes),
+    ptys,
+    ...(selected !== undefined && { selected })
   }
 }
 
-export function splitScreen(screen: ScreenState): SplitLayout & {
-  ptys: { pane: number; pty: string }[]
-} {
-  const ptys: { pane: number; pty: string }[] = []
-  const workspaces = screen.workspaces.map((w) => ({
-    ...w,
-    cells: w.cells.map((c) => ({
-      ...c,
-      panes: c.panes.map(({ ptyId, ...p }) => {
-        ptys.push({ pane: p.key, pty: ptyId })
-        return p
-      })
-    }))
-  }))
-  return { ...splitLayout({ workspaces, selected: screen.selected }), ptys }
-}
-
 /**
- * cell 의 즐겨찾기 표시는 그 workspace 의 `favorites` 에 있을 때만 남긴다. `pins` 를 잃으면 `favorites` 가 비어, cell 에
- * 남은 표시가 없는 즐겨찾기를 가리키기 때문이다.
+ * cell 의 즐겨찾기 표시는 그 workspace 의 `favorites` 에 있을 때만 남긴다. `workspaces` 표를 잃으면 `favorites` 가 비어,
+ * cell 에 남은 표시가 없는 즐겨찾기를 가리키기 때문이다.
  */
 function keepFavorites(w: SavedWorkspace): SavedWorkspace {
   const cells = w.cells.map((c) =>
@@ -349,21 +367,81 @@ export function layoutKeys(
   ])
 }
 
-export function joinLayout(layout: LayoutPart | null, pins: PinsPart | null): SavedLayout | null {
-  const laid = layout?.workspaces ?? []
-  const byId = new Map(laid.map((w) => [w.id, w]))
-  let next = Math.max(-1, ...layoutKeys(laid)) + 1
-  const ids = new Set<string>()
-  const pinned: SavedWorkspace[] = []
-  for (const p of pins?.workspaces ?? []) {
-    if (ids.has(p.id)) continue
-    ids.add(p.id)
-    const w = byId.get(p.id)
-    pinned.push({ ...p, key: w?.key ?? next++, pinned: true, cells: w?.cells ?? [] })
+function firstById<R extends { id: string }>(rows: R[]): R[] {
+  const seen = new Set<string>()
+  return rows.filter((r) => !seen.has(r.id) && seen.add(r.id))
+}
+
+export type Tables = {
+  workspaces: Table<WorkspaceRow> | null
+  cells: Table<CellRow> | null
+  panes: Table<PaneRow> | null
+}
+
+/**
+ * 표를 이어 renderer 가 되살릴 workspace 목록을 만든다. 잃은 표(null)는 그 표 만큼만 잃는다.
+ * - `workspaces` 표에 없는 workspace 를 cell 이 가리키면, 그 id 로 이름 없는 workspace 를 cell 이 처음 나온 순서로 뒤에
+ *   더한다.
+ * - cell 의 배치가 가리키는 pane 이 `panes` 표에 그 cell 의 줄로 모두 있지 않거나 같은 pane 을 두 번 가리키면, 그 cell 을
+ *   workspace 의 `dir` 에서 새 pane 하나로 연다.
+ * - cell 이 없는 workspace 는 핀일 때만 남긴다.
+ */
+export function joinTables(
+  t: Tables,
+  selected?: string,
+  newPaneId = (): string => randomId('n')
+): SavedLayout | null {
+  type Pane = Omit<LayoutPane, 'key'>
+  type Cell = Omit<CellRow, 'workspace'> & { panes: Pane[] }
+  type Building = WorkspaceRow & { cells: Cell[] }
+  const list: Building[] = firstById(t.workspaces?.rows ?? []).map((w) => ({ ...w, cells: [] }))
+  const byId = new Map(list.map((w) => [w.id, w]))
+  const panesOf = new Map<string, PaneRow[]>()
+  for (const p of firstById(t.panes?.rows ?? []))
+    panesOf.set(p.cell, [...(panesOf.get(p.cell) ?? []), p])
+  for (const { workspace, ...c } of firstById(t.cells?.rows ?? [])) {
+    let w = byId.get(workspace)
+    if (!w) {
+      w = { id: workspace, cells: [] }
+      byId.set(workspace, w)
+      list.push(w)
+    }
+    const ids = leaves(c.layout)
+    const own = (panesOf.get(c.id) ?? []).filter((p) => ids.includes(p.id))
+    if (own.length === ids.length && new Set(ids).size === ids.length) {
+      const focused = ids.includes(c.focused) ? c.focused : ids[0]
+      w.cells.push({ ...c, focused, panes: own.map((p) => omit(p, 'cell')) })
+    } else {
+      const pane = compact({ id: newPaneId(), cwd: w.dir })
+      w.cells.push({ ...c, layout: { pane: pane.id }, focused: pane.id, panes: [pane] })
+    }
   }
-  const rest = laid.filter((w) => !ids.has(w.id) && w.cells.length)
-  const workspaces = [...pinned, ...rest].map(keepFavorites)
-  return workspaces.length ? { workspaces, selected: layout?.selected ?? null } : null
+  let next = 0
+  let selectedKey: number | null = null
+  const workspaces = list
+    .filter((w) => w.pinned || w.cells.length)
+    .map(({ cells: built, ...w }): SavedWorkspace => {
+      const key = next++
+      const cells = built.map(({ panes: rows, layout, focused, ...c }) => {
+        const cellKey = next++
+        if (c.id === selected) selectedKey = cellKey
+        const keys = new Map<string, number>()
+        const panes = rows.map((p) => {
+          keys.set(p.id, next)
+          return { key: next++, ...p }
+        })
+        const keyOf = (id: string): number => keys.get(id) as number
+        return {
+          key: cellKey,
+          ...c,
+          panes,
+          layout: mapLayout(layout, keyOf),
+          focused: keyOf(focused)
+        }
+      })
+      return keepFavorites({ key, ...w, cells })
+    })
+  return workspaces.length ? { workspaces, selected: selectedKey } : null
 }
 
 export function screenPanes(
