@@ -103,11 +103,9 @@
 //! 이든 되고, 부른 pty 의 pane 도 된다. `target` 의 pane 이 `pane.list` 에 없으면(job 의 pty 포함) `invalid_params` 다.
 //!
 //! - `pane.read` 는 `job.read` 처럼 스크롤백과 화면을 스타일 없는 글자로 돌려준다. 화면 폭에서 접힌 줄은 잇는다.
-//! - `pane.send` 는 `text` 를 터미널의 붙여넣기처럼 입력한다. `text` 는 끝의 `\r` 들과 그 앞의 본문으로 나눈다. 본문이
-//!   비었거나 `\n`·`\t` 말고 제어 문자가 있으면 `text` 를 그대로 쓴다. 그 밖에는 pane 의 프로그램이 bracketed
-//!   paste(mode 2004)를 켰으면 본문을 `ESC[200~`·`ESC[201~` 로 감싸고, 끝의 `\r` 들은 감싸지 않고 뒤에 쓴다. 감싼
-//!   본문과 `\r` 은 한 번에 써서 다른 입력이 사이에 끼지 않는다. 셸이 끝났으면 `internal_error` 다. 8초 안에 다 쓰지
-//!   못할 때는 `job.send` 와 같다.
+//! - `pane.send` 는 `text` 를 pane 에 입력한다. `text` 는 maru-pty `input` 에 `paste` 를 켜고 보내므로, 본문을
+//!   bracketed paste 로 감쌀지는 그 규칙(`core/crates/maru-pty/src/lib.rs`)을 따른다. 셸이 끝났으면
+//!   `internal_error` 다. 8초 안에 다 쓰지 못할 때는 `job.send` 와 같다.
 //!
 //! `cell.new` 는 pane 하나인 cell 을 만들어 `pty` 의 cell 바로 뒤에 넣고, 그 pane 에서 `pane.new` 처럼
 //! pty 를 띄운다. 답의 `cell` 은 새 cell 의 id 다. `cell` 이 없는 답(이전 앱)이면 `maru cell new` 는 CELL 을
@@ -398,16 +396,22 @@ enum PaneCommand {
     /// interpreted; put control characters in with the shell's `$'...'` quoting, as in the
     /// examples below.
     ///
-    /// TEXT is split into the carriage returns at its end and the body before them. If the
-    /// body is not empty and has no control characters other than newlines and tabs, it is
-    /// typed as a paste: when the pane's program has turned on bracketed paste, as claude and
-    /// zsh do, the body is wrapped in paste markers so the program takes it as one paste. The
-    /// carriage returns follow outside the markers, so they press Enter. A program that has
-    /// not turned it on gets the body as it is, as a terminal paste gives it, and may not take
-    /// a long line whole. Otherwise TEXT is typed as it is. That covers keys such as $'\e'
-    /// and text mixed with keys, such as $'ls\x03'.
+    /// If TEXT ends with a carriage return, it is set aside and the rest is the body. When the
+    /// pane's program has turned on bracketed paste, as Claude Code and zsh do, and the body
+    /// has a newline or is 32 bytes or longer, the body is typed as a paste: it is wrapped in
+    /// paste markers so the program takes it as one paste, and the carriage return follows
+    /// after the markers to press Enter. Otherwise TEXT is typed unchanged as keys. A short
+    /// TEXT such as 2, y, $':wq\r' or $'\t' therefore works as keys in a menu or an editor. A
+    /// program that has not turned on bracketed paste gets TEXT unchanged, and may not take a
+    /// long line as one input.
+    ///
+    /// The text is typed whatever the program is doing. If Claude Code is asking for
+    /// permission, it does not take "$prompt"$'\r' as a prompt: a pasted body is dropped and
+    /// the carriage return picks the highlighted choice. The command still succeeds. Check
+    /// the STATE column of `maru pane list` before sending a prompt.
     #[command(after_long_help = "Examples:
   maru pane send p-1a2b3c4d \"$prompt\"$'\\r'   type a prompt into claude and send it
+  maru pane send p-1a2b3c4d 2                pick choice 2 in Claude Code's menu
   maru pane send p-1a2b3c4d $'ls\\r'          run ls in a shell
   maru pane send p-1a2b3c4d $'\\x03'          press Ctrl+C")]
     Send {

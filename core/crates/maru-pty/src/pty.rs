@@ -436,8 +436,7 @@ impl Pty {
         w.flush()
     }
 
-    /// `text` 를 터미널의 붙여넣기처럼 쓴다(`paste::paste_bytes`). mode 를 읽은 뒤 쓰기 전에 프로그램이 mode 를 바꾸면
-    /// 그 전의 mode 로 쓴다.
+    /// mode 를 읽은 뒤 쓰기 전에 프로그램이 mode 를 바꾸면 그 전의 mode 로 쓴다.
     pub fn paste(&self, text: &str) -> std::io::Result<()> {
         let bracketed = self
             .screen

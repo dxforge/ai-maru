@@ -3,13 +3,15 @@
 const START: &[u8] = b"\x1b[200~";
 const END: &[u8] = b"\x1b[201~";
 
+/// 본문이 이 길이(바이트) 이상이면 감싼다. claude 2.1.318 은 감싸지 않은 입력이 한 번에 64바이트 이상 오면
+/// 붙여넣기로 받는다. 그때 끝의 `\r` 은 Enter 가 아니라 줄바꿈으로 들어간다(실측: 끝의 `\r` 을 합쳐 63바이트는
+/// 전송되었고 64바이트는 전송되지 않았다). 그 절반으로 두어, 키(`2`·`:wq`·`\x1b[A`)는 감싸지 않는다.
+const LONG: usize = 32;
+
 pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
-    let body = text.trim_end_matches('\r');
-    let key = body.is_empty()
-        || body
-            .bytes()
-            .any(|b| b.is_ascii_control() && b != b'\n' && b != b'\t');
-    if key || !bracketed {
+    let body = text.strip_suffix('\r').unwrap_or(text);
+    let paste = bracketed && (body.contains('\n') || body.len() >= LONG);
+    if !paste {
         return text.as_bytes().to_vec();
     }
     let mut out = Vec::with_capacity(text.len() + START.len() + END.len());
@@ -22,29 +24,72 @@ pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::paste_bytes;
+    use super::{LONG, paste_bytes};
 
     fn wrapped(body: &str, tail: &str) -> Vec<u8> {
         format!("\x1b[200~{body}\x1b[201~{tail}").into_bytes()
     }
 
-    #[test]
-    fn the_body_is_wrapped_and_the_trailing_carriage_returns_follow_it() {
-        assert_eq!(paste_bytes("ls", true), wrapped("ls", ""));
-        assert_eq!(paste_bytes("ls\r", true), wrapped("ls", "\r"));
-        assert_eq!(paste_bytes("ls\r\r", true), wrapped("ls", "\r\r"));
-        assert_eq!(paste_bytes("한글 a\r", true), wrapped("한글 a", "\r"));
+    fn long(prefix: &str) -> String {
+        let mut s = prefix.to_owned();
+        while s.len() < LONG {
+            s.push('x');
+        }
+        s
     }
 
     #[test]
-    fn newlines_and_tabs_stay_in_the_body() {
-        assert_eq!(paste_bytes("a\nb\tc\r", true), wrapped("a\nb\tc", "\r"));
+    fn a_long_body_is_wrapped_and_one_trailing_carriage_return_follows_it() {
+        let body = long("ls ");
+        assert_eq!(paste_bytes(&body, true), wrapped(&body, ""));
+        assert_eq!(
+            paste_bytes(&format!("{body}\r"), true),
+            wrapped(&body, "\r")
+        );
+        assert_eq!(
+            paste_bytes(&format!("{body}\r\r"), true),
+            wrapped(&format!("{body}\r"), "\r")
+        );
+        let korean = "한글".repeat(LONG / 6 + 1);
+        assert_eq!(
+            paste_bytes(&format!("{korean}\r"), true),
+            wrapped(&korean, "\r")
+        );
     }
 
     #[test]
-    fn keys_and_text_mixed_with_keys_are_written_as_they_are() {
+    fn a_body_with_a_newline_is_wrapped_however_short() {
+        assert_eq!(paste_bytes("a\nb\r", true), wrapped("a\nb", "\r"));
+        assert_eq!(paste_bytes("a\r\nb\r", true), wrapped("a\r\nb", "\r"));
+        assert_eq!(paste_bytes("a\n", true), wrapped("a\n", ""));
+    }
+
+    #[test]
+    fn a_long_body_with_keys_in_it_is_wrapped() {
+        let body = long("a\x1b[A\x03\tb");
+        assert_eq!(
+            paste_bytes(&format!("{body}\r"), true),
+            wrapped(&body, "\r")
+        );
+    }
+
+    #[test]
+    fn a_short_body_without_a_newline_is_written_as_keys() {
+        let below = "y".repeat(LONG - 1);
         for text in [
-            "\r", "\r\r", "\x1b", "\x1b[A", "\x03", "a\x7f", "x\x1b\r", "\x00a", "a\rb\r",
+            "2",
+            "y",
+            ":wq\r",
+            "\t",
+            "ls\r",
+            "\r",
+            "\r\r",
+            "\x1b",
+            "\x1b[A",
+            "\x03",
+            "a\rb\r",
+            &below,
+            &format!("{below}\r"),
         ] {
             assert_eq!(paste_bytes(text, true), text.as_bytes(), "{text:?}");
         }
@@ -52,7 +97,8 @@ mod tests {
 
     #[test]
     fn without_bracketed_paste_the_text_is_written_as_it_is() {
-        for text in ["ls", "ls\r", "a\nb\r\r", "\x03"] {
+        let body = long("ls ");
+        for text in ["ls\r", "a\nb\r\r", &format!("{body}\r")] {
             assert_eq!(paste_bytes(text, false), text.as_bytes(), "{text:?}");
         }
     }
