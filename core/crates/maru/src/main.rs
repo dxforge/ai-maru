@@ -82,15 +82,15 @@
 //! `pane.new` 는 `pty` 의 pane 을 `direction` 쪽으로 나누고, 새 pane 에서 `cwd` 를 시작 디렉토리로
 //! pty 를 띄운다. `pane` 이 있으면 `pty` 의 pane 대신 `pane` 이 가리키는 pty 의 pane 을 나눈다. 창
 //! 안의 어느 workspace 의 pane 이든 되고, 부른 pty 가 job 이어도 된다. `pane` 이 `p-` 와 hex 8자리가
-//! 아니거나 `full`·`cell` 과 함께 오면 `invalid_params` 다. `full` 이 true 면 그 pane 이 든 cell 전체를
-//! 나눠 새 pane 을 `direction` 쪽 끝에 붙인다. `cell` 이 있으면 `pty` 의 pane 대신 그 id 의 cell 전체를
-//! `full` 처럼 나눈다. 창 안의 어느 workspace 의 cell 이든 되고, 부른 pty 가 job 이어도 된다. `cell` 이
-//! `c-` 와 hex 8자리가 아니거나 그 cell 이 창에 없으면 `invalid_params` 다. 포커스와 선택한 cell 은
-//! 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
+//! 아니거나, `cell` 이나 true 인 `full` 과 함께 오면 `invalid_params` 다. `full` 이 true 면 `pty` 의
+//! pane 이 든 cell 전체를 나눠 새 pane 을 `direction` 쪽 끝에 붙인다. `cell` 이 있으면 `pty` 의
+//! pane 대신 그 id 의 cell 전체를 `full` 처럼 나눈다. 창 안의 어느 workspace 의 cell 이든 되고, 부른
+//! pty 가 job 이어도 된다. `cell` 이 `c-` 와 hex 8자리가 아니거나 그 cell 이 창에 없으면
+//! `invalid_params` 다. 포커스와 선택한 cell 은 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
 //! 그 명령을 실행한다(셸이 sh·bash·zsh·ksh·dash 가 아니면 `/bin/sh` 가 실행한다). 명령이 끝나면 셸과
-//! 함께 pane 이 닫힌다. 새 pty 가 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. 나눌 pane 이 창에
-//! 없으면 `invalid_params` 로 답한다. 나눈 pane 들이 하한(터미널 20열 × 5행) 아래로 내려가 나눌 자리가
-//! 없으면 -32001 `no_space` 로 답하고 pane 을 열지 않는다. pty 를 띄우지 못하면 나눈 pane 을 닫고
+//! 함께 pane 이 닫힌다. 새 pty 가 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. 나눌 pane 이 창에 없으면
+//! `invalid_params` 로 답한다. 나눈 pane 들이 하한(터미널 20열 × 5행) 아래로 내려가 나눌 자리가 없으면
+//! -32001 `no_space` 로 답하고 pane 을 열지 않는다. pty 를 띄우지 못하면 나눈 pane 을 닫고
 //! `internal_error` 로 답한다.
 //!
 //! `pane.close` 는 `target` pty 의 pane 을 닫고 그 pty 를 끈다. `target` 의 pane 이 창에 없으면
