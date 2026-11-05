@@ -1,11 +1,13 @@
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
+  cellFavorite,
   cellItems,
   cellViews,
   expect,
   failingCommandPtyBin,
   marked,
+  newCell,
   newWorkspace,
   restartWith,
   rows,
@@ -68,6 +70,25 @@ test('부른 cell 바로 뒤에 놓이고, columns 에서는 그 오른쪽에 �
   expect(xs).toEqual([...xs].sort((a, b) => a - b))
   expect(new Set(xs).size).toBe(3)
   await run(page, 'echo still-$((1+1))', 'still-2')
+})
+
+test('즐겨찾기 cell 에서 불러도 그 cell 바로 뒤에 놓는다', async ({ launch }) => {
+  const launched = await launch()
+  const { page } = launched
+  // `toggleFavorite` 은 첫 pane 의 디렉토리를 알아야 cell 을 즐겨찾기에 넣는다.
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  await newCell(launched, 2)
+  await run(page, 'echo two-$((1+1))', 'two-2')
+  for (const i of [0, 1]) {
+    await cellItems(page).nth(i).hover()
+    await cellFavorite(page, i).click()
+    await expect(cellFavorite(page, i)).toHaveAttribute('aria-pressed', 'true')
+  }
+  await cellItems(page).nth(0).click()
+  await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
+
+  await page.keyboard.type(`maru cell new ${marked('b')} >/dev/null\n`)
+  await expectOrder(page, [null, 'b', null])
 })
 
 test('재시작한 뒤에도 부른 cell 바로 뒤에 놓는다', async ({ launch }) => {

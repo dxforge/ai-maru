@@ -22,8 +22,7 @@ const SPANS: SidebarSpans = {
         { top: 30, bottom: 60 },
         { top: 66, bottom: 96 }
       ],
-      folded: false,
-      favorites: 0
+      folded: false
     },
     {
       key: 2,
@@ -32,8 +31,7 @@ const SPANS: SidebarSpans = {
       head: { top: 108, bottom: 138 },
       count: 1,
       cells: [{ top: 138, bottom: 168 }],
-      folded: false,
-      favorites: 0
+      folded: false
     },
     {
       key: 3,
@@ -42,8 +40,7 @@ const SPANS: SidebarSpans = {
       head: { top: 180, bottom: 210 },
       count: 3,
       cells: [],
-      folded: true,
-      favorites: 0
+      folded: true
     }
   ],
   newWorkspace: { top: 218, bottom: 248 }
@@ -113,7 +110,7 @@ describe('dropAt — cell', () => {
 })
 
 describe('dropAt — 즐겨찾기', () => {
-  // workspace 1 은 앞 cell 하나가 즐겨찾기를 맡았고, 그 아래 66~96 에 닫힌 줄이 있고, 102~132 에 나머지 cell 이 있다.
+  // workspace 1 은 이름 줄 아래 30~60 에 닫힌 줄이 있고, 그 아래 즐겨찾기 cell 하나와 나머지 cell 하나가 있다.
   // workspace 2 는 즐겨찾기 cell 하나와 나머지 cell 하나다.
   const spans: SidebarSpans = {
     pinned: 2,
@@ -125,12 +122,11 @@ describe('dropAt — 즐겨찾기', () => {
         head: { top: 0, bottom: 30 },
         count: 2,
         cells: [
-          { top: 30, bottom: 60 },
+          { top: 66, bottom: 96 },
           { top: 102, bottom: 132 }
         ],
         folded: false,
-        favorites: 1,
-        closed: { top: 66, bottom: 96 }
+        closedBottom: 60
       },
       {
         key: 2,
@@ -142,78 +138,48 @@ describe('dropAt — 즐겨찾기', () => {
           { top: 174, bottom: 204 },
           { top: 210, bottom: 240 }
         ],
-        folded: false,
-        favorites: 1
+        folded: false
       }
     ]
   }
 
-  it('즐겨찾기 cell 은 같은 workspace 의 즐겨찾기가 아닌 묶음에 놓지 않는다', () => {
-    expect(dropAt(cell(1, 0, 7), spans, 125)).toBeUndefined()
-  })
-
-  it('즐겨찾기가 아닌 cell 은 즐겨찾기 묶음에 놓지 않고, 나머지 묶음 앞의 선은 닫힌 줄 아래에 긋는다', () => {
-    const from = cell(2, 1)
-    expect(dropAt(from, spans, 35)).toBeUndefined()
-    expect(dropAt(from, spans, 110)).toEqual({
-      drop: { kind: 'cell', workspace: 1, index: 1 },
-      line: 99
+  it('즐겨찾기 cell 은 같은 workspace 의 나머지 cell 뒤에 놓을 수 있다', () => {
+    expect(dropAt(cell(2, 0, 7), spans, 235)).toEqual({
+      drop: { kind: 'cell', workspace: 2, index: 2 },
+      line: 243
     })
   })
 
-  it('즐겨찾기 cell 을 다른 workspace 에 놓으면 어디에 놓아도 그곳 즐겨찾기 묶음의 끝이다', () => {
+  it('즐겨찾기가 아닌 cell 은 즐겨찾기 cell 앞에 놓을 수 있다', () => {
+    expect(dropAt(cell(2, 1), spans, 180)).toEqual({
+      drop: { kind: 'cell', workspace: 2, index: 0 },
+      line: 171
+    })
+  })
+
+  it('즐겨찾기 cell 을 다른 workspace 에 놓으면 놓은 자리다', () => {
     const from = cell(1, 0, 7)
-    const end = { drop: { kind: 'cell', workspace: 2, index: 1 }, line: 207 }
-    expect(dropAt(from, spans, 160)).toEqual(end)
-    expect(dropAt(from, spans, 180)).toEqual(end)
-    expect(dropAt(from, spans, 235)).toEqual(end)
+    expect(dropAt(from, spans, 180)?.drop).toEqual({ kind: 'cell', workspace: 2, index: 0 })
+    expect(dropAt(from, spans, 200)?.drop).toEqual({ kind: 'cell', workspace: 2, index: 1 })
+    expect(dropAt(from, spans, 235)?.drop).toEqual({ kind: 'cell', workspace: 2, index: 2 })
   })
 
-  it('즐겨찾기 cell 을 닫힌 줄이 있는 다른 workspace 에 놓으면 선은 닫힌 줄 위에 긋는다', () => {
-    expect(dropAt(cell(2, 0, 7), spans, 110)).toEqual({
-      drop: { kind: 'cell', workspace: 1, index: 1 },
-      line: 63
-    })
-  })
-
-  it('즐겨찾기가 있는 workspace 의 이름 줄 위면 그 cell 이 놓일 수 있는 묶음의 맨 앞이다', () => {
-    expect(dropAt(cell(1, 1), spans, 160)).toEqual({
-      drop: { kind: 'cell', workspace: 2, index: 1 },
-      line: 207
-    })
-    expect(dropAt(cell(2, 1), spans, 10)).toEqual({
+  it('닫힌 줄이 있으면 이름 줄·닫힌 줄 위와 첫 cell 앞은 맨 앞이고, 선은 닫힌 줄 아래에 긋는다', () => {
+    const from = cell(2, 1)
+    const first = { drop: { kind: 'cell', workspace: 1, index: 0 }, line: 63 }
+    expect(dropAt(from, spans, 10)).toEqual(first)
+    expect(dropAt(from, spans, 45)).toEqual(first)
+    expect(dropAt(from, spans, 70)).toEqual(first)
+    expect(dropAt(from, spans, 90)).toEqual({
       drop: { kind: 'cell', workspace: 1, index: 1 },
       line: 99
     })
-    expect(dropAt(cell(1, 0, 7), spans, 10)).toBeUndefined()
-    expect(dropAt(cell(2, 1), spans, 160)).toBeUndefined()
   })
 
-  it('즐겨찾기 묶음 안에서는 옮기고, 즐겨찾기 묶음 끝의 선은 닫힌 줄 위에 긋는다', () => {
-    const two: SidebarSpans = {
-      pinned: 1,
-      workspaces: [
-        {
-          key: 1,
-          top: 0,
-          bottom: 168,
-          head: { top: 0, bottom: 30 },
-          count: 3,
-          cells: [
-            { top: 30, bottom: 60 },
-            { top: 66, bottom: 96 },
-            { top: 138, bottom: 168 }
-          ],
-          folded: false,
-          favorites: 2,
-          closed: { top: 102, bottom: 132 }
-        }
-      ]
-    }
-    expect(dropAt(cell(1, 0, 7), two, 90)).toEqual({
-      drop: { kind: 'cell', workspace: 1, index: 2 },
-      line: 99
-    })
+  it('닫힌 줄이 있는 workspace 안에서 끌어도 이름 줄·닫힌 줄 위는 맨 앞이고, 선은 닫힌 줄 아래에 긋는다', () => {
+    const first = { drop: { kind: 'cell', workspace: 1, index: 0 }, line: 63 }
+    expect(dropAt(cell(1, 1), spans, 10)).toEqual(first)
+    expect(dropAt(cell(1, 1), spans, 45)).toEqual(first)
   })
 
   it('cell 이 없는 핀 workspace 에는 닫힌 줄 아래에 놓는다', () => {
@@ -229,8 +195,7 @@ describe('dropAt — 즐겨찾기', () => {
           count: 0,
           cells: [],
           folded: false,
-          favorites: 0,
-          closed: { top: 138, bottom: 168 }
+          closedBottom: 168
         }
       ]
     }

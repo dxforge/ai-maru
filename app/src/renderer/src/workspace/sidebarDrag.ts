@@ -23,10 +23,8 @@ export type WorkspaceSpan = Span & {
   count: number
   cells: Span[]
   folded: boolean
-  /** 즐겨찾기 cell 의 수. 이 cell 들이 `cells` 의 앞에 온다. */
-  favorites: number
-  /** 즐겨찾기 cell 과 나머지 cell 사이에 놓인 닫힌 줄들의 자리. 없으면 비운다. */
-  closed?: Span
+  /** cell 앞에 놓인 닫힌 줄들의 아래 끝. 닫힌 줄이 없으면 비운다. */
+  closedBottom?: number
 }
 
 export type SidebarSpans = {
@@ -61,28 +59,18 @@ function cellDrop(
   const i = ws.findIndex((w, j) => j === ws.length - 1 || y < (w.bottom + ws[j + 1].top) / 2)
   const w = ws[i]
   if (!w) return undefined
-  const same = w.key === d.workspace
-  const favorite = d.index < (ws.find((x) => x.key === d.workspace)?.favorites ?? 0)
-  // 즐겨찾기 묶음과 나머지 묶음을 넘어 놓지 않는다. `moveCell`(`store.ts`)이 다른 workspace 로 옮긴 즐겨찾기 cell 을 그곳
-  // 즐겨찾기 묶음 끝에 놓으므로, 그 자리에만 놓는다.
   let index: number
-  if (favorite && !same) index = w.favorites
-  else if (w.folded) index = w.count
-  else if (y < w.head.bottom) index = favorite ? 0 : w.favorites
+  if (w.folded) index = w.count
+  else if (y < w.head.bottom) index = 0
   else index = before(w.cells, y)
-  if (same && (index === d.index || index === d.index + 1)) return undefined
-  if (favorite ? index > w.favorites : index < w.favorites) return undefined
-  return {
-    drop: { kind: 'cell', workspace: w.key, index },
-    line: cellLine(w, index, favorite)
-  }
+  if (w.key === d.workspace && (index === d.index || index === d.index + 1)) return undefined
+  return { drop: { kind: 'cell', workspace: w.key, index }, line: cellLine(w, index) }
 }
 
-function cellLine(w: WorkspaceSpan, index: number, favorite: boolean): number {
+function cellLine(w: WorkspaceSpan, index: number): number {
   if (w.folded) return w.head.bottom + HALF_GAP
-  if (w.closed && index === w.favorites)
-    return favorite ? w.closed.top - HALF_GAP : w.closed.bottom + HALF_GAP
-  return gapLine(w.cells, index, w.head.bottom - HALF_GAP)
+  const top = w.closedBottom === undefined ? w.head.bottom - HALF_GAP : w.closedBottom + HALF_GAP
+  return gapLine(w.cells, index, top)
 }
 
 function workspaceDrop(

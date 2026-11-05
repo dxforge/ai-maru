@@ -80,17 +80,10 @@ export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
 export type Cell = Omit<ScreenCell, 'panes'> & { panes: Pane[] }
 
 /**
- * 마지막 cell 이 닫히면 workspace 도 닫힌다. 핀을 꽂은 workspace(`pinned`)만 `cells` 가 빈 채로 남는다. 즐겨찾기를 맡은
- * cell(`favorite`)이 앞에 모이고 그 뒤에 나머지 cell 이 온다. 사이드바가 즐겨찾기를 위에 보이는데, cell 을 넘기는 순서와
- * 터미널 화면의 순서도 그와 같게 하기 위해서다. 목록(`list`)에서도 핀 workspace 가 앞에 모인다.
+ * 마지막 cell 이 닫히면 workspace 도 닫힌다. 핀을 꽂은 workspace(`pinned`)만 `cells` 가 빈 채로 남는다. 목록(`list`)에서는
+ * 핀 workspace 가 앞에 모인다.
  */
 export type Workspace = Omit<ScreenWorkspace, 'cells'> & { cells: Cell[] }
-
-/** 즐겨찾기를 맡은 cell 의 수. 즐겨찾기를 맡지 않은 cell 은 이 자리부터 온다. */
-export function favoriteCount(w: { cells: readonly { favorite?: string }[] }): number {
-  const i = w.cells.findIndex((c) => c.favorite === undefined)
-  return i < 0 ? w.cells.length : i
-}
 
 export const holdsFavorite = (c: { favorite?: string }, dir: string): boolean =>
   c.favorite !== undefined && samePath(c.favorite, dir)
@@ -210,7 +203,7 @@ export function createWorkspaces(
 
   function insertCell(w: Workspace, at: number, init: PaneInit): Cell {
     const c = createCell(init)
-    w.cells.splice(Math.max(at, favoriteCount(w)), 0, c)
+    w.cells.splice(at, 0, c)
     return c
   }
 
@@ -228,8 +221,8 @@ export function createWorkspaces(
   }
 
   /**
-   * cell 을 즐겨찾기에 넣거나 뺀다. 넣을 때는 첫 pane 의 cwd 를 즐겨찾기 디렉토리로 삼아 즐겨찾기 묶음 끝으로 옮긴다. 첫
-   * pane 의 cwd 를 몰라 넣지 못했으면 false 다.
+   * cell 을 즐겨찾기에 넣거나 뺀다. 넣을 때는 첫 pane 의 cwd 를 즐겨찾기 디렉토리로 삼는다.
+   * 첫 pane 의 cwd 를 몰라 넣지 못했으면 false 다.
    */
   function toggleFavorite(key: number): boolean {
     const w = workspaceOf(key)
@@ -241,15 +234,8 @@ export function createWorkspaces(
     }
     const cwd = c.panes[0].cwd
     if (cwd === undefined) return false
-    regroup(w, c, addFavorite(w, cwd))
+    c.favorite = addFavorite(w, cwd)
     return true
-  }
-
-  function regroup(w: Workspace, c: Cell, favorite?: string): void {
-    w.cells.splice(w.cells.indexOf(c), 1)
-    if (favorite === undefined) delete c.favorite
-    else c.favorite = favorite
-    w.cells.splice(favoriteCount(w), 0, c)
   }
 
   const findFavorite = (w: Workspace, dir: string): string | undefined =>
@@ -277,13 +263,14 @@ export function createWorkspaces(
     const w = workspaceByKey(workspace)
     if (!w) return
     dropFavorite(w, dir)
-    for (const c of w.cells.filter((x) => holdsFavorite(x, dir)).reverse()) regroup(w, c)
+    for (const c of w.cells) if (holdsFavorite(c, dir)) delete c.favorite
   }
 
+  /** 사이드바가 닫힌 즐겨찾기 줄을 cell 앞에 그리므로, 첫 자리에 연 cell 은 남은 닫힌 줄 바로 아래에 보인다. */
   function openIn(workspace: number, dir: string, extra: PaneCommand = {}): number | undefined {
     const w = workspaceByKey(workspace)
     if (!w) return undefined
-    const c = insertCell(w, favoriteCount(w), { startDir: dir, ...extra })
+    const c = insertCell(w, 0, { startDir: dir, ...extra })
     const favorite = findFavorite(w, dir)
     if (favorite !== undefined) c.favorite = favorite
     selectedKey.value = c.key
@@ -344,8 +331,7 @@ export function createWorkspaces(
   /**
    * cell 을 `to.workspace` 의 `to.index` 번째 cell 앞(옮기기 전 목록의 자리)으로 옮긴다. `'new'` 면 그 cell 하나로 된
    * workspace 를 목록 끝에 둔다. 핀이 없고 cell 이 하나뿐인 workspace 면 새로 만들지 않고 그 workspace 를 id 그대로 끝으로
-   * 옮긴다. 다른 workspace 로 옮긴 즐겨찾기 cell 은 즐겨찾기를 가지고 가 그 workspace 의 즐겨찾기 묶음 끝에 놓인다.
-   * 같은 workspace 안에서 묶음을 넘어 놓으면 두 묶음 사이에 둔다. 선택·포커스는 바꾸지 않는다.
+   * 옮긴다. 다른 workspace 로 옮긴 즐겨찾기 cell 은 즐겨찾기를 가지고 간다. 선택·포커스는 바꾸지 않는다.
    * 마지막 cell 이 빠진 workspace 는 핀이 없으면 닫는다.
    */
   function moveCell(key: number, to: { workspace: number; index: number } | 'new'): void {
@@ -365,17 +351,9 @@ export function createWorkspaces(
     // cell 이 하나뿐인 workspace 안에서 그 cell 을 옮기면 아무것도 하지 않는다. 핀이 없으면 `detach` 가 cell 을 빼면서 그
     // workspace 를 목록에서 지우므로, 그대로 넣으면 cell 이 목록에 없는 workspace 에 들어가 사라지기 때문이다.
     if (!dest || (dest === from && from.cells.length === 1)) return
-    if (dest !== from) {
-      const c = detach(from, at)
-      carry(from, c, dest)
-      const head = favoriteCount(dest)
-      dest.cells.splice(c.favorite === undefined ? Math.max(to.index, head) : head, 0, c)
-      return
-    }
     const c = detach(from, at)
-    const i = at < to.index ? to.index - 1 : to.index
-    const head = favoriteCount(from)
-    from.cells.splice(c.favorite === undefined ? Math.max(i, head) : Math.min(i, head), 0, c)
+    if (dest !== from) carry(from, c, dest)
+    dest.cells.splice(dest === from && at < to.index ? to.index - 1 : to.index, 0, c)
   }
 
   function carry(from: Workspace, c: Cell, to: Workspace): void {

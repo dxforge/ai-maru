@@ -403,7 +403,8 @@ watch(
   }
 )
 
-// cell 의 자리를 옮기면 터미널이 포커스를 잃어, 드래그로 옮길 때처럼 되돌린다.
+// 즐겨찾기에 넣으면서 workspace 에 핀을 꽂으면 workspace 가 핀 묶음으로 옮겨져 터미널이 포커스를 잃는다. 그래서 드래그로 옮길
+// 때처럼 포커스를 되돌린다.
 function toggleFavorite(cell: number): void {
   if (!workspaces.toggleFavorite(cell)) {
     toasts.put('favorite', {
@@ -815,7 +816,7 @@ function keepHorizontalScroll(e: WheelEvent): void {
 
 type Overlay = 'palette' | 'launcher' | 'launch'
 const overlay = ref<Overlay | null>(null)
-/** `favoriteOf` 가 있으면 사이드바의 닫힌 줄이 띄운 런처다. 고른 명령은 그 workspace 의 즐겨찾기 cell 묶음 끝에 연다. */
+/** `favoriteOf` 가 있으면 사이드바의 닫힌 줄이 띄운 런처다. */
 type LaunchAt =
   | { dir?: string; where: LaunchWhere; favoriteOf?: undefined }
   | { dir: string; where: 'cell'; favoriteOf: number; shell: true; anchor: Anchor }
