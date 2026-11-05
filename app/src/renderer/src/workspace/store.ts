@@ -116,7 +116,7 @@ export function orderedPanes<P extends { key: number }>(c: {
 
 export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
 
-type PaneCommand = Pick<Pane, 'command' | 'keep'>
+export type PaneCommand = Pick<Pane, 'command' | 'keep'>
 
 export type PaneInit = Pick<Pane, 'startDir'> & PaneCommand
 
@@ -280,10 +280,10 @@ export function createWorkspaces(
     for (const c of w.cells.filter((x) => holdsFavorite(x, dir)).reverse()) regroup(w, c)
   }
 
-  function openIn(workspace: number, dir: string): number | undefined {
+  function openIn(workspace: number, dir: string, extra: PaneCommand = {}): number | undefined {
     const w = workspaceByKey(workspace)
     if (!w) return undefined
-    const c = insertCell(w, favoriteCount(w), { startDir: dir })
+    const c = insertCell(w, favoriteCount(w), { startDir: dir, ...extra })
     const favorite = findFavorite(w, dir)
     if (favorite !== undefined) c.favorite = favorite
     selectedKey.value = c.key
