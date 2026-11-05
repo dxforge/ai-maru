@@ -82,7 +82,7 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 ⌘Q·메뉴의 Quit·창 닫기는 pane 이 하나라도 있으면 늘 묻는다: Keep terminals / Keep layout only / End everything / Cancel. Keep terminals 는 pty 를 끄지 않는다. Keep layout only 는 `sessions` 를 비워 쓰고 pty 를 끈다. End everything 은 `layout`·`sessions` 를 비워 쓰고 pty 를 끈다. `pins` 가 남아, 다음 실행에 핀 workspace 가 cell 없이 돌아온다. 고른 결과를 쓴 뒤의 변경은 쓰지 않는다 — pty 가 끝나며 renderer 가 pane 을 닫아도 고른 결과가 남는다. OS 종료(`powerMonitor` 의 `shutdown`)와 SIGTERM·SIGINT·SIGHUP 은 묻지 않고 Keep layout only 로 끝낸다. pty 는 OS 와 함께 끝나거나 이 앱이 끈다.
 
-재시작은 pty 를 남긴다. 재시작 전에 설치된 번들의 `maru-pty --protocol-version` 과 `state-versions.json`(부분마다의 형식 버전)을 지금 앱의 것과 견주어(`app/src/main/restart.ts`) 다시 뜬 앱이 전체 복원을 할 수 있으면 묻지 않는다. 할 수 없으면 레이아웃만 되살려 재시작할지(pty 프로토콜·`sessions` 형식이 다를 때), cell 을 모두 닫고 재시작할지(`layout` 형식이 다를 때) 묻는다. 고르면 그 결과를 쓰고 pty 를 끈 뒤 다시 뜬다. `pins` 형식만 다르면 다시 뜬 앱이 pty 에 다시 붙으므로 pty 는 끄지 않는다. 그래도 핀과 핀 workspace 의 이름·즐겨찾기를 잃으므로 재시작할지 묻는다. 재시작은 renderer 에게 묻지 않으므로 renderer 가 멈춰 있어도 재시작한다. renderer 프로세스가 죽으면(`render-process-gone`) main 이 대화창으로 재시작할지 묻고, Restart 를 고르면 메뉴의 Restart 와 같은 경로로 재시작한다.
+재시작은 pty 를 남긴다. 재시작 전에 설치된 번들의 `maru-pty --protocol-version` 과 `state-versions.json`(부분마다의 형식 버전)을 지금 앱의 것과 견주어(`app/src/main/restart.ts`) 다시 뜬 앱이 전체 복원을 할 수 있으면 묻지 않는다. 할 수 없으면 레이아웃만 되살려 재시작할지(pty 프로토콜·`sessions` 형식이 다를 때), cell 을 모두 닫고 재시작할지(`layout` 형식이 다를 때) 묻는다. 고르면 그 결과를 쓰고 pty 를 끈 뒤 다시 뜬다. `pins` 형식만 다르면 다시 뜬 앱이 pty 에 다시 붙으므로 pty 는 끄지 않는다. 그래도 핀과 핀 workspace 의 이름·즐겨찾기를 잃으므로 재시작할지 묻는다. `pins` 형식이 다르면 고른 결과와 상관없이 `pins` 도 비워 쓴다. 남기면 다시 뜬 앱이 읽지 못한 `pins` 를 toast 로 알리기 때문이다. 재시작은 renderer 에게 묻지 않으므로 renderer 가 멈춰 있어도 재시작한다. renderer 프로세스가 죽으면(`render-process-gone`) main 이 대화창으로 재시작할지 묻고, Restart 를 고르면 메뉴의 Restart 와 같은 경로로 재시작한다.
 
 ## claude 는 PATH 의 shim 이 plugin 을 싣는다
 

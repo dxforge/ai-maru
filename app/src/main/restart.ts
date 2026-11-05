@@ -90,12 +90,15 @@ export async function checkRestart(o: {
   }
 }
 
-/** 재시작하며 상태 파일에 남길 것이다. `full` 은 pty 에 다시 붙으므로 `keep` 이다. */
-export function restartOutcome(check: RestartCheck): Outcome {
-  if (check.ok) return 'keep'
-  if (check.reason !== 'incompatible') return 'layout'
+/**
+ * `pins` 형식이 다르면 결과와 상관없이 `pins` 를 비운다. 남기면 다시 뜬 앱이 읽지 못한 `pins` 를 toast 로 알려, 사용자가
+ * 이미 고른 손실을 다시 알리기 때문이다.
+ */
+export function restartOutcome(check: RestartCheck): { outcome: Outcome; dropPins: boolean } {
+  if (check.ok) return { outcome: 'keep', dropPins: false }
+  if (check.reason !== 'incompatible') return { outcome: 'layout', dropPins: false }
   const outcomes = { full: 'keep', layout: 'layout', empty: 'end' } as const
-  return outcomes[check.result]
+  return { outcome: outcomes[check.result], dropPins: check.formats.includes('pins') }
 }
 
 function reasons(check: Incompatible): string[] {
@@ -146,13 +149,19 @@ export function restartDialog(check: Incompatible): Dialog {
   return { message: `${action}?`, detail: restartDetail(check), buttons: [action, 'Cancel'] }
 }
 
-export function restartRefusal(check: Incompatible): string {
+export function restartRefusal(check: Incompatible): {
+  code: 'pins_would_be_lost' | 'ptys_would_end'
+  message: string
+} {
   const result = {
     full: 'without workspace pins',
     layout: 'with the layout only',
     empty: 'and close all cells'
   }[check.result]
-  return `${restartDetail(check)} Pass --kill-ptys to restart ${result}.`
+  return {
+    code: check.result === 'full' ? 'pins_would_be_lost' : 'ptys_would_end',
+    message: `${restartDetail(check)} Pass --kill-ptys to restart ${result}.`
+  }
 }
 
 export type RendererGone = { reason: string; exitCode: number }

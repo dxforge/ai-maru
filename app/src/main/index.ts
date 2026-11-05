@@ -87,6 +87,7 @@ import {
   restorePlan,
   sessionPtys,
   stateFile,
+  type FinishOptions,
   type Outcome,
   type StateStore
 } from './state'
@@ -308,7 +309,7 @@ function restartCheck(): Promise<RestartCheck> {
 }
 
 /** 쓰지 못하면 던진다. 다음에 뜬 앱이 고른 결과를 모르기 때문이다. */
-function finishWith(o: Outcome): void {
+function finishWith(o: Outcome, options?: FinishOptions): void {
   if (outcome) return
   try {
     if (savedWindow) store?.setWindow(savedWindow())
@@ -317,7 +318,7 @@ function finishWith(o: Outcome): void {
   }
   if (o === 'keep') jobs?.detach()
   try {
-    store?.finish(o)
+    store?.finish(o, options)
   } catch (err) {
     if (o === 'keep') jobs?.resume()
     throw err
@@ -351,7 +352,8 @@ async function restartByUser(): Promise<void> {
   if (!check.ok && check.reason === 'dev_server') return
   if (!check.ok && !(await confirm(restartDialog(check)))) return
   try {
-    finishWith(restartOutcome(check))
+    const next = restartOutcome(check)
+    finishWith(next.outcome, { dropPins: next.dropPins })
   } catch (err) {
     dialog.showErrorBox('Cannot restart', err instanceof Error ? err.message : String(err))
     return
@@ -397,13 +399,11 @@ const restartHandlers: Handlers = {
       )
     }
     if (!check.ok && !kill) {
-      const code = check.result === 'full' ? 'pins_would_be_lost' : 'ptys_would_end'
-      throw new CliError(-32001, code, restartRefusal(check), {
-        ptys: check.ptys,
-        result: check.result
-      })
+      const { code, message } = restartRefusal(check)
+      throw new CliError(-32001, code, message, { ptys: check.ptys, result: check.result })
     }
-    finishWith(restartOutcome(check))
+    const next = restartOutcome(check)
+    finishWith(next.outcome, { dropPins: next.dropPins })
     return new AfterReply(null, relaunch)
   }
 }

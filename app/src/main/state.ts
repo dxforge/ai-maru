@@ -170,8 +170,10 @@ function layoutPlan(
   return differs ? { mode: 'layout', notice: ['protocol'] } : { mode: 'full', notice: [] }
 }
 
-/** `keep` 은 pty 를 남기고, `layout` 은 `sessions` 를 비운다. `end` 는 `layout`·`sessions` 를 비운다. `pins`·`view` 는 늘 남는다. */
+/** `keep` 은 pty 를 남기고, `layout` 은 `sessions` 를 비운다. `end` 는 `layout`·`sessions` 를 비운다. `view` 는 늘 남는다. */
 export type Outcome = 'keep' | 'layout' | 'end'
+
+export type FinishOptions = { dropPins?: boolean }
 
 export type StateStore = {
   /** renderer 가 보낸 화면을 그대로 받는다. 자주 오므로 쓸 때 `parseScreen` 으로 검사하고, 틀리면 버린다. */
@@ -186,7 +188,7 @@ export type StateStore = {
    * 고른 결과로 바로 쓰고, 그 뒤의 변경은 버린다. 끄는 동안 pty 가 끝나 pane 이 닫혀도 고른 결과가 남게 하기
    * 위해서다. 쓰지 못하면 던지고 끝내지 않은 채로 둔다.
    */
-  finish(outcome: Outcome): void
+  finish(outcome: Outcome, options?: FinishOptions): void
   /**
    * 쓰지 않고 끝낸다. `finish` 가 던진 뒤에도 끄는 쪽이 부른다. 끄는 동안 pty 가 끝나 pane 이 닫힌 화면을 타이머가
    * 쓰면, 디스크에 남은 마지막 상태가 그 화면으로 바뀌기 때문이다.
@@ -275,10 +277,11 @@ export function createStateStore(o: {
       enabled = true
       changed()
     },
-    finish(outcome) {
+    finish(outcome, options) {
       if (finished) return
       applyScreen()
-      const next = dropped(state, outcome)
+      const kept = dropped(state, outcome)
+      const next = options?.dropPins ? { ...kept, pins: null } : kept
       writeJsonAtomicSync(o.path, next)
       state = next
       stop()

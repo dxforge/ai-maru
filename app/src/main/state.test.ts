@@ -326,6 +326,12 @@ describe('createStateStore', () => {
     expect(saved()).toEqual({ ...expected, pins })
   })
 
+  it('dropPins 면 pins 도 비워 쓴다', () => {
+    const s = store(full)
+    s.finish('keep', { dropPins: true })
+    expect(saved()).toEqual({ layout, pins: null, sessions, view })
+  })
+
   it('finish 뒤의 변경은 버린다 — 끄며 닫힌 pane 이 고른 결과를 덮지 않는다', () => {
     vi.useFakeTimers()
     const s = store(full)

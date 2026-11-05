@@ -618,6 +618,7 @@ test('pins 형식만 다른 빌드로는 핀을 잃고 재시작할지 묻고, �
   await stubDialog(app, 0)
   await restartWith(app)
   expect(sockets(dataDir)).toHaveLength(1)
+  expect(readState(dataDir).pins).toBeNull()
 
   const again = await launch()
   await run(again.page, 'echo $MARK', 'kept-2')

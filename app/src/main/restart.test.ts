@@ -155,19 +155,32 @@ describe('checkRestart', () => {
 })
 
 describe('restartOutcome', () => {
-  const incompatible = (result: Incompatible['result']): Incompatible => ({
-    ok: false,
-    reason: 'incompatible',
-    result,
-    ptys: 0,
-    formats: []
-  })
+  const incompatible = (
+    result: Incompatible['result'],
+    formats: Incompatible['formats'] = []
+  ): Incompatible => ({ ok: false, reason: 'incompatible', result, ptys: 0, formats })
 
   it('pins 만 잃는 재시작은 pty 를 남긴다', () => {
-    expect(restartOutcome({ ok: true })).toBe('keep')
-    expect(restartOutcome(incompatible('full'))).toBe('keep')
-    expect(restartOutcome(incompatible('layout'))).toBe('layout')
-    expect(restartOutcome(incompatible('empty'))).toBe('end')
+    expect(restartOutcome({ ok: true })).toEqual({ outcome: 'keep', dropPins: false })
+    expect(restartOutcome(incompatible('full', ['pins']))).toEqual({
+      outcome: 'keep',
+      dropPins: true
+    })
+    expect(restartOutcome(incompatible('layout', ['sessions']))).toEqual({
+      outcome: 'layout',
+      dropPins: false
+    })
+    expect(restartOutcome(incompatible('empty', ['layout']))).toEqual({
+      outcome: 'end',
+      dropPins: false
+    })
+  })
+
+  it('pins 형식이 다르면 어느 결과든 pins 를 비운다 — 다시 뜬 앱이 읽지 못한 pins 를 알리지 않게', () => {
+    expect(restartOutcome(incompatible('layout', ['sessions', 'pins'])).dropPins).toBe(true)
+    expect(restartOutcome(incompatible('empty', ['layout', 'sessions', 'pins'])).dropPins).toBe(
+      true
+    )
   })
 })
 
@@ -217,9 +230,21 @@ describe('restartDialog · restartRefusal', () => {
   })
 
   it('CLI 메시지는 플래그를 주면 어떻게 되는지 적는다', () => {
-    expect(restartRefusal(protocol)).toMatch(/Pass --kill-ptys to restart with the layout only\.$/)
-    expect(restartRefusal(layout)).toMatch(/Pass --kill-ptys to restart and close all cells\.$/)
-    expect(restartRefusal(pins)).toMatch(/Pass --kill-ptys to restart without workspace pins\.$/)
+    expect(restartRefusal(protocol).message).toMatch(
+      /Pass --kill-ptys to restart with the layout only\.$/
+    )
+    expect(restartRefusal(layout).message).toMatch(
+      /Pass --kill-ptys to restart and close all cells\.$/
+    )
+    expect(restartRefusal(pins).message).toMatch(
+      /Pass --kill-ptys to restart without workspace pins\.$/
+    )
+  })
+
+  it('pty 를 끄지 않고 pins 만 잃으면 pins_would_be_lost 로 거절한다', () => {
+    expect(restartRefusal(pins).code).toBe('pins_would_be_lost')
+    expect(restartRefusal(protocol).code).toBe('ptys_would_end')
+    expect(restartRefusal(layout).code).toBe('ptys_would_end')
   })
 })
 
