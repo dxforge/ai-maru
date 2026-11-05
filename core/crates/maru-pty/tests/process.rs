@@ -895,8 +895,19 @@ fn pasted(mode: &str, text: &str, len: usize) -> Vec<u8> {
         "stty raw -echo; printf '\\033[?2004{mode}ready-%d' 2; head -c {len} > '{}'",
         file.display()
     ));
-    let (mut c, _, _) = p.attach("observer", 80, 24);
-    c.output_until("ready-2");
+    // 셸이 attach 보다 먼저 쓰면 `ready-2` 는 재생에만 들어가므로, 출력을 기다리지 않고 화면을 묻는다.
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let cap = p.request(json!({ "type": "capture", "protocol_version": PROTOCOL_VERSION }));
+        if cap["text"].as_str().is_some_and(|t| t.contains("ready-2")) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "ready-2 가 화면에 나오지 않았다: {cap}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
     let req = json!({
         "type": "input", "protocol_version": PROTOCOL_VERSION, "text": text, "paste": true,
     });
