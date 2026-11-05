@@ -2,18 +2,26 @@ import type { RestoreNotice } from '../../../shared/screen'
 import type { Toast } from './store'
 
 export function restoreToast(notice: RestoreNotice): Toast {
-  if (notice === 'layout')
+  if (notice === 'workspaces')
     return {
       level: 'warning',
-      title: "Couldn't restore the workspace layout",
-      lines: ["The saved layout couldn't be read, so AI Maru didn't reopen the cells."]
-    }
-  if (notice === 'pins')
-    return {
-      level: 'warning',
-      title: "Couldn't restore workspace pins",
+      title: "Couldn't restore workspace details",
       lines: [
-        "The saved data for pinned workspaces couldn't be read. These workspaces lost their custom names and favorites and are no longer pinned. Those with no cells were removed."
+        "The saved workspace names, pins and favorites couldn't be read. Workspaces are no longer pinned and have lost their custom names and favorites. Pinned workspaces with no cells were removed."
+      ]
+    }
+  if (notice === 'cells')
+    return {
+      level: 'warning',
+      title: "Couldn't restore the cells",
+      lines: ["The saved cells couldn't be read, so AI Maru didn't reopen them."]
+    }
+  if (notice === 'panes')
+    return {
+      level: 'warning',
+      title: "Couldn't restore the panes",
+      lines: [
+        "The saved panes couldn't be read. AI Maru ended the terminals and reopened each cell with one new shell."
       ]
     }
   const why =

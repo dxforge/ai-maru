@@ -37,6 +37,7 @@ import {
  */
 export type Pane = {
   key: number
+  id: string
   ptyId: string
   startDir?: string
   command?: readonly string[]
@@ -129,7 +130,8 @@ export function createWorkspaces(
   source: PaneSource = { get: () => undefined, rootState: () => undefined, isOld: () => false },
   ptyId: () => string = newPtyId,
   cellId: () => string = () => randomId('c'),
-  workspaceId: () => string = () => randomId('w')
+  workspaceId: () => string = () => randomId('w'),
+  paneId: () => string = () => randomId('n')
 ) {
   const list = ref<Workspace[]>([])
   const selectedKey = ref<number | null>(null)
@@ -160,7 +162,7 @@ export function createWorkspaces(
     list.value.find((w) => w.key === key)
 
   function newPane(init: PaneInit): Pane {
-    const p: Pane = { key: nextKey++, ptyId: ptyId(), ...init }
+    const p: Pane = { key: nextKey++, id: paneId(), ptyId: ptyId(), ...init }
     refresh(p)
     return p
   }
@@ -597,7 +599,7 @@ export function createWorkspaces(
     const restorePane = (p: LayoutPane): Pane => {
       const pty = ptys?.[p.key]
       if (pty) return { ...p, ptyId: pty, startDir: p.cwd, attach: true, restoredTitle: p.title }
-      const fresh: Pane = { key: p.key, ptyId: ptyId(), startDir: p.cwd }
+      const fresh: Pane = { key: p.key, id: p.id, ptyId: ptyId(), startDir: p.cwd }
       if (p.git) fresh.git = p.git
       return fresh
     }

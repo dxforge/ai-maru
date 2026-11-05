@@ -29,8 +29,8 @@ function cell(
   return { key, id: `c-${key}`, panes, focused, layout: { pane: panes[0].key } }
 }
 
-const one = (pane: Omit<ScreenPane, 'key'>) => [
-  { key: 1, id: 'w-1', cells: [cell(2, [{ key: 3, ...pane }])] }
+const one = (pane: Omit<ScreenPane, 'key' | 'id'>) => [
+  { key: 1, id: 'w-1', cells: [cell(2, [{ key: 3, id: 'n-3', ...pane }])] }
 ]
 
 const git = (branch: string) => ({ repo: 'ai-maru', branch })
@@ -45,20 +45,27 @@ describe('paneRows', () => {
         id: 'w-1',
         cells: [
           cell(2, [
-            { key: 3, ptyId: 'p-a', cwd: '/r/ai-maru', git: git('main') },
-            { key: 4, ptyId: 'p-shell', cwd: '/r/ai-maru' }
+            { key: 3, id: 'n-3', ptyId: 'p-a', cwd: '/r/ai-maru', git: git('main') },
+            { key: 4, id: 'n-4', ptyId: 'p-shell', cwd: '/r/ai-maru' }
           ]),
           cell(
             5,
             [
-              { key: 6, ptyId: 'p-other', cwd: '/r/wt' },
-              { key: 7, ptyId: 'p-b', cwd: '/r/wt/app', git: git('feat/x'), title: 'fix it' }
+              { key: 6, id: 'n-6', ptyId: 'p-other', cwd: '/r/wt' },
+              {
+                key: 7,
+                id: 'n-7',
+                ptyId: 'p-b',
+                cwd: '/r/wt/app',
+                git: git('feat/x'),
+                title: 'fix it'
+              }
             ],
             7
           )
         ]
       },
-      { key: 8, id: 'w-8', cells: [cell(9, [{ key: 10, ptyId: 'p-c' }])] }
+      { key: 8, id: 'w-8', cells: [cell(9, [{ key: 10, id: 'n-10', ptyId: 'p-c' }])] }
     ]
     const states = new Map([
       ['p-a', state([record('claude-code', { message: 'reading' })])],
@@ -135,8 +142,8 @@ describe('paneRows', () => {
         id: 'w-1',
         cells: [
           cell(2, [
-            { key: 3, ptyId: 'p-a' },
-            { key: 4, ptyId: 'p-b', command: ['/usr/bin/top', '-o', 'cpu'] }
+            { key: 3, id: 'n-3', ptyId: 'p-a' },
+            { key: 4, id: 'n-4', ptyId: 'p-b', command: ['/usr/bin/top', '-o', 'cpu'] }
           ])
         ]
       }
@@ -159,7 +166,7 @@ describe('paneRows', () => {
     const running = { running: true, text: 'npm run dev', exitCode: null, startedAt: 1 }
     const failed = { running: false, text: 'cargo test', exitCode: 101, startedAt: 1 }
     const passed = { ...failed, exitCode: 0 }
-    const name = (pane: Omit<ScreenPane, 'key'>, command: PtyCommand | null) =>
+    const name = (pane: Omit<ScreenPane, 'key' | 'id'>, command: PtyCommand | null) =>
       paneRows(one(pane), () => state([], command), SHELL)[0].title
     expect(name({ ptyId: 'p-a', title: 'user@mac' }, running)).toBe('npm run dev')
     expect(name({ ptyId: 'p-a', title: 'user@mac' }, failed)).toBe('cargo test')
@@ -169,7 +176,7 @@ describe('paneRows', () => {
 
   it('레코드가 있는 pane 의 이름은 터미널 제목이나 프로그램 이름이고, 도는 명령은 쓰지 않는다', () => {
     const running = { running: true, text: 'claude', exitCode: null, startedAt: 1 }
-    const name = (pane: Omit<ScreenPane, 'key'>, app: string) =>
+    const name = (pane: Omit<ScreenPane, 'key' | 'id'>, app: string) =>
       paneRows(one(pane), () => state([record(app)], running), SHELL)[0].title
     expect(name({ ptyId: 'p-a', title: 'Refactor' }, 'claude-code')).toBe('Refactor')
     expect(name({ ptyId: 'p-a' }, 'claude-code')).toBe('Claude')
@@ -187,8 +194,12 @@ describe('paneRows', () => {
 
   it('홈 디렉토리 workspace 의 WORKSPACE 는 사이드바처럼 ~ 다', () => {
     const workspaces = [
-      { key: 1, id: 'w-1', cells: [cell(2, [{ key: 3, ptyId: 'p-a', cwd: '/h/u' }])] },
-      { key: 4, id: 'w-4', cells: [cell(5, [{ key: 6, ptyId: 'p-b', cwd: '/h/u/notes' }])] }
+      { key: 1, id: 'w-1', cells: [cell(2, [{ key: 3, id: 'n-3', ptyId: 'p-a', cwd: '/h/u' }])] },
+      {
+        key: 4,
+        id: 'w-4',
+        cells: [cell(5, [{ key: 6, id: 'n-6', ptyId: 'p-b', cwd: '/h/u/notes' }])]
+      }
     ]
     const rows = paneRows(workspaces, () => undefined, SHELL, '/h/u')
     expect(rows.map((r) => [r.pty, r.workspace])).toEqual([
@@ -203,9 +214,13 @@ describe('paneRows', () => {
         key: 1,
         id: 'w-1',
         name: '리뷰',
-        cells: [cell(2, [{ key: 3, ptyId: 'p-a', cwd: '/h/u' }])]
+        cells: [cell(2, [{ key: 3, id: 'n-3', ptyId: 'p-a', cwd: '/h/u' }])]
       },
-      { key: 4, id: 'w-4', cells: [cell(5, [{ key: 6, ptyId: 'p-b', cwd: '/h/u/notes' }])] }
+      {
+        key: 4,
+        id: 'w-4',
+        cells: [cell(5, [{ key: 6, id: 'n-6', ptyId: 'p-b', cwd: '/h/u/notes' }])]
+      }
     ]
     const rows = paneRows(workspaces, () => undefined, SHELL, '/h/u')
     expect(rows.map((r) => [r.pty, r.workspace])).toEqual([
@@ -223,12 +238,12 @@ describe('paneRows', () => {
           cell(
             2,
             [
-              { key: 3, ptyId: 'p-a', cwd: '/r/wt-a', git: git('feat/a') },
-              { key: 4, ptyId: 'p-b', cwd: '/r/wt-b', git: git('main') }
+              { key: 3, id: 'n-3', ptyId: 'p-a', cwd: '/r/wt-a', git: git('feat/a') },
+              { key: 4, id: 'n-4', ptyId: 'p-b', cwd: '/r/wt-b', git: git('main') }
             ],
             4
           ),
-          cell(5, [{ key: 6, ptyId: 'p-c', cwd: '/r/ai-maru', git: git('main') }])
+          cell(5, [{ key: 6, id: 'n-6', ptyId: 'p-c', cwd: '/r/ai-maru', git: git('main') }])
         ]
       }
     ]
@@ -283,8 +298,8 @@ describe('paneRows', () => {
         id: 'w-1',
         cells: [
           cell(2, [
-            { key: 3, ptyId: 'p-a' },
-            { key: 4, ptyId: 'p-b' }
+            { key: 3, id: 'n-3', ptyId: 'p-a' },
+            { key: 4, id: 'n-4', ptyId: 'p-b' }
           ])
         ]
       }

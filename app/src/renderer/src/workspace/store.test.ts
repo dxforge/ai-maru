@@ -137,6 +137,7 @@ describe('snapshot·restore', () => {
     const after = to.cells().flatMap((c) => c.panes)
     for (const [i, p] of after.entries()) {
       expect(p.ptyId).not.toBe(before[i].ptyId)
+      expect(p.id).toBe(before[i].id)
       expect(p.attach).toBeUndefined()
       expect(p.command).toBeUndefined()
       expect(p.keep).toBeUndefined()
@@ -884,6 +885,7 @@ describe('panes', () => {
     expect(w.layout).toEqual({ split: 'down', first: { pane: from }, second: { pane } })
     expect(w.panes.at(-1)).toEqual({
       key: pane,
+      id: expect.stringMatching(/^n-/),
       ptyId: expect.any(String),
       startDir: '/x',
       cwd: '/x',

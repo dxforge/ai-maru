@@ -121,9 +121,7 @@ test('재시작 뒤 cell 의 pane 폭이 남고, 80 으로 돌아온 cell 은 �
 
   await restartWith(app)
   const saved = readState(dataDir)
-  expect(saved.layout.workspaces.map((w: { cells: object[] }) => 'paneCols' in w.cells[0])).toEqual(
-    [true, false]
-  )
+  expect(saved.cells.rows.map((c: object) => 'paneCols' in c)).toEqual([true, false])
 
   const { app: againApp, page: again } = await launch()
   await expect(again.locator('.terminals')).toHaveClass(/columns/)
@@ -157,9 +155,7 @@ test('column-cols 를 고치면 폭을 바꾸지 않은 cell 은 따라가고 �
 
   await restartWith(app)
   const saved = readState(dataDir)
-  expect(saved.layout.workspaces.map((w: { cells: object[] }) => 'paneCols' in w.cells[0])).toEqual(
-    [false, true]
-  )
+  expect(saved.cells.rows.map((c: object) => 'paneCols' in c)).toEqual([false, true])
 
   writeConfig(dataDir, '[layout]\ncolumn-cols = 120\n')
   const { app: againApp, page: again } = await launch()

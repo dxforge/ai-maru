@@ -5,7 +5,7 @@ import { PROTOCOL_VERSION } from '../shared/protocol'
 import { STATE_VERSIONS } from '../shared/screen'
 import type { Dialog } from './close-confirm'
 import { livePtys } from './pty'
-import type { Outcome } from './state'
+import type { Outcome, TableName } from './state'
 
 const run = promisify(execFile)
 
@@ -34,31 +34,32 @@ export type Incompatible = {
   ok: false
   reason: 'incompatible'
   /**
-   * 다시 뜬 앱이 할 수 있는 복원 — `full` 이면 pty 에 다시 붙지만 `pins` 를 잃고, `layout` 이면 레이아웃만, `empty` 면
-   * cell 을 모두 닫는다.
+   * 다시 뜬 앱이 할 수 있는 복원 — `full` 이면 pty 에 다시 붙지만 `workspaces` 표를 잃고, `layout` 이면 배치만,
+   * `cells` 면 cell 마다 셸 하나로, `empty` 면 cell 을 모두 닫는다.
    */
-  result: 'full' | 'layout' | 'empty'
+  result: 'full' | 'layout' | 'cells' | 'empty'
   /** 꺼질 pty 수다. `full` 이면 pty 를 끄지 않으므로 0 이다. */
   ptys: number
   /** 설치된 `maru-pty` 의 프로토콜이 다르고 살아 있는 pty 가 있을 때만 있다. 버전을 알 수 없으면 null 이다. */
   protocol?: number | null
-  formats: Format[]
+  formats: TableName[]
   /** 설치된 번들에 형식 버전 파일이 없거나 읽지 못해, `formats` 를 모두 다른 것으로 보았다. */
   formatsUnknown?: true
 }
 
 export type RestartCheck = { ok: true } | { ok: false; reason: 'dev_server' } | Incompatible
 
-type Format = 'layout' | 'sessions' | 'pins'
+const FORMATS: TableName[] = ['workspaces', 'cells', 'panes', 'sessions']
 
-function restartResult(formats: Format[], protocolDiffers: boolean): Incompatible['result'] {
-  if (formats.includes('layout')) return 'empty'
+function restartResult(formats: TableName[], protocolDiffers: boolean): Incompatible['result'] {
+  if (formats.includes('cells')) return 'empty'
+  if (formats.includes('panes')) return 'cells'
   return protocolDiffers || formats.includes('sessions') ? 'layout' : 'full'
 }
 
 /**
  * `bin`·`versionsFile` 은 다음에 뜰 앱의 것이다 — `scripts/install-app.sh` 는 같은 경로의 번들을 갈아 끼운다. 다시 뜬
- * 앱은 프로토콜이 다른 pty 에 붙지 못하고, 버전이 다른 부분을 버린다. `view` 의 버전이 달라도 보기 설정만 잃으므로
+ * 앱은 프로토콜이 다른 pty 에 붙지 못하고, 버전이 다른 표를 버린다. `view` 의 버전이 달라도 보기 설정만 잃으므로
  * 묻지 않는다.
  */
 export async function checkRestart(o: {
@@ -73,9 +74,7 @@ export async function checkRestart(o: {
     installedVersions(o.versionsFile),
     livePtys(o.dir)
   ])
-  const formats = (['layout', 'sessions', 'pins'] as const).filter(
-    (k) => versions?.[k] !== STATE_VERSIONS[k]
-  )
+  const formats = FORMATS.filter((k) => versions?.[k] !== STATE_VERSIONS[k])
   const protocolDiffers = protocol !== PROTOCOL_VERSION && live.length > 0
   if (!formats.length && !protocolDiffers) return { ok: true }
   const result = restartResult(formats, protocolDiffers)
@@ -91,15 +90,17 @@ export async function checkRestart(o: {
 }
 
 /**
- * `pins` 형식이 다르면 결과와 상관없이 `pins` 를 비운다. 남기면 다시 뜬 앱이 읽지 못한 `pins` 를 toast 로 알려, 사용자가
- * 이미 고른 손실을 다시 알리기 때문이다.
+ * 형식이 다른 표는 결과와 상관없이 비운다. 남기면 다시 뜬 앱이 읽지 못한 표를 toast 로 알려, 사용자가 이미 고른 손실을
+ * 다시 알리기 때문이다.
  */
-export function restartOutcome(check: RestartCheck): { outcome: Outcome; dropPins: boolean } {
-  if (check.ok) return { outcome: 'keep', dropPins: false }
-  if (check.reason !== 'incompatible') return { outcome: 'layout', dropPins: false }
-  const outcomes = { full: 'keep', layout: 'layout', empty: 'end' } as const
-  return { outcome: outcomes[check.result], dropPins: check.formats.includes('pins') }
+export function restartOutcome(check: RestartCheck): { outcome: Outcome; drop: TableName[] } {
+  if (check.ok) return { outcome: 'keep', drop: [] }
+  if (check.reason !== 'incompatible') return { outcome: 'layout', drop: [] }
+  const outcomes = { full: 'keep', layout: 'layout', cells: 'layout', empty: 'end' } as const
+  return { outcome: outcomes[check.result], drop: check.formats }
 }
+
+const formatName = (f: TableName): string => (f === 'sessions' ? 'terminal sessions' : f)
 
 function reasons(check: Incompatible): string[] {
   const parts: string[] = []
@@ -112,12 +113,10 @@ function reasons(check: Incompatible): string[] {
   if (check.formatsUnknown)
     parts.push("The installed app's saved-state format couldn't be determined.")
   else if (check.formats.length) {
-    const saved = check.formats.map((f) =>
-      f === 'sessions' ? 'terminal sessions' : f === 'pins' ? 'workspace pins' : f
-    )
+    const saved = check.formats.map((f) => formatName(f))
     const last = saved.pop()
     const list = saved.length ? `${saved.join(', ')} and ${last}` : last
-    parts.push(`The installed app uses a different format for the saved ${list}.`)
+    parts.push(`The installed app uses a different saved-state format for the ${list}.`)
   }
   return parts
 }
@@ -130,20 +129,22 @@ function restartDetail(check: Incompatible): string {
   const after = {
     full: [],
     layout: ['The panes will reopen with new shells in their last directories.'],
+    cells: ['Each cell will reopen with one new shell.'],
     empty: ['All cells will close.']
   }[check.result]
-  const pins = check.formats.includes('pins')
+  const workspaces = check.formats.includes('workspaces')
     ? [
-        'Pinned workspaces will be unpinned and lose their custom names and favorites. Those with no cells will be removed.'
+        'Workspaces will be unpinned and lose their custom names and favorites. Pinned workspaces with no cells will be removed.'
       ]
     : []
-  return [...reasons(check), ...ending, ...after, ...pins].join(' ')
+  return [...reasons(check), ...ending, ...after, ...workspaces].join(' ')
 }
 
 export function restartDialog(check: Incompatible): Dialog {
   const action = {
     full: 'Restart without workspace pins',
     layout: 'Restart with layout only',
+    cells: 'Restart with one shell per cell',
     empty: 'Restart and close all cells'
   }[check.result]
   return { message: `${action}?`, detail: restartDetail(check), buttons: [action, 'Cancel'] }
@@ -156,6 +157,7 @@ export function restartRefusal(check: Incompatible): {
   const result = {
     full: 'without workspace pins',
     layout: 'with the layout only',
+    cells: 'with one shell per cell',
     empty: 'and close all cells'
   }[check.result]
   return {

@@ -85,6 +85,7 @@ import {
   readState,
   removeOldStateFiles,
   restorePlan,
+  fullRestore,
   sessionPtys,
   stateFile,
   type FinishOptions,
@@ -103,10 +104,9 @@ import { isPathCandidates } from '../shared/link'
 import { paneRows } from '../shared/pane-list'
 import type { CloseAnswer, PaneReply } from '../shared/pane'
 import {
-  joinLayout,
+  joinTables,
   parseScreen,
   screenPanes,
-  type LayoutPart,
   type Restore,
   type ViewPrefs
 } from '../shared/screen'
@@ -278,10 +278,9 @@ function viewPrefs(): ViewPrefs {
   return { viewMode, sidebar, folded, canvas }
 }
 
-function openWorkspaces(): LayoutPart['workspaces'] {
+function openPaneCount(): number {
   const screen = parseScreen(lastScreen)
-  const layout: Pick<LayoutPart, 'workspaces'> | null = screen ?? store?.layout() ?? null
-  return layout?.workspaces ?? []
+  return screen ? screenPanes(screen).panes.length : (store?.paneCount() ?? 0)
 }
 
 const DEFAULT_WINDOW_THEME: WindowTheme = {
@@ -353,7 +352,7 @@ async function restartByUser(): Promise<void> {
   if (!check.ok && !(await confirm(restartDialog(check)))) return
   try {
     const next = restartOutcome(check)
-    finishWith(next.outcome, { dropPins: next.dropPins })
+    finishWith(next.outcome, { drop: next.drop })
   } catch (err) {
     dialog.showErrorBox('Cannot restart', err instanceof Error ? err.message : String(err))
     return
@@ -403,7 +402,7 @@ const restartHandlers: Handlers = {
       throw new CliError(-32001, code, message, { ptys: check.ptys, result: check.result })
     }
     const next = restartOutcome(check)
-    finishWith(next.outcome, { dropPins: next.dropPins })
+    finishWith(next.outcome, { drop: next.drop })
     return new AfterReply(null, relaunch)
   }
 }
@@ -482,7 +481,7 @@ function confirmQuit(): void {
   if (quitCheck) return
   quitCheck = (async () => {
     if (!quitPermission.allowed()) {
-      const open = openWorkspaces().flatMap((w) => w.cells.flatMap((c) => c.panes)).length
+      const open = openPaneCount()
       if (open === 0) {
         quitWith('end')
       } else {
@@ -648,7 +647,8 @@ function start(): void {
   const launcherFile = join(userData, 'launcher.json')
   for (const file of [stateFile(userData), launcherFile]) removeTmpFiles(file)
   const initial = initialState(read)
-  const { layout, pins, sessions } = initial
+  const { sessions } = initial
+  const layout = joinTables(initial, read.view.selected)
   store = createStateStore({ path: stateFile(userData), debounceMs: STATE_DEBOUNCE_MS, initial })
   applyTheme(read.view.theme ?? DEFAULT_WINDOW_THEME)
   ipcMain.on('theme:apply', (_event, t: unknown) => {
@@ -661,22 +661,22 @@ function start(): void {
     const records = await Promise.all(alive.map((pty) => readRecord(ptyDir(), pty)))
     const protocols = new Map(alive.map((pty, i) => [pty, records[i]?.protocol_version ?? null]))
     const p = restorePlan(read, (pty) => (protocols.has(pty) ? protocols.get(pty) : undefined))
-    // `layout` 을 읽지 못한 `empty` 는 `initialState` 가 이미 비웠다.
+    // `cells` 를 읽지 못한 `empty` 는 `initialState` 가 이미 비웠다.
     if (p.mode === 'layout') store?.discard('layout')
     return p
   })()
   // `killPtys` 는 `keep` 에 없는 pty 를 모두 끄므로, 새 pty 는 이 정리가 끝난 뒤에 띄운다.
-  const leftovers = plan.then(async (p) => {
-    const keep = new Set(p.mode === 'full' && sessions ? sessionPtys(sessions) : [])
+  const full = plan.then((p) =>
+    p.mode === 'full' && sessions ? fullRestore(layout, sessions) : null
+  )
+  const leftovers = full.then(async (f) => {
+    const keep = new Set(f?.keep ?? [])
     await killPtys(ptyDir(), undefined, keep)
     for (const id of keep) ptyStates.watch(id)
   })
-  let toRestore: Promise<Restore> | null = plan.then((p) => ({
-    layout: joinLayout(layout, pins),
-    ptys:
-      p.mode === 'full' && sessions
-        ? Object.fromEntries(sessions.ptys.map(({ pane, pty }) => [pane, pty]))
-        : null,
+  let toRestore: Promise<Restore> | null = Promise.all([plan, full]).then(([p, f]) => ({
+    layout,
+    ptys: f?.attach ?? null,
     notice: p.notice
   }))
   ipcMain.handle('screen:restore', () => {
