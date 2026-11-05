@@ -390,7 +390,11 @@ describe('joinTables', () => {
 
   it('workspaces 표도 없으면 dir 를 모르므로 새 pane 에 cwd 를 두지 않는다', () => {
     let n = 0
-    const out = joinTables({ ...tables(), workspaces: null, panes: null }, 'c-3', () => `n-new${n++}`)!
+    const out = joinTables(
+      { ...tables(), workspaces: null, panes: null },
+      'c-3',
+      () => `n-new${n++}`
+    )!
     expect(out.workspaces.flatMap((w) => w.cells.map((c) => c.panes))).toEqual([
       [{ key: 2, id: 'n-new0' }],
       [{ key: 4, id: 'n-new1' }],

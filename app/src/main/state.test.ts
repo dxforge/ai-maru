@@ -240,7 +240,9 @@ describe('restorePlan', () => {
       mode: 'layout',
       notice: ['panes']
     })
-    expect(restorePlan(read({ panes: { kind: 'absent' }, sessions: { kind: 'absent' } }), live)).toEqual({
+    expect(
+      restorePlan(read({ panes: { kind: 'absent' }, sessions: { kind: 'absent' } }), live)
+    ).toEqual({
       mode: 'layout',
       notice: []
     })
