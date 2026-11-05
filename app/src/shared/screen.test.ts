@@ -418,10 +418,8 @@ describe('splitScreen · joinLayout', () => {
       cells: [at(51, '/work/a'), at(53, '/work/b', '/work/b'), at(55, '/work/c')]
     }
     const { layout, pins } = splitScreen({ ...screen, workspaces: [w], selected: 53 })
-    const out = joinLayout(
-      parseLayoutPart(reread(layout)),
-      parsePinsPart(reread(pins))
-    )!.workspaces[0].cells
+    const out = joinLayout(parseLayoutPart(reread(layout)), parsePinsPart(reread(pins)))!
+      .workspaces[0].cells
     expect(out.map((c) => [c.key, c.favorite])).toEqual([
       [51, undefined],
       [53, '/work/b'],
