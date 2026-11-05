@@ -47,7 +47,7 @@
 //! | `inbox.push` | `to`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
 //! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 pty id>,"text":<본문>}…]}` |
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
-//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `full`(bool, 선택), `cell`(cell id, 선택) | `{"pty":<새 pty id>}` |
+//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `pane`(pty id, 선택), `full`(bool, 선택), `cell`(cell id, 선택) | `{"pty":<새 pty id>}` |
 //! | `pane.close` | `target`(pty id) | `null` |
 //! | `pane.list` | 없음 | `{"panes":[{"pty","state","kind","app","workspace","cell","title","dir","message"}…]}` |
 //! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택), `after`·`before`(pty id, 선택, 둘 중 하나만) | `{"pty":<새 pty id>,"cell":<새 cell id>}` |
@@ -80,14 +80,17 @@
 //! 지운다. 보관은 앱 메모리에만 한다.
 //!
 //! `pane.new` 는 `pty` 의 pane 을 `direction` 쪽으로 나누고, 새 pane 에서 `cwd` 를 시작 디렉토리로
-//! pty 를 띄운다. `full` 이 true 면 그 pane 이 든 cell 전체를 나눠 새 pane 을 `direction` 쪽 끝에
-//! 붙인다. `cell` 이 있으면 `pty` 의 pane 대신 그 id 의 cell 전체를 `full` 처럼 나눈다. 창 안의 어느
-//! workspace 의 cell 이든 되고, 부른 pty 가 job 이어도 된다. `cell` 이 `c-` 와 hex 8자리가 아니거나 그
-//! cell 이 창에 없으면 `invalid_params` 다. 포커스와 선택한 cell 은 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
+//! pty 를 띄운다. `pane` 이 있으면 `pty` 의 pane 대신 `pane` 이 가리키는 pty 의 pane 을 나눈다. 창
+//! 안의 어느 workspace 의 pane 이든 되고, 부른 pty 가 job 이어도 된다. `pane` 이 `p-` 와 hex 8자리가
+//! 아니거나, `cell` 이나 true 인 `full` 과 함께 오면 `invalid_params` 다. `full` 이 true 면 `pty` 의
+//! pane 이 든 cell 전체를 나눠 새 pane 을 `direction` 쪽 끝에 붙인다. `cell` 이 있으면 `pty` 의
+//! pane 대신 그 id 의 cell 전체를 `full` 처럼 나눈다. 창 안의 어느 workspace 의 cell 이든 되고, 부른
+//! pty 가 job 이어도 된다. `cell` 이 `c-` 와 hex 8자리가 아니거나 그 cell 이 창에 없으면
+//! `invalid_params` 다. 포커스와 선택한 cell 은 바꾸지 않는다. `command` 가 있으면 대화형 로그인 셸이
 //! 그 명령을 실행한다(셸이 sh·bash·zsh·ksh·dash 가 아니면 `/bin/sh` 가 실행한다). 명령이 끝나면 셸과
-//! 함께 pane 이 닫힌다. 새 pty 가 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. `pty` 의 pane 이 창에
-//! 없으면 `invalid_params` 로 답한다. 나눈 pane 들이 하한(터미널 20열 × 5행) 아래로 내려가 나눌 자리가
-//! 없으면 -32001 `no_space` 로 답하고 pane 을 열지 않는다. pty 를 띄우지 못하면 나눈 pane 을 닫고
+//! 함께 pane 이 닫힌다. 새 pty 가 뜬 뒤(명령이 그 전에 끝나면 끝난 뒤) 답한다. 나눌 pane 이 창에 없으면
+//! `invalid_params` 로 답한다. 나눈 pane 들이 하한(터미널 20열 × 5행) 아래로 내려가 나눌 자리가 없으면
+//! -32001 `no_space` 로 답하고 pane 을 열지 않는다. pty 를 띄우지 못하면 나눈 pane 을 닫고
 //! `internal_error` 로 답한다.
 //!
 //! `pane.close` 는 `target` pty 의 pane 을 닫고 그 pty 를 끈다. `target` 의 pane 이 창에 없으면
@@ -321,9 +324,9 @@ enum PaneCommand {
     /// is omitted. The pane closes when COMMAND exits. Focus stays where it is.
     ///
     /// Prints the new pane's pty id; `maru inbox push` sends messages to it and
-    /// `maru pane close` closes it. `--cell` opens the pane in another cell instead. Options
-    /// go before COMMAND; everything from COMMAND on is passed to COMMAND. Use `sh -c '...'`
-    /// for a pipeline.
+    /// `maru pane close` closes it. `--pane` splits another pane instead, and `--cell` opens
+    /// the pane in another cell. Options go before COMMAND; everything from COMMAND on is
+    /// passed to COMMAND. Use `sh -c '...'` for a pipeline.
     New {
         /// Directory to start in. Defaults to the current directory.
         #[arg(long)]
@@ -331,6 +334,11 @@ enum PaneCommand {
         /// Split below instead of to the right.
         #[arg(long)]
         down: bool,
+        /// Split the pane of the pty with this id instead of this terminal's pane, e.g.
+        /// p-1a2b3c4d. Any pane in this window works. The PTY column of `maru pane list`
+        /// shows the pty id of each pane.
+        #[arg(long, value_name = "PTY", conflicts_with_all = ["full", "cell"])]
+        pane: Option<String>,
         /// Split the whole cell instead of this pane, adding the new pane at its right
         /// end (bottom end with --down).
         #[arg(long)]
@@ -353,13 +361,14 @@ enum PaneCommand {
     /// List the panes in every workspace and cell, in screen order.
     ///
     /// Prints tab-separated columns with a header: PTY, STATE, APP, WORKSPACE, CELL, TITLE,
-    /// DIR, MESSAGE. STATE, APP and MESSAGE come from the program status the pane's program
-    /// reported, and are empty when it reported none. STATE is idle, working, done, blocked or
-    /// error; a blocked state with a reason reads e.g. blocked(permission). APP is the program,
-    /// e.g. claude-code. WORKSPACE and TITLE are the names shown in the sidebar. CELL is the
-    /// id of the pane's cell, e.g. c-1a2b3c4d, which `maru pane new --cell` takes. DIR is the
-    /// pane's directory. Control characters in a value, such as tabs and newlines, become
-    /// spaces, and an unknown value is an empty column.
+    /// DIR, MESSAGE. PTY is the pane's pty id, which `maru pane new --pane` takes. STATE, APP
+    /// and MESSAGE come from the program status the pane's program reported, and are empty
+    /// when it reported none. STATE is idle, working, done, blocked or error; a blocked state
+    /// with a reason reads e.g. blocked(permission). APP is the program, e.g. claude-code.
+    /// WORKSPACE and TITLE are the names shown in the sidebar. CELL is the id of the pane's
+    /// cell, e.g. c-1a2b3c4d, which `maru pane new --cell` takes. DIR is the pane's
+    /// directory. Control characters in a value, such as tabs and newlines, become spaces,
+    /// and an unknown value is an empty column.
     List,
 }
 
@@ -571,11 +580,12 @@ fn run(command: Command) -> Result<()> {
             PaneCommand::New {
                 cwd,
                 down,
+                pane,
                 full,
                 cell,
                 command,
             } => {
-                let pty = pane_new(cwd, down, full, cell, command)?;
+                let pty = pane_new(cwd, down, pane, full, cell, command)?;
                 writeln!(std::io::stdout(), "{pty}")?;
             }
             PaneCommand::Close { pty } => {
@@ -1323,6 +1333,7 @@ fn start_dir(cwd: Option<PathBuf>) -> Result<String> {
 fn pane_new(
     cwd: Option<PathBuf>,
     down: bool,
+    pane: Option<String>,
     full: bool,
     cell: Option<String>,
     command: Vec<String>,
@@ -1334,6 +1345,9 @@ fn pane_new(
         "direction".into(),
         if down { "down" } else { "right" }.into(),
     );
+    if let Some(pane) = pane {
+        params.insert("pane".into(), pane.into());
+    }
     if full {
         params.insert("full".into(), true.into());
     }

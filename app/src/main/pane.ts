@@ -93,12 +93,20 @@ export function createPanes(
       }
       const command = optionalCommand(params.command)
       const full = optionalBoolean(params.full, 'full')
-      const { cell } = params
+      const { cell, pane } = params
       if (cell !== undefined && !isCellId(cell)) {
         throw new InvalidParams('params.cell must be a cell id, e.g. c-1a2b3c4d')
       }
+      if (pane !== undefined) {
+        if (!isPtyId(pane)) throw new InvalidParams('params.pane must be a pty id, e.g. p-1a2b3c4d')
+        if (full || cell !== undefined) {
+          throw new InvalidParams(
+            'params.pane cannot be used when params.full is true or params.cell is given'
+          )
+        }
+      }
       const req: PaneNewRequest = {
-        pty,
+        pty: pane ?? pty,
         cwd,
         direction,
         full,

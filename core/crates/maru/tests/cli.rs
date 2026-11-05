@@ -1122,6 +1122,7 @@ fn pane_new_without_a_command_sends_none() {
     assert!(req["params"].get("command").is_none(), "{req}");
     assert!(req["params"].get("full").is_none(), "{req}");
     assert!(req["params"].get("cell").is_none(), "{req}");
+    assert!(req["params"].get("pane").is_none(), "{req}");
 }
 
 #[test]
@@ -1225,6 +1226,47 @@ fn pane_new_with_the_cell_and_full_sends_both() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(req["params"]["cell"], "c-0000000d");
     assert_eq!(req["params"]["full"], true);
+}
+
+#[test]
+fn pane_new_sends_the_pane_to_split_and_leaves_a_later_pane_to_the_command() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let out = maru_in(
+        tmp.path(),
+        &sock,
+        &[
+            "pane",
+            "new",
+            "--pane",
+            "p-0000000d",
+            "--down",
+            "x",
+            "--pane",
+            "y",
+        ],
+    );
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "p-0000000c\n");
+    assert_eq!(req["params"]["pane"], "p-0000000d");
+    assert_eq!(req["params"]["pty"], PTY);
+    assert_eq!(req["params"]["direction"], "down");
+    assert!(req["params"].get("full").is_none(), "{req}");
+    assert!(req["params"].get("cell").is_none(), "{req}");
+    assert_eq!(req["params"]["command"], json!(["x", "--pane", "y"]));
+}
+
+#[test]
+fn pane_new_refuses_the_pane_with_full_or_the_cell_without_calling_the_app() {
+    let tmp = tmpdir();
+    // 아무도 듣지 않는 소켓이라, 앱에 닿으려 했다면 다른 오류가 난다.
+    let sock = sock_in(&tmp);
+    for other in [&["--full"][..], &["--cell", "c-0000000d"][..]] {
+        let args = [&["pane", "new", "--pane", "p-0000000d"][..], other].concat();
+        assert_fails_with(&maru_in(tmp.path(), &sock, &args), "cannot be used with");
+    }
 }
 
 #[test]

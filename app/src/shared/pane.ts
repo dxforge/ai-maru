@@ -1,8 +1,9 @@
 import type { ProgramStatusKind, ProgramStatusState } from './program-status'
 
 /**
- * `pane.new` 가 renderer 에 넘기는 요청. `pty` 는 나눌 pane 의 pty 다. `full` 이면 그 pane 이 아니라
- * pane 이 든 cell 전체를 나눈다. `cell` 이 있으면 `pty` 를 보지 않고 그 id 의 cell 전체를 나눈다.
+ * `pane.new` 가 renderer 에 넘기는 요청. `pty` 는 나눌 pane 의 pty 로, 부른 pty 이거나 `pane` 으로
+ * 가리킨 pty 다. `full` 이면 그 pane 이 아니라 pane 이 든 cell 전체를 나눈다. `cell` 이 있으면
+ * `pty` 를 보지 않고 그 id 의 cell 전체를 나눈다.
  */
 export type PaneNewRequest = {
   pty: string
