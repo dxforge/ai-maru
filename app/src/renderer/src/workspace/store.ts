@@ -109,6 +109,8 @@ export function orderedPanes<P extends { key: number }>(c: {
 
 export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
 
+export type Removed = { workspace: Workspace; at: number }
+
 export type PaneCommand = Pick<Pane, 'command' | 'keep'>
 
 export type PaneInit = Pick<Pane, 'startDir'> & PaneCommand
@@ -207,10 +209,22 @@ export function createWorkspaces(
     return c
   }
 
-  /** 핀을 꽂으면 핀 묶음 끝으로, 빼면 핀이 없는 묶음 앞으로 옮긴다. cell 이 없는 workspace 는 핀을 빼면 닫는다. */
-  function togglePin(key: number): void {
+  /**
+   * 핀을 꽂으면 핀 묶음 끝으로, 빼면 핀이 없는 묶음 앞으로 옮긴다. cell 이 없는 workspace 는 핀을 빼면 닫는다. 그때는
+   * `reinstate` 로 되살릴 수 있게 그 workspace 와 자리를 돌려주고, 아니면 `undefined` 를 돌려준다.
+   */
+  function togglePin(key: number): Removed | undefined {
     const w = workspaceByKey(key)
-    if (w) setPinned(w, !w.pinned)
+    if (!w) return undefined
+    const at = list.value.indexOf(w)
+    setPinned(w, !w.pinned)
+    return list.value.includes(w) ? undefined : { workspace: w, at }
+  }
+
+  function reinstate({ workspace: w, at }: Removed): void {
+    if (workspaceByKey(w.key)) return
+    w.pinned = true
+    list.value.splice(Math.min(at, pinnedCount(list.value)), 0, w)
   }
 
   function setPinned(w: Workspace, on: boolean): void {
@@ -615,6 +629,7 @@ export function createWorkspaces(
     moveWorkspace,
     rename,
     togglePin,
+    reinstate,
     toggleFavorite,
     removeFavorite,
     openIn,

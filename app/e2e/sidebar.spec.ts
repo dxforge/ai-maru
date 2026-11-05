@@ -1320,6 +1320,44 @@ test('핀을 꽂은 workspace 는 마지막 cell 을 닫아도 이름과 함께 
   await expect(workspaceNames(again.page)).toHaveText(['sub'])
 })
 
+test('cell 이 있는 workspace 는 핀을 빼도 토스트가 뜨지 않고, cell 이 없는 핀 workspace 는 핀을 빼면 토스트가 뜨며, Undo 를 누르면 그 workspace 가 핀을 꽂은 채 같은 자리로 돌아오고 키 입력은 터미널로 간다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await clickMenu(app, 'rename-workspace')
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('atlas')
+  await page.keyboard.press('Enter')
+  const pin = workspaceHeads(page).nth(0).locator('.pin')
+  await openPalette(launched)
+  await page.keyboard.type('workspace pin')
+  await page.keyboard.press('Enter')
+  await expect(pin).toHaveAttribute('aria-pressed', 'true')
+  await run(page, 'echo in-$((1+1))', 'in-2')
+  await pin.click()
+  await expect(pin).toHaveAttribute('aria-pressed', 'false')
+  await expect(toast(page)).toHaveCount(0)
+  await pin.click()
+  await expect(pin).toHaveAttribute('aria-pressed', 'true')
+  await newWorkspace(launched, 2)
+  await cellItems(page).nth(0).click()
+  await page.keyboard.type('exit\n')
+  await expect(closedRows(page)).toHaveCount(1)
+  const names = await workspaceNames(page).allTextContents()
+  const dir = await closedRows(page).getAttribute('aria-label')
+
+  await pin.click()
+  await expect(workspaceNames(page)).toHaveCount(1)
+  await expect(toast(page)).toContainText("Removed 'atlas'")
+  await toast(page).getByRole('button', { name: 'Undo' }).click()
+  await expect(toast(page)).toHaveCount(0)
+  await expect(workspaceNames(page)).toHaveText(names)
+  await expect(pin).toHaveAttribute('aria-pressed', 'true')
+  await expect(closedRows(page)).toHaveAttribute('aria-label', dir!)
+  await run(page, 'echo back-$((1+1))', 'back-2')
+})
+
 test('cell 이 없는 핀 workspace 만 남기고 끝내도 다음 실행에 그 workspace 가 남고 터미널 하나가 열리며, Close Workspace 는 핀 workspace 도 닫는다', async ({
   launch
 }) => {
