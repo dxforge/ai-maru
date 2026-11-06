@@ -49,6 +49,23 @@ test('pane 에서 job 을 띄우고, 목록·출력·입력·끝내기를 한다
   expect(sockets(dataDir)).toHaveLength(1)
 })
 
+test('bracketed paste 를 켠 job 에 maru job send 로 보낸 긴 글자는 붙여넣기로 감싸이고 Enter 가 뒤따른다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  // `cat -v` 가 받은 ESC·CR 을 `^[`·`^M` 로 찍어, 받은 바이트를 `maru job read` 로 본다.
+  await run(
+    page,
+    `maru job new --name paste sh -c 'stty raw -echo; printf "\\033[?2004hready-%d" 2; exec cat -v' >/dev/null; until maru job read paste | grep -q ready-2; do sleep 0.1; done; echo up-$((1+1))`,
+    'up-2'
+  )
+  await run(
+    page,
+    `clear; B=$(printf %040d 0 | tr 0 x); P="^[[200~$B^[[201~^M"; maru job send paste "$B"; for i in $(seq 20); do maru job read paste | grep -qF "$P" && break; sleep 0.1; done; maru job read paste | grep -cF "$P" | sed 's/^/pasted=/'`,
+    'pasted=1'
+  )
+})
+
 test('스스로 끝난 job 은 띄운 pane 에 알리고 출력과 함께 목록에 남는다', async ({
   launch,
   dataDir

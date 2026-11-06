@@ -36,7 +36,7 @@ export type JobDeps = {
   spawn: (id: string, cwd: string, command: string[]) => Promise<void>
   waitExit: (id: string) => { exit: Promise<PtyExit | null>; cancel: () => void }
   capture: (id: string) => Promise<string>
-  input: (id: string, text: string) => Promise<'written' | 'exited'>
+  paste: (id: string, text: string) => Promise<'written' | 'exited'>
   kill: (id: string) => Promise<void>
   emit: (pty: string, event: object) => boolean
   now: () => number
@@ -184,7 +184,7 @@ export function createJobs(deps: JobDeps) {
       const exited = (): CliError =>
         new CliError(-32001, 'job_exited', `job ${String(target)} has exited`)
       if (job.exit) throw exited()
-      if ((await deps.input(job.pty, text)) === 'exited') throw exited()
+      if ((await deps.paste(job.pty, text)) === 'exited') throw exited()
       return null
     },
     'job.kill': async ({ target }, pty) => {

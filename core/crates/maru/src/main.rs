@@ -132,7 +132,8 @@
 //!   있으면 null 이다.
 //! - `target` 이 `p-` 와 hex 8자리면 pty id 로, 아니면 이름으로 찾는다. 없으면 `invalid_params` 다.
 //! - `job.read` 는 스크롤백과 화면을 스타일 없는 글자로 돌려준다. 화면 폭에서 접힌 줄은 잇는다.
-//! - `job.send` 는 `text` 를 그대로 입력한다(Enter 는 CLI 가 붙인다). 끝난 job 이면 -32001
+//! - `job.send` 는 `pane.send` 처럼 `text` 를 maru-pty `input` 에 `paste` 를 켜고 보낸다(Enter 는 CLI 가
+//!   `text` 끝에 `\r` 로 붙인다). 끝난 job 이면 -32001
 //!   `job_exited` 다. 프로그램이 입력을 읽지 않아 8초 안에 다 쓰지 못하면 `internal_error` 로 답하지만,
 //!   입력은 pty 에 남아 프로그램이 읽을 때 들어간다. 줄 단위로 읽는 프로그램에는 PTY 의 줄 버퍼
 //!   (`MAX_CANON`, macOS 에서 1024바이트)를 넘는 한 줄이 닿지 않는다.
@@ -475,8 +476,11 @@ enum JobCommand {
     },
     /// Type TEXT into a job and press Enter.
     ///
-    /// Reads TEXT, or stdin when TEXT is omitted or `-`. A program that reads line by line
-    /// does not get a line longer than the terminal's line buffer (1024 bytes on macOS).
+    /// Reads TEXT, or stdin when TEXT is omitted or `-`. When the job's program has turned on
+    /// bracketed paste and TEXT has a newline or is 32 bytes or longer, TEXT is pasted, as with
+    /// `maru pane send`. Enter is pressed after the paste unless --no-enter is given. A program
+    /// that reads line by line does not get a line longer than the terminal's line buffer (1024
+    /// bytes on macOS).
     Send {
         /// Do not press Enter after TEXT.
         #[arg(long)]

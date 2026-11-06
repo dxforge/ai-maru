@@ -771,7 +771,7 @@ function start(): void {
     },
     waitExit: (id) => waitPtyExit(ptyDir(), id),
     capture: (id) => capturePty(ptyDir(), id, JOB_REPLY_MS),
-    input: (id, text) => writePtyInput(ptyDir(), id, text, JOB_REPLY_MS),
+    paste: (id, text) => writePtyInput(ptyDir(), id, text, JOB_REPLY_MS, true),
     kill: (id) => killPty(ptyDir(), id),
     emit: monitor.emit,
     now: Date.now,
