@@ -121,10 +121,15 @@
 //! 상태는 그 변경을 실은 PTY 출력보다 먼저 보내려 하지만 attach 와 다른 연결이라 순서는 보장하지 않는다.
 //!
 //! `attach` 의 응답은 헤더 `{"type":"attached","protocol_version","tty","role","cols","rows",
-//! "cursor_x","cursor_y"}` 와 재생(Binary, 비어 있어도 보낸다)이고, 그 뒤로 PTY 출력이 Binary 로 이어진다.
+//! "cursor_x","cursor_y"}` 와 재생, `{"type":"replay_end"}` 이고, 그 뒤로 PTY 출력이 Binary 로 이어진다.
+//! 재생은 1 MiB 이하의 Binary 여러 개로 나눠 온다. 재생이 비었으면 Binary 없이 `replay_end` 만 온다.
 //! 상태는 attach 로 오지 않는다. primary 가 보내는 Binary 는 셸 입력이고 observer 가 보내는 것은
-//! 버린다 — 터미널 질의(`ESC[6n` 등)에 primary 만 답하게. primary 는 `{"type":"resize","cols",
+//! 버린다 — 터미널 질의(`ESC[6n` 등)에 primary 만 답하게. 셸에 아직 쓰지 못한 입력은 연결마다 16 MiB 까지
+//! 쌓아 둔다. 다 차면 서버는 그 연결을 더 읽지 않는다. 입력이 막혀도 출력은 계속 온다. primary 는 `{"type":"resize","cols",
 //! "rows"}` 를 보낼 수 있다. observer 가 보낸 `resize`·`clear_scrollback` 은 버린다.
+//!
+//! primary 는 밀리지 않는다. primary 가 받지 않은 출력이 256 KiB 쌓이면 서버는 PTY 를 더 읽지 않고 기다리고, 커널의
+//! tty 버퍼가 차면 셸의 쓰기가 막힌다. 셸이 끝난 뒤의 출력은 기다리지 않는다.
 //!
 //! primary 가 `{"type":"clear_scrollback"}` 을 보내면 서버는 스크롤백과 커서 행 위의 행을 지워 커서
 //! 행을 맨 위로 올리는 바이트를 화면에 쓰고, 같은 바이트를 PTY 출력처럼 모든 연결에 Binary 로 보낸다.
@@ -136,8 +141,8 @@
 //! - `{"type":"role","role":"observer"}` — 다른 연결이 primary 를 가져갔다.
 //! - `{"type":"size","cols","rows"}` — primary 가 크기를 바꿨다. 이 뒤의 출력은 새 크기로 나온
 //!   것이다. 바꾼 연결에는 보내지 않는다.
-//! - `{"type":"resync",…}` + RIS(`ESC c`)로 시작하는 재생 — 출력을 못 따라잡아
-//!   건너뛴 것이 있다. 밀린 동안의 크기 변경은 `size` 로 오지 않고 이 헤더의 `cols`·`rows` 에
+//! - `{"type":"resync",…}` + RIS(`ESC c`)로 시작하는 재생 + `replay_end` — observer 가 출력을 못 따라잡아
+//!   4 MiB 넘게 밀려, 건너뛴 것이 있다. 밀린 동안의 크기 변경은 `size` 로 오지 않고 이 헤더의 `cols`·`rows` 에
 //!   실린다. 한 연결에 다섯 번을 넘으면 `resync_limit_exceeded` 로 끊는다.
 //! - `{"type":"exit","code","signal"}` — 셸이 끝났다. 남은 출력을 다 보낸 뒤에 온다.
 
@@ -166,4 +171,4 @@ mod vt;
 /// env 나 셸이 뜰 때 읽는 파일을 바꾸는 경우다. 버전이 다른 pty 에는 다음에 뜬 앱이 붙지 않고, 끈 뒤 레이아웃만
 /// 되살려 pane 마다 새 셸을 띄운다. 그래서 이전 빌드의 `maru-pty` 에 붙으려고 버전 올리기를 미루지 않는다. 앱의 같은 값은
 /// `app/src/shared/protocol.ts` 에 있다.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;

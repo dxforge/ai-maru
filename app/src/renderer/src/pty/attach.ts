@@ -3,6 +3,7 @@ import { parseProgramStatus, type ProgramStatusRecord } from '../../../shared/pr
 import { PROTOCOL_VERSION } from '../../../shared/protocol'
 import type { PtyExit } from '../../../shared/pty'
 import type { PtyConnection } from './connection'
+import { Acks } from './flow'
 
 export type AttachHandlers = {
   onExit(exit: PtyExit): void
@@ -46,6 +47,12 @@ export function goneAbove(cols: number, rows: number, cursorY: number): string {
 
 export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHandlers): Attachment {
   const encoder = new TextEncoder()
+  const acks = new Acks(
+    (bytes) => conn.ack(bytes),
+    () => document.hidden
+  )
+  const visibility = (): void => acks.flush()
+  document.addEventListener('visibilitychange', visibility)
   let primary = true
   // maru-pty 는 첫 프레임이 JSON 요청이 아니면 bad_request 로 연결을 끊는다.
   let queued: Uint8Array[] | undefined = []
@@ -72,12 +79,9 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
 
   conn.onMessage((msg) => {
     if (typeof msg !== 'string') {
-      term.write(msg)
-      if (typeof gone === 'object') {
-        const { cols, rows, cursorY } = gone
-        gone = 'no'
-        term.write(goneAbove(cols, rows, cursorY))
-      }
+      const bytes = msg.length
+      acks.wrote(bytes)
+      term.write(msg, () => acks.drew(bytes))
       return
     }
     const m = JSON.parse(msg)
@@ -88,6 +92,13 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
         break
       case 'resync':
         if (!primary) term.resize(m.cols, m.rows)
+        break
+      case 'replay_end':
+        if (typeof gone === 'object') {
+          const { cols, rows, cursorY } = gone
+          gone = 'no'
+          term.write(goneAbove(cols, rows, cursorY))
+        }
         break
       case 'size':
         term.resize(m.cols, m.rows)
@@ -124,6 +135,7 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
     }
   })
   conn.onClose(() => {
+    document.removeEventListener('visibilitychange', visibility)
     showGone()
     if (ended) return
     term.write('\r\n[disconnected from the pty]\r\n')

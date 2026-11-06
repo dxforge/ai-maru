@@ -5,6 +5,8 @@ export type PtyMessage = string | Uint8Array
 
 export interface PtyConnection {
   send(msg: PtyMessage): void
+  /** 받은 출력 가운데 `bytes` 만큼을 다 처리했다고 알린다. pty host 는 알리지 않은 양이 쌓이면 출력을 더 읽지 않는다. */
+  ack(bytes: number): void
   onMessage(cb: (msg: PtyMessage) => void): void
   onClose(cb: () => void): void
   /** pty 가 아직 뜨는 중이면 뜬 뒤에 끝낸다. */
@@ -46,6 +48,8 @@ export function openPty(open: PtyOpen): PtyConnection {
       if (port) port.postMessage(msg)
       else pending.push(msg)
     },
+    // 포트가 오기 전에는 받은 출력이 없다.
+    ack: (bytes) => port?.postMessage(bytes),
     onMessage: (cb) => (onMessage = cb),
     onClose: (cb) => (onClose = cb),
     kill: () => window.maru.killPty(key)

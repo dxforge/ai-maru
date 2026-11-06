@@ -13,12 +13,18 @@ use std::io::{Read, Write};
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::Duration;
 use tokio::sync::{Notify, broadcast, watch};
 
 const READ_CHUNK: usize = 8192;
 const OUTPUT_BACKLOG: usize = 4 * 1024 * 1024;
+/// primary 가 받지 않은 출력이 이만큼 쌓이면 PTY 를 더 읽지 않고 기다린다. 커널의 tty 버퍼가 차면 셸의 쓰기가 막혀,
+/// 출력이 쏟아질 때도 이 큐에 쌓인 양이 이만큼에 머문다. Ctrl-C 를 누른 뒤 그릴 양은 여기에 소켓에 쓰는 중인 청크와
+/// 소켓·pty host 가 들고 있는 양(`main/bridge.ts` 의 `HIGH`)을 더한 만큼이다.
+const PRIMARY_AHEAD: usize = 256 * 1024;
+/// 기다리는 동안 primary 가 바뀌었거나 셸이 끝났거나 끝내는 중인지 다시 보는 간격.
+const PRIMARY_RECHECK: Duration = Duration::from_millis(50);
 /// 셸이 나간 뒤 남은 출력이 다 전달되길 기다리되, EOF 에 종료를 묶지 않으려는 상한.
 const DRAIN_AFTER_EXIT: Duration = Duration::from_millis(500);
 const FOREGROUND_POLL: Duration = Duration::from_secs(1);
@@ -62,6 +68,8 @@ pub struct Output {
     conn: u64,
     backlog: Mutex<Backlog>,
     notify: Notify,
+    /// 클라이언트가 출력을 꺼냈다. primary 를 기다리는 reader 스레드를 깨운다.
+    taken: Condvar,
 }
 
 /// 크기 변경을 출력과 같은 큐에 넣는다. 따로 보내면 새 크기로 나온 출력이 먼저 닿을 수 있다.
@@ -115,8 +123,16 @@ impl Output {
         let r = b.queue.pop_front()?;
         if let Recv::Data(data) = &r {
             b.bytes -= data.len();
+            self.taken.notify_one();
         }
         Some(r)
+    }
+
+    fn wait_below(&self, limit: usize, keep: impl Fn() -> bool) {
+        let mut b = self.backlog.lock().unwrap();
+        while b.bytes >= limit && !b.lagged && keep() {
+            b = self.taken.wait_timeout(b, PRIMARY_RECHECK).unwrap().0;
+        }
     }
 
     pub async fn recv(&self) -> Recv {
@@ -148,7 +164,7 @@ pub struct Pty {
     exit_rx: watch::Receiver<Option<Exit>>,
     primary: watch::Sender<Option<u64>>,
     next_conn: AtomicU64,
-    terminating: AtomicBool,
+    terminating: Arc<AtomicBool>,
     /// `Drop` 에서 깨워 기다리던 감시 스레드가 끝나게 한다.
     wake: Arc<Wake>,
     /// 띄울 때 받은 `--cwd`. 셸 cwd 가 없을 때 foreground cwd 를 이 경로와 견준다.
@@ -181,7 +197,7 @@ struct Screen {
 }
 
 impl Screen {
-    fn broadcast(&mut self, f: impl Fn(&Output)) {
+    fn broadcast(&mut self, mut f: impl FnMut(&Arc<Output>)) {
         self.outputs
             .retain(|o| o.upgrade().inspect(|o| f(o)).is_some());
     }
@@ -321,6 +337,14 @@ impl Pty {
         let shell_pid = spawned.child.id();
         let (exit_tx, exit_rx) = watch::channel(None);
         let (drained_tx, drained_rx) = std::sync::mpsc::channel::<()>();
+        let (primary, primary_r) = watch::channel(None);
+        // 셸이 끝난 뒤 남은 출력은 primary 를 기다리지 않고 넘긴다. 기다리면 `DRAIN_AFTER_EXIT` 안에 다 넘기지 못한다.
+        let exited = Arc::new(AtomicBool::new(false));
+        let exited_r = exited.clone();
+        // 끝내는 중에도 기다리지 않는다. 셸이 SIGHUP 을 받아도 tty 를 닫으며 남은 출력이 빠지기를 기다리므로, reader 가
+        // 읽지 않으면 셸이 끝나지 않는다.
+        let terminating = Arc::new(AtomicBool::new(false));
+        let terminating_r = terminating.clone();
 
         let mut reader = spawned.reader;
         // 셸 입력과 같은 락으로 써야 응답이 입력 시퀀스 중간에 끼지 않는다. 읽기 스레드가 PTY 쓰기나
@@ -369,7 +393,14 @@ impl Pty {
                 if !screen.status.is_empty() && (!had_records || !events.cwd.is_empty()) {
                     wake_r.wake();
                 }
-                screen.broadcast(|o| o.push(bytes));
+                let primary_id = *primary_r.borrow();
+                let mut ahead = None;
+                screen.broadcast(|o| {
+                    o.push(bytes);
+                    if Some(o.conn) == primary_id {
+                        ahead = Some(o.clone());
+                    }
+                });
                 if screen.pending_clear
                     && let Err(e) = screen.clear_scrollback()
                 {
@@ -378,6 +409,14 @@ impl Pty {
                 drop(screen);
                 for reply in events.pty_replies {
                     let _ = reply_tx.send(reply);
+                }
+                // observer 는 기다리지 않는다. 밀리면 resync 로 따라잡는다.
+                if let Some(o) = ahead {
+                    o.wait_below(PRIMARY_AHEAD, || {
+                        *primary_r.borrow() == primary_id
+                            && !exited_r.load(Ordering::Relaxed)
+                            && !terminating_r.load(Ordering::SeqCst)
+                    });
                 }
             }
             let _ = drained_tx.send(());
@@ -396,6 +435,7 @@ impl Pty {
                     signal: None,
                 },
             };
+            exited.store(true, Ordering::Relaxed);
             let _ = drained_rx.recv_timeout(DRAIN_AFTER_EXIT);
             let mut screen = screen_e.lock().unwrap();
             let mut changed = screen.pane.command_exited(exit.code, exit.signal);
@@ -418,9 +458,9 @@ impl Pty {
             writer,
             screen,
             exit_rx,
-            primary: watch::channel(None).0,
+            primary,
             next_conn: AtomicU64::new(1),
-            terminating: AtomicBool::new(false),
+            terminating,
             wake: wake.clone(),
             start_cwd: cwd.and_then(Path::to_str).map(str::to_owned),
         });
@@ -529,6 +569,7 @@ impl Pty {
             conn,
             backlog: Mutex::default(),
             notify: Notify::new(),
+            taken: Condvar::new(),
         });
         screen.outputs.push(Arc::downgrade(&output));
         Ok((replay, state, output))

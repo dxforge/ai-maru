@@ -1,5 +1,5 @@
 use maru_pty::PROTOCOL_VERSION;
-use maru_pty::frame::{TAG_BINARY, TAG_TEXT, decode_header, encode};
+use maru_pty::frame::{MAX_FRAME_LEN, TAG_BINARY, TAG_TEXT, decode_header, encode};
 use maru_pty::paths::Paths;
 use maru_pty::record::{self, Record};
 use nix::sys::signal::{Signal, kill, killpg};
@@ -13,6 +13,10 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(10);
+/// 읽지 않는 observer 를 밀리게 하는 출력 양. `OUTPUT_BACKLOG`(4MiB, `pty.rs`)의 두 배보다 1MiB 크다. 서버가 큐에서
+/// 꺼내 소켓에 쓰다 막힌 청크는 큐 크기에 세지 않고 그 크기는 한도 이하이므로, 그 청크와 소켓 버퍼를 빼도 큐가 한도를
+/// 넘는다.
+const FLOOD: usize = 9 * 1024 * 1024;
 
 struct Proc {
     child: Child,
@@ -127,8 +131,7 @@ impl Proc {
         }));
         let header = c.text();
         assert_eq!(header["type"], "attached", "{header}");
-        let (tag, replay) = c.frame().expect("재생 프레임이 없다");
-        assert_eq!(tag, TAG_BINARY);
+        let replay = c.replay();
         (c, header, replay)
     }
 
@@ -272,9 +275,22 @@ impl Conn {
         }
     }
 
+    fn replay(&mut self) -> Vec<u8> {
+        let mut replay = Vec::new();
+        loop {
+            match self.frame().expect("재생이 끝나기 전에 끊겼다") {
+                (TAG_BINARY, payload) => replay.extend_from_slice(&payload),
+                (_, payload) => {
+                    let v: Value = serde_json::from_slice(&payload).unwrap();
+                    assert_eq!(v["type"], "replay_end", "{v}");
+                    return replay;
+                }
+            }
+        }
+    }
+
     fn expect_resync_replay(&mut self) -> Vec<u8> {
-        let (tag, replay) = self.frame().expect("resync 재생 전에 끊겼다");
-        assert_eq!(tag, TAG_BINARY);
+        let replay = self.replay();
         assert!(replay.starts_with(b"\x1bc"), "리셋으로 시작하지 않는다");
         replay
     }
@@ -454,8 +470,6 @@ fn attaching_in_the_middle_of_a_sequence_replays_its_start() {
 
 #[test]
 fn a_resync_in_the_middle_of_a_sequence_replays_its_start() {
-    // `a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs` 와 같은 양이다.
-    const FLOOD: usize = 9 * 1024 * 1024;
     let head = b"\x1b[3";
     let cut = cut_output(head, b"1mRED");
     let p = start();
@@ -1336,7 +1350,6 @@ fn a_client_that_falls_behind_is_resynced() {
     let p = start();
     let (mut slow, _, _) = p.attach("observer", 80, 24);
     let (mut fast, _, _) = p.attach("primary", 80, 24);
-    // `fast` 도 부하로 읽기가 늦어지면 밀려 resync 를 받으므로, `fast` 가 받은 Text 는 보지 않는다.
     fast.input("yes 0123456789 | head -n 1000000; echo flood-$((6*7))\n");
     fast.output_until("flood-42");
 
@@ -1359,9 +1372,6 @@ fn a_client_that_falls_behind_is_resynced() {
 
 #[test]
 fn a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs() {
-    // `OUTPUT_BACKLOG`(4MiB, `pty.rs`)의 두 배보다 1MiB 큰 양이다. 서버가 큐에서 꺼내 소켓에 쓰다 막힌 청크는
-    // 큐 크기에 세지 않고 그 크기는 한도 이하이므로, 그 청크와 소켓 버퍼를 빼도 큐가 한도를 넘는다.
-    const FLOOD: usize = 9 * 1024 * 1024;
     let p = start();
     let (mut slow, _, _) = p.attach("observer", 80, 24);
 
@@ -1369,10 +1379,8 @@ fn a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs() {
     // 읽지 않은 `slow` 의 큐에도 들어가 있으므로, `slow` 가 밀리는지는 출력 속도에 따라 달라지지 않는다. 출력이
     // 유한하고 읽기마다 `WAIT` 시간 제한이 걸리므로, 밀리지 않으면 테스트가 멈추지 않고 실패한다. 출력은 VT 가
     // 무시하는 NUL 로 채운다. 줄을 그리고 스크롤하는 데 드는 시간을 없애기 때문이다.
+    let (mut fast, _, _) = p.attach("primary", 80, 24);
     for round in 1..=6 {
-        // `fast` 도 부하로 읽기가 늦어지면 밀릴 수 있다. 서버가 resync 횟수를 연결마다 세므로, 판마다 `fast` 를
-        // 새로 붙여 여러 판의 resync 가 한 연결에 쌓여 `fast` 가 끊기는 일을 막는다.
-        let (mut fast, _, _) = p.attach("primary", 80, 24);
         fast.input(&format!(
             "head -c {FLOOD} /dev/zero; echo flood-$(({round}*7))\n"
         ));
@@ -1387,6 +1395,72 @@ fn a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs() {
     }
     assert!(slow.frame().is_none(), "한도 에러 뒤에도 연결이 남았다");
     assert_eq!(p.request(json!({ "type": "kill" }))["type"], "killed");
+}
+
+#[test]
+fn a_primary_that_reads_late_is_not_resynced() {
+    // `FLOOD` 는 읽지 않는 동안 다 나오면 observer 라면 밀리는 양이다. primary 는 그동안 읽지 않아도 resync 를 받지
+    // 않아야 한다.
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input(&format!("head -c {FLOOD} /dev/zero; echo flood-$((6*7))\n"));
+    std::thread::sleep(Duration::from_secs(2));
+    let (texts, out) = a.until(b"flood-42");
+    assert!(texts.is_empty(), "{texts:?}");
+    assert!(out.len() > FLOOD, "{}", out.len());
+}
+
+#[test]
+fn a_primary_that_stops_reading_does_not_hold_up_kill() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input("yes 0123456789\n");
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(p.request(json!({ "type": "kill" }))["type"], "killed");
+    drop(a);
+}
+
+#[test]
+fn output_flows_to_observers_again_once_a_primary_that_stopped_reading_leaves() {
+    let p = start();
+    let (mut o, _, _) = p.attach("observer", 80, 24);
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input(&format!("head -c {FLOOD} /dev/zero; echo left-$((6*7))\n"));
+    std::thread::sleep(Duration::from_secs(1));
+    drop(a);
+    o.until(b"left-42");
+}
+
+#[test]
+fn a_replay_larger_than_one_frame_reaches_the_client() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 1024, 1024);
+    // 글자 칸마다 색을 바꿔 칠하면 재생은 칸마다 SGR 을 실어 한 프레임 한도를 넘는다.
+    a.input(
+        "awk 'BEGIN{for(i=0;i<1048576;i++) printf \"\\033[38;2;%d;%d;%dmx\", i%256, int(i/256)%256, int(i/65536)%256; printf \"\\033[0mfill-%d\", 6*7}'\n",
+    );
+    a.output_until("fill-42");
+    let (_c, _, replay) = p.attach("observer", 1024, 1024);
+    assert!(replay.len() > MAX_FRAME_LEN as usize, "{}", replay.len());
+    assert!(contains(&replay, "fill-42"));
+}
+
+/// 셸이 tty 를 읽지 않으면서 0.1초마다 `tick-<n>` 을 찍는다. 그 동안 보낸 입력은 tty 입력 큐가 차면 쓰기가 막힌다.
+const TICKS_WITHOUT_READING: &str = "stty -icanon -echo; echo ready-$((1+1)); i=0; while :; do i=$((i+1)); echo tick-$i; sleep 0.1; done\n";
+
+#[test]
+fn a_paste_the_program_does_not_read_leaves_the_output_flowing() {
+    let p = start();
+    let (mut a, _, _) = p.attach("primary", 80, 24);
+    a.input(TICKS_WITHOUT_READING);
+    a.output_until("ready-2");
+    a.input(&"x".repeat(1024 * 1024));
+    a.output_until("tick-20\r");
+
+    // 붙여넣기가 아직 tty 에 다 들어가지 못했으므로 이 입력도 그 뒤에서 기다린다.
+    let (mut b, _, _) = p.attach("primary", 80, 24);
+    b.input("y");
+    b.output_until("tick-40\r");
 }
 
 #[test]
