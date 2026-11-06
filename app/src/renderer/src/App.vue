@@ -1105,6 +1105,7 @@ void window.maru.restoreScreen().then((r) => {
             :key="p.key"
             class="pane"
             :class="{ 'edge-left': edge, focused: active }"
+            :data-pty="p.ptyId"
             :style="style"
             @focusin="focusPane(c.key, p.key)"
           >

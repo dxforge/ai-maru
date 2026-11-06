@@ -21,7 +21,7 @@ import { basename, extname, join, normalize } from 'node:path'
 import { promisify } from 'node:util'
 import {
   test as base,
-  expect,
+  expect as baseExpect,
   _electron as electron,
   type ElectronApplication,
   type Locator,
@@ -36,8 +36,81 @@ import type { PtyOpen } from '../src/shared/pty'
 import { clampSidebarWidth, STATE_VERSIONS } from '../src/shared/screen'
 import { GHOSTTY } from '../src/shared/theme'
 
-export { expect }
 export { git } from '../src/main/test-repo-env'
+
+const CLI_BIN = process.env.MARU_CLI_BIN ?? join(__dirname, '../../core/target/debug/maru')
+
+const appSockets = new WeakMap<Page, string>()
+
+/** `launch` 의 env 로 주면 터미널을 DOM renderer 로 그린다. `.xterm-rows`(`rows`·`gridRows`)와 `.xterm-selection` 은 이때만 있다. */
+export const DOM_RENDERER = { MARU_DOM_RENDERER: '1' }
+
+export type Screen = { page: Page; pane: Locator }
+
+export function screen(page: Page, pane?: number | Locator): Screen {
+  if (pane === undefined) return { page, pane: activePane(page) }
+  return { page, pane: typeof pane === 'number' ? panes(page).nth(pane) : pane }
+}
+
+/** `maru pane read` 로 읽은 pane 의 스크롤백과 화면의 글자다. 폭이 모자라 다음 행으로 접힌 줄은 한 줄로 이어 돌려준다. */
+export async function screenText({ page, pane }: Screen): Promise<string> {
+  const socket = appSockets.get(page)
+  if (!socket) throw new Error('the page was not opened by launch')
+  const pty = await pane.getAttribute('data-pty', { timeout: 1000 })
+  if (!pty) throw new Error('the pane has no pty yet')
+  const { stdout } = await promisify(execFile)(CLI_BIN, ['pane', 'read', pty], {
+    env: { ...process.env, MARU_SOCKET: socket, MARU_PTY_ID: pty }
+  })
+  return stdout
+}
+
+/** xterm 이 그리는 행 수. `.xterm-screen` 의 높이를 글자 칸 높이(`--row`)로 나눠 renderer 와 상관없이 잰다. */
+export function terminalRows({ pane }: Screen): Promise<number> {
+  return pane.evaluate((el) => {
+    const height = el.querySelector('.xterm-screen')!.getBoundingClientRect().height
+    return Math.round(height / parseFloat(getComputedStyle(el).getPropertyValue('--row')))
+  })
+}
+
+const shows = (text: string, expected: string | RegExp): boolean =>
+  typeof expected === 'string' ? text.includes(expected) : new RegExp(expected).test(text)
+
+export const expect = baseExpect.extend({
+  /**
+   * `screenText` 가 던져도 기한까지 다시 읽는다. 막 띄운 앱은 main 이 아직 pty 를 잡지 않아 `maru pane read` 가 실패할 수
+   * 있는데, `expect.poll` 은 callback 이 던지면 다시 시도하지 않기 때문이다.
+   */
+  async toShow(received: Screen, expected: string | RegExp, options?: { timeout?: number }) {
+    const deadline = Date.now() + (options?.timeout ?? this.timeout)
+    let text = ''
+    let error: unknown
+    let pass: boolean
+    for (;;) {
+      try {
+        text = await screenText(received)
+        error = undefined
+        pass = shows(text, expected)
+      } catch (e) {
+        error = e
+        // 읽지 못한 채 끝나면 `not` 이어도 실패한다.
+        pass = this.isNot
+      }
+      if ((error === undefined && pass !== this.isNot) || Date.now() >= deadline) break
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    const shown = error === undefined ? text.slice(-2000) : `failed to read: ${error}`
+    return {
+      pass,
+      name: 'toShow',
+      expected,
+      actual: shown,
+      message: () =>
+        `${this.utils.matcherHint('toShow', 'screen', undefined, { isNot: this.isNot })}\n\n` +
+        `Expected: ${this.isNot ? 'not ' : ''}${this.utils.printExpected(expected)}\n` +
+        `Received: ${shown}`
+    }
+  }
+})
 
 export type Launched = { app: ElectronApplication; page: Page }
 
@@ -176,7 +249,6 @@ async function launchApp(
   const launchEnv = {
     ...inherited,
     MARU_UNOBTRUSIVE: '1',
-    MARU_DOM_RENDERER: '1',
     SHELL: '/bin/bash',
     BASH_SILENCE_DEPRECATION_WARNING: '1',
     // 개발자의 `~/.ai-maru/config.toml` 을 읽지 않도록 테스트마다 다른 폴더를 준다. 폴더가 없는 채로 띄우는 테스트가 있으므로 폴더는 만들지 않는다.
@@ -208,6 +280,7 @@ async function launchApp(
   // 끄기는 늘 묻는다. 묻는 것을 재지 않는 테스트가 확인 창에 막히지 않게, pty 를 끄고 핀 workspace 만 남기는 End everything 으로 답한다.
   await stubDialog(app, END_EVERYTHING)
   const page = await app.firstWindow()
+  appSockets.set(page, appSocketPath(runDir(realpathSync(dataDir), launchEnv)))
   // single 보기에서는 고르지 않은 cell 이 숨으므로, 맨 앞 cell 이 아니라 고른 cell 의 터미널을 기다린다.
   await activeTerminal(page)
   return { app, page }
@@ -504,10 +577,6 @@ export async function paneBox(page: Page, i: number) {
   return (await panes(page).nth(i).boundingBox())!
 }
 
-export function paneTerminalRows(page: Page, i: number) {
-  return panes(page).nth(i).locator('.xterm-rows')
-}
-
 export function activePane(page: Page) {
   return page.locator('.pane:has(.terminal-view.active)')
 }
@@ -553,6 +622,10 @@ export function paneHeader(page: Page, i: number) {
   return panes(page).nth(i).locator('.pane-header')
 }
 
+/**
+ * 포커스된 pane 의 DOM renderer 가 그린 행. `launch(DOM_RENDERER)` 로 띄운 테스트만 쓴다 — WebGL renderer 는 이 요소를
+ * 만들지 않는다. 터미널 글자는 `screen` 으로 읽는다.
+ */
 export function rows(page: Page) {
   return page.locator('.terminal-view.active .xterm-rows')
 }
@@ -568,24 +641,9 @@ export async function shellSize(page: Page): Promise<{ rows: number; cols: numbe
   const marker = `size${++sizeMarker}`
   await page.keyboard.type(`clear; echo ${marker}=$(stty size | tr ' ' x)\n`)
   const re = new RegExp(`${marker}=(\\d+)x(\\d+)`)
-  let m: RegExpMatchArray | null = null
-  await expect.poll(async () => (m = (await rows(page).innerText()).match(re))).not.toBeNull()
-  return { rows: Number(m![1]), cols: Number(m![2]) }
-}
-
-/** WebGL 로 그리면 `.xterm-rows` 가 없어 셸이 본 크기를 파일로 받는다. */
-export async function sttySize(
-  page: Page,
-  dataDir: string
-): Promise<{ rows: number; cols: number }> {
-  const out = join(dataDir, `size${++sizeMarker}`)
-  await page.keyboard.type(`stty size > ${out}\n`)
-  let size: string | undefined
-  await expect
-    .poll(() => (size = existsSync(out) ? readFileSync(out, 'utf8').trim() : undefined))
-    .toMatch(/^\d+ \d+$/)
-  const [rows, cols] = size!.split(' ').map(Number)
-  return { rows, cols }
+  await expect(screen(page)).toShow(re)
+  const m = (await screenText(screen(page))).match(re)!
+  return { rows: Number(m[1]), cols: Number(m[2]) }
 }
 
 export async function activeTerminal(page: Page): Promise<void> {
@@ -594,7 +652,7 @@ export async function activeTerminal(page: Page): Promise<void> {
 
 export async function run(page: Page, command: string, expected: string | RegExp): Promise<void> {
   await page.keyboard.type(`${command}\n`)
-  await expect(rows(page)).toContainText(expected)
+  await expect(screen(page)).toShow(expected)
 }
 
 /**

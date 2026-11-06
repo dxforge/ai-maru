@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import {
+  activePane,
   attachFromOutside,
   canvasButton,
   canvasPanel,
@@ -8,6 +9,7 @@ import {
   cellItems,
   CLASSIC_SCROLLBARS,
   clickMenu,
+  DOM_RENDERER,
   dragCanvas,
   dragHandle,
   grabHandle,
@@ -20,6 +22,7 @@ import {
   resizeBy,
   rows,
   run,
+  screen,
   serveRenderer,
   shellSize,
   sockets,
@@ -265,7 +268,7 @@ test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터�
   const typesIntoTerminal = async () => {
     n += 1
     await page.keyboard.type(`echo typed-$((${n}+1000))\n`)
-    await expect(rows(page)).toContainText(`typed-${n + 1000}`)
+    await expect(screen(page)).toShow(`typed-${n + 1000}`)
   }
   await putCanvas(app, { id: 'a', kind: 'markdown', text: 'doc', title: 'A' })
   await putCanvas(app, { id: 'b', kind: 'markdown', text: 'doc', title: 'B' })
@@ -296,7 +299,7 @@ test('다른 클라이언트가 터미널을 넓게 잡고 있어도 패널을 �
   dataDir,
   defer
 }) => {
-  const { app, page } = await launch()
+  const { app, page } = await launch(DOM_RENDERER)
   await page.keyboard.type('echo ready-$((1+1))\n')
   await expect(rows(page)).toContainText('ready-2')
   const other = await attachFromOutside(sockets(dataDir)[0], 300, 12)
@@ -638,8 +641,8 @@ test('터미널에서 maru canvas put 으로 보낸 마크다운이 패널에 �
   await expect(panel(page)).toBeVisible()
   await expect(titles(page)).toHaveText(['From CLI'])
   await expect(markdown(page).locator('h1')).toHaveText('From CLI')
-  await expect(rows(page)).toContainText(/[0-9a-f]{8}-[0-9a-f]{4}-/)
-  await expect(rows(page)).toContainText('code-0')
+  await expect(screen(page)).toShow(/[0-9a-f]{8}-[0-9a-f]{4}-/)
+  await expect(screen(page)).toShow('code-0')
 })
 
 const mcpLine = (msg: object) => `'${JSON.stringify({ jsonrpc: '2.0', ...msg })}'`
@@ -655,8 +658,8 @@ test('maru mcp 에 canvas_put 을 부르면 패널에 렌더되고 문서 id 를
   await page.keyboard.type(`printf '%s\\n' ${init} ${put} | maru mcp; echo code-$?\n`)
   await expect(titles(page)).toHaveText(['From MCP'])
   await expect(markdown(page).locator('h1')).toHaveText('From MCP')
-  await expect(rows(page)).toContainText('"text":"mcp-doc"')
-  await expect(rows(page)).toContainText('code-0')
+  await expect(screen(page)).toShow('"text":"mcp-doc"')
+  await expect(screen(page)).toShow('code-0')
 })
 
 const viewButton = (page: Page) => page.locator('.canvas .views .view')
@@ -709,7 +712,7 @@ test('터미널에서 보낸 문서는 그 cell 을 고른 동안 보이고, 드
   await run(page, 'echo typed-$((1+1))', 'typed-2')
 
   await viewButton(page).click()
-  const box = (await rows(page).boundingBox())!
+  const box = (await activePane(page).locator('.xterm-screen').boundingBox())!
   await page.mouse.click(box.x + 10, box.y + 10)
   await expect(viewMenu(page)).toHaveCount(0)
 })
@@ -797,8 +800,8 @@ test('입력이 16 MiB 아래여도 escape 한 요청 줄이 넘으면 앱의 �
   await page.keyboard.type(
     "head -c 9000000 /dev/zero | tr '\\0' '\"' | maru canvas put; echo code-$?\n"
   )
-  await expect(rows(page)).toContainText('code-1', { timeout: 20_000 })
-  await expect(rows(page)).toContainText('request line exceeds')
+  await expect(screen(page)).toShow('code-1', { timeout: 20_000 })
+  await expect(screen(page)).toShow('request line exceeds')
   await expect(panel(page)).toBeHidden()
 })
 

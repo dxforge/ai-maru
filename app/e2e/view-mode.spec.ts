@@ -13,8 +13,8 @@ import {
   panes,
   programStatus,
   resizeBy,
-  rows,
   run,
+  screen,
   shellSize,
   setZoom,
   split,
@@ -687,7 +687,7 @@ test('columns 에서 마우스 트래킹을 켠 터미널 위에서도 가로 �
   await area.evaluate((el) => (el.scrollLeft = 0))
   await page.keyboard.type('cat -v\n')
   await page.mouse.wheel(0, 100)
-  await expect(rows(page)).toContainText('^[[M')
+  await expect(screen(page)).toShow('^[[M')
   expect(await area.evaluate((el) => el.scrollLeft)).toBe(0)
 })
 
@@ -711,5 +711,5 @@ test('columns 에서 마우스 트래킹 없는 alt buffer 위의 가로 스와�
 
   await area.evaluate((el) => (el.scrollLeft = 0))
   await page.mouse.wheel(0, 100)
-  await expect(rows(page)).toContainText('^[[B')
+  await expect(screen(page)).toShow('^[[B')
 })

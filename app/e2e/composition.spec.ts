@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { CDPSession, Page } from '@playwright/test'
 import {
   cellSize,
+  DOM_RENDERER,
   expect,
   isInk,
   resizeBy,
@@ -124,7 +125,7 @@ async function launchWithHan(
   dpr: number,
   odd?: boolean
 ) {
-  const launched = await launch({ MARU_DOM_RENDERER: renderer === 'dom' ? '1' : '' }, undefined, [
+  const launched = await launch(renderer === 'dom' ? DOM_RENDERER : {}, undefined, [
     `--force-device-scale-factor=${dpr}`
   ])
   const { page } = launched
@@ -214,7 +215,7 @@ for (const size of [undefined, 13, 15, 16])
 
 test('조합창은 설정한 글꼴 크기로 쓴다', async ({ launch, dataDir }) => {
   writeConfig(dataDir, '[terminal]\nfont-size = 16\n')
-  const { page } = await launch({ MARU_DOM_RENDERER: '' })
+  const { page } = await launch()
   const cdp = await page.context().newCDPSession(page)
   await compose(cdp, '한')
   const view = page.locator('.terminal-view.active .composition-view')
@@ -225,7 +226,7 @@ test('조합창은 설정한 글꼴 크기로 쓴다', async ({ launch, dataDir 
 test('마지막 열에서 조합해도 조합창이 터미널 밖으로 넘치지 않고, 남은 폭보다 긴 조합은 끝을 보인다', async ({
   launch
 }) => {
-  const { page } = await launch({ MARU_DOM_RENDERER: '' })
+  const { page } = await launch()
   const cell = await cellSize(page)
   const cdp = await page.context().newCDPSession(page)
   const view = page.locator('.terminal-view.active .composition-view')
@@ -257,7 +258,7 @@ test('조합 중에 커서가 마지막 열로 옮겨지면 조합창을 남은 
   launch,
   dataDir
 }) => {
-  const { page } = await launch({ MARU_DOM_RENDERER: '' })
+  const { page } = await launch()
   const cell = await cellSize(page)
   const cdp = await page.context().newCDPSession(page)
   const view = page.locator('.terminal-view.active .composition-view')

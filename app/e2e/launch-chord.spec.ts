@@ -9,8 +9,8 @@ import {
   expect,
   type Launched,
   panes,
-  rows,
   run,
+  screen,
   test,
   writeConfig,
   zshHome
@@ -60,7 +60,7 @@ test('⌘J ⌘T 는 지금 pane 의 디렉토리로 셸 없는 명령 목록을 
   await expect(launcher(page)).toHaveCount(0)
   await expect(cellItems(page)).toHaveCount(2)
   await activeTerminal(page)
-  await expect(rows(page)).toContainText(`ran-in-${home}/proj`)
+  await expect(screen(page)).toShow(`ran-in-${home}/proj`)
   const state = JSON.parse(readFileSync(join(dataDir, 'launcher.json'), 'utf8'))
   expect(state).toMatchObject({ command: bin, recent: [] })
 })
@@ -78,7 +78,7 @@ test('⌘J ⌘D 는 고른 명령을 오른쪽으로 나눈 pane 에 띄우고 �
   await page.keyboard.press('Enter')
   await expect(panes(page)).toHaveCount(2)
   await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
-  await expect(rows(page)).toContainText(`ran-in-${home}/proj`)
+  await expect(screen(page)).toShow(`ran-in-${home}/proj`)
 })
 
 test('⌘J 뒤 ⌘ 를 떼고 누른 키와 Esc 는 기다리기를 끝내고 터미널에 가지 않는다', async ({
@@ -94,7 +94,7 @@ test('⌘J 뒤 ⌘ 를 떼고 누른 키와 Esc 는 기다리기를 끝내고 �
   await page.keyboard.press('Escape')
   await expect(launcher(page)).toHaveCount(0)
   // 삼키지 못한 T 나 Esc 가 셸에 갔으면 친 줄의 앞이 바뀐다.
-  await run(page, 'echo chord-$((1+1))', '% echo chord-$((1+1))chord-2')
+  await run(page, 'echo chord-$((1+1))', /^% echo chord-\$\(\(1\+1\)\)\nchord-2$/m)
 })
 
 test('File 메뉴의 Launch Split Down… 도 같은 목록을 띄우고, 고른 명령을 아래로 나눈 pane 에 띄운다', async ({
@@ -114,5 +114,5 @@ test('File 메뉴의 Launch Split Down… 도 같은 목록을 띄우고, 고른
   ]
   expect(bottom!.y).toBeGreaterThan(top!.y)
   await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
-  await expect(rows(page)).toContainText(`ran-in-${home}/proj`)
+  await expect(screen(page)).toShow(`ran-in-${home}/proj`)
 })

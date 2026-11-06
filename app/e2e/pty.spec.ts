@@ -3,16 +3,18 @@ import { join } from 'node:path'
 import {
   activeTerminal,
   delayPtyPort,
+  DOM_RENDERER,
   expect,
-  gridRows,
   newWorkspace,
   resizeBy,
   rows,
   run,
   ptyFiles,
+  screen,
   shellSize,
   slowPtyBin,
   sockets,
+  terminalRows,
   test,
   zshHome
 } from './app'
@@ -22,28 +24,28 @@ import {
 test('키 입력이 셸에 가고 셸의 출력이 터미널에 뜬다', async ({ launch }) => {
   const { page } = await launch()
   await page.keyboard.type('echo out-$((1+2))\n')
-  await expect(rows(page)).toContainText('out-3')
+  await expect(screen(page)).toShow('out-3')
 })
 
 test('앱을 끄면 pty 도 끝나고, 다시 켜면 새 셸이 뜬다', async ({ launch, dataDir }) => {
   const first = await launch()
   await first.page.keyboard.type('X=gone-$((40+2)); echo before-$((1+1))\n')
-  await expect(rows(first.page)).toContainText('before-2')
+  await expect(screen(first.page)).toShow('before-2')
   const [before] = sockets(dataDir)
   await first.app.close()
   expect(ptyFiles(dataDir)).toEqual([])
 
   const { page } = await launch()
   await page.keyboard.type('echo "x=$X" after-$((2+2))\n')
-  await expect(rows(page)).toContainText('after-4')
-  await expect(rows(page)).toContainText('x= after-4')
+  await expect(screen(page)).toShow('after-4')
+  await expect(screen(page)).toShow('x= after-4')
   expect(sockets(dataDir)).not.toContain(before)
 })
 
 test('창을 닫으면 pty 도 끝난다', async ({ launch, dataDir }) => {
   const { app, page } = await launch()
   await page.keyboard.type('echo open-$((1+1))\n')
-  await expect(rows(page)).toContainText('open-2')
+  await expect(screen(page)).toShow('open-2')
   const closed = new Promise<void>((resolve) => app.once('close', () => resolve()))
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
   await closed
@@ -83,10 +85,10 @@ test('새 터미널이 pty 에 붙기 전에 창 크기가 바뀌어도 셸은 �
   const { app, page } = launched
   await delayPtyPort(app, 1500)
   await newWorkspace(launched, 2)
-  const before = await gridRows(page).count()
+  const before = await terminalRows(screen(page))
   await resizeBy(app, -200, -180)
-  await expect.poll(() => gridRows(page).count()).toBeLessThan(before)
-  expect((await shellSize(page)).rows).toBe(await gridRows(page).count())
+  await expect.poll(() => terminalRows(screen(page))).toBeLessThan(before)
+  expect((await shellSize(page)).rows).toBe(await terminalRows(screen(page)))
 })
 
 test('zsh 가 뜨는 동안 친 키도 셸에 간다', async ({ launch, dataDir }) => {
@@ -102,17 +104,19 @@ test('zsh 가 뜨는 동안 친 키도 셸에 간다', async ({ launch, dataDir 
 test('창 크기를 바꾸면 셸이 보는 크기도 바뀐다', async ({ launch }) => {
   const { app, page } = await launch()
   const before = await shellSize(page)
-  expect(before.rows).toBe(await gridRows(page).count())
+  expect(before.rows).toBe(await terminalRows(screen(page)))
 
   await resizeBy(app, -200, -180)
   await expect.poll(async () => (await shellSize(page)).rows).toBeLessThan(before.rows)
   const after = await shellSize(page)
-  expect(after.rows).toBe(await gridRows(page).count())
+  expect(after.rows).toBe(await terminalRows(screen(page)))
   expect(after.cols).toBeLessThan(before.cols)
 })
 
 test('maru-pty 를 띄울 수 없으면 터미널에 이유를 보인다', async ({ launch }) => {
-  const { page } = await launch({ MARU_PTY_BIN: '/nonexistent/maru-pty' })
+  // `open_failed` 는 renderer 가 xterm 에만 쓰고 pty 화면에는 없으므로 `maru pane read` 가 아니라
+  // DOM renderer 가 그린 행에서 읽는다.
+  const { page } = await launch({ ...DOM_RENDERER, MARU_PTY_BIN: '/nonexistent/maru-pty' })
   await expect(rows(page)).toContainText('open_failed')
 })
 
@@ -135,13 +139,13 @@ test('앱을 띄운 터미널의 ZDOTDIR 과 CLAUDE_* 는 셸에 넘기지 않�
     CLAUDE_CONFIG_DIR: '/outer/claude',
     COLORTERM: 'outer'
   })
-  await expect(rows(page)).toContainText('rc-from-home')
+  await expect(screen(page)).toShow('rc-from-home')
   await run(
     page,
     'echo "outer=[$CLAUDE_CONFIG_DIR] term=[$COLORTERM]" done-$((1+1))',
     'outer=[] term=[truecolor] done-2'
   )
-  await expect(rows(page)).not.toContainText('rc-from-zdotdir')
+  await expect(screen(page)).not.toShow('rc-from-zdotdir')
 })
 
 test('사용자가 rc 에서 export 한 CLAUDE_*·ANTHROPIC_* 는 셸이 다시 세운다', async ({
@@ -170,5 +174,5 @@ test('LANG 없이 띄워도 셸은 UTF-8 로케일로 떠 한글을 받는다', 
   test.skip(process.platform !== 'darwin', 'macOS 의 지역 설정으로 채운다')
   const { page } = await launch({ LANG: '', LC_ALL: '', LC_CTYPE: '' })
   await page.keyboard.type('echo "charmap=[$(locale charmap)]" 한글-$((1+1))\n')
-  await expect(rows(page)).toContainText('charmap=[UTF-8] 한글-2')
+  await expect(screen(page)).toShow('charmap=[UTF-8] 한글-2')
 })

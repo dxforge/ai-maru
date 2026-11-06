@@ -1,6 +1,7 @@
 import type { ElectronApplication, Page } from '@playwright/test'
 import {
   clickMenu,
+  DOM_RENDERER,
   expect,
   expectRowsChangeOnce,
   newWorkspace,
@@ -14,6 +15,8 @@ import {
   writeConfig
 } from './app'
 import { FONT_SIZE } from '../src/renderer/src/font'
+
+// xterm 이 받은 글꼴은 DOM renderer 가 그린 행(`.xterm-rows`)의 스타일에만 드러나므로 터미널을 DOM renderer 로 그린다.
 
 const BASE = `${FONT_SIZE}px`
 const PLUS1 = `${FONT_SIZE + 1}px`
@@ -38,7 +41,7 @@ const reset = (app: ElectronApplication) => clickMenu(app, 'reset-font-size')
 test('Increase·Decrease·Reset Font Size 는 선택한 cell 의 모든 pane 만 1px 씩 바꾸고, 셸이 본 크기도 바뀐다', async ({
   launch
 }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   await newWorkspace(launched, 2)
   await split(app, page, 'split-right', 2)
@@ -65,7 +68,7 @@ test('Increase·Decrease·Reset Font Size 는 선택한 cell 의 모든 pane 만
 test('Reset Font Size 로 cell 의 글꼴을 되돌려도 터미널 행 수가 중간 값 없이 한 번에 바뀐다', async ({
   launch
 }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   const bigger = async () => {
     for (let i = 0; i < 4; i++) await increase(app)
@@ -79,7 +82,7 @@ test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않은 cell �
   launch,
   dataDir
 }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   await newWorkspace(launched, 2)
   await increase(app)
@@ -101,7 +104,7 @@ test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않은 cell �
 test('재시작하면 cell 마다 바꾼 크기를 되살리고, columns 카드 폭과 셸이 본 크기도 그대로다', async ({
   launch
 }) => {
-  const first = await launch()
+  const first = await launch(DOM_RENDERER)
   await toggleView(first, 'columns')
   await newWorkspace(first, 2)
   await increase(first.app)
@@ -111,7 +114,7 @@ test('재시작하면 cell 마다 바꾼 크기를 되살리고, columns 카드 
   const before = await shellSize(first.page)
 
   await restartWith(first.app)
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await expect.poll(() => fontSizes(page)).toEqual([[BASE], [PLUS2]])
   await expect.poll(() => cardWidths(page)).toEqual(widths)
   await expect.poll(() => shellSize(page)).toEqual(before)
@@ -120,7 +123,7 @@ test('재시작하면 cell 마다 바꾼 크기를 되살리고, columns 카드 
 test('columns 보기에서 크기를 키운 카드는 pane 이 80열인 채로 넓어지고, 헤더도 그 크기를 따른다', async ({
   launch
 }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   await toggleView(launched, 'columns')
   await newWorkspace(launched, 2)
@@ -145,7 +148,7 @@ test('columns 보기에서 크기를 키운 카드는 pane 이 80열인 채로 �
 })
 
 test('명령 팔레트에서 Increase·Decrease·Reset Font Size 를 실행한다', async ({ launch }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { page } = launched
   for (const [query, size] of [
     ['increase font', PLUS1],
@@ -162,7 +165,7 @@ test('명령 팔레트에서 Increase·Decrease·Reset Font Size 를 실행한�
 
 // ⌘+ / ⌘- / ⌘0 자체는 macOS 메뉴가 받으므로 Playwright 키로는 재지 못한다. 메뉴에 걸리지 않아 창이 받는 키만 잰다.
 test('⌘= 과 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 도 터미널에서 글꼴 크기를 바꾼다', async ({ launch }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   for (const [key, size] of [
     ['Meta+Equal', PLUS1],
     ['Meta+Equal', PLUS2],
@@ -177,7 +180,7 @@ test('⌘= 과 ⇧ 를 쥔 채 누른 ⇧⌘- / ⇧⌘0 도 터미널에서 글�
 test('팔레트 입력창에 포커스가 있으면 창의 keydown 은 ⌘= / ⇧⌘- / ⇧⌘0 으로 글꼴 크기를 바꾸지 않는다', async ({
   launch
 }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { page } = launched
   await openPalette(launched)
   await page.keyboard.type('canv')
@@ -192,7 +195,7 @@ test('설정 파일의 글꼴을 바꿔도 글자 칸 크기가 같으면 column
   launch,
   dataDir
 }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   await toggleView(launched, 'columns')
   await newWorkspace(launched, 2)

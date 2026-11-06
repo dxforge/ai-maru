@@ -8,6 +8,7 @@ import {
   clickMenu,
   collapseSidebar,
   configFile,
+  DOM_RENDERER,
   expect,
   expectRowsChangeOnce,
   newWorkspace,
@@ -27,6 +28,7 @@ function headerOffsets(page: Page) {
   })
 }
 
+/** 포커스된 터미널의 글꼴과 행 높이. DOM renderer 가 그린 행(`.xterm-rows`)에서 읽으므로 `launch(DOM_RENDERER)` 에서만 쓴다. */
 async function terminalFont(page: Page) {
   return page.evaluate(() => {
     const rows = document.querySelector('.terminal-view.active .xterm-rows')!
@@ -43,7 +45,7 @@ const fontSize = async (page: Page): Promise<string> => (await terminalFont(page
 
 test('띄울 때 설정 파일의 글꼴·크기·줄 높이를 쓴다', async ({ launch, dataDir }) => {
   writeConfig(dataDir, '[terminal]\nfont-family = "Menlo"\nfont-size = 18\nline-height = 1.5\n')
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   const font = await terminalFont(page)
   expect(font.family).toMatch(/^Menlo, D2Coding/)
   expect(font.size).toBe('18px')
@@ -61,7 +63,7 @@ test('폴더가 없는 채로 띄운 뒤 폴더와 파일을 만들면 적용하
   launch,
   dataDir
 }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   const before = await shellSize(page)
   writeConfig(dataDir, '[terminal]\nfont-size = 20\n')
   await expect.poll(() => fontSize(page)).toBe('20px')
@@ -74,7 +76,7 @@ test('폴더가 없는 채로 띄운 뒤 폴더와 파일을 만들면 적용하
 })
 
 test('줄 높이만 바꿔도 셸이 본 행 수가 바뀐다', async ({ launch, dataDir }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   const before = await shellSize(page)
   const row = (await terminalFont(page)).row
   writeConfig(dataDir, '[terminal]\nline-height = 2\n')
@@ -93,7 +95,7 @@ test('columns 보기에서 줄 높이를 바꾸면 터미널 행 수가 중간 �
   launch,
   dataDir
 }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   await toggleView(launched, 'columns')
   await expectRowsChangeOnce(
     launched,
@@ -106,7 +108,7 @@ test('single 보기에서 글꼴 크기를 줄여도 터미널 행 수가 중간
   launch,
   dataDir
 }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   await expectRowsChangeOnce(
     launched,
     settings(dataDir, '[terminal]\nfont-size = 10\n'),
@@ -120,7 +122,7 @@ test('cell 헤더가 위에 있어도 줄 높이를 바꾸면 터미널 행 수�
 }) => {
   const top = '[layout]\nheader = "top"\n'
   writeConfig(dataDir, top)
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   await expectRowsChangeOnce(
     launched,
     settings(dataDir, `${top}[terminal]\nline-height = 2\n`),
@@ -129,7 +131,7 @@ test('cell 헤더가 위에 있어도 줄 높이를 바꾸면 터미널 행 수�
 })
 
 test('single 보기의 숨은 cell 도 새 크기로 맞춘다', async ({ launch, dataDir }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   await newWorkspace(launched, 2)
   writeConfig(dataDir, '[terminal]\nfont-size = 20\n')
@@ -142,7 +144,7 @@ test('single 보기의 숨은 cell 도 새 크기로 맞춘다', async ({ launch
 })
 
 test('columns 보기에서 화면 밖에 있던 cell 도 줄 높이에 맞춘다', async ({ launch, dataDir }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   await toggleView(launched, 'columns')
   await newWorkspace(launched, 2)
@@ -161,7 +163,7 @@ test('columns 보기에서 화면 밖에 있던 cell 도 줄 높이에 맞춘다
 
 test('창을 새로 고쳐도 설정 글꼴로 그리고, 그 뒤의 저장도 받는다', async ({ launch, dataDir }) => {
   writeConfig(dataDir, '[terminal]\nfont-size = 18\n')
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await page.reload()
   await activeTerminal(page)
   expect(await fontSize(page)).toBe('18px')
@@ -170,7 +172,7 @@ test('창을 새로 고쳐도 설정 글꼴로 그리고, 그 뒤의 저장도 �
 })
 
 test('pane 헤더도 설정 글꼴을 따른다', async ({ launch, dataDir }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   writeConfig(dataDir, '[terminal]\nfont-family = "Menlo"\nfont-size = 20\n')
   await expect.poll(() => fontSize(page)).toBe('20px')
   const header = await page.evaluate(() => {
@@ -202,7 +204,7 @@ test('문법 오류는 줄을 알리고 앞의 값을 두며, 고치면 토스�
   dataDir
 }) => {
   writeConfig(dataDir, '[terminal]\nfont-size = 18\n')
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   writeConfig(dataDir, '[terminal]\nfont-size =\n')
   await expect(toast(page)).toHaveClass(/error/)
   await expect(toast(page)).toContainText("Couldn't read config.toml")
@@ -228,7 +230,7 @@ test('설치되지 않은 글꼴은 알리고, 설치된 글꼴은 알리지 않
 test('라틴 글자가 없는 글꼴도 설치됐으면 알리지 않는다', async ({ launch, dataDir }) => {
   // 앱이 `@font-face` 로 싣는 아이콘 글꼴과 macOS 에 들어 있는 한글 글꼴을 함께 적어, `missingFonts` 의 두 판정 경로를 모두 지나게 한다.
   writeConfig(dataDir, '[terminal]\nfont-family = "Symbols Nerd Font Mono, Apple SD Gothic Neo"\n')
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   expect(await terminalFont(page).then((f) => f.family)).toMatch(/^"Symbols Nerd Font Mono"/)
   await expect(toast(page)).toHaveCount(0)
 })
@@ -238,7 +240,7 @@ test('CSS generic family 키워드는 generic family 로 적용하고, 쓸 수 �
   dataDir
 }) => {
   writeConfig(dataDir, '[terminal]\nfont-family = "monospace"\n')
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   expect(await terminalFont(page).then((f) => f.family)).toMatch(/^monospace, D2Coding/)
   await expect(toast(page)).toHaveCount(0)
   // Chromium 은 `ui-monospace` 를 지원하지 않아 다음 이름인 `serif` 로 그린다.

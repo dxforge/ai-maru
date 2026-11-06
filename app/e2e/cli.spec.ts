@@ -1,14 +1,14 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { appSocketPath } from '../src/main/pty'
-import { expect, rows, ptyDir, sockets, test } from './app'
+import { DOM_RENDERER, expect, ptyDir, rows, screen, sockets, test } from './app'
 
 test('터미널에서 maru ping 이 그 pty 의 id 를 돌려받는다', async ({ launch, dataDir }) => {
   const { page } = await launch()
   await page.keyboard.type('maru ping\n')
-  await expect(rows(page)).toContainText(/pong \(pty p-/)
+  await expect(screen(page)).toShow(/pong \(pty p-/)
   const [sock] = sockets(dataDir)
-  await expect(rows(page)).toContainText(`pong (pty ${basename(sock, '.sock')})`)
+  await expect(screen(page)).toShow(`pong (pty ${basename(sock, '.sock')})`)
 })
 
 test('시스템·rc 가 PATH 에 넣는 디렉토리에 다른 maru 가 없으면 로그인 셸을 지나도 maru 는 이 빌드의 CLI 다', async ({
@@ -20,7 +20,7 @@ test('시스템·rc 가 PATH 에 넣는 디렉토리에 다른 maru 가 없으�
   await page.keyboard.type(
     `test "$(command -v maru)" -ef '${bin}' && echo cli-$((1+1)) || echo cli-other\n`
   )
-  await expect(rows(page)).toContainText('cli-2')
+  await expect(screen(page)).toShow('cli-2')
 })
 
 test('앱이 강제로 끝나 남은 앱 소켓이 있어도 다음에 켜면 maru 가 닿는다', async ({
@@ -29,7 +29,7 @@ test('앱이 강제로 끝나 남은 앱 소켓이 있어도 다음에 켜면 ma
 }) => {
   const first = await launch()
   await first.page.keyboard.type('maru ping\n')
-  await expect(rows(first.page)).toContainText('pong (pty')
+  await expect(screen(first.page)).toShow('pong (pty')
   const closed = new Promise<void>((resolve) => first.app.once('close', () => resolve()))
   first.app.process().kill('SIGKILL')
   await closed
@@ -37,7 +37,7 @@ test('앱이 강제로 끝나 남은 앱 소켓이 있어도 다음에 켜면 ma
 
   const { page } = await launch()
   await page.keyboard.type('maru ping; echo code-$?\n')
-  await expect(rows(page)).toContainText('code-0')
+  await expect(screen(page)).toShow('code-0')
 })
 
 test('앱 소켓을 열지 못해도 터미널은 뜨고, maru 는 앱에 닿지 않는다고 말한다', async ({
@@ -45,7 +45,8 @@ test('앱 소켓을 열지 못해도 터미널은 뜨고, maru 는 앱에 닿지
   dataDir
 }) => {
   mkdirSync(appSocketPath(ptyDir(dataDir)), { recursive: true })
-  const { page } = await launch()
+  // 앱 소켓이 없으면 `maru pane read` 도 앱에 닿지 않으므로 DOM renderer 가 그린 행에서 읽는다.
+  const { page } = await launch(DOM_RENDERER)
   await page.keyboard.type('maru ping; echo code-$?\n')
   await expect(rows(page)).toContainText('cannot reach the app')
   await expect(rows(page)).toContainText('code-1')

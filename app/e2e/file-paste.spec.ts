@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { activePane, canvasSettled, canvasTitles, expect, panes, rows, split, test } from './app'
+import { activePane, canvasSettled, canvasTitles, expect, panes, screen, split, test } from './app'
 
 /** 경로를 셸 인자로 감싸는 규칙의 케이스는 `paths.test.ts` 가 sh·bash·zsh 를 실제로 돌려 잰다. 여기서는 드롭하거나 붙여넣은 경로를 셸이 경로마다 인자 하나로 읽는지만 본다. */
 function makeFiles(dataDir: string): string[] {
@@ -149,7 +149,7 @@ async function armRaw(page: Page, out: string, bracketed: boolean): Promise<void
   await page.keyboard.type(
     `${on}stty raw -echo; echo armed-$((1+1)); perl -e 'alarm 2; sysread STDIN,$b,64; print $b' > '${out}'; stty sane${off}\n`
   )
-  await expect(rows(page)).toContainText('armed-2')
+  await expect(screen(page)).toShow('armed-2')
 }
 
 const rawInput = (out: string) => () => existsSync(out) && readFileSync(out, 'latin1')

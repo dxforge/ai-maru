@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { STATE_VERSIONS } from '../src/shared/screen'
-import { cellPlaces, expect, restartWith, rows, stubDialog, test, zshHome } from './app'
+import { cellPlaces, expect, restartWith, screen, stubDialog, test, zshHome } from './app'
 
 let built: string
 let installed: string
@@ -40,7 +40,7 @@ test('체크아웃 밖에 둔 설치본이 ELECTRON_RUN_AS_NODE 를 줘도 AI Ma
   const { app, page } = await launch({ ELECTRON_RUN_AS_NODE: '1' }, executable())
   expect(await app.evaluate(({ app }) => app.getName())).toBe('AI Maru')
   await page.keyboard.type('maru ping\n')
-  await expect(rows(page)).toContainText(/pong \(pty p-/)
+  await expect(screen(page)).toShow(/pong \(pty p-/)
 })
 
 test('빌드한 앱은 Node 로 실행하는 경로를 끄고 app.asar 에서만 앱을 읽는다', async () => {
@@ -73,7 +73,7 @@ test('설치본의 터미널에서 maru 는 번들 안의 CLI 다', async ({ lau
   await page.keyboard.type(
     `test "$(command -v maru)" -ef '${bin}' && echo cli-$((1+1)) || echo cli-other\n`
   )
-  await expect(rows(page)).toContainText('cli-2')
+  await expect(screen(page)).toShow('cli-2')
 })
 
 test('설치본의 터미널에서 MARU_CLI·MARU_CLAUDE_PLUGIN 은 번들 안을 가리키고, plugin 에 MCP 서버 설정이 있다', async ({
@@ -86,7 +86,7 @@ test('설치본의 터미널에서 MARU_CLI·MARU_CLAUDE_PLUGIN 은 번들 안�
   await page.keyboard.type(
     `test "$MARU_CLI" -ef '${bin}' && test "$MARU_CLAUDE_PLUGIN/hooks/hooks.json" -ef '${hooks}' && test -f "$MARU_CLAUDE_PLUGIN/.mcp.json" && echo plugin-$((1+1)) || echo plugin-other\n`
   )
-  await expect(rows(page)).toContainText('plugin-2')
+  await expect(screen(page)).toShow('plugin-2')
 })
 
 test('설치본의 zsh 터미널에서 claude 는 번들 안의 실행할 수 있는 shim 이다', async ({
@@ -98,7 +98,7 @@ test('설치본의 zsh 터미널에서 claude 는 번들 안의 실행할 수 �
   await page.keyboard.type(
     `test "$(whence -p claude)" -ef '${shim}' && test -x '${shim}' && echo shim-$((1+1)) || echo shim-other\n`
   )
-  await expect(rows(page)).toContainText('shim-2')
+  await expect(screen(page)).toShow('shim-2')
 })
 
 test('설치본의 zsh 에서 cell 이름이 cd 를 따른다', async ({ launch, dataDir }) => {
@@ -130,7 +130,7 @@ test('설치본에 상태 파일의 형식 버전이 실리고, 같은 빌드로
   expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(STATE_VERSIONS)
   const { app, page } = await launch({}, executable())
   await page.keyboard.type('echo up-$((1+1))\n')
-  await expect(rows(page)).toContainText('up-2')
+  await expect(screen(page)).toShow('up-2')
   // 물으면 Cancel 로 답해 앱이 남고, 아래 restartWith 가 창이 닫히기를 기다리다 실패한다.
   await stubDialog(app, 1)
   await restartWith(app)

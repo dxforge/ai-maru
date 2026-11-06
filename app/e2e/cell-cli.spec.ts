@@ -10,8 +10,9 @@ import {
   newCell,
   newWorkspace,
   restartWith,
-  rows,
   run,
+  screen,
+  screenText,
   test,
   toggleView,
   workspaceNames
@@ -25,7 +26,8 @@ async function expectOrder(page: Page, marks: (string | null)[]): Promise<void> 
   await expect(views).toHaveCount(marks.length)
   await expect(cellItems(page)).toHaveCount(marks.length)
   for (const [i, mark] of marks.entries()) {
-    if (mark) await expect(views.nth(i).locator('.xterm-rows')).toContainText(`mark-${mark}`)
+    if (mark)
+      await expect(screen(page, views.nth(i).locator('.pane').first())).toShow(`mark-${mark}`)
   }
 }
 
@@ -39,9 +41,9 @@ test('maru cell new 는 부른 cell 뒤에 cell 을 더해 명령을 띄우고 �
   await expect(cellItems(page)).toHaveCount(2)
   await expect(workspaceNames(page)).toHaveCount(1)
   const got = /got=\[PTY\|CELL\/(p-[0-9a-f]{8})\|(c-[0-9a-f]{8})\/\]/
-  await expect(rows(page)).toContainText(got)
-  const [, pty, cell] = (await rows(page).innerText()).match(got)!
-  await expect(cellViews(page).nth(1).locator('.xterm-rows')).toContainText(`me=[${pty}]`)
+  await expect(screen(page)).toShow(got)
+  const [, pty, cell] = (await screenText(screen(page))).match(got)!
+  await expect(screen(page, cellViews(page).nth(1).locator('.pane'))).toShow(`me=[${pty}]`)
   await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
   await expect(cellViews(page).nth(1)).not.toHaveClass(/selected/)
   await run(
@@ -130,7 +132,7 @@ test('--after 가 다른 workspace 의 pane 이면 cell 을 열지 않고 실패
   await run(page, `echo $MARU_PTY_ID > '${saved}'; echo saved-$((1+1))`, 'saved-2')
   await newWorkspace(launched, 2)
   await run(page, `clear; maru cell new --after $(cat '${saved}') true; echo "code-$?"`, 'code-1')
-  await expect(rows(page)).toContainText('not in the workspace')
+  await expect(screen(page)).toShow('not in the workspace')
   await expect(cellItems(page)).toHaveCount(2)
   await expect(workspaceNames(page)).toHaveCount(2)
 })
@@ -145,7 +147,7 @@ test('명령이 끝나면 cell 이 닫히고, 곧바로 끝나는 명령도 pty 
   await expect(workspaceNames(page)).toHaveCount(1)
   for (const command of ['true', 'no-such-command-xyz']) {
     await page.keyboard.type(`clear; maru cell new ${command}; echo "code-$?"\n`)
-    await expect(rows(page)).toContainText(/p-[0-9a-f]{8}\s+c-[0-9a-f]{8}\s*code-0/)
+    await expect(screen(page)).toShow(/p-[0-9a-f]{8}\s+c-[0-9a-f]{8}\s*code-0/)
     await expect(cellItems(page)).toHaveCount(1)
   }
 })
@@ -193,8 +195,8 @@ test('띄운 cell 에서 연 job 은 그 cell 에 속한다', async ({ launch })
   await page.keyboard.type(
     `maru cell new bash -c 'maru job new --name mate-job sleep 100 >/dev/null; maru job list; read x' >/dev/null\n`
   )
-  const other = cellViews(page).nth(1).locator('.xterm-rows')
-  await expect(other).toContainText(/mate-job\s+running/)
+  const other = screen(page, cellViews(page).nth(1).locator('.pane'))
+  await expect(other).toShow(/mate-job\s+running/)
   await run(page, 'maru job list', 'no jobs')
 })
 
@@ -204,7 +206,7 @@ test('pty 를 띄우지 못하면 cell 을 닫고 maru cell new 가 이유와 �
 }) => {
   const { page } = await launch({ MARU_PTY_BIN: failingCommandPtyBin(dataDir) })
   await page.keyboard.type('maru cell new true; echo code-$?\n')
-  await expect(rows(page)).toContainText('boom-2')
-  await expect(rows(page)).toContainText('code-1')
+  await expect(screen(page)).toShow('boom-2')
+  await expect(screen(page)).toShow('code-1')
   await expect(cellItems(page)).toHaveCount(1)
 })

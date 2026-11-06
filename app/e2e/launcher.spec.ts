@@ -8,6 +8,7 @@ import {
   cellItems,
   clickMenu,
   dialogCalls,
+  DOM_RENDERER,
   expect,
   openPalette,
   paneRows,
@@ -16,6 +17,7 @@ import {
   restartWith,
   rows,
   run,
+  screen,
   stubDialog,
   test,
   workspaceNames,
@@ -193,7 +195,7 @@ test('Enter 는 고른 디렉토리에서 명령을 새 workspace 에 띄우고,
   await expect(cellItems(page)).toHaveCount(2)
   await expect(workspaceNames(page)).toHaveCount(2)
   await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
-  await expect(rows(page)).toContainText(`A-ran-in-${dir}`)
+  await expect(screen(page)).toShow(`A-ran-in-${dir}`)
 
   await finish(page)
   await expect(workspaceNames(page)).toHaveCount(1)
@@ -217,7 +219,7 @@ test('⌘Enter 는 지금 workspace 의 고른 cell 바로 뒤에 새 cell 로 �
   await expect(cellItems(page)).toHaveCount(3)
   await expect(workspaceNames(page)).toHaveCount(1)
   await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
-  await expect(rows(page)).toContainText(`A-ran-in-${dir}`)
+  await expect(screen(page)).toShow(`A-ran-in-${dir}`)
 })
 
 test('명령이 0 이 아닌 코드로 끝나면 pane 이 화면을 남긴 채 종료 코드를 보이고, ⌘W 는 묻지 않고 닫는다', async ({
@@ -226,7 +228,7 @@ test('명령이 0 이 아닌 코드로 끝나면 pane 이 화면을 남긴 채 �
 }) => {
   useTool(dataDir)
   const dir = project(dataDir, 'proj-a')
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   await launchAt(launched, dir)
   await expect(rows(page)).toContainText('A-ran-in-')
@@ -249,7 +251,7 @@ test('런처로 띄운 claude 가 working 을 알린 뒤 SIGKILL 로 끝나면 W
 }) => {
   const claude = fakeClaude(dataDir)
   const dir = project(dataDir, 'proj-a')
-  const launched = await launch(claude.env)
+  const launched = await launch({ ...DOM_RENDERER, ...claude.env })
   const { page } = launched
   // `claude` 는 PATH 의 shim 을 거치고, 경로로 고른 명령은 거치지 않는다. 둘 다 zsh 가 exec 하므로 셸이 시그널로 끝난다.
   for (const start of [() => launchAt(launched, dir), () => launchFake(launched, claude, dir)]) {
@@ -273,7 +275,7 @@ test('커서를 그린 내용 위에 두고 끝난 명령의 종료 코드는 �
   chmodSync(bin, 0o755)
   writeConfig(dataDir, `[launcher]\ncommands = ["${bin}"]\n`)
   const dir = project(dataDir, 'proj-a')
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { page } = launched
   await launchAt(launched, dir)
   await expect(rows(page)).toContainText('[exited with code 3]')
@@ -286,7 +288,7 @@ test('커서를 그린 내용 위에 두고 끝난 명령의 종료 코드는 �
 test('PATH 에 없는 명령은 셸의 오류와 종료 코드 127 을 남긴다', async ({ launch, dataDir }) => {
   writeConfig(dataDir, '[launcher]\ncommands = ["no-such-command-xyz"]\n')
   const dir = project(dataDir, 'proj-a')
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { page } = launched
   await launchAt(launched, dir)
   await expect(rows(page)).toContainText('[exited with code 127]')
@@ -366,7 +368,7 @@ test('/ 로 시작한 입력은 하위 디렉토리를 후보로 보이고, → 
   await page.keyboard.press('Enter')
   await expect(launcher(page)).toHaveCount(0)
   await activeTerminal(page)
-  await expect(rows(page)).toContainText(`A-ran-in-${tree}/alpha/inner`)
+  await expect(screen(page)).toShow(`A-ran-in-${tree}/alpha/inner`)
 })
 
 test('후보가 오기 전에 누른 Enter 는 후보를 기다려 고른 후보의 명령 단계로 가고, 그 사이 한 번 더 누른 Enter 는 띄우지 않는다', async ({
@@ -387,7 +389,7 @@ test('후보가 오기 전에 누른 Enter 는 후보를 기다려 고른 후보
   await page.keyboard.press('Enter')
   await expect(launcher(page)).toHaveCount(0)
   await activeTerminal(page)
-  await expect(rows(page)).toContainText(`A-ran-in-${tree}/alpha`)
+  await expect(screen(page)).toShow(`A-ran-in-${tree}/alpha`)
 })
 
 test('~ 로 시작한 입력은 홈 아래의 디렉토리를 ~ 로 줄여 보이고, 연 디렉토리도 목록에 ~ 로 보인다', async ({
@@ -405,7 +407,7 @@ test('~ 로 시작한 입력은 홈 아래의 디렉토리를 ~ 로 줄여 보�
   await toCommands(page, '~/code')
   await page.keyboard.press('Enter')
   await activeTerminal(page)
-  await expect(rows(page)).toContainText(`A-ran-in-${home}/code`)
+  await expect(screen(page)).toShow(`A-ran-in-${home}/code`)
   await finish(page)
 
   await openLauncher(launched)
@@ -451,7 +453,7 @@ test('명령 단계는 명령 뒤에 shell 을 붙여 보이고, 마지막으로
   await expect(selected(page)).toHaveText(b)
   await page.keyboard.press('Enter')
   await activeTerminal(page)
-  await expect(rows(page)).toContainText(`B-ran-in-${dir}`)
+  await expect(screen(page)).toShow(`B-ran-in-${dir}`)
 
   await openLauncher(first)
   await page.keyboard.type(dir)
@@ -537,8 +539,8 @@ test('Tab 은 고른 후보를 입력에 채우고 / 를 붙이며, / 로 끝난
   await toCommands(page, `${tree}/alpha`)
   await page.keyboard.press('Enter')
   await activeTerminal(page)
-  await expect(rows(page)).toContainText(`A-ran-in-${tree}/alpha`)
-  await expect(rows(page)).not.toContainText(`A-ran-in-${tree}/alpha/inner`)
+  await expect(screen(page)).toShow(`A-ran-in-${tree}/alpha`)
+  await expect(screen(page)).not.toShow(`A-ran-in-${tree}/alpha/inner`)
 })
 
 test('명령 단계의 헤더는 ⌘ 를 누르고 있는 동안 New Workspace 대신 New Cell 을 보인다', async ({
@@ -567,13 +569,13 @@ test('재시작 뒤에도 실패한 채 남긴 pane 은 화면과 종료 코드�
 }) => {
   useTool(dataDir)
   const dir = project(dataDir, 'proj-a')
-  const first = await launch()
+  const first = await launch(DOM_RENDERER)
   await launchAt(first, dir)
   await first.page.keyboard.type('4\n')
   await expect(rows(first.page)).toContainText('[exited with code 4]')
   await restartWith(first.app)
 
-  const again = await launch()
+  const again = await launch(DOM_RENDERER)
   const { app, page } = again
   await expect(cellItems(page)).toHaveCount(2)
   const kept = panes(page).filter({ hasText: '[exited with code 4]' })
@@ -639,7 +641,7 @@ test('런처가 아래일 때 ArrowUp 으로 다음 행을 고르고, 한글을 
   await toCommands(page, second)
   await page.keyboard.press('Enter')
   await activeTerminal(page)
-  await expect(rows(page)).toContainText(`A-ran-in-${second}`)
+  await expect(screen(page)).toShow(`A-ran-in-${second}`)
 })
 
 test('디렉토리 행을 누르면 명령 단계로 가고, 명령 행을 누르면 새 workspace 에, ⌘ 를 누른 채 누르면 지금 workspace 의 새 cell 에 띄운다', async ({
@@ -658,7 +660,7 @@ test('디렉토리 행을 누르면 명령 단계로 가고, 명령 행을 누�
   await items(page).nth(0).click()
   await activeTerminal(page)
   await expect(workspaceNames(page)).toHaveCount(2)
-  await expect(rows(page)).toContainText(`A-ran-in-${second}`)
+  await expect(screen(page)).toShow(`A-ran-in-${second}`)
   await finish(page)
 
   await openLauncher(launched)
@@ -671,7 +673,7 @@ test('디렉토리 행을 누르면 명령 단계로 가고, 명령 행을 누�
   await activeTerminal(page)
   await expect(cellItems(page)).toHaveCount(2)
   await expect(workspaceNames(page)).toHaveCount(1)
-  await expect(rows(page)).toContainText(`A-ran-in-${first}`)
+  await expect(screen(page)).toShow(`A-ran-in-${first}`)
 })
 
 test('최근 목록 행에 마우스를 올리면 나오는 × 는 띄우지 않고 그 행을 지운다', async ({
@@ -710,5 +712,5 @@ test('최근 목록이 오기 전에 누른 Enter 는 목록과 기억한 명령
   await launched.page.keyboard.press('Enter')
   await expect(launcher(launched.page)).toHaveCount(0)
   await activeTerminal(launched.page)
-  await expect(rows(launched.page)).toContainText(`B-ran-in-${dir}`)
+  await expect(screen(launched.page)).toShow(`B-ran-in-${dir}`)
 })
