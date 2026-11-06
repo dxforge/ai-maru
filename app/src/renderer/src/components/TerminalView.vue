@@ -390,6 +390,7 @@ onBeforeUnmount(() => {
   textLinks.dispose()
   if (webgl) disposeWebgl()
   term.dispose()
+  pty?.close()
 })
 </script>
 

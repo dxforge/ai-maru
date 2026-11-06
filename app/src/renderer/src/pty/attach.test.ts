@@ -9,8 +9,10 @@ function fakeTerminal(cols: number, rows: number) {
     cols,
     rows,
     written: [] as unknown[],
-    write(data: unknown) {
+    drawn: [] as (() => void)[],
+    write(data: unknown, cb?: () => void) {
       term.written.push(data)
+      if (cb) term.drawn.push(cb)
     },
     resize(c: number, r: number) {
       term.cols = c
@@ -35,13 +37,17 @@ function fakeTerminal(cols: number, rows: number) {
 function fakeConnection() {
   let deliver: (msg: PtyMessage) => void = () => {}
   let close: () => void = () => {}
+  const acked: number[] = []
+  const state = { closedByUs: 0 }
   const conn: PtyConnection = {
     send: () => {},
+    ack: (bytes) => acked.push(bytes),
     onMessage: (cb) => (deliver = cb),
     onClose: (cb) => (close = cb),
-    kill: () => {}
+    kill: () => {},
+    close: () => state.closedByUs++
   }
-  return { conn, deliver: (msg: PtyMessage) => deliver(msg), close: () => close() }
+  return { conn, acked, state, deliver: (msg: PtyMessage) => deliver(msg), close: () => close() }
 }
 
 const handlers = {
@@ -53,6 +59,8 @@ const handlers = {
 }
 
 const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0))
+
+const REPLAY_END = JSON.stringify({ type: 'replay_end' })
 
 const header = (type: string): string =>
   JSON.stringify({ type, cols: 20, rows: 4, cursor_x: 0, cursor_y: 0 })
@@ -141,14 +149,76 @@ describe('attach', () => {
     expect(calls).toEqual(['gone', 'spawned /w'])
     expect(term.written).toEqual([])
     deliver(JSON.stringify({ type: 'attached', cols: 80, rows: 24, cursor_x: 2, cursor_y: 0 }))
-    const replay = new TextEncoder().encode('% ')
-    deliver(replay)
+    const replay = [new TextEncoder().encode('\x1b[H'), new TextEncoder().encode('% ')]
+    for (const part of replay) deliver(part)
+    deliver(REPLAY_END)
     const output = new TextEncoder().encode('later')
     deliver(output)
-    expect(term.written).toHaveLength(3)
-    expect(term.written[0]).toBe(replay)
-    expect(term.written[1]).toContain(GONE_MESSAGE)
-    expect(term.written[2]).toBe(output)
+    expect(term.written).toHaveLength(4)
+    expect(term.written.slice(0, 2)).toEqual(replay)
+    expect(term.written[2]).toContain(GONE_MESSAGE)
+    expect(term.written[3]).toBe(output)
+  })
+
+  it('받은 출력은 터미널이 처리한 뒤에 그 바이트 수만큼 처리했다고 알린다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, acked, deliver } = fakeConnection()
+    attach(term as unknown as Terminal, conn, handlers)
+    deliver(header('attached'))
+    deliver(new Uint8Array(5))
+    deliver(REPLAY_END)
+    deliver(new Uint8Array(3))
+    expect(acked).toEqual([])
+    for (const done of term.drawn) done()
+    expect(acked).toEqual([5, 3])
+  })
+
+  it('창을 숨기면 받거나 그린 것이 없어도 그리지 않은 출력을 처리했다고 알리고, 연결이 닫히면 더 듣지 않는다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, acked, deliver, close } = fakeConnection()
+    attach(term as unknown as Terminal, conn, handlers)
+    deliver(header('attached'))
+    deliver(REPLAY_END)
+    deliver(new Uint8Array(5))
+    let hidden = true
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+    try {
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(acked).toEqual([5])
+      hidden = false
+      deliver(new Uint8Array(3))
+      close()
+      hidden = true
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(acked).toEqual([5])
+    } finally {
+      delete (document as { hidden?: boolean }).hidden
+    }
+  })
+
+  it('터미널을 치우며 닫으면 연결을 닫고, 핸들러를 부르지 않고, 창이 숨어도 더 알리지 않는다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, acked, state, deliver } = fakeConnection()
+    const calls: string[] = []
+    const pty = attach(term as unknown as Terminal, conn, {
+      ...handlers,
+      onExit: () => calls.push('exit'),
+      onOpenFailed: () => calls.push('failed')
+    })
+    deliver(header('attached'))
+    deliver(REPLAY_END)
+    deliver(new Uint8Array(5))
+    pty.close()
+    expect(state.closedByUs).toBe(1)
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    try {
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(acked).toEqual([])
+    } finally {
+      delete (document as { hidden?: boolean }).hidden
+    }
+    expect(calls).toEqual([])
+    expect(term.written).toHaveLength(1)
   })
 
   it('gone 뒤 새 셸이 붙지 못하고 끝나면 이유를 끝난 알림 앞에 보인다', () => {
@@ -332,10 +402,12 @@ describe('attach', () => {
       latin1('before\r\n'),
       latin1(`$ ${cut}`),
       header('resync'),
-      latin1(`\x1bc${replay}`),
+      latin1('\x1bc'),
+      latin1(replay),
+      REPLAY_END,
       next
     ])
-    const fresh = await drawn([header('attached'), latin1(replay), next])
+    const fresh = await drawn([header('attached'), latin1(replay), REPLAY_END, next])
     expect(resynced).toEqual(fresh)
     expect(fresh.lines[1]).toBe('$ 가다 tail')
   })

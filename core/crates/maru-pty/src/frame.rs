@@ -5,7 +5,7 @@ pub const TAG_TEXT: u8 = 1;
 pub const TAG_BINARY: u8 = 2;
 
 /// 손상된 길이 필드가 거대한 할당을 부르지 않게.
-const MAX_FRAME_LEN: u32 = 16 * 1024 * 1024;
+pub const MAX_FRAME_LEN: u32 = 16 * 1024 * 1024;
 
 pub fn encode(tag: u8, payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(5 + payload.len());
