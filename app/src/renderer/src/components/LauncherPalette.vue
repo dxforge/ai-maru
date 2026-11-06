@@ -10,8 +10,9 @@ import {
   watch
 } from 'vue'
 import type { Position } from '../config/layout'
-import { commandArgv } from '../config/launcher'
-import { ICONS, programIcon } from '../icons'
+import { Play, SquareTerminal, X } from '@lucide/vue'
+import { launcherIcon } from '../icons'
+import AgentLogo from './AgentLogo.vue'
 import {
   expandPath,
   filterRecent,
@@ -24,7 +25,6 @@ import {
   commandList,
   type Row
 } from '../launcher/query'
-import { SHELL } from '../../../shared/launcher'
 import { placeAnchored, type Anchor, type Placement } from '../launcher/anchor'
 import { tildePath } from '../workspace/cwd'
 import { arrowIndex, closeOnFocusLoss, revealSelected } from './palette'
@@ -105,10 +105,7 @@ const pathMode = computed(() => !chosen.value && isPathInput(query.value))
 const commandRows = computed(() =>
   commandChoices(list.value, query.value).map((r) => ({
     ...r,
-    icon:
-      r.command === SHELL
-        ? ICONS.terminal
-        : (programIcon(commandArgv(r.command)[0]) ?? ICONS.running)
+    icon: launcherIcon(r.command)
   }))
 )
 
@@ -329,7 +326,14 @@ function onKeydown(e: KeyboardEvent): void {
           @click="(e) => launch(chosen!.dir, r.command, e.metaKey)"
         >
           <span class="program"
-            ><span class="program-icon nerd-icon">{{ r.icon }}</span
+            ><span class="program-icon"
+              ><SquareTerminal
+                v-if="r.icon === 'terminal'"
+                class="text-icon"
+                data-icon="terminal" /><Play
+                v-else-if="r.icon === 'running'"
+                class="text-icon"
+                data-icon="running" /><AgentLogo v-else :agent="r.icon" /></span
             ><span class="path">{{ r.label }}</span></span
           >
         </li>
@@ -349,11 +353,11 @@ function onKeydown(e: KeyboardEvent): void {
           <button
             v-if="!pathMode"
             v-tooltip="{ text: 'Remove from recent', keys: '⇧⌘⌫' }"
-            class="remove nerd-icon"
+            class="remove"
             aria-label="Remove from recent"
             @click.stop="forget(r)"
           >
-            {{ ICONS.close }}
+            <X class="text-icon" />
           </button>
         </li>
         <li v-if="!rows.length" class="empty">{{ empty }}</li>
@@ -377,11 +381,12 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 .program-icon {
+  display: flex;
+  justify-content: center;
   flex: none;
   width: 16px;
   color: var(--muted);
   font-size: 14px;
-  text-align: center;
 }
 
 .section {

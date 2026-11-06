@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { viewKey, type Canvas, type CanvasView } from '../canvas/store'
-import { ICONS } from '../icons'
+import { Check } from '@lucide/vue'
 import CellName from './CellName.vue'
 import FoldChevron from './FoldChevron.vue'
 
@@ -72,8 +72,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOutside, 
         @mousedown.prevent
         @click="choose(it.view)"
       >
-        <span class="check nerd-icon">{{ checked(it.view) ? ICONS.check : '' }}</span
-        >{{ it.text }}
+        <span class="check"><Check v-if="checked(it.view)" class="text-icon" /></span>{{ it.text }}
       </button>
       <hr v-if="canvas.choices.value.length" />
       <div v-for="g in canvas.choices.value" :key="g.id" class="group" role="group">
@@ -85,7 +84,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOutside, 
           @mousedown.prevent
           @click="choose({ workspace: g.id })"
         >
-          <span class="check nerd-icon">{{ checked({ workspace: g.id }) ? ICONS.check : '' }}</span
+          <span class="check"><Check v-if="checked({ workspace: g.id })" class="text-icon" /></span
           ><span class="label workspace-title">{{ g.workspace }}</span>
         </button>
         <button
@@ -97,7 +96,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOutside, 
           @mousedown.prevent
           @click="choose({ cell: c.id })"
         >
-          <span class="check nerd-icon">{{ checked({ cell: c.id }) ? ICONS.check : '' }}</span
+          <span class="check"><Check v-if="checked({ cell: c.id })" class="text-icon" /></span
           ><CellName class="label" :name="c.name" /><span v-if="c.closed" class="closed"
             >closed</span
           >

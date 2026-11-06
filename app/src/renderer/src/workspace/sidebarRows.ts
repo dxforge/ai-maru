@@ -4,13 +4,10 @@ import { sidebarLabel, type SidebarLabel } from '../../../shared/names'
 import { paneName, type CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { AGENT_ICONS, commandIcon, STATE_LABELS } from '../icons'
+import { AGENT_ICONS, commandIcon, STATE_LABELS, type PaneIcon } from '../icons'
 import { tildePath } from './cwd'
 import { commandLabel, notificationText } from './display'
 import { holdsFavorite, type Pane } from './store'
-
-/** pane 줄 앞 칸에 그리는 것이다. `agent` 와 `glyph` 는 Nerd Font 글자이고, `state` 는 `StatusIcon` 으로 그린다. */
-export type PaneIcon = { agent: string } | { state: ProgramStatusState } | { glyph: string }
 
 export type Row = {
   pane: number
@@ -69,7 +66,7 @@ export function paneRow(
   return {
     pane: p.key,
     state: s,
-    icon: agent ? { agent } : s ? { state: s } : { glyph: commandIcon(cmd) },
+    icon: agent ? { agent } : s ? { state: s } : { command: commandIcon(cmd) },
     command: cmd,
     commandTail: tail,
     focused,

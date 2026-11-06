@@ -24,7 +24,6 @@ import {
   writeConfig,
   zshHome
 } from './app'
-import { ICONS } from '../src/renderer/src/icons'
 
 function headerBelowPane(page: Page): Promise<{ gap: number; above: number }> {
   return page.evaluate(() => {
@@ -60,7 +59,7 @@ test('pane 헤더는 도는 명령과 돈 시간을, 실패한 명령은 종료 
   await page.keyboard.type("printf '\\033]2;my-title\\007'; sleep 30\n")
   await expect(header.locator('.title')).toHaveText("printf '\\033]2;my-title\\007'; sleep 30")
   await expect(header).toHaveClass(/command-running/)
-  await expect(header.locator('.row-bar-icon')).toHaveText(ICONS.running)
+  await expect(header.locator('.row-bar-icon svg[data-icon="running"]')).toBeVisible()
   await expect(header.locator('.command-tail')).toHaveText('<1m')
   await expect(header.locator('.cwd')).toHaveText(basename(home))
 
@@ -70,7 +69,7 @@ test('pane 헤더는 도는 명령과 돈 시간을, 실패한 명령은 종료 
   await page.keyboard.type('false\n')
   await expect(header.locator('.title')).toHaveText('false')
   await expect(header).toHaveClass(/command-failed/)
-  await expect(header.locator('.row-bar-icon')).toHaveText(ICONS.error)
+  await expect(header.locator('.row-bar-icon svg[data-icon="failed"]')).toBeVisible()
   await expect(header.locator('.command-tail')).toHaveText('1')
 })
 
@@ -82,22 +81,6 @@ test('명령을 주어 띄운 pane 의 헤더는 명령 전체와 돈 시간을 
   await expect(header.locator('.title')).toHaveText('bash -c read x')
   await expect(header).toHaveClass(/command-running/)
   await expect(header.locator('.command-tail')).toHaveText('<1m')
-})
-
-test('앱이 뜰 때 그린 pane 헤더 아이콘도 함께 실은 Nerd Font 로 그린다', async ({ launch }) => {
-  const { page } = await launch()
-  await expect(activeHeader(page)).toBeVisible()
-
-  const cdp = await page.context().newCDPSession(page)
-  await cdp.send('DOM.enable')
-  await cdp.send('CSS.enable')
-  const { root } = await cdp.send('DOM.getDocument')
-  const { nodeId } = await cdp.send('DOM.querySelector', {
-    nodeId: root.nodeId,
-    selector: '.pane-header .row-bar-icon'
-  })
-  const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId })
-  expect(fonts.map((f) => f.familyName)).toEqual(['Symbols Nerd Font Mono'])
 })
 
 test('pane 헤더를 누르면 그 pane 이 포커스를 받고 키가 그리로 간다', async ({ launch }) => {
@@ -176,7 +159,9 @@ test('single 보기에서도 선택된 cell 의 헤더만 이름·상태를 보�
   await expect(headers.nth(0)).toBeHidden()
   await expect(headers.nth(1)).toHaveClass(/focused/)
   await expect(headers.nth(1).locator('.name')).toHaveText(basename(process.env.HOME!))
-  await expect(headers.nth(1).locator('.row-bar-icon svg')).toHaveCount(0)
+  await expect(
+    headers.nth(1).locator('.row-bar-icon svg[data-state]:not([data-icon])')
+  ).toHaveCount(0)
 
   await page.keyboard.type(programStatus('working'))
   await expect(headers.nth(1)).toHaveClass(/working/)

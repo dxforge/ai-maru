@@ -1,31 +1,21 @@
+import { SHELL } from '../../shared/launcher'
 import { CLAUDE_APP, type ProgramStatusState } from '../../shared/program-status'
+import { commandArgv } from './config/launcher'
 
 type Command = { running: boolean }
 
-/** 화면에 쓰는 Codicons glyph 의 Symbols Nerd Font 코드 포인트. */
-export const ICONS = {
-  claude: '\uEC82',
-  openai: '\uEC81',
-  terminal: '\uEA85',
-  branch: '\uEA68',
-  error: '\uEA87',
-  warning: '\uEA6C',
-  info: '\uEA74',
-  close: '\uEA76',
-  arrowUp: '\uEAA1',
-  check: '\uEAB2',
-  expandAll: '\uEB95',
-  collapseAll: '\uEAC5',
-  gear: '\uEAF8',
-  starEmpty: '\uEA6A',
-  starFull: '\uEB59',
-  running: '\uEB2C'
-} as const
+export type AgentLogo = 'claude' | 'codex' | 'kiro'
 
-/** OSC 7501 레코드가 없는 pane 의 아이콘이다. 색은 `commandClass` 가 붙이는 class(`style.css`)가 정한다. */
-export function commandIcon(c: Command | undefined): string {
-  if (!c) return ICONS.terminal
-  return c.running ? ICONS.running : ICONS.error
+/** OSC 7501 레코드가 없는 pane 의 아이콘이다. `failed` 는 실패한 명령이 남아 있는 pane 이다. */
+export type CommandIcon = 'terminal' | 'running' | 'failed'
+
+export type PaneIcon =
+  { agent: AgentLogo } | { state: ProgramStatusState } | { command: CommandIcon }
+
+/** 색은 `commandClass` 가 붙이는 class(`style.css`)가 정한다. */
+export function commandIcon(c: Command | undefined): CommandIcon {
+  if (!c) return 'terminal'
+  return c.running ? 'running' : 'failed'
 }
 
 export function commandClass(c: Command | undefined): string {
@@ -34,17 +24,24 @@ export function commandClass(c: Command | undefined): string {
 }
 
 // OSC 7501 의 `app` 은 아무 문자열이나 오므로 객체 대신 Map 으로 찾는다. 객체면 `constructor` 같은 키에 prototype 의 값을 돌려준다.
-export const AGENT_ICONS: ReadonlyMap<string, string> = new Map([[CLAUDE_APP, ICONS.claude]])
-
-const PROGRAM_ICONS: ReadonlyMap<string, string> = new Map([
-  ['claude', ICONS.claude],
-  ['codex', ICONS.openai]
+export const AGENT_ICONS: ReadonlyMap<string, AgentLogo> = new Map([
+  [CLAUDE_APP, 'claude'],
+  ['codex', 'codex'],
+  ['kiro-cli', 'kiro']
 ])
 
-export function programIcon(argv0: string | undefined): string | undefined {
-  return argv0 === undefined
-    ? undefined
-    : PROGRAM_ICONS.get(argv0.slice(argv0.lastIndexOf('/') + 1))
+const PROGRAM_ICONS: ReadonlyMap<string, AgentLogo> = new Map([
+  ['claude', 'claude'],
+  ['codex', 'codex'],
+  ['kiro-cli', 'kiro']
+])
+
+/** launcher 의 명령 줄 아이콘이다. 셸은 셸 아이콘, 표에 있는 agent 는 그 로고, 그 밖의 명령은 도는 명령 아이콘이다. */
+export function launcherIcon(command: string): 'terminal' | 'running' | AgentLogo {
+  if (command === SHELL) return 'terminal'
+  const argv0 = commandArgv(command)[0]
+  if (argv0 === undefined) return 'running'
+  return PROGRAM_ICONS.get(argv0.slice(argv0.lastIndexOf('/') + 1)) ?? 'running'
 }
 
 /** 상태 아이콘의 툴팁·aria-label. 화면에는 글자를 쓰지 않는다. 이름은 OSC 7501 의 상태 그대로다. */

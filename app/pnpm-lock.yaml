@@ -14,6 +14,9 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.13.0(jiti@2.7.0))
+      '@lobehub/icons-static-svg':
+        specifier: 1.102.0
+        version: 1.102.0
       '@lucide/vue':
         specifier: ^1.67.0
         version: 1.67.0(vue@3.5.44(typescript@6.0.3))
@@ -522,6 +525,9 @@ packages:
 
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
+
+  '@lobehub/icons-static-svg@1.102.0':
+    resolution: {integrity: sha512-3Na6S2kdslmsfnBjuL0PQWQClrmuWe/pWThRN/3J2VzPg5MhVghy8knVu7kd1/lqA9ydZBvwmnKLzuBo0Wm6Qw==}
 
   '@lucide/vue@1.67.0':
     resolution: {integrity: sha512-f4MC7czjbnFWOGyN3Ul0uJ6SLjj2cDIBpJpxc5NHyj9E3gE7mBqhHsJcFDno3vLuAyXbE9CTEqIqO3Qdk1tNvw==}
@@ -3018,6 +3024,8 @@ snapshots:
       keyv: 5.6.0
 
   '@keyv/serialize@1.1.1': {}
+
+  '@lobehub/icons-static-svg@1.102.0': {}
 
   '@lucide/vue@1.67.0(vue@3.5.44(typescript@6.0.3))':
     dependencies:

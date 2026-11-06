@@ -2,7 +2,6 @@ import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:f
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { ICONS } from '../src/renderer/src/icons'
 import {
   clickMenu,
   collapseSidebar,
@@ -324,34 +323,6 @@ test('경로는 cell 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입
   const branches = page.locator('.cell-header .branch')
   await expect(branches).toHaveText(['main'])
   await expect(branches).toBeVisible()
-})
-
-test('아이콘은 모두 앞 글꼴의 fallback 이 아니라 함께 실은 Nerd Font 를 글꼴로 정해 그린다', async ({
-  launch,
-  dataDir
-}) => {
-  const home = repoHome(dataDir)
-  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
-  const { app, page } = launched
-  await page.keyboard.type('cd proj\n')
-  await expect(branch(page)).toHaveText(/main$/)
-  await page.keyboard.type(programStatus('working'))
-  await expect(page.locator('.cell-header')).toHaveClass(/working/)
-  await split(app, page, 'split-right', 2)
-  await expect(shellRows(page).locator('.place .branch')).toHaveText(/main$/)
-
-  // 사이드바의 workspace 접기·Claude 아이콘·셸 줄의 터미널 아이콘과 branch, pane 헤더의 Claude 아이콘이 모두 그려진 뒤에 잰다.
-  const families = await page.evaluate((glyphs) => {
-    const found: string[] = []
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
-    for (let node = walker.nextNode(); node; node = walker.nextNode())
-      if (glyphs.some((g) => node!.textContent!.includes(g)))
-        found.push(getComputedStyle(node.parentElement!).fontFamily)
-    return found
-  }, Object.values(ICONS))
-
-  expect(families.length).toBeGreaterThanOrEqual(5)
-  expect(new Set(families)).toEqual(new Set(['"Symbols Nerd Font Mono"']))
 })
 
 test('고른 cell 을 바꾸면 창 제목과 폴더 아이콘이 그것을 따른다', async ({ launch, dataDir }) => {
@@ -693,7 +664,7 @@ test('maru job 으로 띄운 job 은 그 cell 의 pane 줄 아래에 이름·듣
   )
   await expect(jobRows(page)).toHaveCount(1)
   const web = jobRows(page).first()
-  await expect(web.locator('.state')).toHaveText(ICONS.gear)
+  await expect(web.locator('.state svg[data-icon="gear"]')).toBeVisible()
   await expect(web.locator('.title')).toHaveText('web')
   await expect(web).toHaveAttribute(
     'data-tooltip',
@@ -809,8 +780,25 @@ test('OSC 7501 의 app 이 agent 표에 없는 이름이면 사이드바와 pane
   const { page } = await launch()
   await page.keyboard.type(programStatus('idle', undefined, 'constructor'))
   await expect(paneRows(page)).toHaveClass(/idle/)
-  await expect(paneRows(page).locator('.state svg')).toHaveCount(1)
+  await expect(paneRows(page).locator('.state svg[data-state="idle"]')).toHaveCount(1)
   await expect(page.locator('.pane-header .claude-icon')).toHaveCount(0)
+})
+
+test('Codex 와 Kiro 는 쉬는 동안 사이드바 앞 칸에, 어느 상태에서나 pane 헤더에 그 로고를 둔다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  for (const [app, logo] of [
+    ['codex', 'codex'],
+    ['kiro-cli', 'kiro']
+  ]) {
+    await page.keyboard.type(programStatus('idle', undefined, app))
+    await expect(paneRows(page).locator(`.state svg[data-icon="${logo}"]`)).toBeVisible()
+    await expect(page.locator(`.pane-header .claude-icon[data-icon="${logo}"]`)).toBeVisible()
+    await page.keyboard.type(programStatus('working', undefined, app))
+    await expect(paneRows(page).locator('.state svg[data-state="working"]')).toBeVisible()
+    await expect(page.locator(`.pane-header .claude-icon[data-icon="${logo}"]`)).toBeVisible()
+  }
 })
 
 test('다른 저장소의 이름이 길어도 셸 줄의 branch 아이콘은 cell 면 안에 남는다', async ({
@@ -835,7 +823,7 @@ test('다른 저장소의 이름이 길어도 셸 줄의 branch 아이콘은 cel
       .nth(1)
       .evaluate((g) => {
         const face = g.getBoundingClientRect()
-        const icon = g.querySelector('.branch .nerd-icon')!.getBoundingClientRect()
+        const icon = g.querySelector('.branch svg')!.getBoundingClientRect()
         return icon.left >= face.left && icon.right <= face.right
       })
   expect(await inside()).toBe(true)
@@ -853,17 +841,17 @@ test('pane 줄은 오른쪽 끝에 위치를 두고, Claude 가 뜨고 끝나도
   await expect(place).toHaveText(/main$/)
   const right = async () => (await place.boundingBox())!.x + (await place.boundingBox())!.width
   const before = await right()
-  await expect(row.locator('.state')).toHaveText(ICONS.terminal)
+  await expect(row.locator('.state svg[data-icon="terminal"]')).toBeVisible()
 
   await page.keyboard.type(programStatus('working'))
   await expect(row).toHaveClass(/working/)
-  await expect(row.locator('.state svg')).toHaveCount(1)
+  await expect(row.locator('.state svg[data-state="working"]')).toHaveCount(1)
   await expect(place).toHaveText(/main$/)
   expect(await right()).toBe(before)
 
   await page.keyboard.type(programStatus('idle'))
   await expect(row).toHaveClass(/idle/)
-  await expect(row.locator('.state')).toHaveText(ICONS.claude)
+  await expect(row.locator('.state svg[data-icon="claude"]')).toBeVisible()
   expect(await right()).toBe(before)
 
   await page.keyboard.type(programStatus('clear'))
@@ -924,7 +912,7 @@ test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리
   await page.keyboard.type('sleep 30\n')
   await expect(row.locator('.title')).toHaveText('sleep 30')
   await expect(row).toHaveClass(/command-running/)
-  await expect(row.locator('.state')).toHaveText(ICONS.running)
+  await expect(row.locator('.state svg[data-icon="running"]')).toBeVisible()
   await expect(row.locator('.command-tail')).toHaveText('<1m')
   await expect(row.locator('.place')).toHaveCount(0)
   await expect(row).toHaveAttribute('data-tooltip', 'sleep 30\nRunning for <1m\n~')
@@ -949,7 +937,7 @@ test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리
   await page.keyboard.type("sh -c 'exit 3'\n")
   await expect(row).toHaveClass(/command-failed/)
   await expect(row.locator('.title')).toHaveText("sh -c 'exit 3'")
-  await expect(row.locator('.state')).toHaveText(ICONS.error)
+  await expect(row.locator('.state svg[data-icon="failed"]')).toBeVisible()
   await expect(row.locator('.command-tail')).toHaveText('3')
   await expect(row).toHaveAttribute('data-tooltip', "sh -c 'exit 3'\nExited with code 3\n~")
 
@@ -1304,6 +1292,7 @@ test('핀을 꽂은 workspace 는 마지막 cell 을 닫아도 이름과 함께 
   await expect(workspaceNames(page)).toHaveText(['atlas', 'sub'])
   await expect(closedRows(page)).toHaveCount(1)
   await expect(closedRows(page)).toContainText('sub')
+  await expect(closedRows(page).locator('.state svg[data-icon="terminal"]')).toBeVisible()
   await expect(page.locator('.sidebar .closed-card .favorite')).toHaveCount(0)
 
   await reopenShell(page, closedRows(page))
@@ -1447,10 +1436,12 @@ test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell
   // 핀이 꽂힌 workspace 는 핀 묶음으로 옮겨 가 목록의 맨 앞에 오고, 그 터미널들도 DOM 에서 앞으로 옮겨진다.
   await cellItems(page).nth(4).hover()
   await expect(cellFavorite(page, 4)).toHaveAttribute('aria-pressed', 'false')
+  await expect(cellFavorite(page, 4).locator('svg')).toHaveAttribute('fill', 'none')
   await cellFavorite(page, 4).click()
   const pin = workspaceHeads(page).nth(0).locator('.pin')
   await expect(pin).toHaveAttribute('aria-pressed', 'true')
   await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 1).locator('svg')).toHaveAttribute('fill', 'currentColor')
   await expect(cellItems(page).nth(1)).toContainText('sub')
   await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'false')
   await run(page, 'echo kept-$((1+1))', 'kept-2')

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ICONS } from '../icons'
+import { X } from '@lucide/vue'
 import FoldChevron from './FoldChevron.vue'
 
 const { title, open } = defineProps<{ title: string; open: boolean }>()
@@ -21,7 +21,7 @@ defineSlots<{ meta?(): unknown }>()
       @mousedown.prevent
       @click="emit('remove')"
     >
-      <span class="nerd-icon">{{ ICONS.close }}</span>
+      <X class="text-icon" />
     </button>
   </div>
 </template>

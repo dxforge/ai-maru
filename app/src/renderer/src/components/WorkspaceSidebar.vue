@@ -5,9 +5,12 @@ import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { commandClass, ICONS, STATE_LABELS } from '../icons'
+import { GitBranch, Star, X } from '@lucide/vue'
+import { commandClass, STATE_LABELS } from '../icons'
 import { anchorWidth, type Anchor } from '../launcher/anchor'
 import FoldChevron from './FoldChevron.vue'
+import LeadIcon from './LeadIcon.vue'
+import PaneIcon from './PaneIcon.vue'
 import StatusIcon from './StatusIcon.vue'
 import WorkspaceNameInput from './WorkspaceNameInput.vue'
 import { commandLabel, commandTail, elapsed, notificationText } from '../workspace/display'
@@ -351,7 +354,7 @@ const favoriteLabel = (favorite: boolean): string =>
               @mousedown.prevent
               @click="openDir($event, w.key, item.dir)"
             >
-              <span class="state nerd-icon">{{ ICONS.terminal }}</span>
+              <span class="state"><PaneIcon :icon="{ command: 'terminal' }" /></span>
               <span class="title">{{ item.name }}</span>
               <span class="tail">{{ item.path }}</span>
             </button>
@@ -364,7 +367,7 @@ const favoriteLabel = (favorite: boolean): string =>
               @mousedown.prevent
               @click="emit('removeFavorite', w.key, item.dir)"
             >
-              <span class="nerd-icon">{{ ICONS.starFull }}</span>
+              <Star class="text-icon" fill="currentColor" />
             </button>
           </div>
           <div
@@ -391,17 +394,16 @@ const favoriteLabel = (favorite: boolean): string =>
               <span
                 v-tooltip="r.state && STATE_LABELS[r.state]"
                 class="state status-icon"
-                :class="{ 'nerd-icon': !('state' in r.icon), unread: r.notice }"
-                ><StatusIcon v-if="'state' in r.icon" :state="r.icon.state" /><template v-else>{{
-                  'agent' in r.icon ? r.icon.agent : r.icon.glyph
-                }}</template></span
-              >
+                :class="{ unread: r.notice }"
+                ><PaneIcon :icon="r.icon"
+              /></span>
               <span class="title">{{ r.text }}</span>
               <span v-if="r.place" class="tail place"
                 ><span v-if="r.place.name" class="name">{{ r.place.name }}</span
                 ><span v-if="r.place.branch" class="branch"
-                  ><span class="nerd-icon">{{ ICONS.branch }}</span
-                  ><span class="branch-name">{{ r.place.branch }}</span></span
+                  ><GitBranch class="text-icon" /><span class="branch-name">{{
+                    r.place.branch
+                  }}</span></span
                 ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
               >
               <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
@@ -415,18 +417,18 @@ const favoriteLabel = (favorite: boolean): string =>
               class="row job-row"
               :class="{ exited: j.exited }"
             >
-              <span class="state nerd-icon">{{ ICONS.gear }}</span>
+              <span class="state"><LeadIcon name="gear" /></span>
               <span class="title">{{ j.text }}</span>
               <span v-if="j.ports" class="tail ports">{{ j.ports }}</span>
               <span class="tail time">{{ jobTime(j) }}</span>
               <button
                 v-tooltip="j.exited ? 'Remove' : 'Stop'"
-                class="tail kill nerd-icon"
+                class="tail kill"
                 :aria-label="j.exited ? `Remove ${j.text}` : `Stop ${j.text}`"
                 @mousedown.prevent
                 @click="emit('killJob', j.pty)"
               >
-                {{ ICONS.close }}
+                <X class="text-icon" />
               </button>
             </div>
             <button
@@ -438,7 +440,7 @@ const favoriteLabel = (favorite: boolean): string =>
               @mousedown.prevent
               @click="emit('toggleFavorite', item.c.key)"
             >
-              <span class="nerd-icon">{{ item.favorite ? ICONS.starFull : ICONS.starEmpty }}</span>
+              <Star class="text-icon" :fill="item.favorite ? 'currentColor' : 'none'" />
             </button>
           </div>
         </template>
@@ -474,7 +476,6 @@ const favoriteLabel = (favorite: boolean): string =>
   background: var(--side);
   font:
     var(--text-3) var(--font-ui),
-    'Symbols Nerd Font Mono',
     sans-serif;
 }
 
@@ -736,10 +737,6 @@ button {
   min-width: 11px;
 }
 
-.branch .nerd-icon {
-  flex: none;
-}
-
 .sub {
   flex: none;
   max-width: 50%;
@@ -760,7 +757,6 @@ button {
 .state {
   flex: none;
   width: 14px;
-  text-align: center;
   color: var(--claude, var(--faint));
 }
 
