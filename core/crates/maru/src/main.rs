@@ -141,14 +141,16 @@
 //!
 //! `app.restart` 는 pty 를 끄지 않고 앱을 다시 띄운다. 다시 뜬 앱은 workspace·cell·pane 을
 //! 되살리고 같은 pty 에 다시 붙는다. 앱은 답을 보낸 뒤에 끝난다. 설치된 앱의 `maru-pty` 와
-//! 떠 있는 pty 의 프로토콜 버전이 다르거나 상태 파일의 `cells`·`panes`·`sessions` 표의 형식 버전이
-//! 다르면 다시 뜬 앱은 그 pty 에 붙지 못한다. 이때 `kill_ptys` 가 true 가 아니면 재시작하지 않고
-//! -32001 `ptys_would_end` 로 답한다. `data.ptys` 는 꺼질 pty 수다. `data.result` 는 `kill_ptys` 를
-//! 주면 다시 뜬 앱이 되살릴 것이다. 배치만 되살리면 `layout`, cell 마다 셸 하나로 열면 `cells`, cell 을
-//! 모두 닫으면 `empty` 다. `workspaces` 표의 형식 버전만 다르면 다시 뜬 앱은 pty 에 다시 붙지만 핀과
-//! workspace 의 이름·즐겨찾기를 잃는다. 이때는 -32001 `pins_would_be_lost` 로 답하고, `data.result` 는
-//! `full`, `data.ptys` 는 0 이다. `kill_ptys` 가 true 면 그 결과로 재시작한다 — `full` 이 아니면 pty
-//! 를 끈다. dev 서버로 띄운 앱이면 -32001 `restart_unavailable` 로 답한다. 상태를 저장하지 못하면
+//! 떠 있는 pty 의 프로토콜 버전이 다르면 다시 뜬 앱은 그 pty 에 붙지 못한다. 이때 `kill_ptys` 가
+//! true 가 아니면 재시작하지 않고 -32001 `ptys_would_end` 로 답한다. `data.ptys` 는 꺼질 pty 수다.
+//! pty 프로토콜은 같고 상태 파일의 `cells`·`panes`·`sessions` 표의 형식 버전이 다르면, 다시 뜬 앱은
+//! pane 을 그 pty 에 붙이지 못한다. 이때 pty 는 끄지 않고 Recovered workspace 에 cell 하나씩으로 연다. 이때는 -32001
+//! `layout_would_be_lost` 로 답하고, `data.recovered` 는 Recovered workspace 로 옮겨질 pty 수다. 두
+//! 경우 모두 `data.result` 는 `kill_ptys` 를 주면 다시 뜬 앱이 되살릴 것이다. 배치만 되살리면
+//! `layout`, cell 마다 셸 하나로 열면 `cells`, cell 을 모두 닫으면 `empty` 다. `workspaces` 표의 형식 버전만 다르면 다시 뜬 앱은 pty 에
+//! 다시 붙지만 핀과 workspace 의 이름·즐겨찾기를 잃는다. 이때는 -32001 `pins_would_be_lost` 로 답하고,
+//! `data.result` 는 `full` 이다. `kill_ptys` 가 true 면 그 결과로 재시작한다 — 프로토콜이 다를 때만
+//! pty 를 끈다. dev 서버로 띄운 앱이면 -32001 `restart_unavailable` 로 답한다. 상태를 저장하지 못하면
 //! 재시작하지 않고 `internal_error` 로 답한다.
 //!
 //! `monitor.subscribe` 는 `result` 를 보낸 뒤 연결을 닫지 않고, 알림이 생길 때마다
@@ -503,15 +505,16 @@ enum AppCommand {
     /// Restart the app and keep its terminals running. The restarted app restores the
     /// workspaces, cells and panes and reattaches them to their terminals.
     ///
-    /// Refuses when the installed app cannot reattach to the running terminals or read the
-    /// saved state. Pass --kill-ptys to end the terminals and restart anyway: with the layout
-    /// only, with one shell per cell if the installed app uses a different format for saved
-    /// panes, or closing all cells if it uses a different or unknown format for saved cells. If
-    /// only the format for saved workspaces differs, pass --kill-ptys to restart. Terminals will
-    /// keep running, but workspaces will be unpinned and lose their custom names and favorites.
-    /// Pinned workspaces with no cells will be removed.
+    /// Refuses when the installed app uses an incompatible pty protocol or an incompatible or
+    /// unknown saved-state format. Pass --kill-ptys to restart anyway. A cells format mismatch
+    /// closes all cells, and a panes format mismatch reopens each cell with a new shell. A pty
+    /// protocol or terminal-sessions mismatch restores the pane layout with new shells. A pty
+    /// protocol mismatch ends the running terminals. Otherwise, terminals that cannot be matched
+    /// to restored panes keep running in a new workspace named Recovered. A workspaces format
+    /// mismatch unpins workspaces and drops their custom names and favorites, and removes pinned
+    /// workspaces with no cells.
     Restart {
-        /// Restart even if it means ending terminals or losing workspace pins.
+        /// Restart even if it means ending terminals or losing the layout or workspace pins.
         #[arg(long)]
         kill_ptys: bool,
     },

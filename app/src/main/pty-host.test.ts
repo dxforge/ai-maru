@@ -196,6 +196,45 @@ describe('pty host', () => {
     }
   })
 
+  it('quit 은 그 앞뒤로 받은 kill 과 붙지 못해 끄는 pty 가 끝난 뒤에 끝난다', async () => {
+    const exit = spyExit()
+    try {
+      const killed = deferred<void>()
+      pty.killPty.mockReturnValue(killed.promise)
+      pty.spawnPty.mockResolvedValue('live')
+      pty.connect.mockRejectedValue(new Error('refused'))
+      const port = open('p-00000001')
+      await vi.waitFor(() => expect(port.messages).toContain(null))
+      kill('p-00000002')
+      await vi.waitFor(() => expect(pty.killPty).toHaveBeenCalledTimes(2))
+      quit()
+      await new Promise((r) => setTimeout(r, 20))
+      const late = deferred<void>()
+      pty.killPty.mockReturnValue(late.promise)
+      kill('p-00000003')
+      await vi.waitFor(() => expect(pty.killPty).toHaveBeenCalledTimes(3))
+      killed.resolve()
+      await new Promise((r) => setTimeout(r, 20))
+      expect(exit).not.toHaveBeenCalled()
+      late.resolve()
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))
+    } finally {
+      exit.mockRestore()
+    }
+  })
+
+  it('끄기에 실패한 pty 가 있어도 quit 은 끝난다', async () => {
+    const exit = spyExit()
+    try {
+      pty.killPty.mockRejectedValue(new Error('boom'))
+      kill('p-00000001')
+      quit()
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))
+    } finally {
+      exit.mockRestore()
+    }
+  })
+
   it('뜨는 중인 pty 가 없으면 quit 은 바로 끝난다', async () => {
     const exit = spyExit()
     try {

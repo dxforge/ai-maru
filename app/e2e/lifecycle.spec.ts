@@ -35,6 +35,7 @@ import {
   END_EVERYTHING,
   test,
   typesInto,
+  workspaceNames,
   wrapPtyBin
 } from './app'
 
@@ -121,7 +122,7 @@ test('프로세스가 없는 pty 의 레코드는 지우고 새 pty 를 띄운�
   expect(existsSync(join(dir, 'p-dead.sock'))).toBe(false)
 })
 
-test('앱이 강제로 끝나 남은 pty 가 state.json 의 sessions 에 없으면 다음에 켤 때 끝낸다', async ({
+test('앱이 강제로 끝나 남은 pty 가 state.json 의 sessions 에 없으면 다음에 켤 때 끄지 않고 Recovered workspace 에 연다', async ({
   launch,
   dataDir
 }) => {
@@ -136,10 +137,11 @@ test('앱이 강제로 끝나 남은 pty 가 state.json 의 sessions 에 없으�
   rmSync(stateFile(dataDir), { force: true })
 
   const { page } = await launch()
-  await page.keyboard.type('echo fresh-$((2+2))\n')
-  await expect(screen(page)).toShow('fresh-4')
-  expect(sockets(dataDir)).toHaveLength(1)
-  expect(sockets(dataDir)).not.toContain(left)
+  await expect(workspaceNames(page)).toHaveText(['Recovered'])
+  await expect(screen(page)).toShow('left-2')
+  await page.keyboard.type('echo again-$((2+2))\n')
+  await expect(screen(page)).toShow('again-4')
+  expect(sockets(dataDir)).toEqual([left])
 })
 
 test('셸이 뜨기 전에 앱을 끄면 그 pty 는 뜬 뒤에 끝난다', async ({ launch, dataDir }) => {

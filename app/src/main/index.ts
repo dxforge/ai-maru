@@ -62,7 +62,7 @@ import {
   foregroundCwd,
   killPty,
   killPtys,
-  livePtys,
+  liveRecords,
   QUIT_TIMEOUT_MS,
   readRecord,
   runDir,
@@ -84,9 +84,7 @@ import {
   initialState,
   readState,
   removeOldStateFiles,
-  restorePlan,
-  fullRestore,
-  sessionPtys,
+  startRestore,
   stateFile,
   type FinishOptions,
   type Outcome,
@@ -399,7 +397,11 @@ const restartHandlers: Handlers = {
     }
     if (!check.ok && !kill) {
       const { code, message } = restartRefusal(check)
-      throw new CliError(-32001, code, message, { ptys: check.ptys, result: check.result })
+      throw new CliError(-32001, code, message, {
+        ptys: check.ptys,
+        recovered: check.recovered,
+        result: check.result
+      })
     }
     const next = restartOutcome(check)
     finishWith(next.outcome, { drop: next.drop })
@@ -664,27 +666,20 @@ function start(): void {
     if (parsed) applyTheme(parsed)
   })
   const plan = (async () => {
-    const live = new Set(await livePtys(ptyDir()))
-    const alive = (sessions ? sessionPtys(sessions) : []).filter((pty) => live.has(pty))
-    const records = await Promise.all(alive.map((pty) => readRecord(ptyDir(), pty)))
-    const protocols = new Map(alive.map((pty, i) => [pty, records[i]?.protocol_version ?? null]))
-    const p = restorePlan(read, (pty) => (protocols.has(pty) ? protocols.get(pty) : undefined))
+    const p = startRestore(read, layout, sessions, await liveRecords(ptyDir()))
     // `cells` 를 읽지 못한 `empty` 는 `initialState` 가 이미 비웠다.
     if (p.mode === 'layout') store?.discard('layout')
     return p
   })()
   // `killPtys` 는 `keep` 에 없는 pty 를 모두 끄므로, 새 pty 는 이 정리가 끝난 뒤에 띄운다.
-  const full = plan.then((p) =>
-    p.mode === 'full' && sessions ? fullRestore(layout, sessions) : null
-  )
-  const leftovers = full.then(async (f) => {
-    const keep = new Set(f?.keep ?? [])
+  const leftovers = plan.then(async (p) => {
+    const keep = new Set(p.keep)
     await killPtys(ptyDir(), undefined, keep)
     for (const id of keep) ptyStates.watch(id)
   })
-  let toRestore: Promise<Restore> | null = Promise.all([plan, full]).then(([p, f]) => ({
-    layout,
-    ptys: f?.attach ?? null,
+  let toRestore: Promise<Restore> | null = plan.then((p) => ({
+    layout: p.layout,
+    ptys: p.attach,
     notice: p.notice
   }))
   ipcMain.handle('screen:restore', () => {
@@ -943,7 +938,7 @@ function start(): void {
       const proc = host
       if (!proc) return
       return new Promise<void>((resolve) => {
-        // 멈춘 host 를 기다리느라 앱이 꺼지지 않게 상한을 둔다. 그때 띄우던 pty 가운데 소켓을 연 pty 는 다음 실행의 정리가 끈다.
+        // 멈춘 host 를 기다리느라 앱이 꺼지지 않게 상한을 둔다. 그때 띄우던 pty 가운데 소켓을 연 것은 앱이 pty 를 끄고 끝나면 `killPtys` 가 끈다. 앱이 pty 를 남기고 끝나면 다음 실행이 그 pty 를 Recovered workspace 에 연다.
         const timer = setTimeout(() => {
           // 멈춘 프로세스는 SIGTERM 을 처리하지 못한다. host 가 방금 끝나 `exit` 이 아직 오지 않았으면 kill 이 실패한다.
           try {
@@ -969,13 +964,14 @@ function start(): void {
     stopConfig()
     portWatch.stop()
     quitting = true
+    const keepPtys = outcome === 'keep'
     void Promise.all([
-      outcome === 'keep' ||
-        Promise.all([
-          stopHost(),
-          // job 의 시작 폴더 확인(`startDir`)에는 시간 제한이 없다. 응답하지 않는 마운트에 있는 job 때문에 앱이 꺼지지 않을 수 있으므로, host 와 같은 상한까지만 기다린다.
-          Promise.race([Promise.all(jobSpawns), sleep(QUIT_TIMEOUT_MS)])
-        ]).then(() => killPtys(ptyDir())),
+      // pty 를 남기고 끝낼 때도 host 를 기다린다. host 가 받은 kill 을 마치기 전에 끝나면 닫은 pane 의 pty 가 남고, 다음 실행이 그 pty 를 Recovered workspace 에 열기 때문이다.
+      Promise.all([
+        stopHost(),
+        // job 의 시작 폴더 확인(`startDir`)에는 시간 제한이 없다. 응답하지 않는 마운트에 있는 job 때문에 앱이 꺼지지 않을 수 있으므로, host 와 같은 상한까지만 기다린다.
+        keepPtys || Promise.race([Promise.all(jobSpawns), sleep(QUIT_TIMEOUT_MS)])
+      ]).then(() => (keepPtys ? undefined : killPtys(ptyDir()))),
       cliServer.then((server) => server?.close())
     ]).finally(() => {
       ptysKilled = true

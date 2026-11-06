@@ -20,17 +20,28 @@ export function restoreToast(notice: RestoreNotice): Toast {
     return {
       level: 'warning',
       title: "Couldn't restore the panes",
+      lines: ["The saved panes couldn't be read, so AI Maru reopened each cell with a new shell."]
+    }
+  if (notice === 'recovered')
+    return {
+      level: 'info',
+      title: 'Terminals moved to Recovered',
       lines: [
-        "The saved panes couldn't be read. AI Maru ended the terminals and reopened each cell with one new shell."
+        "Running terminals that couldn't be matched to restored panes were opened in the Recovered workspace."
       ]
     }
-  const why =
-    notice === 'protocol'
-      ? 'At least one running terminal uses a different or unknown pty protocol version.'
-      : "The saved terminal sessions couldn't be read."
   return {
     level: 'warning',
     title: "Couldn't reattach to the terminals",
-    lines: [why, 'AI Maru ended the terminals and reopened the panes with new shells.']
+    lines:
+      notice === 'protocol'
+        ? [
+            'At least one running terminal uses a different or unknown pty protocol version.',
+            'AI Maru ended those terminals and reopened the panes with new shells.'
+          ]
+        : [
+            "The saved terminal sessions couldn't be read.",
+            'AI Maru reopened the panes with new shells.'
+          ]
   }
 }

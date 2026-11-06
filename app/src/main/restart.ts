@@ -4,7 +4,7 @@ import { promisify } from 'node:util'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import { STATE_VERSIONS } from '../shared/screen'
 import type { Dialog } from './close-confirm'
-import { livePtys } from './pty'
+import { liveRecords } from './pty'
 import type { Outcome, TableName } from './state'
 
 const run = promisify(execFile)
@@ -38,8 +38,10 @@ export type Incompatible = {
    * `cells` 면 cell 마다 셸 하나로, `empty` 면 cell 을 모두 닫는다.
    */
   result: 'full' | 'layout' | 'cells' | 'empty'
-  /** 꺼질 pty 수다. `full` 이면 pty 를 끄지 않으므로 0 이다. */
+  /** 꺼질 pty 수다. */
   ptys: number
+  /** 다시 뜬 앱이 붙을 pane 을 찾지 못해 `Recovered` workspace 로 옮길 pty 수다. */
+  recovered: number
   /** 설치된 `maru-pty` 의 프로토콜이 다르고 살아 있는 pty 가 있을 때만 있다. 버전을 알 수 없으면 null 이다. */
   protocol?: number | null
   formats: TableName[]
@@ -72,7 +74,7 @@ export async function checkRestart(o: {
   const [protocol, versions, live] = await Promise.all([
     ptyProtocol(o.bin),
     installedVersions(o.versionsFile),
-    livePtys(o.dir)
+    liveRecords(o.dir)
   ])
   const formats = FORMATS.filter((k) => versions?.[k] !== STATE_VERSIONS[k])
   const protocolDiffers = protocol !== PROTOCOL_VERSION && live.length > 0
@@ -82,7 +84,8 @@ export async function checkRestart(o: {
     ok: false,
     reason: 'incompatible',
     result,
-    ptys: result === 'full' ? 0 : live.length,
+    ptys: protocolDiffers ? live.length : 0,
+    recovered: protocolDiffers || result === 'full' ? 0 : live.length,
     ...(protocolDiffers && { protocol }),
     formats,
     ...(!versions && { formatsUnknown: true as const })
@@ -91,13 +94,15 @@ export async function checkRestart(o: {
 
 /**
  * 형식이 다른 표는 결과와 상관없이 비운다. 남기면 다시 뜬 앱이 읽지 못한 표를 toast 로 알려, 사용자가 이미 고른 손실을
- * 다시 알리기 때문이다.
+ * 다시 알리기 때문이다. 프로토콜이 같으면 pty 를 남긴다. 다시 뜬 앱이 붙을 pane 이 없는 pty 를 `Recovered` workspace
+ * 로 열기 때문이다.
  */
 export function restartOutcome(check: RestartCheck): { outcome: Outcome; drop: TableName[] } {
   if (check.ok) return { outcome: 'keep', drop: [] }
   if (check.reason !== 'incompatible') return { outcome: 'layout', drop: [] }
-  const outcomes = { full: 'keep', layout: 'layout', cells: 'layout', empty: 'end' } as const
-  return { outcome: outcomes[check.result], drop: check.formats }
+  const outcome =
+    check.protocol === undefined ? 'keep' : check.result === 'empty' ? 'end' : 'layout'
+  return { outcome, drop: check.formats }
 }
 
 const formatName = (f: TableName): string => (f === 'sessions' ? 'terminal sessions' : f)
@@ -121,11 +126,14 @@ function reasons(check: Incompatible): string[] {
   return parts
 }
 
+const terminals = (n: number): string => `${n} ${n === 1 ? 'terminal' : 'terminals'}`
+
 function restartDetail(check: Incompatible): string {
-  const ending =
-    check.ptys === 0
+  const ending = check.ptys === 0 ? [] : [`This will end ${terminals(check.ptys)}.`]
+  const moving =
+    check.recovered === 0
       ? []
-      : [`This will end ${check.ptys} ${check.ptys === 1 ? 'terminal' : 'terminals'}.`]
+      : [`${terminals(check.recovered)} will keep running in a new workspace named Recovered.`]
   const after = {
     full: [],
     layout: ['The panes will reopen with new shells in their last directories.'],
@@ -137,7 +145,7 @@ function restartDetail(check: Incompatible): string {
         'Workspaces will be unpinned and lose their custom names and favorites. Pinned workspaces with no cells will be removed.'
       ]
     : []
-  return [...reasons(check), ...ending, ...after, ...workspaces].join(' ')
+  return [...reasons(check), ...ending, ...after, ...moving, ...workspaces].join(' ')
 }
 
 export function restartDialog(check: Incompatible): Dialog {
@@ -151,7 +159,7 @@ export function restartDialog(check: Incompatible): Dialog {
 }
 
 export function restartRefusal(check: Incompatible): {
-  code: 'pins_would_be_lost' | 'ptys_would_end'
+  code: 'pins_would_be_lost' | 'layout_would_be_lost' | 'ptys_would_end'
   message: string
 } {
   const result = {
@@ -161,7 +169,12 @@ export function restartRefusal(check: Incompatible): {
     empty: 'and close all cells'
   }[check.result]
   return {
-    code: check.result === 'full' ? 'pins_would_be_lost' : 'ptys_would_end',
+    code:
+      check.protocol !== undefined
+        ? 'ptys_would_end'
+        : check.result === 'full'
+          ? 'pins_would_be_lost'
+          : 'layout_would_be_lost',
     message: `${restartDetail(check)} Pass --kill-ptys to restart ${result}.`
   }
 }
