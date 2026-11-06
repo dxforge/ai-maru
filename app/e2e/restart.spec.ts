@@ -175,31 +175,39 @@ test('앱이 꺼진 동안 셸이 보고한 cwd·제목을 다시 뜬 앱이 프
   await expect(cellPlaces(again)).toHaveText(['moved'])
 })
 
-test('다시 뜬 앱은 pty 의 프로토콜이 다르면 그 pty 를 끄고 레이아웃만 되살려 새 셸을 띄우고 알린다', async ({
+test('다시 뜬 앱은 pty 의 프로토콜이 다르면 그 pty 를 끄고 레이아웃만 되살려 새 셸을 띄우며, 같은 프로토콜의 pty 는 Recovered workspace 에 열고 알린다', async ({
   launch,
   dataDir
 }) => {
   const { app, page } = await launch(DOM_RENDERER)
   await split(app, page, 'split-right', 2)
-  await shellUp(page, 0)
-  await page.keyboard.type(programStatus('working'))
-  await expect(paneRows(page).first()).toHaveClass(/working/)
+  for (const i of [0, 1]) {
+    await shellUp(page, i)
+    await run(page, `X=kept-$((40+2)); echo set-$((${i}+1))`, `set-${i + 1}`)
+  }
   await restartWith(app)
-  const old = sockets(dataDir)
-  const record = join(ptyDir(dataDir), `${basename(old[0], '.sock')}.json`)
+  const [other, same] = readState(dataDir).sessions.ptys.map((p: { pty: string }) => p.pty)
+  const record = join(ptyDir(dataDir), `${other}.json`)
   writeFileSync(
     record,
     JSON.stringify({ ...JSON.parse(readFileSync(record, 'utf8')), protocol_version: 999 })
   )
 
   const { page: again } = await launch(DOM_RENDERER)
-  await expect(toast(again)).toContainText("Couldn't reattach to the terminals")
-  await expect(toast(again)).toContainText('different or unknown pty protocol version')
-  await expect(panes(again)).toHaveCount(2)
-  await expect(paneRows(again)).toHaveCount(0)
+  await expect(
+    toast(again).filter({ hasText: "Couldn't reattach to the terminals" })
+  ).toContainText('different or unknown pty protocol version')
+  await expect(toast(again).filter({ hasText: 'Terminals moved to Recovered' })).toHaveCount(1)
+  await expect(workspaceNames(again).last()).toHaveText('Recovered')
+  await expect(cellItems(again)).toHaveCount(2)
+  await expect(cellViews(again).nth(0).locator('.pane')).toHaveCount(2)
   await expect(panes(again).filter({ hasText: 'pty had ended' })).toHaveCount(0)
-  await run(again, 'echo fresh-$((1+1))', 'fresh-2')
-  for (const sock of old) expect(sockets(dataDir)).not.toContain(sock)
+  await run(again, 'echo "fresh-$((1+1)) x=$X"', 'fresh-2 x=\n')
+  await cellItems(again).nth(1).click()
+  await run(again, 'echo "x=$X"', 'x=kept-42')
+  const now = sockets(dataDir).map((sock) => basename(sock, '.sock'))
+  expect(now).toContain(same)
+  expect(now).not.toContain(other)
 })
 
 test('재시작 동안 끝난 pty 의 pane 은 이유를 보인 뒤 같은 pane 에 저장한 cwd 로 새 셸을 띄운다', async ({
@@ -290,7 +298,7 @@ test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살
 
 const closedRows = (page: Launched['page']) => page.locator('.sidebar .closed-row')
 
-test('state.json 의 cells 를 읽지 못하면 pty 를 끄고, 핀 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리며 알린다', async ({
+test('state.json 의 cells 를 읽지 못하면 핀 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리고, 살아 있는 pty 는 띄운 순서로 Recovered workspace 에 cell 하나씩으로 열며 알린다', async ({
   launch,
   dataDir
 }) => {
@@ -300,7 +308,7 @@ test('state.json 의 cells 를 읽지 못하면 pty 를 끄고, 핀 workspace �
   await expect(first.page.locator('.sidebar .workspace-name-input')).toBeFocused()
   await first.page.keyboard.type('atlas')
   await first.page.keyboard.press('Enter')
-  await run(first.page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await run(first.page, 'cd sub && X=first-$((1+1)) && echo in-$((1+1))', 'in-2')
   await cellItems(first.page).nth(0).hover()
   await cellFavorite(first.page, 0).click()
   await expect(cellFavorite(first.page, 0)).toHaveAttribute('aria-pressed', 'true')
@@ -312,14 +320,16 @@ test('state.json 의 cells 를 읽지 못하면 pty 를 끄고, 핀 workspace �
   const old = sockets(dataDir)
 
   const { page } = await launch(shell)
-  await expect(toast(page)).toContainText("Couldn't restore the cells")
-  await expect(workspaceNames(page)).toHaveCount(2)
-  await expect(workspaceNames(page).nth(0)).toHaveText('atlas')
+  await expect(toast(page).filter({ hasText: "Couldn't restore the cells" })).toHaveCount(1)
+  await expect(toast(page).filter({ hasText: 'Terminals moved to Recovered' })).toHaveCount(1)
+  await expect(workspaceNames(page)).toHaveText(['atlas', 'Recovered'])
   await expect(closedRows(page)).toHaveCount(1)
   await expect(closedRows(page)).toContainText('sub')
-  await expect(cellItems(page)).toHaveCount(1)
-  await run(page, 'echo empty-$((1+1))', 'empty-2')
-  for (const sock of old) expect(sockets(dataDir)).not.toContain(sock)
+  await expect(cellItems(page)).toHaveCount(2)
+  await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
+  await cellItems(page).nth(0).click()
+  await run(page, 'echo "x=$X"', 'x=first-2')
+  expect(sockets(dataDir).sort()).toEqual(old.sort())
 })
 
 async function pinAs(launched: Launched, name: string): Promise<void> {
@@ -335,7 +345,7 @@ async function pinAs(launched: Launched, name: string): Promise<void> {
   )
 }
 
-test('state.json 의 panes 를 읽지 못하면 pty 를 끄고, cell 마다 workspace 의 dir 에서 셸 하나를 띄우며 알린다', async ({
+test('state.json 의 panes 를 읽지 못하면 cell 마다 workspace 의 dir 에서 셸 하나를 띄우고, 살아 있는 pty 는 Recovered workspace 에 열며 알린다', async ({
   launch,
   dataDir
 }) => {
@@ -354,11 +364,15 @@ test('state.json 의 panes 를 읽지 못하면 pty 를 끄고, cell 마다 work
   const old = sockets(dataDir)
 
   const { page } = await launch(zsh)
-  await expect(toast(page)).toContainText("Couldn't restore the panes")
-  await expect(cellItems(page)).toHaveCount(1)
-  await expect(panes(page)).toHaveCount(1)
-  await run(page, 'echo "at=$PWD x=$X"', `at=${sub} x=`)
-  for (const sock of old) expect(sockets(dataDir)).not.toContain(sock)
+  await expect(toast(page).filter({ hasText: "Couldn't restore the panes" })).toHaveCount(1)
+  await expect(toast(page).filter({ hasText: 'Terminals moved to Recovered' })).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(3)
+  await expect(workspaceNames(page).last()).toHaveText('Recovered')
+  await expect(cellViews(page).nth(0).locator('.pane')).toHaveCount(1)
+  await run(page, 'echo "at=$PWD x=$X"', `at=${sub} x=\n`)
+  await cellItems(page).nth(1).click()
+  await run(page, 'echo "x=$X"', 'x=old')
+  expect(sockets(dataDir)).toEqual(expect.arrayContaining(old))
 })
 
 test('state.json 의 workspaces 를 읽지 못하면 cell 과 셸은 되살리고, 이름·핀을 잃었다고 알린다', async ({
@@ -593,7 +607,7 @@ test('pty 프로토콜이 달라도 확인하면 pty 를 끄고 재시작하고,
   await expect(toast(again.page)).toHaveCount(0)
 })
 
-test('cells 형식이 다른 빌드로는 cell 을 모두 닫고 재시작할지 묻고, 확인하면 다음 실행은 새 workspace 하나로 뜨며 알리지 않는다', async ({
+test('cells 형식이 다른 빌드로는 cell 을 모두 닫고 재시작할지 묻고, 확인하면 pty 를 남긴 채 재시작하고 다음 실행은 pty 를 Recovered workspace 에 열며 알리지 않는다', async ({
   launch,
   dataDir
 }) => {
@@ -606,21 +620,24 @@ test('cells 형식이 다른 빌드로는 cell 을 모두 닫고 재시작할지
     .toMatchObject([
       {
         message: 'Restart and close all cells?',
-        detail: expect.stringContaining('a different saved-state format for the cells.'),
+        detail: expect.stringContaining(
+          'a different saved-state format for the cells. All cells will close. 2 terminals will keep running in a new workspace named Recovered.'
+        ),
         buttons: ['Restart and close all cells', 'Cancel']
       }
     ])
   await stubDialog(first.app, 0)
   await restartWith(first.app)
-  expect(readState(dataDir)).toMatchObject({ cells: null, panes: null, sessions: null })
-  expect(sockets(dataDir)).toEqual([])
+  expect(readState(dataDir).cells).toBeNull()
+  expect(sockets(dataDir)).toHaveLength(2)
 
   const { page } = await launch()
-  await expect(cellItems(page)).toHaveCount(1)
+  await expect(workspaceNames(page)).toHaveText(['Recovered'])
+  await expect(cellItems(page)).toHaveCount(2)
   await expect(toast(page)).toHaveCount(0)
 })
 
-test('panes 형식이 다른 빌드로는 cell 마다 셸 하나로 재시작할지 묻고, 확인하면 다음 실행은 cell 을 남기고 셸 하나로 뜨며 알리지 않는다', async ({
+test('panes 형식이 다른 빌드로는 cell 마다 셸 하나로 재시작할지 묻고, 확인하면 다음 실행은 cell 을 남기고 셸 하나로 뜨며 pty 는 Recovered workspace 에 열고 알리지 않는다', async ({
   launch,
   dataDir
 }) => {
@@ -635,19 +652,22 @@ test('panes 형식이 다른 빌드로는 cell 마다 셸 하나로 재시작할
     .toMatchObject([
       {
         message: 'Restart with one shell per cell?',
-        detail: expect.stringContaining('a different saved-state format for the panes.'),
+        detail: expect.stringContaining(
+          'a different saved-state format for the panes. Each cell will reopen with one new shell. 2 terminals will keep running in a new workspace named Recovered.'
+        ),
         buttons: ['Restart with one shell per cell', 'Cancel']
       }
     ])
   await stubDialog(first.app, 0)
   await restartWith(first.app)
-  expect(readState(dataDir)).toMatchObject({ panes: null, sessions: null })
+  expect(readState(dataDir).panes).toBeNull()
   expect(readState(dataDir).cells?.rows).toHaveLength(1)
-  expect(sockets(dataDir)).toEqual([])
+  expect(sockets(dataDir)).toHaveLength(2)
 
   const { page } = await launch()
-  await expect(cellItems(page)).toHaveCount(1)
-  await expect(panes(page)).toHaveCount(1)
+  await expect(cellItems(page)).toHaveCount(3)
+  await expect(cellViews(page).nth(0).locator('.pane')).toHaveCount(1)
+  await expect(workspaceNames(page).last()).toHaveText('Recovered')
   await expect(toast(page)).toHaveCount(0)
 })
 

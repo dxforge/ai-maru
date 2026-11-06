@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PROTOCOL_VERSION } from '../shared/protocol'
-import { joinTables, splitScreen, STATE_VERSIONS, type ScreenState } from '../shared/screen'
+import {
+  joinTables,
+  layoutKeys,
+  splitScreen,
+  STATE_VERSIONS,
+  type ScreenState
+} from '../shared/screen'
 import type { JobRecord } from './job'
 import {
   createStateStore,
@@ -12,8 +18,10 @@ import {
   removeOldStateFiles,
   restorePlan,
   fullRestore,
+  recoverPtys,
   restorePtys,
   sessionPtys,
+  startRestore,
   type ReadState,
   type SessionsPart,
   type StateFile
@@ -316,6 +324,144 @@ describe('restorePtys', () => {
       attach: { 3: 'p-0000000b' },
       keep: ['p-0000000b', job.pty]
     })
+  })
+})
+
+describe('recoverPtys', () => {
+  const ids = (): ((prefix: string) => string) => {
+    let n = 0
+    return (prefix) => `${prefix}-r${n++}`
+  }
+  const rec = (id: string, created: number, protocol = PROTOCOL_VERSION) => ({
+    id,
+    protocol_version: protocol,
+    created_at_ms: created
+  })
+
+  it('붙을 pane 이 없는 pty 가 없으면 받은 그대로 돌려준다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const restored = fullRestore(layout, sessions)
+    expect(recoverPtys(layout, restored, [rec('p-0000000a', 1)], ids())).toEqual({
+      layout,
+      ...restored,
+      recovered: 0
+    })
+  })
+
+  it('남기지 않은 같은 프로토콜의 pty 를 띄운 순서로 목록 끝 Recovered workspace 의 cell 하나씩으로 열고, 다른 프로토콜의 pty 는 넣지 않는다', () => {
+    const layout = joinTables({ workspaces, cells, panes }, 'c-00000001')!
+    const restored = { attach: { 3: 'p-0000000b' }, keep: ['p-0000000b'] }
+    const live = [
+      rec('p-0000000b', 1),
+      rec('p-0000000e', 30),
+      rec('p-0000000d', 20),
+      rec('p-0000000f', 10, PROTOCOL_VERSION + 1)
+    ]
+    const r = recoverPtys(layout, restored, live, ids())
+    expect(r.layout!.workspaces.slice(0, -1)).toEqual(layout.workspaces)
+    expect(r.layout!.selected).toBe(layout.selected)
+    const k = Math.max(...layoutKeys(layout.workspaces)) + 1
+    expect(r.layout!.workspaces.at(-1)).toEqual({
+      key: k,
+      id: 'w-r0',
+      name: 'Recovered',
+      cells: [
+        {
+          key: k + 1,
+          id: 'c-r1',
+          panes: [{ key: k + 2, id: 'n-r2' }],
+          layout: { pane: k + 2 },
+          focused: k + 2
+        },
+        {
+          key: k + 3,
+          id: 'c-r3',
+          panes: [{ key: k + 4, id: 'n-r4' }],
+          layout: { pane: k + 4 },
+          focused: k + 4
+        }
+      ]
+    })
+    expect(r.attach).toEqual({ 3: 'p-0000000b', [k + 2]: 'p-0000000d', [k + 4]: 'p-0000000e' })
+    expect(r.keep).toEqual(['p-0000000b', 'p-0000000d', 'p-0000000e'])
+    expect(r.recovered).toBe(2)
+  })
+
+  it('저장한 배치가 없으면 Recovered workspace 만 두고 그 첫 cell 을 고른다', () => {
+    const r = recoverPtys(null, { attach: {}, keep: [] }, [rec('p-0000000a', 1)], ids())
+    expect(r.layout).toEqual({
+      workspaces: [
+        {
+          key: 0,
+          id: 'w-r0',
+          name: 'Recovered',
+          cells: [
+            { key: 1, id: 'c-r1', panes: [{ key: 2, id: 'n-r2' }], layout: { pane: 2 }, focused: 2 }
+          ]
+        }
+      ],
+      selected: 1
+    })
+    expect(r.attach).toEqual({ 2: 'p-0000000a' })
+  })
+
+  it('고른 cell 이 없는 배치면 Recovered 의 첫 cell 을 고른다', () => {
+    const layout = {
+      workspaces: [{ key: 0, id: 'w-00000009', pinned: true as const, cells: [] }],
+      selected: null
+    }
+    const r = recoverPtys(layout, { attach: {}, keep: [] }, [rec('p-0000000a', 1)], ids())
+    expect(r.layout!.selected).toBe(r.layout!.workspaces[1].cells[0].key)
+  })
+})
+
+describe('startRestore', () => {
+  const read = (over: Partial<Omit<ReadState, 'view'>> = {}) => ({
+    workspaces: ok(workspaces),
+    cells: ok(cells),
+    panes: ok(panes),
+    sessions: ok(sessions),
+    ...over
+  })
+  const live = (ids: string[]) =>
+    ids.map((id, i) => ({ id, protocol_version: PROTOCOL_VERSION, created_at_ms: i }))
+  const recoveredPtys = (r: ReturnType<typeof startRestore>): string[] => {
+    const ws = r.layout!.workspaces.at(-1)!
+    if (ws.name !== 'Recovered') return []
+    return ws.cells.map((c) => r.attach[c.panes[0].key])
+  }
+
+  it('전체 복원이면 job pty 는 남기고 Recovered 에 넣지 않으며, 다른 알림이 없으면 Recovered 로 옮긴 것도 알리지 않는다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const r = startRestore(read(), layout, sessions, live([...sessionPtys(sessions), 'p-000000ff']))
+    expect(r.mode).toBe('full')
+    expect(r.keep).toContain(job.pty)
+    expect(recoveredPtys(r)).toEqual(['p-000000ff'])
+    expect(r.notice).toEqual([])
+  })
+
+  it('sessions 를 읽지 못하면 pane·job 의 pty 를 모두 Recovered 에 열고 함께 알린다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const r = startRestore(
+      read({ sessions: { kind: 'bad' } }),
+      layout,
+      null,
+      live(sessionPtys(sessions))
+    )
+    expect(r.mode).toBe('layout')
+    expect(recoveredPtys(r)).toEqual(sessionPtys(sessions))
+    expect(r.notice).toEqual(['sessions', 'recovered'])
+  })
+
+  it('고른 재시작으로 표를 비웠으면 pty 를 Recovered 에 열되 알리지 않는다', () => {
+    const r = startRestore(
+      read({ cells: { kind: 'absent' }, panes: { kind: 'absent' }, sessions: { kind: 'absent' } }),
+      null,
+      null,
+      live(['p-000000ff'])
+    )
+    expect(recoveredPtys(r)).toEqual(['p-000000ff'])
+    expect(r.notice).toEqual([])
   })
 })
 

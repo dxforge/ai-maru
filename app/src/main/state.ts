@@ -8,6 +8,7 @@ import {
   parseViewPrefs,
   parseWorkspacesTable,
   joinTables,
+  layoutKeys,
   splitScreen,
   STATE_VERSIONS,
   type CellRow,
@@ -21,9 +22,10 @@ import {
   type WorkspaceRow
 } from '../shared/screen'
 import { parseWindowTheme, type WindowTheme } from '../shared/theme'
-import { isPtyId } from '../shared/pty'
+import { isPtyId, randomId } from '../shared/pty'
 import { parseJobRecords, type JobRecord } from './job'
 import { writeJsonAtomicSync } from './json-file'
+import type { PtyRecord } from './pty'
 import { parseWindowState, type WindowState } from './window-state'
 
 /**
@@ -172,8 +174,8 @@ export function sessionPtys(s: SessionsPart): string[] {
 
 /**
  * `protocolOf` 는 살아 있는 pty 의 프로토콜 버전이고, 살아 있지 않으면 undefined 다. 죽은 pty 는 판정에 넣지 않는다 —
- * 그 pane 은 붙을 때 `gone` 을 받아 새 셸을 띄운다. 프로토콜이 하나라도 다르면 모두 버린다. 일부만 이으면 job 과
- * pane 이 어긋나기 때문이다. 잃은 표는 그 아래 표를 함께 잃으므로(`initialState`), 아래 표의 손실은 알리지 않는다.
+ * 그 pane 은 붙을 때 `gone` 을 받아 새 셸을 띄운다. 프로토콜이 하나라도 다르면 `sessions` 를 모두 버린다. 일부만
+ * 이으면 job 과 pane 이 어긋나기 때문이다. 잃은 표는 그 아래 표를 함께 잃으므로(`initialState`), 아래 표의 손실은 알리지 않는다.
  */
 export function restorePlan(
   read: Omit<ReadState, 'view'>,
@@ -197,8 +199,8 @@ export function restorePlan(
 }
 
 /**
- * 전체 복원에서 되살린 pane 의 key 마다 붙을 pty(`attach`)와 남길 pty(`keep`)다. 되살리지 못한 pane 의 pty 는 남기지
- * 않는다. 붙을 pane 이 없기 때문이다.
+ * 전체 복원에서 되살린 pane 의 key 마다 붙을 pty(`attach`)와 남길 pty(`keep`)다. 되살리지 못한 pane 의 pty 는
+ * `recoverPtys` 가 `Recovered` workspace 로 연다.
  */
 export function fullRestore(
   layout: SavedLayout | null,
@@ -218,6 +220,78 @@ export function restorePtys(layout: SavedLayout | null, s: SessionsPart): Record
       return pty ? [[p.key, pty]] : []
     })
   )
+}
+
+const RECOVERED_NAME = 'Recovered'
+
+/**
+ * 붙을 pane 이 없는 살아 있는 pty 를 끄지 않고, 목록 끝에 더한 `Recovered` workspace 에 pty 하나를 cell 하나로 연다.
+ * 표를 잃어도 그 pty 에서 돌던 프로그램이 꺼지지 않게 하기 위해서다. 프로토콜이 다른 pty 는 붙지 못하므로 넣지 않는다.
+ */
+export function recoverPtys(
+  layout: SavedLayout | null,
+  restored: { attach: Record<number, string>; keep: string[] },
+  live: Pick<PtyRecord, 'id' | 'protocol_version' | 'created_at_ms'>[],
+  newId: (prefix: string) => string = randomId
+): {
+  layout: SavedLayout | null
+  attach: Record<number, string>
+  keep: string[]
+  recovered: number
+} {
+  const kept = new Set(restored.keep)
+  const orphans = live
+    .filter((r) => r.protocol_version === PROTOCOL_VERSION && !kept.has(r.id))
+    .sort((a, b) => a.created_at_ms - b.created_at_ms)
+  if (!orphans.length) return { layout, ...restored, recovered: 0 }
+  let next = Math.max(-1, ...layoutKeys(layout?.workspaces ?? [])) + 1
+  const attach = { ...restored.attach }
+  const workspace = {
+    key: next++,
+    id: newId('w'),
+    name: RECOVERED_NAME,
+    cells: orphans.map((r) => {
+      const key = next++
+      const pane = next++
+      attach[pane] = r.id
+      return {
+        key,
+        id: newId('c'),
+        panes: [{ key: pane, id: newId('n') }],
+        layout: { pane },
+        focused: pane
+      }
+    })
+  }
+  return {
+    layout: {
+      workspaces: [...(layout?.workspaces ?? []), workspace],
+      selected: layout?.selected ?? workspace.cells[0].key
+    },
+    attach,
+    keep: [...restored.keep, ...orphans.map((r) => r.id)],
+    recovered: orphans.length
+  }
+}
+
+/**
+ * 뜰 때 되살릴 것이다. 고른 재시작으로 표를 비웠으면 `restorePlan` 의 `notice` 가 비어 있다. 사용자가 대화창에서 이미
+ * 보았으므로 그때는 Recovered 로 옮긴 것도 알리지 않는다.
+ */
+export function startRestore(
+  read: Omit<ReadState, 'view'>,
+  layout: SavedLayout | null,
+  sessions: SessionsPart | null,
+  live: Pick<PtyRecord, 'id' | 'protocol_version' | 'created_at_ms'>[],
+  newId: (prefix: string) => string = randomId
+): ReturnType<typeof recoverPtys> & RestorePlan {
+  const protocols = new Map(live.map((r) => [r.id, r.protocol_version ?? null]))
+  const p = restorePlan(read, (pty) => protocols.get(pty))
+  const full = p.mode === 'full' && sessions ? fullRestore(layout, sessions) : null
+  const r = recoverPtys(layout, full ?? { attach: {}, keep: [] }, live, newId)
+  const notice: RestoreNotice[] =
+    r.recovered && p.notice.length ? [...p.notice, 'recovered'] : p.notice
+  return { ...r, mode: p.mode, notice }
 }
 
 /**

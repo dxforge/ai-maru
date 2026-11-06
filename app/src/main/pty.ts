@@ -27,7 +27,7 @@ const SPAWN_POLL_MS = 50
 // maru-pty 는 셸에 2초를 주고 연결을 1초 더 비운 뒤 끝난다.
 const KILL_TIMEOUT_MS = 5000
 
-type PtyRecord = {
+export type PtyRecord = {
   protocol_version: number
   id: string
   pid: number
@@ -109,10 +109,10 @@ async function readRecords(dir: string): Promise<PtyRecord[]> {
   return parsed.filter((r): r is PtyRecord => r !== null)
 }
 
-export async function livePtys(dir: string): Promise<string[]> {
+export async function liveRecords(dir: string): Promise<PtyRecord[]> {
   const records = await readRecords(dir)
   const live = await Promise.all(records.map((rec) => ptyLive(dir, rec.id)))
-  return records.filter((_, i) => live[i]).map((rec) => rec.id)
+  return records.filter((_, i) => live[i])
 }
 
 /**

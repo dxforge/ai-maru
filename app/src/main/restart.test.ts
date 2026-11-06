@@ -101,6 +101,7 @@ describe('checkRestart', () => {
         reason: 'incompatible',
         result: 'layout',
         ptys: 1,
+        recovered: 0,
         protocol: PROTOCOL_VERSION + 1,
         formats: []
       })
@@ -117,6 +118,7 @@ describe('checkRestart', () => {
       reason: 'incompatible',
       result: 'layout',
       ptys: 0,
+      recovered: 0,
       formats: ['sessions']
     })
   })
@@ -131,6 +133,7 @@ describe('checkRestart', () => {
         reason: 'incompatible',
         result: 'full',
         ptys: 0,
+        recovered: 0,
         formats: ['workspaces']
       })
     } finally {
@@ -139,7 +142,7 @@ describe('checkRestart', () => {
     }
   })
 
-  it('panes 형식이 다르면 cell 마다 셸 하나로 열고, 산 pty 를 끈다', async () => {
+  it('panes 형식이 다르면 cell 마다 셸 하나로 열고, 산 pty 는 끄지 않고 Recovered 로 옮긴다', async () => {
     const d = mkdtempSync(join(tmpdir(), 'maru-live-'))
     const server = await livePty(d, 'p-0000000a')
     try {
@@ -148,7 +151,8 @@ describe('checkRestart', () => {
         ok: false,
         reason: 'incompatible',
         result: 'cells',
-        ptys: 1,
+        ptys: 0,
+        recovered: 1,
         formats: ['panes']
       })
     } finally {
@@ -178,9 +182,9 @@ describe('restartOutcome', () => {
   const incompatible = (
     result: Incompatible['result'],
     formats: Incompatible['formats'] = []
-  ): Incompatible => ({ ok: false, reason: 'incompatible', result, ptys: 0, formats })
+  ): Incompatible => ({ ok: false, reason: 'incompatible', result, ptys: 0, recovered: 0, formats })
 
-  it('결과마다 끄기 결과를 고르고, 형식이 다른 표는 결과와 상관없이 비운다 — 다시 뜬 앱이 읽지 못한 표를 알리지 않게', () => {
+  it('프로토콜이 같으면 pty 를 남기고, 형식이 다른 표는 결과와 상관없이 비운다 — 다시 뜬 앱이 읽지 못한 표를 알리지 않게', () => {
     expect(restartOutcome({ ok: true })).toEqual({ outcome: 'keep', drop: [] })
     expect(restartOutcome({ ok: false, reason: 'dev_server' })).toEqual({
       outcome: 'layout',
@@ -191,14 +195,30 @@ describe('restartOutcome', () => {
       drop: ['workspaces']
     })
     expect(restartOutcome(incompatible('layout', ['sessions']))).toEqual({
-      outcome: 'layout',
+      outcome: 'keep',
       drop: ['sessions']
     })
     expect(restartOutcome(incompatible('cells', ['workspaces', 'panes']))).toEqual({
-      outcome: 'layout',
+      outcome: 'keep',
       drop: ['workspaces', 'panes']
     })
     expect(restartOutcome(incompatible('empty', ['cells']))).toEqual({
+      outcome: 'keep',
+      drop: ['cells']
+    })
+  })
+
+  it('프로토콜이 다르면 pty 를 끄는 결과를 고른다', () => {
+    const differs = (result: Incompatible['result'], formats: Incompatible['formats'] = []) => ({
+      ...incompatible(result, formats),
+      protocol: PROTOCOL_VERSION + 1
+    })
+    expect(restartOutcome(differs('layout'))).toEqual({ outcome: 'layout', drop: [] })
+    expect(restartOutcome(differs('cells', ['panes']))).toEqual({
+      outcome: 'layout',
+      drop: ['panes']
+    })
+    expect(restartOutcome(differs('empty', ['cells']))).toEqual({
       outcome: 'end',
       drop: ['cells']
     })
@@ -211,6 +231,7 @@ describe('restartDialog · restartRefusal', () => {
     reason: 'incompatible',
     result: 'layout',
     ptys: 2,
+    recovered: 0,
     protocol: 9,
     formats: []
   }
@@ -218,14 +239,16 @@ describe('restartDialog · restartRefusal', () => {
     ok: false,
     reason: 'incompatible',
     result: 'empty',
-    ptys: 1,
+    ptys: 0,
+    recovered: 1,
     formats: ['cells', 'sessions']
   }
   const panes: Incompatible = {
     ok: false,
     reason: 'incompatible',
     result: 'cells',
-    ptys: 2,
+    ptys: 0,
+    recovered: 2,
     formats: ['panes']
   }
   const pins: Incompatible = {
@@ -233,6 +256,7 @@ describe('restartDialog · restartRefusal', () => {
     reason: 'incompatible',
     result: 'full',
     ptys: 0,
+    recovered: 0,
     formats: ['workspaces']
   }
 
@@ -244,12 +268,12 @@ describe('restartDialog · restartRefusal', () => {
     })
     expect(restartDialog(layout).buttons).toEqual(['Restart and close all cells', 'Cancel'])
     expect(restartDialog(layout).detail).toBe(
-      'The installed app uses a different saved-state format for the cells and terminal sessions. This will end 1 terminal. All cells will close.'
+      'The installed app uses a different saved-state format for the cells and terminal sessions. All cells will close. 1 terminal will keep running in a new workspace named Recovered.'
     )
     expect(restartDialog(panes)).toEqual({
       message: 'Restart with one shell per cell?',
       detail:
-        'The installed app uses a different saved-state format for the panes. This will end 2 terminals. Each cell will reopen with one new shell.',
+        'The installed app uses a different saved-state format for the panes. Each cell will reopen with one new shell. 2 terminals will keep running in a new workspace named Recovered.',
       buttons: ['Restart with one shell per cell', 'Cancel']
     })
     expect(restartDialog(pins)).toEqual({
@@ -280,11 +304,11 @@ describe('restartDialog · restartRefusal', () => {
     )
   })
 
-  it('pty 를 끄지 않고 workspaces 표만 잃으면 pins_would_be_lost 로 거절한다', () => {
+  it('pty 를 끌 때만 ptys_would_end, 배치를 잃으면 layout_would_be_lost, workspaces 표만 잃으면 pins_would_be_lost 로 거절한다', () => {
     expect(restartRefusal(pins).code).toBe('pins_would_be_lost')
     expect(restartRefusal(protocol).code).toBe('ptys_would_end')
-    expect(restartRefusal(layout).code).toBe('ptys_would_end')
-    expect(restartRefusal(panes).code).toBe('ptys_would_end')
+    expect(restartRefusal(layout).code).toBe('layout_would_be_lost')
+    expect(restartRefusal(panes).code).toBe('layout_would_be_lost')
   })
 })
 

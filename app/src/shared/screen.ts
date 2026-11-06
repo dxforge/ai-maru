@@ -104,8 +104,12 @@ export type PanePty = { pane: string; pty: string }
 /** 표를 `joinTables` 로 이은, renderer 가 되살릴 workspace 목록이다. key 는 0 부터 새로 매긴다. */
 export type SavedLayout = { workspaces: SavedWorkspace[]; selected: number | null }
 
-/** 사용자가 고르지 않았는데 잃은 표다. `protocol` 은 pty 프로토콜이 달라 `sessions` 를 버린 것이다. */
-export type RestoreNotice = 'workspaces' | 'cells' | 'panes' | 'sessions' | 'protocol'
+/**
+ * 다시 뜬 앱이 toast 로 알릴 것이다. `workspaces`·`cells`·`panes`·`sessions` 는 사용자가 고르지 않았는데 잃은 표다.
+ * `protocol` 은 pty 프로토콜이 달라 `sessions` 를 버린 것이다. `recovered` 는 표를 잃어 붙을 pane 이 없던 pty 를
+ * `Recovered` workspace 에 연 것이다.
+ */
+export type RestoreNotice = 'workspaces' | 'cells' | 'panes' | 'sessions' | 'protocol' | 'recovered'
 
 /**
  * 뜰 때 main 이 renderer 에 주는 복원할 것이다. `ptys` 는 pane key 마다 붙을 pty 이고, null 이면 모든 pane 이 새 셸을
