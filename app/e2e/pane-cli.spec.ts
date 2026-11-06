@@ -55,9 +55,9 @@ test('명령이 끝나면 pane 이 닫히고, 명령 없이 부르면 셸을 띄
 
 test('곧바로 끝나는 명령도 그 pty id 를 찍고 성공하며, pane 은 닫힌다', async ({ launch }) => {
   const { page } = await launch()
-  for (const command of ['true', 'echo hi', 'no-such-command-xyz']) {
-    await page.keyboard.type(`clear; maru pane new ${command}; echo "code-$?"\n`)
-    await expect(screen(page)).toShow(/p-[0-9a-f]{8}\s*code-0/)
+  for (const [i, command] of ['true', 'echo hi', 'no-such-command-xyz'].entries()) {
+    await page.keyboard.type(`clear; maru pane new ${command}; echo "code-$?-${i}"\n`)
+    await expect(screen(page)).toShow(new RegExp(`p-[0-9a-f]{8}\\s*code-0-${i}`))
     await expect(panes(page)).toHaveCount(1)
   }
 })
