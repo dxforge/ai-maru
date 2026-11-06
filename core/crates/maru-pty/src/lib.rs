@@ -45,7 +45,7 @@
 //! | `kill` | 셸을 끝내고 소켓·레코드를 지운 뒤 `{"type":"killed"}` |
 //! | `capture` (`unwrap`: bool, 선택) | `{"type":"capture","text":…}` |
 //! | `status` (`wait`: bool, 선택) | `{"type":"status","exit":null}` 또는 `{"type":"status","exit":{"code","signal"}}` |
-//! | `input` (`text`: 문자열) | 셸 입력으로 다 쓴 뒤 `{"type":"input"}` |
+//! | `input` (`text`: 문자열, `paste`: bool, 선택) | 셸 입력으로 다 쓴 뒤 `{"type":"input"}` |
 //! | `foreground` | `{"type":"foreground","pid":…,"cwd":…,"name":…}` |
 //! | `subscribe` | `state`·`notification` 메시지들(아래) |
 //! | `attach` (`role`: `primary`·`observer`, primary 면 `cols`·`rows`) | 아래 |
@@ -59,6 +59,9 @@
 //!
 //! `input` 은 attach 의 primary 자리와 상관없이 쓴다. 셸이 끝났으면 쓰지 않고 `exited` 로 거절한다.
 //! 요청한 쪽이 답을 기다리지 않고 연결을 끊어도 받은 입력은 끝까지 쓴다.
+//! `paste` 가 true 면 `text` 끝의 `\r` 하나를 떼고 나머지를 본문으로 본다. 터미널이 bracketed paste(mode 2004)를
+//! 켰고 본문에 `\n` 이 있거나 본문이 32바이트 이상이면, 본문을 `ESC[200~`·`ESC[201~` 로 감싸고 뗀 `\r` 은 감싸지 않고
+//! 뒤에 쓴다. 감싼 본문과 `\r` 은 한 번에 써서 다른 입력이 사이에 끼지 않는다. 그 밖에는 `text` 를 그대로 쓴다.
 //!
 //! `foreground` 는 tty 의 foreground 프로세스 그룹 리더의 `pid`, 작업 디렉토리 `cwd`, argv[0] 의
 //! basename `name` 을 돌려준다. 프롬프트에서는 셸이고, 명령이 돌고 있으면 그 명령이다. 리더가 이미 끝났거나(`a | b`
@@ -149,6 +152,7 @@ macro_rules! log {
 mod attach;
 pub mod frame;
 mod master;
+mod paste;
 pub mod paths;
 mod procinfo;
 mod program_status;
@@ -162,4 +166,4 @@ mod vt;
 /// env 나 셸이 뜰 때 읽는 파일을 바꾸는 경우다. 버전이 다른 pty 에는 다음에 뜬 앱이 붙지 않고, 끈 뒤 레이아웃만
 /// 되살려 pane 마다 새 셸을 띄운다. 그래서 이전 빌드의 `maru-pty` 에 붙으려고 버전 올리기를 미루지 않는다. 앱의 같은 값은
 /// `app/src/shared/protocol.ts` 에 있다.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;

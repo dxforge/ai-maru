@@ -254,9 +254,16 @@ async fn handle(mut stream: UnixStream, pty: Arc<Pty>, kill_tx: mpsc::Sender<Kil
             if pty.exited().is_some() {
                 return error(&mut stream, "exited", "the shell has exited").await;
             }
-            let bytes = text.as_bytes().to_vec();
+            let text = text.to_owned();
+            let paste = req["paste"] == true;
             let s = pty.clone();
-            let written = tokio::task::spawn_blocking(move || s.write(&bytes))
+            let written = tokio::task::spawn_blocking(move || {
+                if paste {
+                    s.paste(&text)
+                } else {
+                    s.write(text.as_bytes())
+                }
+            })
                 .await
                 .map_err(std::io::Error::other)
                 .and_then(|r| r);

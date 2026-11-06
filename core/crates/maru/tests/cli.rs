@@ -1443,6 +1443,50 @@ fn pane_close_sends_the_target_and_prints_nothing() {
 }
 
 #[test]
+fn pane_read_prints_the_text_with_one_trailing_newline() {
+    for (text, want) in [("a\nb", "a\nb\n"), ("a\n", "a\n"), ("", "")] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, move |req| result(req, json!({ "text": text })));
+        let out = maru(Some(&sock), &["pane", "read", "p-0000000c"]);
+        let req = server.join().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(req["method"], "pane.read");
+        assert_eq!(req["params"]["target"], "p-0000000c");
+        assert_eq!(stdout(&out), want, "{text:?}");
+    }
+}
+
+fn pane_sent(args: &[&str], input: &[u8]) -> Value {
+    let req = sent_request(&[&["pane", "send", "p-0000000c"], args].concat(), input);
+    assert_eq!(req["method"], "pane.send");
+    assert_eq!(req["params"]["target"], "p-0000000c");
+    req["params"]["text"].clone()
+}
+
+#[test]
+fn pane_send_sends_the_text_as_it_is_without_enter() {
+    assert_eq!(pane_sent(&["ls"], b""), "ls");
+    assert_eq!(pane_sent(&["ls\r"], b""), "ls\r");
+    assert_eq!(pane_sent(&["\\e"], b""), "\\e");
+    assert_eq!(pane_sent(&["\x1b"], b""), "\x1b");
+    assert_eq!(pane_sent(&["-x"], b""), "-x");
+    assert_eq!(pane_sent(&[], b"hi\n\n"), "hi\n\n");
+    assert_eq!(pane_sent(&["-"], b"hi\r"), "hi\r");
+}
+
+#[test]
+fn pane_send_with_nothing_to_send_fails_before_asking_the_app() {
+    let tmp = tmpdir();
+    // 아무도 듣지 않는 소켓이라, 앱에 닿으려 했다면 다른 오류가 난다.
+    let sock = sock_in(&tmp);
+    let out = maru(Some(&sock), &["pane", "send", "p-0000000c", ""]);
+    assert_fails_with(&out, "nothing to send");
+    let out = maru_input(Some(&sock), &["pane", "send", "p-0000000c"], b"");
+    assert_fails_with(&out, "nothing to send");
+}
+
+#[test]
 fn job_new_sends_the_command_and_cwd_and_prints_the_pty() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
@@ -1654,7 +1698,7 @@ fn pane_list_fails_on_a_pane_it_cannot_print() {
     }
 }
 
-fn sent_text(args: &[&str], input: &[u8]) -> Value {
+fn sent_request(args: &[&str], input: &[u8]) -> Value {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     let server = serve_once(&sock, |req| result(req, Value::Null));
@@ -1662,6 +1706,11 @@ fn sent_text(args: &[&str], input: &[u8]) -> Value {
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out), "");
+    req
+}
+
+fn sent_text(args: &[&str], input: &[u8]) -> Value {
+    let req = sent_request(args, input);
     assert_eq!(req["method"], "job.send");
     assert_eq!(req["params"]["target"], "dev");
     req["params"]["text"].clone()

@@ -52,6 +52,8 @@ renderer 는 상태를 main 에서만 받는다. 문서를 로드하면 `pty:sta
 
 `maru pane list` 는 main 이 renderer 에 묻지 않고 답한다. 레코드와 셸이 알린 명령은 main 의 상태에서, workspace 이름·cell id 와 pane 의 cwd·제목은 renderer 가 마지막으로 보낸 화면(`lastScreen`)에서 읽는다. 그래서 화면 snapshot 은 pane 의 `git` 과 사용자가 바꾼 workspace 이름(`name`)을 싣는다. workspace 이름은 사이드바와 같은 `workspaceName`(`app/src/shared/names.ts`)으로, pane 이름은 사이드바와 같은 `paneName`(`app/src/shared/pane-name.ts`)으로 짓는다.
 
+`maru pane read`·`maru pane send` 도 대상이 이 창의 pane 인지 `lastScreen` 으로 확인하고, main 이 그 pty 의 maru-pty 에 `capture`·`input` 을 직접 보낸다(`app/src/main/pane.ts` 의 `paneIo`). `pane send` 의 본문을 bracketed paste 로 감쌀지는 maru-pty 가 그 pty 의 mode 2004 와 본문의 길이·줄바꿈을 보고 정한다(`core/crates/maru-pty/src/paste.rs`). pty 의 mode 2004 상태는 maru-pty 안의 libghostty-vt 만 알기 때문이다.
+
 OSC 7501 레코드는 pane 마다 여럿일 수 있다(루트와 하위). 사이드바·pane 헤더·cell 헤더와 `maru pane list` 가 보일 레코드 하나는 `shownRecord`(`app/src/shared/program-status.ts`)가 고른다. renderer 와 main 이 같은 함수를 써서 화면과 `maru pane list` 가 같은 상태를 보인다.
 
 `maru status` 는 앱 소켓을 쓰지 않고 터미널 장치(제어 터미널, 없으면 가장 가까운 조상 프로세스의 제어 터미널)에 OSC 7501 을 쓴다. 그래서 이 명령이 쓴 레코드도 터미널 안의 프로그램이 보낸 레코드처럼 maru-pty 가 해석하고 보관한다.

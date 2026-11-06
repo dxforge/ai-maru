@@ -50,6 +50,8 @@
 //! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `pane`(pty id, 선택), `full`(bool, 선택), `cell`(cell id, 선택) | `{"pty":<새 pty id>}` |
 //! | `pane.close` | `target`(pty id) | `null` |
 //! | `pane.list` | 없음 | `{"panes":[{"pty","state","kind","app","workspace","cell","title","dir","message"}…]}` |
+//! | `pane.read` | `target`(pty id) | `{"text":<글자>}` |
+//! | `pane.send` | `target`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
 //! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택), `after`·`before`(pty id, 선택, 둘 중 하나만) | `{"pty":<새 pty id>,"cell":<새 cell id>}` |
 //! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"pty":<job 의 pty id>}` |
 //! | `job.list` | 없음 | `{"jobs":[{"pty","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
@@ -96,6 +98,14 @@
 //! `pane.close` 는 `target` pty 의 pane 을 닫고 그 pty 를 끈다. `target` 의 pane 이 창에 없으면
 //! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 pty 를 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
 //! 전에 끝날 수 있다.
+//!
+//! `pane.read` 는 `target` pty 의 pane 을 읽고 `pane.send` 는 그 pane 에 입력을 쓴다. 창의 어느 workspace·cell 의 pane
+//! 이든 되고, 부른 pty 의 pane 도 된다. `target` 의 pane 이 `pane.list` 에 없으면(job 의 pty 포함) `invalid_params` 다.
+//!
+//! - `pane.read` 는 `job.read` 처럼 스크롤백과 화면을 스타일 없는 글자로 돌려준다. 화면 폭에서 접힌 줄은 잇는다.
+//! - `pane.send` 는 `text` 를 pane 에 입력한다. `text` 는 maru-pty `input` 에 `paste` 를 켜고 보내므로, 본문을
+//!   bracketed paste 로 감쌀지는 그 규칙(`core/crates/maru-pty/src/lib.rs`)을 따른다. 셸이 끝났으면
+//!   `internal_error` 다. 8초 안에 다 쓰지 못할 때는 `job.send` 와 같다.
 //!
 //! `cell.new` 는 pane 하나인 cell 을 만들어 `pty` 의 cell 바로 뒤에 넣고, 그 pane 에서 `pane.new` 처럼
 //! pty 를 띄운다. 답의 `cell` 은 새 cell 의 id 다. `cell` 이 없는 답(이전 앱)이면 `maru cell new` 는 CELL 을
@@ -246,7 +256,7 @@ enum Command {
         #[command(subcommand)]
         command: InboxCommand,
     },
-    /// Open panes next to this terminal, and list and close panes in this window.
+    /// Open panes next to this terminal, and list, read, type into and close panes in this window.
     Pane {
         #[command(subcommand)]
         command: PaneCommand,
@@ -373,6 +383,39 @@ enum PaneCommand {
     /// directory. Control characters in a value, such as tabs and newlines, become spaces,
     /// and an unknown value is an empty column.
     List,
+    /// Print the scrollback and screen of a pane, any pane in this window, as text. Lines
+    /// wrapped at the screen width are joined.
+    Read {
+        /// Pty id of the pane, e.g. p-1a2b3c4d.
+        pty: String,
+    },
+    /// Type TEXT into a pane, any pane in this window. Enter is not pressed; end TEXT with a
+    /// carriage return to press it.
+    ///
+    /// Reads TEXT, or stdin when TEXT is omitted or `-`. Backslash escapes in TEXT are not
+    /// interpreted; put control characters in with the shell's `$'...'` quoting, as in the
+    /// examples below.
+    ///
+    /// If TEXT ends with a carriage return, it is set aside and the rest is the body. When the
+    /// pane's program has turned on bracketed paste, as Claude Code and zsh do, and the body
+    /// has a newline or is 32 bytes or longer, the body is typed as a paste: it is wrapped in
+    /// paste markers so the program takes it as one paste, and the carriage return follows
+    /// after the markers to press Enter. Otherwise TEXT is typed unchanged as keys. A short
+    /// TEXT such as 2, y, $':wq\r' or $'\t' therefore works as keys in a menu or an editor. A
+    /// program that has not turned on bracketed paste gets TEXT unchanged, and may not take a
+    /// long line as one input.
+    #[command(after_long_help = "Examples:
+  maru pane send p-1a2b3c4d \"$text\"$'\\r'     type a line of text and press Enter
+  maru pane send p-1a2b3c4d 2                press 2, e.g. to select option 2 in a menu
+  maru pane send p-1a2b3c4d $'ls\\r'          run ls in a shell
+  maru pane send p-1a2b3c4d $'\\x03'          press Ctrl+C")]
+    Send {
+        /// Pty id of the pane, e.g. p-1a2b3c4d.
+        pty: String,
+        /// Text to type. It may start with `-`.
+        #[arg(allow_hyphen_values = true)]
+        text: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -599,6 +642,14 @@ fn run(command: Command) -> Result<()> {
                 call(&target()?, "pane.close", target_params(pty))?;
             }
             PaneCommand::List => pane_list()?,
+            PaneCommand::Read { pty } => print_read("pane.read", pty)?,
+            PaneCommand::Send { pty, text } => send_text(
+                "pane.send",
+                pty,
+                text,
+                false,
+                "give TEXT or pipe the input into stdin, e.g. `maru pane send p-1a2b3c4d $'ls\\r'`",
+            )?,
         },
         Command::Cell {
             command:
@@ -618,22 +669,18 @@ fn run(command: Command) -> Result<()> {
                 writeln!(std::io::stdout(), "{pty}")?;
             }
             JobCommand::List => job_list()?,
-            JobCommand::Read { job } => {
-                let result = call(&target()?, "job.read", target_params(job))?;
-                let text = result["text"]
-                    .as_str()
-                    .ok_or_else(|| anyhow!("the app answered without text: {result}"))?;
-                let mut out = std::io::stdout().lock();
-                out.write_all(text.as_bytes())?;
-                if !text.is_empty() && !text.ends_with('\n') {
-                    writeln!(out)?;
-                }
-            }
+            JobCommand::Read { job } => print_read("job.read", job)?,
             JobCommand::Send {
                 no_enter,
                 job,
                 text,
-            } => job_send(job, text, !no_enter)?,
+            } => send_text(
+                "job.send",
+                job,
+                text,
+                !no_enter,
+                "give TEXT or pipe the input into stdin, e.g. `maru job send dev r`",
+            )?,
             JobCommand::Kill { job } => {
                 call(&target()?, "job.kill", target_params(job))?;
             }
@@ -1415,14 +1462,33 @@ fn target_params(target: String) -> Map<String, Value> {
     params
 }
 
-fn job_send(job: String, text: Option<String>, enter: bool) -> Result<()> {
+/// 끝에 줄바꿈이 없으면 하나 붙여, 셸 프롬프트가 마지막 줄 뒤에 이어 붙지 않게 한다.
+fn print_read(method: &str, of: String) -> Result<()> {
+    let result = call(&target()?, method, target_params(of))?;
+    let text = result["text"]
+        .as_str()
+        .ok_or_else(|| anyhow!("the app answered without text: {result}"))?;
+    let mut out = std::io::stdout().lock();
+    out.write_all(text.as_bytes())?;
+    if !text.is_empty() && !text.ends_with('\n') {
+        writeln!(out)?;
+    }
+    Ok(())
+}
+
+fn send_text(
+    method: &str,
+    of: String,
+    text: Option<String>,
+    enter: bool,
+    hint: &str,
+) -> Result<()> {
     // 앱 터미널 밖이면 끝나지 않는 입력을 읽기 전에 실패해야 한다.
     let target = target()?;
     let mut text = match text.filter(|t| t != "-") {
         Some(text) => text,
         None => {
-            let mut text =
-                read_stdin("give TEXT or pipe the input into stdin, e.g. `maru job send dev r`")?;
+            let mut text = read_stdin(hint)?;
             // `echo r | maru job send dev` 가 Enter 를 두 번 누르지 않게.
             if enter && text.ends_with('\n') {
                 text.pop();
@@ -1435,9 +1501,9 @@ fn job_send(job: String, text: Option<String>, enter: bool) -> Result<()> {
     } else if text.is_empty() {
         bail!("nothing to send");
     }
-    let mut params = target_params(job);
+    let mut params = target_params(of);
     params.insert("text".into(), text.into());
-    call(&target, "job.send", params)?;
+    call(&target, method, params)?;
     Ok(())
 }
 

@@ -152,3 +152,32 @@ export function createPanes(
     reply: (id, reply) => pending.get(id)?.(reply)
   }
 }
+
+/**
+ * `pane.read`·`pane.send` 는 이 창의 pane 의 pty 만 읽고 쓴다. `panes` 는 창이 마지막으로 알린 pane 들의 pty id 이고, 창이
+ * 아직 알리지 않았으면 null 이다. job 의 pty 는 여기 없으므로 거절된다.
+ */
+export function paneIo(deps: {
+  panes: () => readonly string[] | null
+  capture: (pty: string) => Promise<string>
+  paste: (pty: string, text: string) => Promise<'written' | 'exited'>
+}): Handlers {
+  function paneOf(target: unknown): string {
+    if (!isPtyId(target)) throw new InvalidParams('params.target must be a pty id')
+    const panes = deps.panes()
+    if (!panes) throw new Error('the window has not reported its layout yet')
+    if (!panes.includes(target)) throw new InvalidParams(`no pane for pty ${target}`)
+    return target
+  }
+  return {
+    'pane.read': async ({ target }) => ({ text: await deps.capture(paneOf(target)) }),
+    'pane.send': async ({ target, text }) => {
+      if (typeof text !== 'string' || text === '') {
+        throw new InvalidParams('params.text must be a non-empty string')
+      }
+      const pty = paneOf(target)
+      if ((await deps.paste(pty, text)) === 'exited') throw new Error(`pty ${pty} has exited`)
+      return null
+    }
+  }
+}
