@@ -17,9 +17,11 @@ const { name } = defineProps<{ name: keyof typeof ICONS }>()
 </template>
 
 <style scoped>
+/* `Settings` 의 위아래 톱니는 선 굵기를 더하면 y 1.0~23.0 까지 닿아 viewBox 밖으로 나가므로, 잘리지 않게 상자 밖에도 그린다. */
 .lead-icon {
   display: block;
   width: 1em;
   height: 1em;
+  overflow: visible;
 }
 </style>
