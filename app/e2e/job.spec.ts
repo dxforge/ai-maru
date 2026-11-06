@@ -74,11 +74,15 @@ test('스스로 끝난 job 은 띄운 pane 에 알리고 출력과 함께 목록
   const events = join(dataDir, 'events')
   await monitorInto(page, events)
   // monitor 가 구독하기 전에 끝나면 보류 경로를 지나므로 잠시 기다린다.
-  await run(page, `sleep 1; maru job new --name x sh -c 'echo out-$((1+1)); exit 3'`, /p-/)
+  await run(
+    page,
+    `sleep 1; echo x=$(maru job new --name x sh -c 'echo out-$((1+1)); exit 3')`,
+    /x=p-[0-9a-f]{8}/
+  )
   await expect.poll(() => jobEvents(events)).toEqual([exited('x', 3)])
   await run(page, 'maru job list', /x\s+exited 3/)
   await run(page, 'maru job read x', 'out-2')
-  await run(page, 'maru job new --name y no-such-command-$((1+1))', /p-/)
+  await run(page, 'echo y=$(maru job new --name y no-such-command-$((1+1)))', /y=p-[0-9a-f]{8}/)
   await expect.poll(() => jobEvents(events)).toContainEqual(exited('y', 127))
   await run(page, 'maru job list', /y\s+exited 127/)
 })

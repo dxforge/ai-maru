@@ -145,9 +145,9 @@ test('명령이 끝나면 cell 이 닫히고, 곧바로 끝나는 명령도 pty 
   await expect(cellItems(page)).toHaveCount(2)
   await expect(cellItems(page)).toHaveCount(1)
   await expect(workspaceNames(page)).toHaveCount(1)
-  for (const command of ['true', 'no-such-command-xyz']) {
-    await page.keyboard.type(`clear; maru cell new ${command}; echo "code-$?"\n`)
-    await expect(screen(page)).toShow(/p-[0-9a-f]{8}\s+c-[0-9a-f]{8}\s*code-0/)
+  for (const [i, command] of ['true', 'no-such-command-xyz'].entries()) {
+    await page.keyboard.type(`clear; maru cell new ${command}; echo "code-$?-${i}"\n`)
+    await expect(screen(page)).toShow(new RegExp(`p-[0-9a-f]{8}\\s+c-[0-9a-f]{8}\\s*code-0-${i}`))
     await expect(cellItems(page)).toHaveCount(1)
   }
 })
