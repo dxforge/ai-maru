@@ -9,6 +9,7 @@ import {
   canvasWidth,
   clickMenu,
   dialogCalls,
+  DOM_RENDERER,
   END_EVERYTHING,
   expect,
   newCell,
@@ -18,13 +19,13 @@ import {
   openPalette,
   paneHeader,
   paneRows,
-  paneTerminalRows,
   programStatus,
   panes,
   readState,
   restartWith,
   rows,
   run,
+  screen,
   serveRenderer,
   ptyDir,
   sockets,
@@ -178,7 +179,7 @@ test('다시 뜬 앱은 pty 의 프로토콜이 다르면 그 pty 를 끄고 레
   launch,
   dataDir
 }) => {
-  const { app, page } = await launch()
+  const { app, page } = await launch(DOM_RENDERER)
   await split(app, page, 'split-right', 2)
   await shellUp(page, 0)
   await page.keyboard.type(programStatus('working'))
@@ -191,7 +192,7 @@ test('다시 뜬 앱은 pty 의 프로토콜이 다르면 그 pty 를 끄고 레
     JSON.stringify({ ...JSON.parse(readFileSync(record, 'utf8')), protocol_version: 999 })
   )
 
-  const { page: again } = await launch()
+  const { page: again } = await launch(DOM_RENDERER)
   await expect(toast(again)).toContainText("Couldn't reattach to the terminals")
   await expect(toast(again)).toContainText('different or unknown pty protocol version')
   await expect(panes(again)).toHaveCount(2)
@@ -208,7 +209,7 @@ test('재시작 동안 끝난 pty 의 pane 은 이유를 보인 뒤 같은 pane 
   // bash 는 cwd 를 알리지 않아, 저장할 cwd 가 생기도록 zsh 로 띄운다.
   const zsh = { SHELL: '/bin/zsh', HOME: zshHome(dataDir, 'moved') }
   const moved = join(zsh.HOME, 'moved')
-  const { app, page } = await launch(zsh)
+  const { app, page } = await launch({ ...DOM_RENDERER, ...zsh })
   await split(app, page, 'split-right', 2)
   await shellUp(page, 0)
   await shellUp(page, 1)
@@ -218,7 +219,7 @@ test('재시작 동안 끝난 pty 의 pane 은 이유를 보인 뒤 같은 pane 
   const second: string = readState(dataDir).sessions.ptys[1].pty
   await killPty(ptyDir(dataDir), second)
 
-  const { page: shown } = await launch(zsh)
+  const { page: shown } = await launch({ ...DOM_RENDERER, ...zsh })
   await expect(panes(shown)).toHaveCount(2)
   const gone = panes(shown).filter({ hasText: 'the pty had ended; trying to start a new shell' })
   await expect(gone).toHaveCount(1)
@@ -234,7 +235,7 @@ test('명령으로 띄운 pane 의 pty 가 재시작 동안 끝났으면 명령�
   dataDir
 }) => {
   const ran = join(dataDir, 'ran')
-  const { app, page } = await launch()
+  const { app, page } = await launch(DOM_RENDERER)
   await run(page, `maru pane new sh -c 'echo x >> ${ran}; read x'; echo made-$((1+1))`, 'made-2')
   await expect(panes(page)).toHaveCount(2)
   await expect.poll(readResult(ran)).toBe('x')
@@ -244,7 +245,7 @@ test('명령으로 띄운 pane 의 pty 가 재시작 동안 끝났으면 명령�
   const pty = saved.sessions.ptys.find((p: { pane: string }) => p.pane === commandPane).pty
   await killPty(ptyDir(dataDir), pty)
 
-  const { page: again } = await launch()
+  const { page: again } = await launch(DOM_RENDERER)
   await expect(panes(again)).toHaveCount(2)
   const gone = panes(again).nth(1)
   await expect(gone).toContainText('the pty had ended; trying to start a new shell')
@@ -271,7 +272,7 @@ test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살
   launch,
   dataDir
 }) => {
-  const first = await launch()
+  const first = await launch(DOM_RENDERER)
   await split(first.app, first.page, 'split-right', 2)
   await shellUp(first.page, 1)
   await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(2)
@@ -280,7 +281,7 @@ test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살
   await closed
   await killPtys(ptyDir(dataDir))
 
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await expect(panes(page)).toHaveCount(2)
   await expect(panes(page).filter({ hasText: 'the pty had ended' })).toHaveCount(2)
   await expect(toast(page)).toHaveCount(0)
@@ -400,7 +401,7 @@ test('재시작 뒤 maru pane new 가 되살린 pane 을 나눈다', async ({ la
   const { page } = await launch()
   await page.keyboard.type(`"$MARU_CLI" pane new -- sh -c 'echo split-$((1+1)); sleep 5'\n`)
   await expect(panes(page)).toHaveCount(2)
-  await expect(panes(page).nth(1).locator('.xterm-rows')).toContainText('split-2')
+  await expect(screen(page, 1)).toShow('split-2')
 })
 
 function callOnReturn(command: string, out: string): string {
@@ -435,7 +436,7 @@ test('재시작 직후 선택하지 않은 cell 의 남은 pty 가 곧바로 부
   await expect.poll(readResult(out), { timeout: 15_000 }).toBe('code=0')
   await expect(cellItems(again)).toHaveCount(4)
   await expect(workspaceNames(again)).toHaveCount(3)
-  await expect(cellViews(again).nth(2).locator('.xterm-rows')).toContainText('mark-new')
+  await expect(screen(again, cellViews(again).nth(2).locator('.pane'))).toShow('mark-new')
 })
 
 test('재시작 직후 남은 pty 가 곧바로 부른 maru cell new --before 는 가리킨 cell 앞에 띄운다', async ({
@@ -459,7 +460,7 @@ test('재시작 직후 남은 pty 가 곧바로 부른 maru cell new --before �
   await expect.poll(readResult(out), { timeout: 15_000 }).toBe('code=0')
   await expect(cellItems(again)).toHaveCount(4)
   await expect(workspaceNames(again)).toHaveCount(3)
-  await expect(cellViews(again).nth(1).locator('.xterm-rows')).toContainText('mark-new')
+  await expect(screen(again, cellViews(again).nth(1).locator('.pane'))).toShow('mark-new')
 })
 
 test('재시작 직후 남은 pty 가 곧바로 부른 maru pane new 는 그 pane 을 나눈다', async ({
@@ -474,7 +475,7 @@ test('재시작 직후 남은 pty 가 곧바로 부른 maru pane new 는 그 pan
   const { page: again } = await launch()
   await expect.poll(readResult(out), { timeout: 15_000 }).toBe('code=0')
   await expect(panes(again)).toHaveCount(2)
-  await expect(panes(again).nth(1).locator('.xterm-rows')).toContainText('split-2')
+  await expect(screen(again, 1)).toShow('split-2')
 })
 
 test('재시작 직후 남은 pty 가 곧바로 부른 maru canvas put 은 창이 준비된 뒤 문서를 띄우고 성공한다', async ({
@@ -516,7 +517,7 @@ test('재시작 전에 maru cell new 가 찍은 cell id 로 재시작 뒤에도 
     /p-[0-9a-f]{8}\s*code-0/
   )
   await expect(cellViews(again).nth(1).locator('.pane')).toHaveCount(2)
-  await expect(cellViews(again).nth(1).locator('.xterm-rows').nth(1)).toContainText('mark-added')
+  await expect(screen(again, cellViews(again).nth(1).locator('.pane').nth(1))).toShow('mark-added')
 })
 
 test('재시작한 뒤 End everything 으로 끄면 되살린 pty 도 끈다', async ({ launch, dataDir }) => {
@@ -757,7 +758,7 @@ test('팔레트에서 Restart 를 고르면 재시작한다', async ({ launch })
 })
 
 test('columns 보기로 재시작해도 재시작 전 출력이 좁은 폭으로 접히지 않는다', async ({ launch }) => {
-  const first = await launch()
+  const first = await launch(DOM_RENDERER)
   const { app, page } = first
   await split(app, page, 'split-right', 2)
   await toggleView(first, 'columns')
@@ -767,13 +768,13 @@ test('columns 보기로 재시작해도 재시작 전 출력이 좁은 폭으로
   }
 
   await restartWith(app)
-  const { page: again } = await launch()
+  const { page: again } = await launch(DOM_RENDERER)
   // 행 div 를 이어 붙이는 textContent 로는 접힌 줄도 한 줄로 이어져 통과하므로 innerText 의 줄로 본다.
   for (const i of [0, 1]) {
     // 창보다 넓은 columns 보기에서 화면 밖 pane 은 xterm 이 렌더링을 멈추므로, 받은 출력이 DOM 에 그려지지 않는다.
     await panes(again).nth(i).scrollIntoViewIfNeeded()
     await expect
-      .poll(async () => (await paneTerminalRows(again, i).innerText()).split('\n'))
+      .poll(async () => (await panes(again).nth(i).locator('.xterm-rows').innerText()).split('\n'))
       .toContain(`wide${i}-abcdefghijklmnopqrstuvwxyz-2`)
   }
 })
@@ -781,14 +782,14 @@ test('columns 보기로 재시작해도 재시작 전 출력이 좁은 폭으로
 test('columns 보기로 재시작한 뒤 대체 화면을 나가도 그 아래 출력이 접히지 않는다', async ({
   launch
 }) => {
-  const first = await launch()
+  const first = await launch(DOM_RENDERER)
   const { app, page } = first
   await toggleView(first, 'columns')
   await typesInto(page, 0, 'under-abcdefghijklmnopqrstuvwxyz')
   await run(page, "printf '\\033[?1049h'; echo alt-$((1+1))", 'alt-2')
 
   await restartWith(app)
-  const { page: again } = await launch()
+  const { page: again } = await launch(DOM_RENDERER)
   await run(again, "printf '\\033[?1049l'; echo back-$((1+1))", 'back-2')
   expect((await rows(again).innerText()).split('\n')).toContain(
     'under-abcdefghijklmnopqrstuvwxyz-2'

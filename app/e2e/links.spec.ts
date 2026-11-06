@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import {
   canvasTitles,
   cellSize,
+  DOM_RENDERER,
   expect,
   resizeBy,
   restartWith,
@@ -13,6 +14,8 @@ import {
   toast,
   writeConfig
 } from './app'
+
+// 링크를 누를 자리를 화면에 보이는 행(`.xterm-rows`)의 글자로 찾으므로 터미널을 DOM renderer 로 그린다.
 
 type Opened = { opened?: string[]; paths?: string[] }
 
@@ -64,7 +67,7 @@ async function metaClick(page: Page, text: string): Promise<void> {
 const OSC8 = (url: string, label: string) => `printf '\\e]8;;${url}\\a${label}\\e]8;;\\a\\n'`
 
 test('OSC 8 링크는 ⌘+클릭으로 열고, 그냥 클릭은 열지 않는다', async ({ launch }) => {
-  const { app, page } = await launch()
+  const { app, page } = await launch(DOM_RENDERER)
   await recordShell(app)
   await run(page, `${OSC8('https://example.com/osc', 'repo#7')}; echo done-$((1+1))`, 'done-2')
 
@@ -80,7 +83,7 @@ test('OSC 8 링크는 ⌘+클릭으로 열고, 그냥 클릭은 열지 않는다
 test('⌘ 를 누른 채 OSC 8 링크에 올리면 주소가 보이고, 떼거나 떠나면 사라진다', async ({
   launch
 }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await run(page, `${OSC8('https://example.com/addr', 'repo#8')}; echo done-$((1+1))`, 'done-2')
   const address = page.locator('.terminal-view.active .link-address')
   const { x, y } = await pointAt(page, 'repo#8')
@@ -105,7 +108,7 @@ for (const header of ['bottom', 'top'] as const) {
     dataDir
   }) => {
     if (header === 'top') writeConfig(dataDir, '[layout]\nheader = "top"\n')
-    const { app, page } = await launch()
+    const { app, page } = await launch(DOM_RENDERER)
     // 본문이 헤더를 뺀 행 수보다 반 행 길면 주소의 아래 끝이 가려지는지 보려고, pane 높이를 행 높이의 배수보다 1/4 행 크게 맞춘다.
     const { height: row } = await cellSize(page)
     const grid = () =>
@@ -139,7 +142,7 @@ for (const header of ['bottom', 'top'] as const) {
 }
 
 test('글자로 찍힌 .md 경로는 Canvas 로 간다', async ({ launch, dataDir }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   writeFileSync(join(dataDir, 'note.md'), '# From link')
   await run(page, `cd '${dataDir}'; echo "$PWD/note.md:3"; echo done-$((1+1))`, 'done-2')
 
@@ -152,7 +155,7 @@ test('줄 끝에서 끊겨 다음 줄에 이어 찍힌 경로는 어느 줄을 �
   launch,
   dataDir
 }) => {
-  const { app, page } = await launch()
+  const { app, page } = await launch(DOM_RENDERER)
   await recordShell(app)
   mkdirSync(join(dataDir, 'sub', 'c769d050-299b'), { recursive: true })
   // 상대경로는 foreground 프로세스의 cwd 로 푼다. 그 cwd 는 symlink 를 푼 경로(`/private/var/…`)이므로 기대값도 `realpathSync` 로 푼다.
@@ -172,7 +175,7 @@ test('줄 끝에서 끊겨 다음 줄에 이어 찍힌 경로는 어느 줄을 �
 })
 
 test('상대경로는 돌고 있는 명령의 cwd 기준이다', async ({ launch, dataDir }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   mkdirSync(join(dataDir, 'sub'))
   writeFileSync(join(dataDir, 'sub', 'rel.md'), '# In sub')
   await run(
@@ -187,7 +190,7 @@ test('상대경로는 돌고 있는 명령의 cwd 기준이다', async ({ launch
 })
 
 test('못 여는 링크는 이유를 토스트로 보인다', async ({ launch, dataDir }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await run(page, `echo '${dataDir}/none.md'; echo done-$((1+1))`, 'done-2')
 
   await metaClick(page, 'none.md')
@@ -211,11 +214,11 @@ for (const [kind, print, text, url] of [
   ]
 ] as const)
   test(`재시작해 pty 에 다시 붙어도 ${kind}는 열린다`, async ({ launch }) => {
-    const first = await launch()
+    const first = await launch(DOM_RENDERER)
     await run(first.page, `${print}; echo done-$((1+1))`, 'done-2')
 
     await restartWith(first.app)
-    const { app, page } = await launch()
+    const { app, page } = await launch(DOM_RENDERER)
     await expect(rows(page)).toContainText(text)
     await recordShell(app)
 

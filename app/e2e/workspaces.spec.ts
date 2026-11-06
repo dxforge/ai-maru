@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import {
   activeTerminal,
   clickMenu,
+  DOM_RENDERER,
   expect,
-  gridRows,
   hostPid,
   newWorkspace,
   pressNew,
@@ -13,9 +13,11 @@ import {
   rows,
   run,
   ptyFiles,
+  screen,
   slowPtyBin,
   shellSize,
   sockets,
+  terminalRows,
   test,
   cellGroups,
   cellItems,
@@ -55,7 +57,8 @@ test('bash 에서 ⌘N 은 cd 와 상관없이 홈 디렉토리에서 새 pty �
 test('사이드바에서 누른 cell 로 전환하고, 보이지 않던 동안의 출력도 남아 있다', async ({
   launch
 }) => {
-  const launched = await launch()
+  // 숨은 동안 xterm 이 출력을 받아 그렸는지 보므로 pty 화면이 아니라 DOM renderer 가 그린 행에서 읽는다.
+  const launched = await launch(DOM_RENDERER)
   const { page } = launched
   await page.keyboard.type('X=a-$((1+1)); (sleep 1; echo late-$((3+3))) &\n')
   await newWorkspace(launched, 2)
@@ -122,7 +125,7 @@ test('앱을 끄면 열린 cell 의 pty 를 모두 종료한다', async ({ launc
 })
 
 test('pty 를 잇는 utilityProcess 가 죽어도 cell 은 닫지 않는다', async ({ launch }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   await newWorkspace(launched, 2)
   await run(page, 'echo set-$((3+3))', 'set-6')
@@ -142,7 +145,7 @@ test('보이지 않는 동안 창 크기가 바뀐 cell 도 셸이 보는 크기
   await cellItems(page).first().click()
 
   const size = await shellSize(page)
-  expect(size.rows).toBe(await gridRows(page).count())
+  expect(size.rows).toBe(await terminalRows(screen(page)))
   expect(size.rows).toBeLessThan(before.rows)
 })
 
@@ -230,7 +233,7 @@ test('zsh 에서 ⌘N 을 연달아 눌러도 선택된 cell 의 디렉토리에
     HOME: home,
     MARU_PTY_BIN: slowPtyBin(dataDir)
   })
-  await expect(rows(page)).toContainText('%', { timeout: 10_000 })
+  await expect(screen(page)).toShow('%', { timeout: 10_000 })
   await page.keyboard.type('cd proj\n')
   await expect(cellPlaces(page)).toHaveText(['proj'])
 
@@ -278,7 +281,7 @@ test('zsh 에서 ⌘T 는 선택한 cell 바로 뒤(그 cell 이 앞서 띄운 �
 
   await expect(workspaceNames(page)).toHaveCount(2)
   await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
-  await expect(cellViews(page).nth(2).locator('.xterm-rows')).toContainText('mark-spawned')
+  await expect(screen(page, cellViews(page).nth(2).locator('.pane'))).toShow('mark-spawned')
   await run(page, '[ "$PWD" = "$HOME/proj" ] && echo in-proj-$((1+1))', 'in-proj-2')
 })
 

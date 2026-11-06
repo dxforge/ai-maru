@@ -2,11 +2,12 @@ import type { Locator, Page } from '@playwright/test'
 import { SCROLLBAR_WIDTH } from '../src/renderer/src/workspace/columns'
 import {
   activeTerminal,
+  DOM_RENDERER,
   expect,
   newWorkspace,
   panes,
+  shellSize,
   split,
-  sttySize,
   test,
   toggleView,
   WEBGL_CANVAS,
@@ -43,7 +44,7 @@ async function loseContext(terminal: Locator): Promise<void> {
 test('선택된 cell 의 터미널은 WebGL 로, 선택되지 않은 cell 의 터미널은 DOM 으로 그리고, 선택을 바꾸면 따라 바뀐다', async ({
   launch
 }) => {
-  const launched = await launch({ MARU_DOM_RENDERER: '' })
+  const launched = await launch()
   const { app, page } = launched
   await split(app, page, 'split-right', 2)
   await expect.poll(() => renderers(cellViews(page).nth(0))).toEqual(['webgl', 'webgl'])
@@ -60,7 +61,7 @@ test('선택된 cell 의 터미널은 WebGL 로, 선택되지 않은 cell 의 �
 test('columns 에서는 화면에 보이는 cell 의 터미널만 WebGL 로 그리고, 스크롤해서 보이면 WebGL 로 바뀐다', async ({
   launch
 }) => {
-  const launched = await launch({ MARU_DOM_RENDERER: '' })
+  const launched = await launch()
   const { page } = launched
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
@@ -81,7 +82,7 @@ test('columns 에서는 화면에 보이는 cell 의 터미널만 WebGL 로 그�
 test('WebGL context 를 잃은 터미널은 보이는 동안 DOM 으로 그리고, 숨었다 다시 보이면 WebGL 로 돌아온다', async ({
   launch
 }) => {
-  const launched = await launch({ MARU_DOM_RENDERER: '' })
+  const launched = await launch()
   const { page } = launched
   const first = terminals(cellViews(page).nth(0))
   await expect.poll(() => renderer(first)).toBe('webgl')
@@ -113,10 +114,9 @@ async function screenWidth(
 }
 
 test('WebGL 터미널은 pane 폭을 글자 칸 단위로 채우고, renderer 가 바뀌어도 셸이 보는 열 수는 그대로다', async ({
-  launch,
-  dataDir
+  launch
 }) => {
-  const launched = await launch({ MARU_DOM_RENDERER: '' })
+  const launched = await launch()
   const { page } = launched
   const first = terminals(cellViews(page).nth(0))
   await expect.poll(() => renderer(first)).toBe('webgl')
@@ -124,24 +124,23 @@ test('WebGL 터미널은 pane 폭을 글자 칸 단위로 채우고, renderer �
   const spare = w.room - SCROLLBAR_WIDTH - w.screen
   expect(spare).toBeGreaterThanOrEqual(0)
   expect(spare).toBeLessThan(w.cell)
-  const before = await sttySize(page, dataDir)
+  const before = await shellSize(page)
 
   await newWorkspace(launched, 2)
   await expect.poll(() => renderer(first)).toBe('dom')
   await cellItems(page).first().click()
   await expect.poll(() => renderer(first)).toBe('webgl')
-  expect(await sttySize(page, dataDir)).toEqual(before)
+  expect(await shellSize(page)).toEqual(before)
 
   await loseContext(first)
   await expect.poll(() => renderer(first), { timeout: 10_000 }).toBe('dom')
-  expect(await sttySize(page, dataDir)).toEqual(before)
+  expect(await shellSize(page)).toEqual(before)
 })
 
 test('WebGL2 를 쓸 수 없으면 DOM 으로 그리고, pane 폭을 DOM 의 글자 칸 단위로 채우며 columns 의 pane 은 80열이다', async ({
-  launch,
-  dataDir
+  launch
 }) => {
-  const launched = await launch({ MARU_DOM_RENDERER: '' })
+  const launched = await launch()
   const { page } = launched
   // 첫 터미널이 열리기 전에 막아야 하므로, init script 를 걸고 페이지를 다시 불러온다.
   await page.addInitScript(() => {
@@ -169,19 +168,19 @@ test('WebGL2 를 쓸 수 없으면 DOM 으로 그리고, pane 폭을 DOM 의 글
 
   await newWorkspace(launched, 2)
   await toggleView(launched, 'columns')
-  await expect.poll(async () => (await sttySize(page, dataDir)).cols).toBe(80)
+  await expect.poll(async () => (await shellSize(page)).cols).toBe(80)
 })
 
-test('WebGL 로 그려도 columns 의 pane 은 80열이다', async ({ launch, dataDir }) => {
-  const launched = await launch({ MARU_DOM_RENDERER: '' })
+test('WebGL 로 그려도 columns 의 pane 은 80열이다', async ({ launch }) => {
+  const launched = await launch()
   await toggleView(launched, 'columns')
-  await expect.poll(async () => (await sttySize(launched.page, dataDir)).cols).toBe(80)
+  await expect.poll(async () => (await shellSize(launched.page)).cols).toBe(80)
 })
 
 test('pane 이 많은 cell 사이를 한도보다 많이 오가도 WebGL context 가 한도를 넘지 않는다', async ({
   launch
 }) => {
-  const launched = await launch({ MARU_DOM_RENDERER: '' })
+  const launched = await launch()
   const { app, page } = launched
   const warnings: string[] = []
   page.on('console', (m) => {
@@ -202,7 +201,7 @@ test('pane 이 많은 cell 사이를 한도보다 많이 오가도 WebGL context
 })
 
 test('MARU_DOM_RENDERER 를 주고 띄우면 보이는 터미널도 DOM 으로 그린다', async ({ launch }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await page.waitForTimeout(500)
   expect(await renderers(page)).toEqual(['dom'])
 })

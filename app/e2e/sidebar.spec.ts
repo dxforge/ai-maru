@@ -18,8 +18,8 @@ import {
   programStatus,
   resizeBy,
   restartWith,
-  rows,
   run,
+  screen,
   shellRows,
   shellSize,
   SIDEBAR_MAX_WIDTH,
@@ -383,7 +383,7 @@ test('branch 이름이 길면 셸 줄의 위치에서 branch 를 줄이고, 위�
   const { page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await page.keyboard.type('cd proj\n')
   await page.keyboard.type(`git switch -q -c ${'b'.repeat(120)}; echo ok-$((1+1))\n`)
-  await expect(rows(page)).toContainText('ok-2', shellGit)
+  await expect(screen(page)).toShow('ok-2', shellGit)
   await expect(branch(page)).toHaveText(/b{120}$/)
   const list = page.locator('.sidebar .list')
   expect(await list.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0)
@@ -1049,7 +1049,9 @@ test('이름을 고치다 다른 workspace 줄을 두 번 누르면 고치던 �
     if (m.type() === 'error') errors.push(m.text())
   })
   await newWorkspace(launched, 2)
-  const second = (await workspaceNames(page).nth(1).textContent())!
+  // 새 workspace 의 이름은 셸이 디렉토리를 알린 뒤에 정해진다.
+  const second = '~'
+  await expect(workspaceNames(page).nth(1)).toHaveText(second)
 
   await workspaceHeads(page).nth(0).dblclick()
   await expect(nameInput(page)).toBeFocused()
@@ -1647,7 +1649,7 @@ test('닫힌 즐겨찾기 줄을 누르면 그 줄 바로 아래에 줄의 폭�
   await expect(closedRows(page)).toHaveCount(0)
   await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
   await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
-  await expect(rows(page)).toContainText(`ran-in-${home}/sub`)
+  await expect(screen(page)).toShow(`ran-in-${home}/sub`)
 })
 
 test('사이드바를 접으면 닫힌 줄의 런처가 펼친 최소 폭일 때의 줄 폭으로 뜨고, 목록을 스크롤해 창 아래 끝에 온 줄에서는 줄 위로 뒤집혀 뜬다', async ({

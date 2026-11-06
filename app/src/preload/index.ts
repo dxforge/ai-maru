@@ -134,7 +134,7 @@ const api = {
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   // dev 서버로 띄우면 Electron 이 끝날 때 dev 서버도 끝나, 다시 뜬 앱이 renderer 를 불러올 곳이 없다.
   canRestart: !process.env.ELECTRON_RENDERER_URL,
-  // e2e 는 터미널 글자를 DOM renderer 가 그린 `.xterm-rows` 에서 읽는다.
+  // e2e 는 DOM renderer 만 그리는 행(`.xterm-rows`)·고른 영역(`.xterm-selection`)을 재는 테스트에서 켠다.
   webgl: !process.env.MARU_DOM_RENDERER,
   home: process.env.HOME,
   shell: process.env.SHELL

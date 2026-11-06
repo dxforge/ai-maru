@@ -7,8 +7,9 @@ import {
   newWorkspace,
   paneRows,
   programStatus,
-  rows,
   run,
+  screen,
+  screenText,
   split,
   test,
   typesInto,
@@ -17,7 +18,7 @@ import {
 
 async function ptyIdOf(page: Page, prefix = ''): Promise<string> {
   await run(page, `${prefix}clear; echo id=[$MARU_PTY_ID]`, /id=\[p-[0-9a-f]{8}\]/)
-  return (await rows(page).innerText()).match(/id=\[(p-[0-9a-f]{8})\]/)![1]
+  return (await screenText(screen(page))).match(/id=\[(p-[0-9a-f]{8})\]/)![1]
 }
 
 /** e2e 의 bash 는 cd 를 OSC 7 로 알리지 않으므로 직접 보낸다. */

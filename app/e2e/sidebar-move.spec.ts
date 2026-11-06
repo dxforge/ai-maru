@@ -11,8 +11,8 @@ import {
   recordPtys,
   resizeBy,
   restartWith,
-  rows,
   run,
+  screen,
   test,
   toggleView,
   workspaceHeads,
@@ -92,9 +92,9 @@ test('손잡이로 cell 을 끌어 같은 workspace 의 다른 자리에 놓으�
   await expect(cards(page).nth(0)).toHaveClass(/selected/)
   await expect(cellViews(page).nth(0).locator('.pane-header')).toContainText('charlie')
   await expect(cellViews(page).nth(1).locator('.pane-header')).toContainText('alpha')
-  await expect(cellViews(page).nth(1).locator('.xterm-rows')).toContainText('kept-2')
+  await expect(screen(page, cellViews(page).nth(1).locator('.pane'))).toShow('kept-2')
   await run(page, 'echo typed-$((1+1))', 'typed-2')
-  await expect(cellViews(page).nth(0).locator('.xterm-rows')).toContainText('typed-2')
+  await expect(screen(page, cellViews(page).nth(0).locator('.pane'))).toShow('typed-2')
   expect(await events()).toEqual({ opens: [], kills: [] })
 
   await clickMenu(app, 'next-cell')
@@ -230,8 +230,8 @@ test('Esc 를 누르면 끌기를 그만두어 순서가 그대로이고, 그 Es
   await expect.poll(() => shape(page)).toEqual([['alpha', 'bravo'], ['charlie']])
 
   await page.keyboard.type('z-$((1+1))\n')
-  await expect(rows(page)).toContainText('z-$((1+1))')
-  await expect(rows(page)).not.toContainText('^[')
+  await expect(screen(page)).toShow('z-$((1+1))')
+  await expect(screen(page)).not.toShow('^[')
   await page.keyboard.press('Control+C')
 })
 

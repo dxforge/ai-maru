@@ -244,15 +244,14 @@ test('pane 헤더와 columns 의 cell 헤더는 글자 위에서도 기본 커�
 async function measure(page: Page) {
   return page.evaluate(() => {
     const grid = document.querySelector('.panes.selected .grid')!.getBoundingClientRect()
-    // pane 경계가 맞추는 격자. DOM 의 행 높이는 행 수에 따라 반올림이 달라 1px 의 몇 % 씩 어긋난다.
+    // pane 경계가 맞추는 격자이자 터미널의 글자 칸 크기.
     const vars = getComputedStyle(document.querySelector('.panes.selected')!)
     const cellWidth = parseFloat(vars.getPropertyValue('--cell'))
     const unit = parseFloat(vars.getPropertyValue('--row'))
     return [...document.querySelectorAll('.panes.selected .pane')].map((pane) => {
       const box = pane.getBoundingClientRect()
       const head = pane.querySelector('.pane-header')!.getBoundingClientRect()
-      const row = pane.querySelector('.xterm-rows > div')!.getBoundingClientRect()
-      const rows = pane.querySelector('.xterm-rows')!.children.length
+      const screen = pane.querySelector('.xterm-screen')!.getBoundingClientRect()
       return {
         left: box.left - grid.left,
         right: box.right - grid.left,
@@ -260,9 +259,8 @@ async function measure(page: Page) {
         bottom: box.bottom - grid.top,
         headTop: head.top - grid.top,
         headHeight: head.height,
-        rows,
-        firstRow: row.top - grid.top,
-        rowHeight: row.height,
+        rows: Math.round(screen.height / unit),
+        firstRow: screen.top - grid.top,
         unit,
         cellWidth,
         gridWidth: grid.width,
@@ -280,13 +278,13 @@ function expectOnGrid(
   header: 'bottom' | 'top' = 'bottom'
 ) {
   for (const b of boxes) {
-    expect(b.headHeight).toBeCloseTo(b.rowHeight, 1)
+    expect(b.headHeight).toBeCloseTo(b.unit, 1)
     if (header === 'bottom') {
-      expect(b.headTop).toBeCloseTo(b.bottom - b.rowHeight, 1)
+      expect(b.headTop).toBeCloseTo(b.bottom - b.unit, 1)
       expect(b.firstRow).toBeCloseTo(b.top, 1)
     } else {
       expect(b.headTop).toBeCloseTo(b.top, 1)
-      expect(b.firstRow).toBeCloseTo(b.top + b.rowHeight, 1)
+      expect(b.firstRow).toBeCloseTo(b.top + b.unit, 1)
     }
     expect(offGrid(b.top, b.unit)).toBeLessThan(0.01)
     expect(offGrid(b.left, b.cellWidth)).toBeLessThan(0.01)
@@ -370,7 +368,7 @@ test('줌 1.5 에서 행 높이가 소수이고 영역 높이가 행의 배수 �
   await setZoom(app, 1.5)
   await split(app, page, 'split-right', 2)
   await split(app, page, 'split-down', 3)
-  expect((await measure(page))[0].rowHeight % 1).not.toBe(0)
+  expect((await measure(page))[0].unit % 1).not.toBe(0)
 
   for (const offset of [0, 0.25, 0.5, 0.75]) {
     const [box] = await measure(page)

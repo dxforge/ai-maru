@@ -1,5 +1,18 @@
 import type { Page } from '@playwright/test'
-import { clickMenu, expect, openPalette, restartWith, rows, run, test, type Launched } from './app'
+import {
+  clickMenu,
+  DOM_RENDERER,
+  expect,
+  openPalette,
+  restartWith,
+  rows,
+  run,
+  screen,
+  test,
+  type Launched
+} from './app'
+
+// Clear Scrollback 뒤 화면에 보이는 행을 `.xterm-rows` 로 재므로 터미널을 DOM renderer 로 그린다.
 
 function scrolls(page: Page): Promise<boolean> {
   return page.evaluate(() => {
@@ -17,19 +30,19 @@ async function fillWithPending({ page }: Launched): Promise<void> {
   await run(page, 'seq 1 300', '300')
   await expect.poll(() => scrolls(page)).toBe(true)
   await page.keyboard.type('echo pending-$((1+1))')
-  await expect(rows(page)).toContainText('echo pending-$((1+1))')
+  await expect(screen(page)).toShow('echo pending-$((1+1))')
 }
 
 async function expectCleared(page: Page): Promise<void> {
   await expect.poll(() => scrolls(page)).toBe(false)
   await expect.poll(() => firstRow(page)).toContain('echo pending-$((1+1))')
-  await expect(rows(page)).not.toContainText('299')
+  await expect(screen(page)).not.toShow('299')
 }
 
 test('Clear Scrollback 은 스크롤백과 커서 줄 위를 지워 치던 줄을 맨 위로 올리고, 친 글자는 그대로 셸에 간다', async ({
   launch
 }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   await fillWithPending(launched)
 
@@ -37,12 +50,12 @@ test('Clear Scrollback 은 스크롤백과 커서 줄 위를 지워 치던 줄�
   await expectCleared(page)
 
   await page.keyboard.press('Enter')
-  await expect(rows(page)).toContainText('pending-2')
+  await expect(screen(page)).toShow('pending-2')
   await expect.poll(() => firstRow(page)).toContain('echo pending-$((1+1))')
 })
 
 test('팔레트의 Clear Scrollback 도 지운다', async ({ launch }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { page } = launched
   await fillWithPending(launched)
 
@@ -53,14 +66,14 @@ test('팔레트의 Clear Scrollback 도 지운다', async ({ launch }) => {
 })
 
 test('지운 스크롤백은 재시작한 뒤에도 돌아오지 않는다', async ({ launch }) => {
-  const first = await launch()
+  const first = await launch(DOM_RENDERER)
   await fillWithPending(first)
   await clickMenu(first.app, 'clear-scrollback')
   await expectCleared(first.page)
 
   await restartWith(first.app)
-  const { page } = await launch()
-  await expect(rows(page)).toContainText('echo pending-$((1+1))')
+  const { page } = await launch(DOM_RENDERER)
+  await expect(screen(page)).toShow('echo pending-$((1+1))')
   await expectCleared(page)
 })
 
@@ -77,7 +90,7 @@ test('Clear Scrollback 뒤 화면은 재시작해 재생한 화면과 같고, �
     await expect.poll(() => row(page, 0)).toContain('mark-b')
     await expect.poll(() => row(page, 1)).toContain('mark-3')
   }
-  const first = await launch()
+  const first = await launch(DOM_RENDERER)
   await run(
     first.page,
     `seq 1 300; printf "mark-a\\nmark-b\\nmark-$((2+1))\\033[A\\r"; read x`,
@@ -91,7 +104,7 @@ test('Clear Scrollback 뒤 화면은 재시작해 재생한 화면과 같고, �
   const cleared = await rows(first.page).innerText()
 
   await restartWith(first.app)
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await expectRows(page)
   expect(await rows(page).innerText()).toBe(cleared)
   expect(await scrolls(page)).toBe(false)

@@ -16,6 +16,7 @@ import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import {
   attachFromOutside,
   clickMenu,
+  DOM_RENDERER,
   expect,
   gridRows,
   hostPid,
@@ -25,6 +26,7 @@ import {
   rows,
   ptyDir,
   ptyFiles,
+  screen,
   slowPtyBin,
   sockets,
   stateFile,
@@ -39,7 +41,7 @@ import {
 test('두 번째 실행은 pty 를 더 띄우지 않고 끝난다', async ({ launch, dataDir }) => {
   const { page } = await launch()
   await page.keyboard.type('echo one-$((0+1))\n')
-  await expect(rows(page)).toContainText('one-1')
+  await expect(screen(page)).toShow('one-1')
 
   const second = spawnSync(
     electronBin as unknown as string,
@@ -65,7 +67,7 @@ test('다른 클라이언트가 primary 를 가져가면 창은 그 크기를 �
   dataDir,
   defer
 }) => {
-  const { app, page } = await launch()
+  const { app, page } = await launch(DOM_RENDERER)
   await page.keyboard.type('echo ready-$((1+1))\n')
   await expect(rows(page)).toContainText('ready-2')
 
@@ -80,7 +82,7 @@ test('다른 클라이언트가 primary 를 가져가면 창은 그 크기를 �
 })
 
 test('pty 를 잇는 utilityProcess 가 죽으면 끊김을 보인다', async ({ launch }) => {
-  const { app, page } = await launch()
+  const { app, page } = await launch(DOM_RENDERER)
   await page.keyboard.type('echo set-$((1+1))\n')
   await expect(rows(page)).toContainText('set-2')
   process.kill(await hostPid(app), 'SIGKILL')
@@ -91,7 +93,7 @@ test('maru-pty 가 준비 전에 끝나면 그 이유를 터미널에 보인다'
   const bin = join(dataDir, 'fake-pty')
   writeFileSync(bin, '#!/bin/sh\necho "reason-from-stderr" >&2\nexit 3\n')
   chmodSync(bin, 0o755)
-  const { page } = await launch({ MARU_PTY_BIN: bin })
+  const { page } = await launch({ ...DOM_RENDERER, MARU_PTY_BIN: bin })
   await expect(rows(page)).toContainText('code=3')
   await expect(rows(page)).toContainText('reason-from-stderr')
   expect(ptyFiles(dataDir).filter((n) => n.endsWith('.log'))).toEqual([])
@@ -114,7 +116,7 @@ test('프로세스가 없는 pty 의 레코드는 지우고 새 pty 를 띄운�
 
   const { page } = await launch()
   await page.keyboard.type('echo fresh-$((3+3))\n')
-  await expect(rows(page)).toContainText('fresh-6')
+  await expect(screen(page)).toShow('fresh-6')
   expect(existsSync(join(dir, 'p-dead.json'))).toBe(false)
   expect(existsSync(join(dir, 'p-dead.sock'))).toBe(false)
 })
@@ -125,7 +127,7 @@ test('앱이 강제로 끝나 남은 pty 가 state.json 의 sessions 에 없으�
 }) => {
   const first = await launch()
   await first.page.keyboard.type('echo left-$((1+1))\n')
-  await expect(rows(first.page)).toContainText('left-2')
+  await expect(screen(first.page)).toShow('left-2')
   const [left] = sockets(dataDir)
   const closed = new Promise<void>((resolve) => first.app.once('close', () => resolve()))
   first.app.process().kill('SIGKILL')
@@ -135,7 +137,7 @@ test('앱이 강제로 끝나 남은 pty 가 state.json 의 sessions 에 없으�
 
   const { page } = await launch()
   await page.keyboard.type('echo fresh-$((2+2))\n')
-  await expect(rows(page)).toContainText('fresh-4')
+  await expect(screen(page)).toShow('fresh-4')
   expect(sockets(dataDir)).toHaveLength(1)
   expect(sockets(dataDir)).not.toContain(left)
 })
@@ -258,7 +260,7 @@ test('pty 를 잇는 utilityProcess 가 죽은 뒤에 닫은 pane 의 pty 도 �
   launch,
   dataDir
 }) => {
-  const { app, page } = await launch()
+  const { app, page } = await launch(DOM_RENDERER)
   await split(app, page, 'split-right', 2)
   await typesInto(page, 1, 'second')
   expect(sockets(dataDir)).toHaveLength(2)

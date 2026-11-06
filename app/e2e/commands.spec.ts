@@ -2,13 +2,14 @@ import type { Page } from '@playwright/test'
 import {
   activeTerminal,
   clickMenu,
+  DOM_RENDERER,
   DRAG_LOG_ENV,
   dragRegion,
   expect,
   openPalette,
   resizeBy,
-  rows,
   run,
+  screen,
   shellSize,
   test,
   cellGroups,
@@ -34,7 +35,7 @@ async function armKitty(page: Page, flags: number, read: string): Promise<void> 
   await page.keyboard.type(
     `printf '\\033[>${flags}u'; echo armed-${flags}-$((1+1)); IFS= read -rs ${read} k; printf '\\033[<u'; printf 'got=%q\\n' "$k"\n`
   )
-  await expect(rows(page)).toContainText(`armed-${flags}-2`)
+  await expect(screen(page)).toShow(`armed-${flags}-2`)
 }
 
 test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W 는 Close Window 가 아니며, 새로 고침과 창 zoom 은 메뉴에 없다', async ({
@@ -155,12 +156,12 @@ test('터미널에서 ⇧↩ 은 kitty 키보드 프로토콜을 켠 프로그�
   const { page } = await launch()
   await page.keyboard.type('echo plain-$((1+1))')
   await page.keyboard.press('Shift+Enter')
-  await expect(rows(page)).toContainText('plain-2')
+  await expect(screen(page)).toShow('plain-2')
 
   await armKitty(page, 1, '-n7')
   await page.keyboard.press('Shift+Enter')
 
-  await expect(rows(page)).toContainText("got=$'\\E[13;2u'")
+  await expect(screen(page)).toShow("got=$'\\E[13;2u'")
 })
 
 // Playwright 의 `keyboard.press` 는 key 와 code 가 다른 키를 만들지 못하므로 CDP 로 보낸다.
@@ -178,18 +179,18 @@ test('한글 배열의 ⌃R 은 플래그 4 를 켠 kitty 프로그램에 물리
   const { page } = await launch()
   await armKitty(page, 5, '-t 2 -n15')
   await pressHangulCtrlR(page)
-  await expect(rows(page)).toContainText("got=$'\\E[12593::114;5u'")
+  await expect(screen(page)).toShow("got=$'\\E[12593::114;5u'")
 
   await armKitty(page, 1, '-t 2 -n10')
   await pressHangulCtrlR(page)
-  await expect(rows(page)).toContainText("got=$'\\E[12593;5u'")
+  await expect(screen(page)).toShow("got=$'\\E[12593;5u'")
 
   await page.keyboard.type(
     'echo legacy-$((1+1)); IFS= read -rs -t 2 -n1 k; printf \'got=%q\\n\' "$k"\n'
   )
-  await expect(rows(page)).toContainText('legacy-2')
+  await expect(screen(page)).toShow('legacy-2')
   await pressHangulCtrlR(page)
-  await expect(rows(page)).toContainText("got=$'\\022'")
+  await expect(screen(page)).toShow("got=$'\\022'")
 })
 
 test('플래그 2 를 함께 켠 kitty 프로그램에는 한글 배열의 ⌃R 을 뗄 때도 누를 때와 같은 키 번호와 base layout key 로 간다', async ({
@@ -198,7 +199,7 @@ test('플래그 2 를 함께 켠 kitty 프로그램에는 한글 배열의 ⌃R 
   const { page } = await launch()
   await armKitty(page, 7, '-t 2 -n32')
   await pressHangulCtrlR(page)
-  await expect(rows(page)).toContainText("got=$'\\E[12593::114;5u\\E[12593::114;5:3u'")
+  await expect(screen(page)).toShow("got=$'\\E[12593::114;5u\\E[12593::114;5:3u'")
 })
 
 test('한글을 조합하는 중에 누른 한글 배열의 ⌃R 은 조합한 글자 뒤에 base layout key 를 붙여 kitty 프로그램에 간다', async ({
@@ -209,7 +210,7 @@ test('한글을 조합하는 중에 누른 한글 배열의 ⌃R 은 조합한 �
   await page.keyboard.type(
     `printf '\\033[>5u'; echo armed-$((1+1)); IFS= read -rs -t 2 -d u k; printf '\\033[<u'; printf '%s' "$k" | xxd -p | sed 's/^/got=/'\n`
   )
-  await expect(rows(page)).toContainText('armed-2')
+  await expect(screen(page)).toShow('armed-2')
 
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('Input.imeSetComposition', { text: '하', selectionStart: 1, selectionEnd: 1 })
@@ -219,7 +220,7 @@ test('한글을 조합하는 중에 누른 한글 배열의 ⌃R 은 조합한 �
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key })
   await cdp.detach()
 
-  await expect(rows(page)).toContainText('got=ed95981b5b31323539333a3a3131343b35')
+  await expect(screen(page)).toShow('got=ed95981b5b31323539333a3a3131343b35')
 })
 
 test('터미널에서 ⌘⌫ 은 커서 앞의 입력을 지운다', async ({ launch }) => {
@@ -229,8 +230,8 @@ test('터미널에서 ⌘⌫ 은 커서 앞의 입력을 지운다', async ({ la
   await page.keyboard.press('Meta+Backspace')
   await page.keyboard.type('echo kept-$((1+1))\n')
 
-  await expect(rows(page)).toContainText('kept-2')
-  await expect(rows(page)).not.toContainText('gone')
+  await expect(screen(page)).toShow('kept-2')
+  await expect(screen(page)).not.toShow('gone')
 })
 
 async function composeThenMetaKey(page: Page, code: string, keyCode: number): Promise<void> {
@@ -252,7 +253,7 @@ test('터미널에서 한글을 조합하는 중에 ⌘⌫ 을 누르면 조합�
   await composeThenMetaKey(page, 'Backspace', 8)
   await page.keyboard.type('echo kept-$((1+1))\n')
 
-  await expect(rows(page)).toContainText('kept-2')
+  await expect(screen(page)).toShow('kept-2')
 })
 
 test('터미널에서 한글을 조합하는 중에 ⌘← 를 누르면 조합하던 글자를 넣은 뒤 줄 처음으로 간다', async ({
@@ -266,7 +267,7 @@ test('터미널에서 한글을 조합하는 중에 ⌘← 를 누르면 조합�
   await page.keyboard.press('Meta+ArrowRight')
   await page.keyboard.type('-$((1+1))\n')
 
-  await expect(rows(page)).toContainText('안녕하-2')
+  await expect(screen(page)).toShow('안녕하-2')
 })
 
 test('터미널에서 ⌥ 는 Meta 로 가서 ⌥P 는 ESC p 를 보낸다', async ({ launch }) => {
@@ -275,7 +276,7 @@ test('터미널에서 ⌥ 는 Meta 로 가서 ⌥P 는 ESC p 를 보낸다', asy
 
   await page.keyboard.press('Alt+KeyP')
 
-  await expect(rows(page)).toContainText("got=$'\\Ep'")
+  await expect(screen(page)).toShow("got=$'\\Ep'")
 })
 
 test('kitty 키보드 모드인 프로그램이 떠 있어도 ⌘ 조합은 프로그램으로 가지 않고 메뉴나 창으로 흘려보낸다', async ({
@@ -318,7 +319,7 @@ test('kitty 키보드 모드인 프로그램이 떠 있어도 ⌘ 조합은 프�
   expect(await page.evaluate(() => (window as unknown as { seen: unknown[] }).seen)).toEqual(
     keys.map((key) => ({ code: key.split('+').at(-1), prevented: false }))
   )
-  await expect(rows(page)).toContainText('got=x')
+  await expect(screen(page)).toShow('got=x')
 })
 
 test('kitty 키보드 모드가 아닌 프로그램에도 표에 없는 ⌘↩ 은 가지 않는다', async ({ launch }) => {
@@ -328,7 +329,7 @@ test('kitty 키보드 모드가 아닌 프로그램에도 표에 없는 ⌘↩ �
   await page.keyboard.press('Meta+Enter')
   await page.keyboard.press('KeyX')
 
-  await expect(rows(page)).toContainText('got=x')
+  await expect(screen(page)).toShow('got=x')
 })
 
 test('kitty 키보드 모드인 프로그램은 ⌘ 와, ⌘ 를 쥔 채 누른 ⇧·⌥·⌃ 같은 modifier 단독 누름은 받는다', async ({
@@ -343,15 +344,14 @@ test('kitty 키보드 모드인 프로그램은 ⌘ 와, ⌘ 를 쥔 채 누른 
   await page.keyboard.press('Control')
   await page.keyboard.up('Meta')
 
-  await expect(rows(page)).toContainText(
-    "got=$'\\E[57444;9u\\E[57441;10u\\E[57443;11u\\E[57442;13u'"
-  )
+  await expect(screen(page)).toShow("got=$'\\E[57444;9u\\E[57441;10u\\E[57443;11u\\E[57442;13u'")
 })
 
+// 고른 영역은 DOM renderer 만 `.xterm-selection` 으로 그린다.
 const selection = (page: Page) => page.locator('.terminal-view.active .xterm-selection div')
 
 test('터미널에서 ⌘A 는 터미널의 내용을 모두 고르고, ⇧⌘A 는 고르지 않는다', async ({ launch }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await run(page, 'echo all-$((1+1))', 'all-2')
   await expect(selection(page)).toHaveCount(0)
 

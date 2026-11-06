@@ -6,8 +6,8 @@ import {
   expect,
   newWorkspace,
   restartWith,
-  rows,
   run,
+  screen,
   sockets,
   stubDialog,
   END_EVERYTHING,
@@ -108,7 +108,7 @@ test('같은 이름이 돌고 있으면 거절한다', async ({ launch }) => {
     'maru job new --name d sleep 100 >/dev/null; maru job new --name d sleep 100; echo code-$?',
     'code-1'
   )
-  await expect(rows(page)).toContainText('job d is running in this cell')
+  await expect(screen(page)).toShow('job d is running in this cell')
 })
 
 test('다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell 의 job 만 끝난다', async ({
@@ -160,7 +160,7 @@ test('재시작 뒤 job 이 남고, 재시작 동안 끝난 job 의 알림이 �
   await expect.poll(() => jobEvents(events), { timeout: 15_000 }).toEqual([exited('late', 7)])
   await shown.locator('.xterm-screen').click()
   await run(shown, 'maru job list', /keep\s+running/)
-  await expect(rows(shown)).toContainText(/late\s+exited 7/)
+  await expect(screen(shown)).toShow(/late\s+exited 7/)
   expect(jobEvents(events)).toHaveLength(1)
   await stubDialog(again, END_EVERYTHING)
   await again.close()

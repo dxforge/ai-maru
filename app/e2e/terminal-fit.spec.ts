@@ -6,6 +6,7 @@ import {
   cellSize,
   cellViews,
   clickMenu,
+  DOM_RENDERER,
   expect,
   expectCols,
   focusPane,
@@ -15,6 +16,7 @@ import {
   resizeBy,
   rows,
   run,
+  screen,
   screenshotPixels,
   shellSize,
   split,
@@ -26,7 +28,10 @@ import {
 async function measure(app: ElectronApplication) {
   return (await app.firstWindow()).evaluate(() => {
     const screen = document.querySelector('.xterm-screen')!.getBoundingClientRect()
-    const rows = document.querySelector('.xterm-rows')!.children.length
+    const rows = Math.round(
+      screen.height /
+        parseFloat(getComputedStyle(document.querySelector('.panes')!).getPropertyValue('--row'))
+    )
     const headers = ['.pane-header', '.cell-header'].map(
       (s) => document.querySelector(s)!.getBoundingClientRect().height
     )
@@ -195,7 +200,7 @@ test('columns 에서 다른 cell 의 pane 왼쪽 여백을 누르면 그 cell �
   await run(page, 'echo "x=$X"', 'x=a-2')
 })
 
-/** 포커스된 pane 의 왼쪽 여백 4px 안에서 `text` 를 쓴 행 높이의 점과, 그 행의 터미널 왼쪽 끝. */
+/** 포커스된 pane 의 왼쪽 여백 4px 안에서 `text` 를 쓴 행 높이의 점과, 그 행의 터미널 왼쪽 끝. 행은 `.xterm-rows` 에서 찾으므로 DOM renderer 에서만 쓴다. */
 async function gapOf(page: Page, text: string) {
   const row = (await rows(page).locator('> div', { hasText: text }).last().boundingBox())!
   const pane = (await activePane(page).boundingBox())!
@@ -216,7 +221,7 @@ test('프로그램이 OSC 11 로 배경을 바꾸면 왼쪽 여백도 그 색으
 })
 
 test('왼쪽 여백에서 끌기 시작해도 글자를 고른다', async ({ launch }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await run(page, 'echo sel-$((1+1))', 'sel-2')
   const { width } = await cellSize(page)
   const gap = await gapOf(page, 'sel-2')
@@ -232,12 +237,13 @@ test('마우스 트래킹을 켠 프로그램은 왼쪽 여백의 휠과 누름�
   await run(page, "printf '\\033[?1000h'; echo on-$((1+1))", 'on-2')
   await expect(activePane(page).locator('.xterm')).toHaveClass(/enable-mouse-events/)
   await page.keyboard.type('cat -v\n')
-  const gap = await gapOf(page, 'on-2')
-  await page.mouse.move(gap.x, gap.y)
+  const term = (await activePane(page).locator('.xterm-screen').boundingBox())!
+  const pane = (await activePane(page).boundingBox())!
+  await page.mouse.move(pane.x + 2, term.y + term.height / 2)
   // X10 보고의 버튼 바이트는 32 + 버튼이다. 아래로 굴린 휠은 65 라 `a`, 뗀 버튼은 3 이라 `#` 이다.
   await page.mouse.wheel(0, 100)
-  await expect(rows(page)).toContainText('^[[Ma')
+  await expect(screen(page)).toShow('^[[Ma')
   await page.mouse.down()
   await page.mouse.up()
-  await expect(rows(page)).toContainText('^[[M#')
+  await expect(screen(page)).toShow('^[[M#')
 })

@@ -4,6 +4,7 @@ import {
   attachFromOutside,
   cellItems,
   cellViews,
+  DOM_RENDERER,
   expect,
   gridRows,
   newWorkspace,
@@ -16,6 +17,8 @@ import {
   test,
   toggleView
 } from './app'
+
+// 이 spec 은 화면에 보이는 행(`.xterm-rows`)으로 스크롤 위치를 재므로 터미널을 DOM renderer 로 그린다.
 
 const HEIGHT = 200
 const LINE = /^L(\d{3})/
@@ -91,7 +94,7 @@ for (const [label, before] of [
   test(`${label} 터미널은 창이 커졌다 작아진 뒤에도 그 자리에 있고, 휠 한 번에 같은 행 수만큼 올라간다`, async ({
     launch
   }) => {
-    const { app, page } = await launch()
+    const { app, page } = await launch(DOM_RENDERER)
     await fill(app, page)
     await pointAtTerminal(page)
     await before(page)
@@ -108,7 +111,7 @@ for (const [label, before] of [
 test('휠을 굴린 터미널은 창이 좁아져 줄이 접힌 뒤에도 바닥에 있고, 휠 한 번에 같은 행 수만큼 올라간다', async ({
   launch
 }) => {
-  const { app, page } = await launch()
+  const { app, page } = await launch(DOM_RENDERER)
   await fill(app, page)
   await pointAtTerminal(page)
   await wheelAndBack(page)
@@ -127,7 +130,7 @@ test('다른 클라이언트가 primary 를 가져가 행 수가 줄어든 터�
   dataDir,
   defer
 }) => {
-  const { app, page } = await launch()
+  const { app, page } = await launch(DOM_RENDERER)
   await fill(app, page)
   await pointAtTerminal(page)
   await wheelAndBack(page)
@@ -147,7 +150,7 @@ test('다른 클라이언트가 primary 를 가져가 행 수가 줄어든 터�
 test('columns 에서 화면 밖에 있던 터미널은 창이 커졌다 작아진 뒤에도 바닥에 남고, 휠 한 번에 같은 행 수만큼 올라간다', async ({
   launch
 }) => {
-  const launched = await launch()
+  const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
   await toggleView(launched, 'columns')
   await fill(app, page)

@@ -1,5 +1,17 @@
 import { spawnSync } from 'node:child_process'
-import { clickMenu, expect, hostPid, panes, rows, split, stubDialog, test, typesInto } from './app'
+import {
+  clickMenu,
+  DOM_RENDERER,
+  expect,
+  hostPid,
+  panes,
+  rows,
+  screen,
+  split,
+  stubDialog,
+  test,
+  typesInto
+} from './app'
 
 const FLOOD_MS = 3000
 
@@ -11,7 +23,7 @@ function hostSockets(pid: number): number {
 test('출력이 쏟아지는 pane 을 닫으면 pty host 가 그 pty 의 소켓을 닫는다', async ({ launch }) => {
   const { app, page } = await launch()
   await page.keyboard.type('echo ready-$((1+1))\n')
-  await expect(rows(page)).toContainText('ready-2')
+  await expect(screen(page)).toShow('ready-2')
   const host = await hostPid(app)
   const before = hostSockets(host)
   await split(app, page, 'split-right', 2)
@@ -30,9 +42,10 @@ test('출력이 쏟아지는 pane 을 닫으면 pty host 가 그 pty 의 소켓�
 test('출력이 쏟아지는 동안에도 main 과 renderer 가 막히지 않고 Ctrl-C 가 먹는다', async ({
   launch
 }) => {
-  const { app: a, page } = await launch()
+  // Ctrl-C 뒤 renderer 가 프롬프트를 그리기까지를 재므로 DOM renderer 가 그린 행에서 읽는다.
+  const { app: a, page } = await launch(DOM_RENDERER)
   await page.keyboard.type('echo ready-$((1+1))\n')
-  await expect(rows(page)).toContainText('ready-2')
+  await expect(screen(page)).toShow('ready-2')
 
   await a.evaluate(() => {
     const g = globalThis as unknown as { lag: number[]; lagTimer: NodeJS.Timeout }
