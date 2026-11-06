@@ -276,6 +276,28 @@ test('앱이 강제로 끝나도 다음 실행은 살아 있는 셸에 다시 �
   await expect(toast(page)).toHaveCount(0)
 })
 
+test('앱이 강제로 끝나 sessions 에 없는 pty 가 남으면 다음 실행은 그 pty 를 Recovered workspace 에 열고 알린다', async ({
+  launch,
+  dataDir
+}) => {
+  const first = await launch()
+  await run(first.page, 'echo left-$((1+1))', 'left-2')
+  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(1)
+  const closed = new Promise<void>((resolve) => first.app.once('close', () => resolve()))
+  first.app.process().kill('SIGKILL')
+  await closed
+  // 앱이 pty 를 띄운 뒤 sessions 를 쓰기 전에 끝난 것과 같은 상태를 만든다.
+  const saved = readState(dataDir)
+  writeFileSync(
+    stateFile(dataDir),
+    JSON.stringify({ ...saved, sessions: { ...saved.sessions, ptys: [] } })
+  )
+
+  const { page } = await launch()
+  await expect(toast(page).filter({ hasText: 'Terminals moved to Recovered' })).toHaveCount(1)
+  await expect(workspaceNames(page).last()).toHaveText('Recovered')
+})
+
 test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살리고 pane 마다 새 셸을 띄우며 알리지 않는다', async ({
   launch,
   dataDir

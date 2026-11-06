@@ -431,12 +431,19 @@ describe('startRestore', () => {
     return ws.cells.map((c) => r.attach[c.panes[0].key])
   }
 
-  it('전체 복원이면 job pty 는 남기고 Recovered 에 넣지 않으며, 다른 알림이 없으면 Recovered 로 옮긴 것도 알리지 않는다', () => {
+  it('전체 복원이면 job pty 는 남기고 Recovered 에 넣지 않으며, 붙을 pane 이 없는 pty 를 Recovered 로 옮긴 것은 알린다', () => {
     const layout = joinTables({ workspaces, cells, panes })
     const r = startRestore(read(), layout, sessions, live([...sessionPtys(sessions), 'p-000000ff']))
     expect(r.mode).toBe('full')
     expect(r.keep).toContain(job.pty)
     expect(recoveredPtys(r)).toEqual(['p-000000ff'])
+    expect(r.notice).toEqual(['recovered'])
+  })
+
+  it('전체 복원에서 Recovered 로 옮길 pty 가 없으면 알리지 않는다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const r = startRestore(read(), layout, sessions, live(sessionPtys(sessions)))
+    expect(r.mode).toBe('full')
     expect(r.notice).toEqual([])
   })
 

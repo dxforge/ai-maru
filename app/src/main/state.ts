@@ -275,8 +275,10 @@ export function recoverPtys(
 }
 
 /**
- * 뜰 때 되살릴 것이다. 고른 재시작으로 표를 비웠으면 `restorePlan` 의 `notice` 가 비어 있다. 사용자가 대화창에서 이미
- * 보았으므로 그때는 Recovered 로 옮긴 것도 알리지 않는다.
+ * 뜰 때 붙을 pty, Recovered workspace 를 더한 배치, 알릴 것을 정한다. 재시작 대화창에서 고른 결과로
+ * `cells`·`panes`·`sessions` 가운데 하나를 비웠으면 전체 복원이 아니고 `restorePlan` 의 `notice` 도 비어 있으므로
+ * Recovered 를 알리지 않는다. 사용자가 대화창에서 이미 보았기 때문이다. 전체 복원에서 Recovered 가 생기면 사용자가
+ * 모르는 사이에 pty 가 남은 것이라 알린다. 앱이 강제로 끝났거나 pty host 를 기다리다 시간을 넘긴 때가 그렇다.
  */
 export function startRestore(
   read: Omit<ReadState, 'view'>,
@@ -290,7 +292,7 @@ export function startRestore(
   const full = p.mode === 'full' && sessions ? fullRestore(layout, sessions) : null
   const r = recoverPtys(layout, full ?? { attach: {}, keep: [] }, live, newId)
   const notice: RestoreNotice[] =
-    r.recovered && p.notice.length ? [...p.notice, 'recovered'] : p.notice
+    r.recovered && (p.mode === 'full' || p.notice.length) ? [...p.notice, 'recovered'] : p.notice
   return { ...r, mode: p.mode, notice }
 }
 
