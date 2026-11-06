@@ -39,6 +39,10 @@ function received(port: MessagePort, count: number): Promise<PtyMessage[]> {
   })
 }
 
+function closed(port: MessagePort): Promise<void> {
+  return new Promise((resolve) => port.addEventListener('close', () => resolve()))
+}
+
 afterEach(() => vi.unstubAllGlobals())
 
 describe('openPty', () => {
@@ -78,6 +82,31 @@ describe('openPty', () => {
     expect(closes).toBe(0)
     win.lose()
     expect(closes).toBe(1)
+  })
+
+  it('닫으면 포트를 닫고, onClose 는 부르지 않고, 그 뒤의 pty:lost 도 듣지 않는다', async () => {
+    const win = fakeWindow()
+    const conn = openPty({ id: 'p-00000001', cell: 'c-00000001' })
+    let closes = 0
+    conn.onClose(() => closes++)
+    const port = win.givePort()
+    const ended = closed(port)
+    conn.close()
+    await ended
+    win.lose()
+    expect(closes).toBe(0)
+  })
+
+  it('포트가 오기 전에 닫으면 온 포트를 바로 닫고 모아 둔 메시지를 보내지 않는다', async () => {
+    const win = fakeWindow()
+    const conn = openPty({ id: 'p-00000001', cell: 'c-00000001' })
+    conn.send('{"type":"attach"}')
+    conn.close()
+    const port = win.givePort()
+    const got: PtyMessage[] = []
+    port.onmessage = ({ data }) => got.push(data)
+    await closed(port)
+    expect(got).toEqual([])
   })
 
   it('포트가 오기 전에도 그 pty 를 끝낼 수 있다', () => {

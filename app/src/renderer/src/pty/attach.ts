@@ -25,6 +25,8 @@ export type Attachment = {
   start(): void
   /** xterm 은 직접 지우지 않는다. maru-pty 가 지우는 바이트를 출력과 같은 순서로 보내 준다. */
   clearScrollback(): void
+  /** 터미널을 치울 때 부른다. 연결을 닫고 핸들러는 부르지 않는다. */
+  close(): void
 }
 
 // 새 셸이 그 자리에 뜨므로, 앞의 프로그램이 이어지지 않는다는 것을 보인다.
@@ -170,6 +172,10 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
     },
     clearScrollback() {
       if (!queued && primary) conn.send(JSON.stringify({ type: 'clear_scrollback' }))
+    },
+    close() {
+      document.removeEventListener('visibilitychange', visibility)
+      conn.close()
     }
   }
 }

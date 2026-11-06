@@ -1,6 +1,31 @@
-import { expect, rows, test } from './app'
+import { spawnSync } from 'node:child_process'
+import { clickMenu, expect, hostPid, panes, rows, split, stubDialog, test, typesInto } from './app'
 
 const FLOOD_MS = 3000
+
+function hostSockets(pid: number): number {
+  const out = spawnSync('lsof', ['-a', '-p', String(pid), '-U', '-F', 'f']).stdout.toString()
+  return out.split('\n').filter((line) => line.startsWith('f')).length
+}
+
+test('출력이 쏟아지는 pane 을 닫으면 pty host 가 그 pty 의 소켓을 닫는다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await page.keyboard.type('echo ready-$((1+1))\n')
+  await expect(rows(page)).toContainText('ready-2')
+  const host = await hostPid(app)
+  const before = hostSockets(host)
+  await split(app, page, 'split-right', 2)
+  await typesInto(page, 1, 'second')
+  await expect.poll(() => hostSockets(host)).toBe(before + 1)
+
+  await page.keyboard.type('yes\n')
+  await page.waitForTimeout(500)
+  await stubDialog(app, 0)
+  await clickMenu(app, 'close-pane')
+  await expect(panes(page)).toHaveCount(1)
+
+  await expect.poll(() => hostSockets(host), { timeout: 5000 }).toBe(before)
+})
 
 test('출력이 쏟아지는 동안에도 main 과 renderer 가 막히지 않고 Ctrl-C 가 먹는다', async ({
   launch

@@ -8,6 +8,7 @@ import { encodeFrame, TAG_BINARY, TAG_TEXT } from './frame'
 function fakeSocket() {
   const sock = Object.assign(new EventEmitter(), {
     paused: false,
+    destroyed: false,
     written: [] as Buffer[],
     pause() {
       sock.paused = true
@@ -21,7 +22,9 @@ function fakeSocket() {
     write(b: Buffer) {
       sock.written.push(b)
     },
-    destroy() {}
+    destroy() {
+      sock.destroyed = true
+    }
   })
   return sock
 }
@@ -59,6 +62,14 @@ describe('bridge', () => {
     expect(sock.paused).toBe(true)
     ack(1)
     expect(sock.paused).toBe(false)
+  })
+
+  it('읽지 않고 멈춘 소켓도 포트가 닫히면 닫는다', () => {
+    const { sock, port, output } = connect()
+    output(HIGH + 1)
+    expect(sock.paused).toBe(true)
+    port.emit('close')
+    expect(sock.destroyed).toBe(true)
   })
 
   it('JSON 메시지는 알리지 않을 양에 세지 않는다', () => {

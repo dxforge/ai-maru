@@ -38,14 +38,16 @@ function fakeConnection() {
   let deliver: (msg: PtyMessage) => void = () => {}
   let close: () => void = () => {}
   const acked: number[] = []
+  const state = { closedByUs: 0 }
   const conn: PtyConnection = {
     send: () => {},
     ack: (bytes) => acked.push(bytes),
     onMessage: (cb) => (deliver = cb),
     onClose: (cb) => (close = cb),
-    kill: () => {}
+    kill: () => {},
+    close: () => state.closedByUs++
   }
-  return { conn, acked, deliver: (msg: PtyMessage) => deliver(msg), close: () => close() }
+  return { conn, acked, state, deliver: (msg: PtyMessage) => deliver(msg), close: () => close() }
 }
 
 const handlers = {
@@ -192,6 +194,31 @@ describe('attach', () => {
     } finally {
       delete (document as { hidden?: boolean }).hidden
     }
+  })
+
+  it('터미널을 치우며 닫으면 연결을 닫고, 핸들러를 부르지 않고, 창이 숨어도 더 알리지 않는다', () => {
+    const term = fakeTerminal(80, 24)
+    const { conn, acked, state, deliver } = fakeConnection()
+    const calls: string[] = []
+    const pty = attach(term as unknown as Terminal, conn, {
+      ...handlers,
+      onExit: () => calls.push('exit'),
+      onOpenFailed: () => calls.push('failed')
+    })
+    deliver(header('attached'))
+    deliver(REPLAY_END)
+    deliver(new Uint8Array(5))
+    pty.close()
+    expect(state.closedByUs).toBe(1)
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    try {
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(acked).toEqual([])
+    } finally {
+      delete (document as { hidden?: boolean }).hidden
+    }
+    expect(calls).toEqual([])
+    expect(term.written).toHaveLength(1)
   })
 
   it('gone 뒤 새 셸이 붙지 못하고 끝나면 이유를 끝난 알림 앞에 보인다', () => {
