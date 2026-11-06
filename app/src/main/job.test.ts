@@ -37,7 +37,7 @@ function setup(cells: Record<string, string> = { [A]: 'c-1', [B]: 'c-1', [C]: 'c
       }
     },
     capture: vi.fn(async (id: string) => `out of ${id}`),
-    input: vi.fn(async (): Promise<'written' | 'exited'> => 'written'),
+    paste: vi.fn(async (): Promise<'written' | 'exited'> => 'written'),
     kill: vi.fn(async (id: string) => {
       killed.push(id)
     }),
@@ -242,20 +242,20 @@ describe('job.read·send·kill', () => {
     const t = setup()
     const id = await t.start({ name: 'dev' })
     expect(await t.call('job.send', { target: 'dev', text: 'r\r' })).toBeNull()
-    expect(t.deps.input).toHaveBeenCalledWith(id, 'r\r')
+    expect(t.deps.paste).toHaveBeenCalledWith(id, 'r\r')
     await rejects(t.call('job.send', { target: 'dev', text: 1 }), InvalidParams)
-    t.deps.input.mockResolvedValueOnce('exited')
+    t.deps.paste.mockResolvedValueOnce('exited')
     await rejects(t.call('job.send', { target: 'dev', text: 'x' }), CliError, 'job_exited')
     await t.exit(id, { code: 0, signal: null })
-    t.deps.input.mockClear()
+    t.deps.paste.mockClear()
     await rejects(t.call('job.send', { target: 'dev', text: 'x' }), CliError, 'job_exited')
-    expect(t.deps.input).not.toHaveBeenCalled()
+    expect(t.deps.paste).not.toHaveBeenCalled()
   })
 
   it('send 가 멈추면 그 실패를 그대로 돌려준다', async () => {
     const t = setup()
     await t.start({ name: 'dev' })
-    t.deps.input.mockRejectedValueOnce(new Error('did not answer within 8s'))
+    t.deps.paste.mockRejectedValueOnce(new Error('did not answer within 8s'))
     await expect(t.call('job.send', { target: 'dev', text: 'x' })).rejects.toThrow('8s')
   })
 
