@@ -18,6 +18,7 @@
     "src/main/test-repo-env.ts",
     "src/renderer/src/font.ts",
     "src/renderer/src/icons.ts",
+    "src/renderer/src/config/launcher.ts",
     "src/renderer/src/config/notification.ts",
     "src/renderer/src/workspace/columns.ts",
     "src/renderer/src/workspace/layout.ts",

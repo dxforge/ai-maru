@@ -5,7 +5,8 @@ import { paneName, type CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { AGENT_ICONS, commandClass, commandIcon, STATE_LABELS } from '../icons'
-import StatusIcon from './StatusIcon.vue'
+import AgentLogo from './AgentLogo.vue'
+import PaneIcon from './PaneIcon.vue'
 import { commandTail, notificationText } from '../workspace/display'
 import type { Pane } from '../workspace/store'
 
@@ -32,6 +33,9 @@ const {
 
 const state = computed(() => status?.state)
 const agent = computed(() => status && AGENT_ICONS.get(status.app))
+const icon = computed(() =>
+  state.value ? { state: state.value } : { command: commandIcon(command) }
+)
 const tail = computed(() => (command ? commandTail(command, now) : ''))
 const notice = computed(() => notification && notificationText(notification))
 </script>
@@ -41,15 +45,13 @@ const notice = computed(() => notification && notificationText(notification))
     <span
       v-tooltip="state && STATE_LABELS[state]"
       class="row-bar-icon status-icon"
-      :class="{ 'nerd-icon': !state, unread: notification }"
-      ><StatusIcon v-if="state" :state="state" /><template v-else>{{
-        commandIcon(command)
-      }}</template></span
-    >
+      :class="{ unread: notification }"
+      ><PaneIcon :icon="icon"
+    /></span>
     <span class="row-bar-text title">{{ paneName(pane, status, shell, command) }}</span>
     <span v-if="notice" v-tooltip="notice" class="row-bar-text notification">{{ notice }}</span>
     <span v-if="tail" class="command-tail">{{ tail }}</span>
-    <span v-if="agent" class="claude-icon nerd-icon">{{ agent }}</span>
+    <AgentLogo v-if="agent" class="claude-icon" :agent="agent" />
     <span v-if="pane.cwd" class="cwd">{{ dirName(pane.cwd) }}</span>
   </div>
 </template>

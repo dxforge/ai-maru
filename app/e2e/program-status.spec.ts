@@ -26,7 +26,7 @@ import {
   writeConfig,
   zshHome
 } from './app'
-import { ICONS, STATE_LABELS } from '../src/renderer/src/icons'
+import { STATE_LABELS } from '../src/renderer/src/icons'
 import { DEFAULT_NOTIFICATION } from '../src/renderer/src/config/notification'
 
 const SEEN_MS = DEFAULT_NOTIFICATION.seenMs!
@@ -123,7 +123,7 @@ test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상�
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
 })
 
-test('상태 아이콘은 상태마다 SVG 로 그리고, working 만 움직이며, 상태가 사라지면 terminal glyph 로 돌아온다', async ({
+test('상태 아이콘은 상태마다 SVG 로 그리고, working 만 움직이며, 상태가 사라지면 셸 아이콘으로 돌아온다', async ({
   launch,
   dataDir
 }) => {
@@ -150,9 +150,11 @@ test('상태 아이콘은 상태마다 SVG 로 그리고, working 만 움직이�
   await page.keyboard.type(status('clear'))
   await expect(paneRows(page)).toHaveCount(0)
   const header = activeHeader(page).locator('.status-icon')
-  await expect(header.locator('svg')).toHaveCount(0)
-  await expect(header).toHaveText(ICONS.terminal)
-  await expect(page.locator('.cell-header .status-icon svg')).toHaveCount(0)
+  await expect(header.locator('svg[data-state]:not([data-icon])')).toHaveCount(0)
+  await expect(header.locator('svg[data-icon="terminal"]')).toBeVisible()
+  await expect(
+    page.locator('.cell-header .status-icon svg[data-state]:not([data-icon])')
+  ).toHaveCount(0)
 })
 
 test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아이콘 대신 app 값을 보인다', async ({

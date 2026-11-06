@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { ChevronsDownUp, ChevronsUpDown } from '@lucide/vue'
 import { ref, useTemplateRef, watch } from 'vue'
 import { clockTime, type Canvas } from '../canvas/store'
-import { ICONS } from '../icons'
 import CanvasDoc from './CanvasDoc.vue'
 import CanvasViewMenu from './CanvasViewMenu.vue'
 import CardStream from './CardStream.vue'
@@ -77,7 +77,7 @@ function onTransition(e: TransitionEvent): void {
             @mousedown.prevent
             @click="canvas.expandAll()"
           >
-            <span class="nerd-icon">{{ ICONS.expandAll }}</span>
+            <ChevronsUpDown class="text-icon" />
           </button>
           <button
             v-tooltip="'Collapse all'"
@@ -86,7 +86,7 @@ function onTransition(e: TransitionEvent): void {
             @mousedown.prevent
             @click="canvas.collapseAll()"
           >
-            <span class="nerd-icon">{{ ICONS.collapseAll }}</span>
+            <ChevronsDownUp class="text-icon" />
           </button>
         </span>
       </div>

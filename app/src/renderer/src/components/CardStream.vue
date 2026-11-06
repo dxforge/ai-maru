@@ -6,6 +6,7 @@
 // 항목은 `key` 로 구별하고, 펼침 상태·`expand`·`remove` 도 `key` 로 가리킨다. `id` 는 카드·붙은 제목·팝오버 항목의 `data-id` 로만 단다.
 // 새로 들어온 항목과 같은 key 로 새 객체가 온 항목을 잠깐 강조한다. 그래서 쓰는 쪽은 같은 key 의 항목을 내용이
 // 바뀔 때만 새 객체로 넘긴다.
+import { ArrowUp } from '@lucide/vue'
 import {
   computed,
   nextTick,
@@ -16,7 +17,6 @@ import {
   useTemplateRef,
   watch
 } from 'vue'
-import { ICONS } from '../icons'
 import StreamRow from './StreamRow.vue'
 import {
   ROW_H,
@@ -274,8 +274,7 @@ onBeforeUnmount(() => {
           @mousedown.prevent
           @click="flush"
         >
-          <span class="nerd-icon">{{ ICONS.arrowUp }}</span
-          >{{ held }} new
+          <ArrowUp class="text-icon" />{{ held }} new
         </button>
       </Transition>
       <div v-if="popover" v-overlay-scroll="'y'" class="popover popup-menu" :class="popover">

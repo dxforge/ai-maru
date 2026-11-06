@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ICONS } from '../icons'
+import { CircleX, Info, TriangleAlert, X } from '@lucide/vue'
 import type { ToastEntry } from '../toast/store'
+
+const LEVEL_ICONS = { error: CircleX, warning: TriangleAlert, info: Info }
 
 const { toasts, width } = defineProps<{ toasts: readonly ToastEntry[]; width: number }>()
 const emit = defineEmits<{ close: [id: string]; act: [id: string] }>()
@@ -9,7 +11,7 @@ const emit = defineEmits<{ close: [id: string]; act: [id: string] }>()
 <template>
   <div v-if="toasts.length" class="toast-stack" :style="{ width: `${width}px` }">
     <div v-for="t in toasts" :key="t.id" class="toast" :class="t.level" role="status">
-      <span class="icon nerd-icon">{{ ICONS[t.level] }}</span>
+      <span class="icon"><component :is="LEVEL_ICONS[t.level]" class="text-icon" /></span>
       <div v-overlay-scroll="'y'" class="body">
         <div class="title">{{ t.title }}</div>
         <div v-for="(line, i) in t.lines" :key="i" class="line">{{ line }}</div>
@@ -18,8 +20,8 @@ const emit = defineEmits<{ close: [id: string]; act: [id: string] }>()
           {{ t.action.label }}
         </button>
       </div>
-      <button class="close nerd-icon" aria-label="Dismiss" @click="emit('close', t.id)">
-        {{ ICONS.close }}
+      <button class="close" aria-label="Dismiss" @click="emit('close', t.id)">
+        <X class="text-icon" />
       </button>
     </div>
   </div>

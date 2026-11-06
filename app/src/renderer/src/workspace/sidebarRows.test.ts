@@ -7,7 +7,6 @@ import {
   type ProgramStatusState
 } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { ICONS } from '../icons'
 import {
   closedRows,
   exitText,
@@ -37,7 +36,7 @@ const row = (o: Parameters<typeof source>[0] = {}) => paneRow(source(o), pane, f
 
 describe('paneRow', () => {
   it('agent 가 쉬는 동안은 앞 칸에 agent 아이콘을 둔다', () => {
-    expect(row({ record: record('idle') }).icon).toEqual({ agent: ICONS.claude })
+    expect(row({ record: record('idle') }).icon).toEqual({ agent: 'claude' })
   })
 
   it('agent 표에 없는 app 이 쉬면 상태 아이콘을 둔다', () => {
@@ -48,12 +47,12 @@ describe('paneRow', () => {
     expect(row({ record: record('working') }).icon).toEqual({ state: 'working' })
   })
 
-  it('상태가 없는 pane 은 명령에 따라 셸·도는 중·실패 글리프를 둔다', () => {
-    expect(row().icon).toEqual({ glyph: ICONS.terminal })
+  it('상태가 없는 pane 은 명령에 따라 셸·도는 중·실패 아이콘을 둔다', () => {
+    expect(row().icon).toEqual({ command: 'terminal' })
     const running: CommandView = { running: true, text: 'make' }
-    expect(row({ command: running }).icon).toEqual({ glyph: ICONS.running })
+    expect(row({ command: running }).icon).toEqual({ command: 'running' })
     const failed: CommandView = { running: false, text: 'make', exitCode: 2 }
-    expect(row({ command: failed }).icon).toEqual({ glyph: ICONS.error })
+    expect(row({ command: failed }).icon).toEqual({ command: 'failed' })
   })
 
   it('알림이 있으면 줄 글은 알림의 제목(없으면 본문)이고, 화면 낭독에 알림을 붙인다', () => {
