@@ -335,6 +335,7 @@ test('state.json 의 cells 를 읽지 못하면 핀 workspace 만 이름·즐겨
   await cellFavorite(first.page, 0).click()
   await expect(cellFavorite(first.page, 0)).toHaveAttribute('aria-pressed', 'true')
   await newWorkspace(first, 2)
+  await expect.poll(() => sockets(dataDir)).toHaveLength(2)
   await restartWith(first.app)
   const saved = readState(dataDir)
   saved.cells.version = 999
@@ -378,6 +379,7 @@ test('state.json 의 panes 를 읽지 못하면 cell 마다 workspace 의 dir �
   await run(first.page, `cd '${sub}'; X=old; echo in-$((1+1))`, 'in-2')
   await expect.poll(() => readState(dataDir).panes?.rows?.[0]?.cwd).toBe(sub)
   await split(first.app, first.page, 'split-right', 2)
+  await expect.poll(() => sockets(dataDir)).toHaveLength(2)
   await restartWith(first.app)
   const saved = readState(dataDir)
   expect(saved.workspaces.rows[0].dir).toBe(sub)
@@ -615,6 +617,7 @@ test('pty 프로토콜이 달라도 확인하면 pty 를 끄고 재시작하고,
   const { app, page } = await launch(otherProtocolBin(dataDir))
   await split(app, page, 'split-right', 2)
   await run(page, 'echo up-$((1+1))', 'up-2')
+  await expect.poll(() => sockets(dataDir)).toHaveLength(2)
   await stubDialog(app, 0)
   await restartWith(app)
   expect(sockets(dataDir)).toEqual([])
@@ -635,6 +638,7 @@ test('cells 형식이 다른 빌드로는 cell 을 모두 닫고 재시작할지
 }) => {
   const first = await launch(otherVersions(dataDir, 'cells'))
   await newWorkspace(first, 2)
+  await expect.poll(() => sockets(dataDir)).toHaveLength(2)
   await stubDialog(first.app, 1)
   await clickMenu(first.app, 'restart')
   await expect
@@ -666,7 +670,7 @@ test('panes 형식이 다른 빌드로는 cell 마다 셸 하나로 재시작할
   const first = await launch(otherVersions(dataDir, 'panes'))
   await split(first.app, first.page, 'split-right', 2)
   await expect(panes(first.page)).toHaveCount(2)
-  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(2)
+  await expect.poll(() => sockets(dataDir)).toHaveLength(2)
   await stubDialog(first.app, 1)
   await clickMenu(first.app, 'restart')
   await expect
