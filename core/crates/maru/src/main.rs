@@ -404,14 +404,9 @@ enum PaneCommand {
     /// TEXT such as 2, y, $':wq\r' or $'\t' therefore works as keys in a menu or an editor. A
     /// program that has not turned on bracketed paste gets TEXT unchanged, and may not take a
     /// long line as one input.
-    ///
-    /// The text is typed whatever the program is doing. If Claude Code is asking for
-    /// permission, it does not take "$prompt"$'\r' as a prompt: a pasted body is dropped and
-    /// the carriage return picks the highlighted choice. The command still succeeds. Check
-    /// the STATE column of `maru pane list` before sending a prompt.
     #[command(after_long_help = "Examples:
-  maru pane send p-1a2b3c4d \"$prompt\"$'\\r'   type a prompt into claude and send it
-  maru pane send p-1a2b3c4d 2                pick choice 2 in Claude Code's menu
+  maru pane send p-1a2b3c4d \"$text\"$'\\r'     type a line of text and press Enter
+  maru pane send p-1a2b3c4d 2                press 2, e.g. to select option 2 in a menu
   maru pane send p-1a2b3c4d $'ls\\r'          run ls in a shell
   maru pane send p-1a2b3c4d $'\\x03'          press Ctrl+C")]
     Send {
