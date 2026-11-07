@@ -135,7 +135,7 @@ function trackTags(open: string[], t: Token, counted: Counted = anyTag): void {
     }
     return
   }
-  const inner = counted === anyTag && t.type === 'paragraph' ? paragraphTag : formattingTag
+  const inner = counted !== anyTag ? counted : t.type === 'paragraph' ? paragraphTag : formattingTag
   const children =
     t.type === 'list' ? (t as Tokens.List).items : 'tokens' in t ? t.tokens : undefined
   for (const c of children ?? []) trackTags(open, c, inner)
