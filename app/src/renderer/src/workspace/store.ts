@@ -502,8 +502,9 @@ export function createWorkspaces(
   /** main 이 그 pty 의 상태를 바꾸거나 지웠다. */
   function applyState(ptyId: string): void {
     const p = paneByPty(ptyId)
-    // main 은 끝난 pty 의 상태를 지우고, 그러면 cwd 는 셸을 띄운 디렉토리로 돌아간다. 그 알림이 셸의 exit 보다 먼저 오면
-    // `dir` 이 없거나 홈인 핀 workspace 에서는 cell 을 닫는 `detach` 가 그 디렉토리를 workspace 의 디렉토리로 적으므로, 상태가 지워졌을 때는 마지막 cwd 를 둔다.
+    // main 은 끝난 pty 의 상태를 지우고, 그러면 cwd 는 셸을 띄운 디렉토리로 돌아간다. 그 알림이 셸의 exit 보다 먼저 오면,
+    // `dir` 이 없거나 홈인 채로 남는 workspace(`keeps`)에서는 cell 을 닫는 `detach` 가 그 디렉토리를 workspace 의 디렉토리로
+    // 적는다. 그래서 상태가 지워졌을 때는 마지막 cwd 를 둔다.
     if (p) refresh(p, source.get(ptyId) === undefined)
   }
 

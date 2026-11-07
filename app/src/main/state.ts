@@ -299,7 +299,7 @@ export function startRestore(
 
 /**
  * `keep` 은 pty 를 남기고, `layout` 은 `sessions` 를 비운다. `end` 는 `cells`·`panes`·`sessions` 를 비우고
- * `workspaces` 에는 핀 workspace 줄만 남긴다. `view` 는 늘 남는다.
+ * `workspaces` 에는 핀을 꽂았거나 즐겨찾기가 있는 workspace(`keeps`) 줄만 남긴다. `view` 는 늘 남는다.
  */
 export type Outcome = 'keep' | 'layout' | 'end'
 
