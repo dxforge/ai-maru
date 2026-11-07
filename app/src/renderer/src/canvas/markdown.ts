@@ -66,8 +66,8 @@ export type Prepared = { heading: string | undefined; parts: Part[] }
 
 /**
  * 문서를 한 번 lexing 해 첫 heading 과 렌더할 묶음을 낸다. 묶음은 최상위 블록 경계에서 나누므로 코드 블록·표가
- * 묶음 사이에서 잘리지 않는다. 참조형 링크는 lexing 할 때 이미 주소로 풀리므로 묶음마다
- * 따로 렌더해도 된다.
+ * 묶음 사이에서 잘리지 않는다. HTML 로 연 태그가 닫히기 전에는 나누지 않는다. 참조형 링크는 lexing 할 때 이미
+ * 주소로 풀리므로 묶음마다 따로 렌더해도 된다.
  */
 export function prepareMarkdown(text: string, size = PART_SIZE): Prepared {
   let tokens: Token[]
@@ -81,10 +81,12 @@ export function prepareMarkdown(text: string, size = PART_SIZE): Prepared {
   const parts: Part[] = []
   let part: Token[] = []
   let length = 0
+  const open: string[] = []
   for (const t of tokens) {
     part.push(t)
     length += t.raw.length
-    if (length >= size) {
+    trackTags(open, t, true)
+    if (length >= size && !open.length) {
       parts.push({ tokens: part })
       part = []
       length = 0
@@ -92,6 +94,37 @@ export function prepareMarkdown(text: string, size = PART_SIZE): Prepared {
   }
   if (part.length || !parts.length) parts.push({ tokens: part })
   return { heading: heading && plainText(heading.tokens), parts }
+}
+
+// 묶음은 따로 sanitize 하므로, HTML 로 연 태그가 닫히기 전에 끊으면 DOMPurify 가 그 묶음 끝에서 닫고 다음 묶음의
+// 닫는 태그는 버린다. 그래서 한 번에 렌더했을 때 다음 블록까지 이어질 태그가 열려 있는 동안은 끊지 않는다.
+// 끝 태그가 없는 빈 요소와, 다음 블록이 닫으므로 끝 태그를 생략할 수 있는 태그는 세지 않는다.
+const UNCOUNTED_TAGS = new Set(
+  'area base br col embed hr img input link meta source track wbr'
+    .split(' ')
+    .concat(
+      'p li dt dd tr td th thead tbody tfoot caption colgroup option optgroup rt rp'.split(' ')
+    )
+)
+// 인용·목록 안에서 연 블록 태그는 인용·목록이 끝날 때 닫히지만, 글자 꾸밈 태그는 HTML 파서가 다음 블록에서 다시 연다.
+const FORMATTING_TAGS = new Set('a b big code em font i nobr s small strike strong tt u'.split(' '))
+
+function trackTags(open: string[], t: Token, topLevel: boolean): void {
+  if (t.type === 'html') {
+    const raw = t.raw.replace(/<!--[\s\S]*?(-->|$)/g, '')
+    for (const [, close, tag] of raw.matchAll(/<(\/?)([a-zA-Z][a-zA-Z0-9-]*)[^>]*>/g)) {
+      const name = tag!.toLowerCase()
+      if (UNCOUNTED_TAGS.has(name) || (!topLevel && !FORMATTING_TAGS.has(name))) continue
+      if (!close) open.push(name)
+      else if (open.includes(name)) open.length = open.lastIndexOf(name)
+    }
+    return
+  }
+  const childTopLevel =
+    topLevel && t.type !== 'blockquote' && t.type !== 'list' && t.type !== 'list_item'
+  const children =
+    t.type === 'list' ? (t as Tokens.List).items : 'tokens' in t ? t.tokens : undefined
+  for (const c of children ?? []) trackTags(open, c, childTopLevel)
 }
 
 function splitText(text: string, size: number): string[] {

@@ -178,6 +178,12 @@ describe('prepareMarkdown 의 묶음', () => {
   ]
   const doc = Array.from({ length: 5 }, () => blocks.join('\n\n')).join('\n\n')
 
+  function appended(parts: Part[]): string {
+    const el = document.createElement('div')
+    for (const p of parts) el.insertAdjacentHTML('beforeend', renderPart(p))
+    return el.innerHTML
+  }
+
   it('최상위 블록 경계에서 나눠, 코드 블록·표·인용·목록이 묶음 사이에서 잘리지 않는다', () => {
     const { parts } = prepareMarkdown(doc, 40)
     expect(parts.length).toBeGreaterThan(10)
@@ -192,9 +198,47 @@ describe('prepareMarkdown 의 묶음', () => {
     )
   })
 
-  it('묶음을 이어 붙인 HTML 은 한 번에 렌더한 HTML 과 같다', () => {
-    expect(html(prepareMarkdown(doc, 40).parts)).toBe(html(prepareMarkdown(doc, Infinity).parts))
+  it('묶음을 차례로 붙인 DOM 은 한 번에 렌더한 DOM 과 같다', () => {
+    expect(appended(prepareMarkdown(doc, 40).parts)).toBe(
+      appended(prepareMarkdown(doc, Infinity).parts)
+    )
     expect(prepareMarkdown(doc, Infinity).parts).toHaveLength(1)
+  })
+
+  it.each([
+    ['접기', '<details>\n<summary>log</summary>', 'a', 'b', 'c', '</details>', 'after'],
+    [
+      '빈 줄이 든 HTML 표',
+      '<table>\n<tr><td>1</td></tr>',
+      '<tr><td>2</td></tr>',
+      '</table>',
+      'after'
+    ],
+    ['겹친 접기', '<details>', '<details>', 'a', '</details>', 'b', '</details>', 'after'],
+    ['문단 안에서 연 접기', 'x <details>', 'a', 'b', '</details>', 'after'],
+    ['글자 꾸밈', 'x <b>bold', 'a', '> q', 'b</b>', 'after'],
+    ['인용·목록 안의 글자 꾸밈', '> <i>q', 'a', '- <b>l', 'b', '</i></b>', 'after'],
+    ['인용·목록 안의 접기', '> <details>q', 'a', '- <details>l', 'b', 'after'],
+    ['주석·빈 태그', '<!-- <details> -->', '<br>', '<hr>', '<p>x', 'a', 'b']
+  ])('HTML 태그가 묶음을 넘어도 DOM 은 한 번에 렌더한 것과 같다: %s', (_, ...blocks) => {
+    const doc = [...blocks, ...blocks].join('\n\n')
+    const whole = appended(prepareMarkdown(doc, Infinity).parts)
+    for (let size = 1; size <= doc.length; size++) {
+      expect(appended(prepareMarkdown(doc, size).parts), `size ${size}`).toBe(whole)
+    }
+  })
+
+  it('연 HTML 태그가 닫히면 다시 묶음을 나눈다', () => {
+    const doc = ['<details>', 'a', 'b', '</details>', 'c', 'd'].join('\n\n')
+    const raws = prepareMarkdown(doc, 1).parts.map((p) =>
+      'tokens' in p ? p.tokens.map((t) => t.raw).join('') : ''
+    )
+    expect(raws).toEqual(['<details>\n\na\n\nb\n\n</details>', '\n\n', 'c', '\n\n', 'd'])
+  })
+
+  it('다음 블록으로 이어지지 않는 태그는 묶음 나누기를 막지 않는다', () => {
+    const blocks = ['> <details>q', '- <div>l', '<!-- <details> -->', '<br>', '<p>x', 'a']
+    expect(prepareMarkdown(blocks.join('\n\n'), 1).parts).toHaveLength(blocks.length * 2 - 1)
   })
 
   it('참조형 링크는 정의가 다른 묶음에 있어도 주소로 풀린다', () => {
