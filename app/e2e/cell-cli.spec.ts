@@ -77,15 +77,15 @@ test('부른 cell 바로 뒤에 놓이고, columns 에서는 그 오른쪽에 �
 test('즐겨찾기 cell 에서 불러도 그 cell 바로 뒤에 놓는다', async ({ launch }) => {
   const launched = await launch()
   const { page } = launched
-  // `toggleFavorite` 은 첫 pane 의 디렉토리를 알아야 cell 을 즐겨찾기에 넣는다.
+  // `toggleFavorite` 은 첫 pane 의 cwd 를 즐겨찾기에 넣으므로, 셸이 cwd 를 알린 뒤에 누른다.
   await run(page, 'echo up-$((1+1))', 'up-2')
   await newCell(launched, 2)
   await run(page, 'echo two-$((1+1))', 'two-2')
-  for (const i of [0, 1]) {
-    await cellItems(page).nth(i).hover()
-    await cellFavorite(page, i).click()
+  // 두 cell 은 같은 디렉토리라 하나를 즐겨찾기에 넣으면 둘 다 ★ 가 된다.
+  await cellItems(page).nth(0).hover()
+  await cellFavorite(page, 0).click()
+  for (const i of [0, 1])
     await expect(cellFavorite(page, i)).toHaveAttribute('aria-pressed', 'true')
-  }
   await cellItems(page).nth(0).click()
   await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
 
