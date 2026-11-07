@@ -74,7 +74,6 @@ const {
   now?: number
   home?: string
   shell?: string
-  /** 메뉴를 연 workspace 의 key */
   menuFor?: number | null
 }>()
 
@@ -155,7 +154,6 @@ function jobTime(j: JobRow): string {
   return j.started === undefined ? '' : elapsed(now - j.started)
 }
 
-/** 런처를 줄의 가로 자리와 폭으로 줄 바로 아래에 띄운다. */
 function openRow(e: MouseEvent, workspace: number, dir: string): void {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
   const width = anchorWidth(r.width, nav.value!.getBoundingClientRect().width)

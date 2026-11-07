@@ -278,7 +278,6 @@ export function createWorkspaces(
     dropUnkept(w)
   }
 
-  /** `dir` 에서 새 cell 을 workspace 끝에 열어 선택한다. */
   function openIn(workspace: number, dir: string, extra: PaneCommand = {}): number | undefined {
     const w = workspaceByKey(workspace)
     if (!w) return undefined

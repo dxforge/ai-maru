@@ -41,7 +41,7 @@ function finish(next: string | null, refocus: boolean): void {
   emit('done', next, refocus)
 }
 
-// Enter 가 아닌 길로 닫는다. 닫힌 뒤에 오는 이벤트에서는 입력창이 이미 없다.
+// Enter 가 아닌 경우에 닫는다. 닫힌 뒤에 오는 이벤트에서는 입력창이 이미 없다.
 function close(refocus: boolean): void {
   if (!finished) finish(nameOnFocusLoss(input.value!.value, opened), refocus)
 }

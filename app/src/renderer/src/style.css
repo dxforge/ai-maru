@@ -27,7 +27,7 @@
 }
 
 /* 창 드래그 영역이다. 드래그 영역을 누르면 페이지에 pointerdown 이 오지 않으므로, 바깥을 눌러 닫는 메뉴가 열린 동안에는
-   `.window-drag-off` 로 끈다. `-webkit-app-region` 은 CSS 변수로 줄 수 없어(값이 `none` 이 된다) class 로 끈다. */
+   `.window-drag-off` 로 끈다. */
 .window-drag {
   -webkit-app-region: drag;
 }
@@ -236,7 +236,7 @@ body,
     sans-serif;
 }
 
-/* 팔레트의 입력줄과 workspace 메뉴의 이름 칸이 함께 쓰는 한 줄 입력 칸이다. 폭과 자리는 쓰는 쪽이 정한다. */
+/* 한 줄 입력 칸이다. 폭과 자리는 쓰는 쪽이 정한다. */
 .text-input {
   box-sizing: border-box;
   padding: var(--space-2) var(--space-3);
@@ -338,7 +338,7 @@ body,
   border-top: 1px solid var(--line);
 }
 
-/* 줄 안의 작은 아이콘 버튼이다. 사이드바 workspace 헤더의 핀·메뉴 버튼과 workspace 메뉴의 즐겨찾기 빼기 버튼이 쓴다. */
+/* 줄 안의 작은 아이콘 버튼이다. */
 .icon-button {
   display: flex;
   align-items: center;

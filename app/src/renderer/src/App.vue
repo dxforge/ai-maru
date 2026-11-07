@@ -218,7 +218,6 @@ for (const type of ['focusin', 'focusout']) document.addEventListener(type, upda
 for (const type of ['focus', 'blur']) window.addEventListener(type, updateViewed)
 watch(() => config.notification.value.seenMs, updateViewed)
 
-/** 메뉴를 연 workspace 의 key */
 const menuFor = ref<number | null>(null)
 
 // 보이지 않는 터미널에는 포커스를 줄 수 없어, 선택이 화면에 반영된 뒤에 준다.
@@ -925,7 +924,7 @@ const handlers: Record<CommandId, () => void> = {
   },
   'toggle-sidebar': () => {
     sidebarOpen.value = !sidebarOpen.value
-    // 사이드바 폭이 바뀌면 메뉴가 헤더 옆에서 떨어진다. 터미널에 포커스를 주면 메뉴가 포커스를 잃어 고치던 이름을 정하고
+    // 사이드바를 접거나 펴면 메뉴가 ⋮ 버튼에서 떨어진다. 터미널에 포커스를 주면 메뉴가 포커스를 잃어 고치던 이름을 정하고
     // 닫힌다.
     if (menuFor.value !== null) void focusSelected()
   },
