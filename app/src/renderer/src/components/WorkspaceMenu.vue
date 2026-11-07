@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, useTemplateRef } from 'vue'
 import { Folder, X } from '@lucide/vue'
 import { nameOnFocusLoss } from '../../../shared/names'
 import type { Anchor } from '../launcher/anchor'
@@ -30,6 +30,8 @@ const MIN_WIDTH = 180
 const root = useTemplateRef<HTMLElement>('root')
 const input = useTemplateRef<HTMLInputElement>('input')
 const at = ref({ left: 0, top: 0, width: WIDTH })
+/** 경로가 말줄임으로 잘린 즐겨찾기의 디렉토리. 잘리지 않은 경로는 줄에 다 보이므로 tooltip 으로 겹쳐 띄우지 않는다. */
+const clipped = ref(new Set<string>())
 let opened = ''
 let finished = false
 
@@ -52,6 +54,7 @@ onMounted(async () => {
   el.value = name
   el.focus()
   el.select()
+  document.documentElement.classList.add('window-drag-off')
   document.addEventListener('pointerdown', onPointerDown, true)
   window.addEventListener('resize', onResize)
   window.addEventListener('focus', onWindowFocus)
@@ -69,8 +72,20 @@ onMounted(async () => {
     top: Math.max(MARGIN, Math.min(top, innerHeight - MARGIN - r.height)),
     width
   }
+  await nextTick()
+  measureClipped()
 })
+onUpdated(measureClipped)
+
+function measureClipped(): void {
+  const next = new Set<string>()
+  for (const el of root.value?.querySelectorAll<HTMLElement>('.tail') ?? [])
+    if (el.scrollWidth > el.clientWidth) next.add(el.dataset.dir!)
+  const same = next.size === clipped.value.size && [...next].every((d) => clipped.value.has(d))
+  if (!same) clipped.value = next
+}
 onBeforeUnmount(() => {
+  document.documentElement.classList.remove('window-drag-off')
   document.removeEventListener('pointerdown', onPointerDown, true)
   window.removeEventListener('resize', onResize)
   window.removeEventListener('focus', onWindowFocus)
@@ -144,7 +159,7 @@ function openFavorite(dir: string): void {
     <div class="section">Favorites</div>
     <div v-for="f in favorites" :key="f.dir" class="favorite-item">
       <button
-        v-tooltip="f.path"
+        v-tooltip="clipped.has(f.dir) ? f.path : undefined"
         class="favorite-open"
         role="menuitem"
         :aria-label="`Open ${f.name}`"
@@ -152,7 +167,7 @@ function openFavorite(dir: string): void {
         @click="openFavorite(f.dir)"
       >
         <Folder class="icon" /><span class="title">{{ f.name }}</span
-        ><span class="tail">{{ f.path }}</span>
+        ><span class="tail" :data-dir="f.dir">{{ f.path }}</span>
       </button>
       <button
         v-tooltip="'Remove from Favorites'"

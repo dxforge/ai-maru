@@ -307,7 +307,7 @@ const favoriteLabel = (favorite: boolean): string =>
 </script>
 
 <template>
-  <nav ref="nav" class="sidebar" :class="{ collapsed }">
+  <nav ref="nav" class="sidebar window-drag" :class="{ collapsed }">
     <div class="titlebar" />
     <div ref="list" v-overlay-scroll="'y'" class="list">
       <div
@@ -500,7 +500,6 @@ const favoriteLabel = (favorite: boolean): string =>
    행 앞 칸의 아이콘과 workspace 이름의 첫 글자는 신호등의 첫 원과 같은 x(12px)에 선다. 12px 는 cell 면의 바깥 여백
    6px 와 안쪽 여백 6px 를 더한 값이다. */
 .sidebar {
-  -webkit-app-region: drag;
   flex: 1;
   min-width: 0;
   box-sizing: border-box;

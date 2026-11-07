@@ -63,7 +63,7 @@ function onTransition(e: TransitionEvent): void {
     @mouseleave="canvas.hold(false)"
   >
     <header class="bar">
-      <div class="title-row">
+      <div class="title-row window-drag">
         <span class="workspace-title">Canvas</span>
       </div>
       <!-- 카드를 모두 펴고 접는 버튼은 보기 메뉴 옆에 둔다. 이 버튼은 지금 보기에 든 카드에만 작용하기 때문이다. -->
@@ -174,7 +174,6 @@ button {
   height: var(--titlebar-height);
   padding: 0 var(--space-4) 0 calc(2 * var(--space-3));
   border-bottom: 1px solid var(--line);
-  -webkit-app-region: drag;
 }
 
 .picker {

@@ -17,7 +17,7 @@ defineEmits<{ run: [id: CommandId] }>()
 
 <template>
   <nav class="panel-bar" aria-label="Panels">
-    <div class="titlebar" />
+    <div class="titlebar window-drag" />
     <button
       v-for="p in panels"
       :key="p.id"
@@ -59,7 +59,6 @@ defineEmits<{ run: [id: CommandId] }>()
   margin: 0 0 var(--space-1) -1px;
   background: var(--side);
   border-bottom: 1px solid var(--line);
-  -webkit-app-region: drag;
 }
 
 .panel-button {

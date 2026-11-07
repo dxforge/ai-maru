@@ -36,6 +36,7 @@ import {
   dialogCalls,
   END_EVERYTHING,
   newCell,
+  openCanvas,
   sockets,
   stubDialog,
   workspaceHeads,
@@ -1577,6 +1578,71 @@ test('workspace 메뉴에서 즐겨찾기를 빼면 그 디렉토리의 cell 도
   await pin.click()
   await expect(pin).toHaveAttribute('aria-pressed', 'false')
   await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('workspace 메뉴의 즐겨찾기는 경로가 줄에 다 보이면 tooltip 을 달지 않고, 말줄임으로 잘리면 전체 경로를 tooltip 으로 단다', async ({
+  launch,
+  dataDir
+}) => {
+  const long = 'a-directory-name-long-enough-to-be-cut-short-in-the-menu'
+  const home = zshHome(dataDir, 'sub', long)
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await newCell(launched, 2)
+  await run(page, `cd ~/${long} && echo long-$((1+1))`, 'long-2')
+  for (const i of [0, 1]) {
+    await cellItems(page).nth(i).hover()
+    await cellFavorite(page, i).click()
+  }
+
+  await openWorkspaceMenu(page, 0)
+  const open = workspaceMenu(page).locator('.favorite-open')
+  await expect(open).toHaveCount(2)
+  await expect(open.nth(0)).toHaveAttribute('data-tooltip', '')
+  await expect(open.nth(1)).toHaveAttribute('data-tooltip', `~/${long}`)
+})
+
+test('workspace 메뉴는 바깥 어디를 눌러도 닫히며 누른 자리의 동작도 하고, 열린 동안에는 창 드래그 영역을 꺼서 사이드바 빈 곳·제목 줄을 눌러도 닫힌다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await run(page, 'echo a-$((1+1))', 'a-2')
+  await newWorkspace(launched, 2)
+  await newCell(launched, 3)
+  await openCanvas(launched)
+  await expect(cellGroups(page).nth(2)).toHaveClass(/selected/)
+
+  await openWorkspaceMenu(page, 0)
+  await clickRightEnd(cellItems(page).nth(1))
+  await expect(workspaceMenu(page)).toHaveCount(0)
+  await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
+
+  await openWorkspaceMenu(page, 0)
+  await panes(page).filter({ visible: true }).first().click()
+  await expect(workspaceMenu(page)).toHaveCount(0)
+  await run(page, 'echo t-$((1+1))', 't-2')
+
+  const center = async (el: Locator) => {
+    const b = (await el.boundingBox())!
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+  }
+  const list = (await page.locator('.sidebar .list').boundingBox())!
+  const spots = [
+    { x: list.x + list.width / 2, y: list.y + list.height - 8 },
+    await center(page.locator('.sidebar .titlebar')),
+    await center(page.locator('.canvas .title-row')),
+    await center(page.locator('.panel-bar .titlebar'))
+  ]
+  for (const { x, y } of spots) {
+    expect(await appRegionAt(page, x, y)).toBe('drag')
+    await openWorkspaceMenu(page, 0)
+    expect(await appRegionAt(page, x, y)).toBe('no-drag')
+    await page.mouse.click(x, y)
+    await expect(workspaceMenu(page)).toHaveCount(0)
+    expect(await appRegionAt(page, x, y)).toBe('drag')
+  }
 })
 
 /**
