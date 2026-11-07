@@ -135,7 +135,7 @@ function openFavorite(dir: string): void {
     <div class="name-field">
       <input
         ref="input"
-        class="workspace-name-input"
+        class="workspace-name-input text-input"
         aria-label="Workspace name"
         spellcheck="false"
       />
@@ -156,7 +156,7 @@ function openFavorite(dir: string): void {
       </button>
       <button
         v-tooltip="'Remove from Favorites'"
-        class="favorite-remove"
+        class="favorite-remove icon-button"
         :aria-label="`Remove ${f.name} from Favorites`"
         @mousedown.prevent
         @click="emit('removeFavorite', f.dir)"
@@ -210,25 +210,7 @@ button {
 }
 
 .workspace-name-input {
-  box-sizing: border-box;
   width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-1);
-  outline: none;
-  background: var(--ground);
-  color: inherit;
-  font: inherit;
-}
-
-.workspace-name-input:focus {
-  border-color: var(--accent);
-}
-
-hr {
-  margin: var(--space-2) 0;
-  border: none;
-  border-top: 1px solid var(--line);
 }
 
 .section {
@@ -286,21 +268,9 @@ hr {
   font-size: var(--text-1);
 }
 
-.popup-menu .favorite-remove {
+.favorite-remove {
   flex: none;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  margin-right: var(--space-3);
-  border-radius: var(--radius-1);
-  color: var(--faint);
-}
-
-.popup-menu .favorite-remove:hover {
-  color: var(--fg);
-  background: var(--hover);
+  margin-right: var(--space-4);
 }
 
 .icon {

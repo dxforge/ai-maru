@@ -357,7 +357,7 @@ const favoriteLabel = (favorite: boolean): string =>
             ><span
               v-tooltip="pinTip(pinned)"
               role="button"
-              class="pin"
+              class="pin icon-button"
               :class="{ on: pinned }"
               :aria-label="pinLabel(pinned)"
               :aria-pressed="pinned"
@@ -368,7 +368,7 @@ const favoriteLabel = (favorite: boolean): string =>
           <span
             v-tooltip="menuFor === w.key ? undefined : 'Workspace Menu'"
             role="button"
-            class="workspace-menu-button"
+            class="workspace-menu-button icon-button"
             aria-label="Workspace Menu"
             aria-haspopup="menu"
             :aria-expanded="menuFor === w.key"
@@ -593,17 +593,7 @@ const favoriteLabel = (favorite: boolean): string =>
 }
 
 .pin {
-  display: flex;
-  align-items: center;
-  height: 20px;
   visibility: hidden;
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-1);
-}
-
-.pin svg {
-  width: 12px;
-  height: 12px;
 }
 
 .pin.on,
@@ -616,18 +606,8 @@ const favoriteLabel = (favorite: boolean): string =>
 /* 메뉴 버튼은 헤더를 가리킬 때와 메뉴가 열려 있을 때만 보인다. 핀과 달리 자리를 늘 차지해 이름이 hover 때 밀리지 않는다. */
 .workspace-menu-button {
   flex: none;
-  display: flex;
-  align-items: center;
-  height: 20px;
   margin-left: auto;
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-1);
   visibility: hidden;
-}
-
-.workspace-menu-button svg {
-  width: 12px;
-  height: 12px;
 }
 
 .workspace-head:hover .workspace-menu-button,
@@ -636,16 +616,13 @@ const favoriteLabel = (favorite: boolean): string =>
   visibility: visible;
 }
 
-.workspace-menu-button:hover {
-  background: var(--hover);
-}
-
 .workspace-head.menu-open .workspace-menu-button {
   color: var(--fg);
 }
 
-/* 이름 위에 겹친 핀은 바탕색으로 이름을 가리므로, hover 색은 바탕색 위에 덧칠한다. */
+/* 이름 위에 겹친 핀은 바탕색으로 이름을 가리므로, hover 색은 `.icon-button` 처럼 바탕색을 바꾸지 않고 그 위에 덧칠한다. */
 .pin:hover {
+  background-color: transparent;
   background-image: linear-gradient(var(--hover), var(--hover));
 }
 

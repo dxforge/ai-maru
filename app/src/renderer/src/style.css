@@ -226,11 +226,9 @@ body,
     sans-serif;
 }
 
-.palette .query {
-  flex: none;
+/* 팔레트의 입력줄과 workspace 메뉴의 이름 칸이 함께 쓰는 한 줄 입력 칸이다. 폭과 자리는 쓰는 쪽이 정한다. */
+.text-input {
   box-sizing: border-box;
-  width: calc(100% - 2 * var(--space-3));
-  margin: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-1);
@@ -240,8 +238,14 @@ body,
   font: inherit;
 }
 
-.palette .query:focus {
+.text-input:focus {
   border-color: var(--accent);
+}
+
+.palette .query {
+  flex: none;
+  width: calc(100% - 2 * var(--space-3));
+  margin: var(--space-3);
 }
 
 .palette .list {
@@ -307,7 +311,7 @@ body,
 }
 
 /* 글자 크기와 색은 위에 둔다. 버튼은 컴포넌트의 `button { font: inherit; color: inherit }` 으로 물려받는다. */
-.popup-menu button {
+.popup-menu button:not(.icon-button) {
   width: 100%;
   padding: var(--space-2) var(--space-5);
   text-align: left;
@@ -315,5 +319,29 @@ body,
 }
 
 .popup-menu button:hover {
+  background: var(--hover);
+}
+
+.popup-menu hr {
+  margin: var(--space-2) 0;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+/* 줄 안의 작은 아이콘 버튼이다. 사이드바 workspace 헤더의 핀·메뉴 버튼과 workspace 메뉴의 즐겨찾기 빼기 버튼이 쓴다. */
+.icon-button {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-1);
+}
+
+.icon-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.icon-button:hover {
   background: var(--hover);
 }

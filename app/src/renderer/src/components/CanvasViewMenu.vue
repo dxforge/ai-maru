@@ -188,10 +188,4 @@ button {
   width: 1.5em;
   color: var(--accent);
 }
-
-hr {
-  margin: var(--space-2) 0;
-  border: none;
-  border-top: 1px solid var(--line);
-}
 </style>
