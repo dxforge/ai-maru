@@ -969,8 +969,11 @@ test('명령을 주어 띄운 pane 은 이름 자리에 명령 전체를 쓰고,
 const nameInput = (page: Page) => page.locator('.sidebar .workspace-name-input')
 const workspaceMenu = (page: Page) => page.locator('.sidebar .workspace-menu')
 
-// 메뉴는 ⋮ 아래로 떠 그 아래 줄의 가운데를 덮는다. 줄의 왼쪽 끝은 덮지 않는다.
-const LEFT_EDGE = { x: 4, y: 8 }
+// 메뉴는 ⋮ 아래에 오른쪽 끝을 맞춰 떠 그 아래 줄을 덮는다. ⋮ 오른쪽의 접기 화살표 아래인 줄의 오른쪽 끝만 덮지 않는다.
+async function clickRightEnd(el: Locator): Promise<void> {
+  const b = (await el.boundingBox())!
+  await el.click({ position: { x: b.width - 16, y: b.height / 2 } })
+}
 
 async function openWorkspaceMenu(page: Page, i: number): Promise<void> {
   await workspaceHeads(page).nth(i).hover()
@@ -1115,7 +1118,7 @@ test('이름을 고치다 pane 줄을 누르면 이미 고른 줄이든 아니�
   await openWorkspaceMenu(page, 0)
   await expect(nameInput(page)).toBeFocused()
   await page.keyboard.type('review')
-  await cellItems(page).nth(1).click({ position: LEFT_EDGE })
+  await clickRightEnd(cellItems(page).nth(1))
   await expect(nameInput(page)).toHaveCount(0)
   await expect(first).toHaveText('review')
   await run(page, 'echo same-$((1+1))', 'same-2')
@@ -1124,7 +1127,7 @@ test('이름을 고치다 pane 줄을 누르면 이미 고른 줄이든 아니�
   await openWorkspaceMenu(page, 0)
   await expect(nameInput(page)).toBeFocused()
   await page.keyboard.type('again')
-  await cellItems(page).nth(0).click({ position: LEFT_EDGE })
+  await clickRightEnd(cellItems(page).nth(0))
   await expect(nameInput(page)).toHaveCount(0)
   await expect(first).toHaveText('again')
   await run(page, 'echo other-$((1+1))', 'other-2')
@@ -1142,7 +1145,7 @@ test('이름을 고치다 다른 workspace 줄을 누르면 친 이름으로 정
   await openWorkspaceMenu(page, 0)
   await expect(nameInput(page)).toBeFocused()
   await page.keyboard.type('review')
-  await heads.nth(1).click({ position: LEFT_EDGE })
+  await clickRightEnd(heads.nth(1))
   await expect(nameInput(page)).toHaveCount(0)
   await expect(workspaceNames(page).nth(0)).toHaveText('review')
   await expect(heads.nth(1)).toHaveAttribute('aria-expanded', 'false')
@@ -1193,7 +1196,7 @@ test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 자동 이�
 
   await openWorkspaceMenu(page, 0)
   await expect(nameInput(page)).toHaveValue('proj')
-  await cellItems(page).nth(0).click({ position: LEFT_EDGE })
+  await clickRightEnd(cellItems(page).nth(0))
   await expect(nameInput(page)).toHaveCount(0)
   await page.keyboard.type('cd ~/notes\n')
   await expect(workspaceNames(page)).toHaveText(['sub'])
@@ -1265,7 +1268,7 @@ test('핀을 꽂거나 빼도 workspace 들의 세로 위치가 그대로다', a
   await expect.poll(tops).toEqual(before)
 })
 
-test('workspace 메뉴는 헤더를 가리킬 때 보이는 ⋮ 를 누르면 그 버튼 바로 아래에 뜨고, 즐겨찾기가 없으면 안내 한 줄을 보이며, Pin Workspace 는 핀을 꽂고 Close Workspace 는 고른 cell 이 아니라 그 workspace 를 확인 창을 거쳐 닫는다', async ({
+test('workspace 메뉴는 헤더를 가리킬 때 접기 화살표 바로 왼쪽에 보이는 ⋮ 를 누르면 그 버튼 아래에 오른쪽 끝을 맞춰 사이드바 안에 뜨고, 즐겨찾기가 없으면 안내 한 줄을 보이며, Pin Workspace 는 핀을 꽂고 Close Workspace 는 고른 cell 이 아니라 그 workspace 를 확인 창을 거쳐 닫는다', async ({
   launch,
   dataDir
 }) => {
@@ -1280,8 +1283,12 @@ test('workspace 메뉴는 헤더를 가리킬 때 보이는 ⋮ 를 누르면 �
 
   await openWorkspaceMenu(page, 0)
   const b = await box(button)
+  const c = await box(workspaceHeads(page).nth(0).locator('.chevron'))
+  expect(c.x).toBeGreaterThanOrEqual(b.x + b.width)
+  expect(c.x).toBeLessThan(b.x + b.width + 8)
   const m = await box(workspaceMenu(page))
-  expect(m.x).toBeCloseTo(b.x, 0)
+  expect(m.x + m.width).toBeCloseTo(b.x + b.width, 0)
+  expect(m.x + m.width).toBeLessThanOrEqual(await sidebarWidth(page))
   expect(m.y).toBeGreaterThanOrEqual(b.y + b.height)
   expect(m.y).toBeLessThan(b.y + b.height + 8)
   await expect(favoriteItems(page)).toHaveCount(0)

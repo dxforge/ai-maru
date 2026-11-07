@@ -10,7 +10,7 @@ const { name, favorites, pinned, head } = defineProps<{
   name: string
   favorites: readonly DirRow[]
   pinned: boolean
-  /** 메뉴를 연 workspace 헤더. 메뉴는 그 안의 ⋮ 버튼 아래에 뜬다. */
+  /** 메뉴를 연 workspace 헤더. 메뉴는 그 안의 ⋮ 버튼 아래에 오른쪽 끝을 맞춰 뜬다. */
   head: HTMLElement
 }>()
 
@@ -25,9 +25,11 @@ const emit = defineEmits<{
 
 const GAP = 4
 const MARGIN = 8
+const WIDTH = 260
+const MIN_WIDTH = 180
 const root = useTemplateRef<HTMLElement>('root')
 const input = useTemplateRef<HTMLInputElement>('input')
-const at = ref({ left: 0, top: 0 })
+const at = ref({ left: 0, top: 0, width: WIDTH })
 let opened = ''
 let finished = false
 
@@ -53,16 +55,19 @@ onMounted(async () => {
   document.addEventListener('pointerdown', onPointerDown, true)
   window.addEventListener('resize', onResize)
   window.addEventListener('focus', onWindowFocus)
+  // 오른쪽 끝을 ⋮ 에 맞추고 왼쪽 여백까지만 넓혀 사이드바 안에 둔다.
   const b = (menuButton() ?? head).getBoundingClientRect()
-  at.value = { left: b.left, top: b.bottom + GAP }
+  const width = Math.max(MIN_WIDTH, Math.min(WIDTH, b.right - MARGIN))
+  at.value = { left: b.right - width, top: b.bottom + GAP, width }
   await nextTick()
   const r = root.value!.getBoundingClientRect()
   const below = b.bottom + GAP
   const above = b.top - GAP - r.height
   const top = below + r.height <= innerHeight - MARGIN || above < MARGIN ? below : above
   at.value = {
-    left: Math.max(MARGIN, Math.min(b.left, innerWidth - MARGIN - r.width)),
-    top: Math.max(MARGIN, Math.min(top, innerHeight - MARGIN - r.height))
+    left: Math.max(MARGIN, Math.min(b.right - width, innerWidth - MARGIN - width)),
+    top: Math.max(MARGIN, Math.min(top, innerHeight - MARGIN - r.height)),
+    width
   }
 })
 onBeforeUnmount(() => {
@@ -123,7 +128,7 @@ function openFavorite(dir: string): void {
     ref="root"
     class="workspace-menu popup-menu"
     role="menu"
-    :style="{ left: `${at.left}px`, top: `${at.top}px` }"
+    :style="{ left: `${at.left}px`, top: `${at.top}px`, width: `${at.width}px` }"
     @keydown="onKeydown"
     @focusout="onFocusOut"
   >
@@ -186,7 +191,6 @@ function openFavorite(dir: string): void {
   position: fixed;
   z-index: 9;
   box-sizing: border-box;
-  width: 260px;
   max-height: calc(100vh - 16px);
   text-transform: none;
   letter-spacing: normal;

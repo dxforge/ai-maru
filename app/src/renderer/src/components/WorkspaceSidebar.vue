@@ -549,7 +549,7 @@ const favoriteLabel = (favorite: boolean): string =>
 
 .workspace-head .chevron {
   flex: none;
-  margin-left: auto;
+  margin-left: calc(-1 * var(--space-2));
   opacity: 0;
 }
 
@@ -613,14 +613,13 @@ const favoriteLabel = (favorite: boolean): string =>
   visibility: visible;
 }
 
-/* 메뉴 버튼은 헤더를 가리킬 때와 메뉴가 열려 있을 때만 보인다. 핀과 달리 자리를 늘 차지해 이름이 hover 때 밀리지 않는다.
-   왼쪽 margin 은 헤더의 gap 을 지워 핀 바로 뒤에 붙인다. */
+/* 메뉴 버튼은 헤더를 가리킬 때와 메뉴가 열려 있을 때만 보인다. 핀과 달리 자리를 늘 차지해 이름이 hover 때 밀리지 않는다. */
 .workspace-menu-button {
   flex: none;
   display: flex;
   align-items: center;
   height: 20px;
-  margin-left: calc(-1 * var(--space-4));
+  margin-left: auto;
   padding: 0 var(--space-1);
   border-radius: var(--radius-1);
   visibility: hidden;
