@@ -5,7 +5,8 @@
 }
 
 /* renderer 의 양수 margin·padding·gap 과 radius·글자 크기는 이 단계에서 고른다. 아이콘 글리프 크기처럼 다른 요소의 크기·위치에
-   맞춘 값과, 정렬을 보정하는 음수 margin 은 단계 밖에 literal 로 둔다. */
+   맞춘 값과, 정렬을 보정하는 음수 margin 은 단계 밖에 literal 로 둔다. 그림자의 검정 반투명 색(`rgb(0 0 0 / …)`)과
+   원형을 만드는 radius(`50%`·`9999px`)도 토큰으로 두지 않고 literal 로 쓴다. */
 :root {
   --space-1: 2px;
   --space-2: 4px;
