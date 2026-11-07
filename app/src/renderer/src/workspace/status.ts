@@ -1,8 +1,9 @@
 import { URGENCY, type ProgramStatusState } from '../../../shared/program-status'
+import { openCells, type ClosedCell } from '../../../shared/screen'
 
 type Tree = readonly {
   key: number
-  cells: readonly { key: number; panes: readonly { ptyId: string }[] }[]
+  cells: readonly ({ key: number; panes: readonly { ptyId: string }[] } | ClosedCell)[]
 }[]
 
 /**
@@ -16,7 +17,7 @@ export function urgentStates(
   const map = new Map<number, ProgramStatusState>()
   for (const w of workspaces) {
     const all = new Set<string | undefined>()
-    for (const c of w.cells) {
+    for (const c of openCells(w)) {
       const states = new Set(c.panes.map((p) => stateOf(p.ptyId)))
       const state = URGENCY.find((s) => states.has(s))
       if (state) map.set(c.key, state)
@@ -34,7 +35,7 @@ export function unreadWorkspaces(
 ): Set<number> {
   return new Set(
     workspaces
-      .filter((w) => w.cells.some((c) => c.panes.some((p) => notified(p.ptyId))))
+      .filter((w) => openCells(w).some((c) => c.panes.some((p) => notified(p.ptyId))))
       .map((w) => w.key)
   )
 }

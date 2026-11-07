@@ -16,7 +16,12 @@ import { cellLabel, windowTitle, workspaceName } from '../../shared/names'
 import type { JobView } from '../../shared/job'
 import type { PaneReply } from '../../shared/pane'
 import type { ProgramStatusRecord } from '../../shared/program-status'
-import { clampCanvasWidth, clampSidebarWidth, type ScreenState } from '../../shared/screen'
+import {
+  clampCanvasWidth,
+  clampSidebarWidth,
+  isClosed,
+  type ScreenState
+} from '../../shared/screen'
 import { chords, secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
 import { createCanvas, openCells } from './canvas/store'
@@ -278,12 +283,12 @@ function selectedWorkspace() {
   return c && workspaces.workspaceOf(c.key)
 }
 
-// 마지막 cell 이 닫히면 store 가 핀이 없는 workspace 를 지운다. 핀 workspace 는 빈 채로 남으므로 이어서 목록에서 뺀다.
+// 마지막 cell 이 닫히면 store 가 남을 이유(핀·즐겨찾기)가 없는 workspace 를 지운다. 남은 workspace 는 이어서 목록에서 뺀다.
 // cell 의 job 은 cell 이 닫힐 때 main 이 끈다.
 async function closeWorkspace(): Promise<void> {
   const w = selectedWorkspace()
   if (!w) return
-  const panes = w.cells.flatMap((x) => x.panes.map((p) => p.key))
+  const panes = w.cells.flatMap((x) => (isClosed(x) ? [] : x.panes.map((p) => p.key)))
   if ((await window.maru.confirmCloseWorkspace(w.id)).close) {
     for (const p of panes) removePane(p)
     workspaces.discard(w.key)
@@ -411,8 +416,6 @@ watch(
   }
 )
 
-// 즐겨찾기에 넣으면서 workspace 에 핀을 꽂으면 workspace 가 핀 묶음으로 옮겨져 터미널이 포커스를 잃는다. 그래서 드래그로 옮길
-// 때처럼 포커스를 되돌린다.
 function toggleFavorite(cell: number): void {
   if (!workspaces.toggleFavorite(cell)) {
     toasts.put('favorite', {
@@ -1009,7 +1012,7 @@ void window.maru.restoreScreen().then((r) => {
     workspaces.restore(r.layout, r.ptys)
     for (const w of workspaces.list.value) if (prefs.folded?.includes(w.id)) folded.add(w.key)
   }
-  // cell 이 없는 핀 workspace 만 되살렸으면 고를 cell 이 없으므로, 레이아웃이 없을 때처럼 터미널 하나를 연다.
+  // cell 이 없는 workspace 만 되살렸으면 고를 cell 이 없으므로, 레이아웃이 없을 때처럼 터미널 하나를 연다.
   if (!workspaces.cells().length) workspaces.open()
   for (const notice of r?.notice ?? []) toasts.put(`restore-${notice}`, restoreToast(notice))
   // 되살린 cell 은 아직 그려지기 전이라 잰 것이 없다. cell 을 다 잰 뒤 `flush: 'post'` 인 스크롤 watch 가 먼저

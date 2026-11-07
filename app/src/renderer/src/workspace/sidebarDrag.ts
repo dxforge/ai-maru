@@ -23,14 +23,12 @@ export type WorkspaceSpan = Span & {
   count: number
   cells: Span[]
   folded: boolean
-  /** cell 앞에 놓인 닫힌 줄들의 아래 끝. 닫힌 줄이 없으면 비운다. */
-  closedBottom?: number
+  /** cell 사이사이와 앞뒤에 놓인 닫힌 줄들. */
+  closed: Span[]
 }
 
 export type SidebarSpans = {
   workspaces: WorkspaceSpan[]
-  /** 핀 workspace 의 수. 이 workspace 들이 `workspaces` 의 앞에 온다. */
-  pinned: number
   newWorkspace?: Span
 }
 
@@ -67,10 +65,15 @@ function cellDrop(
   return { drop: { kind: 'cell', workspace: w.key, index }, line: cellLine(w, index) }
 }
 
+/** 선은 `index` 번째 cell 바로 위 줄(cell 이든 닫힌 줄이든)의 아래에 긋는다. store 가 그 줄과 cell 사이에 넣기 때문이다. */
 function cellLine(w: WorkspaceSpan, index: number): number {
   if (w.folded) return w.head.bottom + HALF_GAP
-  const top = w.closedBottom === undefined ? w.head.bottom - HALF_GAP : w.closedBottom + HALF_GAP
-  return gapLine(w.cells, index, top)
+  const next = w.cells[index]
+  const above = w.closed.filter((s) => !next || s.top < next.top)
+  const closed = above.length ? above[above.length - 1].bottom : -Infinity
+  const cell = w.cells[index - 1]?.bottom ?? -Infinity
+  if (closed > cell) return closed + HALF_GAP
+  return gapLine(w.cells, index, w.head.bottom - HALF_GAP)
 }
 
 function workspaceDrop(
@@ -80,8 +83,6 @@ function workspaceDrop(
 ): DropAt | undefined {
   const index = before(s.workspaces, y)
   if (index === d.index || index === d.index + 1) return undefined
-  // 핀 묶음과 핀이 없는 묶음을 넘어 놓지 않는다.
-  if (d.index < s.pinned ? index > s.pinned : index < s.pinned) return undefined
   return {
     drop: { kind: 'workspace', index },
     line: gapLine(s.workspaces, index, (s.workspaces[0]?.top ?? 0) - HALF_GAP)

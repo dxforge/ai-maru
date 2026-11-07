@@ -320,7 +320,7 @@ test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살
 
 const closedRows = (page: Launched['page']) => page.locator('.sidebar .closed-row')
 
-test('state.json 의 cells 를 읽지 못하면 핀 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리고, 살아 있는 pty 는 띄운 순서로 Recovered workspace 에 cell 하나씩으로 열며 알린다', async ({
+test('state.json 의 cells 를 읽지 못하면 핀이나 즐겨찾기가 있는 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리고, 살아 있는 pty 는 띄운 순서로 Recovered workspace 에 cell 하나씩으로 열며 알린다', async ({
   launch,
   dataDir
 }) => {

@@ -8,10 +8,10 @@ import {
 } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import {
-  closedRows,
   exitText,
   jobRow,
   paneRow,
+  sidebarSlots,
   workspaceMarks,
   type RowSource
 } from './sidebarRows'
@@ -169,30 +169,36 @@ describe('workspaceMarks', () => {
   })
 })
 
-describe('closedRows', () => {
-  it('열린 cell 이 맡지 않은 즐겨찾기를 넣은 순서대로 내고, 이름은 디렉토리 이름, 경로는 홈을 ~ 로 줄인다', () => {
-    const favorites = ['/h/work/app', '/h/notes', '/opt/x']
-    const cells = [{}, { favorite: '/h/work/app/' }]
-    expect(closedRows({ dir: '/h/old', favorites, cells }, '/h')).toEqual([
+describe('sidebarSlots', () => {
+  const closed = (favorite: string) => ({ closed: true as const, favorite })
+
+  it('닫힌 줄은 cells 의 자리 그대로 cell 과 섞어 두고, 이름은 디렉토리 이름, 경로는 홈을 ~ 로 줄인다', () => {
+    const a = {}
+    const b = { favorite: '/h/work/app' }
+    const w = { dir: '/h/old', cells: [closed('/h/notes'), a, closed('/opt/x'), b] }
+    expect(sidebarSlots(w, '/h')).toEqual([
       { dir: '/h/notes', name: 'notes', path: '~/notes', favorite: true },
-      { dir: '/opt/x', name: 'x', path: '/opt/x', favorite: true }
+      { cell: a, index: 0 },
+      { dir: '/opt/x', name: 'x', path: '/opt/x', favorite: true },
+      { cell: b, index: 1 }
     ])
   })
 
   it('홈 디렉토리의 이름은 ~ 다', () => {
-    expect(closedRows({ favorites: ['/h'], cells: [] }, '/h')).toEqual([
+    expect(sidebarSlots({ dir: '/h/x', cells: [closed('/h')] }, '/h')).toEqual([
       { dir: '/h', name: '~', path: '~', favorite: true }
     ])
   })
 
-  it('cell 도 즐겨찾기도 없으면 dir 줄 하나이고, dir 도 없으면 없다', () => {
-    expect(closedRows({ dir: '/h/notes', cells: [] }, '/h')).toEqual([
+  it('cell 도 닫힌 줄도 없으면 dir 줄 하나이고, dir 도 없으면 없다', () => {
+    expect(sidebarSlots({ dir: '/h/notes', cells: [] }, '/h')).toEqual([
       { dir: '/h/notes', name: 'notes', path: '~/notes', favorite: false }
     ])
-    expect(closedRows({ cells: [] })).toEqual([])
+    expect(sidebarSlots({ cells: [] })).toEqual([])
   })
 
   it('cell 이 있으면 dir 줄은 없다', () => {
-    expect(closedRows({ dir: '/h/notes', cells: [{}] })).toEqual([])
+    const a = {}
+    expect(sidebarSlots({ dir: '/h/notes', cells: [a] })).toEqual([{ cell: a, index: 0 }])
   })
 })

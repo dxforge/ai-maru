@@ -2,12 +2,13 @@ import type { DeepReadonly } from 'vue'
 import { jobName, type JobView } from '../../../shared/job'
 import { sidebarLabel, type SidebarLabel } from '../../../shared/names'
 import { paneName, type CommandView } from '../../../shared/pane-name'
+import { isClosed, type ClosedCell } from '../../../shared/screen'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { AGENT_ICONS, commandIcon, STATE_LABELS, type PaneIcon } from '../icons'
 import { tildePath } from './cwd'
 import { commandLabel, notificationText } from './display'
-import { holdsFavorite, type Pane } from './store'
+import type { Pane } from './store'
 
 export type Row = {
   pane: number
@@ -111,27 +112,22 @@ export function workspaceMarks(
 /** `favorite` 가 아니면 cell 이 없는 핀 workspace 의 디렉토리 줄이다. */
 export type ClosedRow = { dir: string; name: string; path: string; favorite: boolean }
 
-type ClosedSource = {
-  dir?: string
-  favorites?: readonly string[]
-  cells: readonly { favorite?: string }[]
-}
+/** `index` 는 cell 의 workspace 안 자리다. */
+export type SidebarSlot<C> = { cell: C; index: number } | ClosedRow
 
-/**
- * workspace 의 닫힌 줄이다. 즐겨찾기 디렉토리 가운데 열린 cell 이 맡지(`favorite`) 않은 것을 넣은 순서대로 둔다. 같은
- * 디렉토리가 열린 cell 과 닫힌 줄로 두 번 보이지 않게 하기 위해서다. cell 도 즐겨찾기도 없는 workspace 는 `dir` 줄 하나를
- * 둔다.
- */
-export function closedRows(w: ClosedSource, home?: string): ClosedRow[] {
+export function sidebarSlots<T extends object>(
+  w: { dir?: string; cells: readonly T[] },
+  home?: string
+): SidebarSlot<Exclude<T, ClosedCell>>[] {
   const row = (dir: string, favorite: boolean): ClosedRow => ({
     dir,
     name: sidebarLabel({ cwd: dir }, undefined, home).name!,
     path: tildePath(dir, home),
     favorite
   })
-  const favorites = w.favorites ?? []
-  if (!w.cells.length && !favorites.length) return w.dir === undefined ? [] : [row(w.dir, false)]
-  return favorites
-    .filter((dir) => !w.cells.some((c) => holdsFavorite(c, dir)))
-    .map((dir) => row(dir, true))
+  if (!w.cells.length) return w.dir === undefined ? [] : [row(w.dir, false)]
+  let index = 0
+  return w.cells.map((c) =>
+    isClosed(c) ? row(c.favorite, true) : { cell: c as Exclude<T, ClosedCell>, index: index++ }
+  )
 }

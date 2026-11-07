@@ -1,4 +1,5 @@
 import type { GitHead } from './git'
+import { openCells, type ClosedCell } from './screen'
 
 /**
  * cell·workspace 이름의 재료. `cwd` 는 그 pane 의 화면에 보이는 cwd 다. `gitRoot` 는 `git` 을 읽은 cwd 에서 구한 작업 트리
@@ -45,14 +46,18 @@ export function sidebarLabel(p: Named, base: Named | undefined, home?: string): 
   return { ...(branch === undefined ? { name: repo } : { branch }), ...(sub && { sub }) }
 }
 
-type NamedWorkspace<P> = { name?: string; dir?: string; cells: readonly { panes: readonly P[] }[] }
+type NamedWorkspace<P> = {
+  name?: string
+  dir?: string
+  cells: readonly ({ panes: readonly P[] } | ClosedCell)[]
+}
 
 /**
  * `dir` 이 없거나 첫 pane 의 작업 트리 안에 있을 때만 첫 pane 을 돌려준다. 저장소 여럿을 모은 디렉토리를 workspace 로 연
  * 경우, 첫 cell 이 그 안의 저장소로 `cd` 해도 그 저장소 이름을 workspace 이름으로 쓰지 않기 위해서다.
  */
 function repoPane<P extends Named>(w: NamedWorkspace<P>): P | undefined {
-  const p = w.cells[0]?.panes[0]
+  const p = openCells(w)[0]?.panes[0]
   if (!p || w.dir === undefined) return p
   // `cd` 한 뒤 `git` 을 다시 읽기 전에는 `git.sub` 이 옛 cwd 의 것이라, 새 cwd 로 구하면 작업 트리 안에서도 이름이 깜빡인다.
   const top = p.git && (p.gitRoot ?? (p.cwd && gitRootOf(p.cwd, p.git.sub)))

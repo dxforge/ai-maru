@@ -1,5 +1,6 @@
 import versions from '../../resources/state-versions.json'
 import type { GitHead } from './git'
+import { samePath } from './launcher'
 import { panes as leaves, type Layout } from './layout'
 import { isPtyId, randomId } from './pty'
 
@@ -52,8 +53,9 @@ type CellOf<P> = {
  * `name` 은 사용자가 바꾼 이름이다. 없으면 `workspaceName` 이 짓는다. `dir` 이 첫 pane 의 작업 트리 안이면 그 저장소
  * 이름, 밖이면 `dir` 의 디렉토리 이름, `dir` 이 아직 없으면 첫 pane 의 저장소나 디렉토리 이름이다. `dir` 은 workspace 의
  * 디렉토리로, 홈 밖의 디렉토리로 한 번 정하면 바꾸지 않는다. 첫 cell 이 `cd` 하거나 다른 cell 이 첫 자리로 와도
- * workspace 의 경로가 따라 바뀌지 않게 하기 위해서다. `pinned` 인 workspace 는 마지막 cell 을 닫아도 남는다.
- * cell 이 없는 workspace 는 `pinned` 일 때만 있다. `favorites` 는 즐겨찾기 디렉토리의 절대경로로, 넣은 순서다.
+ * workspace 의 경로가 따라 바뀌지 않게 하기 위해서다. `favorites` 는 즐겨찾기 디렉토리의 절대경로로, 넣은 순서다.
+ * `pinned` 이거나 `favorites` 가 있는 workspace 는 마지막 cell 을 닫아도 남는다(`keeps`). 열린 cell 이 없는 workspace 는
+ * 이때만 있다. `cells` 는 사이드바의 순서로, 열린 cell 이 맡지 않은 즐겨찾기마다 닫힌 줄(`ClosedCell`)을 하나씩 갖는다.
  */
 type WorkspaceOf<P> = {
   key: number
@@ -62,8 +64,23 @@ type WorkspaceOf<P> = {
   pinned?: true
   dir?: string
   favorites?: string[]
-  cells: CellOf<P>[]
+  cells: (CellOf<P> | ClosedCell)[]
 }
+
+/** 닫은 즐겨찾기 cell 이 남긴 줄이다. id 가 없고, workspace 안에서 `favorite` 로 가린다. */
+export type ClosedCell = { closed: true; favorite: string }
+
+export const isClosed = (c: object): c is ClosedCell => 'closed' in c
+
+export function openCells<T extends object>(w: { cells: readonly T[] }): Exclude<T, ClosedCell>[] {
+  return w.cells.filter((c): c is Exclude<T, ClosedCell> => !isClosed(c))
+}
+
+export const keeps = (w: { pinned?: true; favorites?: readonly string[] }): boolean =>
+  !!w.pinned || !!w.favorites?.length
+
+export const holdsFavorite = (c: { favorite?: string }, dir: string): boolean =>
+  c.favorite !== undefined && samePath(c.favorite, dir)
 
 export type ScreenCell = CellOf<ScreenPane>
 export type ScreenWorkspace = WorkspaceOf<ScreenPane>
@@ -89,8 +106,13 @@ export type Table<R> = { version: number; rows: R[] }
 
 export type WorkspaceRow = Omit<SavedWorkspace, 'key' | 'cells'>
 
-/** `cells` 표의 줄이다. 같은 `workspace` 의 줄끼리는 줄의 순서가 cell 의 순서다. 배치의 잎은 pane 의 id 다. */
-export type CellRow = Omit<CellOf<never>, 'key' | 'panes' | 'layout' | 'focused'> & {
+/**
+ * `cells` 표의 줄이다. 같은 `workspace` 의 줄끼리는 줄의 순서가 cell 의 순서다. 배치의 잎은 pane 의 id 다. 닫힌 줄은
+ * pane 이 없다.
+ */
+export type CellRow = OpenCellRow | (ClosedCell & { workspace: string })
+
+type OpenCellRow = Omit<CellOf<never>, 'key' | 'panes' | 'layout' | 'focused'> & {
   workspace: string
   layout: Layout<string>
   focused: string
@@ -208,7 +230,14 @@ function parseCellFields(v: Obj): Pick<CellOf<never>, 'fontSize' | 'paneCols' | 
   return { fontSize, paneCols, favorite }
 }
 
-function parseScreenCell(v: unknown): ScreenCell | null {
+function parseClosedCell(v: unknown): ClosedCell | null {
+  return isObj(v) && v.closed === true && typeof v.favorite === 'string'
+    ? { closed: true, favorite: v.favorite }
+    : null
+}
+
+function parseScreenCell(v: unknown): ScreenCell | ClosedCell | null {
+  if (isObj(v) && 'closed' in v) return parseClosedCell(v)
   if (!isObj(v) || !isKey(v.key) || typeof v.id !== 'string' || !isKey(v.focused)) return null
   const fields = parseCellFields(v)
   const panes = parseList(v.panes, parseScreenPane)
@@ -235,7 +264,12 @@ function parseWorkspaceRow(w: unknown): WorkspaceRow | null {
 }
 
 function parseCellRow(v: unknown): CellRow | null {
-  if (!isObj(v) || typeof v.id !== 'string' || typeof v.workspace !== 'string') return null
+  if (!isObj(v) || typeof v.workspace !== 'string') return null
+  if ('closed' in v) {
+    const c = parseClosedCell(v)
+    return c && { ...c, workspace: v.workspace }
+  }
+  if (typeof v.id !== 'string') return null
   if (typeof v.focused !== 'string') return null
   const fields = parseCellFields(v)
   const layout = parseLayout(v.layout, isString)
@@ -257,7 +291,7 @@ export function parseScreen(v: unknown): ScreenState | null {
     (w): ScreenWorkspace | null => {
       const row = parseWorkspaceRow(w)
       if (!row || !isKey((w as Obj).key)) return null
-      const cells = parseList((w as Obj).cells, parseScreenCell, row.pinned)
+      const cells = parseList((w as Obj).cells, parseScreenCell, keeps(row))
       return cells && { key: (w as Obj).key as number, ...row, cells }
     },
     true
@@ -319,7 +353,12 @@ export function splitScreen(screen: ScreenState): SplitScreen {
   for (const { cells: wCells, ...rest } of screen.workspaces) {
     const w = omit(rest, 'key')
     workspaces.push(compact(w))
-    for (const { key, panes: cPanes, layout, focused, ...c } of wCells) {
+    for (const cell of wCells) {
+      if (isClosed(cell)) {
+        cells.push({ ...cell, workspace: w.id })
+        continue
+      }
+      const { key, panes: cPanes, layout, focused, ...c } = cell
       if (key === screen.selected) selected = c.id
       const ids = new Map(cPanes.map((p) => [p.key, p.id]))
       cells.push({
@@ -345,25 +384,44 @@ export function splitScreen(screen: ScreenState): SplitScreen {
 }
 
 /**
- * cell 의 즐겨찾기 표시는 그 workspace 의 `favorites` 에 있을 때만 남긴다. `workspaces` 표를 잃으면 `favorites` 가 비어,
- * cell 에 남은 표시가 없는 즐겨찾기를 가리키기 때문이다.
+ * 즐겨찾기 표시와 닫힌 줄을 `favorites` 에 맞춘다. `workspaces` 표를 잃으면 `favorites` 가 비어, cell 에 남은 표시가
+ * 없는 즐겨찾기를 가리키기 때문이다. 열린 cell 이 맡지 않았는데 닫힌 줄도 없는 즐겨찾기(닫힌 줄을 저장하지 않던
+ * 빌드의 state)는 맨 앞의 닫힌 줄로 둔다.
  */
-function keepFavorites(w: SavedWorkspace): SavedWorkspace {
-  const cells = w.cells.map((c) =>
-    c.favorite === undefined || w.favorites?.includes(c.favorite)
-      ? c
-      : compact({ ...c, favorite: undefined })
-  )
-  return { ...w, cells }
+function settleFavorites<C extends { favorite?: string }>(w: {
+  favorites?: readonly string[]
+  cells: readonly (C | ClosedCell)[]
+}): (C | ClosedCell)[] {
+  const favorites = w.favorites ?? []
+  const held = (dir: string): boolean => openCells(w).some((c) => holdsFavorite(c, dir))
+  const seen = new Set<string>()
+  const cells = w.cells.flatMap((c): (C | ClosedCell)[] => {
+    if (!isClosed(c))
+      return [
+        c.favorite === undefined || favorites.includes(c.favorite)
+          ? c
+          : compact({ ...c, favorite: undefined })
+      ]
+    if (!favorites.includes(c.favorite) || held(c.favorite) || seen.has(c.favorite)) return []
+    seen.add(c.favorite)
+    return [c]
+  })
+  const missing = favorites
+    .filter((dir) => !held(dir) && !seen.has(dir))
+    .map((dir): ClosedCell => ({ closed: true, favorite: dir }))
+  return [...missing, ...cells]
 }
 
 /** workspace·cell·pane 의 key 는 카운터 하나로 매기므로 셋을 모두 준다. */
 export function layoutKeys(
-  workspaces: { key: number; cells: { key: number; panes: { key: number }[] }[] }[]
+  workspaces: {
+    key: number
+    cells: readonly ({ key: number; panes: { key: number }[] } | ClosedCell)[]
+  }[]
 ): number[] {
   return workspaces.flatMap((w) => [
     w.key,
-    ...w.cells.flatMap((c) => [c.key, ...c.panes.map((p) => p.key)])
+    ...openCells(w).flatMap((c) => [c.key, ...c.panes.map((p) => p.key)])
   ])
 }
 
@@ -384,7 +442,7 @@ export type Tables = {
  *   더한다.
  * - cell 의 배치가 가리키는 pane 이 `panes` 표에 그 cell 의 줄로 모두 있지 않거나 같은 pane 을 두 번 가리키면, 그 cell 을
  *   workspace 의 `dir` 에서 새 pane 하나로 연다.
- * - cell 이 없는 workspace 는 핀일 때만 남긴다.
+ * - 열린 cell 이 없는 workspace 는 `keeps` 일 때만 남긴다.
  */
 export function joinTables(
   t: Tables,
@@ -392,15 +450,23 @@ export function joinTables(
   newPaneId = (): string => randomId('n')
 ): SavedLayout | null {
   type Pane = Omit<LayoutPane, 'key'>
-  type Cell = Omit<CellRow, 'workspace'> & { panes: Pane[] }
-  type Building = WorkspaceRow & { cells: Cell[] }
+  type Cell = Omit<OpenCellRow, 'workspace'> & { panes: Pane[] }
+  type Building = WorkspaceRow & { cells: (Cell | ClosedCell)[] }
   const list: Building[] = firstById(t.workspaces?.rows ?? []).map((w) => ({ ...w, cells: [] }))
   const byId = new Map(list.map((w) => [w.id, w]))
   const panesOf = new Map<string, PaneRow[]>()
   for (const p of firstById(t.panes?.rows ?? []))
     panesOf.set(p.cell, [...(panesOf.get(p.cell) ?? []), p])
-  for (const { workspace, ...c } of firstById(t.cells?.rows ?? [])) {
+  const seen = new Set<string>()
+  for (const { workspace, ...c } of t.cells?.rows ?? []) {
     let w = byId.get(workspace)
+    if (isClosed(c)) {
+      // 닫힌 줄만 있는 workspace 를 더하지 않는다. `workspaces` 표를 잃었으면 그 줄이 가리키는 즐겨찾기도 없다.
+      w?.cells.push(c)
+      continue
+    }
+    if (seen.has(c.id)) continue
+    seen.add(c.id)
     if (!w) {
       w = { id: workspace, cells: [] }
       byId.set(workspace, w)
@@ -419,10 +485,12 @@ export function joinTables(
   let next = 0
   let selectedKey: number | null = null
   const workspaces = list
-    .filter((w) => w.pinned || w.cells.length)
+    .filter((w) => keeps(w) || openCells(w).length)
     .map(({ cells: built, ...w }): SavedWorkspace => {
       const key = next++
-      const cells = built.map(({ panes: rows, layout, focused, ...c }) => {
+      const cells = settleFavorites({ ...w, cells: built }).map((cell) => {
+        if (isClosed(cell)) return cell
+        const { panes: rows, layout, focused, ...c } = cell
         const cellKey = next++
         if (c.id === selected) selectedKey = cellKey
         const keys = new Map<string, number>()
@@ -439,7 +507,7 @@ export function joinTables(
           focused: keyOf(focused)
         }
       })
-      return keepFavorites({ key, ...w, cells })
+      return { key, ...w, cells }
     })
   return workspaces.length ? { workspaces, selected: selectedKey } : null
 }
@@ -450,7 +518,7 @@ export function screenPanes(
 ): { panes: ScreenPane[]; cells: string[] } {
   const cells = (screen?.workspaces ?? [])
     .filter((w) => workspace === undefined || w.id === workspace)
-    .flatMap((w) => w.cells)
+    .flatMap((w) => openCells(w))
   return { panes: cells.flatMap((c) => c.panes), cells: cells.map((c) => c.id) }
 }
 

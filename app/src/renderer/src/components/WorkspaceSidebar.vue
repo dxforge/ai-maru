@@ -3,6 +3,7 @@ import { computed, ref, useTemplateRef, type DeepReadonly } from 'vue'
 import type { JobView } from '../../../shared/job'
 import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
+import { openCells } from '../../../shared/screen'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { GitBranch, Star, X } from '@lucide/vue'
@@ -25,9 +26,9 @@ import {
   type Span
 } from '../workspace/sidebarDrag'
 import {
-  closedRows,
   jobRow,
   paneRow,
+  sidebarSlots,
   workspaceMarks,
   type ClosedRow,
   type JobRow,
@@ -35,14 +36,7 @@ import {
   type RowSource
 } from '../workspace/sidebarRows'
 import PinIcon from './PinIcon.vue'
-import {
-  focusedPane,
-  orderedPanes,
-  pinnedCount,
-  type Cell,
-  type Pane,
-  type Workspace
-} from '../workspace/store'
+import { focusedPane, orderedPanes, type Cell, type Pane, type Workspace } from '../workspace/store'
 
 const {
   workspaces,
@@ -127,8 +121,9 @@ type Item = ReturnType<typeof cellGroup> | ({ kind: 'closed' } & ClosedRow)
 
 function items(src: RowSource, w: DeepReadonly<Workspace>): Item[] {
   const base = labelBase(w)
-  const closed = closedRows(w, home).map((r): Item => ({ kind: 'closed', ...r }))
-  return [...closed, ...w.cells.map((c, i) => cellGroup(src, c, base, i))]
+  return sidebarSlots(w, home).map((s): Item =>
+    'cell' in s ? cellGroup(src, s.cell, base, s.index) : { kind: 'closed', ...s }
+  )
 }
 
 const groups = computed(() => {
@@ -186,21 +181,19 @@ const spanOf = (el: Element): Span => {
 function spans(): SidebarSpans {
   const slot = list.value!.querySelector(':scope > .new-workspace')
   return {
-    pinned: pinnedCount(workspaces),
     workspaces: Array.from(
       list.value!.querySelectorAll<HTMLElement>(':scope > .workspace'),
       (el) => {
         const key = Number(el.dataset.workspace)
         const w = workspaces.find((x) => x.key === key)
-        const closed = el.querySelectorAll<HTMLElement>(':scope > .closed-card')
         return {
           ...spanOf(el),
           key,
           head: spanOf(el.querySelector(':scope > .workspace-head')!),
-          count: w?.cells.length ?? 0,
+          count: w ? openCells(w).length : 0,
           cells: Array.from(el.querySelectorAll(':scope > .group'), spanOf),
           folded: folded.has(key),
-          closedBottom: closed.length ? spanOf(closed[closed.length - 1]).bottom : undefined
+          closed: Array.from(el.querySelectorAll(':scope > .closed-card'), spanOf)
         }
       }
     ),
@@ -282,6 +275,10 @@ const cellDragged = (cell: number): boolean =>
 const workspaceDragged = (workspace: number): boolean =>
   dragged.value?.kind === 'workspace' && dragged.value.workspace === workspace
 const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin Workspace' : 'Pin Workspace')
+const pinTip = (pinned: boolean): string =>
+  pinned
+    ? pinLabel(pinned)
+    : `${pinLabel(pinned)} — keep it in the sidebar after its last cell closes`
 const favoriteLabel = (favorite: boolean): string =>
   favorite ? 'Remove from Favorites' : 'Add to Favorites'
 </script>
@@ -329,7 +326,7 @@ const favoriteLabel = (favorite: boolean): string =>
           <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 핀의 pointerdown·click·dblclick 이 헤더의 끌기·접기·이름 고치기로 전해지지 않게 막는다. -->
           <span class="pin-slot" :class="{ on: pinned }"
             ><span
-              v-tooltip="pinLabel(pinned)"
+              v-tooltip="pinTip(pinned)"
               role="button"
               class="pin"
               :class="{ on: pinned }"

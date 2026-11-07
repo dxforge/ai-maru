@@ -7,6 +7,7 @@ import {
   type Label,
   type Named
 } from '../../../shared/names'
+import { isClosed, type ClosedCell } from '../../../shared/screen'
 import { firstHeading } from './markdown'
 
 // `at` 은 renderer 가 문서를 받은 시각(ms)이다. 문서를 고쳐 보냈으면 고친 시각이다.
@@ -48,17 +49,19 @@ export type ChoiceGroup = { id: string; workspace: string; cells: CellChoice[] }
 type NamedWorkspace = {
   id: string
   name?: string
-  cells: readonly { id: string; focused: number; panes: readonly (Named & { key: number })[] }[]
+  cells: readonly (
+    { id: string; focused: number; panes: readonly (Named & { key: number })[] } | ClosedCell
+  )[]
 }
 
 export function openCells(workspaces: readonly NamedWorkspace[], home?: string): OpenCell[] {
   return workspaces.flatMap((w) => {
     const workspace = workspaceName(w, home)
-    return w.cells.map((c) => ({
-      id: c.id,
-      group: w.id,
-      name: { workspace, cell: cellLabel(focusedPane(c)) }
-    }))
+    return w.cells.flatMap((c) =>
+      isClosed(c)
+        ? []
+        : [{ id: c.id, group: w.id, name: { workspace, cell: cellLabel(focusedPane(c)) } }]
+    )
   })
 }
 

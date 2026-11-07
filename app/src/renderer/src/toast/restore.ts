@@ -7,7 +7,7 @@ export function restoreToast(notice: RestoreNotice): Toast {
       level: 'warning',
       title: "Couldn't restore workspace details",
       lines: [
-        "The saved workspace names, pins and favorites couldn't be read. Workspaces are no longer pinned and have lost their custom names and favorites. Pinned workspaces with no cells were removed."
+        "The saved workspace names, pins and favorites couldn't be read. Workspaces are no longer pinned and have lost their custom names and favorites. Workspaces without cells were removed."
       ]
     }
   if (notice === 'cells')

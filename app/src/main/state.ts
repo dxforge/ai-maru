@@ -2,6 +2,8 @@ import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import {
+  keeps,
+  openCells,
   parseCellsTable,
   parsePanesTable,
   parseScreen,
@@ -213,7 +215,7 @@ export function fullRestore(
 /** 되살린 pane 의 key 마다 붙을 pty 다. `sessions` 에 없는 pane(새로 연 pane)은 새 셸을 띄운다. */
 export function restorePtys(layout: SavedLayout | null, s: SessionsPart): Record<number, string> {
   const ptyOf = new Map(s.ptys.map((p) => [p.pane, p.pty]))
-  const panes = (layout?.workspaces ?? []).flatMap((w) => w.cells.flatMap((c) => c.panes))
+  const panes = (layout?.workspaces ?? []).flatMap((w) => openCells(w).flatMap((c) => c.panes))
   return Object.fromEntries(
     panes.flatMap((p) => {
       const pty = ptyOf.get(p.id)
@@ -333,11 +335,21 @@ export type StateStore = {
 function dropped(state: StateFile, outcome: Outcome): StateFile {
   if (outcome === 'keep') return state
   if (outcome === 'layout') return { ...state, sessions: null }
-  const { workspaces } = state
+  const { workspaces, cells } = state
+  const rows = workspaces?.rows.filter(keeps) ?? []
+  const favorites = new Map(rows.map((w) => [w.id, w.favorites ?? []]))
   return {
     ...state,
-    workspaces: workspaces && { ...workspaces, rows: workspaces.rows.filter((w) => w.pinned) },
-    cells: null,
+    workspaces: workspaces && { ...workspaces, rows },
+    // 즐겨찾기 cell 은 cell 을 하나씩 닫은 것처럼 그 자리의 닫힌 줄로 남긴다.
+    cells: cells && {
+      ...cells,
+      rows: cells.rows.flatMap((c): CellRow[] =>
+        c.favorite !== undefined && favorites.get(c.workspace)?.includes(c.favorite)
+          ? [{ workspace: c.workspace, closed: true, favorite: c.favorite }]
+          : []
+      )
+    },
     panes: null,
     sessions: null
   }
@@ -435,7 +447,7 @@ export function createStateStore(o: {
       applyScreen()
       // `panes` 를 잃은 cell 도 pane 하나로 열리므로, 표의 줄 수가 아니라 다음에 뜰 화면의 pane 을 센다.
       const ws = joinTables(state)?.workspaces ?? []
-      return ws.reduce((n, w) => n + w.cells.reduce((m, c) => m + c.panes.length, 0), 0)
+      return ws.reduce((n, w) => n + openCells(w).reduce((m, c) => m + c.panes.length, 0), 0)
     }
   }
 }

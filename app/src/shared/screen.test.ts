@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isClosed,
   joinTables,
   parseCellsTable,
   parsePanesTable,
   parseScreen,
   parseViewPrefs,
   parseWorkspacesTable,
+  openCells,
   screenPanes,
   splitScreen,
   STATE_VERSIONS,
@@ -53,7 +55,16 @@ const reparse = (t: ReturnType<typeof splitScreen>) => ({
   panes: parsePanesTable(reread(t.panes))
 })
 
+const first = (s: ScreenState): ScreenCell => openCells(s.workspaces[0])[0]
+
 describe('parseScreen', () => {
+  it('닫힌 줄은 cell 들 사이 그 자리에 그대로 읽는다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].favorites = ['/a']
+    s.workspaces[0].cells.unshift({ closed: true, favorite: '/a' })
+    expect(parseScreen(s)!.workspaces[0].cells[0]).toEqual({ closed: true, favorite: '/a' })
+  })
+
   it('맞는 화면은 그대로 돌려준다', () => {
     expect(parseScreen(clone())).toEqual(screen)
   })
@@ -63,7 +74,15 @@ describe('parseScreen', () => {
     ['pty id 모양이 아님', (s) => (s.workspaces[0].cells[0].panes[0].ptyId = '../x')],
     ['pane id 가 문자열이 아님', (s) => (s.workspaces[0].cells[0].panes[0].id = 1)],
     ['pane 이 없는 cell', (s) => (s.workspaces[0].cells[0].panes = [])],
-    ['핀이 없는데 cell 이 없는 workspace', (s) => (s.workspaces[0].cells = [])],
+    ['핀도 즐겨찾기도 없는데 cell 이 없는 workspace', (s) => (s.workspaces[0].cells = [])],
+    [
+      '닫힌 줄의 closed 가 true 가 아님',
+      (s) => s.workspaces[0].cells.push({ closed: 1, favorite: '/a' })
+    ],
+    [
+      '닫힌 줄의 즐겨찾기가 문자열이 아님',
+      (s) => s.workspaces[0].cells.push({ closed: true, favorite: 1 })
+    ],
     ['workspace 핀이 true 가 아님', (s) => (s.workspaces[0].pinned = 1)],
     ['workspace dir 이 문자열이 아님', (s) => (s.workspaces[0].dir = 1)],
     ['즐겨찾기 목록이 배열이 아님', (s) => (s.workspaces[0].favorites = '/a')],
@@ -97,28 +116,28 @@ describe('parseScreen', () => {
 
   it('cell 의 글꼴 크기는 없어도 되고, 있으면 그대로 돌려준다', () => {
     const s = clone() as ScreenState
-    s.workspaces[0].cells[0].fontSize = 16.5
-    expect(parseScreen(s)!.workspaces[0].cells[0].fontSize).toBe(16.5)
+    first(s).fontSize = 16.5
+    expect(first(parseScreen(s)!).fontSize).toBe(16.5)
   })
 
   it('pane 의 keep 은 없어도 되고, 있으면 그대로 돌려준다', () => {
     const s = clone() as ScreenState
-    s.workspaces[0].cells[0].panes[1].keep = true
-    expect(parseScreen(s)!.workspaces[0].cells[0].panes[1].keep).toBe(true)
-    expect(parseScreen(clone())!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('keep')
+    first(s).panes[1].keep = true
+    expect(first(parseScreen(s)!).panes[1].keep).toBe(true)
+    expect(first(parseScreen(clone())!).panes[1]).not.toHaveProperty('keep')
   })
 
   it('cell 의 pane 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {
     const s = clone() as ScreenState
-    s.workspaces[0].cells[0].paneCols = 110
-    expect(parseScreen(s)!.workspaces[0].cells[0].paneCols).toBe(110)
+    first(s).paneCols = 110
+    expect(first(parseScreen(s)!).paneCols).toBe(110)
   })
 
   it('cell 의 즐겨찾기는 없어도 되고, 있으면 그대로 돌려준다', () => {
     const s = clone() as ScreenState
-    s.workspaces[0].cells[0].favorite = '/work/app'
-    expect(parseScreen(s)!.workspaces[0].cells[0].favorite).toBe('/work/app')
-    expect(parseScreen(clone())!.workspaces[0].cells[0]).not.toHaveProperty('favorite')
+    first(s).favorite = '/work/app'
+    expect(first(parseScreen(s)!).favorite).toBe('/work/app')
+    expect(first(parseScreen(clone())!)).not.toHaveProperty('favorite')
   })
 
   it('예전 판이 쓴 cell 의 pin 과 workspace 의 favorite 은 버린다', () => {
@@ -145,14 +164,18 @@ describe('parseScreen', () => {
     expect(parseWorkspacesTable(reread(workspaces))!.rows[0]).not.toHaveProperty('name')
   })
 
-  it('핀 workspace 는 cell 없이도 받고, 표로 나눴다가 이어도 그대로다', () => {
+  it('핀 workspace 는 열린 cell 없이도 받고, 표로 나눴다가 이어도 그대로다', () => {
     const s = clone() as ScreenState
+    const closed = [
+      { closed: true as const, favorite: '/work/app' },
+      { closed: true as const, favorite: '/work/lib' }
+    ]
     Object.assign(s.workspaces[0], {
       key: 0,
       pinned: true,
       dir: '/work/app',
       favorites: ['/work/app', '/work/lib'],
-      cells: []
+      cells: closed
     })
     const parsed = parseScreen(s)!.workspaces[0]
     expect(parsed).toEqual({
@@ -161,14 +184,20 @@ describe('parseScreen', () => {
       pinned: true,
       dir: '/work/app',
       favorites: ['/work/app', '/work/lib'],
-      cells: []
+      cells: closed
     })
     const t = splitScreen(s)
     expect(t.workspaces.rows).toEqual([
       { id: 'w-00000001', pinned: true, dir: '/work/app', favorites: ['/work/app', '/work/lib'] }
     ])
-    expect(t.cells.rows).toEqual([])
+    expect(t.cells.rows).toEqual(closed.map((c) => ({ ...c, workspace: 'w-00000001' })))
     expect(joinTables(reparse(t))!.workspaces).toEqual([parsed])
+  })
+
+  it('핀이 없어도 즐겨찾기가 있으면 cell 없이 받는다', () => {
+    const s = clone() as ScreenState
+    Object.assign(s.workspaces[0], { favorites: ['/work/app'], cells: [] })
+    expect(parseScreen(s)!.workspaces[0].cells).toEqual([])
   })
 
   it('핀·dir·즐겨찾기는 없어도 되고, 빈 즐겨찾기 목록은 키를 없앤다', () => {
@@ -284,7 +313,7 @@ describe('joinTables', () => {
     focused: key + 1,
     ...(favorite && { favorite })
   })
-  // key 는 joinTables 가 매기는 순서(workspace, 그 cell, 그 pane)로 둔다. 핀을 뺀 workspace 도 즐겨찾기를 남긴다(`setPinned`).
+  // key 는 joinTables 가 매기는 순서(workspace, 그 cell, 그 pane)로 둔다. 핀이 없는 workspace 도 즐겨찾기를 가질 수 있다.
   const full: ScreenState = {
     ...screen,
     workspaces: [
@@ -298,7 +327,13 @@ describe('joinTables', () => {
         cells: [at(1, '/work/app', '/work/app'), at(3, '/work/lib')]
       },
       { key: 5, id: 'w-0000000b', pinned: true, dir: '/work/docs', cells: [] },
-      { key: 6, id: 'w-0000000c', name: '리뷰', favorites: ['/r'], cells: [at(7, '/r', '/r')] }
+      {
+        key: 6,
+        id: 'w-0000000c',
+        name: '리뷰',
+        favorites: ['/r', '/s'],
+        cells: [at(7, '/r', '/r'), { closed: true, favorite: '/s' }]
+      }
     ],
     selected: 3
   }
@@ -310,7 +345,10 @@ describe('joinTables', () => {
       return q as LayoutPane
     })
   })
-  const strip = (w: ScreenState['workspaces'][number]) => ({ ...w, cells: w.cells.map(stripCell) })
+  const strip = (w: ScreenState['workspaces'][number]) => ({
+    ...w,
+    cells: w.cells.map((c) => (isClosed(c) ? c : stripCell(c)))
+  })
   const tables = () => reparse(splitScreen(full))
   const join = (t = tables(), selected: string | undefined = 'c-3') =>
     joinTables(t, selected, () => 'n-new')
@@ -334,13 +372,15 @@ describe('joinTables', () => {
     expect(joinTables(reparse(splitScreen(s)))!.workspaces[0].cells[0]).toEqual(stripCell(c))
   })
 
-  it('workspaces 표가 없으면 cell 이 가리키는 id 로 이름·핀·즐겨찾기 없는 workspace 를 만들고, cell 이 없던 핀 workspace 는 버린다', () => {
+  it('workspaces 표가 없으면 cell 이 가리키는 id 로 이름·핀·즐겨찾기 없는 workspace 를 만들고, 열린 cell 이 없던 workspace 와 닫힌 줄은 버린다', () => {
     const out = join({ ...tables(), workspaces: null })!
     expect(out.workspaces.map((w) => [w.key, w.id, w.name, w.pinned, w.dir, w.favorites])).toEqual([
       [0, 'w-0000000a', undefined, undefined, undefined, undefined],
       [5, 'w-0000000c', undefined, undefined, undefined, undefined]
     ])
-    expect(out.workspaces.flatMap((w) => w.cells.map((c) => [c.key, c.favorite]))).toEqual([
+    expect(
+      out.workspaces.flatMap((w) => w.cells.map((c) => ['key' in c ? c.key : c, c.favorite]))
+    ).toEqual([
       [1, undefined],
       [3, undefined],
       [6, undefined]
@@ -355,7 +395,7 @@ describe('joinTables', () => {
     expect(out.workspaces.map((w) => w.id)).toEqual(['w-0000000b', 'w-0000000c', 'w-0000000a'])
   })
 
-  it('cells 표가 없으면 핀 workspace 만 cell 없이 이름·dir·즐겨찾기와 함께 돌아온다', () => {
+  it('cells 표가 없으면 핀이나 즐겨찾기가 있는 workspace 만 열린 cell 없이 돌아오고, 즐겨찾기마다 맨 앞에 닫힌 줄을 둔다', () => {
     expect(join({ ...tables(), cells: null, panes: null })).toEqual({
       workspaces: [
         {
@@ -365,9 +405,19 @@ describe('joinTables', () => {
           pinned: true,
           dir: '/work',
           favorites: ['/work/app'],
-          cells: []
+          cells: [{ closed: true, favorite: '/work/app' }]
         },
-        { key: 1, id: 'w-0000000b', pinned: true, dir: '/work/docs', cells: [] }
+        { key: 1, id: 'w-0000000b', pinned: true, dir: '/work/docs', cells: [] },
+        {
+          key: 2,
+          id: 'w-0000000c',
+          name: '리뷰',
+          favorites: ['/r', '/s'],
+          cells: [
+            { closed: true, favorite: '/r' },
+            { closed: true, favorite: '/s' }
+          ]
+        }
       ],
       selected: null
     })
@@ -377,13 +427,13 @@ describe('joinTables', () => {
     let n = 0
     const out = joinTables({ ...tables(), panes: null }, 'c-3', () => `n-new${n++}`)!
     expect(
-      out.workspaces.flatMap((w) => w.cells.map((c) => [c.id, c.panes, c.layout, c.focused]))
+      out.workspaces.flatMap((w) => openCells(w).map((c) => [c.id, c.panes, c.layout, c.focused]))
     ).toEqual([
       ['c-1', [{ key: 2, id: 'n-new0', cwd: '/work' }], { pane: 2 }, 2],
       ['c-3', [{ key: 4, id: 'n-new1', cwd: '/work' }], { pane: 4 }, 4],
       ['c-7', [{ key: 8, id: 'n-new2' }], { pane: 8 }, 8]
     ])
-    expect(out.workspaces[0].cells[0].favorite).toBe('/work/app')
+    expect(openCells(out.workspaces[0])[0].favorite).toBe('/work/app')
     expect(out.selected).toBe(3)
   })
 
@@ -394,7 +444,7 @@ describe('joinTables', () => {
       'c-3',
       () => `n-new${n++}`
     )!
-    expect(out.workspaces.flatMap((w) => w.cells.map((c) => c.panes))).toEqual([
+    expect(out.workspaces.flatMap((w) => openCells(w).map((c) => c.panes))).toEqual([
       [{ key: 2, id: 'n-new0' }],
       [{ key: 4, id: 'n-new1' }],
       [{ key: 7, id: 'n-new2' }]
@@ -404,7 +454,7 @@ describe('joinTables', () => {
   it('배치가 가리키는 pane 이 그 cell 의 줄에 없으면 그 cell 만 새 pane 하나로 연다', () => {
     const t = tables()
     const rows = t.panes!.rows.map((p) => (p.id === 'n-4' ? { ...p, cell: 'c-1' } : p))
-    const cells = join({ ...t, panes: { ...t.panes!, rows } })!.workspaces[0].cells
+    const cells = openCells(join({ ...t, panes: { ...t.panes!, rows } })!.workspaces[0])
     expect(cells[0].panes.map((p) => p.id)).toEqual(['n-2'])
     expect(cells[1].panes).toEqual([{ key: 4, id: 'n-new', cwd: '/work' }])
   })
@@ -412,16 +462,18 @@ describe('joinTables', () => {
   it('배치가 같은 pane 을 두 번 가리키면 그 cell 을 새 pane 하나로 연다', () => {
     const t = tables()
     const twice = { split: 'down' as const, first: { pane: 'n-2' }, second: { pane: 'n-2' } }
-    const rows = t.cells!.rows.map((c) => (c.id === 'c-1' ? { ...c, layout: twice } : c))
+    const rows = t.cells!.rows.map((c) =>
+      'id' in c && c.id === 'c-1' ? { ...c, layout: twice } : c
+    )
     const out = join({ ...t, cells: { ...t.cells!, rows } })!
-    expect(out.workspaces[0].cells[0].panes.map((p) => p.id)).toEqual(['n-new'])
+    expect(first(out as ScreenState).panes.map((p) => p.id)).toEqual(['n-new'])
   })
 
   it('focused 가 배치에 없으면 첫 pane 에 둔다', () => {
     const t = tables()
     const rows = t.cells!.rows.map((c) => ({ ...c, focused: 'n-x' }))
     const out = join({ ...t, cells: { ...t.cells!, rows } })!
-    expect(out.workspaces[0].cells[0].focused).toBe(2)
+    expect(openCells(out.workspaces[0])[0].focused).toBe(2)
   })
 
   it('같은 id 의 줄이 두 번 있으면 앞의 것만 쓴다', () => {
@@ -436,9 +488,59 @@ describe('joinTables', () => {
     expect(out.workspaces.filter((w) => w.id === 'w-0000000a').map((w) => w.name)).toEqual([
       'atlas'
     ])
-    expect(out.workspaces[0].cells.map((c) => [c.id, c.fontSize])).toEqual([
+    expect(openCells(out.workspaces[0]).map((c) => [c.id, c.fontSize])).toEqual([
       ['c-1', undefined],
       ['c-3', undefined]
+    ])
+  })
+
+  const shape = (out: { workspaces: { cells: ({ key: number } | { favorite: string })[] }[] }) =>
+    out.workspaces[0].cells.map((c) => ('key' in c ? c.key : c.favorite))
+
+  it('workspace 의 즐겨찾기에 없는 닫힌 줄은 지우고, 나머지 닫힌 줄은 자리를 지킨다', () => {
+    const w = {
+      key: 0,
+      id: 'w-0000000f',
+      favorites: ['/work/b'],
+      cells: [
+        { closed: true as const, favorite: '/work/a' },
+        at(1, '/work/c'),
+        { closed: true as const, favorite: '/work/b' }
+      ]
+    }
+    expect(shape(joinTables(reparse(splitScreen({ ...screen, workspaces: [w] })))!)).toEqual([
+      1,
+      '/work/b'
+    ])
+  })
+
+  it('열린 cell 이 맡은 즐겨찾기의 닫힌 줄과 같은 즐겨찾기의 두 번째 닫힌 줄은 지운다', () => {
+    const w = {
+      key: 0,
+      id: 'w-0000000f',
+      favorites: ['/work/a', '/work/b'],
+      cells: [
+        { closed: true as const, favorite: '/work/a' },
+        { closed: true as const, favorite: '/work/b' },
+        at(1, '/work/a', '/work/a'),
+        { closed: true as const, favorite: '/work/b' }
+      ]
+    }
+    expect(shape(joinTables(reparse(splitScreen({ ...screen, workspaces: [w] })))!)).toEqual([
+      '/work/b',
+      1
+    ])
+  })
+
+  it('닫힌 줄만 있는 workspace 는 열린 cell 없이 남는다', () => {
+    const w = {
+      key: 0,
+      id: 'w-0000000f',
+      favorites: ['/work/a'],
+      cells: [{ closed: true as const, favorite: '/work/a' }]
+    }
+    expect(joinTables(reparse(splitScreen({ ...screen, workspaces: [w] })))!.workspaces).toEqual([
+      { ...w, key: 0 }
     ])
   })
 
@@ -451,7 +553,7 @@ describe('joinTables', () => {
       cells: [at(1, '/work/a', '/work/a'), at(3, '/work/b', '/work/b'), at(5, '/work/c')]
     }
     const out = joinTables(reparse(splitScreen({ ...screen, workspaces: [w] })))!
-    expect(out.workspaces[0].cells.map((c) => [c.key, c.favorite])).toEqual([
+    expect(out.workspaces[0].cells.map((c) => ['key' in c ? c.key : c, c.favorite])).toEqual([
       [1, undefined],
       [3, '/work/b'],
       [5, undefined]
@@ -466,7 +568,7 @@ describe('joinTables', () => {
   it('모두 없거나 남는 workspace 가 없으면 null', () => {
     expect(joinTables({ workspaces: null, cells: null, panes: null })).toBeNull()
     const t = tables()
-    const rows = t.workspaces!.rows.map((w) => ({ ...w, pinned: undefined }))
+    const rows = t.workspaces!.rows.map((w) => ({ ...w, pinned: undefined, favorites: undefined }))
     expect(
       join({ ...t, workspaces: { ...t.workspaces!, rows }, cells: null, panes: null })
     ).toBeNull()

@@ -173,7 +173,7 @@ describe('checkRestart', () => {
     expect(
       restartDialog((await check(bin, join(dir, 'missing.json'))) as Incompatible).detail
     ).toBe(
-      "The installed app's saved-state format couldn't be determined. All cells will close. Workspaces will be unpinned and lose their custom names and favorites. Pinned workspaces with no cells will be removed."
+      "The installed app's saved-state format couldn't be determined. All cells will close. Workspaces will be unpinned and lose their custom names and favorites. Workspaces without cells will be removed."
     )
   })
 })
@@ -279,7 +279,7 @@ describe('restartDialog · restartRefusal', () => {
     expect(restartDialog(pins)).toEqual({
       message: 'Restart without workspace pins?',
       detail:
-        'The installed app uses a different saved-state format for the workspaces. Workspaces will be unpinned and lose their custom names and favorites. Pinned workspaces with no cells will be removed.',
+        'The installed app uses a different saved-state format for the workspaces. Workspaces will be unpinned and lose their custom names and favorites. Workspaces without cells will be removed.',
       buttons: ['Restart without workspace pins', 'Cancel']
     })
     expect(

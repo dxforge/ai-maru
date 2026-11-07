@@ -1384,7 +1384,7 @@ test('cell 이 없는 핀 workspace 만 남기고 끝내도 다음 실행에 그
   await expect(workspaceNames(again.page)).not.toHaveText(['atlas'])
 })
 
-test('End everything 으로 끄면 터미널을 끝내고, 핀 workspace 는 이름·즐겨찾기와 함께 cell 없이 남으며 핀 없는 workspace 는 남지 않는다', async ({
+test('End everything 으로 끄면 터미널을 끝내고, 즐겨찾기가 있는 workspace 는 핀이 없어도 이름·즐겨찾기와 함께 cell 없이 남으며 둘 다 없는 workspace 는 남지 않는다', async ({
   launch,
   dataDir
 }) => {
@@ -1399,7 +1399,8 @@ test('End everything 으로 끄면 터미널을 끝내고, 핀 workspace 는 이
   await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
   await cellItems(page).nth(0).hover()
   await cellFavorite(page, 0).click()
-  await expect(workspaceHeads(page).nth(0).locator('.pin')).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(workspaceHeads(page).nth(0).locator('.pin')).toHaveAttribute('aria-pressed', 'false')
   await newWorkspace(launched, 2)
   await stubDialog(app, END_EVERYTHING)
   const closed = app.waitForEvent('close')
@@ -1416,7 +1417,7 @@ test('End everything 으로 끄면 터미널을 끝내고, 핀 workspace 는 이
   await run(again.page, 'echo up-$((1+1))', 'up-2')
 })
 
-test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell 이 제자리에 있으며 키는 그 터미널로 간다. 닫으면 닫힌 줄로 남고 누르면 뜬 런처에서 고른 셸을 첫 자리의 cell 로 그 디렉토리에 연다. 재시작 뒤에도 남는다', async ({
+test('cell 을 즐겨찾기에 넣어도 workspace 에 핀이 꽂히지 않고 줄이 옮겨지지 않으며 키는 그 터미널로 간다. 닫으면 그 자리에 닫힌 줄로 남고, 누르면 뜬 런처에서 고른 셸을 그 자리의 cell 로 그 디렉토리에 연다. 재시작 뒤에도 남는다', async ({
   launch,
   dataDir
 }) => {
@@ -1433,29 +1434,31 @@ test('cell 을 즐겨찾기에 넣으면 workspace 에 핀이 꽂히고 그 cell
   await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
   await expect(workspaceHeads(page).nth(1).locator('.pin')).toBeHidden()
 
-  // 핀이 꽂힌 workspace 는 핀 묶음으로 옮겨 가 목록의 맨 앞에 오고, 그 터미널들도 DOM 에서 앞으로 옮겨진다.
+  const names = await workspaceNames(page).allTextContents()
   await cellItems(page).nth(4).hover()
   await expect(cellFavorite(page, 4)).toHaveAttribute('aria-pressed', 'false')
   await expect(cellFavorite(page, 4).locator('svg')).toHaveAttribute('fill', 'none')
   await cellFavorite(page, 4).click()
-  const pin = workspaceHeads(page).nth(0).locator('.pin')
-  await expect(pin).toHaveAttribute('aria-pressed', 'true')
-  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
-  await expect(cellFavorite(page, 1).locator('svg')).toHaveAttribute('fill', 'currentColor')
-  await expect(cellItems(page).nth(1)).toContainText('sub')
-  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'false')
+  await expect(cellFavorite(page, 4)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 4).locator('svg')).toHaveAttribute('fill', 'currentColor')
+  await expect(cellItems(page).nth(4)).toContainText('sub')
+  await expect(cellFavorite(page, 3)).toHaveAttribute('aria-pressed', 'false')
+  await expect(workspaceHeads(page).nth(1).locator('.pin')).toHaveAttribute('aria-pressed', 'false')
+  await expect(workspaceNames(page)).toHaveText(names)
   await run(page, 'echo kept-$((1+1))', 'kept-2')
 
   await page.keyboard.type('exit\n')
   await expect(cellItems(page)).toHaveCount(4)
   await expect(closedRows(page)).toHaveCount(1)
   await expect(closedRows(page)).toContainText('sub')
+  const above = (await cellItems(page).nth(3).boundingBox())!
+  expect((await closedRows(page).boundingBox())!.y).toBeGreaterThan(above.y)
 
   await reopenShell(page, closedRows(page))
   await expect(cellItems(page)).toHaveCount(5)
   await expect(closedRows(page)).toHaveCount(0)
-  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
-  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'false')
+  await expect(cellFavorite(page, 4)).toHaveAttribute('aria-pressed', 'true')
+  await expect(cellFavorite(page, 3)).toHaveAttribute('aria-pressed', 'false')
   await run(page, 'pwd', `${home}/sub`)
 
   await page.keyboard.type('exit\n')
@@ -1490,7 +1493,7 @@ test('즐겨찾기는 cell 줄과 닫힌 줄의 별에서 빼고, workspace 의 
   await expect(closedRows(page)).toHaveCount(0)
   // 다른 cell 의 별을 눌러도 키는 고른 cell 의 터미널로 간다.
   await run(page, 'echo un-$((1+1))', 'un-2')
-  await expect(pin).toHaveAttribute('aria-pressed', 'true')
+  await expect(pin).toHaveAttribute('aria-pressed', 'false')
 
   await cellItems(page).nth(2).hover()
   await cellFavorite(page, 2).click()
@@ -1506,6 +1509,8 @@ test('즐겨찾기는 cell 줄과 닫힌 줄의 별에서 빼고, workspace 의 
   await cellFavorite(page, 1).click()
   await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
   await workspaceHeads(page).nth(0).hover()
+  await pin.click()
+  await expect(pin).toHaveAttribute('aria-pressed', 'true')
   await pin.click()
   await expect(pin).toHaveAttribute('aria-pressed', 'false')
   await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
@@ -1603,12 +1608,13 @@ test('닫힌 즐겨찾기 줄을 누르면 그 줄 바로 아래에 줄의 폭�
   const home = zshHome(dataDir, 'sub')
   const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
   const { page } = launched
-  await run(page, 'echo up-$((1+1))', 'up-2')
-  await newCell(launched, 2)
+  // 닫힌 줄 아래에 줄이 남아야 런처가 그 줄을 밀지 않는지 볼 수 있으므로, 첫 cell 을 즐겨찾기에 넣고 닫는다.
   await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
-  await cellItems(page).nth(1).hover()
-  await cellFavorite(page, 1).click()
-  await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
+  await newCell(launched, 2)
+  await cellItems(page).nth(0).hover()
+  await cellFavorite(page, 0).click()
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await cellItems(page).nth(0).click()
   await page.keyboard.type('exit\n')
   await expect(closedRows(page)).toHaveCount(1)
   const card = page.locator('.sidebar .closed-card')
@@ -1654,11 +1660,6 @@ test('사이드바를 접으면 닫힌 줄의 런처가 펼친 최소 폭일 때
   const { app, page } = launched
   await run(page, 'echo up-$((1+1))', 'up-2')
   for (let n = 2; n <= 3; n++) await newCell(launched, n)
-  // 핀을 꽂은 workspace 는 핀 workspace 들의 뒤로 가므로, 닫힌 줄이 목록 끝에 남도록 첫 workspace 에 먼저 핀을 꽂는다.
-  const pin = workspaceHeads(page).nth(0).locator('.pin')
-  await workspaceHeads(page).nth(0).hover()
-  await pin.click()
-  await expect(pin).toHaveAttribute('aria-pressed', 'true')
   await newWorkspace(launched, 4)
   await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
   await cellItems(page).nth(3).hover()
