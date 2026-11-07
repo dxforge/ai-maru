@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
-import { X } from '@lucide/vue'
+import { Folder, X } from '@lucide/vue'
 import { nameOnFocusLoss } from '../../../shared/names'
 import type { Anchor } from '../launcher/anchor'
 import type { DirRow } from '../workspace/sidebarRows'
@@ -10,7 +10,7 @@ const { name, favorites, pinned, head } = defineProps<{
   name: string
   favorites: readonly DirRow[]
   pinned: boolean
-  /** 메뉴를 옆에 띄울 workspace 헤더 */
+  /** 메뉴를 연 workspace 헤더. 메뉴는 그 안의 ⋮ 버튼 아래에 뜬다. */
   head: HTMLElement
 }>()
 
@@ -53,13 +53,16 @@ onMounted(async () => {
   document.addEventListener('pointerdown', onPointerDown, true)
   window.addEventListener('resize', onResize)
   window.addEventListener('focus', onWindowFocus)
-  const h = head.getBoundingClientRect()
-  at.value = { left: h.right + GAP, top: h.top }
+  const b = (menuButton() ?? head).getBoundingClientRect()
+  at.value = { left: b.left, top: b.bottom + GAP }
   await nextTick()
   const r = root.value!.getBoundingClientRect()
+  const below = b.bottom + GAP
+  const above = b.top - GAP - r.height
+  const top = below + r.height <= innerHeight - MARGIN || above < MARGIN ? below : above
   at.value = {
-    left: Math.max(MARGIN, Math.min(h.right + GAP, window.innerWidth - MARGIN - r.width)),
-    top: Math.max(MARGIN, Math.min(h.top, window.innerHeight - MARGIN - r.height))
+    left: Math.max(MARGIN, Math.min(b.left, innerWidth - MARGIN - r.width)),
+    top: Math.max(MARGIN, Math.min(top, innerHeight - MARGIN - r.height))
   }
 })
 onBeforeUnmount(() => {
@@ -68,15 +71,16 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', onWindowFocus)
 })
 
+const menuButton = (): Element | null => head.querySelector('.workspace-menu-button')
+
 // 메뉴를 여닫는 헤더의 ⋮ 버튼은 스스로 메뉴를 닫으므로 여기서 닫지 않는다.
 function onPointerDown(e: PointerEvent): void {
   const t = e.target as Element | null
-  if (t && (root.value?.contains(t) || head.querySelector('.workspace-menu-button')?.contains(t)))
-    return
+  if (t && (root.value?.contains(t) || menuButton()?.contains(t))) return
   close(true)
 }
 
-// 창 크기가 바뀌면 헤더가 움직여 메뉴가 헤더 옆에서 떨어진다.
+// 창 크기가 바뀌면 헤더가 움직여 메뉴가 ⋮ 버튼에서 떨어진다.
 function onResize(): void {
   close(false)
 }
@@ -142,8 +146,8 @@ function openFavorite(dir: string): void {
         @mousedown.prevent
         @click="openFavorite(f.dir)"
       >
-        <span class="title">{{ f.name }}</span>
-        <span class="tail">{{ f.path }}</span>
+        <Folder class="icon" /><span class="title">{{ f.name }}</span
+        ><span class="tail">{{ f.path }}</span>
       </button>
       <button
         v-tooltip="'Remove from Favorites'"
@@ -152,7 +156,7 @@ function openFavorite(dir: string): void {
         @mousedown.prevent
         @click="emit('removeFavorite', f.dir)"
       >
-        <X class="text-icon" />
+        <X class="icon" />
       </button>
     </div>
     <div v-if="!favorites.length" class="hint">Star a cell to add its directory</div>
@@ -182,28 +186,34 @@ function openFavorite(dir: string): void {
   position: fixed;
   z-index: 9;
   box-sizing: border-box;
-  width: 280px;
+  width: 260px;
   max-height: calc(100vh - 16px);
-  overflow-y: auto;
   text-transform: none;
   letter-spacing: normal;
   font-weight: normal;
 }
 
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
 .name-field {
-  padding: var(--space-1) var(--space-3);
+  padding: 0 var(--space-3) var(--space-1);
 }
 
 .workspace-name-input {
-  width: 100%;
-  height: 26px;
-  padding: 0 var(--space-3);
   box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-1);
   outline: none;
   background: var(--ground);
-  color: var(--fg);
+  color: inherit;
   font: inherit;
 }
 
@@ -228,18 +238,30 @@ hr {
   color: var(--faint);
 }
 
+.popup-menu .action,
+.popup-menu .favorite-open {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
 .favorite-item {
   display: flex;
   align-items: center;
 }
 
+.favorite-item:hover {
+  background: var(--hover);
+}
+
 .popup-menu .favorite-open {
-  display: flex;
-  align-items: baseline;
   flex: 1;
   min-width: 0;
-  gap: var(--space-3);
   padding-right: var(--space-2);
+}
+
+.popup-menu .favorite-open:hover {
+  background: none;
 }
 
 .title {
@@ -264,22 +286,17 @@ hr {
   flex: none;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   padding: 0;
-  margin-right: var(--space-2);
+  margin-right: var(--space-3);
   border-radius: var(--radius-1);
   color: var(--faint);
 }
 
 .popup-menu .favorite-remove:hover {
   color: var(--fg);
-}
-
-.popup-menu .action {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  background: var(--hover);
 }
 
 .icon {

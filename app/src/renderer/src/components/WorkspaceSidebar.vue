@@ -608,17 +608,19 @@ const favoriteLabel = (favorite: boolean): string =>
 
 .pin.on,
 .workspace-head:hover .pin,
-.workspace-head:focus-visible .pin {
+.workspace-head:focus-visible .pin,
+.workspace-head.menu-open .pin {
   visibility: visible;
 }
 
-/* 메뉴 버튼은 헤더를 가리킬 때와 메뉴가 열려 있을 때만 보인다. 핀과 달리 자리를 늘 차지해 이름이 hover 때 밀리지 않는다. */
+/* 메뉴 버튼은 헤더를 가리킬 때와 메뉴가 열려 있을 때만 보인다. 핀과 달리 자리를 늘 차지해 이름이 hover 때 밀리지 않는다.
+   왼쪽 margin 은 헤더의 gap 을 지워 핀 바로 뒤에 붙인다. */
 .workspace-menu-button {
   flex: none;
   display: flex;
   align-items: center;
   height: 20px;
-  margin-left: calc(-1 * var(--space-2));
+  margin-left: calc(-1 * var(--space-4));
   padding: 0 var(--space-1);
   border-radius: var(--radius-1);
   visibility: hidden;
@@ -635,9 +637,12 @@ const favoriteLabel = (favorite: boolean): string =>
   visibility: visible;
 }
 
-.workspace-menu-button:hover,
-.workspace-head.menu-open .workspace-menu-button {
+.workspace-menu-button:hover {
   background: var(--hover);
+}
+
+.workspace-head.menu-open .workspace-menu-button {
+  color: var(--fg);
 }
 
 /* 이름 위에 겹친 핀은 바탕색으로 이름을 가리므로, hover 색은 바탕색 위에 덧칠한다. */

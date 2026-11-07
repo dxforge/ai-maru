@@ -969,6 +969,9 @@ test('명령을 주어 띄운 pane 은 이름 자리에 명령 전체를 쓰고,
 const nameInput = (page: Page) => page.locator('.sidebar .workspace-name-input')
 const workspaceMenu = (page: Page) => page.locator('.sidebar .workspace-menu')
 
+// 메뉴는 ⋮ 아래로 떠 그 아래 줄의 가운데를 덮는다. 줄의 왼쪽 끝은 덮지 않는다.
+const LEFT_EDGE = { x: 4, y: 8 }
+
 async function openWorkspaceMenu(page: Page, i: number): Promise<void> {
   await workspaceHeads(page).nth(i).hover()
   await workspaceHeads(page).nth(i).locator('.workspace-menu-button').click()
@@ -1045,19 +1048,21 @@ test('이름을 고치다 다른 workspace 의 메뉴를 열면 고치던 이름
   })
   await newWorkspace(launched, 2)
   // 새 workspace 의 이름은 셸이 디렉토리를 알린 뒤에 정해진다.
-  const second = '~'
-  await expect(workspaceNames(page).nth(1)).toHaveText(second)
+  const first = '~'
+  await expect(workspaceNames(page).nth(1)).toHaveText(first)
+  await expect(workspaceNames(page).nth(0)).toHaveText(first)
 
-  await openWorkspaceMenu(page, 0)
-  await expect(nameInput(page)).toBeFocused()
-  await page.keyboard.type('first')
+  // 메뉴는 ⋮ 아래로 떠 아래쪽 workspace 의 헤더를 덮으므로 위쪽 workspace 의 메뉴를 연다.
   await openWorkspaceMenu(page, 1)
+  await expect(nameInput(page)).toBeFocused()
+  await page.keyboard.type('second')
+  await openWorkspaceMenu(page, 0)
   await expect(workspaceMenu(page)).toHaveCount(1)
   await expect(nameInput(page)).toHaveCount(1)
-  await expect(nameInput(page)).toHaveValue(second)
-  await expect(workspaceNames(page)).toHaveText(['first', second])
+  await expect(nameInput(page)).toHaveValue(first)
+  await expect(workspaceNames(page)).toHaveText([first, 'second'])
 
-  await page.keyboard.type('second')
+  await page.keyboard.type('first')
   await page.keyboard.press('Enter')
   await expect(nameInput(page)).toHaveCount(0)
   await expect(workspaceNames(page)).toHaveText(['first', 'second'])
@@ -1110,7 +1115,7 @@ test('이름을 고치다 pane 줄을 누르면 이미 고른 줄이든 아니�
   await openWorkspaceMenu(page, 0)
   await expect(nameInput(page)).toBeFocused()
   await page.keyboard.type('review')
-  await cellItems(page).nth(1).click()
+  await cellItems(page).nth(1).click({ position: LEFT_EDGE })
   await expect(nameInput(page)).toHaveCount(0)
   await expect(first).toHaveText('review')
   await run(page, 'echo same-$((1+1))', 'same-2')
@@ -1119,7 +1124,7 @@ test('이름을 고치다 pane 줄을 누르면 이미 고른 줄이든 아니�
   await openWorkspaceMenu(page, 0)
   await expect(nameInput(page)).toBeFocused()
   await page.keyboard.type('again')
-  await cellItems(page).nth(0).click()
+  await cellItems(page).nth(0).click({ position: LEFT_EDGE })
   await expect(nameInput(page)).toHaveCount(0)
   await expect(first).toHaveText('again')
   await run(page, 'echo other-$((1+1))', 'other-2')
@@ -1137,7 +1142,7 @@ test('이름을 고치다 다른 workspace 줄을 누르면 친 이름으로 정
   await openWorkspaceMenu(page, 0)
   await expect(nameInput(page)).toBeFocused()
   await page.keyboard.type('review')
-  await heads.nth(1).click()
+  await heads.nth(1).click({ position: LEFT_EDGE })
   await expect(nameInput(page)).toHaveCount(0)
   await expect(workspaceNames(page).nth(0)).toHaveText('review')
   await expect(heads.nth(1)).toHaveAttribute('aria-expanded', 'false')
@@ -1188,7 +1193,7 @@ test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 자동 이�
 
   await openWorkspaceMenu(page, 0)
   await expect(nameInput(page)).toHaveValue('proj')
-  await cellItems(page).nth(0).click()
+  await cellItems(page).nth(0).click({ position: LEFT_EDGE })
   await expect(nameInput(page)).toHaveCount(0)
   await page.keyboard.type('cd ~/notes\n')
   await expect(workspaceNames(page)).toHaveText(['sub'])
@@ -1260,7 +1265,7 @@ test('핀을 꽂거나 빼도 workspace 들의 세로 위치가 그대로다', a
   await expect.poll(tops).toEqual(before)
 })
 
-test('workspace 메뉴는 헤더를 가리킬 때 보이는 ⋮ 로 헤더 옆에 뜨고, 즐겨찾기가 없으면 안내 한 줄을 보이며, Pin Workspace 는 핀을 꽂고 Close Workspace 는 고른 cell 이 아니라 그 workspace 를 확인 창을 거쳐 닫는다', async ({
+test('workspace 메뉴는 헤더를 가리킬 때 보이는 ⋮ 를 누르면 그 버튼 바로 아래에 뜨고, 즐겨찾기가 없으면 안내 한 줄을 보이며, Pin Workspace 는 핀을 꽂고 Close Workspace 는 고른 cell 이 아니라 그 workspace 를 확인 창을 거쳐 닫는다', async ({
   launch,
   dataDir
 }) => {
@@ -1274,10 +1279,11 @@ test('workspace 메뉴는 헤더를 가리킬 때 보이는 ⋮ 로 헤더 옆�
   await expect(button).toBeHidden()
 
   await openWorkspaceMenu(page, 0)
-  const h = await box(workspaceHeads(page).nth(0))
+  const b = await box(button)
   const m = await box(workspaceMenu(page))
-  expect(m.x).toBeGreaterThanOrEqual(h.x + h.width)
-  expect(m.y).toBeCloseTo(h.y, 0)
+  expect(m.x).toBeCloseTo(b.x, 0)
+  expect(m.y).toBeGreaterThanOrEqual(b.y + b.height)
+  expect(m.y).toBeLessThan(b.y + b.height + 8)
   await expect(favoriteItems(page)).toHaveCount(0)
   await expect(menuHint(page)).toHaveText('Star a cell to add its directory')
   await workspaceMenu(page).getByRole('menuitem', { name: 'Pin Workspace' }).click()
