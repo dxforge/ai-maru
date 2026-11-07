@@ -218,8 +218,8 @@ for (const type of ['focusin', 'focusout']) document.addEventListener(type, upda
 for (const type of ['focus', 'blur']) window.addEventListener(type, updateViewed)
 watch(() => config.notification.value.seenMs, updateViewed)
 
-/** 이름을 고치는 중인 workspace 의 key */
-const renaming = ref<number | null>(null)
+/** 메뉴를 연 workspace 의 key */
+const menuFor = ref<number | null>(null)
 
 // 보이지 않는 터미널에는 포커스를 줄 수 없어, 선택이 화면에 반영된 뒤에 준다.
 async function focusSelected(): Promise<void> {
@@ -280,8 +280,9 @@ function selectedWorkspace() {
 
 // 마지막 cell 이 닫히면 store 가 남을 이유(핀·즐겨찾기)가 없는 workspace 를 지운다. 남은 workspace 는 이어서 목록에서 뺀다.
 // cell 의 job 은 cell 이 닫힐 때 main 이 끈다.
-async function closeWorkspace(): Promise<void> {
-  const w = selectedWorkspace()
+async function closeWorkspace(key?: number): Promise<void> {
+  const w =
+    key === undefined ? selectedWorkspace() : workspaces.list.value.find((x) => x.key === key)
   if (!w) return
   const panes = w.cells.flatMap((x) => x.panes.map((p) => p.key))
   if ((await window.maru.confirmCloseWorkspace(w.id)).close) {
@@ -391,23 +392,21 @@ const folded = reactive(new Set<number>())
 function toggleFold(key: number): void {
   if (!folded.delete(key)) folded.add(key)
 }
-// 접은 사이드바는 입력창을 놓기에 좁아 편다.
-function startRename(key: number): void {
-  sidebarOpen.value = true
-  renaming.value = key
+function openMenu(key: number): void {
+  menuFor.value = key
 }
-function endRename(key: number, name: string | null, refocus: boolean): void {
+function closeMenu(key: number, name: string | null, refocus: boolean): void {
   if (name !== null) workspaces.rename(key, name)
-  // 다른 workspace 의 고치기를 시작해 이 입력창이 빠졌으면 새 고치기는 그대로 둔다.
-  if (renaming.value !== key) return
-  renaming.value = null
+  // 다른 workspace 의 메뉴를 열어 이 메뉴가 빠졌으면 새 메뉴는 그대로 둔다.
+  if (menuFor.value !== key) return
+  menuFor.value = null
   if (refocus) void focusSelected()
 }
-// 고치는 동안 그 workspace 가 닫히면 입력창도 사라지므로 고치기를 끝낸다.
+// 메뉴를 연 동안 그 workspace 가 닫히면 메뉴도 사라지므로 메뉴를 닫은 것으로 한다.
 watch(
-  () => renaming.value !== null && !workspaces.list.value.some((w) => w.key === renaming.value),
+  () => menuFor.value !== null && !workspaces.list.value.some((w) => w.key === menuFor.value),
   (gone) => {
-    if (gone) renaming.value = null
+    if (gone) menuFor.value = null
   }
 )
 
@@ -839,7 +838,7 @@ function keepHorizontalScroll(e: WheelEvent): void {
 
 type Overlay = 'palette' | 'launcher' | 'launch'
 const overlay = ref<Overlay | null>(null)
-/** `inWorkspace` 가 있으면 사이드바의 즐겨찾기 메뉴나 cell 이 없는 workspace 의 디렉토리 줄이 띄운 런처다. */
+/** `inWorkspace` 가 있으면 사이드바의 workspace 메뉴의 즐겨찾기나 cell 이 없는 workspace 의 디렉토리 줄이 띄운 런처다. */
 type LaunchAt =
   | { dir?: string; where: LaunchWhere; inWorkspace?: undefined }
   | { dir: string; where: 'cell'; inWorkspace: number; shell: true; anchor: Anchor }
@@ -854,10 +853,10 @@ const launcher = useTemplateRef<InstanceType<typeof LauncherPalette>>('launcher'
 function closeOverlay(which?: Overlay): void {
   if (overlay.value === null || (which && overlay.value !== which)) return
   overlay.value = null
-  // 팔레트에서 고른 명령은 팔레트를 닫은 뒤에 돈다(`runCommand`). 그 명령이 workspace 이름 고치기를 열었으면 입력창이
-  // 포커스를 가져가므로 터미널에 포커스를 주지 않는다.
+  // 팔레트에서 고른 명령은 팔레트를 닫은 뒤에 돈다(`runCommand`). 그 명령이 workspace 메뉴를 열었으면 메뉴의 이름
+  // 입력창이 포커스를 가져가므로 터미널에 포커스를 주지 않는다.
   void nextTick(() => {
-    if (renaming.value === null) void focusSelected()
+    if (menuFor.value === null) void focusSelected()
   })
 }
 
@@ -898,7 +897,7 @@ const handlers: Record<CommandId, () => void> = {
   'close-workspace': () => void closeWorkspace(),
   'rename-workspace': () => {
     const w = selectedWorkspace()
-    if (w) startRename(w.key)
+    if (w) openMenu(w.key)
   },
   'toggle-pin-workspace': () => {
     const w = selectedWorkspace()
@@ -926,8 +925,9 @@ const handlers: Record<CommandId, () => void> = {
   },
   'toggle-sidebar': () => {
     sidebarOpen.value = !sidebarOpen.value
-    // 접은 사이드바에는 입력창을 둘 자리가 없다. 터미널에 포커스를 주면 입력창이 포커스를 잃어 고치던 이름을 확정하고 닫힌다.
-    if (!sidebarOpen.value && renaming.value !== null) void focusSelected()
+    // 사이드바 폭이 바뀌면 메뉴가 헤더 옆에서 떨어진다. 터미널에 포커스를 주면 메뉴가 포커스를 잃어 고치던 이름을 정하고
+    // 닫힌다.
+    if (menuFor.value !== null) void focusSelected()
   },
   'toggle-canvas': canvas.toggle,
   'toggle-view-mode': () => {
@@ -1053,18 +1053,19 @@ void window.maru.restoreScreen().then((r) => {
         :now="now"
         :home="home"
         :shell="shell"
-        :renaming="renaming"
+        :menu-for="menuFor"
         @focus="selectPane"
         @fold="toggleFold"
         @kill-job="killJob"
         @move-cell="moveCell"
         @move-workspace="moveWorkspace"
-        @start-rename="startRename"
-        @end-rename="endRename"
+        @open-menu="openMenu"
+        @close-menu="closeMenu"
         @toggle-pin="togglePin"
         @toggle-favorite="toggleFavorite"
         @open-dir="openDir"
         @remove-favorite="workspaces.removeFavorite"
+        @close-workspace="(key: number) => void closeWorkspace(key)"
       />
     </div>
     <div v-if="sidebarOpen" class="resizer" @mousedown.prevent @pointerdown="resizeSidebar" />

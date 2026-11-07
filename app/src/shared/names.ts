@@ -86,7 +86,7 @@ export function workspaceName(w: NamedWorkspace<Named>, home?: string): string {
 
 /**
  * 이름 입력창이 포커스를 잃어 확정할 때 저장할 이름이다. 앞뒤 공백을 자른 값이 입력창을 열 때의 이름(`opened`)과 같으면
- * null(취소)이다. workspace 줄을 빠르게 두 번 눌러 고치기가 뜻하지 않게 열렸을 때, 다른 곳을 누르기만 해도 보이던
+ * null(취소)이다. workspace 메뉴를 열기만 하고 다른 곳을 누르거나 항목을 골라 닫았을 때, 보이던
  * 자동 이름이 `name` 으로 고정되지 않게 하기 위해서다. Enter 는 같은 이름이어도 확정하므로 이 함수를 거치지 않는다.
  */
 export function nameOnFocusLoss(typed: string, opened: string): string | null {

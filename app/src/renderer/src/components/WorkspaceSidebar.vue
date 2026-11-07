@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, type DeepReadonly } from 'vue'
+import { computed, ref, useTemplateRef, type DeepReadonly } from 'vue'
 import type { JobView } from '../../../shared/job'
 import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { GitBranch, Star, X } from '@lucide/vue'
+import { EllipsisVertical, GitBranch, Star, X } from '@lucide/vue'
 import { commandClass, STATE_LABELS } from '../icons'
 import { anchorWidth, type Anchor } from '../launcher/anchor'
 import FoldChevron from './FoldChevron.vue'
 import LeadIcon from './LeadIcon.vue'
 import PaneIcon from './PaneIcon.vue'
 import StatusIcon from './StatusIcon.vue'
-import WorkspaceNameInput from './WorkspaceNameInput.vue'
+import WorkspaceMenu from './WorkspaceMenu.vue'
 import { commandLabel, commandTail, elapsed, notificationText } from '../workspace/display'
 import {
   dropAt,
@@ -58,7 +58,7 @@ const {
   now = 0,
   home = undefined,
   shell = undefined,
-  renaming = null
+  menuFor = null
 } = defineProps<{
   workspaces: readonly DeepReadonly<Workspace>[]
   selectedKey: number | null
@@ -74,8 +74,8 @@ const {
   now?: number
   home?: string
   shell?: string
-  /** 이름을 고치는 중인 workspace 의 key */
-  renaming?: number | null
+  /** 메뉴를 연 workspace 의 key */
+  menuFor?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -84,13 +84,14 @@ const emit = defineEmits<{
   killJob: [pty: string]
   moveCell: [cell: number, to: { workspace: number; index: number } | 'new']
   moveWorkspace: [workspace: number, index: number]
-  startRename: [workspace: number]
-  /** `name` 이 null 이면 취소다. `refocus` 면 터미널에 포커스를 돌려준다. */
-  endRename: [workspace: number, name: string | null, refocus: boolean]
+  openMenu: [workspace: number]
+  /** `name` 이 null 이면 이름을 바꾸지 않는다. `refocus` 면 터미널에 포커스를 돌려준다. */
+  closeMenu: [workspace: number, name: string | null, refocus: boolean]
   togglePin: [workspace: number]
   toggleFavorite: [cell: number]
   openDir: [workspace: number, dir: string, anchor: Anchor]
   removeFavorite: [workspace: number, dir: string]
+  closeWorkspace: [workspace: number]
 }>()
 
 // `groups` 밖에 둔다. `groups` 안에 두면 job 표가 바뀔 때마다 job 과 상관없는 pane 줄까지 다시 만들기 때문이다.
@@ -154,37 +155,27 @@ function jobTime(j: JobRow): string {
   return j.started === undefined ? '' : elapsed(now - j.started)
 }
 
-/** 런처를 `across` 의 가로 자리와 폭으로 `under` 의 바로 아래에 띄운다. */
-function openDir(across: Element, under: Element, workspace: number, dir: string): void {
-  const h = across.getBoundingClientRect()
-  const v = under.getBoundingClientRect()
-  const width = anchorWidth(h.width, nav.value!.getBoundingClientRect().width)
-  menuFor.value = null
-  emit('openDir', workspace, dir, { left: h.left, top: v.top, bottom: v.bottom, width })
-}
-
+/** 런처를 줄의 가로 자리와 폭으로 줄 바로 아래에 띄운다. */
 function openRow(e: MouseEvent, workspace: number, dir: string): void {
-  const row = e.currentTarget as HTMLElement
-  openDir(row, row, workspace, dir)
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const width = anchorWidth(r.width, nav.value!.getBoundingClientRect().width)
+  emit('openDir', workspace, dir, { left: r.left, top: r.top, bottom: r.bottom, width })
 }
 
-// 메뉴는 닫히므로 런처는 메뉴가 있던 자리, 곧 이름 줄 바로 아래에 메뉴의 폭으로 띄운다.
-function openFavorite(e: MouseEvent, workspace: number, dir: string): void {
-  const menu = (e.currentTarget as HTMLElement).closest('.favorites-menu')!
-  const head = menu.parentElement!.querySelector(':scope > .workspace-head')!
-  openDir(menu, head, workspace, dir)
+const heads = new Map<number, HTMLElement>()
+function headRef(key: number, el: unknown): void {
+  if (el instanceof HTMLElement) heads.set(key, el)
+  else heads.delete(key)
 }
 
-/** 즐겨찾기 메뉴를 연 workspace 의 key */
-const menuFor = ref<number | null>(null)
-
-function closeOutside(e: PointerEvent): void {
-  const t = e.target as Element | null
-  if (!t?.closest('.favorites-menu, .favorites')) menuFor.value = null
+let menu: InstanceType<typeof WorkspaceMenu> | null = null
+function menuRef(el: unknown): void {
+  menu = el as InstanceType<typeof WorkspaceMenu> | null
 }
-
-onMounted(() => document.addEventListener('pointerdown', closeOutside, true))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOutside, true))
+function toggleMenu(key: number): void {
+  if (menuFor === key) menu?.close()
+  else emit('openMenu', key)
+}
 
 // 이름 자리에서 잘릴 수 있는 명령을 툴팁에 다 보인다. 돈 시간이 들어가므로 `groups` 밖에서 만든다.
 function paneTip(r: Row): string {
@@ -341,23 +332,16 @@ const favoriteLabel = (favorite: boolean): string =>
         :class="{ dragging: workspaceDragged(w.key) }"
         :data-workspace="w.key"
       >
-        <div v-if="renaming === w.key" class="workspace-head editing">
-          <WorkspaceNameInput
-            :value="name"
-            @done="(n, refocus) => emit('endRename', w.key, n, refocus)"
-          />
-        </div>
         <button
-          v-else
+          :ref="(el) => headRef(w.key, el)"
           v-tooltip="auto"
           class="workspace-head"
-          :class="{ folded: wf }"
+          :class="{ folded: wf, 'menu-open': menuFor === w.key }"
           :aria-label="wf ? `Expand ${name}` : `Collapse ${name}`"
           :aria-expanded="!wf"
           @mousedown.prevent
           @pointerdown="grabWorkspace($event, w.key, wi)"
           @click="emit('fold', w.key)"
-          @dblclick="emit('startRename', w.key)"
         >
           <span
             v-if="state"
@@ -368,21 +352,7 @@ const favoriteLabel = (favorite: boolean): string =>
           /></span>
           <span class="workspace-name workspace-title">{{ name }}</span>
           <span v-if="dot" class="unread-dot" />
-          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 즐겨찾기와 핀의 pointerdown·click·dblclick 이 헤더의 끌기·접기·이름 고치기로 전해지지 않게 막는다. -->
-          <span
-            v-if="favorites.length"
-            v-tooltip="menuFor === w.key ? undefined : 'Favorites'"
-            role="button"
-            class="favorites"
-            :class="{ opened: menuFor === w.key }"
-            aria-label="Favorites"
-            aria-haspopup="menu"
-            :aria-expanded="menuFor === w.key"
-            @pointerdown.stop
-            @click.stop="menuFor = menuFor === w.key ? null : w.key"
-            @dblclick.stop
-            ><Star class="text-icon" fill="currentColor"
-          /></span>
+          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 핀과 메뉴 버튼의 pointerdown·click 이 헤더의 끌기·접기로 전해지지 않게 막는다. -->
           <span class="pin-slot" :class="{ on: pinned }"
             ><span
               v-tooltip="pinTip(pinned)"
@@ -393,40 +363,34 @@ const favoriteLabel = (favorite: boolean): string =>
               :aria-pressed="pinned"
               @pointerdown.stop
               @click.stop="emit('togglePin', w.key)"
-              @dblclick.stop
               ><PinIcon :filled="pinned" /></span
           ></span>
+          <span
+            v-tooltip="menuFor === w.key ? undefined : 'Workspace Menu'"
+            role="button"
+            class="workspace-menu-button"
+            aria-label="Workspace Menu"
+            aria-haspopup="menu"
+            :aria-expanded="menuFor === w.key"
+            @pointerdown.stop
+            @click.stop="toggleMenu(w.key)"
+            ><EllipsisVertical class="text-icon"
+          /></span>
           <FoldChevron class="chevron" :open="!wf" />
         </button>
-        <div
-          v-if="menuFor === w.key && favorites.length"
-          class="favorites-menu popup-menu"
-          role="menu"
-          @keydown.esc="menuFor = null"
-        >
-          <div v-for="f in favorites" :key="f.dir" class="favorite-item">
-            <button
-              v-tooltip="f.path"
-              class="favorite-open"
-              role="menuitem"
-              :aria-label="`Open ${f.name}`"
-              @mousedown.prevent
-              @click="openFavorite($event, w.key, f.dir)"
-            >
-              <span class="title">{{ f.name }}</span>
-              <span class="tail">{{ f.path }}</span>
-            </button>
-            <button
-              v-tooltip="favoriteLabel(true)"
-              class="favorite-remove"
-              :aria-label="`Remove ${f.name} from Favorites`"
-              @mousedown.prevent
-              @click="emit('removeFavorite', w.key, f.dir)"
-            >
-              <X class="text-icon" />
-            </button>
-          </div>
-        </div>
+        <WorkspaceMenu
+          v-if="menuFor === w.key && heads.get(w.key)"
+          :ref="menuRef"
+          :name="name"
+          :favorites="favorites"
+          :pinned="pinned"
+          :head="heads.get(w.key)!"
+          @done="(n, refocus) => emit('closeMenu', w.key, n, refocus)"
+          @open-favorite="(dir, at) => emit('openDir', w.key, dir, at)"
+          @remove-favorite="(dir) => emit('removeFavorite', w.key, dir)"
+          @toggle-pin="emit('togglePin', w.key)"
+          @close-workspace="emit('closeWorkspace', w.key)"
+        />
         <div v-for="d in empty" :key="d.dir" class="dir-card">
           <button
             v-tooltip="d.path"
@@ -583,12 +547,6 @@ const favoriteLabel = (favorite: boolean): string =>
   color: var(--fg);
 }
 
-.workspace-head.editing {
-  display: flex;
-  align-items: center;
-  height: var(--row-height);
-}
-
 .workspace-head .chevron {
   flex: none;
   margin-left: auto;
@@ -654,7 +612,8 @@ const favoriteLabel = (favorite: boolean): string =>
   visibility: visible;
 }
 
-.favorites {
+/* 메뉴 버튼은 헤더를 가리킬 때와 메뉴가 열려 있을 때만 보인다. 핀과 달리 자리를 늘 차지해 이름이 hover 때 밀리지 않는다. */
+.workspace-menu-button {
   flex: none;
   display: flex;
   align-items: center;
@@ -662,60 +621,23 @@ const favoriteLabel = (favorite: boolean): string =>
   margin-left: calc(-1 * var(--space-2));
   padding: 0 var(--space-1);
   border-radius: var(--radius-1);
+  visibility: hidden;
 }
 
-.favorites svg {
+.workspace-menu-button svg {
   width: 12px;
   height: 12px;
 }
 
-.favorites:hover,
-.favorites.opened {
+.workspace-head:hover .workspace-menu-button,
+.workspace-head:focus-visible .workspace-menu-button,
+.workspace-head.menu-open .workspace-menu-button {
+  visibility: visible;
+}
+
+.workspace-menu-button:hover,
+.workspace-head.menu-open .workspace-menu-button {
   background: var(--hover);
-}
-
-/* 메뉴는 이름 줄 바로 아래, cell 위에 겹친다. */
-.workspace {
-  position: relative;
-}
-
-.favorites-menu {
-  -webkit-app-region: no-drag;
-  position: absolute;
-  top: var(--row-height);
-  left: var(--space-3);
-  right: var(--space-3);
-  z-index: 4;
-  max-height: 60vh;
-}
-
-.favorite-item {
-  display: flex;
-  align-items: center;
-}
-
-.popup-menu .favorite-open {
-  flex: 1;
-  min-width: 0;
-  gap: var(--space-2);
-  height: auto;
-  padding-right: var(--space-2);
-  color: var(--fg);
-}
-
-.popup-menu .favorite-remove {
-  flex: none;
-  width: 24px;
-  height: 24px;
-  justify-content: center;
-  padding: 0;
-  margin-right: var(--space-2);
-  border-radius: var(--radius-1);
-  color: var(--faint);
-}
-
-.popup-menu .favorite-remove:hover {
-  color: var(--fg);
 }
 
 /* 이름 위에 겹친 핀은 바탕색으로 이름을 가리므로, hover 색은 바탕색 위에 덧칠한다. */
@@ -787,8 +709,7 @@ const favoriteLabel = (favorite: boolean): string =>
   background: var(--hover);
 }
 
-.dir-row .tail,
-.favorite-open .tail {
+.dir-row .tail {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 60%;

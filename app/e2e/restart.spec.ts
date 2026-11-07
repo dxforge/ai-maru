@@ -79,7 +79,7 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드와 �
   await shellUp(page, 0)
   await shellUp(page, 1)
   await page.keyboard.type('export MARK=kept-$((1+1))\n')
-  await workspaceHeads(page).nth(0).dblclick()
+  await clickMenu(app, 'rename-workspace')
   await expect(page.locator('.sidebar .workspace-name-input')).toBeFocused()
   await page.keyboard.type('renamed')
   await page.keyboard.press('Enter')

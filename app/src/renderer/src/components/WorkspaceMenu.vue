@@ -1,0 +1,291 @@
+<script setup lang="ts">
+import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { X } from '@lucide/vue'
+import { nameOnFocusLoss } from '../../../shared/names'
+import type { Anchor } from '../launcher/anchor'
+import type { DirRow } from '../workspace/sidebarRows'
+import PinIcon from './PinIcon.vue'
+
+const { name, favorites, pinned, head } = defineProps<{
+  name: string
+  favorites: readonly DirRow[]
+  pinned: boolean
+  /** 메뉴를 옆에 띄울 workspace 헤더 */
+  head: HTMLElement
+}>()
+
+const emit = defineEmits<{
+  /** `name` 이 null 이면 이름을 바꾸지 않는다. `refocus` 면 터미널에 포커스를 돌려준다. */
+  done: [name: string | null, refocus: boolean]
+  openFavorite: [dir: string, anchor: Anchor]
+  removeFavorite: [dir: string]
+  togglePin: []
+  closeWorkspace: []
+}>()
+
+const GAP = 4
+const MARGIN = 8
+const root = useTemplateRef<HTMLElement>('root')
+const input = useTemplateRef<HTMLInputElement>('input')
+const at = ref({ left: 0, top: 0 })
+let opened = ''
+let finished = false
+
+function finish(next: string | null, refocus: boolean): void {
+  if (finished) return
+  finished = true
+  emit('done', next, refocus)
+}
+
+// Enter 가 아닌 길로 닫는다. 닫힌 뒤에 오는 이벤트에서는 입력창이 이미 없다.
+function close(refocus: boolean): void {
+  if (!finished) finish(nameOnFocusLoss(input.value!.value, opened), refocus)
+}
+
+// 처음 값은 템플릿에 묶지 않고 여기서 한 번만 준다. 묶으면 자동 이름을 고치는 중에 셸이 cd 해 `name` 이 바뀔 때 Vue 가
+// 친 글자를 되돌리기 때문이다.
+onMounted(async () => {
+  const el = input.value!
+  opened = name
+  el.value = name
+  el.focus()
+  el.select()
+  document.addEventListener('pointerdown', onPointerDown, true)
+  window.addEventListener('resize', onResize)
+  window.addEventListener('focus', onWindowFocus)
+  const h = head.getBoundingClientRect()
+  at.value = { left: h.right + GAP, top: h.top }
+  await nextTick()
+  const r = root.value!.getBoundingClientRect()
+  at.value = {
+    left: Math.max(MARGIN, Math.min(h.right + GAP, window.innerWidth - MARGIN - r.width)),
+    top: Math.max(MARGIN, Math.min(h.top, window.innerHeight - MARGIN - r.height))
+  }
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onPointerDown, true)
+  window.removeEventListener('resize', onResize)
+  window.removeEventListener('focus', onWindowFocus)
+})
+
+// 메뉴를 여닫는 헤더의 ⋮ 버튼은 스스로 메뉴를 닫으므로 여기서 닫지 않는다.
+function onPointerDown(e: PointerEvent): void {
+  const t = e.target as Element | null
+  if (t && (root.value?.contains(t) || head.querySelector('.workspace-menu-button')?.contains(t)))
+    return
+  close(true)
+}
+
+// 창 크기가 바뀌면 헤더가 움직여 메뉴가 헤더 옆에서 떨어진다.
+function onResize(): void {
+  close(false)
+}
+
+// 창이 포커스를 잃을 때도 focusout 이 오는데, 그때는 닫지 않고 창이 돌아왔을 때 포커스가 메뉴 밖이면 닫는다.
+function onFocusOut(e: FocusEvent): void {
+  if (!document.hasFocus()) return
+  const next = e.relatedTarget as Node | null
+  if (!next || !root.value?.contains(next)) close(false)
+}
+
+function onWindowFocus(): void {
+  if (!root.value?.contains(document.activeElement)) close(false)
+}
+
+function onKeydown(e: KeyboardEvent): void {
+  if (e.isComposing) return
+  if (e.key === 'Enter' && e.target === input.value) finish(input.value!.value, true)
+  else if (e.key === 'Escape') finish(null, true)
+  else return
+  e.preventDefault()
+}
+
+defineExpose({ close: () => close(true) })
+
+function act(run: () => void): void {
+  close(true)
+  run()
+}
+
+// 메뉴는 닫히므로 런처는 메뉴가 있던 자리에 메뉴의 폭으로 띄운다.
+function openFavorite(dir: string): void {
+  const r = root.value!.getBoundingClientRect()
+  act(() => emit('openFavorite', dir, { left: r.left, top: r.top, bottom: r.top, width: r.width }))
+}
+</script>
+
+<template>
+  <div
+    ref="root"
+    class="workspace-menu popup-menu"
+    role="menu"
+    :style="{ left: `${at.left}px`, top: `${at.top}px` }"
+    @keydown="onKeydown"
+    @focusout="onFocusOut"
+  >
+    <div class="name-field">
+      <input
+        ref="input"
+        class="workspace-name-input"
+        aria-label="Workspace name"
+        spellcheck="false"
+      />
+    </div>
+    <hr />
+    <div class="section">Favorites</div>
+    <div v-for="f in favorites" :key="f.dir" class="favorite-item">
+      <button
+        v-tooltip="f.path"
+        class="favorite-open"
+        role="menuitem"
+        :aria-label="`Open ${f.name}`"
+        @mousedown.prevent
+        @click="openFavorite(f.dir)"
+      >
+        <span class="title">{{ f.name }}</span>
+        <span class="tail">{{ f.path }}</span>
+      </button>
+      <button
+        v-tooltip="'Remove from Favorites'"
+        class="favorite-remove"
+        :aria-label="`Remove ${f.name} from Favorites`"
+        @mousedown.prevent
+        @click="emit('removeFavorite', f.dir)"
+      >
+        <X class="text-icon" />
+      </button>
+    </div>
+    <div v-if="!favorites.length" class="hint">Star a cell to add its directory</div>
+    <hr />
+    <button
+      class="action pin-action"
+      role="menuitem"
+      @mousedown.prevent
+      @click="act(() => emit('togglePin'))"
+    >
+      <PinIcon class="icon" :filled="pinned" />{{ pinned ? 'Unpin Workspace' : 'Pin Workspace' }}
+    </button>
+    <button
+      class="action close-action"
+      role="menuitem"
+      @mousedown.prevent
+      @click="act(() => emit('closeWorkspace'))"
+    >
+      <X class="icon" />Close Workspace
+    </button>
+  </div>
+</template>
+
+<style scoped>
+.workspace-menu {
+  -webkit-app-region: no-drag;
+  position: fixed;
+  z-index: 9;
+  box-sizing: border-box;
+  width: 280px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: normal;
+}
+
+.name-field {
+  padding: var(--space-1) var(--space-3);
+}
+
+.workspace-name-input {
+  width: 100%;
+  height: 26px;
+  padding: 0 var(--space-3);
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+  outline: none;
+  background: var(--ground);
+  color: var(--fg);
+  font: inherit;
+}
+
+.workspace-name-input:focus {
+  border-color: var(--accent);
+}
+
+hr {
+  margin: var(--space-2) 0;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+.section {
+  padding: var(--space-1) var(--space-5);
+  color: var(--faint);
+  font-size: var(--text-1);
+}
+
+.hint {
+  padding: var(--space-2) var(--space-5);
+  color: var(--faint);
+}
+
+.favorite-item {
+  display: flex;
+  align-items: center;
+}
+
+.popup-menu .favorite-open {
+  display: flex;
+  align-items: baseline;
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-3);
+  padding-right: var(--space-2);
+}
+
+.title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tail {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--faint);
+  font-size: var(--text-1);
+}
+
+.popup-menu .favorite-remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-right: var(--space-2);
+  border-radius: var(--radius-1);
+  color: var(--faint);
+}
+
+.popup-menu .favorite-remove:hover {
+  color: var(--fg);
+}
+
+.popup-menu .action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.icon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
+}
+</style>

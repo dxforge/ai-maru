@@ -55,7 +55,9 @@ test('홈 디렉토리 workspace 의 WORKSPACE 는 사이드바처럼 ~ 다', as
 test('workspace 이름을 바꾸면 WORKSPACE 는 바꾼 이름이다', async ({ launch, dataDir }) => {
   const { page } = await launch()
   await ptyIdOf(page)
-  await page.locator('.sidebar .workspace-head').nth(0).dblclick()
+  const head = page.locator('.sidebar .workspace-head').nth(0)
+  await head.hover()
+  await head.locator('.workspace-menu-button').click()
   await expect(page.locator('.sidebar .workspace-name-input')).toBeFocused()
   await page.keyboard.type('renamed')
   await page.keyboard.press('Enter')
