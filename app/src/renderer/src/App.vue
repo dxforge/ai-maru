@@ -16,12 +16,7 @@ import { cellLabel, windowTitle, workspaceName } from '../../shared/names'
 import type { JobView } from '../../shared/job'
 import type { PaneReply } from '../../shared/pane'
 import type { ProgramStatusRecord } from '../../shared/program-status'
-import {
-  clampCanvasWidth,
-  clampSidebarWidth,
-  isClosed,
-  type ScreenState
-} from '../../shared/screen'
+import { clampCanvasWidth, clampSidebarWidth, type ScreenState } from '../../shared/screen'
 import { chords, secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
 import { createCanvas, openCells } from './canvas/store'
@@ -288,7 +283,7 @@ function selectedWorkspace() {
 async function closeWorkspace(): Promise<void> {
   const w = selectedWorkspace()
   if (!w) return
-  const panes = w.cells.flatMap((x) => (isClosed(x) ? [] : x.panes.map((p) => p.key)))
+  const panes = w.cells.flatMap((x) => x.panes.map((p) => p.key))
   if ((await window.maru.confirmCloseWorkspace(w.id)).close) {
     for (const p of panes) removePane(p)
     workspaces.discard(w.key)
@@ -420,7 +415,7 @@ function toggleFavorite(cell: number): void {
   if (!workspaces.toggleFavorite(cell)) {
     toasts.put('favorite', {
       level: 'warning',
-      title: "Couldn't favorite the cell",
+      title: "Couldn't add to Favorites",
       lines: ["The first pane's directory isn't known yet."]
     })
     return
@@ -471,9 +466,9 @@ async function openIn(workspace: number, dir: string, pane: PaneCommand): Promis
   if (key !== undefined) selectCell(key)
 }
 
-async function openClosed(workspace: number, dir: string, anchor: Anchor): Promise<void> {
+async function openDir(workspace: number, dir: string, anchor: Anchor): Promise<void> {
   if (!(await isDirectory(dir))) return
-  launchAt.value = { dir, where: 'cell', favoriteOf: workspace, shell: true, anchor }
+  launchAt.value = { dir, where: 'cell', inWorkspace: workspace, shell: true, anchor }
   overlay.value = 'launch'
 }
 
@@ -844,10 +839,10 @@ function keepHorizontalScroll(e: WheelEvent): void {
 
 type Overlay = 'palette' | 'launcher' | 'launch'
 const overlay = ref<Overlay | null>(null)
-/** `favoriteOf` 가 있으면 사이드바의 닫힌 줄이 띄운 런처다. */
+/** `inWorkspace` 가 있으면 사이드바의 즐겨찾기 메뉴나 cell 이 없는 workspace 의 디렉토리 줄이 띄운 런처다. */
 type LaunchAt =
-  | { dir?: string; where: LaunchWhere; favoriteOf?: undefined }
-  | { dir: string; where: 'cell'; favoriteOf: number; shell: true; anchor: Anchor }
+  | { dir?: string; where: LaunchWhere; inWorkspace?: undefined }
+  | { dir: string; where: 'cell'; inWorkspace: number; shell: true; anchor: Anchor }
 const launchAt = ref<LaunchAt>({ where: 'cell' })
 const palette = useTemplateRef<InstanceType<typeof CommandPalette>>('palette')
 const launcher = useTemplateRef<InstanceType<typeof LauncherPalette>>('launcher')
@@ -875,7 +870,7 @@ const SPLIT_OF: Partial<Record<LaunchWhere, SplitDirection>> = {
 function launch({ dir, command, where }: Launch, at?: LaunchAt): void {
   const pane = command === SHELL ? {} : ({ command: commandArgv(command), keep: true } as const)
   const split = SPLIT_OF[where]
-  if (at?.favoriteOf !== undefined) void openIn(at.favoriteOf, at.dir, pane)
+  if (at?.inWorkspace !== undefined) void openIn(at.inWorkspace, at.dir, pane)
   else if (where === 'cell') workspaces.openCell(dir, pane)
   else if (where === 'workspace') workspaces.open(dir, pane)
   // 목록을 띄운 뒤 창이 작아졌으면 자리가 없을 수 있어 다시 본다.
@@ -1068,7 +1063,7 @@ void window.maru.restoreScreen().then((r) => {
         @end-rename="endRename"
         @toggle-pin="togglePin"
         @toggle-favorite="toggleFavorite"
-        @open-dir="openClosed"
+        @open-dir="openDir"
         @remove-favorite="workspaces.removeFavorite"
       />
     </div>
@@ -1187,7 +1182,7 @@ void window.maru.restoreScreen().then((r) => {
     />
     <LauncherPalette
       v-else-if="overlay === 'launch'"
-      :key="launchAt.favoriteOf === undefined ? launchAt.where : 'favorite'"
+      :key="launchAt.inWorkspace === undefined ? launchAt.where : 'in-workspace'"
       :position="config.layout.value.palette"
       :commands="config.launcher.value.commands"
       :home="home"

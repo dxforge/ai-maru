@@ -278,7 +278,7 @@ test('End everything 으로 끄면 다음 실행은 빈 화면으로 뜨고, 보
   await first.app.evaluate(({ app }) => app.quit())
   await closed
   expect(sockets(dataDir)).toEqual([])
-  expect(readState(dataDir)).toMatchObject({ cells: { rows: [] }, panes: null, sessions: null })
+  expect(readState(dataDir)).toMatchObject({ cells: null, panes: null, sessions: null })
 
   const { page } = await launch()
   await expect(cellItems(page)).toHaveCount(1)
@@ -312,7 +312,7 @@ test('pane 이 하나도 없으면 묻지 않고 끄고, 다음 실행은 빈 �
   const closed = first.app.waitForEvent('close')
   await first.app.evaluate(({ app }) => app.quit())
   await closed
-  expect(readState(dataDir)).toMatchObject({ cells: { rows: [] }, panes: null, sessions: null })
+  expect(readState(dataDir)).toMatchObject({ cells: null, panes: null, sessions: null })
 })
 
 test('재시작은 프로그램이 돌아도 끄기를 묻지 않는다', async ({ launch, dataDir }) => {

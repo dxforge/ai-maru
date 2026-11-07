@@ -23,8 +23,8 @@ export type WorkspaceSpan = Span & {
   count: number
   cells: Span[]
   folded: boolean
-  /** cell 사이사이와 앞뒤에 놓인 닫힌 줄들. */
-  closed: Span[]
+  /** cell 이 없는 workspace 의 `dir` 줄의 아래 끝. 그 줄이 없으면 비운다. */
+  dirBottom?: number
 }
 
 export type SidebarSpans = {
@@ -65,15 +65,10 @@ function cellDrop(
   return { drop: { kind: 'cell', workspace: w.key, index }, line: cellLine(w, index) }
 }
 
-/** 선은 `index` 번째 cell 바로 위 줄(cell 이든 닫힌 줄이든)의 아래에 긋는다. store 가 그 줄과 cell 사이에 넣기 때문이다. */
 function cellLine(w: WorkspaceSpan, index: number): number {
   if (w.folded) return w.head.bottom + HALF_GAP
-  const next = w.cells[index]
-  const above = w.closed.filter((s) => !next || s.top < next.top)
-  const closed = above.length ? above[above.length - 1].bottom : -Infinity
-  const cell = w.cells[index - 1]?.bottom ?? -Infinity
-  if (closed > cell) return closed + HALF_GAP
-  return gapLine(w.cells, index, w.head.bottom - HALF_GAP)
+  const top = w.dirBottom === undefined ? w.head.bottom - HALF_GAP : w.dirBottom + HALF_GAP
+  return gapLine(w.cells, index, top)
 }
 
 function workspaceDrop(

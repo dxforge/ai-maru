@@ -6,7 +6,6 @@ import { PROTOCOL_VERSION } from '../shared/protocol'
 import {
   joinTables,
   layoutKeys,
-  openCells,
   splitScreen,
   STATE_VERSIONS,
   type ScreenState
@@ -66,7 +65,7 @@ const workspaces = {
   ...screenWorkspaces,
   rows: [
     ...screenWorkspaces.rows,
-    { id: 'w-00000009', name: 'atlas', pinned: true as const, favorites: ['/tmp'] },
+    { id: 'w-00000009', name: 'atlas', pinned: true as const },
     { id: 'w-0000000a', favorites: ['/r'] }
   ]
 }
@@ -308,7 +307,7 @@ describe('sessionPtys', () => {
 describe('restorePtys', () => {
   it('되살린 pane 의 key 마다 그 pane id 의 pty 를 주고, sessions 에 없는 pane 은 빼며, 되살리지 않은 pane 의 pty 는 주지 않는다', () => {
     const layout = joinTables({ workspaces, cells, panes })
-    const keys = openCells(layout!.workspaces[0])[0].panes.map((p) => [p.id, p.key])
+    const keys = layout!.workspaces[0].cells[0].panes.map((p) => [p.id, p.key])
     expect(keys).toEqual([
       ['n-0000000a', 2],
       ['n-0000000b', 3]
@@ -413,7 +412,7 @@ describe('recoverPtys', () => {
       selected: null
     }
     const r = recoverPtys(layout, { attach: {}, keep: [] }, [rec('p-0000000a', 1)], ids())
-    expect(r.layout!.selected).toBe(openCells(r.layout!.workspaces[1])[0].key)
+    expect(r.layout!.selected).toBe(r.layout!.workspaces[1].cells[0].key)
   })
 })
 
@@ -430,7 +429,7 @@ describe('startRestore', () => {
   const recoveredPtys = (r: ReturnType<typeof startRestore>): string[] => {
     const ws = r.layout!.workspaces.at(-1)!
     if (ws.name !== 'Recovered') return []
-    return openCells(ws).map((c) => r.attach[c.panes[0].key])
+    return ws.cells.map((c) => r.attach[c.panes[0].key])
   }
 
   it('전체 복원이면 job pty 는 남기고 Recovered 에 넣지 않으며, 붙을 pane 이 없는 pty 를 Recovered 로 옮긴 것은 알린다', () => {
@@ -536,16 +535,11 @@ describe('createStateStore', () => {
     expect(s.current().view).toMatchObject({ window, theme: { background: '#ffffff' } })
   })
 
-  const ended = {
-    ...none,
-    workspaces: { ...workspaces, rows: workspaces.rows.slice(1) },
-    cells: { ...cells, rows: [] },
-    view
-  }
+  const kept = { ...workspaces, rows: workspaces.rows.slice(1) }
   it.each([
     ['keep', full],
     ['layout', { ...full, sessions: null }],
-    ['end', ended]
+    ['end', { ...none, workspaces: kept, view }]
   ] as const)('finish(%s) 는 바로 쓰고 view 는 남긴다', (outcome, expected) => {
     const s = store(full)
     s.finish(outcome)
@@ -574,7 +568,7 @@ describe('createStateStore', () => {
     expect(() => s.finish('keep')).toThrow()
     rmSync(path, { recursive: true })
     s.finish('end')
-    expect(saved()).toEqual(ended)
+    expect(saved()).toEqual({ ...none, workspaces: kept, view })
   })
 
   it('finish 가 던져도 끝내지 않았으므로 그 뒤의 변경을 타이머가 쓴다 — 끄지 않고 이어 쓰는 경우', () => {
@@ -623,37 +617,11 @@ describe('createStateStore', () => {
     })
   })
 
-  it('End everything 은 즐겨찾기를 맡은 cell 을 그 자리의 닫힌 줄로 남긴다', () => {
-    const [w] = screen.workspaces
-    const c = { ...w.cells[0], favorite: '/tmp' }
-    const s = store(full)
-    s.setScreen({
-      ...screen,
-      workspaces: [
-        {
-          ...w,
-          favorites: ['/r', '/tmp'],
-          cells: [
-            { ...c, key: 5, id: 'c-00000002', favorite: undefined },
-            { closed: true, favorite: '/r' },
-            c
-          ]
-        }
-      ]
-    })
-    s.finish('end')
-    expect(saved().workspaces?.rows).toEqual([{ id: 'w-00000001', favorites: ['/r', '/tmp'] }])
-    expect(saved().cells?.rows).toEqual([
-      { workspace: 'w-00000001', closed: true, favorite: '/r' },
-      { workspace: 'w-00000001', closed: true, favorite: '/tmp' }
-    ])
-  })
-
   it('discard 는 판정이 버린 표를 비운다', () => {
     const s = store(full)
     s.discard('layout')
     expect(s.current()).toEqual({ ...full, sessions: null })
     s.discard('end')
-    expect(s.current()).toEqual(ended)
+    expect(s.current()).toEqual({ ...none, workspaces: kept, view })
   })
 })

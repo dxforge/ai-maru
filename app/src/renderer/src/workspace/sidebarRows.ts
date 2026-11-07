@@ -2,7 +2,6 @@ import type { DeepReadonly } from 'vue'
 import { jobName, type JobView } from '../../../shared/job'
 import { sidebarLabel, type SidebarLabel } from '../../../shared/names'
 import { paneName, type CommandView } from '../../../shared/pane-name'
-import { isClosed, type ClosedCell } from '../../../shared/screen'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { AGENT_ICONS, commandIcon, STATE_LABELS, type PaneIcon } from '../icons'
@@ -109,25 +108,17 @@ export function workspaceMarks(
   return { state, notified: unread, dot: unread && !state }
 }
 
-/** `favorite` 가 아니면 cell 이 없는 핀 workspace 의 디렉토리 줄이다. */
-export type ClosedRow = { dir: string; name: string; path: string; favorite: boolean }
+export type DirRow = { dir: string; name: string; path: string }
 
-/** `index` 는 cell 의 workspace 안 자리다. */
-export type SidebarSlot<C> = { cell: C; index: number } | ClosedRow
-
-export function sidebarSlots<T extends object>(
-  w: { dir?: string; cells: readonly T[] },
-  home?: string
-): SidebarSlot<Exclude<T, ClosedCell>>[] {
-  const row = (dir: string, favorite: boolean): ClosedRow => ({
+export function dirRow(dir: string, home?: string): DirRow {
+  return {
     dir,
     name: sidebarLabel({ cwd: dir }, undefined, home).name!,
-    path: tildePath(dir, home),
-    favorite
-  })
-  if (!w.cells.length) return w.dir === undefined ? [] : [row(w.dir, false)]
-  let index = 0
-  return w.cells.map((c) =>
-    isClosed(c) ? row(c.favorite, true) : { cell: c as Exclude<T, ClosedCell>, index: index++ }
-  )
+    path: tildePath(dir, home)
+  }
+}
+
+/** cell 이 없는 workspace 는 `dir` 줄 하나를 두어, 그 디렉토리에서 cell 을 다시 열 수 있게 한다. */
+export function emptyRow(w: { dir?: string; cells: readonly unknown[] }, home?: string): DirRow[] {
+  return !w.cells.length && w.dir !== undefined ? [dirRow(w.dir, home)] : []
 }

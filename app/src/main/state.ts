@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { PROTOCOL_VERSION } from '../shared/protocol'
 import {
   keeps,
-  openCells,
   parseCellsTable,
   parsePanesTable,
   parseScreen,
@@ -34,8 +33,8 @@ import { parseWindowState, type WindowState } from './window-state'
  * `state.json` 은 상태가 바뀔 때마다 쓰고 다음에 뜬 앱이 읽는다. 두 앱의 빌드가 다를 수 있어 entity 마다 표를 두고, 표마다
  * 따로 버전(`STATE_VERSIONS`)을 두어 따로 읽는다. 표끼리는 id 로 잇고, 하나를 잃으면 그 표 만큼만 잃는다(`joinTables`).
  * - `workspaces` — workspace 의 순서와 이름·핀·`dir`·즐겨찾기. 잃으면 cell 이 가리키는 id 로 이름 없는 workspace 를
- *   다시 만들고, cell 이 없던 핀 workspace 는 사라진다.
- * - `cells` — cell 과 pane 의 배치. 잃으면 workspace 는 핀일 때만 cell 없이 뜬다.
+ *   다시 만들고, cell 이 없던 workspace 는 사라진다.
+ * - `cells` — cell 과 pane 의 배치. 잃으면 핀이나 즐겨찾기가 있는 workspace 만 cell 없이 뜬다.
  * - `panes` — pane 의 명령·디렉토리·제목. 잃으면 cell 마다 workspace 의 `dir` 에서 셸 하나를 띄운다.
  * - `sessions` — pane 마다 붙은 pty 와 job 표. 잃으면 배치만 되살리고 pane 마다 새 셸을 띄운다. 둘은 함께 잇거나
  *   함께 버린다 — pane 의 pty 만 잇고 job 표를 버리면 job 을 띄운 claude 가 종료 알림을 받지 못한다.
@@ -215,7 +214,7 @@ export function fullRestore(
 /** 되살린 pane 의 key 마다 붙을 pty 다. `sessions` 에 없는 pane(새로 연 pane)은 새 셸을 띄운다. */
 export function restorePtys(layout: SavedLayout | null, s: SessionsPart): Record<number, string> {
   const ptyOf = new Map(s.ptys.map((p) => [p.pane, p.pty]))
-  const panes = (layout?.workspaces ?? []).flatMap((w) => openCells(w).flatMap((c) => c.panes))
+  const panes = (layout?.workspaces ?? []).flatMap((w) => w.cells.flatMap((c) => c.panes))
   return Object.fromEntries(
     panes.flatMap((p) => {
       const pty = ptyOf.get(p.id)
@@ -335,21 +334,11 @@ export type StateStore = {
 function dropped(state: StateFile, outcome: Outcome): StateFile {
   if (outcome === 'keep') return state
   if (outcome === 'layout') return { ...state, sessions: null }
-  const { workspaces, cells } = state
-  const rows = workspaces?.rows.filter(keeps) ?? []
-  const favorites = new Map(rows.map((w) => [w.id, w.favorites ?? []]))
+  const { workspaces } = state
   return {
     ...state,
-    workspaces: workspaces && { ...workspaces, rows },
-    // 즐겨찾기 cell 은 cell 을 하나씩 닫은 것처럼 그 자리의 닫힌 줄로 남긴다.
-    cells: cells && {
-      ...cells,
-      rows: cells.rows.flatMap((c): CellRow[] =>
-        c.favorite !== undefined && favorites.get(c.workspace)?.includes(c.favorite)
-          ? [{ workspace: c.workspace, closed: true, favorite: c.favorite }]
-          : []
-      )
-    },
+    workspaces: workspaces && { ...workspaces, rows: workspaces.rows.filter(keeps) },
+    cells: null,
     panes: null,
     sessions: null
   }
@@ -447,7 +436,7 @@ export function createStateStore(o: {
       applyScreen()
       // `panes` 를 잃은 cell 도 pane 하나로 열리므로, 표의 줄 수가 아니라 다음에 뜰 화면의 pane 을 센다.
       const ws = joinTables(state)?.workspaces ?? []
-      return ws.reduce((n, w) => n + openCells(w).reduce((m, c) => m + c.panes.length, 0), 0)
+      return ws.reduce((n, w) => n + w.cells.reduce((m, c) => m + c.panes.length, 0), 0)
     }
   }
 }
