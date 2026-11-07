@@ -1,37 +1,69 @@
 <script setup lang="ts">
+import { OverlayScrollbars } from 'overlayscrollbars'
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
-import { renderMarkdown } from '../canvas/markdown'
-import type { CanvasEntry } from '../canvas/store'
+import { fillBody } from '../canvas/fill'
+import { bodyOf, type CanvasEntry } from '../canvas/store'
 import { attachOverlayScroll, detachOverlayScroll } from '../overlayScroll'
 
-// 문서마다 렌더 결과를 computed 로 담아 두려고 컴포넌트로 뗐다. `CardStream` 은 붙는 제목이 바뀔 때마다 다시
-// 그리는데, slot 에서 바로 렌더하면 그때마다 마크다운을 다시 렌더하기 때문이다.
 const { doc } = defineProps<{ doc: CanvasEntry }>()
-const html = computed(() => (doc.kind === 'markdown' ? renderMarkdown(doc.text) : ''))
-
-// `v-html` 로 넣은 코드 블록(`pre`)에는 directive 를 달 수 없으므로, HTML 을 넣은 뒤에 `attachOverlayScroll` 로 스크롤바를 씌운다.
 const root = useTemplateRef<HTMLElement>('root')
+
+// 첫 묶음은 렌더할 때 넣는다. 카드를 펼치거나 넣은 뒤 `CardStream` 이 카드 자리를 재는 post watcher 가 이 컴포넌트의
+// watcher 보다 먼저 돌아, 그때 본문이 비어 있으면 잘못 잰 자리로 스크롤하기 때문이다.
+// 같은 id 로 다시 온 문서는 `body.id` 를 key 로 새 요소에 그린다. 첫 묶음의 HTML 이 같으면 `v-html` 이 요소를 비우지
+// 않아, 앞 문서의 나머지 묶음이 남기 때문이다.
+const body = computed(() => bodyOf(doc))
+const first = computed(() => body.value?.html(0) ?? '')
+// 요소가 바뀌거나 사라지면(같은 id 로 이미지가 오면 이 컴포넌트는 남고 요소만 사라진다) 앞 요소에 붙이던 것을 멈춘다.
+let stop: (() => void) | undefined
+function reset(): void {
+  stop?.()
+  stop = undefined
+  release()
+}
+watch(
+  root,
+  (el) => {
+    reset()
+    if (el && body.value) stop = fillBody(el, body.value)
+  },
+  { flush: 'post' }
+)
+
+// 코드 블록(`pre`)의 스크롤바는 포인터가 그 블록에 처음 들어올 때 씌운다. 큰 문서의 블록을 한꺼번에 씌우면 창이
+// 오래 멈추기 때문이다. 이 스크롤바는 hover·스크롤 때만 보이고, 블록을 스크롤하려면 포인터가 먼저 그 위에 있어야 하므로
+// 한꺼번에 씌울 때와 쓰는 법은 같다.
+//
+// 시스템 스크롤바가 overlay 면 `attachOverlayScroll` 을 부르지 않는다. `OverlayScrollbars` 는 이때 초기화를 취소하지만 블록마다
+// scroll-timeline 애니메이션을 두 개 만들고 끄지 않으므로, 문서를 넣고 지울 때마다 애니메이션이 쌓여 레이아웃이 점점 느려진다.
+const classic = !OverlayScrollbars.env().scrollbarsOverlaid.x
 let blocks: HTMLElement[] = []
+function hover(e: PointerEvent): void {
+  if (!classic) return
+  const pre = (e.target as Element).closest('pre')
+  if (!pre || blocks.includes(pre)) return
+  blocks.push(pre)
+  attachOverlayScroll(pre, 'x')
+}
 function release(): void {
   for (const b of blocks) detachOverlayScroll(b)
   blocks = []
 }
-watch(
-  [root, html],
-  ([el]) => {
-    release()
-    if (!el) return
-    blocks = [...el.querySelectorAll<HTMLElement>('pre')]
-    for (const b of blocks) attachOverlayScroll(b, 'x')
-  },
-  { flush: 'post' }
-)
-onBeforeUnmount(release)
+onBeforeUnmount(reset)
 </script>
 
 <template>
-  <!-- eslint-disable-next-line vue/no-v-html -- renderMarkdown 이 DOMPurify 로 거른 HTML 이다 -->
-  <div v-if="doc.kind === 'markdown'" ref="root" class="markdown" v-html="html" />
+  <!-- eslint-disable vue/no-v-html -- MarkdownBody 가 낸 HTML 이다. lexing 한 묶음은 DOMPurify 로 걸렀고, 글자 묶음은 escape 했다 -->
+  <div
+    v-if="doc.kind === 'markdown'"
+    :key="body?.id"
+    ref="root"
+    class="markdown"
+    :class="{ classic }"
+    @pointerover="hover"
+    v-html="first"
+  />
+  <!-- eslint-enable vue/no-v-html -->
   <img v-else class="image" :src="doc.url" :alt="doc.title" />
 </template>
 
@@ -57,6 +89,16 @@ onBeforeUnmount(release)
   padding: var(--space-4) var(--space-5);
   background: var(--raised);
   border-radius: var(--radius-1);
+}
+
+/* 고전 스크롤바 설정에서 스크롤바를 씌우기 전의 블록이 시스템 스크롤바로 높이를 바꾸지 않게 한다. */
+.markdown.classic :deep(pre) {
+  scrollbar-width: none;
+}
+
+.markdown :deep(.plain) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .markdown :deep(pre code) {

@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 // DOMPurify 는 DOM 이 없으면 입력을 거르지 않고 그대로 돌려주므로, 이 파일만 DOM 환경에서 돌린다.
-import { describe, expect, it } from 'vitest'
-import { firstHeading, renderMarkdown } from './markdown'
+import { Marked } from 'marked'
+import { describe, expect, it, vi } from 'vitest'
+import { MarkdownBody, prepareMarkdown, renderPart, type Part } from './markdown'
+
+const html = (parts: Part[]): string => parts.map(renderPart).join('')
 
 function render(...blocks: string[]): HTMLElement {
   const el = document.createElement('div')
-  el.innerHTML = renderMarkdown(blocks.join('\n\n'))
+  el.innerHTML = html(prepareMarkdown(blocks.join('\n\n')).parts)
   return el
 }
 
@@ -24,7 +27,7 @@ function unsafe(el: HTMLElement): string[] {
     .map((e) => e.outerHTML)
 }
 
-describe('renderMarkdown', () => {
+describe('renderPart', () => {
   it('markdown 을 HTML 로 그린다', () => {
     const el = render('# Title', 'some **bold** text')
     expect(el.querySelector('h1')?.textContent).toBe('Title')
@@ -150,7 +153,7 @@ describe('renderMarkdown', () => {
   })
 })
 
-describe('firstHeading', () => {
+describe('prepareMarkdown 의 heading', () => {
   it.each([
     '# Tom &amp; *J &lt;3&gt;* [&copy;](https://x) &#38; `&amp;` \\&amp;',
     '# <em>e</em> &amp; *<b>굵게</b>*',
@@ -158,6 +161,155 @@ describe('firstHeading', () => {
     '# [<a href="https://x">in</a>](https://y)',
     '# a <!-- c --> b'
   ])('본문 heading 과 같은 글자다: %s', (src) => {
-    expect(firstHeading(src)).toBe(render(src).querySelector('h1')?.textContent)
+    expect(prepareMarkdown(src).heading).toBe(render(src).querySelector('h1')?.textContent)
+  })
+})
+
+describe('prepareMarkdown 의 묶음', () => {
+  const blocks = [
+    '# Title',
+    'para with [ref] and [other][o]',
+    '```ts\nconst a = 1\n\nconst b = 2\n```',
+    '| a | b |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |',
+    '> quote\n>\n> more',
+    '- one\n- two\n\n  inner',
+    '[ref]: https://example.com/r "R"',
+    '[o]: https://example.com/o'
+  ]
+  const doc = Array.from({ length: 5 }, () => blocks.join('\n\n')).join('\n\n')
+
+  function appended(parts: Part[]): string {
+    const el = document.createElement('div')
+    for (const p of parts) el.insertAdjacentHTML('beforeend', renderPart(p))
+    return el.innerHTML
+  }
+
+  it('최상위 블록 경계에서 나눠, 코드 블록·표·인용·목록이 묶음 사이에서 잘리지 않는다', () => {
+    const { parts } = prepareMarkdown(doc, 40)
+    expect(parts.length).toBeGreaterThan(10)
+    for (const p of parts) {
+      if (!('tokens' in p)) throw new Error('lexing 하지 못했다')
+      const raw = p.tokens.map((t) => t.raw).join('')
+      expect((raw.match(/```/g) ?? []).length % 2).toBe(0)
+      for (const t of p.tokens) expect(doc).toContain(t.raw)
+    }
+    expect(parts.flatMap((p) => ('tokens' in p ? p.tokens.map((t) => t.raw) : [])).join('')).toBe(
+      doc
+    )
+  })
+
+  it('묶음을 차례로 붙인 DOM 은 한 번에 렌더한 DOM 과 같다', () => {
+    expect(appended(prepareMarkdown(doc, 40).parts)).toBe(
+      appended(prepareMarkdown(doc, Infinity).parts)
+    )
+    expect(prepareMarkdown(doc, Infinity).parts).toHaveLength(1)
+  })
+
+  it.each([
+    ['접기', '<details>\n<summary>log</summary>', 'a', 'b', 'c', '</details>', 'after'],
+    [
+      '빈 줄이 든 HTML 표',
+      '<table>\n<tr><td>1</td></tr>',
+      '<tr><td>2</td></tr>',
+      '</table>',
+      'after'
+    ],
+    ['겹친 접기', '<details>', '<details>', 'a', '</details>', 'b', '</details>', 'after'],
+    ['문단 안에서 연 접기', 'x <details>', 'a', 'b', '</details>', 'after'],
+    ['문단 안에서 닫는 접기', '<details>', 'a', 'b </details>', 'after'],
+    [
+      '굵게·링크 안에서 연 접기',
+      '**x <details>**',
+      'a',
+      '[<details>y](u)',
+      'b',
+      '</details>',
+      'after'
+    ],
+    ['문단·제목 안의 닫지 않은 태그', 'Vec<String> x', 'a', '# h <div>', 'b', '<span>s', 'c'],
+    ['글자 꾸밈', 'x <b>bold', 'a', '> q', 'b</b>', 'after'],
+    ['인용·목록 안의 글자 꾸밈', '> <i>q', 'a', '- <b>l', 'b', '</i></b>', 'after'],
+    ['인용·목록 안의 접기', '> <details>q', 'a', '- <details>l', 'b', 'after'],
+    ['주석·빈 태그', '<!-- <details> -->', '<br>', '<hr>', '<p>x', 'a', 'b']
+  ])('HTML 태그가 묶음을 넘어도 DOM 은 한 번에 렌더한 것과 같다: %s', (_, ...blocks) => {
+    const doc = [...blocks, ...blocks].join('\n\n')
+    const whole = appended(prepareMarkdown(doc, Infinity).parts)
+    for (let size = 1; size <= doc.length; size++) {
+      expect(appended(prepareMarkdown(doc, size).parts), `size ${size}`).toBe(whole)
+    }
+  })
+
+  it('연 HTML 태그가 닫히면 다시 묶음을 나눈다', () => {
+    const doc = ['<details>', 'a', 'b', '</details>', 'c', 'd'].join('\n\n')
+    const raws = prepareMarkdown(doc, 1).parts.map((p) =>
+      'tokens' in p ? p.tokens.map((t) => t.raw).join('') : ''
+    )
+    expect(raws).toEqual(['<details>\n\na\n\nb\n\n</details>', '\n\n', 'c', '\n\n', 'd'])
+  })
+
+  it('다음 블록으로 이어지지 않는 태그는 묶음 나누기를 막지 않는다', () => {
+    const blocks = [
+      ...['> <details>q', '- <div>l', '<!-- <details> -->', '<br>', '<p>x'],
+      ...['returns Vec<String> here', 'Option<T>', '<span>x', '**<span>y**', '# h <div>', 'a']
+    ]
+    expect(prepareMarkdown(blocks.join('\n\n'), 1).parts).toHaveLength(blocks.length * 2 - 1)
+  })
+
+  it('참조형 링크는 정의가 다른 묶음에 있어도 주소로 풀린다', () => {
+    const { parts } = prepareMarkdown(
+      '[ref] and [x][o]\n\n' + 'filler\n\n'.repeat(20) + '[ref]: https://r\n[o]: https://o',
+      20
+    )
+    expect(parts.length).toBeGreaterThan(2)
+    const el = document.createElement('div')
+    el.innerHTML = renderPart(parts[0])
+    expect([...el.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual([
+      'https://r',
+      'https://o'
+    ])
+  })
+
+  it('빈 문서도 묶음 하나다', () => {
+    expect(prepareMarkdown('').parts).toHaveLength(1)
+    expect(html(prepareMarkdown('').parts)).toBe('')
+  })
+
+  it('lexer 가 던지면 heading 없이 원문을 줄 경계에서 나눈 글자로 보인다', () => {
+    // 8 MB 넘는 긴 문단에서 marked 의 lheading 정규식이 호출 스택을 넘기는 것을 흉내 낸다.
+    const lexer = vi.spyOn(Marked.prototype, 'lexer').mockImplementation(() => {
+      throw new RangeError('Maximum call stack size exceeded')
+    })
+    try {
+      const text = '# big\n<b>a & b</b>\n' + 'line\n'.repeat(30)
+      const { heading, parts } = prepareMarkdown(text, 20)
+      expect(heading).toBeUndefined()
+      expect(parts.length).toBeGreaterThan(3)
+      for (const p of parts) {
+        if (!('text' in p)) throw new Error('글자 묶음이 아니다')
+        expect(p.text.endsWith('\n')).toBe(true)
+      }
+      const el = document.createElement('div')
+      el.innerHTML = html(parts)
+      expect(el.querySelectorAll('b, h1')).toHaveLength(0)
+      expect(el.textContent).toBe(text)
+    } finally {
+      lexer.mockRestore()
+    }
+  })
+})
+
+describe('MarkdownBody', () => {
+  it('묶음마다 한 번만 렌더하고 같은 HTML 을 돌려준다', () => {
+    const parser = vi.spyOn(Marked.prototype, 'parser')
+    try {
+      const body = new MarkdownBody(prepareMarkdown('# a\n\nb\n\nc', 3).parts)
+      expect(body.length).toBe(3)
+      const first = [0, 1, 2].map((i) => body.html(i))
+      const again = [0, 1, 2].map((i) => body.html(i))
+      expect(again).toEqual(first)
+      expect(parser).toHaveBeenCalledTimes(3)
+    } finally {
+      parser.mockRestore()
+    }
   })
 })

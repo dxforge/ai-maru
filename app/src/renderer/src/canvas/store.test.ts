@@ -1,7 +1,9 @@
 import { resolveObjectURL } from 'node:buffer'
-import { describe, expect, it } from 'vitest'
+import { Marked } from 'marked'
+import { describe, expect, it, vi } from 'vitest'
 import type { CanvasItem } from '../../../shared/canvas'
 import {
+  bodyOf,
   clockTime,
   createCanvas,
   docKey,
@@ -63,9 +65,9 @@ describe('createCanvas', () => {
     c.put(md('a', 'A'))
     c.put(md('b', 'B'))
     c.expand(k('a'), false)
-    c.put(md('a', 'A2'))
+    c.put(md('a', '# A2'))
     expect(c.docs.value.map((d) => d.id)).toEqual(['b', 'a'])
-    expect(docOf(c, 'a')).toMatchObject({ text: 'A2' })
+    expect(docOf(c, 'a')?.title).toBe('A2')
     expect(c.expanded.has(k('a'))).toBe(false)
   })
 
@@ -95,9 +97,10 @@ describe('createCanvas', () => {
     const c = createCanvas()
     c.put(image('i', 'a.png'))
     const url = urlOf(c, 'i')
-    c.put(md('i', 'text'))
+    c.put(md('i', '# text'))
     expect(resolveObjectURL(url)).toBeUndefined()
-    expect(docOf(c, 'i')).toMatchObject({ kind: 'markdown', text: 'text' })
+    expect(docOf(c, 'i')?.kind).toBe('markdown')
+    expect(docOf(c, 'i')?.title).toBe('text')
   })
 
   it('지우면 목록과 펼침 상태에서 빠지고, 이미지는 URL 을 놓는다', () => {
@@ -142,19 +145,20 @@ describe('createCanvas', () => {
     let t = 1000
     const c = createCanvas(() => t)
     c.choose('all')
-    c.put(md('a', 'A'))
+    c.put(md('a', '# A'))
     c.hold(true)
     t = 2000
     c.put(md('b', 'B'))
-    c.put(md('a', 'A2'))
+    c.put(md('a', '# A2'))
     c.put(md('c', 'C'))
     expect(c.docs.value.map((d) => d.id)).toEqual(['a'])
-    expect(docOf(c, 'a')).toMatchObject({ text: 'A' })
+    expect(docOf(c, 'a')?.title).toBe('A')
     expect(c.held.value).toBe(3)
     t = 3000
     c.hold(false)
     expect(c.docs.value.map((d) => d.id)).toEqual(['c', 'b', 'a'])
-    expect(docOf(c, 'a')).toMatchObject({ text: 'A2', at: 2000 })
+    expect(docOf(c, 'a')?.title).toBe('A2')
+    expect(docOf(c, 'a')?.at).toBe(2000)
     expect([...c.expanded].toSorted()).toEqual(keys('a', 'b', 'c'))
     expect(c.held.value).toBe(0)
   })
@@ -238,13 +242,13 @@ describe('createCanvas', () => {
 })
 
 const owned = (id: string, cell?: string, text = id): CanvasItem => ({
-  ...md(id, text),
+  ...md(id, text, text),
   pty: 'p-1',
   ...(cell === undefined ? {} : { cell })
 })
 
 const shownTexts = (c: Canvas): [string | undefined, string][] =>
-  c.shown.value.map((d) => [d.cell, d.kind === 'markdown' ? d.text : d.title])
+  c.shown.value.map((d) => [d.cell, d.title])
 
 const named = (id: string, workspace: string, cell: string, branch?: string): OpenCell => ({
   id,
@@ -767,5 +771,45 @@ describe('문서 제목', () => {
 
   it('이미지는 파일 이름이다', () => {
     expect(titleOf(image('i', 'shot.png'))).toBe('shot.png')
+  })
+
+  it('lexing 하지 못한 문서도 버리지 않고 Markdown 이라는 제목으로 넣는다', () => {
+    const lexer = vi.spyOn(Marked.prototype, 'lexer').mockImplementation(() => {
+      throw new RangeError('Maximum call stack size exceeded')
+    })
+    try {
+      const c = createCanvas()
+      c.put(md('a', '# big\nline\n'))
+      expect(c.docs.value.map((d) => d.title)).toEqual(['Markdown'])
+      expect(bodyOf(c.docs.value[0])?.length).toBe(1)
+    } finally {
+      lexer.mockRestore()
+    }
+  })
+})
+
+describe('문서 본문', () => {
+  it('넣을 때 한 번만 lexing 하고, 그 결과로 제목과 본문 묶음을 함께 만든다', () => {
+    const lexer = vi.spyOn(Marked.prototype, 'lexer')
+    try {
+      const c = createCanvas()
+      c.put(md('a', '# 머리\n\n본문'))
+      expect(lexer).toHaveBeenCalledTimes(1)
+      expect(c.docs.value[0].title).toBe('머리')
+      expect(bodyOf(c.docs.value[0])?.length).toBe(1)
+    } finally {
+      lexer.mockRestore()
+    }
+  })
+
+  it('같은 id 로 다시 오면 새 본문이고, 이미지에는 본문이 없다', () => {
+    const c = createCanvas()
+    c.put(md('a', 'old'))
+    const old = bodyOf(c.docs.value[0])
+    c.put(md('a', 'new'))
+    expect(bodyOf(c.docs.value[0])).not.toBe(old)
+    expect(bodyOf(c.docs.value[0])).toBe(bodyOf(c.docs.value[0]))
+    c.put(image('i', 'shot.png'))
+    expect(bodyOf(docOf(c, 'i')!)).toBeUndefined()
   })
 })

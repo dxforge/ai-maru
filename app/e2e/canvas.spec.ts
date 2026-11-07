@@ -262,6 +262,180 @@ test('목록의 제목은 본문 heading 과 같은 글자로 보인다', async 
   await expect(titles(page)).toHaveText(body!)
 })
 
+function mixedDoc(bytes: number): string {
+  const blocks: string[] = []
+  for (let n = 0, length = 0; length < bytes; n++) {
+    const b = [
+      `## Section ${n}`,
+      `Paragraph ${n} with **bold**, *em*, \`code\` and [a link](https://example.com/${n}). ` +
+        'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor.',
+      `- item ${n}\n- item with \`code\`\n- item three`,
+      '```ts\nconst x = ' +
+        n +
+        '\nfunction f() {\n  return x * 2 // ' +
+        'wide '.repeat(30) +
+        '\n}\n```',
+      '| a | b | c |\n| - | - | - |\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |',
+      `> quote ${n}\n> more`
+    ].join('\n\n')
+    blocks.push(b)
+    length += b.length + 2
+  }
+  return [...blocks, 'END-MARK'].join('\n\n')
+}
+
+// 한 번에 렌더하면 1 MB 문서에서 창이 1.3 초 넘게 멈추고, 묶음으로 나눠 렌더하면 5 MB 문서에서도 가장 긴 longtask 가
+// 229 ms 였다(잰 값). 한도는 그 사이로 잡는다.
+const LONG_TASK_LIMIT = 1_000
+
+async function watchLongTasks(page: Page): Promise<() => Promise<number[]>> {
+  await page.evaluate(() => {
+    const w = window as unknown as { longTasks: number[] }
+    w.longTasks = []
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) w.longTasks.push(e.duration)
+    }).observe({ type: 'longtask' })
+  })
+  return () => page.evaluate(() => (window as unknown as { longTasks: number[] }).longTasks)
+}
+
+test('큰 문서를 넣으면 위에서부터 채워 끝까지 그리고, 그동안 터미널은 입력을 받아 보인다', async ({
+  launch
+}) => {
+  test.setTimeout(120_000)
+  const { app, page } = await launch()
+  const longTasks = await watchLongTasks(page)
+  const end = markdown(page).getByText('END-MARK')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: mixedDoc(5_000_000), title: 'A' })
+  await expect(markdown(page).locator('h2').first()).toHaveText('Section 0')
+  await expect(end).toHaveCount(0)
+  await page.keyboard.type('echo typed-$((1+1000))\n')
+  await expect(screen(page)).toShow('typed-1001')
+  await expect(end).toHaveCount(0)
+
+  await expect(end).toBeVisible({ timeout: 60_000 })
+  expect(await markdown(page).locator('h2').count()).toBe(
+    await markdown(page).locator('pre').count()
+  )
+  expect(Math.max(...(await longTasks()))).toBeLessThan(LONG_TASK_LIMIT)
+})
+
+test('채우는 도중 같은 id 로 이미지가 오면 떨어져 나간 본문에 더 붙이지 않는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await page.evaluate(() => {
+    const w = window as unknown as { detached: number }
+    w.detached = 0
+    const insert = Element.prototype.insertAdjacentHTML
+    Element.prototype.insertAdjacentHTML = function (this: Element, ...args) {
+      if (!this.isConnected) w.detached++
+      return insert.apply(this, args)
+    }
+  })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: mixedDoc(5_000_000), title: 'A' })
+  await expect(markdown(page).locator('h2').first()).toHaveText('Section 0')
+  await putCanvas(app, {
+    id: 'a',
+    kind: 'image',
+    name: 'shot.svg',
+    mime: 'image/svg+xml',
+    svg: svg(40)
+  })
+  await expect(page.locator('.canvas .image')).toBeVisible()
+  // 묶음을 붙이는 차례는 문서끼리 번갈아 오므로, 다른 문서를 끝까지 채우는 동안 앞 문서의 채우기가 살아 있으면 붙인다.
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: mixedDoc(300_000), title: 'B' })
+  await expect(markdown(page).getByText('END-MARK')).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as { detached: number }).detached)).toBe(0)
+})
+
+test('marked 가 lexing 하지 못하는 큰 문서도 Markdown 이라는 제목의 카드에 원문 글자로 보인다', async ({
+  launch
+}) => {
+  test.setTimeout(120_000)
+  const { app, page } = await launch()
+  const longTasks = await watchLongTasks(page)
+  const text = '# big\n' + 'line\n'.repeat(3_000_000) + 'END-MARK\n'
+  await putCanvas(app, { id: 'a', kind: 'markdown', text })
+  await expect(titles(page)).toHaveText(['Markdown'])
+  await expect(markdown(page).getByText('END-MARK')).toBeVisible({ timeout: 60_000 })
+  await expect(markdown(page).locator('h1')).toHaveCount(0)
+  expect(await markdown(page).evaluate((el) => el.textContent!.length)).toBe(text.length)
+  expect(Math.max(...(await longTasks()))).toBeLessThan(LONG_TASK_LIMIT)
+})
+
+for (const [setting, args] of [
+  ['overlay', undefined],
+  ['고전', CLASSIC_SCROLLBARS]
+] as const) {
+  test(`${setting} 스크롤바 설정에서 코드 블록에 포인터를 올렸던 문서를 지워도 애니메이션이 남지 않는다`, async ({
+    launch
+  }) => {
+    const { app, page } = await launch({}, undefined, args)
+    // 지운 요소의 애니메이션은 document.getAnimations() 에 나오지 않으므로 만들어지는 것을 모두 잡아 둔다.
+    await page.evaluate(() => {
+      const w = window as unknown as { animations: Animation[] }
+      w.animations = []
+      const animate = Element.prototype.animate
+      Element.prototype.animate = function (...a) {
+        const animation = animate.apply(this, a)
+        w.animations.push(animation)
+        return animation
+      }
+    })
+    await putCanvas(app, { id: 'a', kind: 'markdown', text: wide('code'), title: 'A' })
+    await card(page, 'a').locator('.markdown pre').hover()
+    await page.evaluate(() =>
+      document.querySelector<HTMLElement>('.canvas .card[data-id="a"] .remove')!.click()
+    )
+    await expect(titles(page)).toHaveCount(0)
+    const live = () =>
+      page.evaluate(
+        () =>
+          (window as unknown as { animations: Animation[] }).animations.filter(
+            (a) => a.playState !== 'idle'
+          ).length
+      )
+    expect(await live()).toBe(0)
+  })
+}
+
+test('접었다 펴거나 모두 펼쳐도 마크다운을 다시 렌더하지 않고, 같은 id 로 다시 온 문서는 새로 렌더해 앞 문서의 묶음을 남기지 않는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: mixedDoc(300_000), title: 'A' })
+  await expect(markdown(page).getByText('END-MARK')).toBeVisible()
+  const html = await markdown(page).innerHTML()
+  // DOMPurify 는 거를 HTML 을 DOMParser 로 읽으므로, 그 호출 수가 렌더한 횟수다.
+  await page.evaluate(() => {
+    const w = window as unknown as { parses: number }
+    w.parses = 0
+    const parse = DOMParser.prototype.parseFromString
+    DOMParser.prototype.parseFromString = function (...args) {
+      w.parses++
+      return parse.apply(this, args)
+    }
+  })
+  const parses = () => page.evaluate(() => (window as unknown as { parses: number }).parses)
+
+  await titles(page).filter({ hasText: 'A' }).click()
+  await expect(markdown(page)).toHaveCount(0)
+  await titles(page).filter({ hasText: 'A' }).click()
+  await expect(markdown(page).getByText('END-MARK')).toBeVisible()
+  await page.locator('.canvas .collapse-all').click()
+  await page.locator('.canvas .expand-all').click()
+  await expect(markdown(page).getByText('END-MARK')).toBeVisible()
+  expect(await markdown(page).innerHTML()).toBe(html)
+  expect(await parses()).toBe(0)
+
+  await leavePanel(page)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: mixedDoc(300_000), title: 'A' })
+  await expect.poll(parses).toBeGreaterThan(0)
+  await expect(markdown(page).getByText('END-MARK')).toBeVisible()
+  expect(await markdown(page).innerHTML()).toBe(html)
+})
+
 test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터미널로 간다', async ({ launch }) => {
   const { app, page } = await launch()
   let n = 0
@@ -560,19 +734,34 @@ test('고전 스크롤바 설정에서 Canvas 의 스크롤바 트랙을 눌러�
 
 const wide = (tag: string) => '```\n' + `${tag} `.repeat(400) + '\n```'
 
-test('고전 스크롤바 설정에서 문서를 다시 그려도 새 코드 블록에 스크롤바를 씌운다', async ({
+test('고전 스크롤바 설정에서 코드 블록은 포인터가 들어온 블록에만 스크롤바를 씌우고, 씌우기 전에도 시스템 스크롤바가 자리를 차지하지 않으며, 다시 그린 블록에도 씌운다', async ({
   launch
 }) => {
   const { app, page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
-  const pre = card(page, 'a').locator('.markdown pre')
-  await putCanvas(app, { id: 'a', kind: 'markdown', text: wide('old'), title: 'A' })
-  await expect(pre).toHaveAttribute('data-overlayscrollbars')
-  await expect(pre).toContainText('old')
+  const pres = card(page, 'a').locator('.markdown pre')
+  const barHeight = (i: number) =>
+    pres.nth(i).evaluate((el: HTMLElement) => el.offsetHeight - el.clientHeight)
+  await putCanvas(app, {
+    id: 'a',
+    kind: 'markdown',
+    text: wide('old') + '\n\n' + wide('other'),
+    title: 'A'
+  })
+  await expect(pres).toHaveCount(2)
+  await expect(pres.first()).not.toHaveAttribute('data-overlayscrollbars')
+  expect(await barHeight(0)).toBe(0)
 
+  await pres.first().hover()
+  await expect(pres.first()).toHaveAttribute('data-overlayscrollbars')
+  await expect(pres.nth(1)).not.toHaveAttribute('data-overlayscrollbars')
+  expect(await barHeight(0)).toBe(0)
+
+  await leavePanel(page)
   await putCanvas(app, { id: 'a', kind: 'markdown', text: wide('new'), title: 'A' })
-  await expect(pre).toContainText('new')
-  await expect(pre).toHaveAttribute('data-overlayscrollbars')
-  expect(await pre.evaluate((el: HTMLElement) => el.offsetHeight - el.clientHeight)).toBe(0)
+  await expect(pres.first()).toContainText('new')
+  await pres.first().hover()
+  await expect(pres.first()).toHaveAttribute('data-overlayscrollbars')
+  expect(await barHeight(0)).toBe(0)
 })
 
 test('overlay 스크롤바 설정에서는 Canvas 가 시스템 스크롤바를 그대로 쓴다', async ({ launch }) => {
