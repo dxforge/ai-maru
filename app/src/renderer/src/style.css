@@ -27,6 +27,16 @@
   --font-mono: ui-monospace;
 }
 
+/* 창 드래그 영역이다. 드래그 영역을 누르면 페이지에 pointerdown 이 오지 않으므로, 바깥을 눌러 닫는 메뉴가 열린 동안에는
+   `.window-drag-off` 로 끈다. */
+.window-drag {
+  -webkit-app-region: drag;
+}
+
+:root.window-drag-off .window-drag {
+  -webkit-app-region: no-drag;
+}
+
 /* 시스템 스크롤바가 overlay 일 때 쓰는 native 스크롤바의 모양이다. 아니면 overlayScroll.ts 가 그린 스크롤바(.os-theme-maru)를 쓴다.
    `::-webkit-scrollbar` 를 쓰면 macOS 의 overlay 스크롤바가 고전 모드로 바뀌므로, 표준 속성으로 폭과 색만 정한다.
    트랙은 스크롤바에 마우스를 올린 동안만 칠해진다. */
@@ -227,11 +237,9 @@ body,
     sans-serif;
 }
 
-.palette .query {
-  flex: none;
+/* 한 줄 입력 칸이다. 폭과 자리는 쓰는 쪽이 정한다. */
+.text-input {
   box-sizing: border-box;
-  width: calc(100% - 2 * var(--space-3));
-  margin: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-1);
@@ -241,8 +249,14 @@ body,
   font: inherit;
 }
 
-.palette .query:focus {
+.text-input:focus {
   border-color: var(--accent);
+}
+
+.palette .query {
+  flex: none;
+  width: calc(100% - 2 * var(--space-3));
+  margin: var(--space-3);
 }
 
 .palette .list {
@@ -308,7 +322,7 @@ body,
 }
 
 /* 글자 크기와 색은 위에 둔다. 버튼은 컴포넌트의 `button { font: inherit; color: inherit }` 으로 물려받는다. */
-.popup-menu button {
+.popup-menu button:not(.icon-button) {
   width: 100%;
   padding: var(--space-2) var(--space-5);
   text-align: left;
@@ -316,5 +330,29 @@ body,
 }
 
 .popup-menu button:hover {
+  background: var(--hover);
+}
+
+.popup-menu hr {
+  margin: var(--space-2) 0;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+/* 줄 안의 작은 아이콘 버튼이다. */
+.icon-button {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-1);
+}
+
+.icon-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.icon-button:hover {
   background: var(--hover);
 }

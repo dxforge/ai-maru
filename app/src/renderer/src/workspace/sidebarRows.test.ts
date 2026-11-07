@@ -8,7 +8,8 @@ import {
 } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import {
-  closedRows,
+  dirRow,
+  emptyRow,
   exitText,
   jobRow,
   paneRow,
@@ -169,30 +170,22 @@ describe('workspaceMarks', () => {
   })
 })
 
-describe('closedRows', () => {
-  it('열린 cell 이 맡지 않은 즐겨찾기를 넣은 순서대로 내고, 이름은 디렉토리 이름, 경로는 홈을 ~ 로 줄인다', () => {
-    const favorites = ['/h/work/app', '/h/notes', '/opt/x']
-    const cells = [{}, { favorite: '/h/work/app/' }]
-    expect(closedRows({ dir: '/h/old', favorites, cells }, '/h')).toEqual([
-      { dir: '/h/notes', name: 'notes', path: '~/notes', favorite: true },
-      { dir: '/opt/x', name: 'x', path: '/opt/x', favorite: true }
-    ])
+describe('dirRow', () => {
+  it('이름은 디렉토리 이름, 경로는 홈을 ~ 로 줄이고, 홈 디렉토리의 이름은 ~ 다', () => {
+    expect(dirRow('/h/notes', '/h')).toEqual({ dir: '/h/notes', name: 'notes', path: '~/notes' })
+    expect(dirRow('/opt/x', '/h')).toEqual({ dir: '/opt/x', name: 'x', path: '/opt/x' })
+    expect(dirRow('/h', '/h')).toEqual({ dir: '/h', name: '~', path: '~' })
   })
+})
 
-  it('홈 디렉토리의 이름은 ~ 다', () => {
-    expect(closedRows({ favorites: ['/h'], cells: [] }, '/h')).toEqual([
-      { dir: '/h', name: '~', path: '~', favorite: true }
-    ])
-  })
-
-  it('cell 도 즐겨찾기도 없으면 dir 줄 하나이고, dir 도 없으면 없다', () => {
-    expect(closedRows({ dir: '/h/notes', cells: [] }, '/h')).toEqual([
-      { dir: '/h/notes', name: 'notes', path: '~/notes', favorite: false }
-    ])
-    expect(closedRows({ cells: [] })).toEqual([])
+describe('emptyRow', () => {
+  it('cell 이 없으면 dir 줄 하나이고, dir 도 없으면 없다', () => {
+    const row = { dir: '/h/notes', name: 'notes', path: '~/notes' }
+    expect(emptyRow({ dir: '/h/notes', cells: [] }, '/h')).toEqual([row])
+    expect(emptyRow({ cells: [] })).toEqual([])
   })
 
   it('cell 이 있으면 dir 줄은 없다', () => {
-    expect(closedRows({ dir: '/h/notes', cells: [{}] })).toEqual([])
+    expect(emptyRow({ dir: '/h/notes', cells: [{}] })).toEqual([])
   })
 })

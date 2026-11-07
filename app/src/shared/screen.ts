@@ -44,16 +44,15 @@ type CellOf<P> = {
   fontSize?: number
   /** columns 보기에서 늘어선 pane 하나가 받는 터미널 열 수. 없으면 설정 파일의 `layout.column-cols` 다. */
   paneCols?: number
-  /** 이 cell 이 맡은 즐겨찾기 디렉토리. 그 workspace 의 `favorites` 가운데 하나다. */
-  favorite?: string
 }
 
 /**
  * `name` 은 사용자가 바꾼 이름이다. 없으면 `workspaceName` 이 짓는다. `dir` 이 첫 pane 의 작업 트리 안이면 그 저장소
  * 이름, 밖이면 `dir` 의 디렉토리 이름, `dir` 이 아직 없으면 첫 pane 의 저장소나 디렉토리 이름이다. `dir` 은 workspace 의
  * 디렉토리로, 홈 밖의 디렉토리로 한 번 정하면 바꾸지 않는다. 첫 cell 이 `cd` 하거나 다른 cell 이 첫 자리로 와도
- * workspace 의 경로가 따라 바뀌지 않게 하기 위해서다. `pinned` 인 workspace 는 마지막 cell 을 닫아도 남는다.
- * cell 이 없는 workspace 는 `pinned` 일 때만 있다. `favorites` 는 즐겨찾기 디렉토리의 절대경로로, 넣은 순서다.
+ * workspace 의 경로가 따라 바뀌지 않게 하기 위해서다. `favorites` 는 즐겨찾기 디렉토리의 절대경로로, 넣은 순서다.
+ * `pinned` 이거나 `favorites` 가 있는 workspace 는 마지막 cell 을 닫아도 남는다(`keeps`). cell 이 없는 workspace 는
+ * 이때만 있다.
  */
 type WorkspaceOf<P> = {
   key: number
@@ -199,13 +198,12 @@ function parseScreenPane(v: unknown): ScreenPane | null {
   return pane && isKey(key) && isPtyId(ptyId) ? { key, ...pane, ptyId } : null
 }
 
-function parseCellFields(v: Obj): Pick<CellOf<never>, 'fontSize' | 'paneCols' | 'favorite'> | null {
-  const { fontSize, paneCols, favorite } = v
-  if (!optString(favorite)) return null
+function parseCellFields(v: Obj): Pick<CellOf<never>, 'fontSize' | 'paneCols'> | null {
+  const { fontSize, paneCols } = v
   if (fontSize !== undefined && !(typeof fontSize === 'number' && Number.isFinite(fontSize)))
     return null
   if (paneCols !== undefined && !(isKey(paneCols) && paneCols > 0)) return null
-  return { fontSize, paneCols, favorite }
+  return { fontSize, paneCols }
 }
 
 function parseScreenCell(v: unknown): ScreenCell | null {
@@ -257,7 +255,7 @@ export function parseScreen(v: unknown): ScreenState | null {
     (w): ScreenWorkspace | null => {
       const row = parseWorkspaceRow(w)
       if (!row || !isKey((w as Obj).key)) return null
-      const cells = parseList((w as Obj).cells, parseScreenCell, row.pinned)
+      const cells = parseList((w as Obj).cells, parseScreenCell, keeps(row))
       return cells && { key: (w as Obj).key as number, ...row, cells }
     },
     true
@@ -344,18 +342,8 @@ export function splitScreen(screen: ScreenState): SplitScreen {
   }
 }
 
-/**
- * cell 의 즐겨찾기 표시는 그 workspace 의 `favorites` 에 있을 때만 남긴다. `workspaces` 표를 잃으면 `favorites` 가 비어,
- * cell 에 남은 표시가 없는 즐겨찾기를 가리키기 때문이다.
- */
-function keepFavorites(w: SavedWorkspace): SavedWorkspace {
-  const cells = w.cells.map((c) =>
-    c.favorite === undefined || w.favorites?.includes(c.favorite)
-      ? c
-      : compact({ ...c, favorite: undefined })
-  )
-  return { ...w, cells }
-}
+export const keeps = (w: { pinned?: true; favorites?: readonly string[] }): boolean =>
+  !!w.pinned || !!w.favorites?.length
 
 /** workspace·cell·pane 의 key 는 카운터 하나로 매기므로 셋을 모두 준다. */
 export function layoutKeys(
@@ -384,7 +372,7 @@ export type Tables = {
  *   더한다.
  * - cell 의 배치가 가리키는 pane 이 `panes` 표에 그 cell 의 줄로 모두 있지 않거나 같은 pane 을 두 번 가리키면, 그 cell 을
  *   workspace 의 `dir` 에서 새 pane 하나로 연다.
- * - cell 이 없는 workspace 는 핀일 때만 남긴다.
+ * - cell 이 없는 workspace 는 `keeps` 일 때만 남긴다.
  */
 export function joinTables(
   t: Tables,
@@ -419,7 +407,7 @@ export function joinTables(
   let next = 0
   let selectedKey: number | null = null
   const workspaces = list
-    .filter((w) => w.pinned || w.cells.length)
+    .filter((w) => keeps(w) || w.cells.length)
     .map(({ cells: built, ...w }): SavedWorkspace => {
       const key = next++
       const cells = built.map(({ panes: rows, layout, focused, ...c }) => {
@@ -439,7 +427,7 @@ export function joinTables(
           focused: keyOf(focused)
         }
       })
-      return keepFavorites({ key, ...w, cells })
+      return { key, ...w, cells }
     })
   return workspaces.length ? { workspaces, selected: selectedKey } : null
 }

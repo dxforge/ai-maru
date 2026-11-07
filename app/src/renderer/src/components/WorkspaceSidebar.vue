@@ -5,14 +5,14 @@ import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { GitBranch, Star, X } from '@lucide/vue'
+import { EllipsisVertical, GitBranch, Star, X } from '@lucide/vue'
 import { commandClass, STATE_LABELS } from '../icons'
 import { anchorWidth, type Anchor } from '../launcher/anchor'
 import FoldChevron from './FoldChevron.vue'
 import LeadIcon from './LeadIcon.vue'
 import PaneIcon from './PaneIcon.vue'
 import StatusIcon from './StatusIcon.vue'
-import WorkspaceNameInput from './WorkspaceNameInput.vue'
+import WorkspaceMenu from './WorkspaceMenu.vue'
 import { commandLabel, commandTail, elapsed, notificationText } from '../workspace/display'
 import {
   dropAt,
@@ -25,11 +25,11 @@ import {
   type Span
 } from '../workspace/sidebarDrag'
 import {
-  closedRows,
   jobRow,
   paneRow,
+  dirRow,
+  emptyRow,
   workspaceMarks,
-  type ClosedRow,
   type JobRow,
   type Row,
   type RowSource
@@ -37,8 +37,8 @@ import {
 import PinIcon from './PinIcon.vue'
 import {
   focusedPane,
+  isFavorite,
   orderedPanes,
-  pinnedCount,
   type Cell,
   type Pane,
   type Workspace
@@ -58,7 +58,7 @@ const {
   now = 0,
   home = undefined,
   shell = undefined,
-  renaming = null
+  menuFor = null
 } = defineProps<{
   workspaces: readonly DeepReadonly<Workspace>[]
   selectedKey: number | null
@@ -74,8 +74,7 @@ const {
   now?: number
   home?: string
   shell?: string
-  /** 이름을 고치는 중인 workspace 의 key */
-  renaming?: number | null
+  menuFor?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -84,13 +83,14 @@ const emit = defineEmits<{
   killJob: [pty: string]
   moveCell: [cell: number, to: { workspace: number; index: number } | 'new']
   moveWorkspace: [workspace: number, index: number]
-  startRename: [workspace: number]
-  /** `name` 이 null 이면 취소다. `refocus` 면 터미널에 포커스를 돌려준다. */
-  endRename: [workspace: number, name: string | null, refocus: boolean]
+  openMenu: [workspace: number]
+  /** `name` 이 null 이면 이름을 바꾸지 않는다. `refocus` 면 터미널에 포커스를 돌려준다. */
+  closeMenu: [workspace: number, name: string | null, refocus: boolean]
   togglePin: [workspace: number]
   toggleFavorite: [cell: number]
   openDir: [workspace: number, dir: string, anchor: Anchor]
   removeFavorite: [workspace: number, dir: string]
+  closeWorkspace: [workspace: number]
 }>()
 
 // `groups` 밖에 둔다. `groups` 안에 두면 job 표가 바뀔 때마다 job 과 상관없는 pane 줄까지 다시 만들기 때문이다.
@@ -107,6 +107,7 @@ const jobsByCell = computed(() => {
 
 function cellGroup(
   src: RowSource,
+  w: DeepReadonly<Workspace>,
   c: DeepReadonly<Cell>,
   base: DeepReadonly<Pane> | undefined,
   index: number
@@ -118,17 +119,14 @@ function cellGroup(
     c,
     index,
     selected,
-    favorite: c.favorite !== undefined,
+    favorite: isFavorite(w, c),
     rows: orderedPanes(c).map((p) => paneRow(src, p, selected && p === current, base))
   }
 }
 
-type Item = ReturnType<typeof cellGroup> | ({ kind: 'closed' } & ClosedRow)
-
-function items(src: RowSource, w: DeepReadonly<Workspace>): Item[] {
+function cells(src: RowSource, w: DeepReadonly<Workspace>) {
   const base = labelBase(w)
-  const closed = closedRows(w, home).map((r): Item => ({ kind: 'closed', ...r }))
-  return [...closed, ...w.cells.map((c, i) => cellGroup(src, c, base, i))]
+  return w.cells.map((c, i) => cellGroup(src, w, c, base, i))
 }
 
 const groups = computed(() => {
@@ -143,7 +141,9 @@ const groups = computed(() => {
       folded: f,
       pinned: !!w.pinned,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
-      items: f ? [] : items(src, w)
+      favorites: (w.favorites ?? []).map((d) => dirRow(d, home)),
+      empty: f ? [] : emptyRow(w, home),
+      items: f ? [] : cells(src, w)
     }
   })
 })
@@ -154,10 +154,25 @@ function jobTime(j: JobRow): string {
   return j.started === undefined ? '' : elapsed(now - j.started)
 }
 
-function openDir(e: MouseEvent, workspace: number, dir: string): void {
-  const box = (e.currentTarget as HTMLElement).closest('.closed-card')!.getBoundingClientRect()
-  const width = anchorWidth(box.width, nav.value!.getBoundingClientRect().width)
-  emit('openDir', workspace, dir, { left: box.left, top: box.top, bottom: box.bottom, width })
+function openRow(e: MouseEvent, workspace: number, dir: string): void {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const width = anchorWidth(r.width, nav.value!.getBoundingClientRect().width)
+  emit('openDir', workspace, dir, { left: r.left, top: r.top, bottom: r.bottom, width })
+}
+
+const heads = new Map<number, HTMLElement>()
+function headRef(key: number, el: unknown): void {
+  if (el instanceof HTMLElement) heads.set(key, el)
+  else heads.delete(key)
+}
+
+let menu: InstanceType<typeof WorkspaceMenu> | null = null
+function menuRef(el: unknown): void {
+  menu = el as InstanceType<typeof WorkspaceMenu> | null
+}
+function toggleMenu(key: number): void {
+  if (menuFor === key) menu?.close()
+  else emit('openMenu', key)
 }
 
 // 이름 자리에서 잘릴 수 있는 명령을 툴팁에 다 보인다. 돈 시간이 들어가므로 `groups` 밖에서 만든다.
@@ -186,13 +201,12 @@ const spanOf = (el: Element): Span => {
 function spans(): SidebarSpans {
   const slot = list.value!.querySelector(':scope > .new-workspace')
   return {
-    pinned: pinnedCount(workspaces),
     workspaces: Array.from(
       list.value!.querySelectorAll<HTMLElement>(':scope > .workspace'),
       (el) => {
         const key = Number(el.dataset.workspace)
         const w = workspaces.find((x) => x.key === key)
-        const closed = el.querySelectorAll<HTMLElement>(':scope > .closed-card')
+        const dir = el.querySelector(':scope > .dir-card')
         return {
           ...spanOf(el),
           key,
@@ -200,7 +214,7 @@ function spans(): SidebarSpans {
           count: w?.cells.length ?? 0,
           cells: Array.from(el.querySelectorAll(':scope > .group'), spanOf),
           folded: folded.has(key),
-          closedBottom: closed.length ? spanOf(closed[closed.length - 1]).bottom : undefined
+          dirBottom: dir ? spanOf(dir).bottom : undefined
         }
       }
     ),
@@ -282,40 +296,50 @@ const cellDragged = (cell: number): boolean =>
 const workspaceDragged = (workspace: number): boolean =>
   dragged.value?.kind === 'workspace' && dragged.value.workspace === workspace
 const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin Workspace' : 'Pin Workspace')
+const pinTip = (pinned: boolean): string =>
+  pinned
+    ? pinLabel(pinned)
+    : `${pinLabel(pinned)} — keep it in the sidebar after its last cell closes`
 const favoriteLabel = (favorite: boolean): string =>
   favorite ? 'Remove from Favorites' : 'Add to Favorites'
 </script>
 
 <template>
-  <nav ref="nav" class="sidebar" :class="{ collapsed }">
+  <nav ref="nav" class="sidebar window-drag" :class="{ collapsed }">
     <div class="titlebar" />
     <div ref="list" v-overlay-scroll="'y'" class="list">
       <div
         v-for="(
-          { w, name, auto, folded: wf, pinned, state, notified, dot, items: entries }, wi
+          {
+            w,
+            name,
+            auto,
+            folded: wf,
+            pinned,
+            state,
+            notified,
+            dot,
+            favorites,
+            empty,
+            items: entries
+          },
+          wi
         ) in groups"
         :key="w.key"
         class="workspace"
         :class="{ dragging: workspaceDragged(w.key) }"
         :data-workspace="w.key"
       >
-        <div v-if="renaming === w.key" class="workspace-head editing">
-          <WorkspaceNameInput
-            :value="name"
-            @done="(n, refocus) => emit('endRename', w.key, n, refocus)"
-          />
-        </div>
         <button
-          v-else
+          :ref="(el) => headRef(w.key, el)"
           v-tooltip="auto"
           class="workspace-head"
-          :class="{ folded: wf }"
+          :class="{ folded: wf, 'menu-open': menuFor === w.key }"
           :aria-label="wf ? `Expand ${name}` : `Collapse ${name}`"
           :aria-expanded="!wf"
           @mousedown.prevent
           @pointerdown="grabWorkspace($event, w.key, wi)"
           @click="emit('fold', w.key)"
-          @dblclick="emit('startRename', w.key)"
         >
           <span
             v-if="state"
@@ -326,124 +350,132 @@ const favoriteLabel = (favorite: boolean): string =>
           /></span>
           <span class="workspace-name workspace-title">{{ name }}</span>
           <span v-if="dot" class="unread-dot" />
-          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 핀의 pointerdown·click·dblclick 이 헤더의 끌기·접기·이름 고치기로 전해지지 않게 막는다. -->
+          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 핀과 메뉴 버튼의 pointerdown·click 이 헤더의 끌기·접기로 전해지지 않게 막는다. -->
           <span class="pin-slot" :class="{ on: pinned }"
             ><span
-              v-tooltip="pinLabel(pinned)"
+              v-tooltip="pinTip(pinned)"
               role="button"
-              class="pin"
+              class="pin icon-button"
               :class="{ on: pinned }"
               :aria-label="pinLabel(pinned)"
               :aria-pressed="pinned"
               @pointerdown.stop
               @click.stop="emit('togglePin', w.key)"
-              @dblclick.stop
               ><PinIcon :filled="pinned" /></span
           ></span>
+          <span
+            v-tooltip="menuFor === w.key ? undefined : 'Workspace Menu'"
+            role="button"
+            class="workspace-menu-button icon-button"
+            aria-label="Workspace Menu"
+            aria-haspopup="menu"
+            :aria-expanded="menuFor === w.key"
+            @pointerdown.stop
+            @click.stop="toggleMenu(w.key)"
+            ><EllipsisVertical class="text-icon"
+          /></span>
           <FoldChevron class="chevron" :open="!wf" />
         </button>
-        <template
+        <WorkspaceMenu
+          v-if="menuFor === w.key && heads.get(w.key)"
+          :ref="menuRef"
+          :name="name"
+          :favorites="favorites"
+          :pinned="pinned"
+          :head="heads.get(w.key)!"
+          @done="(n, refocus) => emit('closeMenu', w.key, n, refocus)"
+          @open-favorite="(dir, at) => emit('openDir', w.key, dir, at)"
+          @remove-favorite="(dir) => emit('removeFavorite', w.key, dir)"
+          @toggle-pin="emit('togglePin', w.key)"
+          @close-workspace="emit('closeWorkspace', w.key)"
+        />
+        <div v-for="d in empty" :key="d.dir" class="dir-card">
+          <button
+            v-tooltip="d.path"
+            class="row dir-row"
+            :aria-label="`Open ${d.name}`"
+            @mousedown.prevent
+            @click="openRow($event, w.key, d.dir)"
+          >
+            <span class="state"><PaneIcon :icon="{ command: 'terminal' }" /></span>
+            <span class="title">{{ d.name }}</span>
+            <span class="tail">{{ d.path }}</span>
+          </button>
+        </div>
+        <div
           v-for="item in entries"
-          :key="item.kind === 'cell' ? item.c.key : `closed:${item.dir}`"
+          :key="item.c.key"
+          class="group"
+          :class="{ selected: item.selected, dragging: cellDragged(item.c.key) }"
         >
-          <div v-if="item.kind === 'closed'" class="closed-card">
-            <button
-              v-tooltip="item.path"
-              class="row closed-row"
-              :aria-label="`Open ${item.name}`"
-              @mousedown.prevent
-              @click="openDir($event, w.key, item.dir)"
-            >
-              <span class="state"><PaneIcon :icon="{ command: 'terminal' }" /></span>
-              <span class="title">{{ item.name }}</span>
-              <span class="tail">{{ item.path }}</span>
-            </button>
-            <button
-              v-if="item.favorite"
-              v-tooltip="favoriteLabel(true)"
-              class="favorite on"
-              :aria-label="`Remove ${item.name} from Favorites`"
-              aria-pressed="true"
-              @mousedown.prevent
-              @click="emit('removeFavorite', w.key, item.dir)"
-            >
-              <Star class="text-icon" fill="currentColor" />
-            </button>
-          </div>
-          <div
-            v-else
-            class="group"
-            :class="{ selected: item.selected, dragging: cellDragged(item.c.key) }"
+          <span
+            class="grip"
+            aria-hidden="true"
+            @mousedown.prevent
+            @pointerdown="grabCell($event, w.key, item.c.key, item.index)"
+          />
+          <button
+            v-for="r in item.rows"
+            :key="r.pane"
+            v-tooltip="paneTip(r)"
+            class="row pane-row"
+            :class="[r.state ?? ['shell', commandClass(r.command)], { focused: r.focused }]"
+            :aria-label="r.aria"
+            @mousedown.prevent
+            @click="emit('focus', item.c.key, r.pane)"
           >
             <span
-              class="grip"
-              aria-hidden="true"
-              @mousedown.prevent
-              @pointerdown="grabCell($event, w.key, item.c.key, item.index)"
-            />
+              v-tooltip="r.state && STATE_LABELS[r.state]"
+              class="state status-icon"
+              :class="{ unread: r.notice }"
+              ><PaneIcon :icon="r.icon"
+            /></span>
+            <span class="title">{{ r.text }}</span>
+            <span v-if="r.place" class="tail place"
+              ><span v-if="r.place.name" class="name">{{ r.place.name }}</span
+              ><span v-if="r.place.branch" class="branch"
+                ><GitBranch class="text-icon" /><span class="branch-name">{{
+                  r.place.branch
+                }}</span></span
+              ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
+            >
+            <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
+              commandTail(r.command, now)
+            }}</span>
+          </button>
+          <div
+            v-for="j in jobsByCell.get(item.c.id)"
+            :key="j.pty"
+            v-tooltip="j.tip"
+            class="row job-row"
+            :class="{ exited: j.exited }"
+          >
+            <span class="state"><LeadIcon name="gear" /></span>
+            <span class="title">{{ j.text }}</span>
+            <span v-if="j.ports" class="tail ports">{{ j.ports }}</span>
+            <span class="tail time">{{ jobTime(j) }}</span>
             <button
-              v-for="r in item.rows"
-              :key="r.pane"
-              v-tooltip="paneTip(r)"
-              class="row pane-row"
-              :class="[r.state ?? ['shell', commandClass(r.command)], { focused: r.focused }]"
-              :aria-label="r.aria"
+              v-tooltip="j.exited ? 'Remove' : 'Stop'"
+              class="tail kill"
+              :aria-label="j.exited ? `Remove ${j.text}` : `Stop ${j.text}`"
               @mousedown.prevent
-              @click="emit('focus', item.c.key, r.pane)"
+              @click="emit('killJob', j.pty)"
             >
-              <span
-                v-tooltip="r.state && STATE_LABELS[r.state]"
-                class="state status-icon"
-                :class="{ unread: r.notice }"
-                ><PaneIcon :icon="r.icon"
-              /></span>
-              <span class="title">{{ r.text }}</span>
-              <span v-if="r.place" class="tail place"
-                ><span v-if="r.place.name" class="name">{{ r.place.name }}</span
-                ><span v-if="r.place.branch" class="branch"
-                  ><GitBranch class="text-icon" /><span class="branch-name">{{
-                    r.place.branch
-                  }}</span></span
-                ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
-              >
-              <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
-                commandTail(r.command, now)
-              }}</span>
-            </button>
-            <div
-              v-for="j in jobsByCell.get(item.c.id)"
-              :key="j.pty"
-              v-tooltip="j.tip"
-              class="row job-row"
-              :class="{ exited: j.exited }"
-            >
-              <span class="state"><LeadIcon name="gear" /></span>
-              <span class="title">{{ j.text }}</span>
-              <span v-if="j.ports" class="tail ports">{{ j.ports }}</span>
-              <span class="tail time">{{ jobTime(j) }}</span>
-              <button
-                v-tooltip="j.exited ? 'Remove' : 'Stop'"
-                class="tail kill"
-                :aria-label="j.exited ? `Remove ${j.text}` : `Stop ${j.text}`"
-                @mousedown.prevent
-                @click="emit('killJob', j.pty)"
-              >
-                <X class="text-icon" />
-              </button>
-            </div>
-            <button
-              v-tooltip="favoriteLabel(item.favorite)"
-              class="favorite"
-              :class="{ on: item.favorite }"
-              :aria-label="favoriteLabel(item.favorite)"
-              :aria-pressed="item.favorite"
-              @mousedown.prevent
-              @click="emit('toggleFavorite', item.c.key)"
-            >
-              <Star class="text-icon" :fill="item.favorite ? 'currentColor' : 'none'" />
+              <X class="text-icon" />
             </button>
           </div>
-        </template>
+          <button
+            v-tooltip="favoriteLabel(item.favorite)"
+            class="favorite"
+            :class="{ on: item.favorite }"
+            :aria-label="favoriteLabel(item.favorite)"
+            :aria-pressed="item.favorite"
+            @mousedown.prevent
+            @click="emit('toggleFavorite', item.c.key)"
+          >
+            <Star class="text-icon" :fill="item.favorite ? 'currentColor' : 'none'" />
+          </button>
+        </div>
       </div>
       <div
         v-if="dragged?.kind === 'cell'"
@@ -466,7 +498,6 @@ const favoriteLabel = (favorite: boolean): string =>
    행 앞 칸의 아이콘과 workspace 이름의 첫 글자는 신호등의 첫 원과 같은 x(12px)에 선다. 12px 는 cell 면의 바깥 여백
    6px 와 안쪽 여백 6px 를 더한 값이다. */
 .sidebar {
-  -webkit-app-region: drag;
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
@@ -513,15 +544,9 @@ const favoriteLabel = (favorite: boolean): string =>
   color: var(--fg);
 }
 
-.workspace-head.editing {
-  display: flex;
-  align-items: center;
-  height: var(--row-height);
-}
-
 .workspace-head .chevron {
   flex: none;
-  margin-left: auto;
+  margin-left: calc(-1 * var(--space-2));
   opacity: 0;
 }
 
@@ -565,27 +590,36 @@ const favoriteLabel = (favorite: boolean): string =>
 }
 
 .pin {
-  display: flex;
-  align-items: center;
-  height: 20px;
   visibility: hidden;
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-1);
-}
-
-.pin svg {
-  width: 12px;
-  height: 12px;
 }
 
 .pin.on,
 .workspace-head:hover .pin,
-.workspace-head:focus-visible .pin {
+.workspace-head:focus-visible .pin,
+.workspace-head.menu-open .pin {
   visibility: visible;
 }
 
-/* 이름 위에 겹친 핀은 바탕색으로 이름을 가리므로, hover 색은 바탕색 위에 덧칠한다. */
+/* 메뉴 버튼은 헤더를 가리킬 때와 메뉴가 열려 있을 때만 보인다. 핀과 달리 자리를 늘 차지해 이름이 hover 때 밀리지 않는다. */
+.workspace-menu-button {
+  flex: none;
+  margin-left: auto;
+  visibility: hidden;
+}
+
+.workspace-head:hover .workspace-menu-button,
+.workspace-head:focus-visible .workspace-menu-button,
+.workspace-head.menu-open .workspace-menu-button {
+  visibility: visible;
+}
+
+.workspace-head.menu-open .workspace-menu-button {
+  color: var(--fg);
+}
+
+/* 이름 위에 겹친 핀은 바탕색으로 이름을 가리므로, hover 색은 `.icon-button` 처럼 바탕색을 바꾸지 않고 그 위에 덧칠한다. */
 .pin:hover {
+  background-color: transparent;
   background-image: linear-gradient(var(--hover), var(--hover));
 }
 
@@ -606,27 +640,27 @@ const favoriteLabel = (favorite: boolean): string =>
 }
 
 .group:last-child,
-.closed-card:last-child {
+.dir-card:last-child {
   margin-bottom: 0;
 }
 
 /* 별이 박스 모서리 밖으로 나오므로 박스는 넘친 것을 자르지 않고, 줄의 바탕색은 박스의 첫 줄과 마지막 줄의 모서리를 깎아
    박스 안에 둔다. */
 .group,
-.closed-card {
+.dir-card {
   position: relative;
   margin: 0 var(--space-3) var(--space-3);
   border-radius: var(--radius-2);
 }
 
 .grip + .row,
-.closed-row {
+.dir-row {
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
 }
 
 .group > .row:nth-last-child(2),
-.closed-row {
+.dir-row {
   border-bottom-left-radius: var(--radius-2);
   border-bottom-right-radius: var(--radius-2);
 }
@@ -639,21 +673,21 @@ const favoriteLabel = (favorite: boolean): string =>
   background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
-.closed-row {
+.dir-row {
   color: var(--faint);
 }
 
 /* 테두리 대신 안쪽으로 그은 outline 이라 박스 높이가 열린 cell 과 같다. */
-.closed-card {
+.dir-card {
   outline: 1px dashed color-mix(in srgb, var(--fg) 18%, transparent);
   outline-offset: -1px;
 }
 
-.closed-row:hover {
+.dir-row:hover {
   background: var(--hover);
 }
 
-.closed-row .tail {
+.dir-row .tail {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 60%;
@@ -682,8 +716,7 @@ const favoriteLabel = (favorite: boolean): string =>
   color: var(--muted);
 }
 
-.group:hover .favorite.on,
-.closed-card:hover .favorite.on {
+.group:hover .favorite.on {
   color: var(--fg);
 }
 

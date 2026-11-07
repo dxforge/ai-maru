@@ -306,7 +306,7 @@ function onKeydown(e: KeyboardEvent): void {
       <input
         ref="input"
         v-model="query"
-        class="query"
+        class="query text-input"
         :placeholder="
           chosen ? 'Choose a command' : 'Filter recent directories, or type a path from ~ or /'
         "

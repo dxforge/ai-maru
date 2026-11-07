@@ -79,7 +79,7 @@ test('재시작 뒤 배치·포커스·선택·사이드바·보기 모드와 �
   await shellUp(page, 0)
   await shellUp(page, 1)
   await page.keyboard.type('export MARK=kept-$((1+1))\n')
-  await workspaceHeads(page).nth(0).dblclick()
+  await clickMenu(app, 'rename-workspace')
   await expect(page.locator('.sidebar .workspace-name-input')).toBeFocused()
   await page.keyboard.type('renamed')
   await page.keyboard.press('Enter')
@@ -318,9 +318,9 @@ test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살
   await run(page, 'echo back-$((1+1))', 'back-2')
 })
 
-const closedRows = (page: Launched['page']) => page.locator('.sidebar .closed-row')
+const dirRows = (page: Launched['page']) => page.locator('.sidebar .dir-row')
 
-test('state.json 의 cells 를 읽지 못하면 핀 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리고, 살아 있는 pty 는 띄운 순서로 Recovered workspace 에 cell 하나씩으로 열며 알린다', async ({
+test('state.json 의 cells 를 읽지 못하면 핀이나 즐겨찾기가 있는 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리고, 살아 있는 pty 는 띄운 순서로 Recovered workspace 에 cell 하나씩으로 열며 알린다', async ({
   launch,
   dataDir
 }) => {
@@ -346,8 +346,8 @@ test('state.json 의 cells 를 읽지 못하면 핀 workspace 만 이름·즐겨
   await expect(toast(page).filter({ hasText: "Couldn't restore the cells" })).toHaveCount(1)
   await expect(toast(page).filter({ hasText: 'Terminals moved to Recovered' })).toHaveCount(1)
   await expect(workspaceNames(page)).toHaveText(['atlas', 'Recovered'])
-  await expect(closedRows(page)).toHaveCount(1)
-  await expect(closedRows(page)).toContainText('sub')
+  await expect(dirRows(page)).toHaveCount(1)
+  await expect(dirRows(page)).toContainText('sub')
   await expect(cellItems(page)).toHaveCount(2)
   await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
   await cellItems(page).nth(0).click()

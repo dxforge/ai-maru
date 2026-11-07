@@ -7,7 +7,7 @@ import type { PtyNotification } from '../../../shared/pty-state'
 import { AGENT_ICONS, commandIcon, STATE_LABELS, type PaneIcon } from '../icons'
 import { tildePath } from './cwd'
 import { commandLabel, notificationText } from './display'
-import { holdsFavorite, type Pane } from './store'
+import type { Pane } from './store'
 
 export type Row = {
   pane: number
@@ -108,30 +108,17 @@ export function workspaceMarks(
   return { state, notified: unread, dot: unread && !state }
 }
 
-/** `favorite` 가 아니면 cell 이 없는 핀 workspace 의 디렉토리 줄이다. */
-export type ClosedRow = { dir: string; name: string; path: string; favorite: boolean }
+export type DirRow = { dir: string; name: string; path: string }
 
-type ClosedSource = {
-  dir?: string
-  favorites?: readonly string[]
-  cells: readonly { favorite?: string }[]
-}
-
-/**
- * workspace 의 닫힌 줄이다. 즐겨찾기 디렉토리 가운데 열린 cell 이 맡지(`favorite`) 않은 것을 넣은 순서대로 둔다. 같은
- * 디렉토리가 열린 cell 과 닫힌 줄로 두 번 보이지 않게 하기 위해서다. cell 도 즐겨찾기도 없는 workspace 는 `dir` 줄 하나를
- * 둔다.
- */
-export function closedRows(w: ClosedSource, home?: string): ClosedRow[] {
-  const row = (dir: string, favorite: boolean): ClosedRow => ({
+export function dirRow(dir: string, home?: string): DirRow {
+  return {
     dir,
     name: sidebarLabel({ cwd: dir }, undefined, home).name!,
-    path: tildePath(dir, home),
-    favorite
-  })
-  const favorites = w.favorites ?? []
-  if (!w.cells.length && !favorites.length) return w.dir === undefined ? [] : [row(w.dir, false)]
-  return favorites
-    .filter((dir) => !w.cells.some((c) => holdsFavorite(c, dir)))
-    .map((dir) => row(dir, true))
+    path: tildePath(dir, home)
+  }
+}
+
+/** cell 이 없는 workspace 는 `dir` 줄 하나를 두어, 그 디렉토리에서 cell 을 다시 열 수 있게 한다. */
+export function emptyRow(w: { dir?: string; cells: readonly unknown[] }, home?: string): DirRow[] {
+  return !w.cells.length && w.dir !== undefined ? [dirRow(w.dir, home)] : []
 }

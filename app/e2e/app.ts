@@ -277,7 +277,7 @@ async function launchApp(
   await app.evaluate(() => {
     process.once('exit', () => process.kill(process.pid, 'SIGKILL'))
   })
-  // 끄기는 늘 묻는다. 묻는 것을 재지 않는 테스트가 확인 창에 막히지 않게, pty 를 끄고 핀 workspace 만 남기는 End everything 으로 답한다.
+  // 끄기는 늘 묻는다. 묻는 것을 재지 않는 테스트가 확인 창에 막히지 않게, pty 를 끄고 핀이나 즐겨찾기가 있는 workspace 만 남기는 End everything 으로 답한다.
   await stubDialog(app, END_EVERYTHING)
   const page = await app.firstWindow()
   appSockets.set(page, appSocketPath(runDir(realpathSync(dataDir), launchEnv)))

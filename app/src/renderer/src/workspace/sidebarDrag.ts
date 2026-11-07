@@ -23,14 +23,12 @@ export type WorkspaceSpan = Span & {
   count: number
   cells: Span[]
   folded: boolean
-  /** cell 앞에 놓인 닫힌 줄들의 아래 끝. 닫힌 줄이 없으면 비운다. */
-  closedBottom?: number
+  /** cell 이 없는 workspace 의 `dir` 줄의 아래 끝. 그 줄이 없으면 비운다. */
+  dirBottom?: number
 }
 
 export type SidebarSpans = {
   workspaces: WorkspaceSpan[]
-  /** 핀 workspace 의 수. 이 workspace 들이 `workspaces` 의 앞에 온다. */
-  pinned: number
   newWorkspace?: Span
 }
 
@@ -69,7 +67,7 @@ function cellDrop(
 
 function cellLine(w: WorkspaceSpan, index: number): number {
   if (w.folded) return w.head.bottom + HALF_GAP
-  const top = w.closedBottom === undefined ? w.head.bottom - HALF_GAP : w.closedBottom + HALF_GAP
+  const top = w.dirBottom === undefined ? w.head.bottom - HALF_GAP : w.dirBottom + HALF_GAP
   return gapLine(w.cells, index, top)
 }
 
@@ -80,8 +78,6 @@ function workspaceDrop(
 ): DropAt | undefined {
   const index = before(s.workspaces, y)
   if (index === d.index || index === d.index + 1) return undefined
-  // 핀 묶음과 핀이 없는 묶음을 넘어 놓지 않는다.
-  if (d.index < s.pinned ? index > s.pinned : index < s.pinned) return undefined
   return {
     drop: { kind: 'workspace', index },
     line: gapLine(s.workspaces, index, (s.workspaces[0]?.top ?? 0) - HALF_GAP)

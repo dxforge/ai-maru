@@ -43,7 +43,7 @@ function onKeydown(e: KeyboardEvent): void {
       <input
         ref="input"
         v-model="query"
-        class="query"
+        class="query text-input"
         placeholder="Type a command"
         spellcheck="false"
         @keydown="onKeydown"

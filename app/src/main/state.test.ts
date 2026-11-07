@@ -60,12 +60,13 @@ const job: JobRecord = {
 }
 
 const { workspaces: screenWorkspaces, cells, panes, ptys } = splitScreen(screen)
-// store 는 표끼리 맞는지 보지 않는다 — End everything 이 핀 줄만 남기는지 보려고 cell 없는 핀 줄을 더한다.
+// store 는 표끼리 맞는지 보지 않는다 — End everything 이 핀이나 즐겨찾기가 있는 줄만 남기는지 보려고 cell 없는 줄을 더한다.
 const workspaces = {
   ...screenWorkspaces,
   rows: [
     ...screenWorkspaces.rows,
-    { id: 'w-00000009', name: 'atlas', pinned: true as const, favorites: ['/tmp'] }
+    { id: 'w-00000009', name: 'atlas', pinned: true as const },
+    { id: 'w-0000000a', favorites: ['/r'] }
   ]
 }
 const sessions: SessionsPart = { version: STATE_VERSIONS.sessions, ptys, jobs: [job] }
@@ -534,11 +535,11 @@ describe('createStateStore', () => {
     expect(s.current().view).toMatchObject({ window, theme: { background: '#ffffff' } })
   })
 
-  const pinnedOnly = { ...workspaces, rows: workspaces.rows.filter((w) => w.pinned) }
+  const kept = { ...workspaces, rows: workspaces.rows.slice(1) }
   it.each([
     ['keep', full],
     ['layout', { ...full, sessions: null }],
-    ['end', { ...none, workspaces: pinnedOnly, view }]
+    ['end', { ...none, workspaces: kept, view }]
   ] as const)('finish(%s) 는 바로 쓰고 view 는 남긴다', (outcome, expected) => {
     const s = store(full)
     s.finish(outcome)
@@ -567,7 +568,7 @@ describe('createStateStore', () => {
     expect(() => s.finish('keep')).toThrow()
     rmSync(path, { recursive: true })
     s.finish('end')
-    expect(saved()).toEqual({ ...none, workspaces: pinnedOnly, view })
+    expect(saved()).toEqual({ ...none, workspaces: kept, view })
   })
 
   it('finish 가 던져도 끝내지 않았으므로 그 뒤의 변경을 타이머가 쓴다 — 끄지 않고 이어 쓰는 경우', () => {
@@ -621,6 +622,6 @@ describe('createStateStore', () => {
     s.discard('layout')
     expect(s.current()).toEqual({ ...full, sessions: null })
     s.discard('end')
-    expect(s.current()).toEqual({ ...none, workspaces: pinnedOnly, view })
+    expect(s.current()).toEqual({ ...none, workspaces: kept, view })
   })
 })

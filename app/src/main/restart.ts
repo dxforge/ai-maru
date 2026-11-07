@@ -142,7 +142,7 @@ function restartDetail(check: Incompatible): string {
   }[check.result]
   const workspaces = check.formats.includes('workspaces')
     ? [
-        'Workspaces will be unpinned and lose their custom names and favorites. Pinned workspaces with no cells will be removed.'
+        'Workspaces will be unpinned and lose their custom names and favorites. Workspaces without cells will be removed.'
       ]
     : []
   return [...reasons(check), ...ending, ...after, ...moving, ...workspaces].join(' ')
