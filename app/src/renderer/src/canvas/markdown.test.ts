@@ -216,6 +216,8 @@ describe('prepareMarkdown 의 묶음', () => {
     ],
     ['겹친 접기', '<details>', '<details>', 'a', '</details>', 'b', '</details>', 'after'],
     ['문단 안에서 연 접기', 'x <details>', 'a', 'b', '</details>', 'after'],
+    ['문단 안에서 닫는 접기', '<details>', 'a', 'b </details>', 'after'],
+    ['문단·제목 안의 닫지 않은 태그', 'Vec<String> x', 'a', '# h <div>', 'b', '<span>s', 'c'],
     ['글자 꾸밈', 'x <b>bold', 'a', '> q', 'b</b>', 'after'],
     ['인용·목록 안의 글자 꾸밈', '> <i>q', 'a', '- <b>l', 'b', '</i></b>', 'after'],
     ['인용·목록 안의 접기', '> <details>q', 'a', '- <details>l', 'b', 'after'],
@@ -237,7 +239,10 @@ describe('prepareMarkdown 의 묶음', () => {
   })
 
   it('다음 블록으로 이어지지 않는 태그는 묶음 나누기를 막지 않는다', () => {
-    const blocks = ['> <details>q', '- <div>l', '<!-- <details> -->', '<br>', '<p>x', 'a']
+    const blocks = [
+      ...['> <details>q', '- <div>l', '<!-- <details> -->', '<br>', '<p>x'],
+      ...['returns Vec<String> here', 'Option<T>', '<span>x', '# h <div>', 'a']
+    ]
     expect(prepareMarkdown(blocks.join('\n\n'), 1).parts).toHaveLength(blocks.length * 2 - 1)
   })
 

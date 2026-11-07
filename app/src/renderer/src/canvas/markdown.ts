@@ -85,7 +85,7 @@ export function prepareMarkdown(text: string, size = PART_SIZE): Prepared {
   for (const t of tokens) {
     part.push(t)
     length += t.raw.length
-    trackTags(open, t, true)
+    trackTags(open, t)
     if (length >= size && !open.length) {
       parts.push({ tokens: part })
       part = []
@@ -106,25 +106,39 @@ const UNCOUNTED_TAGS = new Set(
       'p li dt dd tr td th thead tbody tfoot caption colgroup option optgroup rt rp'.split(' ')
     )
 )
-// 인용·목록 안에서 연 블록 태그는 인용·목록이 끝날 때 닫히지만, 글자 꾸밈 태그는 HTML 파서가 다음 블록에서 다시 연다.
+// 제목·인용·목록 안에서 연 태그는 그 블록이 끝날 때 닫힌다. 다만 글자 꾸밈 태그는 HTML 파서가 다음 블록에서 다시 열므로 센다.
 const FORMATTING_TAGS = new Set('a b big code em font i nobr s small strike strong tt u'.split(' '))
+// 최상위 문단 안에서는 글자 꾸밈 태그와, 문단이 끝난 뒤에도 열려 있는 블록 태그만 센다. `span` 이나
+// `Vec<String>` 의 `<string>` 같은 그 밖의 태그는 HTML 파서가 문단 끝에서 닫기 때문이다.
+const PARAGRAPH_CLOSING_TAGS = new Set(
+  (
+    'address article aside blockquote center details dialog dir div dl fieldset figcaption figure ' +
+    'footer header hgroup main menu nav ol search section summary ul h1 h2 h3 h4 h5 h6 ' +
+    'pre listing xmp plaintext form table'
+  ).split(' ')
+)
 
-function trackTags(open: string[], t: Token, topLevel: boolean): void {
+type Counted = (name: string) => boolean
+const anyTag: Counted = () => true
+const paragraphTag: Counted = (name) =>
+  FORMATTING_TAGS.has(name) || PARAGRAPH_CLOSING_TAGS.has(name)
+const formattingTag: Counted = (name) => FORMATTING_TAGS.has(name)
+
+function trackTags(open: string[], t: Token, counted: Counted = anyTag): void {
   if (t.type === 'html') {
     const raw = t.raw.replace(/<!--[\s\S]*?(-->|$)/g, '')
     for (const [, close, tag] of raw.matchAll(/<(\/?)([a-zA-Z][a-zA-Z0-9-]*)[^>]*>/g)) {
       const name = tag!.toLowerCase()
-      if (UNCOUNTED_TAGS.has(name) || (!topLevel && !FORMATTING_TAGS.has(name))) continue
+      if (UNCOUNTED_TAGS.has(name) || !counted(name)) continue
       if (!close) open.push(name)
       else if (open.includes(name)) open.length = open.lastIndexOf(name)
     }
     return
   }
-  const childTopLevel =
-    topLevel && t.type !== 'blockquote' && t.type !== 'list' && t.type !== 'list_item'
+  const inner = counted === anyTag && t.type === 'paragraph' ? paragraphTag : formattingTag
   const children =
     t.type === 'list' ? (t as Tokens.List).items : 'tokens' in t ? t.tokens : undefined
-  for (const c of children ?? []) trackTags(open, c, childTopLevel)
+  for (const c of children ?? []) trackTags(open, c, inner)
 }
 
 function splitText(text: string, size: number): string[] {
