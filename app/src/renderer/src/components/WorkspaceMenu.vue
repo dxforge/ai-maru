@@ -102,7 +102,7 @@ function onPointerDown(e: PointerEvent): void {
 
 // 창 크기가 바뀌면 헤더가 움직여 메뉴가 ⋮ 버튼에서 떨어진다.
 function onResize(): void {
-  close(false)
+  close(true)
 }
 
 // 창이 포커스를 잃을 때도 focusout 이 오는데, 그때는 닫지 않고 창이 돌아왔을 때 포커스가 메뉴 밖이면 닫는다.
@@ -110,6 +110,12 @@ function onFocusOut(e: FocusEvent): void {
   if (!document.hasFocus()) return
   const next = e.relatedTarget as Node | null
   if (!next || !root.value?.contains(next)) close(false)
+}
+
+// 제목·안내 문구·구분선·여백은 포커스를 받지 않는다. 그 자리를 누르면 포커스가 body 로 가 `onFocusOut` 이 메뉴를 닫으므로,
+// 이름 칸이 아닌 곳을 누를 때는 기본 동작을 막는다.
+function onMouseDown(e: MouseEvent): void {
+  if (e.target !== input.value) e.preventDefault()
 }
 
 function onWindowFocus(): void {
@@ -145,6 +151,7 @@ function openFavorite(dir: string): void {
     role="menu"
     :style="{ left: `${at.left}px`, top: `${at.top}px`, width: `${at.width}px` }"
     @keydown="onKeydown"
+    @mousedown="onMouseDown"
     @focusout="onFocusOut"
   >
     <div class="name-field">
@@ -163,7 +170,6 @@ function openFavorite(dir: string): void {
         class="favorite-open"
         role="menuitem"
         :aria-label="`Open ${f.name}`"
-        @mousedown.prevent
         @click="openFavorite(f.dir)"
       >
         <Folder class="icon" /><span class="title">{{ f.name }}</span
@@ -173,7 +179,6 @@ function openFavorite(dir: string): void {
         v-tooltip="'Remove from Favorites'"
         class="favorite-remove icon-button"
         :aria-label="`Remove ${f.name} from Favorites`"
-        @mousedown.prevent
         @click="emit('removeFavorite', f.dir)"
       >
         <X class="icon" />
@@ -181,20 +186,10 @@ function openFavorite(dir: string): void {
     </div>
     <div v-if="!favorites.length" class="hint">Star a cell to add its directory</div>
     <hr />
-    <button
-      class="action pin-action"
-      role="menuitem"
-      @mousedown.prevent
-      @click="act(() => emit('togglePin'))"
-    >
+    <button class="action pin-action" role="menuitem" @click="act(() => emit('togglePin'))">
       <PinIcon class="icon" :filled="pinned" />{{ pinned ? 'Unpin Workspace' : 'Pin Workspace' }}
     </button>
-    <button
-      class="action close-action"
-      role="menuitem"
-      @mousedown.prevent
-      @click="act(() => emit('closeWorkspace'))"
-    >
+    <button class="action close-action" role="menuitem" @click="act(() => emit('closeWorkspace'))">
       <X class="icon" />Close Workspace
     </button>
   </div>

@@ -1645,6 +1645,49 @@ test('workspace 메뉴는 바깥 어디를 눌러도 닫히며 누른 자리의 
   }
 })
 
+test('workspace 메뉴 안의 버튼이 아닌 곳을 눌러도 메뉴가 남고 이름 칸이 입력을 받으며, 창 크기가 바뀌어 닫히거나 마지막 즐겨찾기를 빼 workspace 와 함께 사라져도 터미널이 입력을 받는다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'sub')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { app, page } = launched
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await cellItems(page).nth(0).hover()
+  await cellFavorite(page, 0).click()
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await newWorkspace(launched, 2)
+
+  await openWorkspaceMenu(page, 0)
+  for (const spot of [
+    workspaceMenu(page).locator('.section'),
+    workspaceMenu(page).locator('hr').first(),
+    workspaceMenu(page).locator('.name-field')
+  ]) {
+    const b = (await spot.boundingBox())!
+    await page.mouse.click(b.x + 2, b.y + b.height / 2)
+    await expect(workspaceMenu(page)).toHaveCount(1)
+    await expect(nameInput(page)).toBeFocused()
+  }
+  await page.keyboard.press('Escape')
+  await expect(workspaceMenu(page)).toHaveCount(0)
+
+  await openWorkspaceMenu(page, 0)
+  await resizeBy(app, -40, 0)
+  await expect(workspaceMenu(page)).toHaveCount(0)
+  await run(page, 'echo sized-$((1+1))', 'sized-2')
+
+  await cellItems(page).nth(0).click()
+  await page.keyboard.type('exit\n')
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect(workspaceHeads(page)).toHaveCount(2)
+  await openWorkspaceMenu(page, 0)
+  await workspaceMenu(page).getByRole('button', { name: 'Remove sub from Favorites' }).click()
+  await expect(workspaceHeads(page)).toHaveCount(1)
+  await expect(workspaceMenu(page)).toHaveCount(0)
+  await run(page, 'echo gone-$((1+1))', 'gone-2')
+})
+
 /**
  * 좌표 (x, y) 가 창 끌기 영역(`drag`)인지, 밑의 요소가 마우스를 받는 자리(`no-drag`)인지를 Chromium 과 Electron 이 정하는
  * 규칙대로 계산한다. 테스트가 보내는 마우스 이벤트는 OS 의 창 끌기 처리를 거치지 않고 페이지에 바로 가서, 실제 마우스가

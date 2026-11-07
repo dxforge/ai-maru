@@ -401,11 +401,14 @@ function closeMenu(key: number, name: string | null, refocus: boolean): void {
   menuFor.value = null
   if (refocus) void focusSelected()
 }
-// 메뉴를 연 동안 그 workspace 가 닫히면 메뉴도 사라지므로 메뉴를 닫은 것으로 한다.
+// 메뉴를 연 동안 그 workspace 가 닫히면 메뉴는 `done` 을 보내지 않고 사라지므로, 여기서 메뉴를 닫은 것으로 한다. 포커스를
+// 들고 있던 이름 칸도 없어지므로 터미널에 포커스를 돌려준다.
 watch(
   () => menuFor.value !== null && !workspaces.list.value.some((w) => w.key === menuFor.value),
   (gone) => {
-    if (gone) menuFor.value = null
+    if (!gone) return
+    menuFor.value = null
+    void focusSelected()
   }
 )
 
