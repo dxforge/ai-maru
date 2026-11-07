@@ -1,4 +1,4 @@
-import { computed, reactive, readonly, ref, shallowRef } from 'vue'
+import { computed, reactive, readonly, ref, shallowRef, toRaw } from 'vue'
 import type { CanvasItem, CanvasOwner } from '../../../shared/canvas'
 import {
   cellLabel,
@@ -7,11 +7,11 @@ import {
   type Label,
   type Named
 } from '../../../shared/names'
-import { firstHeading } from './markdown'
+import { MarkdownBody, prepareMarkdown } from './markdown'
 
 // `at` 은 renderer 가 문서를 받은 시각(ms)이다. 문서를 고쳐 보냈으면 고친 시각이다.
 export type CanvasEntry = CanvasOwner & { key: string } & (
-    | { id: string; kind: 'markdown'; title: string; at: number; text: string }
+    | { id: string; kind: 'markdown'; title: string; at: number }
     | { id: string; kind: 'image'; title: string; at: number; url: string }
   )
 
@@ -250,6 +250,14 @@ function release(entry: CanvasEntry): void {
   if (entry.kind === 'image') URL.revokeObjectURL(entry.url)
 }
 
+// 렌더한 HTML 은 문서마다 담아 두어, 카드를 접었다 펴거나 보기를 바꿔 본문을 다시 그릴 때 렌더하지 않는다. 같은 id 로
+// 다시 오면 새 entry 라 새로 렌더한다. reactive 한 목록에 넣으면 Vue 가 토큰까지 proxy 로 감싸므로 entry 밖에 둔다.
+const bodies = new WeakMap<CanvasEntry, MarkdownBody>()
+
+export function bodyOf(entry: CanvasEntry): MarkdownBody | undefined {
+  return bodies.get(toRaw(entry))
+}
+
 function toEntry(item: CanvasItem, at: number): CanvasEntry {
   const owner: CanvasOwner & { key: string } = {
     key: docKey(item.id, item.cell),
@@ -257,8 +265,11 @@ function toEntry(item: CanvasItem, at: number): CanvasEntry {
     ...(item.cell === undefined ? {} : { cell: item.cell })
   }
   if (item.kind === 'markdown') {
-    const title = item.title || firstHeading(item.text) || 'Markdown'
-    return { id: item.id, kind: 'markdown', title, at, text: item.text, ...owner }
+    const { heading, parts } = prepareMarkdown(item.text)
+    const title = item.title || heading || 'Markdown'
+    const entry: CanvasEntry = { id: item.id, kind: 'markdown', title, at, ...owner }
+    bodies.set(entry, new MarkdownBody(parts))
+    return entry
   }
   const url = URL.createObjectURL(new Blob([item.bytes as BlobPart], { type: item.mime }))
   return { id: item.id, kind: 'image', title: item.name, at, url, ...owner }
