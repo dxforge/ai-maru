@@ -1,7 +1,7 @@
-use maru_pty::PROTOCOL_VERSION;
 use maru_pty::frame::{MAX_FRAME_LEN, TAG_BINARY, TAG_TEXT, decode_header, encode};
 use maru_pty::paths::Paths;
 use maru_pty::record::{self, Record};
+use maru_pty::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 use nix::sys::signal::{Signal, kill, killpg};
 use nix::unistd::Pid;
 use serde_json::{Value, json};
@@ -390,6 +390,7 @@ fn version_and_kill_ignore_the_protocol_version_but_nothing_else_does() {
     for req in [
         json!({ "type": "capture" }),
         json!({ "type": "attach", "protocol_version": PROTOCOL_VERSION + 1, "role": "observer" }),
+        json!({ "type": "status", "protocol_version": MIN_PROTOCOL_VERSION - 1 }),
     ] {
         let r = p.request(req.clone());
         assert_eq!(r["code"], "protocol_mismatch", "{req} → {r}");
@@ -398,6 +399,80 @@ fn version_and_kill_ignore_the_protocol_version_but_nothing_else_does() {
 
     let r = p.request(json!({ "type": "kill", "protocol_version": PROTOCOL_VERSION + 1 }));
     assert_eq!(r["type"], "killed");
+    assert!(p.wait().success());
+}
+
+fn keys(v: &Value) -> Vec<&str> {
+    let mut k: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    k.sort_unstable();
+    k
+}
+
+/// 버전을 올린 뒤에도 앱은 `MIN_PROTOCOL_VERSION` 으로 떠 있는 pty 에 그 버전의 요청을 보낸다. 그 버전의 모든
+/// 요청에 그 버전의 모양으로 답하는지 본다.
+#[test]
+fn every_request_at_the_lowest_version_gets_that_versions_answer() {
+    let mut p = start();
+    let v = MIN_PROTOCOL_VERSION;
+    let ask = |req: Value| {
+        let mut req = req;
+        req["protocol_version"] = json!(v);
+        p.request(req)
+    };
+
+    let mut c = p.connect();
+    c.send_text(json!({
+        "type": "attach", "protocol_version": v, "role": "primary", "cols": 80, "rows": 24,
+    }));
+    let header = c.text();
+    assert_eq!(header["type"], "attached", "{header}");
+    assert_eq!(header["protocol_version"], v);
+    assert_eq!(
+        keys(&header),
+        [
+            "cols",
+            "cursor_x",
+            "cursor_y",
+            "protocol_version",
+            "role",
+            "rows",
+            "tty",
+            "type"
+        ]
+    );
+    c.replay();
+    c.input("echo low-$((40+2))\n");
+    c.output_until("low-42");
+
+    let mut sub = p.connect();
+    sub.send_text(json!({ "type": "subscribe", "protocol_version": v }));
+    let state = sub.state();
+    assert_eq!(
+        keys(&state),
+        [
+            "command",
+            "cwd",
+            "cwd_reports",
+            "foreground_cwd",
+            "records",
+            "title",
+            "type"
+        ]
+    );
+
+    let cap = ask(json!({ "type": "capture", "unwrap": true }));
+    assert_eq!(keys(&cap), ["text", "type"], "{cap}");
+    assert!(cap["text"].as_str().unwrap().contains("low-42"), "{cap}");
+    let fg = ask(json!({ "type": "foreground" }));
+    assert_eq!(keys(&fg), ["cwd", "name", "pid", "type"], "{fg}");
+    let input = ask(json!({ "type": "input", "text": "", "paste": true }));
+    assert_eq!(input, json!({ "type": "input" }));
+    let status = ask(json!({ "type": "status" }));
+    assert_eq!(status, json!({ "type": "status", "exit": null }));
+    let version = ask(json!({ "type": "version" }));
+    assert_eq!(keys(&version), ["protocol_version", "type"], "{version}");
+    let killed = ask(json!({ "type": "kill" }));
+    assert_eq!(killed, json!({ "type": "killed" }));
     assert!(p.wait().success());
 }
 
@@ -1670,6 +1745,23 @@ fn protocol_version_prints_the_version_without_dir_or_id() {
 }
 
 #[test]
+fn min_protocol_version_prints_the_lowest_version_without_dir_or_id() {
+    let out = Command::new(env!("CARGO_BIN_EXE_maru-pty"))
+        .arg("--min-protocol-version")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        format!("{MIN_PROTOCOL_VERSION}\n")
+    );
+}
+
+#[test]
 fn without_arguments_it_fails_without_printing() {
     let out = Command::new(env!("CARGO_BIN_EXE_maru-pty"))
         .output()
@@ -1679,12 +1771,20 @@ fn without_arguments_it_fails_without_printing() {
 }
 
 #[test]
-fn the_protocol_version_flag_does_not_combine() {
+fn the_protocol_version_flags_do_not_combine() {
     let tmp = tmpdir();
+    for flag in ["--protocol-version", "--min-protocol-version"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_maru-pty"))
+            .arg(flag)
+            .args(["--id", "pty-test", "--dir"])
+            .arg(tmp.path())
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{flag}");
+        assert!(out.stdout.is_empty(), "{flag}");
+    }
     let out = Command::new(env!("CARGO_BIN_EXE_maru-pty"))
-        .arg("--protocol-version")
-        .args(["--id", "pty-test", "--dir"])
-        .arg(tmp.path())
+        .args(["--protocol-version", "--min-protocol-version"])
         .output()
         .unwrap();
     assert!(!out.status.success());

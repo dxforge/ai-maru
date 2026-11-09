@@ -17,6 +17,7 @@ import {
 } from '../shared/pty-state'
 import { appHome } from './config-file'
 import { encodeFrame, FrameDecoder } from './frame'
+import { appProtocol, attachable } from './pty-protocol'
 
 const SPAWN_TIMEOUT_MS = 5000
 // 앱을 끌 때 main 이 host 와 띄우던 job 을 기다리는 상한이다. `spawnPty` 는 시간 제한 안에 소켓이 열리지
@@ -109,6 +110,15 @@ async function readRecords(dir: string): Promise<PtyRecord[]> {
   return parsed.filter((r): r is PtyRecord => r !== null)
 }
 
+/**
+ * 그 pty 에 보내는 요청에 넣을 버전이다. 레코드가 없거나 레코드의 버전에 붙을 수 없으면 앱의 버전을 넣는다. 붙을 수
+ * 없는 버전의 pty 는 그 요청을 `protocol_mismatch` 로 거절한다.
+ */
+export async function protocolOf(dir: string, id: string): Promise<number> {
+  const v = (await readRecord(dir, id))?.protocol_version
+  return attachable(v) ? v : appProtocol()
+}
+
 export async function liveRecords(dir: string): Promise<PtyRecord[]> {
   const records = await readRecords(dir)
   const live = await Promise.all(records.map((rec) => ptyLive(dir, rec.id)))
@@ -161,9 +171,11 @@ function request(
     cb?.()
   }
   const decoder = new FrameDecoder()
-  const sock = createConnection(socketPath(dir, id), () => {
+  const sock = createConnection(socketPath(dir, id), async () => {
     connected = true
-    const req = JSON.stringify({ ...body, protocol_version: PROTOCOL_VERSION })
+    const protocol_version = await protocolOf(dir, id)
+    if (done) return
+    const req = JSON.stringify({ ...body, protocol_version })
     sock.write(encodeFrame(TAG_TEXT, Buffer.from(req)))
   })
   sock.on('data', (chunk) => {
@@ -269,7 +281,9 @@ export async function foreground(
   timeoutMs = FOREGROUND_REPLY_MS
 ): Promise<Foreground> {
   const r = await askWithin(dir, id, { type: 'foreground' }, timeoutMs)
-  // 버전 1 의 maru-pty 가운데 `foreground` 를 모르는 것을 위한 분기다. 버전 1 의 maru-pty 는 버전 2 의 요청을 `protocol_mismatch` 로 거절하므로 지금은 닿지 않는다.
+  // 버전 1 의 maru-pty 가운데 `foreground` 를 모르는 것을 위한 분기다. 앱은 `MIN_PROTOCOL_VERSION` 이상의 버전으로
+  // 요청하고, 버전 1 의 maru-pty 는 그 요청을 `protocol_mismatch` 로 거절하므로 지금은 닿지 않는다. 버전을 올리지 않고
+  // 더한 요청을 옛 pty 가 모를 때 이 분기를 본보기로 쓰므로 지우지 않는다(`.claude/rules/pty-protocol.md`).
   if (r.code === 'unknown_request') {
     throw new Error(`pty ${id} runs an older maru-pty that does not answer foreground requests`)
   }
@@ -305,7 +319,9 @@ export function subscribeState(dir: string, id: string, on: StateHandlers): () =
     id,
     { type: 'subscribe' },
     (msg) => {
-      // 버전 1 의 maru-pty 가운데 `subscribe` 를 모르는 것을 위한 분기다. 버전 1 의 maru-pty 는 버전 2 의 요청을 `protocol_mismatch` 로 거절하므로 지금은 닿지 않는다.
+      // 버전 1 의 maru-pty 가운데 `subscribe` 를 모르는 것을 위한 분기다. 앱은 `MIN_PROTOCOL_VERSION` 이상의 버전으로
+      // 요청하고, 버전 1 의 maru-pty 는 그 요청을 `protocol_mismatch` 로 거절하므로 지금은 닿지 않는다. 버전을 올리지
+      // 않고 더한 요청을 옛 pty 가 모를 때 이 분기를 본보기로 쓰므로 지우지 않는다(`.claude/rules/pty-protocol.md`).
       if (msg?.code === 'unknown_request') {
         req.close()
         return on.old()
@@ -337,6 +353,11 @@ export async function writePtyInput(
   throw new Error(`cannot write to pty ${id}: ${String(r.message ?? r.code)}`)
 }
 
+/** `ids` 가운데 이 앱이 붙을 수 있는 버전의 pty 를 남긴다(`killPtys` 의 `keep`). */
+export function keepAttachable(ids: ReadonlySet<string>): (rec: PtyRecord) => boolean {
+  return (rec) => ids.has(rec.id) && attachable(rec.protocol_version)
+}
+
 /**
  * 프로세스까지 없는 레코드는 지운다 — 띄우는 중인 pty 는 소켓이 아직 안 열렸어도 프로세스는
  * 있다.
@@ -344,13 +365,13 @@ export async function writePtyInput(
 export async function killPtys(
   dir: string,
   timeoutMs = KILL_TIMEOUT_MS,
-  keep: ReadonlySet<string> = new Set()
+  keep: (rec: PtyRecord) => boolean = () => false
 ): Promise<void> {
   await Promise.all(
     (await readRecords(dir)).map(async (rec) => {
       const sock = socketPath(dir, rec.id)
       if (await isLive(sock)) {
-        if (keep.has(rec.id) && rec.protocol_version === PROTOCOL_VERSION) return
+        if (keep(rec)) return
         await requestKill(sock, timeoutMs)
       } else if (!processExists(rec.pid)) {
         await rm(join(dir, `${rec.id}.json`), { force: true })

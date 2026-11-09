@@ -9,6 +9,7 @@ const pty = vi.hoisted(() => ({
 }))
 vi.mock('./pty', () => ({
   ...pty,
+  protocolOf: async () => 4,
   socketPath: (dir: string, id: string) => `${dir}/${id}.sock`,
   startDir: async (cwd?: string) => cwd ?? '/'
 }))

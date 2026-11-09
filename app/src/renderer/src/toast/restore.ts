@@ -36,7 +36,7 @@ export function restoreToast(notice: RestoreNotice): Toast {
     lines:
       notice === 'protocol'
         ? [
-            'At least one running terminal uses a different or unknown pty protocol version.',
+            "AI Maru couldn't reattach to at least one running terminal because its pty protocol version is unsupported or unknown.",
             'AI Maru ended those terminals and reopened the panes with new shells.'
           ]
         : [

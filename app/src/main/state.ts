@@ -1,6 +1,5 @@
 import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { PROTOCOL_VERSION } from '../shared/protocol'
 import {
   keeps,
   parseCellsTable,
@@ -26,6 +25,7 @@ import { parseWindowTheme, type WindowTheme } from '../shared/theme'
 import { isPtyId, randomId } from '../shared/pty'
 import { parseJobRecords, type JobRecord } from './job'
 import { writeJsonAtomicSync } from './json-file'
+import { attachable } from './pty-protocol'
 import type { PtyRecord } from './pty'
 import { parseWindowState, type WindowState } from './window-state'
 
@@ -175,7 +175,7 @@ export function sessionPtys(s: SessionsPart): string[] {
 
 /**
  * `protocolOf` 는 살아 있는 pty 의 프로토콜 버전이고, 살아 있지 않으면 undefined 다. 죽은 pty 는 판정에 넣지 않는다 —
- * 그 pane 은 붙을 때 `gone` 을 받아 새 셸을 띄운다. 프로토콜이 하나라도 다르면 `sessions` 를 모두 버린다. 일부만
+ * 그 pane 은 붙을 때 `gone` 을 받아 새 셸을 띄운다. 앱이 붙을 수 없는 버전의 pty 가 하나라도 있으면 `sessions` 를 모두 버린다. 일부만
  * 이으면 job 과 pane 이 어긋나기 때문이다. 잃은 표는 그 아래 표를 함께 잃으므로(`initialState`), 아래 표의 손실은 알리지 않는다.
  */
 export function restorePlan(
@@ -193,7 +193,7 @@ export function restorePlan(
   const sessions = okValue(read.sessions)!
   const differs = sessionPtys(sessions).some((pty) => {
     const v = protocolOf(pty)
-    return v !== undefined && v !== PROTOCOL_VERSION
+    return v !== undefined && !attachable(v)
   })
   if (differs) return { mode: 'layout', notice: [...notice, 'protocol'] }
   return { mode: 'full', notice }
@@ -227,7 +227,7 @@ const RECOVERED_NAME = 'Recovered'
 
 /**
  * 붙을 pane 이 없는 살아 있는 pty 를 끄지 않고, 목록 끝에 더한 `Recovered` workspace 에 pty 하나를 cell 하나로 연다.
- * 표를 잃어도 그 pty 에서 돌던 프로그램이 꺼지지 않게 하기 위해서다. 프로토콜이 다른 pty 는 붙지 못하므로 넣지 않는다.
+ * 표를 잃어도 그 pty 에서 돌던 프로그램이 꺼지지 않게 하기 위해서다. 앱이 붙을 수 없는 버전의 pty 는 넣지 않는다.
  */
 export function recoverPtys(
   layout: SavedLayout | null,
@@ -242,7 +242,7 @@ export function recoverPtys(
 } {
   const kept = new Set(restored.keep)
   const orphans = live
-    .filter((r) => r.protocol_version === PROTOCOL_VERSION && !kept.has(r.id))
+    .filter((r) => attachable(r.protocol_version) && !kept.has(r.id))
     .sort((a, b) => a.created_at_ms - b.created_at_ms)
   if (!orphans.length) return { layout, ...restored, recovered: 0 }
   let next = Math.max(-1, ...layoutKeys(layout?.workspaces ?? [])) + 1

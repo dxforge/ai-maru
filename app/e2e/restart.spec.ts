@@ -1,9 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { killPty, killPtys } from '../src/main/pty'
-import { PROTOCOL_VERSION } from '../src/shared/protocol'
+import { MIN_PROTOCOL_VERSION, PROTOCOL_VERSION } from '../src/shared/protocol'
 import { STATE_VERSIONS } from '../src/shared/screen'
 import {
+  answerDialog,
   blockStateWrites,
   canvasTitles,
   canvasWidth,
@@ -15,6 +16,7 @@ import {
   newCell,
   newWorkspace,
   dragCanvas,
+  holdDialogs,
   openCanvas,
   openPalette,
   paneHeader,
@@ -31,7 +33,9 @@ import {
   sockets,
   split,
   stateFile,
+  shellSize,
   stubDialog,
+  terminalRows,
   test,
   toast,
   toggleView,
@@ -175,7 +179,7 @@ test('앱이 꺼진 동안 셸이 보고한 cwd·제목을 다시 뜬 앱이 프
   await expect(cellPlaces(again)).toHaveText(['moved'])
 })
 
-test('다시 뜬 앱은 pty 의 프로토콜이 다르면 그 pty 를 끄고 레이아웃만 되살려 새 셸을 띄우며, 같은 프로토콜의 pty 는 Recovered workspace 에 열고 알린다', async ({
+test('다시 뜬 앱은 붙지 못하는 버전의 pty 가 있으면 그 pty 를 끄고 레이아웃만 되살려 새 셸을 띄우며, 붙을 수 있는 버전의 pty 는 Recovered workspace 에 열고 알린다', async ({
   launch,
   dataDir
 }) => {
@@ -196,7 +200,7 @@ test('다시 뜬 앱은 pty 의 프로토콜이 다르면 그 pty 를 끄고 레
   const { page: again } = await launch(DOM_RENDERER)
   await expect(
     toast(again).filter({ hasText: "Couldn't reattach to the terminals" })
-  ).toContainText('different or unknown pty protocol version')
+  ).toContainText('because its pty protocol version is unsupported or unknown')
   await expect(toast(again).filter({ hasText: 'Terminals moved to Recovered' })).toHaveCount(1)
   await expect(workspaceNames(again).last()).toHaveText('Recovered')
   await expect(cellItems(again)).toHaveCount(2)
@@ -570,14 +574,105 @@ test('재시작한 뒤 End everything 으로 끄면 되살린 pty 도 끈다', a
   expect(sockets(dataDir)).toEqual([])
 })
 
-function otherProtocolBin(dataDir: string): Record<string, string> {
+/** 설치본의 `maru-pty` 가 `min` 부터 `max` 까지의 버전을 받는다고 답하게 한다. 띄우는 pty 는 지금 버전이다. */
+function installedProtocols(dataDir: string, min: number, max: number): Record<string, string> {
   const bin = wrapPtyBin(
     dataDir,
     'other-protocol',
-    `[ "$1" = --protocol-version ] && { echo ${PROTOCOL_VERSION + 1}; exit 0; }`
+    [
+      `[ "$1" = --protocol-version ] && { echo ${max}; exit 0; }`,
+      `[ "$1" = --min-protocol-version ] && { echo ${min}; exit 0; }`
+    ].join('\n')
   )
   return { MARU_PTY_BIN: bin }
 }
+
+const otherProtocolBin = (dataDir: string): Record<string, string> =>
+  installedProtocols(dataDir, PROTOCOL_VERSION + 1, PROTOCOL_VERSION + 1)
+
+function rewriteProtocol(dataDir: string, pty: string, version: number): void {
+  const record = join(ptyDir(dataDir), `${pty}.json`)
+  writeFileSync(
+    record,
+    JSON.stringify({ ...JSON.parse(readFileSync(record, 'utf8')), protocol_version: version })
+  )
+}
+
+test('앱의 버전이 pty 의 버전보다 높아도 그 pty 의 버전으로 요청해 붙고, 재시작 뒤 다시 붙어 재생·입력·크기·상태 표시가 된다', async ({
+  launch
+}) => {
+  const newer = { ...DOM_RENDERER, MARU_TEST_PROTOCOL_VERSION: String(PROTOCOL_VERSION + 1) }
+  const { app, page } = await launch(newer)
+  await split(app, page, 'split-right', 2)
+  await shellUp(page, 1)
+  await page.keyboard.type(programStatus('blocked', 'kind=permission'))
+  await shellUp(page, 0)
+  await run(page, 'X=kept-$((40+2)); echo set-$((1+1))', 'set-2')
+  await expect(paneHeader(page, 1)).toHaveClass(/blocked/)
+  await restartWith(app)
+
+  const { page: again } = await launch(newer)
+  await expect(paneHeader(again, 1)).toHaveClass(/blocked/)
+  await expect(screen(again, 0)).toShow('set-2')
+  await again.locator('.xterm-screen').first().click()
+  await run(again, 'echo "x=$X"', 'x=kept-42')
+  expect((await shellSize(again)).rows).toBe(await terminalRows(screen(again, 0)))
+  await expect(workspaceNames(again)).not.toContainText(['Recovered'])
+  await expect(toast(again)).toHaveCount(0)
+})
+
+test('설치본이 받는 버전의 범위 안이면 설치본의 버전이 달라도 묻지 않고 pty 를 남긴 채 재시작하고, 다시 뜬 앱이 그 pty 에 붙는다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch(
+    installedProtocols(dataDir, PROTOCOL_VERSION, PROTOCOL_VERSION + 1)
+  )
+  await run(page, 'X=kept-$((40+2)); echo set-$((1+1))', 'set-2')
+  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(1)
+  await holdDialogs(app)
+  // 대화창이 뜨면 `holdDialogs` 가 답하지 않아 앱이 끝나지 않으므로 `restartWith` 가 실패한다.
+  await restartWith(app)
+  expect(sockets(dataDir)).toHaveLength(1)
+
+  const { page: again } = await launch()
+  await run(again, 'echo "x=$X"', 'x=kept-42')
+  await expect(workspaceNames(again)).not.toContainText(['Recovered'])
+})
+
+test('설치본이 붙지 못하는 pty 만 끈다고 세어 묻고, 확인하면 그 pty 만 끄며 다시 뜬 앱은 남긴 pty 를 Recovered workspace 에 연다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch({
+    ...DOM_RENDERER,
+    ...installedProtocols(dataDir, PROTOCOL_VERSION, PROTOCOL_VERSION + 1)
+  })
+  await split(app, page, 'split-right', 2)
+  for (const i of [0, 1]) {
+    await shellUp(page, i)
+    await run(page, `X=kept-$((40+2)); echo set-$((${i}+1))`, `set-${i + 1}`)
+  }
+  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(2)
+  const [older, kept] = readState(dataDir).sessions.ptys.map((p: { pty: string }) => p.pty)
+  rewriteProtocol(dataDir, older, MIN_PROTOCOL_VERSION - 1)
+  await holdDialogs(app)
+  await clickMenu(app, 'restart')
+  await expect.poll(() => dialogCalls(app)).toHaveLength(1)
+  expect((await dialogCalls(app))[0]).toMatchObject({
+    message: 'Restart with layout only?',
+    detail: `The installed app can't reattach to terminals that use pty protocol version ${MIN_PROTOCOL_VERSION - 1}. This will end 1 terminal. The panes will reopen with new shells in their last directories. 1 terminal will keep running in a new workspace named Recovered.`
+  })
+  await restartWith(app, () => answerDialog(app, 0, 0))
+  expect(sockets(dataDir).map((sock) => basename(sock, '.sock'))).toEqual([kept])
+
+  const { page: again } = await launch(DOM_RENDERER)
+  await expect(workspaceNames(again).last()).toHaveText('Recovered')
+  await expect(cellItems(again)).toHaveCount(2)
+  await expect(cellViews(again).nth(0).locator('.pane')).toHaveCount(2)
+  await cellItems(again).nth(1).click()
+  await run(again, 'echo "x=$X id=$MARU_PTY_ID"', `x=kept-42 id=${kept}`)
+})
 
 function otherVersions(
   dataDir: string,
@@ -601,7 +696,7 @@ test('pty 프로토콜이 다르면 레이아웃만 되살릴지 묻고, 취소�
   expect((await dialogCalls(app))[0]).toMatchObject({
     message: 'Restart with layout only?',
     detail: expect.stringContaining(
-      `The installed app uses pty protocol version ${PROTOCOL_VERSION + 1}`
+      `The installed app can't reattach to terminals that use pty protocol version ${PROTOCOL_VERSION}.`
     ),
     buttons: ['Restart with layout only', 'Cancel']
   })

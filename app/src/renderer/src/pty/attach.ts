@@ -1,6 +1,5 @@
 import type { Terminal } from '@xterm/xterm'
 import { parseProgramStatus, type ProgramStatusRecord } from '../../../shared/program-status'
-import { PROTOCOL_VERSION } from '../../../shared/protocol'
 import type { PtyExit } from '../../../shared/pty'
 import type { PtyConnection } from './connection'
 import { Acks } from './flow'
@@ -161,7 +160,6 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
       conn.send(
         JSON.stringify({
           type: 'attach',
-          protocol_version: PROTOCOL_VERSION,
           role: 'primary',
           cols: term.cols,
           rows: term.rows

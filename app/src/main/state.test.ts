@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PROTOCOL_VERSION } from '../shared/protocol'
+import { MIN_PROTOCOL_VERSION, PROTOCOL_VERSION } from '../shared/protocol'
 import {
   joinTables,
   layoutKeys,
@@ -282,7 +282,20 @@ describe('restorePlan', () => {
     })
   })
 
-  it('살아 있는 pty 하나라도 프로토콜이 다르면 배치만 복원하고 알린다 — job 의 pty 도 본다', () => {
+  it('앱 버전과 달라도 붙을 수 있는 버전이면 모두 복원하고, 그보다 낮으면 배치만 복원한다', () => {
+    vi.stubEnv('MARU_TEST_PROTOCOL_VERSION', String(PROTOCOL_VERSION + 1))
+    try {
+      expect(restorePlan(read(), () => MIN_PROTOCOL_VERSION)).toEqual({ mode: 'full', notice: [] })
+      expect(restorePlan(read(), () => MIN_PROTOCOL_VERSION - 1)).toEqual({
+        mode: 'layout',
+        notice: ['protocol']
+      })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('살아 있는 pty 하나라도 앱이 붙지 못하는 버전이면 배치만 복원하고 알린다 — job 의 pty 도 본다', () => {
     const other = (pty: string): number =>
       pty === job.pty ? PROTOCOL_VERSION + 1 : PROTOCOL_VERSION
     expect(restorePlan(read(), other)).toEqual({ mode: 'layout', notice: ['protocol'] })
@@ -337,6 +350,21 @@ describe('recoverPtys', () => {
     id,
     protocol_version: protocol,
     created_at_ms: created
+  })
+
+  it('앱 버전보다 낮아도 붙을 수 있는 버전의 pty 는 열고, 그보다 낮은 버전은 넣지 않는다', () => {
+    vi.stubEnv('MARU_TEST_PROTOCOL_VERSION', String(PROTOCOL_VERSION + 1))
+    try {
+      const live = [
+        rec('p-0000000a', 1, MIN_PROTOCOL_VERSION),
+        rec('p-0000000b', 2, MIN_PROTOCOL_VERSION - 1)
+      ]
+      const r = recoverPtys(null, { attach: {}, keep: [] }, live, ids())
+      expect(r.recovered).toBe(1)
+      expect(r.keep).toEqual(['p-0000000a'])
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('붙을 pane 이 없는 pty 가 없으면 받은 그대로 돌려준다', () => {

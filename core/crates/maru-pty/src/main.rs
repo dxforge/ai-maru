@@ -10,6 +10,9 @@ struct Args {
     /// Print the protocol version and exit.
     #[arg(long, exclusive = true)]
     protocol_version: bool,
+    /// Print the lowest protocol version this build accepts and exit.
+    #[arg(long, exclusive = true)]
+    min_protocol_version: bool,
     #[command(flatten)]
     opts: Option<Options>,
 }
@@ -18,6 +21,10 @@ fn main() -> ExitCode {
     let args = Args::parse();
     if args.protocol_version {
         let _ = writeln!(std::io::stdout(), "{}", maru_pty::PROTOCOL_VERSION);
+        return ExitCode::SUCCESS;
+    }
+    if args.min_protocol_version {
+        let _ = writeln!(std::io::stdout(), "{}", maru_pty::MIN_PROTOCOL_VERSION);
         return ExitCode::SUCCESS;
     }
     let Some(opts) = args.opts else {
