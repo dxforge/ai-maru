@@ -32,7 +32,6 @@ export type QuitRequest = { type: 'quit'; keepPtys: boolean }
 type HostRequest = OpenRequest | KillRequest | QuitRequest
 
 // `stop` 은 띄우는 중인 pty 를 멈춘다. pty 띄우기에는 시간 제한이 없으므로, 뜨는 중에 닫은 pane 의 pty 는 kill 이 멈춘다.
-// 붙는 중(`reattach`)에는 멈출 것이 없어 `stop` 이 없다.
 const spawning = new Map<string, { done: Promise<void>; stop?: AbortController }>()
 const killing = new Set<Promise<void>>()
 let quitting = false

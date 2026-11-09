@@ -180,6 +180,19 @@ describe('snapshot·restore', () => {
     expect(ws.reopen(-1)).toBeUndefined()
   })
 
+  it('붙지 못해 셸을 띄운 되살린 pane 을 reopen 하면 버린 명령 없이 셸을 띄운다', () => {
+    const from = createWorkspaces()
+    from.open('/start', { command: ['claude'], keep: true })
+    const to = createWorkspaces()
+    to.restore(...full(from.snapshot()))
+    const key = selected(to).panes[0].key
+    to.respawned(key)
+    to.reopen(key)
+    expect(selected(to).panes[0].command).toBeUndefined()
+    expect(selected(to).panes[0].keep).toBeUndefined()
+    expect(selected(to).panes[0].attach).toBeUndefined()
+  })
+
   it('되살린 pane 을 reopen 하면 붙지 않고 새로 띄운다', () => {
     const from = createWorkspaces()
     from.open('/start')

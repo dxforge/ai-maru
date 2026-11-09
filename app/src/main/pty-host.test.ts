@@ -67,7 +67,6 @@ function quit(keepPtys = true): void {
   send({ data: { type: 'quit', keepPtys }, ports: [] })
 }
 
-/** `spawnPty` 처럼 signal 을 abort 하면 실패하는 가짜. 그 전에는 뜨지 않는다. */
 function spawnUntilAborted(): void {
   pty.spawnPty.mockImplementation(
     (...args: unknown[]) =>

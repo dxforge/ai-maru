@@ -532,7 +532,7 @@ export function createWorkspaces(
   }
 
   /**
-   * pane 을 새 pty id 로 다시 연다. 시작 디렉토리·명령·keep 은 그대로 두고, 되살린 pane 이면 붙지 않고 새로 띄운다.
+   * pane 에 새 pty id 를 준다. 시작 디렉토리·명령·keep 은 그대로 두고, 되살린 pane 도 붙지 않고 새로 띄우게 한다.
    * 앞 pty id 를 돌려준다. 같은 id 로 다시 띄우면 앞 연결을 끄는 kill 이 새 pty 를 끌 수 있다.
    */
   function reopen(key: number): string | undefined {

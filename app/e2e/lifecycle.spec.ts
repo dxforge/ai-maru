@@ -101,7 +101,8 @@ test('maru-pty 가 준비 전에 끝나면 그 이유를 터미널 첫 줄에 �
   const { page } = await launch({ MARU_PTY_BIN: bin })
   const line = page.locator('.opening-line')
   await expect(line).toContainText('code=3')
-  await expect(line).toContainText('reason-from-stderr')
+  // 이유가 한 줄을 넘쳐 잘려도 마우스를 올려 읽을 수 있다.
+  await expect(line.locator('.row-bar-text')).toHaveAttribute('title', /reason-from-stderr/)
   expect(ptyFiles(dataDir).filter((n) => n.endsWith('.log'))).toEqual([])
 })
 
@@ -156,7 +157,7 @@ test('셸이 뜨기 전에 앱을 끄면 띄우던 pty 를 멈추고 남기지 �
 
   await app.close()
 
-  // `slowPtyBin` 이 기다리는 1.5초가 지나도 띄우기를 이어 가지 않는다.
+  // 멈춘 pty 가 `slowPtyBin` 의 `sleep 1.5` 뒤에 `started` 를 만들지 않는지, 그보다 길게 기다려 확인한다.
   await sleep(2500)
   expect(existsSync(started)).toBe(false)
   expect(sockets(dataDir)).toEqual([])

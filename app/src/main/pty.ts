@@ -445,8 +445,8 @@ export function utf8Locale(
   return region && exists(name) ? name : 'C.UTF-8'
 }
 
-const STOPPED = 'maru-pty was stopped before it was ready'
-const TIMED_OUT = 'maru-pty did not open its socket in time'
+const STOPPED = 'maru-pty startup was canceled'
+const TIMED_OUT = 'timed out connecting to maru-pty'
 
 export async function spawnPty(
   bin: string,
@@ -503,7 +503,6 @@ export async function spawnPty(
       await sleep(SPAWN_POLL_MS)
     }
     child.kill('SIGTERM')
-    // 끝나기 전에 돌아가면, 같은 자리에 다시 띄운 pty 가 아직 뜨는 이 pty 와 겹칠 수 있다.
     if (!ended && !failure) {
       await new Promise((resolve) => {
         child.once('exit', resolve)

@@ -331,10 +331,9 @@ function onPaste(e: ClipboardEvent): void {
 
 let conn: PtyConnection | undefined
 
-// pty 가 뜨기 전에는 xterm 이 비어 있으므로, 여는 중임과 띄우지 못한 이유를 xterm 에 쓰지 않고 첫 줄 자리에 겹쳐 그린다.
+// 여는 중임과 띄우지 못한 이유는 xterm 에 쓰지 않고 첫 줄 자리에 겹쳐 그린다. xterm 에 쓰면 셸 출력과 섞여 화면에 남기 때문이다.
 const openedAt = performance.now()
 const elapsed = ref(0)
-// 뜨면 'opened', 띄우지 못하면 그 이유다.
 const outcome = ref<'opened' | { failed: string }>()
 let tick: ReturnType<typeof setTimeout> | undefined
 // 보이기 시작한 뒤로 지난 초가 바뀔 때마다 다시 그린다.
@@ -442,10 +441,11 @@ onBeforeUnmount(() => {
       <span class="row-bar-icon"
         ><StatusIcon :state="opening.kind === 'opening' ? 'working' : 'error'"
       /></span>
-      <span class="row-bar-text">{{
+      <!-- 이유가 한 줄에 다 들지 않을 때 마우스를 올려 읽는다. -->
+      <span class="row-bar-text" :title="opening.kind === 'failed' ? opening.message : undefined">{{
         opening.kind === 'opening'
           ? `Opening… ${opening.seconds}s`
-          : `Couldn't open: ${opening.message}`
+          : `Couldn't open the terminal: ${opening.message}`
       }}</span>
       <button v-if="opening.retry" class="reopen" @click="emit('retry')">Reopen</button>
     </div>
@@ -483,7 +483,7 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* 터미널 첫 줄 자리에 겹친다. 스크롤바(z-index 11)보다 위에 둔다. 글자는 터미널과 같은 글꼴로 세 번째 열에서 시작한다. */
+/* 스크롤바(z-index 11)보다 위에 둔다. */
 .opening-line {
   position: absolute;
   top: 0;

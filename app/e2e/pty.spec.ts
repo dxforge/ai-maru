@@ -119,7 +119,7 @@ test('maru-pty 를 띄울 수 없으면 터미널 첫 줄에 이유와 다시 �
   const { page } = await launch({ MARU_PTY_BIN: '/nonexistent/maru-pty' })
   const line = page.locator('.opening-line')
   await expect(line).toHaveClass(/failed/)
-  await expect(line).toContainText("Couldn't open: ")
+  await expect(line).toContainText("Couldn't open the terminal: ")
   await expect(line.getByRole('button', { name: 'Reopen' })).toBeVisible()
 })
 
@@ -166,7 +166,9 @@ test('띄우지 못한 pty 는 다시 열기로 새 pty 를 연다', async ({ la
   const bin = wrapPtyBin(dataDir, 'failing-pty', `[ -e '${fast}' ] || exit 1`)
   const { page } = await launch({ MARU_PTY_BIN: bin })
   const line = page.locator('.opening-line')
-  await expect(line).toContainText("Couldn't open: maru-pty exited before it was ready")
+  await expect(line).toContainText(
+    "Couldn't open the terminal: maru-pty exited before it was ready"
+  )
   writeFileSync(fast, '')
   await line.getByRole('button', { name: 'Reopen' }).click()
   await run(page, 'echo reopened-$((2+2))', 'reopened-4')

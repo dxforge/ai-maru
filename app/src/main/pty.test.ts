@@ -678,7 +678,6 @@ describe('writePtyInput', () => {
 
 describe('spawnPty', () => {
   const setup = { cli: { socket: '/s', bin: '/b/maru' }, zdotdir: '/z', claudePlugin: '/p' }
-  // 소켓을 열지 않고 30초 기다리는 가짜 maru-pty. 자기 pid 를 `pid` 파일에 쓴다.
   function stuckBin(): { dir: string; bin: string; pid: () => number } {
     const dir = mkdtempSync(join(tmpdir(), 'maru-spawn-'))
     const bin = join(dir, 'stuck-pty')
@@ -699,7 +698,7 @@ describe('spawnPty', () => {
     const { dir, bin } = stuckBin()
     await expect(
       spawnPty(bin, dir, setup, 'p-0000000b', '/', [], { signal: AbortSignal.timeout(300) })
-    ).rejects.toThrow('did not open its socket in time')
+    ).rejects.toThrow('timed out connecting to maru-pty')
   })
 
   it('abort 하면 maru-pty 가 끝나기를 기다린 뒤 실패한다', async () => {
@@ -707,11 +706,10 @@ describe('spawnPty', () => {
     const stop = new AbortController()
     const spawned = spawnPty(bin, dir, setup, 'p-0000000c', '/', [], { signal: stop.signal })
     await vi.waitFor(() => expect(existsSync(join(dir, 'pid'))).toBe(true))
-    // 시간 제한이 없으므로 abort 하기 전에는 끝나지 않는다.
     await new Promise((r) => setTimeout(r, 300))
     expect(alive(pid())).toBe(true)
     stop.abort()
-    await expect(spawned).rejects.toThrow('stopped before it was ready')
+    await expect(spawned).rejects.toThrow('startup was canceled')
     expect(alive(pid())).toBe(false)
   })
 
@@ -721,7 +719,7 @@ describe('spawnPty', () => {
     stop.abort()
     await expect(
       spawnPty(bin, dir, setup, 'p-0000000d', '/', [], { signal: stop.signal })
-    ).rejects.toThrow('stopped before it was ready')
+    ).rejects.toThrow('startup was canceled')
     expect(existsSync(join(dir, 'pid'))).toBe(false)
   })
 

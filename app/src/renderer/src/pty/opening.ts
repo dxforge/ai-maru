@@ -9,8 +9,8 @@ export type OpeningView =
   | { kind: 'failed'; message: string; retry: boolean }
 
 /**
- * pty 가 뜨기 전 터미널 첫 줄에 보일 것을 고른다. `failed` 는 띄우지 못한 이유이고, `retryable` 이 false 인
- * pane(CLI 가 답을 기다리는 pane)에는 다시 열기를 두지 않는다.
+ * pty 가 뜨기 전 터미널 첫 줄에 보일 것을 고른다. `failed` 는 띄우지 못한 이유다. `retryable` 은 CLI 가 답을 기다리는
+ * pane 에서 false 이고, 그 pane 에는 다시 열기를 두지 않는다.
  */
 export function openingView({
   elapsedMs,

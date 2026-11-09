@@ -228,7 +228,10 @@ test('마지막 pane 을 ⌘W 로 닫으면 cell 도 닫고 pty 를 끝낸다', 
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
 })
 
-test('셸이 뜨기 전에 ⌘W 로 닫아도 그 pty 는 뜬 뒤에 끝난다', async ({ launch, dataDir }) => {
+test('셸이 뜨기 전에 ⌘W 로 닫으면 띄우던 pty 를 멈추고 남기지 않는다', async ({
+  launch,
+  dataDir
+}) => {
   const { app, page } = await launch({ MARU_PTY_BIN: slowPtyBin(dataDir) })
   await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
   await clickMenu(app, 'split-right')
@@ -237,7 +240,7 @@ test('셸이 뜨기 전에 ⌘W 로 닫아도 그 pty 는 뜬 뒤에 끝난다',
   await clickMenu(app, 'close-pane')
 
   await expect(panes(page)).toHaveCount(1)
-  // 띄우던 pty 가 소켓을 연 뒤에 끝나야 하므로 그 시간이 지나도록 본다.
+  // 멈춘 pty 가 `slowPtyBin` 의 `sleep 1.5` 뒤에 소켓을 열지 않는지, 그보다 길게 기다려 확인한다.
   await page.waitForTimeout(2500)
   await expect.poll(() => sockets(dataDir), { timeout: 10_000 }).toHaveLength(1)
   await typesInto(page, 0, 'remaining')
