@@ -5,6 +5,7 @@ import {
   onBeforeUnmount,
   reactive,
   ref,
+  shallowReactive,
   shallowRef,
   useTemplateRef,
   watch,
@@ -293,8 +294,8 @@ async function closeWorkspace(key?: number): Promise<void> {
 
 // `maru pane new`·`maru cell new` 로 열어 pty 가 뜨기를 기다리는 pane → 답할 요청 id. `cell` 은 `cell.new` 의 답에 싣는
 // 새 cell 의 id 다. 명령이 곧바로 끝나면 답하기 전에 cell 이 닫힐 수 있으므로 열 때 적어 둔다.
-// reactive 가 아니지만, pane 을 만든 직후 같은 tick 에 넣으므로 그 pane 을 처음 그릴 때 다시 열기를 두지 않는다.
-const paneRequests = new Map<number, { id: number; cell?: string }>()
+// 이 pane 에는 다시 열기를 두지 않으므로 화면이 읽는다.
+const paneRequests = shallowReactive(new Map<number, { id: number; cell?: string }>())
 
 function answerPaneRequest(pane: number, reply: PaneReply): void {
   const request = paneRequests.get(pane)

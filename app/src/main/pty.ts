@@ -446,6 +446,7 @@ export function utf8Locale(
 }
 
 const STOPPED = 'maru-pty was stopped before it was ready'
+const TIMED_OUT = 'maru-pty did not open its socket in time'
 
 export async function spawnPty(
   bin: string,
@@ -457,14 +458,11 @@ export async function spawnPty(
   {
     keep = false,
     env = process.env,
-    timeoutMs = Infinity,
     signal
   }: {
     keep?: boolean
     env?: NodeJS.ProcessEnv
-    /** 이 시간 안에 소켓이 열리지 않으면 maru-pty 에 SIGTERM 을 보내고 실패한다. 없으면 기다린다. */
-    timeoutMs?: number
-    /** abort 하면 maru-pty 에 SIGTERM 을 보내고, 끝나기를 기다린 뒤 실패한다. */
+    /** abort 하면 maru-pty 에 SIGTERM 을 보내고, 끝나기를 기다린 뒤 실패한다. 없으면 소켓이 열릴 때까지 기다린다. */
     signal?: AbortSignal
   } = {}
 ): Promise<'live' | 'ended'> {
@@ -497,23 +495,22 @@ export async function spawnPty(
   }
   child.once('error', onError)
   child.once('exit', onExit)
-  const exited = new Promise<void>((resolve) => {
-    child.once('exit', () => resolve())
-    child.once('error', () => resolve())
-  })
   try {
-    const deadline = Date.now() + timeoutMs
-    while (Date.now() < deadline && !signal?.aborted) {
+    while (!signal?.aborted) {
       if (failure) throw failure
       if (ended) return 'ended'
       if (await isLive(socketPath(dir, id))) return 'live'
       await sleep(SPAWN_POLL_MS)
     }
     child.kill('SIGTERM')
-    if (!signal?.aborted) throw new Error(`maru-pty did not open its socket within ${timeoutMs}ms`)
     // 끝나기 전에 돌아가면, 같은 자리에 다시 띄운 pty 가 아직 뜨는 이 pty 와 겹칠 수 있다.
-    await exited
-    throw new Error(STOPPED)
+    if (!ended && !failure) {
+      await new Promise((resolve) => {
+        child.once('exit', resolve)
+        child.once('error', resolve)
+      })
+    }
+    throw new Error(signal.reason?.name === 'TimeoutError' ? TIMED_OUT : STOPPED)
   } catch (err) {
     const stderr = (await readFile(logPath, 'utf8').catch(() => '')).trim()
     if (stderr && err instanceof Error) err.message += `: ${stderr}`

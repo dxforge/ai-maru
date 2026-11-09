@@ -695,11 +695,11 @@ describe('spawnPty', () => {
     }
   }
 
-  it('timeoutMs 안에 소켓이 열리지 않으면 실패한다', async () => {
+  it('시간 제한 signal 이 끝나도록 소켓이 열리지 않으면 실패한다', async () => {
     const { dir, bin } = stuckBin()
     await expect(
-      spawnPty(bin, dir, setup, 'p-0000000b', '/', [], { timeoutMs: 300 })
-    ).rejects.toThrow('did not open its socket within 300ms')
+      spawnPty(bin, dir, setup, 'p-0000000b', '/', [], { signal: AbortSignal.timeout(300) })
+    ).rejects.toThrow('did not open its socket in time')
   })
 
   it('abort 하면 maru-pty 가 끝나기를 기다린 뒤 실패한다', async () => {

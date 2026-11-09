@@ -31,9 +31,9 @@ export type HostEvent = { type: 'live'; id: string }
 export type QuitRequest = { type: 'quit'; keepPtys: boolean }
 type HostRequest = OpenRequest | KillRequest | QuitRequest
 
-const spawning = new Map<string, Promise<void>>()
-// 띄우는 중인 pty 를 멈추는 데 쓴다. pty 띄우기에는 시간 제한이 없으므로, 뜨는 중에 닫은 pane 의 pty 는 kill 이 멈춘다.
-const stopping = new Map<string, AbortController>()
+// `stop` 은 띄우는 중인 pty 를 멈춘다. pty 띄우기에는 시간 제한이 없으므로, 뜨는 중에 닫은 pane 의 pty 는 kill 이 멈춘다.
+// 붙는 중(`reattach`)에는 멈출 것이 없어 `stop` 이 없다.
+const spawning = new Map<string, { done: Promise<void>; stop?: AbortController }>()
 const killing = new Set<Promise<void>>()
 let quitting = false
 
@@ -64,7 +64,7 @@ function serve(id: string, port: MessagePortMain, c: Attached, spawned: object):
 async function reattach(req: OpenRequest, port: MessagePortMain): Promise<void> {
   // 붙는 동안 온 kill 도 기다리게 한다. 붙지 못하면 이어서 셸을 띄우므로, kill 이 먼저 지나가면 어느 pane 에도 붙지 않은 셸이 남는다.
   let connected!: () => void
-  spawning.set(req.id, new Promise<void>((resolve) => (connected = resolve)))
+  spawning.set(req.id, { done: new Promise<void>((resolve) => (connected = resolve)) })
   const attached = await attachTo(req.dir, req.id)
   if (attached) {
     spawning.delete(req.id)
@@ -94,12 +94,8 @@ async function spawnFor(req: OpenRequest, port: MessagePortMain): Promise<void> 
     return { cwd, state }
   })
   // pty 가 뜨는 동안 pane 을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 `spawning` 에 넣는다.
-  stopping.set(req.id, stop)
-  const done = (): void => {
-    spawning.delete(req.id)
-    stopping.delete(req.id)
-  }
-  spawning.set(req.id, spawned.then(done, done))
+  const done = (): void => void spawning.delete(req.id)
+  spawning.set(req.id, { done: spawned.then(done, done), stop })
   try {
     const { cwd, state } = await spawned
     // 소켓을 본 뒤 붙기 전에 끝난 pty 도, 띄운 명령이 그만큼 빨리 끝난 것으로 본다.
@@ -129,17 +125,18 @@ function track(killed: Promise<void>): Promise<void> {
 
 async function kill(req: KillRequest): Promise<void> {
   // 붙는 중(`reattach`)이면 멈출 것이 아직 없다. 붙지 못해 띄우기 시작하면 다음 바퀴에 멈춘다.
-  for (let p = spawning.get(req.id); p; p = spawning.get(req.id)) {
-    stopping.get(req.id)?.abort()
-    await p
+  for (let s = spawning.get(req.id); s; s = spawning.get(req.id)) {
+    s.stop?.abort()
+    await s.done
   }
   await killPty(req.dir, req.id)
 }
 
 async function quit(keepPtys: boolean): Promise<void> {
   quitting = true
-  if (!keepPtys) for (const stop of stopping.values()) stop.abort()
-  await Promise.all(spawning.values())
+  const pending = [...spawning.values()]
+  if (!keepPtys) for (const s of pending) s.stop?.abort()
+  await Promise.all(pending.map((s) => s.done))
   // quit 뒤에 온 kill 도 `killing` 에 들어오므로 빌 때까지 기다린다.
   while (killing.size) await Promise.all(killing)
   process.exit(0)

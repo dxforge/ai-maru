@@ -19,7 +19,7 @@ import '@xterm/xterm/css/xterm.css'
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../pty/attach'
 import { openPty, type PtyConnection } from '../pty/connection'
-import { openingView } from '../pty/opening'
+import { OPENING_SHOW_MS, openingView } from '../pty/opening'
 import StatusIcon from './StatusIcon.vue'
 import type { ProgramStatusRecord } from '../../../shared/program-status'
 import { exitMessage, failedExit } from '../../../shared/pty'
@@ -332,24 +332,20 @@ function onPaste(e: ClipboardEvent): void {
 let conn: PtyConnection | undefined
 
 // pty 가 뜨기 전에는 xterm 이 비어 있으므로, 여는 중임과 띄우지 못한 이유를 xterm 에 쓰지 않고 첫 줄 자리에 겹쳐 그린다.
-let openedAt = 0
+const openedAt = performance.now()
 const elapsed = ref(0)
-const opened = ref(false)
-const openFailure = ref<string>()
+// 뜨면 'opened', 띄우지 못하면 그 이유다.
+const outcome = ref<'opened' | { failed: string }>()
 let tick: ReturnType<typeof setTimeout> | undefined
-// 지난 초가 바뀔 때마다 다시 그린다.
+// 보이기 시작한 뒤로 지난 초가 바뀔 때마다 다시 그린다.
 function scheduleTick(): void {
   elapsed.value = performance.now() - openedAt
   tick = setTimeout(scheduleTick, 1000 - (elapsed.value % 1000))
 }
-function stopTick(): void {
-  clearTimeout(tick)
-  tick = undefined
-}
 const opening = computed(() =>
-  opened.value
+  outcome.value === 'opened'
     ? ({ kind: 'hidden' } as const)
-    : openingView({ elapsedMs: elapsed.value, failed: openFailure.value, retryable })
+    : openingView({ elapsedMs: elapsed.value, failed: outcome.value?.failed, retryable })
 )
 
 // claude 처럼 입력란 아래에 상태줄을 그려 두는 프로그램은 커서를 그 위에 둔 채 끝나므로, 커서 자리에 쓰면 아래 줄을 덮는다.
@@ -385,9 +381,8 @@ onMounted(() => {
   checkCell()
   intersection?.observe(host.value!)
   if (active) term.focus()
+  tick = setTimeout(scheduleTick, OPENING_SHOW_MS)
   // reactive 배열의 proxy 는 IPC 로 보낼 수 없다.
-  openedAt = performance.now()
-  scheduleTick()
   conn = openPty({
     id: ptyId,
     cell: cellId,
@@ -403,13 +398,13 @@ onMounted(() => {
     },
     onGone: () => emit('gone'),
     onOpenFailed: (message) => {
-      stopTick()
-      openFailure.value = message
+      clearTimeout(tick)
+      outcome.value = { failed: message }
       emit('failed', message)
     },
     onSpawned: (_id, dir) => {
-      stopTick()
-      opened.value = true
+      clearTimeout(tick)
+      outcome.value = 'opened'
       emit('spawned', dir)
     },
     onProgramStatus: (records) => emit('programStatus', records)
@@ -423,7 +418,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  stopTick()
+  clearTimeout(tick)
   intersection?.disconnect()
   if (resyncFrame !== undefined) cancelAnimationFrame(resyncFrame)
   textLinks.dispose()

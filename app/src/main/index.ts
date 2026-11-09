@@ -759,7 +759,7 @@ function start(): void {
         const state = await spawnPty(ptyBin(), ptyDir(), setup, id, dir, command, {
           keep: true,
           env: jobEnv,
-          timeoutMs: JOB_SPAWN_TIMEOUT_MS
+          signal: AbortSignal.timeout(JOB_SPAWN_TIMEOUT_MS)
         })
         if (state === 'live') ptyStates.watch(id)
       })
