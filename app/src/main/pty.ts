@@ -19,11 +19,11 @@ import { appHome } from './config-file'
 import { encodeFrame, FrameDecoder } from './frame'
 import { appProtocol, attachable } from './pty-protocol'
 
-const SPAWN_TIMEOUT_MS = 5000
-// 앱을 끌 때 main 이 host 와 띄우던 job 을 기다리는 상한이다. `spawnPty` 는 시간 제한 안에 소켓이 열리지
-// 않으면 그 pty 에 SIGTERM 을 보내므로, 상한은 spawn 시간 제한보다 길어야 한다. host 의 시간 제한은 open 을
-// 받고 시작 폴더를 확인한 뒤에 시작하므로 2초를 더 둔다.
-export const QUIT_TIMEOUT_MS = SPAWN_TIMEOUT_MS + 2000
+// job 은 CLI 가 띄우고 화면에 여는 중임을 보일 곳이 없어 시간 제한을 둔다. pane 의 pty 띄우기에는 시간 제한이 없다.
+export const JOB_SPAWN_TIMEOUT_MS = 5000
+// 앱을 끌 때 main 이 host 와 띄우던 job 을 기다리는 상한이다. job 의 spawn 시간 제한에 시작 폴더를 확인하는
+// 시간으로 2초를 더한 값이다.
+export const QUIT_TIMEOUT_MS = 7000
 const SPAWN_POLL_MS = 50
 // maru-pty 는 셸에 2초를 주고 연결을 1초 더 비운 뒤 끝난다.
 const KILL_TIMEOUT_MS = 5000
@@ -445,6 +445,9 @@ export function utf8Locale(
   return region && exists(name) ? name : 'C.UTF-8'
 }
 
+const STOPPED = 'maru-pty startup was canceled'
+const TIMED_OUT = 'timed out connecting to maru-pty'
+
 export async function spawnPty(
   bin: string,
   dir: string,
@@ -452,9 +455,19 @@ export async function spawnPty(
   id: string,
   cwd: string,
   command: string[] = [],
-  { keep = false, env = process.env }: { keep?: boolean; env?: NodeJS.ProcessEnv } = {}
+  {
+    keep = false,
+    env = process.env,
+    signal
+  }: {
+    keep?: boolean
+    env?: NodeJS.ProcessEnv
+    /** abort 하면 maru-pty 에 SIGTERM 을 보내고, 끝나기를 기다린 뒤 실패한다. 없으면 소켓이 열릴 때까지 기다린다. */
+    signal?: AbortSignal
+  } = {}
 ): Promise<'live' | 'ended'> {
   if (!isPtyId(id)) throw new Error(`not a pty id: ${id}`)
+  if (signal?.aborted) throw new Error(STOPPED)
   // 준비 전에 끝나면 이유가 stderr 에만 있다. 파이프로 받으면 앱이 끝난 뒤 pty 의 쓰기가 실패한다.
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const logPath = join(dir, `${id}.log`)
@@ -483,15 +496,20 @@ export async function spawnPty(
   child.once('error', onError)
   child.once('exit', onExit)
   try {
-    const deadline = Date.now() + SPAWN_TIMEOUT_MS
-    while (Date.now() < deadline) {
+    while (!signal?.aborted) {
       if (failure) throw failure
       if (ended) return 'ended'
       if (await isLive(socketPath(dir, id))) return 'live'
       await sleep(SPAWN_POLL_MS)
     }
     child.kill('SIGTERM')
-    throw new Error(`maru-pty did not open its socket within ${SPAWN_TIMEOUT_MS}ms`)
+    if (!ended && !failure) {
+      await new Promise((resolve) => {
+        child.once('exit', resolve)
+        child.once('error', resolve)
+      })
+    }
+    throw new Error(signal.reason?.name === 'TimeoutError' ? TIMED_OUT : STOPPED)
   } catch (err) {
     const stderr = (await readFile(logPath, 'utf8').catch(() => '')).trim()
     if (stderr && err instanceof Error) err.message += `: ${stderr}`

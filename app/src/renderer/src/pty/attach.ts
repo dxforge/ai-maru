@@ -10,6 +10,7 @@ export type AttachHandlers = {
   onGone(): void
   /** 되살린 pane 이 붙으면 `cwd` 가 없다. */
   onSpawned(id: string, cwd: string | undefined): void
+  /** pty 가 뜨기 전에 실패했다. 터미널에는 쓰지 않으므로 받는 쪽이 이유를 보인다. */
   onOpenFailed(message: string): void
   /**
    * pty 의 OSC 7501 레코드 전체. 상태 구독을 모르는 이전 maru-pty 만 attach 스트림으로 보낸다 — 붙을 때와 바뀔 때마다
@@ -130,8 +131,8 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
         break
       case 'error':
         showGone()
-        term.write(`\r\n[maru-pty: ${m.code}] ${m.message ?? ''}\r\n`)
         if (m.code === 'open_failed') openFailed(m.message ?? '')
+        else term.write(`\r\n[maru-pty: ${m.code}] ${m.message ?? ''}\r\n`)
         break
     }
   })
@@ -139,9 +140,9 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
     document.removeEventListener('visibilitychange', visibility)
     showGone()
     if (ended) return
-    term.write('\r\n[disconnected from the pty]\r\n')
     // pty host 가 죽으면 open_failed 없이 닫힌다.
     if (!spawned) openFailed('disconnected before the pty started')
+    else term.write('\r\n[disconnected from the pty]\r\n')
   })
 
   term.onData((data) => input(encoder.encode(data)))

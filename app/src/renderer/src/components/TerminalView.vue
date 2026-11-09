@@ -16,9 +16,11 @@ import { UnicodeGraphemesAddon } from '@xterm/addon-unicode-graphemes'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal, type IRenderDimensions, type ITheme } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { attach as attachTerminal, type Attachment } from '../pty/attach'
 import { openPty, type PtyConnection } from '../pty/connection'
+import { OPENING_SHOW_MS, openingView } from '../pty/opening'
+import StatusIcon from './StatusIcon.vue'
 import type { ProgramStatusRecord } from '../../../shared/program-status'
 import { exitMessage, failedExit } from '../../../shared/pty'
 import { isSelectAll, terminalInput } from '../../../shared/shortcuts'
@@ -38,6 +40,7 @@ const {
   command = undefined,
   attach = undefined,
   keep = undefined,
+  retryable = false,
   active,
   shown,
   font,
@@ -52,6 +55,8 @@ const {
   attach?: boolean
   /** pty 를 `--keep` 으로 띄우고, 명령이 실패하면 `exit` 를 내지 않고 종료 상태를 마지막 줄에 쓴다. */
   keep?: boolean
+  /** pty 가 늦게 뜨거나 뜨지 못하면 첫 줄에 다시 열기를 둔다. */
+  retryable?: boolean
   active: boolean
   /** 터미널이 속한 cell 이 화면에 나와 있다. 겹쳐 숨은 cell 도 화면 안에 있어 IntersectionObserver 로는 가려낼 수 없다. */
   shown: boolean
@@ -67,6 +72,8 @@ const emit = defineEmits<{
   /** 되살린 pane 의 pty 가 없어 같은 자리에 새 셸이 뜬다. */
   gone: []
   failed: [message: string]
+  /** 다시 열기를 눌렀다. 받는 쪽이 pane 을 새 pty 로 다시 연다. */
+  retry: []
   /** `cwd` 는 pty 를 띄운 실제 시작 디렉토리다. 되살린 pane 이 남은 pty 에 붙으면 없다. */
   spawned: [cwd: string | undefined]
   /** 이전 maru-pty 의 pty 만 attach 스트림으로 보내는 OSC 7501 레코드(`pty/states.ts`). */
@@ -324,6 +331,29 @@ function onPaste(e: ClipboardEvent): void {
 
 let conn: PtyConnection | undefined
 
+// 여는 중임과 띄우지 못한 이유는 xterm 에 쓰지 않고 첫 줄 자리에 겹쳐 그린다. xterm 에 쓰면 셸 출력과 섞여 화면에 남기 때문이다.
+const openedAt = performance.now()
+const elapsed = ref(0)
+const outcome = ref<'opened' | { failed: string }>()
+// 되살린 pane 의 pty 가 없어 host 가 새로 띄우기 시작했다. 그 뒤로는 다시 열어도 잃을 세션이 없으므로 다시 열기를 둔다.
+const respawning = ref(false)
+let tick: ReturnType<typeof setTimeout> | undefined
+// 보이기 시작한 뒤로 지난 초가 바뀔 때마다 다시 그린다.
+function scheduleTick(): void {
+  elapsed.value = performance.now() - openedAt
+  tick = setTimeout(scheduleTick, 1000 - (elapsed.value % 1000))
+}
+const opening = computed(() =>
+  outcome.value === 'opened'
+    ? ({ kind: 'hidden' } as const)
+    : openingView({
+        elapsedMs: elapsed.value,
+        failed: outcome.value?.failed,
+        retryable,
+        attaching: attach === true && !respawning.value
+      })
+)
+
 // claude 처럼 입력란 아래에 상태줄을 그려 두는 프로그램은 커서를 그 위에 둔 채 끝나므로, 커서 자리에 쓰면 아래 줄을 덮는다.
 // 앞서 받은 출력을 xterm 이 다 그린 뒤, 화면에 그려진 마지막 줄 바로 아래로 커서를 옮겨 쓴다.
 function writeBelowContent(text: string): void {
@@ -357,6 +387,7 @@ onMounted(() => {
   checkCell()
   intersection?.observe(host.value!)
   if (active) term.focus()
+  tick = setTimeout(scheduleTick, OPENING_SHOW_MS)
   // reactive 배열의 proxy 는 IPC 로 보낼 수 없다.
   conn = openPty({
     id: ptyId,
@@ -371,9 +402,20 @@ onMounted(() => {
       if (keep && failedExit(exit)) writeBelowContent(exitMessage(exit))
       else emit('exit')
     },
-    onGone: () => emit('gone'),
-    onOpenFailed: (message) => emit('failed', message),
-    onSpawned: (_id, dir) => emit('spawned', dir),
+    onGone: () => {
+      respawning.value = true
+      emit('gone')
+    },
+    onOpenFailed: (message) => {
+      clearTimeout(tick)
+      outcome.value = { failed: message }
+      emit('failed', message)
+    },
+    onSpawned: (_id, dir) => {
+      clearTimeout(tick)
+      outcome.value = 'opened'
+      emit('spawned', dir)
+    },
     onProgramStatus: (records) => emit('programStatus', records)
   })
   // 조합한 글자는 다음 키가 오면 그 키보다 먼저 setTimeout 을 기다리지 않고 간다. 그 바로 뒤에 보낸다.
@@ -385,6 +427,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(tick)
   intersection?.disconnect()
   if (resyncFrame !== undefined) cancelAnimationFrame(resyncFrame)
   textLinks.dispose()
@@ -404,6 +447,18 @@ onBeforeUnmount(() => {
     @paste.capture="onPaste"
   >
     <div v-if="metaPressed && hoveredUrl" class="link-address">{{ hoveredUrl }}</div>
+    <div v-if="opening.kind !== 'hidden'" class="row-bar opening-line" :class="opening.kind">
+      <span class="row-bar-icon"
+        ><StatusIcon :state="opening.kind === 'opening' ? 'working' : 'error'"
+      /></span>
+      <!-- 이유가 한 줄에 다 들지 않을 때 마우스를 올려 읽는다. -->
+      <span class="row-bar-text" :title="opening.kind === 'failed' ? opening.message : undefined">{{
+        opening.kind === 'opening'
+          ? `Opening… ${opening.seconds}s`
+          : `Couldn't open the terminal: ${opening.message}`
+      }}</span>
+      <button v-if="opening.retry" class="reopen" @click="emit('retry')">Reopen</button>
+    </div>
   </div>
 </template>
 
@@ -436,6 +491,41 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+}
+
+/* 스크롤바(z-index 11)보다 위에 둔다. */
+.opening-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 12;
+  background: var(--ground);
+}
+
+.opening-line.opening {
+  --claude: var(--muted);
+}
+
+.opening-line.failed {
+  --claude: var(--error);
+  color: var(--error);
+}
+
+.reopen {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.reopen:hover {
+  background: var(--hover);
 }
 
 .terminal-view :deep(.xterm) {

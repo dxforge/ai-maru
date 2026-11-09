@@ -12,7 +12,8 @@ import {
   stubDialog,
   END_EVERYTHING,
   test,
-  cellItems
+  cellItems,
+  wrapPtyBin
 } from './app'
 
 /** 그 pane 의 claude 와 같은 알림을 받는다. */
@@ -113,6 +114,21 @@ test('같은 이름이 돌고 있으면 거절한다', async ({ launch }) => {
     'code-1'
   )
   await expect(screen(page)).toShow('job d is running in this cell')
+})
+
+test('pty 가 5초 안에 뜨지 않는 job 은 띄우지 못했다고 답한다', async ({ launch, dataDir }) => {
+  // pane 은 바로 띄우고, `--keep` 으로 띄우는 job 만 소켓을 열지 않고 멈춘다.
+  const bin = wrapPtyBin(
+    dataDir,
+    'stuck-job-pty',
+    `case " $* " in *" --keep "*) exec sleep 30;; esac`
+  )
+  const { page } = await launch({ MARU_PTY_BIN: bin })
+  await page.keyboard.type(
+    's=$SECONDS; maru job new --name t sleep 1; echo code-$? took-$((SECONDS-s))s\n'
+  )
+  await expect(screen(page)).toShow(/code-1 took-[5-9]s/, { timeout: 15_000 })
+  await expect(screen(page)).toShow('timed out connecting to maru-pty')
 })
 
 test('다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell 의 job 만 끝난다', async ({

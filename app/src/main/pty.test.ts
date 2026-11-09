@@ -677,12 +677,57 @@ describe('writePtyInput', () => {
 })
 
 describe('spawnPty', () => {
+  const setup = { cli: { socket: '/s', bin: '/b/maru' }, zdotdir: '/z', claudePlugin: '/p' }
+  function stuckBin(): { dir: string; bin: string; pid: () => number } {
+    const dir = mkdtempSync(join(tmpdir(), 'maru-spawn-'))
+    const bin = join(dir, 'stuck-pty')
+    writeFileSync(bin, `#!/bin/sh\necho $$ > "${join(dir, 'pid')}"\nexec sleep 30\n`)
+    chmodSync(bin, 0o755)
+    return { dir, bin, pid: () => Number(readFileSync(join(dir, 'pid'), 'utf8')) }
+  }
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  it('시간 제한 signal 이 끝나도록 소켓이 열리지 않으면 실패한다', async () => {
+    const { dir, bin } = stuckBin()
+    await expect(
+      spawnPty(bin, dir, setup, 'p-0000000b', '/', [], { signal: AbortSignal.timeout(300) })
+    ).rejects.toThrow('timed out connecting to maru-pty')
+  })
+
+  it('abort 하면 maru-pty 가 끝나기를 기다린 뒤 실패한다', async () => {
+    const { dir, bin, pid } = stuckBin()
+    const stop = new AbortController()
+    const spawned = spawnPty(bin, dir, setup, 'p-0000000c', '/', [], { signal: stop.signal })
+    await vi.waitFor(() => expect(existsSync(join(dir, 'pid'))).toBe(true))
+    await new Promise((r) => setTimeout(r, 300))
+    expect(alive(pid())).toBe(true)
+    stop.abort()
+    await expect(spawned).rejects.toThrow('startup was canceled')
+    expect(alive(pid())).toBe(false)
+  })
+
+  it('abort 한 signal 이면 띄우지 않고 실패한다', async () => {
+    const { dir, bin } = stuckBin()
+    const stop = new AbortController()
+    stop.abort()
+    await expect(
+      spawnPty(bin, dir, setup, 'p-0000000d', '/', [], { signal: stop.signal })
+    ).rejects.toThrow('startup was canceled')
+    expect(existsSync(join(dir, 'pid'))).toBe(false)
+  })
+
   it('keep 이면 명령 앞에 --keep 을 넘긴다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-spawn-'))
     const bin = join(dir, 'fake-pty')
     writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(dir, 'args')}"\n`)
     chmodSync(bin, 0o755)
-    const setup = { cli: { socket: '/s', bin: '/b/maru' }, zdotdir: '/z', claudePlugin: '/p' }
     const id = 'p-0000000a'
     expect(await spawnPty(bin, dir, setup, id, '/', ['sh'], { keep: true })).toBe('ended')
     const args = readFileSync(join(dir, 'args'), 'utf8').trim().split('\n')
