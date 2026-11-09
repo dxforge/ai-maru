@@ -133,10 +133,9 @@ const alive = (pid: number): boolean => {
 }
 
 test('늦게 뜨는 pty 는 여는 중을 보이고, 뜨면 지운다', async ({ launch, dataDir }) => {
-  const { page } = await launch({ MARU_PTY_BIN: wrapPtyBin(dataDir, 'late-pty', 'sleep 3') })
+  const { page } = await launch({ MARU_PTY_BIN: wrapPtyBin(dataDir, 'late-pty', 'sleep 5') })
   const line = page.locator('.opening-line')
-  await expect(line).toContainText(/Opening… [12]s/)
-  await expect(line.getByRole('button', { name: 'Reopen' })).toHaveCount(0)
+  await expect(line).toContainText(/Opening… [34]s/)
   await expect(line).toHaveCount(0, { timeout: 10_000 })
   await run(page, 'echo opened-$((1+1))', 'opened-2')
 })

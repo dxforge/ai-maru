@@ -1,5 +1,5 @@
 /** 열기 시작해 이만큼 지나도 pty 가 뜨지 않았으면 여는 중임을 보인다. */
-export const OPENING_SHOW_MS = 1000
+export const OPENING_SHOW_MS = 3000
 /** 여는 중이 이만큼 길어지면 다시 열기를 더한다. */
 export const OPENING_RETRY_MS = 5000
 

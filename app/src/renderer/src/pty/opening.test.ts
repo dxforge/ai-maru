@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { openingView } from './opening'
 
 describe('openingView', () => {
-  it('1초가 지나기 전에는 보이지 않는다', () => {
+  it('3초가 지나기 전에는 보이지 않는다', () => {
     expect(openingView({ elapsedMs: 0, retryable: true })).toEqual({ kind: 'hidden' })
-    expect(openingView({ elapsedMs: 999, retryable: true })).toEqual({ kind: 'hidden' })
+    expect(openingView({ elapsedMs: 2999, retryable: true })).toEqual({ kind: 'hidden' })
   })
 
-  it('1초부터 지난 초를 보이고, 5초부터 다시 열기를 더한다', () => {
-    expect(openingView({ elapsedMs: 1000, retryable: true })).toEqual({
+  it('3초부터 지난 초를 보이고, 5초부터 다시 열기를 더한다', () => {
+    expect(openingView({ elapsedMs: 3000, retryable: true })).toEqual({
       kind: 'opening',
-      seconds: 1,
+      seconds: 3,
       retry: false
     })
     expect(openingView({ elapsedMs: 4999, retryable: true })).toEqual({
