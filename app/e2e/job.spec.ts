@@ -116,20 +116,69 @@ test('같은 이름이 돌고 있으면 거절한다', async ({ launch }) => {
   await expect(screen(page)).toShow('job d is running in this cell')
 })
 
-test('pty 가 5초 안에 뜨지 않는 job 은 띄우지 못했다고 답한다', async ({ launch, dataDir }) => {
-  // pane 은 바로 띄우고, `--keep` 으로 띄우는 job 만 소켓을 열지 않고 멈춘다.
+/**
+ * `--keep` 을 받은 maru-pty 만 소켓을 열지 않고 멈추는 wrapper 다. 이 테스트에서 `--keep` 을 받는 것은 job 뿐이고,
+ * 처음 뜨는 셸 pane 은 그대로 뜬다.
+ */
+function stuckJobPty(dataDir: string, trap = ''): { bin: string; pidFile: string } {
+  const pidFile = join(dataDir, 'stuck-pid')
   const bin = wrapPtyBin(
     dataDir,
     'stuck-job-pty',
-    `case " $* " in *" --keep "*) exec sleep 30;; esac`
+    `case " $* " in *" --keep "*) ${trap}echo $$ > '${pidFile}'; exec sleep 30;; esac`
   )
-  const { page } = await launch({ MARU_PTY_BIN: bin })
-  await page.keyboard.type(
-    's=$SECONDS; maru job new --name t sleep 1; echo code-$? took-$((SECONDS-s))s\n'
-  )
-  await expect(screen(page)).toShow(/code-1 took-[5-9]s/, { timeout: 15_000 })
-  await expect(screen(page)).toShow('timed out connecting to maru-pty')
+  return { bin, pidFile }
+}
+
+for (const { name, trap } of [
+  { name: 'pty 가 5초 안에 뜨지 않는 job 은 띄우지 못했다고 답한다', trap: '' },
+  {
+    name: 'SIGTERM 으로 끝나지 않는 pty 의 job 도 CLI 응답 제한 안에 띄우지 못했다고 답한다',
+    trap: "trap '' TERM; "
+  }
+]) {
+  test(name, async ({ launch, dataDir }) => {
+    const { bin, pidFile } = stuckJobPty(dataDir, trap)
+    const { page } = await launch({ MARU_PTY_BIN: bin })
+    await page.keyboard.type(
+      's=$SECONDS; maru job new --name t sleep 1; echo code-$? took-$((SECONDS-s))s\n'
+    )
+    await expect(screen(page)).toShow(/code-1 took-[5-8]s/, { timeout: 15_000 })
+    await expect(screen(page)).toShow('timed out connecting to maru-pty')
+    expect(alive(Number(readFileSync(pidFile, 'utf8')))).toBe(false)
+  })
+}
+
+test('job 을 띄우는 중에 앱을 끄면 SIGTERM 으로 끝나지 않는 pty 도 끝난다', async ({
+  launch,
+  dataDir
+}) => {
+  const { bin, pidFile } = stuckJobPty(dataDir, "trap '' TERM; ")
+  const { app, page } = await launch({ MARU_PTY_BIN: bin })
+  await page.keyboard.type('maru job new --name t sleep 1 &\n')
+  await expect.poll(() => existsSync(pidFile)).toBe(true)
+  const stuck = Number(readFileSync(pidFile, 'utf8'))
+  try {
+    await stubDialog(app, END_EVERYTHING)
+    await app.close()
+    await expect.poll(() => alive(stuck), { timeout: 3000 }).toBe(false)
+  } finally {
+    try {
+      process.kill(stuck, 'SIGKILL')
+    } catch {
+      // 이미 끝났다.
+    }
+  }
 })
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
 
 test('다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell 의 job 만 끝난다', async ({
   launch,

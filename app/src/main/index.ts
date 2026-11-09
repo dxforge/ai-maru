@@ -64,6 +64,7 @@ import {
   keepAttachable,
   killPtys,
   liveRecords,
+  JOB_KILL_TIMEOUT_MS,
   JOB_SPAWN_TIMEOUT_MS,
   QUIT_TIMEOUT_MS,
   readRecord,
@@ -759,7 +760,8 @@ function start(): void {
         const state = await spawnPty(ptyBin(), ptyDir(), setup, id, dir, command, {
           keep: true,
           env: jobEnv,
-          signal: AbortSignal.timeout(JOB_SPAWN_TIMEOUT_MS)
+          signal: AbortSignal.timeout(JOB_SPAWN_TIMEOUT_MS),
+          killTimeoutMs: JOB_KILL_TIMEOUT_MS
         })
         if (state === 'live') ptyStates.watch(id)
       })
