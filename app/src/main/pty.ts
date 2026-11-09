@@ -21,8 +21,12 @@ import { appProtocol, attachable } from './pty-protocol'
 
 // job 은 CLI 가 띄우고 화면에 여는 중임을 보일 곳이 없어 시간 제한을 둔다. pane 의 pty 띄우기에는 시간 제한이 없다.
 export const JOB_SPAWN_TIMEOUT_MS = 5000
-// 앱을 끌 때 main 이 host 와 띄우던 job 을 기다리는 상한이다. job 의 spawn 시간 제한에 시작 폴더를 확인하는
-// 시간으로 2초를 더한 값이다.
+// 시간 제한에 걸린 job 의 maru-pty 가 SIGTERM 으로 끝나지 않을 때 SIGKILL 을 보내기까지 기다리는 시간이다.
+// pane 의 `KILL_TIMEOUT_MS` 보다 짧은 것은 job 의 spawn 이 `QUIT_TIMEOUT_MS` 안에 끝나야 하기 때문이다.
+export const JOB_KILL_TIMEOUT_MS = 1000
+// 앱을 끌 때 main 이 host 와 띄우던 job 을 기다리는 상한이다. job 의 spawn 시간 제한과 SIGKILL 대기
+// (`JOB_KILL_TIMEOUT_MS`)에 시작 폴더를 확인하는 시간으로 1초를 더한 값이다. job 의 spawn 이 이 시간 안에
+// 끝나야 main 이 멈춘 maru-pty 에 SIGKILL 을 보내고 나서 종료한다.
 export const QUIT_TIMEOUT_MS = 7000
 const SPAWN_POLL_MS = 50
 // maru-pty 는 셸에 2초를 주고 연결을 1초 더 비운 뒤 끝난다.
@@ -458,12 +462,15 @@ export async function spawnPty(
   {
     keep = false,
     env = process.env,
-    signal
+    signal,
+    killTimeoutMs = KILL_TIMEOUT_MS
   }: {
     keep?: boolean
     env?: NodeJS.ProcessEnv
     /** abort 하면 maru-pty 에 SIGTERM 을 보내고, 끝나기를 기다린 뒤 실패한다. 없으면 소켓이 열릴 때까지 기다린다. */
     signal?: AbortSignal
+    /** abort 뒤 SIGTERM 을 보내고 이 시간 안에 maru-pty 가 끝나지 않으면 SIGKILL 을 보낸다. */
+    killTimeoutMs?: number
   } = {}
 ): Promise<'live' | 'ended'> {
   if (!isPtyId(id)) throw new Error(`not a pty id: ${id}`)
@@ -504,9 +511,15 @@ export async function spawnPty(
     }
     child.kill('SIGTERM')
     if (!ended && !failure) {
-      await new Promise((resolve) => {
-        child.once('exit', resolve)
-        child.once('error', resolve)
+      // 준비 전의 maru-pty 는 SIGTERM 을 받아 두기만 한다(`maru-pty` 의 `lib.rs`). 그 단계에서 멈춘 maru-pty 는 SIGKILL 로 끈다.
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => child.kill('SIGKILL'), killTimeoutMs)
+        const done = (): void => {
+          clearTimeout(timer)
+          resolve()
+        }
+        child.once('exit', done)
+        child.once('error', done)
       })
     }
     throw new Error(signal.reason?.name === 'TimeoutError' ? TIMED_OUT : STOPPED)
