@@ -227,36 +227,41 @@ test('main 의 JS 가 끝난 뒤의 뒷정리가 오래 걸려도 테스트의 a
   expect(Date.now() - started).toBeLessThan(slowMs / 2)
 })
 
-test('앱을 끌 때 소켓을 열기 전에 멈춘 pty 는 기다리지 않고 멈춘다', async ({
-  launch,
-  dataDir
-}) => {
-  const stall = join(dataDir, 'stall')
-  const pidFile = join(dataDir, 'stalled-pid')
-  const bin = wrapPtyBin(
-    dataDir,
-    'stalling-pty',
-    `if [ -e '${stall}' ]; then echo $$ > '${pidFile}'; exec sleep 100; fi`
-  )
-  const { app, page } = await launch({ MARU_PTY_BIN: bin })
-  await expect.poll(() => sockets(dataDir)).toHaveLength(1)
-  writeFileSync(stall, '')
-  await split(app, page, 'split-right', 2)
-  await expect.poll(() => existsSync(pidFile)).toBe(true)
-  const stalled = Number(readFileSync(pidFile, 'utf8'))
-  try {
-    const start = Date.now()
-    await app.close()
-    expect(Date.now() - start).toBeLessThan(QUIT_TIMEOUT_MS)
-    await expect.poll(() => alive(stalled), { timeout: 3000 }).toBe(false)
-  } finally {
-    try {
-      process.kill(stalled, 'SIGKILL')
-    } catch {
-      // 이미 끝났다.
-    }
+for (const { name, trap } of [
+  { name: '앱을 끌 때 소켓을 열기 전에 멈춘 pty 는 기다리지 않고 멈춘다', trap: '' },
+  {
+    name: '앱을 끌 때 소켓을 열기 전에 멈춰 SIGTERM 으로 끝나지 않는 pty 도 SIGKILL 로 멈춘다',
+    trap: "trap '' TERM; "
   }
-})
+]) {
+  test(name, async ({ launch, dataDir }) => {
+    const stall = join(dataDir, 'stall')
+    const pidFile = join(dataDir, 'stalled-pid')
+    const bin = wrapPtyBin(
+      dataDir,
+      'stalling-pty',
+      `if [ -e '${stall}' ]; then ${trap}echo $$ > '${pidFile}'; exec sleep 100; fi`
+    )
+    const { app, page } = await launch({ MARU_PTY_BIN: bin })
+    await expect.poll(() => sockets(dataDir)).toHaveLength(1)
+    writeFileSync(stall, '')
+    await split(app, page, 'split-right', 2)
+    await expect.poll(() => existsSync(pidFile)).toBe(true)
+    const stalled = Number(readFileSync(pidFile, 'utf8'))
+    try {
+      const start = Date.now()
+      await app.close()
+      expect(Date.now() - start).toBeLessThan(QUIT_TIMEOUT_MS)
+      await expect.poll(() => alive(stalled), { timeout: 3000 }).toBe(false)
+    } finally {
+      try {
+        process.kill(stalled, 'SIGKILL')
+      } catch {
+        // 이미 끝났다.
+      }
+    }
+  })
+}
 
 test('pty 를 잇는 utilityProcess 가 죽은 뒤에 닫은 pane 의 pty 도 끝난다', async ({
   launch,

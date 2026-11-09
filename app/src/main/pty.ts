@@ -458,12 +458,15 @@ export async function spawnPty(
   {
     keep = false,
     env = process.env,
-    signal
+    signal,
+    killTimeoutMs = KILL_TIMEOUT_MS
   }: {
     keep?: boolean
     env?: NodeJS.ProcessEnv
     /** abort 하면 maru-pty 에 SIGTERM 을 보내고, 끝나기를 기다린 뒤 실패한다. 없으면 소켓이 열릴 때까지 기다린다. */
     signal?: AbortSignal
+    /** abort 뒤 SIGTERM 을 보내고 이 시간 안에 maru-pty 가 끝나지 않으면 SIGKILL 을 보낸다. */
+    killTimeoutMs?: number
   } = {}
 ): Promise<'live' | 'ended'> {
   if (!isPtyId(id)) throw new Error(`not a pty id: ${id}`)
@@ -504,9 +507,15 @@ export async function spawnPty(
     }
     child.kill('SIGTERM')
     if (!ended && !failure) {
-      await new Promise((resolve) => {
-        child.once('exit', resolve)
-        child.once('error', resolve)
+      // 준비 전의 maru-pty 는 SIGTERM 을 받아 두기만 한다(`maru-pty` 의 `lib.rs`). 그 단계에서 멈춘 maru-pty 는 SIGKILL 로 끈다.
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => child.kill('SIGKILL'), killTimeoutMs)
+        const done = (): void => {
+          clearTimeout(timer)
+          resolve()
+        }
+        child.once('exit', done)
+        child.once('error', done)
       })
     }
     throw new Error(signal.reason?.name === 'TimeoutError' ? TIMED_OUT : STOPPED)

@@ -678,10 +678,10 @@ describe('writePtyInput', () => {
 
 describe('spawnPty', () => {
   const setup = { cli: { socket: '/s', bin: '/b/maru' }, zdotdir: '/z', claudePlugin: '/p' }
-  function stuckBin(): { dir: string; bin: string; pid: () => number } {
+  function stuckBin(prelude = ''): { dir: string; bin: string; pid: () => number } {
     const dir = mkdtempSync(join(tmpdir(), 'maru-spawn-'))
     const bin = join(dir, 'stuck-pty')
-    writeFileSync(bin, `#!/bin/sh\necho $$ > "${join(dir, 'pid')}"\nexec sleep 30\n`)
+    writeFileSync(bin, `#!/bin/sh\n${prelude}echo $$ > "${join(dir, 'pid')}"\nexec sleep 30\n`)
     chmodSync(bin, 0o755)
     return { dir, bin, pid: () => Number(readFileSync(join(dir, 'pid'), 'utf8')) }
   }
@@ -708,6 +708,19 @@ describe('spawnPty', () => {
     await vi.waitFor(() => expect(existsSync(join(dir, 'pid'))).toBe(true))
     await new Promise((r) => setTimeout(r, 300))
     expect(alive(pid())).toBe(true)
+    stop.abort()
+    await expect(spawned).rejects.toThrow('startup was canceled')
+    expect(alive(pid())).toBe(false)
+  })
+
+  it('abort 뒤 시간 안에 SIGTERM 으로 끝나지 않으면 SIGKILL 로 끄고 실패한다', async () => {
+    const { dir, bin, pid } = stuckBin("trap '' TERM\n")
+    const stop = new AbortController()
+    const spawned = spawnPty(bin, dir, setup, 'p-0000000e', '/', [], {
+      signal: stop.signal,
+      killTimeoutMs: 300
+    })
+    await vi.waitFor(() => expect(existsSync(join(dir, 'pid'))).toBe(true))
     stop.abort()
     await expect(spawned).rejects.toThrow('startup was canceled')
     expect(alive(pid())).toBe(false)
