@@ -41,10 +41,10 @@ function fakePort() {
   return port
 }
 
-function connect() {
+function connect(protocol = 4) {
   const sock = fakeSocket()
   const port = fakePort()
-  bridge(sock as unknown as Socket, port as unknown as MessagePortMain)
+  bridge(sock as unknown as Socket, port as unknown as MessagePortMain, protocol)
   const output = (bytes: number): boolean =>
     sock.emit('data', encodeFrame(TAG_BINARY, Buffer.alloc(bytes)))
   const ack = (bytes: number): boolean => port.emit('message', { data: bytes })
@@ -81,11 +81,24 @@ describe('bridge', () => {
   it('알림은 소켓에 보내지 않고, 문자열과 바이트는 프레임으로 보낸다', () => {
     const { sock, port, ack } = connect()
     ack(10)
+    port.emit('message', { data: '{"type":"attach"}' })
     port.emit('message', { data: '{"type":"resize"}' })
     port.emit('message', { data: new Uint8Array([3]) })
-    expect(sock.written).toEqual([
+    expect(sock.written.slice(1)).toEqual([
       encodeFrame(TAG_TEXT, Buffer.from('{"type":"resize"}')),
       encodeFrame(TAG_BINARY, new Uint8Array([3]))
+    ])
+  })
+
+  it('첫 문자열(attach 요청)에만 pty 의 프로토콜 버전을 넣는다', () => {
+    const { sock, port } = connect(7)
+    port.emit('message', { data: new Uint8Array([3]) })
+    port.emit('message', { data: '{"type":"attach","protocol_version":1,"cols":80}' })
+    port.emit('message', { data: '{"type":"resize"}' })
+    expect(sock.written).toEqual([
+      encodeFrame(TAG_BINARY, new Uint8Array([3])),
+      encodeFrame(TAG_TEXT, Buffer.from('{"type":"attach","protocol_version":7,"cols":80}')),
+      encodeFrame(TAG_TEXT, Buffer.from('{"type":"resize"}'))
     ])
   })
 })

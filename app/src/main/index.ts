@@ -61,6 +61,7 @@ import {
   foreground,
   foregroundCwd,
   killPty,
+  keepAttachable,
   killPtys,
   liveRecords,
   QUIT_TIMEOUT_MS,
@@ -263,6 +264,9 @@ let lastScreen: unknown = null
 let restarting = false
 let store: StateStore | null = null
 let outcome: Outcome | null = null
+// `outcome` 이 `keep` 이 아닐 때 끝내며 남길 pty. 설치된 앱이 붙을 수 있다고 재시작 확인이 고른 pty 이므로, 이 앱이
+// 붙을 수 있는 버전으로 다시 거르지 않는다(`restartOutcome`). 설치본은 이 앱보다 높은 버전도 받을 수 있다.
+let keptPtys = new Set<string>()
 let savedWindow: (() => WindowState) | null = null
 
 /**
@@ -306,7 +310,7 @@ function restartCheck(): Promise<RestartCheck> {
 }
 
 /** 쓰지 못하면 던진다. 다음에 뜬 앱이 고른 결과를 모르기 때문이다. */
-function finishWith(o: Outcome, options?: FinishOptions): void {
+function finishWith(o: Outcome, options?: FinishOptions, keep: string[] = []): void {
   if (outcome) return
   try {
     if (savedWindow) store?.setWindow(savedWindow())
@@ -321,6 +325,7 @@ function finishWith(o: Outcome, options?: FinishOptions): void {
     throw err
   }
   outcome = o
+  keptPtys = new Set(keep)
   quitPermission.allow()
 }
 
@@ -350,7 +355,7 @@ async function restartByUser(): Promise<void> {
   if (!check.ok && !(await confirm(restartDialog(check)))) return
   try {
     const next = restartOutcome(check)
-    finishWith(next.outcome, { drop: next.drop })
+    finishWith(next.outcome, { drop: next.drop }, next.keep)
   } catch (err) {
     dialog.showErrorBox('Cannot restart', err instanceof Error ? err.message : String(err))
     return
@@ -404,7 +409,7 @@ const restartHandlers: Handlers = {
       })
     }
     const next = restartOutcome(check)
-    finishWith(next.outcome, { drop: next.drop })
+    finishWith(next.outcome, { drop: next.drop }, next.keep)
     return new AfterReply(null, relaunch)
   }
 }
@@ -674,7 +679,7 @@ function start(): void {
   // `killPtys` 는 `keep` 에 없는 pty 를 모두 끄므로, 새 pty 는 이 정리가 끝난 뒤에 띄운다.
   const leftovers = plan.then(async (p) => {
     const keep = new Set(p.keep)
-    await killPtys(ptyDir(), undefined, keep)
+    await killPtys(ptyDir(), undefined, keepAttachable(keep))
     for (const id of keep) ptyStates.watch(id)
   })
   let toRestore: Promise<Restore> | null = plan.then((p) => ({
@@ -971,7 +976,9 @@ function start(): void {
         stopHost(),
         // job 의 시작 폴더 확인(`startDir`)에는 시간 제한이 없다. 응답하지 않는 마운트에 있는 job 때문에 앱이 꺼지지 않을 수 있으므로, host 와 같은 상한까지만 기다린다.
         keepPtys || Promise.race([Promise.all(jobSpawns), sleep(QUIT_TIMEOUT_MS)])
-      ]).then(() => (keepPtys ? undefined : killPtys(ptyDir()))),
+      ]).then(() =>
+        keepPtys ? undefined : killPtys(ptyDir(), undefined, (rec) => keptPtys.has(rec.id))
+      ),
       cliServer.then((server) => server?.close())
     ]).finally(() => {
       ptysKilled = true

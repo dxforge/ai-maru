@@ -12,12 +12,13 @@ import { createServer, type Socket } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
+import { MIN_PROTOCOL_VERSION, PROTOCOL_VERSION, TAG_TEXT } from '../shared/protocol'
 import { encodeFrame, FrameDecoder } from './frame'
 import {
   capturePty,
   foreground,
   foregroundCwd,
+  keepAttachable,
   killPtys,
   readRecord,
   runDir,
@@ -255,7 +256,7 @@ describe('killPtys', () => {
     const kept = await fakePty(dir, 'p-0000000a')
     const other = await fakePty(dir, 'p-0000000b')
     try {
-      await killPtys(dir, 200, new Set(['p-0000000a']))
+      await killPtys(dir, 200, keepAttachable(new Set(['p-0000000a'])))
       expect(kept.killed.value).toBe(false)
       expect(other.killed.value).toBe(true)
     } finally {
@@ -271,18 +272,48 @@ describe('killPtys', () => {
       join(dir, 'p-0000000a.json'),
       JSON.stringify({ protocol_version: PROTOCOL_VERSION, id: 'p-0000000a', pid: dead })
     )
-    await killPtys(dir, 200, new Set(['p-0000000a']))
+    await killPtys(dir, 200, keepAttachable(new Set(['p-0000000a'])))
     expect(existsSync(join(dir, 'p-0000000a.json'))).toBe(false)
   })
 
-  it('프로토콜 버전이 다른 pty 는 남길 pty 여도 끈다', async () => {
+  it('앱이 붙지 못하는 버전의 pty 는 남길 pty 여도 끈다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'maru-keep-'))
-    const old = await fakePty(dir, 'p-0000000a', PROTOCOL_VERSION + 1)
+    const newer = await fakePty(dir, 'p-0000000a', PROTOCOL_VERSION + 1)
+    const older = await fakePty(dir, 'p-0000000b', MIN_PROTOCOL_VERSION - 1)
     try {
-      await killPtys(dir, 200, new Set(['p-0000000a']))
-      expect(old.killed.value).toBe(true)
+      await killPtys(dir, 200, keepAttachable(new Set(['p-0000000a', 'p-0000000b'])))
+      expect(newer.killed.value).toBe(true)
+      expect(older.killed.value).toBe(true)
     } finally {
-      old.close()
+      newer.close()
+      older.close()
+    }
+  })
+
+  it('남길지 고르는 함수가 고른 pty 는 이 앱이 붙지 못하는 버전이어도 남긴다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maru-keep-'))
+    const newer = await fakePty(dir, 'p-0000000a', PROTOCOL_VERSION + 1)
+    const other = await fakePty(dir, 'p-0000000b', PROTOCOL_VERSION + 1)
+    try {
+      await killPtys(dir, 200, (rec) => rec.id === 'p-0000000a')
+      expect(newer.killed.value).toBe(false)
+      expect(other.killed.value).toBe(true)
+    } finally {
+      newer.close()
+      other.close()
+    }
+  })
+
+  it('앱 버전보다 낮아도 붙을 수 있는 버전의 pty 는 남긴다', async () => {
+    vi.stubEnv('MARU_TEST_PROTOCOL_VERSION', String(PROTOCOL_VERSION + 1))
+    const dir = mkdtempSync(join(tmpdir(), 'maru-keep-'))
+    const lowest = await fakePty(dir, 'p-0000000a', MIN_PROTOCOL_VERSION)
+    try {
+      await killPtys(dir, 200, keepAttachable(new Set(['p-0000000a'])))
+      expect(lowest.killed.value).toBe(false)
+    } finally {
+      lowest.close()
+      vi.unstubAllEnvs()
     }
   })
 })
@@ -318,6 +349,47 @@ async function framePty(answer: (req: Record<string, unknown>, sock: Socket) => 
 
 const send = (sock: Socket, v: object): void =>
   void sock.write(encodeFrame(TAG_TEXT, Buffer.from(JSON.stringify(v))))
+
+describe('요청의 프로토콜 버전', () => {
+  const sent = async (record: object | null): Promise<unknown> => {
+    const s = await framePty((_req, sock) => send(sock, { type: 'status', exit: null }))
+    if (record) writeFileSync(join(s.dir, `${s.id}.json`), JSON.stringify({ id: s.id, ...record }))
+    try {
+      await waitPtyExit(s.dir, s.id).exit
+      return s.requests[0]?.protocol_version
+    } finally {
+      s.close()
+    }
+  }
+
+  it('레코드의 버전이 붙을 수 있는 버전이면 그 버전으로, 아니면 앱의 버전으로 보낸다', async () => {
+    vi.stubEnv('MARU_TEST_PROTOCOL_VERSION', String(PROTOCOL_VERSION + 1))
+    try {
+      expect(await sent({ protocol_version: MIN_PROTOCOL_VERSION, pid: 1 })).toBe(
+        MIN_PROTOCOL_VERSION
+      )
+      expect(await sent({ protocol_version: MIN_PROTOCOL_VERSION - 1, pid: 1 })).toBe(
+        PROTOCOL_VERSION + 1
+      )
+      expect(await sent({ protocol_version: PROTOCOL_VERSION + 2, pid: 1 })).toBe(
+        PROTOCOL_VERSION + 1
+      )
+      expect(await sent({ pid: 1 })).toBe(PROTOCOL_VERSION + 1)
+      expect(await sent(null)).toBe(PROTOCOL_VERSION + 1)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('테스트용 버전이 정수가 아니면 PROTOCOL_VERSION 을 쓴다', async () => {
+    vi.stubEnv('MARU_TEST_PROTOCOL_VERSION', 'x')
+    try {
+      expect(await sent(null)).toBe(PROTOCOL_VERSION)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+})
 
 describe('waitPtyExit', () => {
   it('답의 종료 상태로 끝나고, 기다리는 status 를 보낸다', async () => {

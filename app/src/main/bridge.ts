@@ -10,8 +10,13 @@ import { encodeFrame, FrameDecoder, TAG_BINARY, TAG_TEXT } from './frame'
 export const HIGH = 100_000
 export const LOW = 10_000
 
-export function bridge(sock: Socket, port: MessagePortMain): void {
+/**
+ * port 에서 온 첫 text 메시지(attach 요청)에 `protocol` 을 `protocol_version` 으로 넣는다. renderer 는 pty 의 버전을
+ * 모르고, pty 가 받는 버전은 레코드에 있기 때문이다.
+ */
+export function bridge(sock: Socket, port: MessagePortMain, protocol: number): void {
   const decoder = new FrameDecoder()
+  let attached = false
   const text = new TextDecoder()
   let unacked = 0
   const post = (bytes: Uint8Array): void => {
@@ -55,9 +60,20 @@ export function bridge(sock: Socket, port: MessagePortMain): void {
     if (typeof data === 'number') {
       unacked -= data
       if (unacked < LOW && sock.isPaused()) sock.resume()
-    } else if (typeof data === 'string') sock.write(encodeFrame(TAG_TEXT, Buffer.from(data)))
-    else if (data instanceof Uint8Array) sock.write(encodeFrame(TAG_BINARY, data))
+    } else if (typeof data === 'string') {
+      const text = attached ? data : withProtocol(data, protocol)
+      attached = true
+      sock.write(encodeFrame(TAG_TEXT, Buffer.from(text)))
+    } else if (data instanceof Uint8Array) sock.write(encodeFrame(TAG_BINARY, data))
   })
   port.on('close', () => sock.destroy())
   port.start()
+}
+
+function withProtocol(data: string, protocol: number): string {
+  try {
+    return JSON.stringify({ ...JSON.parse(data), protocol_version: protocol })
+  } catch {
+    return data
+  }
 }

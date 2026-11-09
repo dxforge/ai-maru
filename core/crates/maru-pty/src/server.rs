@@ -1,9 +1,9 @@
-use crate::PROTOCOL_VERSION;
 use crate::frame::{TAG_TEXT, read_frame, write_json};
 use crate::paths::{self, Paths};
 use crate::procinfo;
 use crate::pty::{Pty, wait_exit};
 use crate::record::{self, Record};
+use crate::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::ffi::OsString;
@@ -219,14 +219,26 @@ async fn handle(mut stream: UnixStream, pty: Arc<Pty>, kill_tx: mpsc::Sender<Kil
             }
             reply(&mut stream, json!({ "type": "killed" })).await
         }
-        _ if req["protocol_version"].as_u64() != Some(PROTOCOL_VERSION.into()) => {
-            reply(
-                &mut stream,
-                json!({ "type": "error", "code": "protocol_mismatch", "protocol_version": PROTOCOL_VERSION }),
-            )
-            .await
+        _ => {
+            let accepted = MIN_PROTOCOL_VERSION.into()..=PROTOCOL_VERSION.into();
+            match req["protocol_version"].as_u64() {
+                Some(v) if accepted.contains(&v) => answer(stream, pty, &req, v as u32).await,
+                _ => {
+                    reply(
+                        &mut stream,
+                        json!({ "type": "error", "code": "protocol_mismatch", "protocol_version": PROTOCOL_VERSION }),
+                    )
+                    .await
+                }
+            }
         }
-        Some("attach") => crate::attach::run(stream, pty, &req).await,
+    }
+}
+
+/// `version` 은 검사를 지난 요청의 `protocol_version` 이다.
+async fn answer(mut stream: UnixStream, pty: Arc<Pty>, req: &Value, version: u32) {
+    match req["type"].as_str() {
+        Some("attach") => crate::attach::run(stream, pty, req, version).await,
         Some("subscribe") => crate::state::run(stream, pty).await,
         Some("status") => {
             let wait = req["wait"] == true;
@@ -264,9 +276,9 @@ async fn handle(mut stream: UnixStream, pty: Arc<Pty>, kill_tx: mpsc::Sender<Kil
                     s.write(text.as_bytes())
                 }
             })
-                .await
-                .map_err(std::io::Error::other)
-                .and_then(|r| r);
+            .await
+            .map_err(std::io::Error::other)
+            .and_then(|r| r);
             match written {
                 Ok(()) => reply(&mut stream, json!({ "type": "input" })).await,
                 Err(e) => error(&mut stream, "input_failed", &e.to_string()).await,

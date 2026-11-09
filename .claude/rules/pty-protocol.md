@@ -1,0 +1,22 @@
+---
+paths:
+  - "core/crates/maru-pty/**"
+  - "app/src/shared/protocol.ts"
+  - "app/src/main/pty.ts"
+  - "app/src/main/pty-host.ts"
+  - "app/src/main/pty-protocol.ts"
+  - "app/src/main/bridge.ts"
+  - "app/src/main/restart.ts"
+  - "app/src/renderer/src/pty/**"
+---
+
+- 떠 있는 pty 는 앱을 다시 설치하고 재시작해도 옛 `maru-pty` 바이너리로 돈다. 그래서 앱과 `maru-pty` 는 `MIN_PROTOCOL_VERSION` 부터 `PROTOCOL_VERSION` 까지의 버전을 모두 지킨다.
+  - 앱은 pty 에 보내는 요청에 그 pty 의 레코드에 적힌 버전을 넣고(`protocolOf`), 응답을 그 버전의 모양으로 읽는다.
+  - `maru-pty` 는 받은 `protocol_version` 의 모양과 동작으로 답한다. `server.rs` 의 `answer` 가 받는 `version` 으로 고르고, 버전마다 동작이 갈리는 요청을 처리하는 코드에 이 값을 넘긴다.
+  - `tests/process.rs` 의 `every_request_at_the_lowest_version_gets_that_versions_answer` 는 하한 버전의 요청 8가지와 응답 모양을 고정한다. `PROTOCOL_VERSION` 을 올려도 이 테스트는 고치지 않는다.
+- `PROTOCOL_VERSION` 은 기존 메시지의 뜻이나 모양을 바꿀 때만 올린다. 더하는 변경은 올리지 않고 아래처럼 넣는다. 옛 쪽은 그 변경을 모르므로, 앱이 그 기능이 있는지 알아보는 방법을 같이 둔다.
+  - 새 요청 type: 옛 `maru-pty` 는 연결의 첫 프레임에 온 모르는 type 에 `unknown_request` 로 답한다. 앱은 이 답을 "그 pty 에는 이 기능이 없다" 로 다룬다. 본보기는 `pty.ts` 의 `foreground`·`subscribeState` 의 `unknown_request` 분기다.
+  - attach 연결 안의 새 메시지 type: 옛 `maru-pty` 는 모르는 type 을 말없이 넘긴다. 답이 없어도 앱이 멈추지 않게 한다.
+  - 옵션 필드: 옛 `maru-pty` 는 모르는 필드를 말없이 무시한다. `maru-pty` 가 그 필드를 적용했는지 앱이 알아야 하면, `maru-pty` 가 응답에 그 필드를 되돌려 싣게 한다.
+- `MIN_PROTOCOL_VERSION` 을 올리면 그보다 낮은 버전으로 떠 있는 pty 에 앱이 붙지 못해, 재시작할 때 그 터미널을 끈다. 앱(`app/src/shared/protocol.ts`)과 `maru-pty`(`lib.rs`)의 값을 함께 바꾼다. `PROTOCOL_VERSION` 도 마찬가지다.
+- `--protocol-version`·`--min-protocol-version` 의 출력 모양(버전 하나와 줄바꿈)은 바꾸지 않는다. 떠 있는 옛 앱이 재시작 전에 설치본의 이 출력을 읽어, 끌 터미널을 센다.

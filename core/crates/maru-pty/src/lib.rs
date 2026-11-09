@@ -17,9 +17,12 @@
 //! - 이 프로세스는 시작할 때 `setsid` 로 띄운 쪽의 세션에서 떨어진다. 프로세스 그룹 리더로 띄우면
 //!   이게 실패해 띄운 쪽이 끝날 때 같이 시그널을 받을 수 있다.
 //! - `version`·`kill` 은 `protocol_version` 과 상관없이 받고, 이 두 요청과 응답의 모양은 버전을
-//!   올려도 바꾸지 않는다. 나머지 요청은 버전이 다르면 `protocol_mismatch` 로 거절한다.
-//! - `--protocol-version` 만 주고 띄우면 셸을 띄우지 않고 버전과 줄바꿈을 stdout 에 쓴 뒤 0 으로
-//!   끝난다. 앱은 재시작 전에 다음에 뜰 바이너리의 버전을 이것으로 물으므로, 이 모양도 바꾸지 않는다.
+//!   올려도 바꾸지 않는다. 나머지 요청은 `protocol_version` 이 `MIN_PROTOCOL_VERSION` 이상
+//!   `PROTOCOL_VERSION` 이하일 때 받고, 그 버전의 응답 모양과 동작으로 답한다. 범위 밖이면
+//!   `protocol_mismatch` 로 거절한다.
+//! - `--protocol-version`·`--min-protocol-version` 가운데 하나만 주고 띄우면 셸을 띄우지 않고
+//!   `PROTOCOL_VERSION`·`MIN_PROTOCOL_VERSION` 과 줄바꿈을 stdout 에 쓴 뒤 0 으로 끝난다. 앱은
+//!   재시작 전에 다음에 뜰 바이너리가 받는 범위를 이것으로 물으므로, 이 모양도 바꾸지 않는다.
 //! - SIGHUP 을 무시한 작업(`nohup … &`)은 이 프로세스가 끝난 뒤에도 남는다.
 //! - 크기는 `role: "primary"` 로 붙은 연결 하나가 정한다. 나중에 붙은 primary 가 자리를 가져가고,
 //!   primary 가 떨어져도 다른 연결을 승격하지 않는다. `cols`·`rows` 는 1~4096 이고, 벗어난 크기는
@@ -167,8 +170,12 @@ pub mod server;
 mod state;
 mod vt;
 
-/// 세션이 알아야 하는 것을 바꿀 때 올린다 — 새 요청을 더하거나, 기존 요청의 동작을 고치거나, 세션을 만들 때 넣는
-/// env 나 셸이 뜰 때 읽는 파일을 바꾸는 경우다. 버전이 다른 pty 에는 다음에 뜬 앱이 붙지 않고, 끈 뒤 레이아웃만
-/// 되살려 pane 마다 새 셸을 띄운다. 그래서 이전 빌드의 `maru-pty` 에 붙으려고 버전 올리기를 미루지 않는다. 앱의 같은 값은
-/// `app/src/shared/protocol.ts` 에 있다.
+/// 앱과 주고받는 기존 메시지의 뜻이나 모양을 바꿀 때만 올린다. 더하는 변경은 올리지 않는다 — 옛 `maru-pty` 가
+/// 무시하는 옵션 필드나, 옛 쪽이 `unknown_request` 로 답하거나 넘기는 새 요청·메시지로 넣는다. 올려도
+/// `MIN_PROTOCOL_VERSION` 부터의 버전으로 온 요청에는 그 버전 그대로 답하고, 앱도 그 버전의 pty 에 붙는다. 떠 있는
+/// pty 는 재시작 뒤에도 옛 바이너리로 돌기 때문이다. 앱의 같은 값은 `app/src/shared/protocol.ts` 에 있다.
 pub const PROTOCOL_VERSION: u32 = 4;
+
+/// 받는 가장 낮은 `protocol_version`. 이 버전의 요청과 응답은 `PROTOCOL_VERSION` 을 올려도 지킨다.
+/// 올리면 그보다 낮은 버전으로 떠 있는 pty 에는 앱이 붙지 못한다.
+pub const MIN_PROTOCOL_VERSION: u32 = 4;

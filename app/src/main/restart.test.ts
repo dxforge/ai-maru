@@ -9,7 +9,7 @@ import { socketPath } from './pty'
 import {
   checkRestart,
   installedVersions,
-  ptyProtocol,
+  ptyProtocolRange,
   rendererGoneDialog,
   restartDialog,
   restartOutcome,
@@ -23,9 +23,14 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-function fakeBin(output: string): string {
+/** `min` 이 없으면 `--min-protocol-version` 을 모르는 빌드처럼 실패한다. */
+function fakeBin(output: string, min?: string): string {
   const bin = join(dir, 'maru-pty')
-  writeFileSync(bin, `#!/bin/sh\necho ${output}\n`)
+  const lowest = min === undefined ? 'exit 2' : `echo ${min}`
+  writeFileSync(
+    bin,
+    `#!/bin/sh\ncase "$1" in --min-protocol-version) ${lowest} ;; *) echo ${output} ;; esac\n`
+  )
   chmodSync(bin, 0o755)
   return bin
 }
@@ -36,22 +41,28 @@ function versions(v: object | string): string {
   return file
 }
 
-async function livePty(d: string, id: string): Promise<Server> {
+async function livePty(d: string, id: string, protocol = PROTOCOL_VERSION): Promise<Server> {
   const server = createServer((s) => s.destroy())
   await new Promise<void>((r) => server.listen(socketPath(d, id), r))
   writeFileSync(
     join(d, `${id}.json`),
-    JSON.stringify({ protocol_version: PROTOCOL_VERSION, id, pid: process.pid })
+    JSON.stringify({ protocol_version: protocol, id, pid: process.pid })
   )
   return server
 }
 
-describe('ptyProtocol', () => {
-  it('바이너리가 알려 준 버전을 읽고, 못 읽으면 null 이다', async () => {
-    expect(await ptyProtocol(fakeBin('7'))).toBe(7)
-    expect(await ptyProtocol(fakeBin('nope'))).toBeNull()
-    expect(await ptyProtocol(fakeBin(''))).toBeNull()
-    expect(await ptyProtocol(join(dir, 'missing'))).toBeNull()
+describe('ptyProtocolRange', () => {
+  it('바이너리가 알려 준 두 버전을 읽고, 버전을 못 읽으면 null 이다', async () => {
+    expect(await ptyProtocolRange(fakeBin('7', '5'))).toEqual({ min: 5, max: 7 })
+    expect(await ptyProtocolRange(fakeBin('nope', '5'))).toBeNull()
+    expect(await ptyProtocolRange(fakeBin('', '5'))).toBeNull()
+    expect(await ptyProtocolRange(join(dir, 'missing'))).toBeNull()
+  })
+
+  it('하한을 모르거나 버전보다 높으면 하한을 버전으로 본다', async () => {
+    expect(await ptyProtocolRange(fakeBin('7'))).toEqual({ min: 7, max: 7 })
+    expect(await ptyProtocolRange(fakeBin('7', 'nope'))).toEqual({ min: 7, max: 7 })
+    expect(await ptyProtocolRange(fakeBin('7', '8'))).toEqual({ min: 7, max: 7 })
   })
 })
 
@@ -92,7 +103,7 @@ describe('checkRestart', () => {
     expect(await check(fakeBin(String(PROTOCOL_VERSION)), file)).toEqual({ ok: true })
   })
 
-  it('프로토콜이 다르고 산 pty 가 있으면 레이아웃만 복원한다', async () => {
+  it('설치본이 받는 범위 밖인 산 pty 가 있으면 레이아웃만 복원한다 — 하한을 모르는 설치본은 자기 버전만 받는다', async () => {
     const d = mkdtempSync(join(tmpdir(), 'maru-live-'))
     const server = await livePty(d, 'p-0000000a')
     try {
@@ -102,7 +113,64 @@ describe('checkRestart', () => {
         result: 'layout',
         ptys: 1,
         recovered: 0,
-        protocol: PROTOCOL_VERSION + 1,
+        protocol: [PROTOCOL_VERSION],
+        kept: [],
+        formats: []
+      })
+    } finally {
+      server.close()
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  it('설치본의 버전이 달라도 산 pty 가 그 범위 안이면 재시작한다', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'maru-live-'))
+    const server = await livePty(d, 'p-0000000a')
+    try {
+      const bin = fakeBin(String(PROTOCOL_VERSION + 1), String(PROTOCOL_VERSION))
+      expect(await check(bin, same(), d)).toEqual({ ok: true })
+    } finally {
+      server.close()
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  it('범위 밖 pty 만 끈다고 세고, 범위 안 pty 는 남겨 Recovered 로 옮긴다', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'maru-live-'))
+    const inside = await livePty(d, 'p-0000000a')
+    const below = await livePty(d, 'p-0000000b', PROTOCOL_VERSION - 1)
+    const above = await livePty(d, 'p-0000000c', PROTOCOL_VERSION + 2)
+    const again = await livePty(d, 'p-0000000d', PROTOCOL_VERSION - 1)
+    try {
+      const bin = fakeBin(String(PROTOCOL_VERSION + 1), String(PROTOCOL_VERSION))
+      expect(await check(bin, same(), d)).toEqual({
+        ok: false,
+        reason: 'incompatible',
+        result: 'layout',
+        ptys: 3,
+        recovered: 1,
+        protocol: [PROTOCOL_VERSION - 1, PROTOCOL_VERSION + 2],
+        kept: ['p-0000000a'],
+        formats: []
+      })
+    } finally {
+      for (const s of [inside, below, above, again]) s.close()
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  it('설치본의 버전을 알 수 없으면 산 pty 를 모두 끈다고 센다', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'maru-live-'))
+    const server = await livePty(d, 'p-0000000a')
+    try {
+      expect(await check(fakeBin('nope', String(PROTOCOL_VERSION)), same(), d)).toEqual({
+        ok: false,
+        reason: 'incompatible',
+        result: 'layout',
+        ptys: 1,
+        recovered: 0,
+        protocol: null,
+        kept: [],
         formats: []
       })
     } finally {
@@ -185,42 +253,57 @@ describe('restartOutcome', () => {
   ): Incompatible => ({ ok: false, reason: 'incompatible', result, ptys: 0, recovered: 0, formats })
 
   it('프로토콜이 같으면 pty 를 남기고, 형식이 다른 표는 결과와 상관없이 비운다 — 다시 뜬 앱이 읽지 못한 표를 알리지 않게', () => {
-    expect(restartOutcome({ ok: true })).toEqual({ outcome: 'keep', drop: [] })
+    expect(restartOutcome({ ok: true })).toEqual({ outcome: 'keep', drop: [], keep: [] })
     expect(restartOutcome({ ok: false, reason: 'dev_server' })).toEqual({
       outcome: 'layout',
-      drop: []
+      drop: [],
+      keep: []
     })
     expect(restartOutcome(incompatible('full', ['workspaces']))).toEqual({
       outcome: 'keep',
-      drop: ['workspaces']
+      drop: ['workspaces'],
+      keep: []
     })
     expect(restartOutcome(incompatible('layout', ['sessions']))).toEqual({
       outcome: 'keep',
-      drop: ['sessions']
+      drop: ['sessions'],
+      keep: []
     })
     expect(restartOutcome(incompatible('cells', ['workspaces', 'panes']))).toEqual({
       outcome: 'keep',
-      drop: ['workspaces', 'panes']
+      drop: ['workspaces', 'panes'],
+      keep: []
     })
     expect(restartOutcome(incompatible('empty', ['cells']))).toEqual({
       outcome: 'keep',
-      drop: ['cells']
+      drop: ['cells'],
+      keep: []
     })
   })
 
-  it('프로토콜이 다르면 pty 를 끄는 결과를 고른다', () => {
-    const differs = (result: Incompatible['result'], formats: Incompatible['formats'] = []) => ({
+  it('설치본이 붙지 못하는 pty 가 있으면 pty 를 끄는 결과를 고르고, 붙을 수 있는 pty 만 남긴다', () => {
+    const differs = (
+      result: Incompatible['result'],
+      formats: Incompatible['formats'] = []
+    ): Incompatible => ({
       ...incompatible(result, formats),
-      protocol: PROTOCOL_VERSION + 1
+      protocol: [PROTOCOL_VERSION - 1],
+      kept: ['p-0000000a']
     })
-    expect(restartOutcome(differs('layout'))).toEqual({ outcome: 'layout', drop: [] })
+    expect(restartOutcome(differs('layout'))).toEqual({
+      outcome: 'layout',
+      drop: [],
+      keep: ['p-0000000a']
+    })
     expect(restartOutcome(differs('cells', ['panes']))).toEqual({
       outcome: 'layout',
-      drop: ['panes']
+      drop: ['panes'],
+      keep: ['p-0000000a']
     })
     expect(restartOutcome(differs('empty', ['cells']))).toEqual({
       outcome: 'end',
-      drop: ['cells']
+      drop: ['cells'],
+      keep: ['p-0000000a']
     })
   })
 })
@@ -232,7 +315,8 @@ describe('restartDialog · restartRefusal', () => {
     result: 'layout',
     ptys: 2,
     recovered: 0,
-    protocol: 9,
+    protocol: [3],
+    kept: [],
     formats: []
   }
   const layout: Incompatible = {
@@ -263,9 +347,21 @@ describe('restartDialog · restartRefusal', () => {
   it('결과에 맞는 버튼과 이유를 준다', () => {
     expect(restartDialog(protocol)).toEqual({
       message: 'Restart with layout only?',
-      detail: `The installed app uses pty protocol version 9, while this app uses version ${PROTOCOL_VERSION}. This will end 2 terminals. The panes will reopen with new shells in their last directories.`,
+      detail:
+        "The installed app can't reattach to terminals that use pty protocol version 3. This will end 2 terminals. The panes will reopen with new shells in their last directories.",
       buttons: ['Restart with layout only', 'Cancel']
     })
+    expect(
+      restartDialog({ ...protocol, protocol: [3, 7, 9], recovered: 1, kept: ['p-0000000a'] }).detail
+    ).toBe(
+      "The installed app can't reattach to terminals that use pty protocol versions 3, 7 and 9. This will end 2 terminals. The panes will reopen with new shells in their last directories. 1 terminal will keep running in a new workspace named Recovered."
+    )
+    expect(restartDialog({ ...protocol, protocol: null }).detail).toBe(
+      `The installed app's pty protocol version couldn't be determined (this app uses version ${PROTOCOL_VERSION}). This will end 2 terminals. The panes will reopen with new shells in their last directories.`
+    )
+    expect(restartDialog({ ...protocol, protocol: [] }).detail).toMatch(
+      /^The installed app can't reattach to terminals whose pty protocol version is unknown\. /
+    )
     expect(restartDialog(layout).buttons).toEqual(['Restart and close all cells', 'Cancel'])
     expect(restartDialog(layout).detail).toBe(
       'The installed app uses a different saved-state format for the cells and terminal sessions. All cells will close. 1 terminal will keep running in a new workspace named Recovered.'

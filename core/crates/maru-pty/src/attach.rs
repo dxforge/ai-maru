@@ -20,7 +20,7 @@ const REPLAY_CHUNK: usize = 1024 * 1024;
 /// 소켓을 더 읽지 않는다.
 const INPUT_QUEUE: u32 = MAX_FRAME_LEN;
 
-pub async fn run(stream: UnixStream, pty: Arc<Pty>, req: &Value) {
+pub async fn run(stream: UnixStream, pty: Arc<Pty>, req: &Value, version: u32) {
     let (mut rd, mut wr) = stream.into_split();
 
     let mut primary = match req["role"].as_str() {
@@ -48,7 +48,7 @@ pub async fn run(stream: UnixStream, pty: Arc<Pty>, req: &Value) {
         }
     }
 
-    let Some(mut output) = replay(&mut wr, &pty, conn, false).await else {
+    let Some(mut output) = replay(&mut wr, &pty, conn, Header::Attached(version)).await else {
         pty.release_primary(conn);
         return;
     };
@@ -183,11 +183,17 @@ async fn forward(
     }
 }
 
+enum Header {
+    /// 붙을 때의 헤더. 요청의 `protocol_version` 을 싣는다.
+    Attached(u32),
+    Resync,
+}
+
 async fn replay(
     wr: &mut OwnedWriteHalf,
     pty: &Pty,
     conn: u64,
-    resync: bool,
+    kind: Header,
 ) -> Option<Arc<Output>> {
     let (payload, st, output) = match pty.subscribe_with_replay(conn) {
         Ok(v) => v,
@@ -196,6 +202,7 @@ async fn replay(
             return None;
         }
     };
+    let resync = matches!(kind, Header::Resync);
     let mut header = json!({
         "type": if resync { "resync" } else { "attached" },
         "cols": st.cols,
@@ -203,8 +210,8 @@ async fn replay(
         "cursor_x": st.cursor_x,
         "cursor_y": st.cursor_y,
     });
-    if !resync {
-        header["protocol_version"] = json!(crate::PROTOCOL_VERSION);
+    if let Header::Attached(version) = kind {
+        header["protocol_version"] = json!(version);
         header["tty"] = json!(pty.tty);
         header["role"] = json!(if pty.is_primary(conn) {
             "primary"
@@ -244,5 +251,5 @@ async fn resync(
         .await;
         return None;
     }
-    replay(wr, pty, conn, true).await
+    replay(wr, pty, conn, Header::Resync).await
 }

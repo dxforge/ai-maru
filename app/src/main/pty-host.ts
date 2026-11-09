@@ -1,7 +1,15 @@
 import type { Socket } from 'node:net'
 import type { MessagePortMain } from 'electron'
 import { bridge } from './bridge'
-import { connect, killPty, socketPath, spawnPty, startDir, type ShellSetup } from './pty'
+import {
+  connect,
+  killPty,
+  protocolOf,
+  socketPath,
+  spawnPty,
+  startDir,
+  type ShellSetup
+} from './pty'
 
 export type OpenRequest = {
   type: 'open'
@@ -32,9 +40,21 @@ function end(port: MessagePortMain, ...messages: object[]): void {
   port.close()
 }
 
-function serve(id: string, port: MessagePortMain, sock: Socket, spawned: object): void {
+type Attached = { sock: Socket; protocol: number }
+
+/**
+ * `protocol` 은 그 pty 의 레코드 버전이다(`protocolOf`). 소켓에 붙기 전에 읽는다 — 붙은 뒤에 읽으면 그동안 소켓이 닫혀도
+ * `bridge` 가 닫힘을 듣지 못하기 때문이다.
+ */
+async function attachTo(dir: string, id: string): Promise<Attached | null> {
+  const protocol = await protocolOf(dir, id)
+  const sock = await connect(socketPath(dir, id)).catch(() => null)
+  return sock && { sock, protocol }
+}
+
+function serve(id: string, port: MessagePortMain, c: Attached, spawned: object): void {
   port.postMessage(JSON.stringify({ type: 'spawned', id, ...spawned }))
-  bridge(sock, port)
+  bridge(c.sock, port, c.protocol)
 }
 
 /** pty 에 붙을 때는 renderer 가 cwd 를 이미 가지고 있으므로 `spawned` 에 cwd 를 싣지 않는다. */
@@ -42,11 +62,11 @@ async function reattach(req: OpenRequest, port: MessagePortMain): Promise<void> 
   // 붙는 동안 온 kill 도 기다리게 한다. 붙지 못하면 이어서 셸을 띄우므로, kill 이 먼저 지나가면 어느 pane 에도 붙지 않은 셸이 남는다.
   let connected!: () => void
   spawning.set(req.id, new Promise<void>((resolve) => (connected = resolve)))
-  const sock = await connect(socketPath(req.dir, req.id)).catch(() => null)
-  if (sock) {
+  const attached = await attachTo(req.dir, req.id)
+  if (attached) {
     spawning.delete(req.id)
     connected()
-    return serve(req.id, port, sock, {})
+    return serve(req.id, port, attached, {})
   }
   port.postMessage(JSON.stringify({ type: 'gone' }))
   // `spawnFor` 는 await 하기 전에 `spawning` 의 항목을 제 promise 로 바꾸므로, 그 뒤에 풀린 kill 은 셸이 뜨기를 기다린다.
@@ -74,12 +94,11 @@ async function spawnFor(req: OpenRequest, port: MessagePortMain): Promise<void> 
   try {
     const { cwd, state } = await spawned
     // 소켓을 본 뒤 붙기 전에 끝난 pty 도, 띄운 명령이 그만큼 빨리 끝난 것으로 본다.
-    const sock =
-      state === 'live' ? await connect(socketPath(req.dir, req.id)).catch(() => null) : null
-    if (sock) {
+    const attached = state === 'live' ? await attachTo(req.dir, req.id) : null
+    if (attached) {
       const live: HostEvent = { type: 'live', id: req.id }
       process.parentPort.postMessage(live)
-      return serve(req.id, port, sock, { cwd })
+      return serve(req.id, port, attached, { cwd })
     }
     if (state === 'live') void track(killPty(req.dir, req.id))
     end(port, { type: 'spawned', id: req.id, cwd }, { type: 'exit', code: null, signal: null })
