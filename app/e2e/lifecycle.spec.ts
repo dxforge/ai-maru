@@ -12,6 +12,7 @@ import {
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import electronBin from 'electron'
+import { QUIT_TIMEOUT_MS } from '../src/main/pty'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import {
   attachFromOutside,
@@ -90,13 +91,17 @@ test('pty 를 잇는 utilityProcess 가 죽으면 끊김을 보인다', async ({
   await expect(rows(page)).toContainText('disconnected from the pty')
 })
 
-test('maru-pty 가 준비 전에 끝나면 그 이유를 터미널에 보인다', async ({ launch, dataDir }) => {
+test('maru-pty 가 준비 전에 끝나면 그 이유를 터미널 첫 줄에 보인다', async ({
+  launch,
+  dataDir
+}) => {
   const bin = join(dataDir, 'fake-pty')
   writeFileSync(bin, '#!/bin/sh\necho "reason-from-stderr" >&2\nexit 3\n')
   chmodSync(bin, 0o755)
-  const { page } = await launch({ ...DOM_RENDERER, MARU_PTY_BIN: bin })
-  await expect(rows(page)).toContainText('code=3')
-  await expect(rows(page)).toContainText('reason-from-stderr')
+  const { page } = await launch({ MARU_PTY_BIN: bin })
+  const line = page.locator('.opening-line')
+  await expect(line).toContainText('code=3')
+  await expect(line).toContainText('reason-from-stderr')
   expect(ptyFiles(dataDir).filter((n) => n.endsWith('.log'))).toEqual([])
 })
 
@@ -144,16 +149,16 @@ test('앱이 강제로 끝나 남은 pty 가 state.json 의 sessions 에 없으�
   expect(sockets(dataDir)).toEqual([left])
 })
 
-test('셸이 뜨기 전에 앱을 끄면 그 pty 는 뜬 뒤에 끝난다', async ({ launch, dataDir }) => {
+test('셸이 뜨기 전에 앱을 끄면 띄우던 pty 를 멈추고 남기지 않는다', async ({ launch, dataDir }) => {
   const started = join(dataDir, 'started')
   const { app } = await launch({ MARU_PTY_BIN: slowPtyBin(dataDir, `touch '${started}'`) })
   expect(existsSync(started)).toBe(false)
 
   await app.close()
 
-  await expect.poll(() => existsSync(started), { timeout: 10_000 }).toBe(true)
-  // 띄우던 pty 가 소켓을 열기에 넉넉한 시간을 기다린 뒤 확인한다.
-  await sleep(1000)
+  // `slowPtyBin` 이 기다리는 1.5초가 지나도 띄우기를 이어 가지 않는다.
+  await sleep(2500)
+  expect(existsSync(started)).toBe(false)
   expect(sockets(dataDir)).toEqual([])
 })
 
@@ -221,7 +226,7 @@ test('main 의 JS 가 끝난 뒤의 뒷정리가 오래 걸려도 테스트의 a
   expect(Date.now() - started).toBeLessThan(slowMs / 2)
 })
 
-test('앱을 끌 때 소켓을 열기 전에 멈춘 pty 는 host 가 spawn 시간 제한 뒤에 끝낸다', async ({
+test('앱을 끌 때 소켓을 열기 전에 멈춘 pty 는 기다리지 않고 멈춘다', async ({
   launch,
   dataDir
 }) => {
@@ -235,26 +240,20 @@ test('앱을 끌 때 소켓을 열기 전에 멈춘 pty 는 host 가 spawn 시�
   const { app, page } = await launch({ MARU_PTY_BIN: bin })
   await expect.poll(() => sockets(dataDir)).toHaveLength(1)
   writeFileSync(stall, '')
-  const host = await hostPid(app)
-  // host 가 open 을 늦게 받게 해, host 의 spawn 시간 제한이 main 의 상한보다 1초 늦게 시작하게 한다.
-  process.kill(host, 'SIGSTOP')
-  let stalled = 0
+  await split(app, page, 'split-right', 2)
+  await expect.poll(() => existsSync(pidFile)).toBe(true)
+  const stalled = Number(readFileSync(pidFile, 'utf8'))
   try {
-    await split(app, page, 'split-right', 2)
-    await sleep(300)
-    const closed = app.close()
-    await sleep(1000)
-    process.kill(host, 'SIGCONT')
-    await closed
-    stalled = Number(readFileSync(pidFile, 'utf8'))
+    const start = Date.now()
+    await app.close()
+    expect(Date.now() - start).toBeLessThan(QUIT_TIMEOUT_MS)
     await expect.poll(() => alive(stalled), { timeout: 3000 }).toBe(false)
   } finally {
-    for (const pid of [host, stalled])
-      try {
-        if (pid) process.kill(pid, pid === host ? 'SIGCONT' : 'SIGKILL')
-      } catch {
-        // 이미 끝났다.
-      }
+    try {
+      process.kill(stalled, 'SIGKILL')
+    } catch {
+      // 이미 끝났다.
+    }
   }
 })
 

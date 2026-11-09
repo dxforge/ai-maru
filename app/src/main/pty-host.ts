@@ -25,12 +25,15 @@ export type OpenRequest = {
 export type KillRequest = { type: 'kill'; id: string; dir: string }
 /** host 가 main 에 보내는 것. `live` 는 띄운 pty 에 붙었다는 뜻이다 — main 은 그 pty 의 상태 구독을 연다. */
 export type HostEvent = { type: 'live'; id: string }
-/** `quit` 을 받은 host 는 띄우는 중인 pty 가 다 뜨고 받은 kill 이 끝난 뒤에 끝난다. 끄던 pty 가 남으면 다음 실행이
- * 붙을 pane 이 없는 pty 로 보고 Recovered workspace 에 되살리기 때문이다. main 은 host 가 끝난 뒤에 레코드를 읽어야 그 pty 까지 끈다(docs/architecture.md 의 "앱을 끄면 띄우던 pty 도 뜬 뒤에 끈다"). */
-export type QuitRequest = { type: 'quit' }
+/** `quit` 을 받은 host 는 띄우는 중인 pty 가 다 뜨거나 멈추고 받은 kill 이 끝난 뒤에 끝난다. 끄던 pty 가 남으면 다음 실행이
+ * 붙을 pane 이 없는 pty 로 보고 Recovered workspace 에 되살리기 때문이다. main 은 host 가 끝난 뒤에 레코드를 읽어야 그 pty 까지 끈다(docs/architecture.md 의 "앱을 끄면 띄우던 pty 도 끈다").
+ * `keepPtys` 가 false 면 어차피 끌 pty 이므로 띄우는 중인 pty 를 기다리지 않고 멈춘다. */
+export type QuitRequest = { type: 'quit'; keepPtys: boolean }
 type HostRequest = OpenRequest | KillRequest | QuitRequest
 
 const spawning = new Map<string, Promise<void>>()
+// 띄우는 중인 pty 를 멈추는 데 쓴다. pty 띄우기에는 시간 제한이 없으므로, 뜨는 중에 닫은 pane 의 pty 는 kill 이 멈춘다.
+const stopping = new Map<string, AbortController>()
 const killing = new Set<Promise<void>>()
 let quitting = false
 
@@ -82,14 +85,20 @@ async function open(req: OpenRequest, port: MessagePortMain): Promise<void> {
 
 async function spawnFor(req: OpenRequest, port: MessagePortMain): Promise<void> {
   if (quitting) return end(port)
+  const stop = new AbortController()
   const spawned = startDir(req.cwd).then(async (cwd) => {
     const state = await spawnPty(req.bin, req.dir, req.setup, req.id, cwd, req.command, {
-      keep: req.keep
+      keep: req.keep,
+      signal: stop.signal
     })
     return { cwd, state }
   })
   // pty 가 뜨는 동안 pane 을 닫아도 kill 이 기다렸다 끝낼 수 있게, await 하기 전에 `spawning` 에 넣는다.
-  const done = (): void => void spawning.delete(req.id)
+  stopping.set(req.id, stop)
+  const done = (): void => {
+    spawning.delete(req.id)
+    stopping.delete(req.id)
+  }
   spawning.set(req.id, spawned.then(done, done))
   try {
     const { cwd, state } = await spawned
@@ -119,12 +128,17 @@ function track(killed: Promise<void>): Promise<void> {
 }
 
 async function kill(req: KillRequest): Promise<void> {
-  for (let p = spawning.get(req.id); p; p = spawning.get(req.id)) await p
+  // 붙는 중(`reattach`)이면 멈출 것이 아직 없다. 붙지 못해 띄우기 시작하면 다음 바퀴에 멈춘다.
+  for (let p = spawning.get(req.id); p; p = spawning.get(req.id)) {
+    stopping.get(req.id)?.abort()
+    await p
+  }
   await killPty(req.dir, req.id)
 }
 
-async function quit(): Promise<void> {
+async function quit(keepPtys: boolean): Promise<void> {
   quitting = true
+  if (!keepPtys) for (const stop of stopping.values()) stop.abort()
   await Promise.all(spawning.values())
   // quit 뒤에 온 kill 도 `killing` 에 들어오므로 빌 때까지 기다린다.
   while (killing.size) await Promise.all(killing)
@@ -135,5 +149,5 @@ process.parentPort.on('message', (e) => {
   const req = e.data as HostRequest
   if (req.type === 'open') void open(req, e.ports[0])
   else if (req.type === 'kill') void track(kill(req))
-  else if (req.type === 'quit') void quit()
+  else if (req.type === 'quit') void quit(req.keepPtys)
 })

@@ -9,7 +9,7 @@ export interface PtyConnection {
   ack(bytes: number): void
   onMessage(cb: (msg: PtyMessage) => void): void
   onClose(cb: () => void): void
-  /** pty 가 아직 뜨는 중이면 뜬 뒤에 끝낸다. */
+  /** pty 가 아직 뜨는 중이면 띄우기를 멈춘다. */
   kill(): void
   /**
    * 포트를 닫는다. pty 는 끝내지 않고 `onClose` 도 부르지 않는다. 포트가 오기 전이면 온 포트를 바로 닫는다.

@@ -284,8 +284,9 @@ describe('attach', () => {
 
   it('셸이 끝나지 않았는데 연결이 닫히면 끊김을 보인다', () => {
     const term = fakeTerminal(80, 24)
-    const { conn, close } = fakeConnection()
+    const { conn, deliver, close } = fakeConnection()
     attach(term as unknown as Terminal, conn, handlers)
+    deliver(JSON.stringify({ type: 'spawned', id: 'p-1', cwd: '/' }))
     close()
     expect(String(term.written)).toContain('disconnected from the pty')
   })
@@ -303,7 +304,7 @@ describe('attach', () => {
     expect(term.written).toEqual([])
   })
 
-  it('pty 를 띄우지 못했다는 오류만 알리고, 오류는 어느 것이든 터미널에 쓴다', () => {
+  it('pty 를 띄우지 못했다는 오류는 터미널에 쓰지 않고 알리기만 하고, 다른 오류는 터미널에 쓴다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver } = fakeConnection()
     const failed: string[] = []
@@ -314,13 +315,14 @@ describe('attach', () => {
     deliver(JSON.stringify({ type: 'error', code: 'bad_request', message: 'x' }))
     deliver(JSON.stringify({ type: 'error', code: 'open_failed', message: 'no shell' }))
     expect(failed).toEqual(['no shell'])
-    expect(term.written).toHaveLength(2)
+    expect(term.written).toHaveLength(1)
+    expect(String(term.written)).toContain('bad_request')
   })
 
-  it('pty 가 뜨기 전에 exit 없이 닫히면 띄우지 못한 것으로 알리고, 뜬 뒤에 닫히면 알리지 않는다', () => {
-    for (const [spawnFirst, expected] of [
-      [false, ['disconnected before the pty started']],
-      [true, []]
+  it('pty 가 뜨기 전에 exit 없이 닫히면 끊김은 쓰지 않고 띄우지 못한 것으로 알리고, 뜬 뒤에 닫히면 끊김을 쓴다', () => {
+    for (const [spawnFirst, expected, written] of [
+      [false, ['disconnected before the pty started'], 0],
+      [true, [], 1]
     ] as const) {
       const term = fakeTerminal(80, 24)
       const { conn, deliver, close } = fakeConnection()
@@ -332,6 +334,7 @@ describe('attach', () => {
       if (spawnFirst) deliver(JSON.stringify({ type: 'spawned', id: 'p-1', cwd: '/' }))
       close()
       expect(failed).toEqual(expected)
+      expect(term.written).toHaveLength(written)
     }
   })
 

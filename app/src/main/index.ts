@@ -64,6 +64,7 @@ import {
   keepAttachable,
   killPtys,
   liveRecords,
+  JOB_SPAWN_TIMEOUT_MS,
   QUIT_TIMEOUT_MS,
   readRecord,
   runDir,
@@ -757,7 +758,8 @@ function start(): void {
       const spawned = startDir(cwd).then(async (dir) => {
         const state = await spawnPty(ptyBin(), ptyDir(), setup, id, dir, command, {
           keep: true,
-          env: jobEnv
+          env: jobEnv,
+          timeoutMs: JOB_SPAWN_TIMEOUT_MS
         })
         if (state === 'live') ptyStates.watch(id)
       })
@@ -938,7 +940,7 @@ function start(): void {
     confirmQuit()
   })
   // open 과 같은 `ready.then` 으로 보내야 host 가 그 앞의 open 을 먼저 받는다.
-  const stopHost = (): Promise<void> =>
+  const stopHost = (keepPtys: boolean): Promise<void> =>
     ready.then(() => {
       const proc = host
       if (!proc) return
@@ -957,7 +959,7 @@ function start(): void {
           clearTimeout(timer)
           resolve()
         })
-        const req: QuitRequest = { type: 'quit' }
+        const req: QuitRequest = { type: 'quit', keepPtys }
         proc.postMessage(req)
       })
     })
@@ -973,7 +975,7 @@ function start(): void {
     void Promise.all([
       // pty 를 남기고 끝낼 때도 host 를 기다린다. host 가 받은 kill 을 마치기 전에 끝나면 닫은 pane 의 pty 가 남고, 다음 실행이 그 pty 를 Recovered workspace 에 열기 때문이다.
       Promise.all([
-        stopHost(),
+        stopHost(keepPtys),
         // job 의 시작 폴더 확인(`startDir`)에는 시간 제한이 없다. 응답하지 않는 마운트에 있는 job 때문에 앱이 꺼지지 않을 수 있으므로, host 와 같은 상한까지만 기다린다.
         keepPtys || Promise.race([Promise.all(jobSpawns), sleep(QUIT_TIMEOUT_MS)])
       ]).then(() =>

@@ -531,6 +531,21 @@ export function createWorkspaces(
     refresh(p)
   }
 
+  /**
+   * pane 을 새 pty id 로 다시 연다. 시작 디렉토리·명령·keep 은 그대로 두고, 되살린 pane 이면 붙지 않고 새로 띄운다.
+   * 앞 pty id 를 돌려준다. 같은 id 로 다시 띄우면 앞 연결을 끄는 kill 이 새 pty 를 끌 수 있다.
+   */
+  function reopen(key: number): string | undefined {
+    const p = pane(key)
+    if (!p) return
+    const old = p.ptyId
+    p.ptyId = ptyId()
+    delete p.attach
+    p.restoredTitle = undefined
+    refresh(p)
+    return old
+  }
+
   // pane 마다 마지막으로 청한 답만 쓴다. 답은 청한 순서대로 오지 않아, 늦게 온 답이 새 답을 덮을 수 있다.
   function claim(key: number): () => boolean {
     const read = ++reads
@@ -632,6 +647,7 @@ export function createWorkspaces(
     applyState,
     setSpawnedDir,
     respawned,
+    reopen,
     setFontSize,
     setPaneCols,
     snapshot,

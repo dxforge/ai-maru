@@ -163,6 +163,36 @@ describe('snapshot·restore', () => {
     expect(selected(to).panes[0].restoredTitle).toBeUndefined()
   })
 
+  it('reopen 은 새 pty id 를 주고 시작 디렉토리·명령·keep 을 그대로 두며 앞 id 를 돌려준다', () => {
+    const ws = createWorkspaces()
+    ws.open('/start', { command: ['claude'], keep: true })
+    const before = { ...selected(ws).panes[0] }
+    expect(ws.reopen(before.key)).toBe(before.ptyId)
+    const after = selected(ws).panes[0]
+    expect(after.ptyId).not.toBe(before.ptyId)
+    expect(after).toMatchObject({
+      key: before.key,
+      startDir: '/start',
+      command: ['claude'],
+      keep: true
+    })
+    expect(ws.snapshot().workspaces[0].cells[0].panes[0].ptyId).toBe(after.ptyId)
+    expect(ws.reopen(-1)).toBeUndefined()
+  })
+
+  it('되살린 pane 을 reopen 하면 붙지 않고 새로 띄운다', () => {
+    const from = createWorkspaces()
+    from.open('/start')
+    from.setSpawnedDir(selected(from).panes[0].key, '/saved')
+    const to = createWorkspaces()
+    to.restore(...full(from.snapshot()))
+    const p = selected(to).panes[0]
+    expect(p.attach).toBe(true)
+    to.reopen(p.key)
+    expect(selected(to).panes[0]).toMatchObject({ startDir: '/saved', restoredTitle: undefined })
+    expect(selected(to).panes[0].attach).toBeUndefined()
+  })
+
   it('되살린 pane 은 pty 에 붙고, 스냅샷에는 붙기와 화면 cwd 의 재료를 싣지 않는다', () => {
     const to = restarted(arranged())
     to.setSpawnedDir(to.cells()[0].panes[0].key, '/spawned')

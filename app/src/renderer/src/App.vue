@@ -293,6 +293,7 @@ async function closeWorkspace(key?: number): Promise<void> {
 
 // `maru pane new`·`maru cell new` 로 열어 pty 가 뜨기를 기다리는 pane → 답할 요청 id. `cell` 은 `cell.new` 의 답에 싣는
 // 새 cell 의 id 다. 명령이 곧바로 끝나면 답하기 전에 cell 이 닫힐 수 있으므로 열 때 적어 둔다.
+// reactive 가 아니지만, pane 을 만든 직후 같은 tick 에 넣으므로 그 pane 을 처음 그릴 때 다시 열기를 두지 않는다.
 const paneRequests = new Map<number, { id: number; cell?: string }>()
 
 function answerPaneRequest(pane: number, reply: PaneReply): void {
@@ -322,6 +323,18 @@ function onSpawned(pane: number, pty: string, dir: string | undefined): void {
 // 받으므로 닫는다.
 function paneFailed(pane: number, message: string): void {
   if (paneRequests.has(pane)) removePane(pane, message)
+}
+
+// 앞 pty 를 끄기 전에 새 pty 를 연다. pane 하나뿐인 cell 에서 앞 연결의 kill 이 먼저 가면, main 이 그 cell 을 닫힌
+// 것으로 보고 cell 의 job 을 끈다(docs/architecture.md 의 "main 이 아는 pty 의 cell").
+async function reopenPane(pane: number): Promise<void> {
+  const old = terminals.get(pane)
+  const oldPty = workspaces.reopen(pane)
+  if (oldPty === undefined) return
+  ptyStates.remove(oldPty)
+  // 새 pty id 를 `key` 로 받은 `TerminalView` 가 mount 하며 연결을 연다.
+  await nextTick()
+  old?.kill()
 }
 
 // 터미널 글자에서 찾은 링크는 `a/b.ext` 같은 글을 경로로 잘못 본 것일 수 있다. 실패를 알리지 않으면 왜 열리지 않는지 알 수 없다.
@@ -1122,6 +1135,7 @@ void window.maru.restoreScreen().then((r) => {
             />
             <div class="body" @mousedown="(e) => focusFromBody(e, p.key)">
               <TerminalView
+                :key="p.ptyId"
                 :ref="(t) => setTerminal(p.key, t)"
                 :pty-id="p.ptyId"
                 :cell-id="c.id"
@@ -1129,6 +1143,7 @@ void window.maru.restoreScreen().then((r) => {
                 :command="p.command"
                 :attach="p.attach"
                 :keep="p.keep"
+                :retryable="!paneRequests.has(p.key)"
                 :active="active"
                 :shown="selected || viewMode === 'columns'"
                 :font="font"
@@ -1138,6 +1153,7 @@ void window.maru.restoreScreen().then((r) => {
                 @exit="removePane(p.key)"
                 @gone="workspaces.respawned(p.key)"
                 @failed="(message) => paneFailed(p.key, message)"
+                @retry="reopenPane(p.key)"
                 @spawned="(dir) => onSpawned(p.key, p.ptyId, dir)"
                 @program-status="(records) => onLegacyProgramStatus(p.ptyId, records)"
                 @link-failed="linkFailed"

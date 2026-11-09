@@ -63,8 +63,19 @@ function kill(id: string): void {
   send({ data: req, ports: [] })
 }
 
-function quit(): void {
-  send({ data: { type: 'quit' }, ports: [] })
+function quit(keepPtys = true): void {
+  send({ data: { type: 'quit', keepPtys }, ports: [] })
+}
+
+/** `spawnPty` 처럼 signal 을 abort 하면 실패하는 가짜. 그 전에는 뜨지 않는다. */
+function spawnUntilAborted(): void {
+  pty.spawnPty.mockImplementation(
+    (...args: unknown[]) =>
+      new Promise((_, reject) => {
+        const { signal } = args[6] as { signal?: AbortSignal }
+        signal?.addEventListener('abort', () => reject(new Error('stopped')))
+      })
+  )
 }
 
 function spyExit() {
@@ -120,13 +131,19 @@ describe('pty host', () => {
     )
     expect(port.messages[0]).toEqual({ type: 'gone' })
     expect(port.messages).not.toContain(null)
-    expect(pty.spawnPty).toHaveBeenCalledWith('maru-pty', dir, {}, 'p-00000001', '/w', undefined, {
-      keep: undefined
-    })
+    expect(pty.spawnPty).toHaveBeenCalledWith(
+      'maru-pty',
+      dir,
+      {},
+      'p-00000001',
+      '/w',
+      undefined,
+      expect.objectContaining({ keep: undefined })
+    )
     expect(toMain).toEqual([{ type: 'live', id: 'p-00000001' }])
   })
 
-  it('붙는 중에 온 kill 은 gone 뒤 띄운 셸이 뜬 뒤에 끈다', async () => {
+  it('붙는 중에 온 kill 은 gone 뒤 띄운 셸의 띄우기가 끝난 뒤에 끈다', async () => {
     let refuse!: (err: Error) => void
     pty.connect
       .mockReturnValueOnce(new Promise((_, reject) => (refuse = reject)))
@@ -147,7 +164,7 @@ describe('pty host', () => {
     const plain = open('p-00000002')
     await vi.waitFor(() => expect(kept.messages).toContain(null))
     await vi.waitFor(() => expect(plain.messages).toContain(null))
-    expect(pty.spawnPty.mock.calls.map((c) => c[6])).toEqual([{ keep: true }, { keep: undefined }])
+    expect(pty.spawnPty.mock.calls.map((c) => c[6].keep)).toEqual([true, undefined])
   })
 
   it('띄우자마자 끝난 pty 는 끄지 않는다', async () => {
@@ -162,7 +179,7 @@ describe('pty host', () => {
     await vi.waitFor(() => expect(pty.killPty).toHaveBeenCalledWith(dir, 'p-00000002'))
   })
 
-  it('뜨는 중인 pty 의 kill 은 pty 가 뜬 뒤에 끈다', async () => {
+  it('뜨는 중인 pty 의 kill 은 멈추기 전에 뜬 pty 도 뜬 뒤에 끈다', async () => {
     const spawned = deferred<string>()
     pty.spawnPty.mockReturnValue(spawned.promise)
     pty.connect.mockReturnValue(new Promise(() => {}))
@@ -172,6 +189,38 @@ describe('pty host', () => {
     expect(pty.killPty).not.toHaveBeenCalled()
     spawned.resolve('live')
     await vi.waitFor(() => expect(pty.killPty).toHaveBeenCalledWith(dir, 'p-00000001'))
+  })
+
+  it('뜨는 중인 pty 의 kill 은 띄우기를 멈추고 끈다', async () => {
+    spawnUntilAborted()
+    const port = open('p-00000001')
+    await vi.waitFor(() => expect(pty.spawnPty).toHaveBeenCalled())
+    kill('p-00000001')
+    await vi.waitFor(() => expect(pty.killPty).toHaveBeenCalledWith(dir, 'p-00000001'))
+    expect(port.messages).toContainEqual(expect.objectContaining({ type: 'error' }))
+  })
+
+  it('붙는 중에 온 kill 은 붙지 못해 띄우기 시작한 셸을 멈춘다', async () => {
+    let refuse!: (err: Error) => void
+    pty.connect.mockReturnValueOnce(new Promise((_, reject) => (refuse = reject)))
+    spawnUntilAborted()
+    open('p-00000001', true)
+    kill('p-00000001')
+    refuse(new Error('refused'))
+    await vi.waitFor(() => expect(pty.killPty).toHaveBeenCalledWith(dir, 'p-00000001'))
+  })
+
+  it('pty 를 끄고 끝내는 quit 은 뜨는 중인 pty 를 멈추고 끝난다', async () => {
+    const exit = spyExit()
+    try {
+      spawnUntilAborted()
+      open('p-00000001')
+      await vi.waitFor(() => expect(pty.spawnPty).toHaveBeenCalled())
+      quit(false)
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))
+    } finally {
+      exit.mockRestore()
+    }
   })
 
   it('quit 은 뜨는 중인 pty 가 다 뜬 뒤에 끝나고, 그 뒤의 open 은 pty 를 띄우거나 붙지 않는다', async () => {

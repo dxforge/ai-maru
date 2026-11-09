@@ -23,7 +23,7 @@ export function createPanes(
   send: (channel: PaneChannel, id: number, arg: unknown) => boolean,
   cellOf: (pty: string) => string | undefined,
   windowReady: WindowReady,
-  // pty 띄우기는 5초(`SPAWN_TIMEOUT_MS`) 안에 끝나거나 실패하므로 `replyMs` 는 그보다 길게 둔다.
+  // pane 의 pty 띄우기에는 시간 제한이 없다. `replyMs` 안에 pty 가 뜨지 않으면 요청이 시간 초과로 실패하고 창이 그 pane 을 닫는다.
   replyMs = WINDOW_WAIT_MS
 ): {
   handlers: Handlers
