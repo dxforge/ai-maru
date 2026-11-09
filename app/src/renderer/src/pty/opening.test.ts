@@ -33,6 +33,20 @@ describe('openingView', () => {
     })
   })
 
+  it('되살린 pane 이 붙는 중이면 5초가 지나도 다시 열기가 없다', () => {
+    expect(openingView({ elapsedMs: 9000, retryable: true, attaching: true })).toEqual({
+      kind: 'opening',
+      seconds: 9,
+      retry: false
+    })
+  })
+
+  it('되살린 pane 이 붙다 실패하면 다시 열기를 둔다', () => {
+    expect(
+      openingView({ elapsedMs: 9000, failed: 'no shell', retryable: true, attaching: true })
+    ).toEqual({ kind: 'failed', message: 'no shell', retry: true })
+  })
+
   it('실패하면 지난 시간과 상관없이 이유를 보이고, 다시 열 수 있으면 다시 열기를 둔다', () => {
     expect(openingView({ elapsedMs: 10, failed: 'no shell', retryable: true })).toEqual({
       kind: 'failed',

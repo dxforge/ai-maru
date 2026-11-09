@@ -143,7 +143,8 @@ type Fixtures = {
   launch: (
     env?: Record<string, string>,
     executablePath?: string,
-    args?: string[]
+    args?: string[],
+    beforeWindow?: (app: ElectronApplication) => Promise<void>
   ) => Promise<Launched>
   defer: (fn: () => void) => void
 }
@@ -163,8 +164,8 @@ export const test = base.extend<Fixtures>({
   },
   launch: async ({ dataDir }, use) => {
     const apps: ElectronApplication[] = []
-    await use(async (env = {}, executablePath, args = []) => {
-      const launched = await launchApp(dataDir, env, executablePath, args)
+    await use(async (env = {}, executablePath, args = [], beforeWindow) => {
+      const launched = await launchApp(dataDir, env, executablePath, args, beforeWindow)
       apps.push(launched.app)
       return launched
     })
@@ -238,7 +239,8 @@ async function launchApp(
   dataDir: string,
   env: Record<string, string>,
   executablePath: string | undefined,
-  args: string[]
+  args: string[],
+  beforeWindow?: (app: ElectronApplication) => Promise<void>
 ): Promise<Launched> {
   const inherited = gitEnv()
   // 패키징한 앱이 번들 안의 바이너리를 쓰는지 봐야 하므로 바깥의 덮어쓰기를 물려주지 않는다.
@@ -279,6 +281,7 @@ async function launchApp(
   })
   // 끄기는 늘 묻는다. 묻는 것을 재지 않는 테스트가 확인 창에 막히지 않게, pty 를 끄고 핀이나 즐겨찾기가 있는 workspace 만 남기는 End everything 으로 답한다.
   await stubDialog(app, END_EVERYTHING)
+  await beforeWindow?.(app)
   const page = await app.firstWindow()
   appSockets.set(page, appSocketPath(runDir(realpathSync(dataDir), launchEnv)))
   // single 보기에서는 고르지 않은 cell 이 숨으므로, 맨 앞 cell 이 아니라 고른 cell 의 터미널을 기다린다.
@@ -451,6 +454,24 @@ export async function delayPtyPort(app: ElectronApplication, ms: number): Promis
       })
       open(late, ...args)
     })
+  }, ms)
+}
+
+/**
+ * 창이 `pty:port` 를 `ms` 늦게 받게 한다. `delayPtyPort` 와 달리 `pty:open` listener 가 아니라 창의 `postMessage` 를 감싸므로,
+ * `launch` 의 `beforeWindow` 로 부르면 창이 처음 여는 pty(되살린 pane 이 붙는 것)부터 늦춘다.
+ */
+export async function delayPtyPortFromStart(app: ElectronApplication, ms: number): Promise<void> {
+  await app.evaluate(({ app, webContents }, ms) => {
+    const delay = (contents: Electron.WebContents): void => {
+      const post = contents.postMessage.bind(contents)
+      contents.postMessage = (...msg: Parameters<typeof post>) => {
+        if (msg[0] === 'pty:port') setTimeout(() => post(...msg), ms)
+        else post(...msg)
+      }
+    }
+    for (const contents of webContents.getAllWebContents()) delay(contents)
+    app.on('web-contents-created', (_event, contents) => delay(contents))
   }, ms)
 }
 

@@ -10,22 +10,25 @@ export type OpeningView =
 
 /**
  * pty 가 뜨기 전 터미널 첫 줄에 보일 것을 고른다. `failed` 는 띄우지 못한 이유다. `retryable` 은 CLI 가 답을 기다리는
- * pane 에서 false 이고, 그 pane 에는 다시 열기를 두지 않는다.
+ * pane 에서 false 이고, 그 pane 에는 다시 열기를 두지 않는다. `attaching` 은 되살린 pane 이 떠 있는 pty 에 붙는 중이라는
+ * 뜻이다. 이때 다시 열면 붙으려던 pty 를 끄고 새로 띄우므로, `opening` 에는 `retry` 를 켜지 않는다.
  */
 export function openingView({
   elapsedMs,
   failed,
-  retryable
+  retryable,
+  attaching = false
 }: {
   elapsedMs: number
   failed?: string
   retryable: boolean
+  attaching?: boolean
 }): OpeningView {
   if (failed !== undefined) return { kind: 'failed', message: failed, retry: retryable }
   if (elapsedMs < OPENING_SHOW_MS) return { kind: 'hidden' }
   return {
     kind: 'opening',
     seconds: Math.floor(elapsedMs / 1000),
-    retry: retryable && elapsedMs >= OPENING_RETRY_MS
+    retry: retryable && !attaching && elapsedMs >= OPENING_RETRY_MS
   }
 }

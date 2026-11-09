@@ -4,10 +4,12 @@ import {
   activeTerminal,
   clickMenu,
   delayPtyPort,
+  delayPtyPortFromStart,
   expect,
   newWorkspace,
   panes,
   resizeBy,
+  restartWith,
   run,
   ptyFiles,
   screen,
@@ -197,6 +199,22 @@ test('pane 하나뿐인 cell 에서 다시 열어도 그 cell 의 job 은 살아
   await expect(reopen).toBeVisible({ timeout: 10_000 })
   await reopen.click()
   await run(page, 'maru job list', /keeper\s+running/)
+})
+
+test('되살린 pane 이 붙는 동안에는 5초가 지나도 다시 열기가 없고, 붙으면 같은 셸이다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await run(page, 'X=kept-$((40+2)); echo set-$((1+1))', 'set-2')
+  await restartWith(app)
+  // `Reopen` 이 붙는 시점(5초)이 지나도 없는지 보려고, 붙기를 그보다 늦춘다.
+  const { page: again } = await launch({}, undefined, [], (a) => delayPtyPortFromStart(a, 8000))
+  const line = again.locator('.opening-line')
+  await expect(line).toContainText('Opening… 6s', { timeout: 10_000 })
+  // 붙으면 줄째 사라지므로 `toHaveCount(0)` 처럼 기다리지 않고 지금 센다.
+  expect(await line.getByRole('button', { name: 'Reopen' }).count()).toBe(0)
+  await expect(line).toHaveCount(0, { timeout: 10_000 })
+  await run(again, 'echo "x=$X"', 'x=kept-42')
 })
 
 test('maru pane new 로 연 pane 은 5초가 지나도 다시 열기가 없다', async ({ launch, dataDir }) => {

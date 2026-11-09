@@ -335,6 +335,8 @@ let conn: PtyConnection | undefined
 const openedAt = performance.now()
 const elapsed = ref(0)
 const outcome = ref<'opened' | { failed: string }>()
+// 되살린 pane 의 pty 가 없어 host 가 새로 띄우기 시작했다. 그 뒤로는 다시 열어도 잃을 세션이 없으므로 다시 열기를 둔다.
+const respawning = ref(false)
 let tick: ReturnType<typeof setTimeout> | undefined
 // 보이기 시작한 뒤로 지난 초가 바뀔 때마다 다시 그린다.
 function scheduleTick(): void {
@@ -344,7 +346,12 @@ function scheduleTick(): void {
 const opening = computed(() =>
   outcome.value === 'opened'
     ? ({ kind: 'hidden' } as const)
-    : openingView({ elapsedMs: elapsed.value, failed: outcome.value?.failed, retryable })
+    : openingView({
+        elapsedMs: elapsed.value,
+        failed: outcome.value?.failed,
+        retryable,
+        attaching: attach === true && !respawning.value
+      })
 )
 
 // claude 처럼 입력란 아래에 상태줄을 그려 두는 프로그램은 커서를 그 위에 둔 채 끝나므로, 커서 자리에 쓰면 아래 줄을 덮는다.
@@ -395,7 +402,10 @@ onMounted(() => {
       if (keep && failedExit(exit)) writeBelowContent(exitMessage(exit))
       else emit('exit')
     },
-    onGone: () => emit('gone'),
+    onGone: () => {
+      respawning.value = true
+      emit('gone')
+    },
     onOpenFailed: (message) => {
       clearTimeout(tick)
       outcome.value = { failed: message }
