@@ -92,7 +92,7 @@ test('저장소 안에서는 저장소 이름과 branch 를, 밖에서는 디렉
   await expect.poll(() => win(app)).toEqual({ title: 'notes', path: join(home, 'notes') })
 })
 
-test('workspace 이름 줄은 첫 pane 이 홈 밖으로 처음 간 디렉토리의 저장소 이름(저장소 밖이면 디렉토리 이름)이고 branch 가 없으며, 첫 cell 이 닫히면 남은 첫 pane 을 따르고 접은 사이드바에서도 보인다', async ({
+test('workspace 이름 줄은 첫 pane 이 있는 디렉토리의 저장소 이름(저장소 밖이면 디렉토리 이름)이고 branch 가 없으며, 첫 cell 이 닫히면 남은 첫 pane 을 따르고 접은 사이드바에서도 보인다', async ({
   launch,
   dataDir
 }) => {
