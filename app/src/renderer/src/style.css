@@ -151,7 +151,6 @@ body,
 }
 
 .row-bar.focused {
-  background: var(--hdr-focus);
   color: var(--fg);
 }
 

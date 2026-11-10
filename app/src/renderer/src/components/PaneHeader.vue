@@ -61,10 +61,6 @@ const notice = computed(() => notification && notificationText(notification))
   --unread-ring: var(--hdr);
 }
 
-.pane-header.focused {
-  --unread-ring: var(--hdr-focus);
-}
-
 /* 아이콘 칸의 오른쪽 끝에서 바로 이름이 시작하므로, 점을 칸 안쪽에 두어 이름 첫 글자에 겹치지 않게 한다. */
 .status-icon.unread::after {
   right: 2px;

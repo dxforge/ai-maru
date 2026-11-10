@@ -3,10 +3,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   contrast,
-  FOCUSED_HEADER_CONTRAST,
   GHOSTTY,
   HEADER_CONTRAST,
-  isLight,
   PANE_LINE_CONTRAST,
   uiColors
 } from '../../../shared/theme'
@@ -39,7 +37,7 @@ describe('themeNamed', () => {
     for (const name of themeNames()) {
       const theme = themeNamed(name)!
       const ui = uiColors(theme)
-      const surfaces = [ui.side, ui.ground, ui.raised, ui.hdr, ui.hdrFocus]
+      const surfaces = [ui.side, ui.ground, ui.raised, ui.hdr]
       for (const [key, i] of [
         ['working', 4],
         ['waiting', 3],
@@ -61,20 +59,10 @@ describe('themeNamed', () => {
     }
   })
 
-  it('모든 테마에서 focus 된 pane 헤더는 focus 안 된 pane 헤더와 같은 대비로 구별되고, 밝은 테마는 흰색에서 멈춘다', () => {
-    for (const name of themeNames()) {
-      const theme = themeNamed(name)!
-      const ui = uiColors(theme)
-      const away = isLight(theme) ? '#ffffff' : theme.foreground
-      const target = Math.min(FOCUSED_HEADER_CONTRAST, contrast(away, ui.hdr))
-      expect(near(contrast(ui.hdrFocus, ui.hdr), target), name).toBe(true)
-    }
-  })
-
-  it('모든 테마에서 pane 경계선은 터미널·focus 안 된 pane 헤더·focus 된 pane 헤더와 구별된다', () => {
+  it('모든 테마에서 pane 경계선은 터미널·pane 헤더와 구별된다', () => {
     for (const name of themeNames()) {
       const ui = uiColors(themeNamed(name)!)
-      for (const surface of [ui.ground, ui.hdr, ui.hdrFocus])
+      for (const surface of [ui.ground, ui.hdr])
         expect(contrast(ui.paneLine, surface), name).toBeGreaterThanOrEqual(PANE_LINE_CONTRAST)
     }
   })

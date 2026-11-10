@@ -30,10 +30,16 @@ for (const renderer of ['webgl', 'dom'] as const) {
   test(`${renderer}: SGR 9 는 글자 칸 폭 전체를 가로지르는 줄로 그려진다`, async ({ launch }) => {
     const { page } = await launch(renderer === 'dom' ? DOM_RENDERER : {})
     if (renderer === 'webgl') await expect(page.locator(WEBGL_CANVAS)).toHaveCount(1)
-    await page.keyboard.type(`clear; printf '\\033[9m${TEXT}\\033[0m\\n${TEXT}\\n'\n`)
+    // focus 된 pane 의 테두리가 0행의 위쪽 가장자리를 덮으므로, 0행을 비우고 1행부터 찍어 잰다.
+    await page.keyboard.type(`clear; printf '\\n\\033[9m${TEXT}\\033[0m\\n${TEXT}\\n'\n`)
     const screen = (await page.locator('.terminal-view.active .xterm-screen').boundingBox())!
     const cell = await cellSize(page)
-    const clip = { x: screen.x, y: screen.y, width: COLS * cell.width, height: 2 * cell.height }
+    const clip = {
+      x: screen.x,
+      y: screen.y + cell.height,
+      width: COLS * cell.width,
+      height: 2 * cell.height
+    }
     let rows: number[] = []
     await expect
       .poll(

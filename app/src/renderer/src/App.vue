@@ -1257,14 +1257,17 @@ void window.maru.restoreScreen().then((r) => {
   flex: 1;
   min-width: 0;
   z-index: 1;
-  border-radius: var(--radius-3);
+  --terminals-radius: var(--radius-3);
+  border-radius: var(--terminals-radius);
   box-shadow:
     0 0 0 1px var(--line),
     0 4px 24px rgb(0 0 0 / 0.65);
 }
 
-/* 사이드바가 펴지는 동안 pane 은 이전 폭으로 남아, 자르지 않으면 Canvas 를 덮는다. */
+/* 사이드바가 펴지는 동안 pane 은 이전 폭으로 남아, 자르지 않으면 Canvas 를 덮는다. single 의 cell 은 이 영역을 채우므로
+   영역의 모서리가 cell 의 모서리다. */
 .single {
+  --cell-radius: var(--terminals-radius);
   overflow: clip;
 }
 
@@ -1288,10 +1291,10 @@ void window.maru.restoreScreen().then((r) => {
 }
 
 .columns {
+  --cell-radius: var(--radius-2);
   display: flex;
   /* cell 사이는 행을 이어 쓸 필요가 없어 틈을 두고 카드로 나눈다. */
   gap: var(--space-4);
-  /* 카드 테두리는 바깥 1px 의 box-shadow 라, 여백이 없으면 스크롤 영역이 그 1px 을 자른다. */
   padding: var(--space-4);
   /* 포커스를 따라 scrollIntoView 할 때도 카드를 영역 끝에 붙이지 않고 같은 여백을 남긴다. */
   scroll-padding: var(--space-4);
@@ -1314,13 +1317,9 @@ void window.maru.restoreScreen().then((r) => {
 .columns .panes {
   position: relative;
   flex: none;
-  border-radius: var(--radius-2);
+  border-radius: var(--cell-radius);
   overflow: clip;
   visibility: visible;
-}
-
-.columns .panes.selected {
-  box-shadow: 0 0 0 1px var(--accent);
 }
 
 /* cell 헤더와 pane 헤더 사이의 경계선은 맞닿은 pane 헤더가 그린다. cell 헤더에도 선을 그리면 2px 로 겹친다. */
@@ -1363,7 +1362,9 @@ void window.maru.restoreScreen().then((r) => {
   left: 0;
   right: 0;
   z-index: 2;
-  box-shadow: inset 0 1px 0 var(--pane-line);
+  box-shadow:
+    inset 0 1px 0 var(--pane-line),
+    inset 0 -1px 0 var(--header-edge, transparent);
 }
 
 /* 터미널은 받은 열·행 수만큼만 그리므로, 본문 오른쪽과 아래에 한 글자 칸 미만의 빈 자리가 남을 수 있다. */
@@ -1378,7 +1379,9 @@ void window.maru.restoreScreen().then((r) => {
 .header-bottom .pane-header {
   top: auto;
   bottom: 0;
-  box-shadow: inset 0 -1px 0 var(--pane-line);
+  box-shadow:
+    inset 0 -1px 0 var(--pane-line),
+    inset 0 1px 0 var(--header-edge, transparent);
 }
 
 .header-bottom .body {
@@ -1393,5 +1396,22 @@ void window.maru.restoreScreen().then((r) => {
   z-index: 1;
   background: var(--dim);
   pointer-events: none;
+}
+
+/* 입력을 받는 pane 의 테두리다. 경계선처럼 자리를 차지하지 않게 헤더와 터미널 가장자리 위에 겹친다. columns 에서는
+   고른 cell 도 이 테두리로 알아본다. 네 모서리를 모두 cell 과 같은 반지름으로 둥글게 해, cell 의 둥근 모서리에 닿아도 테두리가
+   잘리지 않는다. */
+.pane.focused::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border-radius: var(--cell-radius);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  pointer-events: none;
+}
+
+.pane.focused > .pane-header {
+  --header-edge: var(--accent);
 }
 </style>

@@ -94,42 +94,54 @@ test('pane 헤더를 누르면 그 pane 이 포커스를 받고 키가 그리로
   await typesInto(page, 1, 'again')
 })
 
-test('columns 에서 고르지 않은 cell 의 pane 헤더를 누르면 그 cell 을 고르고 키가 그 pane 으로 간다', async ({
+test('columns 에서 고르지 않은 cell 의 pane 헤더를 누르면 그 cell 을 고르고, pane 테두리가 그 pane 으로 옮겨 가고, 키가 그 pane 으로 간다', async ({
   launch
 }) => {
   const launched = await launch()
   const { app, page } = launched
   await newWorkspace(launched, 2)
   await toggleView({ app, page }, 'columns')
+  const rings = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('.columns .panes')].map((c) =>
+        [...c.querySelectorAll('.pane')].map((p) => getComputedStyle(p, '::after').content)
+      )
+    )
+  await expect.poll(rings).toEqual([['none'], ['""']])
 
   await cellViews(page).nth(0).locator('.pane-header').click()
 
   await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
+  await expect.poll(rings).toEqual([['""'], ['none']])
   await typesInto(page, 0, 'other')
 })
 
-test('포커스를 옮기면 pane 헤더의 강조와 다른 pane 을 흐리게 덮는 층이 따라간다', async ({
+test('포커스를 옮기면 pane 헤더의 강조와 pane 테두리, 다른 pane 을 흐리게 덮는 층이 따라가고, pane 이 하나여도 테두리를 그린다', async ({
   launch
 }) => {
   const { app, page } = await launch()
-  await split(app, page, 'split-right', 2)
   const state = () =>
     page.evaluate(() =>
       [...document.querySelectorAll('.panes.selected .pane')].map((p) => [
         p.querySelector('.pane-header')!.classList.contains('focused'),
+        getComputedStyle(p, '::after').content,
         getComputedStyle(p.querySelector('.body')!, '::after').content
       ])
     )
+  await expect.poll(state).toEqual([[true, '""', 'none']])
+
+  await split(app, page, 'split-right', 2)
+
   await expect.poll(state).toEqual([
-    [false, '""'],
-    [true, 'none']
+    [false, 'none', '""'],
+    [true, '""', 'none']
   ])
 
   await clickMenu(app, 'focus-pane-left')
 
   await expect.poll(state).toEqual([
-    [true, 'none'],
-    [false, '""']
+    [true, '""', 'none'],
+    [false, 'none', '""']
   ])
 })
 
