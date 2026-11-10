@@ -49,45 +49,31 @@ describe('uiColors', () => {
   })
 
   it('오류 색도 상태 색과 같은 대비 기준으로 고른다', () => {
-    const ui = uiColors(GHOSTTY)
-    expect(contrast(GHOSTTY.ansi[1], ui.hdrFocus)).toBeLessThan(3)
-    expect(ui.error).toBe(GHOSTTY.ansi[9])
+    expect(uiColors(GHOSTTY).error).toBe(GHOSTTY.ansi[1])
+    const ansi = [...GHOSTTY.ansi]
+    ansi[1] = '#7a7a7a'
+    expect(uiColors({ ...GHOSTTY, ansi }).error).toBe(ansi[9])
   })
 
-  it('포커스된 pane 헤더 위에서만 3:1 이 안 되어도 bright 색을 쓴다', () => {
+  it('한 면 위에서만 3:1 이 안 되어도 bright 색을 쓴다', () => {
     const ui = uiColors(GHOSTTY)
     const ansi = [...GHOSTTY.ansi]
-    ansi[4] = GHOSTTY.ansi[1]
-    expect(contrast(ansi[4], ui.ground)).toBeGreaterThanOrEqual(3)
-    expect(contrast(ansi[4], ui.hdrFocus)).toBeLessThan(3)
+    ansi[4] = '#7a7a7a'
+    for (const surface of [ui.side, ui.ground, ui.hdr])
+      expect(contrast(ansi[4], surface)).toBeGreaterThanOrEqual(3)
+    expect(contrast(ansi[4], ui.raised)).toBeLessThan(3)
     expect(uiColors({ ...GHOSTTY, ansi }).working).toBe(ansi[12])
   })
 
-  it('포커스된 pane 헤더는 다른 pane 헤더보다 글자색에 가깝다', () => {
-    const ui = uiColors(GHOSTTY)
-    expect(contrast(ui.hdrFocus, ui.fg)).toBeLessThan(contrast(ui.raised, ui.fg))
-  })
-
-  it('밝은 테마의 focus 된 pane 헤더는 focus 안 된 pane 헤더보다 밝아, 흐린 글자와 멀어진다', () => {
-    const ui = uiColors({ background: '#eff1f5', foreground: '#4c4f69', ansi: GHOSTTY.ansi })
-    expect(brightness(ui.hdrFocus)).toBeGreaterThan(brightness(ui.hdr))
-    expect(contrast(ui.faint, ui.hdrFocus)).toBeGreaterThan(contrast(ui.faint, ui.hdr))
-  })
-
-  it('배경이 흰색인 밝은 테마의 focus 된 pane 헤더는 흰색에서 멈춘다', () => {
-    const ui = uiColors({ background: '#ffffff', foreground: '#1f2328', ansi: GHOSTTY.ansi })
-    expect(ui.hdrFocus).toBe('#ffffff')
-  })
-
-  it('구분선이 터미널·두 헤더와 이미 구별되면 pane 경계선은 구분선과 같은 색이다', () => {
+  it('구분선이 터미널·pane 헤더와 이미 구별되면 pane 경계선은 구분선과 같은 색이다', () => {
     const ui = uiColors(GHOSTTY)
     expect(ui.paneLine).toBe(ui.line)
   })
 
-  it('구분선이 focus 된 pane 헤더와 같은 색에 가까우면 pane 경계선을 글자색 쪽으로 더 섞는다', () => {
-    const ui = uiColors({ background: '#1e1e2e', foreground: '#cdd6f4', ansi: GHOSTTY.ansi })
-    expect(contrast(ui.line, ui.hdrFocus)).toBeLessThan(PANE_LINE_CONTRAST)
-    expect(contrast(ui.paneLine, ui.hdrFocus)).toBeGreaterThanOrEqual(PANE_LINE_CONTRAST)
+  it('구분선이 pane 헤더와 같은 색에 가까우면 pane 경계선을 글자색 쪽으로 더 섞는다', () => {
+    const ui = uiColors({ background: '#090300', foreground: '#a5a2a2', ansi: GHOSTTY.ansi })
+    expect(contrast(ui.line, ui.hdr)).toBeLessThan(PANE_LINE_CONTRAST)
+    expect(contrast(ui.paneLine, ui.hdr)).toBeGreaterThanOrEqual(PANE_LINE_CONTRAST)
     expect(contrast(ui.paneLine, ui.fg)).toBeLessThan(contrast(ui.line, ui.fg))
   })
 
