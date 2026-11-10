@@ -15,8 +15,9 @@ import {
   type Launched
 } from './app'
 
-// 한 = U+D55C. 셸의 locale 과 상관없이 같은 바이트를 내도록 printf 의 8진 escape 로 쓴다.
-const PRINT_HAN = "printf '\\355\\225\\234\\n'"
+// 한 = U+D55C. 셸의 locale 과 상관없이 같은 바이트를 내도록 printf 의 8진 escape 로 쓴다. focus 된 pane 의 테두리가 0행의 위쪽
+// 가장자리를 덮으므로, 0행을 비우고 1행에 찍는다.
+const PRINT_HAN = "printf '\\n\\355\\225\\234\\n'"
 
 /**
  * 커서 글자 칸의 왼쪽 위와 `.xterm-screen` 의 왼쪽 끝. xterm 은 textarea 를 커서 글자 칸에 둔다. `alignComposition` 은
@@ -95,7 +96,7 @@ async function printHan({ page }: Launched): Promise<void> {
     .poll(async () => {
       const at = await cursor(page)
       const now = `${at.x},${at.y}`
-      const settled = now === last && Math.abs(at.y - (top + height)) < 0.1 && at.x > at.left
+      const settled = now === last && Math.abs(at.y - (top + 2 * height)) < 0.1 && at.x > at.left
       last = now
       return settled
     })
