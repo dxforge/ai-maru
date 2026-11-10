@@ -11,6 +11,7 @@ import {
   dirRow,
   emptyRow,
   exitText,
+  favoriteRow,
   jobRow,
   paneRow,
   workspaceMarks,
@@ -175,6 +176,20 @@ describe('dirRow', () => {
     expect(dirRow('/h/notes', '/h')).toEqual({ dir: '/h/notes', name: 'notes', path: '~/notes' })
     expect(dirRow('/opt/x', '/h')).toEqual({ dir: '/opt/x', name: 'x', path: '/opt/x' })
     expect(dirRow('/h', '/h')).toEqual({ dir: '/h', name: '~', path: '~' })
+  })
+})
+
+describe('favoriteRow', () => {
+  it('workspace 디렉토리 아래면 path 는 그로부터의 상대 경로이고, 밖이거나 이름만 같으면 ~ 경로다', () => {
+    expect(favoriteRow('/h/r2/backend', '/h/r2/', '/h')).toEqual({
+      dir: '/h/r2/backend',
+      name: 'backend',
+      path: 'backend'
+    })
+    expect(favoriteRow('/h/r2/a/b', '/h/r2', '/h').path).toBe('a/b')
+    expect(favoriteRow('/h/r2x/a', '/h/r2', '/h').path).toBe('~/r2x/a')
+    expect(favoriteRow('/h/r2', '/h/r2', '/h').path).toBe('~/r2')
+    expect(favoriteRow('/opt/x', undefined, '/h').path).toBe('/opt/x')
   })
 })
 

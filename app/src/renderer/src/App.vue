@@ -426,12 +426,12 @@ watch(
   }
 )
 
-function toggleFavorite(cell: number): void {
-  if (!workspaces.toggleFavorite(cell)) {
+function toggleFavorite(cell: number, pane?: number): void {
+  if (!workspaces.toggleFavorite(cell, pane)) {
     toasts.put('favorite', {
       level: 'warning',
       title: "Couldn't add to Favorites",
-      lines: ["The first pane's directory isn't known yet."]
+      lines: ["The pane's directory isn't known yet."]
     })
     return
   }

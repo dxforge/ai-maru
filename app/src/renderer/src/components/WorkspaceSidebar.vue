@@ -27,18 +27,20 @@ import {
 import {
   jobRow,
   paneRow,
-  dirRow,
   emptyRow,
+  favoriteRow,
   workspaceMarks,
   type JobRow,
   type Row,
   type RowSource
 } from '../workspace/sidebarRows'
+import { tildePath } from '../workspace/cwd'
 import PinIcon from './PinIcon.vue'
 import {
   focusedPane,
-  isFavorite,
+  findFavorite,
   orderedPanes,
+  workspaceDir,
   type Cell,
   type Pane,
   type Workspace
@@ -87,7 +89,7 @@ const emit = defineEmits<{
   /** `name` 이 null 이면 이름을 바꾸지 않는다. `refocus` 면 터미널에 포커스를 돌려준다. */
   closeMenu: [workspace: number, name: string | null, refocus: boolean]
   togglePin: [workspace: number]
-  toggleFavorite: [cell: number]
+  toggleFavorite: [cell: number, pane: number]
   openDir: [workspace: number, dir: string, anchor: Anchor]
   removeFavorite: [workspace: number, dir: string]
   closeWorkspace: [workspace: number]
@@ -119,8 +121,10 @@ function cellGroup(
     c,
     index,
     selected,
-    favorite: isFavorite(w, c),
-    rows: orderedPanes(c).map((p) => paneRow(src, p, selected && p === current, base))
+    rows: orderedPanes(c).map((p) => ({
+      ...paneRow(src, p, selected && p === current, base),
+      favorite: findFavorite(w, p.cwd) !== undefined
+    }))
   }
 }
 
@@ -129,11 +133,15 @@ function cells(src: RowSource, w: DeepReadonly<Workspace>) {
   return w.cells.map((c, i) => cellGroup(src, w, c, base, i))
 }
 
+const favoriteLabel = (favorite: boolean): string =>
+  favorite ? 'Remove from Favorites' : 'Add to Favorites'
+
 const groups = computed(() => {
   const src: RowSource = { shown, command, notification, home, shell }
   return workspaces.map((w) => {
     const f = folded.has(w.key)
     const auto = autoWorkspaceName(w, home)
+    const dir = workspaceDir(w)
     return {
       w,
       name: w.name ?? auto,
@@ -141,7 +149,8 @@ const groups = computed(() => {
       folded: f,
       pinned: !!w.pinned,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
-      favorites: (w.favorites ?? []).map((d) => dirRow(d, home)),
+      dir: dir === undefined ? undefined : tildePath(dir, home),
+      favorites: (w.favorites ?? []).map((d) => favoriteRow(d, dir, home)),
       empty: f ? [] : emptyRow(w, home),
       items: f ? [] : cells(src, w)
     }
@@ -300,8 +309,6 @@ const pinTip = (pinned: boolean): string =>
   pinned
     ? pinLabel(pinned)
     : `${pinLabel(pinned)} — keep it in the sidebar after its last cell closes`
-const favoriteLabel = (favorite: boolean): string =>
-  favorite ? 'Remove from Favorites' : 'Add to Favorites'
 </script>
 
 <template>
@@ -319,6 +326,7 @@ const favoriteLabel = (favorite: boolean): string =>
             state,
             notified,
             dot,
+            dir,
             favorites,
             empty,
             items: entries
@@ -380,6 +388,7 @@ const favoriteLabel = (favorite: boolean): string =>
           v-if="menuFor === w.key && heads.get(w.key)"
           :ref="menuRef"
           :name="name"
+          :dir="dir"
           :favorites="favorites"
           :pinned="pinned"
           :head="heads.get(w.key)!"
@@ -397,9 +406,8 @@ const favoriteLabel = (favorite: boolean): string =>
             @mousedown.prevent
             @click="openRow($event, w.key, d.dir)"
           >
-            <span class="state"><PaneIcon :icon="{ command: 'terminal' }" /></span>
-            <span class="title">{{ d.name }}</span>
-            <span class="tail">{{ d.path }}</span>
+            <span class="state"><LeadIcon name="folder" /></span>
+            <span class="title">{{ d.path }}</span>
           </button>
         </div>
         <div
@@ -414,35 +422,47 @@ const favoriteLabel = (favorite: boolean): string =>
             @mousedown.prevent
             @pointerdown="grabCell($event, w.key, item.c.key, item.index)"
           />
-          <button
-            v-for="r in item.rows"
-            :key="r.pane"
-            v-tooltip="paneTip(r)"
-            class="row pane-row"
-            :class="[r.state ?? ['shell', commandClass(r.command)], { focused: r.focused }]"
-            :aria-label="r.aria"
-            @mousedown.prevent
-            @click="emit('focus', item.c.key, r.pane)"
-          >
-            <span
-              v-tooltip="r.state && STATE_LABELS[r.state]"
-              class="state status-icon"
-              :class="{ unread: r.notice }"
-              ><PaneIcon :icon="r.icon"
-            /></span>
-            <span class="title">{{ r.text }}</span>
-            <span v-if="r.place" class="tail place"
-              ><span v-if="r.place.name" class="name">{{ r.place.name }}</span
-              ><span v-if="r.place.branch" class="branch"
-                ><GitBranch class="text-icon" /><span class="branch-name">{{
-                  r.place.branch
-                }}</span></span
-              ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
+          <div v-for="r in item.rows" :key="r.pane" class="pane-line">
+            <button
+              v-tooltip="paneTip(r)"
+              class="row pane-row"
+              :class="[r.state ?? ['shell', commandClass(r.command)], { focused: r.focused }]"
+              :aria-label="r.aria"
+              @mousedown.prevent
+              @click="emit('focus', item.c.key, r.pane)"
             >
-            <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
-              commandTail(r.command, now)
-            }}</span>
-          </button>
+              <span
+                v-tooltip="r.state && STATE_LABELS[r.state]"
+                class="state status-icon"
+                :class="{ unread: r.notice }"
+                ><PaneIcon :icon="r.icon"
+              /></span>
+              <span class="title">{{ r.text }}</span>
+              <span v-if="r.place" class="tail place"
+                ><span v-if="r.place.name" class="name">{{ r.place.name }}</span
+                ><span v-if="r.place.branch" class="branch"
+                  ><GitBranch class="text-icon" /><span class="branch-name">{{
+                    r.place.branch
+                  }}</span></span
+                ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
+              >
+              <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
+                commandTail(r.command, now)
+              }}</span>
+            </button>
+            <button
+              v-if="r.path"
+              v-tooltip="favoriteLabel(r.favorite)"
+              class="favorite"
+              :class="{ on: r.favorite }"
+              :aria-label="favoriteLabel(r.favorite)"
+              :aria-pressed="r.favorite"
+              @mousedown.prevent
+              @click="emit('toggleFavorite', item.c.key, r.pane)"
+            >
+              <Star class="text-icon" :fill="r.favorite ? 'currentColor' : 'none'" />
+            </button>
+          </div>
           <div
             v-for="j in jobsByCell.get(item.c.id)"
             :key="j.pty"
@@ -464,17 +484,6 @@ const favoriteLabel = (favorite: boolean): string =>
               <X class="text-icon" />
             </button>
           </div>
-          <button
-            v-tooltip="favoriteLabel(item.favorite)"
-            class="favorite"
-            :class="{ on: item.favorite }"
-            :aria-label="favoriteLabel(item.favorite)"
-            :aria-pressed="item.favorite"
-            @mousedown.prevent
-            @click="emit('toggleFavorite', item.c.key)"
-          >
-            <Star class="text-icon" :fill="item.favorite ? 'currentColor' : 'none'" />
-          </button>
         </div>
       </div>
       <div
@@ -644,8 +653,6 @@ const favoriteLabel = (favorite: boolean): string =>
   margin-bottom: 0;
 }
 
-/* 별이 박스 모서리 밖으로 나오므로 박스는 넘친 것을 자르지 않고, 줄의 바탕색은 박스의 첫 줄과 마지막 줄의 모서리를 깎아
-   박스 안에 둔다. */
 .group,
 .dir-card {
   position: relative;
@@ -653,13 +660,14 @@ const favoriteLabel = (favorite: boolean): string =>
   border-radius: var(--radius-2);
 }
 
-.grip + .row,
+.grip + .pane-line > .row,
 .dir-row {
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
 }
 
-.group > .row:nth-last-child(2),
+.group > .row:last-child,
+.group > .pane-line:last-child > .row,
 .dir-row {
   border-bottom-left-radius: var(--radius-2);
   border-bottom-right-radius: var(--radius-2);
@@ -687,46 +695,41 @@ const favoriteLabel = (favorite: boolean): string =>
   background: var(--hover);
 }
 
-.dir-row .tail {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 60%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: var(--text-1);
+.pane-line {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 
-/* 박스의 오른쪽 위 모서리에 걸쳐 그린다. 줄 폭을 쓰지 않아 이름이 별 때문에 더 잘리지 않는다. */
+/* `.kill` 처럼 키보드로도 닿게 display 대신 opacity 로 숨긴다. */
 .favorite {
   position: absolute;
-  top: -7px;
-  right: -5px;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
+  right: var(--space-3);
+  width: 16px;
+  height: 16px;
+  justify-content: center;
+  border-radius: var(--radius-1);
   color: var(--faint);
   font-size: 12px;
-  visibility: hidden;
+  opacity: 0;
 }
 
-/* 즐겨찾기 별은 workspace 핀(`.pin.on`)과 같은 색을 쓴다. 핀은 색을 `.workspace-head` 에서 물려받는다. */
-.favorite.on {
-  color: var(--muted);
-}
-
-.group:hover .favorite.on {
-  color: var(--fg);
+.pane-line:hover .favorite,
+.favorite:focus-visible {
+  opacity: 1;
 }
 
 .favorite.on,
-.group:hover .favorite {
-  visibility: visible;
+.favorite:hover {
+  color: var(--fg);
 }
 
-.favorite:not(.on):hover {
-  color: var(--fg);
+.pane-line:has(.favorite):hover .tail {
+  display: none;
+}
+
+.pane-line:has(.favorite):hover > .pane-row {
+  padding-right: calc(var(--space-3) + 16px + var(--space-2));
 }
 
 button {
@@ -745,8 +748,8 @@ button {
 }
 
 /* 손잡이는 첫 행 위에 겹친 형제 요소라, 마우스가 손잡이 위에 있으면 첫 행은 :hover 를 잃는다. */
-.pane-row:hover,
-.group:not(.dragging) > .grip:hover + .pane-row:not(.focused) {
+.pane-line:hover > .pane-row,
+.group:not(.dragging) > .grip:hover + .pane-line > .pane-row:not(.focused) {
   background: var(--hover);
 }
 

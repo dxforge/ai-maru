@@ -5,7 +5,7 @@ import { paneName, type CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { AGENT_ICONS, commandIcon, STATE_LABELS, type PaneIcon } from '../icons'
-import { tildePath } from './cwd'
+import { relativeTo, tildePath } from './cwd'
 import { commandLabel, notificationText } from './display'
 import type { Pane } from './store'
 
@@ -116,6 +116,16 @@ export function dirRow(dir: string, home?: string): DirRow {
     name: sidebarLabel({ cwd: dir }, undefined, home).name!,
     path: tildePath(dir, home)
   }
+}
+
+/**
+ * workspace 메뉴의 즐겨찾기 줄이다. 줄에는 디렉토리 이름만 쓰고, `path` 는 workspace 디렉토리(`base`) 아래면 그로부터의
+ * 상대 경로를, 밖이면 홈을 `~` 로 쓴 경로를 쓴다. 메뉴 위에 workspace 디렉토리가 이미 보이기 때문이다.
+ */
+export function favoriteRow(dir: string, base: string | undefined, home?: string): DirRow {
+  const row = dirRow(dir, home)
+  const rel = relativeTo(dir, base)
+  return rel ? { ...row, path: rel } : row
 }
 
 /** cell 이 없는 workspace 는 `dir` 줄 하나를 두어, 그 디렉토리에서 cell 을 다시 열 수 있게 한다. */

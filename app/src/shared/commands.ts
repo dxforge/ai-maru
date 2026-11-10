@@ -54,7 +54,7 @@ export const commands: readonly Command[] = [
   { id: 'close-workspace', title: 'Close Workspace', menu: 'file' },
   { id: 'rename-workspace', title: 'Rename Workspace…', menu: 'file' },
   { id: 'toggle-pin-workspace', title: 'Toggle Workspace Pin', menu: 'file' },
-  { id: 'toggle-favorite-cell', title: 'Toggle Cell Favorite', menu: 'file' },
+  { id: 'toggle-favorite-cell', title: 'Toggle Favorite', menu: 'file' },
   { id: 'command-palette', title: 'Command Palette…', menu: 'view', palette: false },
   { id: 'next-cell', title: 'Next Cell', menu: 'view' },
   { id: 'previous-cell', title: 'Previous Cell', menu: 'view' },

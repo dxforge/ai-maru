@@ -19,7 +19,7 @@ describe('filterCommands', () => {
       'Close Workspace',
       'Rename Workspace…',
       'Toggle Workspace Pin',
-      'Toggle Cell Favorite',
+      'Toggle Favorite',
       'Next Cell',
       'Previous Cell',
       'Next Pane',

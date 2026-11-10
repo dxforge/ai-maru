@@ -44,6 +44,9 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'close-pane', key: 'W', meta: true },
   { target: 'command', action: 'close-workspace', key: 'W', shift: true, meta: true },
   { target: 'command', action: 'rename-workspace', key: 'R', shift: true, meta: true },
+  { target: 'command', action: 'toggle-pin-workspace', key: 'P', alt: true, meta: true },
+  // Finder 가 고른 항목을 사이드바에 넣는 키(Add to Sidebar)와 같다.
+  { target: 'command', action: 'toggle-favorite-cell', key: 'T', ctrl: true, meta: true },
   { target: 'command', action: 'command-palette', key: 'P', shift: true, meta: true },
   { target: 'command', action: 'next-cell', key: ']', shift: true, meta: true },
   { target: 'command', action: 'previous-cell', key: '[', shift: true, meta: true },

@@ -33,7 +33,7 @@ function shape(page: Page): Promise<string[][]> {
     .evaluateAll((ws) =>
       ws.map((w) =>
         Array.from(
-          w.querySelectorAll(':scope > .group > .pane-row:first-of-type .title'),
+          w.querySelectorAll(':scope > .group > .pane-line:first-of-type > .pane-row .title'),
           (t) => t.textContent!
         )
       )

@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, useTemplateRef } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { Folder, X } from '@lucide/vue'
 import { nameOnFocusLoss } from '../../../shared/names'
 import type { Anchor } from '../launcher/anchor'
 import type { DirRow } from '../workspace/sidebarRows'
 import PinIcon from './PinIcon.vue'
 
-const { name, favorites, pinned, head } = defineProps<{
+const {
+  name,
+  dir = undefined,
+  favorites,
+  pinned,
+  head
+} = defineProps<{
   name: string
+  /** workspace 의 디렉토리(`workspaceDir`)다. 홈을 `~` 로 쓴다. */
+  dir?: string
   favorites: readonly DirRow[]
   pinned: boolean
   /** 메뉴를 연 workspace 헤더. 메뉴는 그 안의 ⋮ 버튼 아래에 오른쪽 끝을 맞춰 뜬다. */
@@ -30,8 +38,6 @@ const MIN_WIDTH = 180
 const root = useTemplateRef<HTMLElement>('root')
 const input = useTemplateRef<HTMLInputElement>('input')
 const at = ref({ left: 0, top: 0, width: WIDTH })
-/** 경로가 말줄임으로 잘린 즐겨찾기의 디렉토리. 잘리지 않은 경로는 줄에 다 보이므로 tooltip 으로 겹쳐 띄우지 않는다. */
-const clipped = ref(new Set<string>())
 let opened = ''
 let finished = false
 
@@ -72,18 +78,7 @@ onMounted(async () => {
     top: Math.max(MARGIN, Math.min(top, innerHeight - MARGIN - r.height)),
     width
   }
-  await nextTick()
-  measureClipped()
 })
-onUpdated(measureClipped)
-
-function measureClipped(): void {
-  const next = new Set<string>()
-  for (const el of root.value?.querySelectorAll<HTMLElement>('.tail') ?? [])
-    if (el.scrollWidth > el.clientWidth) next.add(el.dataset.dir!)
-  const same = next.size === clipped.value.size && [...next].every((d) => clipped.value.has(d))
-  if (!same) clipped.value = next
-}
 onBeforeUnmount(() => {
   document.documentElement.classList.remove('window-drag-off')
   document.removeEventListener('pointerdown', onPointerDown, true)
@@ -161,19 +156,19 @@ function openFavorite(dir: string): void {
         aria-label="Workspace name"
         spellcheck="false"
       />
+      <div v-if="dir" v-tooltip="dir" class="workspace-dir">{{ dir }}</div>
     </div>
     <hr />
     <div class="section">Favorites</div>
     <div v-for="f in favorites" :key="f.dir" class="favorite-item">
       <button
-        v-tooltip="clipped.has(f.dir) ? f.path : undefined"
+        v-tooltip="f.path"
         class="favorite-open"
         role="menuitem"
         :aria-label="`Open ${f.name}`"
         @click="openFavorite(f.dir)"
       >
-        <Folder class="icon" /><span class="title">{{ f.name }}</span
-        ><span class="tail" :data-dir="f.dir">{{ f.path }}</span>
+        <Folder class="icon" /><span class="title">{{ f.name }}</span>
       </button>
       <button
         v-tooltip="'Remove from Favorites'"
@@ -184,7 +179,7 @@ function openFavorite(dir: string): void {
         <X class="icon" />
       </button>
     </div>
-    <div v-if="!favorites.length" class="hint">Star a cell to add its directory</div>
+    <div v-if="!favorites.length" class="hint">Star a pane to add its directory</div>
     <hr />
     <button class="action pin-action" role="menuitem" @click="act(() => emit('togglePin'))">
       <PinIcon class="icon" :filled="pinned" />{{ pinned ? 'Unpin Workspace' : 'Pin Workspace' }}
@@ -221,6 +216,15 @@ button {
 
 .workspace-name-input {
   width: 100%;
+}
+
+.workspace-dir {
+  padding: var(--space-2) var(--space-2) 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+  font-size: var(--text-1);
 }
 
 .section {
@@ -267,20 +271,15 @@ button {
   text-overflow: ellipsis;
 }
 
-.tail {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 60%;
-  margin-left: auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--faint);
-  font-size: var(--text-1);
-}
-
 .favorite-remove {
   flex: none;
   margin-right: var(--space-4);
+  opacity: 0;
+}
+
+.favorite-item:hover .favorite-remove,
+.favorite-remove:focus-visible {
+  opacity: 1;
 }
 
 .icon {
