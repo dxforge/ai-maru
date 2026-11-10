@@ -5,7 +5,7 @@ import { paneName, type CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { AGENT_ICONS, commandIcon, STATE_LABELS, type PaneIcon } from '../icons'
-import { tildePath } from './cwd'
+import { relativeTo, tildePath } from './cwd'
 import { commandLabel, notificationText } from './display'
 import type { Pane } from './store'
 
@@ -124,10 +124,8 @@ export function dirRow(dir: string, home?: string): DirRow {
  */
 export function favoriteRow(dir: string, base: string | undefined, home?: string): DirRow {
   const row = dirRow(dir, home)
-  const b = base?.replace(/\/+$/, '')
-  return b !== undefined && dir.startsWith(`${b}/`)
-    ? { ...row, path: dir.slice(b.length + 1) }
-    : row
+  const rel = relativeTo(dir, base)
+  return rel ? { ...row, path: rel } : row
 }
 
 /** cell 이 없는 workspace 는 `dir` 줄 하나를 두어, 그 디렉토리에서 cell 을 다시 열 수 있게 한다. */

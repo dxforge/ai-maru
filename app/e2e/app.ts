@@ -740,7 +740,6 @@ export function cellGroups(page: Page) {
   return page.locator('.sidebar .group')
 }
 
-/** cell 의 첫 pane 줄의 즐겨찾기 별. 그 줄에 마우스를 올려야 보인다. */
 export function cellFavorite(page: Page, i: number) {
   return cellGroups(page).nth(i).locator('.pane-line').first().locator('.favorite')
 }

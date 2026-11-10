@@ -1321,7 +1321,6 @@ test('workspace 메뉴는 헤더를 가리킬 때 접기 화살표 바로 왼쪽
 const dirRows = (page: Page) => page.locator('.sidebar .dir-row')
 const favoriteItems = (page: Page) => workspaceMenu(page).locator('.favorite-open')
 
-// 빼기 버튼은 즐겨찾기 줄에 마우스를 올려야 보인다.
 async function removeFavorite(page: Page, name: string): Promise<void> {
   await workspaceMenu(page).locator('.favorite-item', { hasText: name }).hover()
   await workspaceMenu(page)
@@ -1774,6 +1773,29 @@ test('팔레트의 Toggle Favorite 는 고른 cell 의 포커스된 pane 의 디
   await expect(toast(page)).toContainText("Couldn't open the favorite directory")
   await expect(launcher(page)).toHaveCount(0)
   await expect(cellItems(page)).toHaveCount(1)
+})
+
+test('나눈 cell 에서 Toggle Favorite 메뉴 항목은 포커스된 둘째 pane 의 디렉토리를, 첫 pane 줄의 별은 첫 pane 의 디렉토리를 넣는다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'sub')
+  const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
+  await run(page, 'echo up-$((1+1))', 'up-2')
+  await split(app, page, 'split-right', 2)
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  const lines = page.locator('.sidebar .group').first().locator('.pane-line')
+  const star = (i: number) => lines.nth(i).locator('.favorite')
+
+  await clickMenu(app, 'toggle-favorite-cell')
+  await expect(star(1)).toHaveAttribute('aria-pressed', 'true')
+  await expect(star(0)).toHaveAttribute('aria-pressed', 'false')
+
+  await lines.nth(0).hover()
+  await star(0).click()
+  await expect(star(0)).toHaveAttribute('aria-pressed', 'true')
+  await openWorkspaceMenu(page, 0)
+  await expect(favoriteItems(page)).toHaveText(['sub', '~'])
 })
 
 function useTool(dataDir: string): string {

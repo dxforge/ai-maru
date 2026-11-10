@@ -1,10 +1,7 @@
 import type { GitHead } from './git'
 
-/**
- * cell·workspace 이름의 재료. `cwd` 는 그 pane 의 화면에 보이는 cwd 다. `gitRoot` 는 `git` 을 읽은 cwd 에서 구한 작업 트리
- * 최상위 경로다.
- */
-export type Named = { cwd?: string; git?: GitHead; gitRoot?: string }
+/** cell·workspace 이름의 재료. `cwd` 는 그 pane 의 화면에 보이는 cwd 다. */
+export type Named = { cwd?: string; git?: GitHead }
 
 export function focusedPane<P extends { key: number }>(c: {
   readonly panes: readonly P[]

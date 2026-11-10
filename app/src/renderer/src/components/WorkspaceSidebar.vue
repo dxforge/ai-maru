@@ -653,7 +653,6 @@ const pinTip = (pinned: boolean): string =>
   margin-bottom: 0;
 }
 
-/* 줄의 바탕색은 박스의 첫 줄과 마지막 줄의 모서리를 깎아 박스 안에 둔다. */
 .group,
 .dir-card {
   position: relative;
@@ -702,7 +701,7 @@ const pinTip = (pinned: boolean): string =>
   align-items: center;
 }
 
-/* 별은 그 pane 의 지금 디렉토리가 즐겨찾기인지 보인다. cd 하면 바뀌므로 hover 때만 위치 대신 보인다. */
+/* `.kill` 처럼 키보드로도 닿게 display 대신 opacity 로 숨긴다. */
 .favorite {
   position: absolute;
   right: var(--space-3);
@@ -712,12 +711,12 @@ const pinTip = (pinned: boolean): string =>
   border-radius: var(--radius-1);
   color: var(--faint);
   font-size: 12px;
-  visibility: hidden;
+  opacity: 0;
 }
 
 .pane-line:hover .favorite,
 .favorite:focus-visible {
-  visibility: visible;
+  opacity: 1;
 }
 
 .favorite.on,
@@ -725,11 +724,11 @@ const pinTip = (pinned: boolean): string =>
   color: var(--fg);
 }
 
-.pane-line:hover .tail {
+.pane-line:has(.favorite):hover .tail {
   display: none;
 }
 
-.pane-line:hover > .pane-row {
+.pane-line:has(.favorite):hover > .pane-row {
   padding-right: calc(var(--space-3) + 16px + var(--space-2));
 }
 

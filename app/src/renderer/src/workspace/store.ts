@@ -84,8 +84,8 @@ export const findFavorite = (
 export { focusedPane }
 
 /**
- * workspace 의 디렉토리다. 핀이 없으면 첫 pane 이 지금 있는 디렉토리다. 저장된 `dir` 은 첫 pane 의 cwd 가 바뀔 때만 따라가서,
- * cell 순서를 바꿔 첫 pane 이 바뀐 뒤에는 옛 값일 수 있기 때문이다.
+ * workspace 의 디렉토리다. 핀이 없으면 첫 pane 이 지금 있는 디렉토리이고, 저장된 `dir` 은 그대로 쓰지 않는다. `dir` 은 첫
+ * pane 의 cwd 가 바뀔 때만 따라가므로, cell 순서를 바꿔 첫 pane 이 바뀐 뒤에는 옛 값일 수 있기 때문이다.
  */
 export function workspaceDir(
   w: Pick<Workspace, 'pinned' | 'dir'> & {

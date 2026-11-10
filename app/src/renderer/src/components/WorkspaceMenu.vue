@@ -274,12 +274,12 @@ button {
 .favorite-remove {
   flex: none;
   margin-right: var(--space-4);
-  visibility: hidden;
+  opacity: 0;
 }
 
 .favorite-item:hover .favorite-remove,
 .favorite-remove:focus-visible {
-  visibility: visible;
+  opacity: 1;
 }
 
 .icon {
