@@ -77,7 +77,7 @@ test('부른 cell 바로 뒤에 놓이고, columns 에서는 그 오른쪽에 �
 test('즐겨찾기 cell 에서 불러도 그 cell 바로 뒤에 놓는다', async ({ launch }) => {
   const launched = await launch()
   const { page } = launched
-  // `toggleFavorite` 은 첫 pane 의 cwd 를 즐겨찾기에 넣으므로, 셸이 cwd 를 알린 뒤에 누른다.
+  // 별은 그 pane 의 cwd 를 즐겨찾기에 넣으므로, 셸이 cwd 를 알린 뒤에 누른다.
   await run(page, 'echo up-$((1+1))', 'up-2')
   await newCell(launched, 2)
   await run(page, 'echo two-$((1+1))', 'two-2')

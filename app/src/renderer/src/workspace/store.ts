@@ -1,7 +1,7 @@
 import { readonly, ref } from 'vue'
 import { sameGitHead, type GitHead } from '../../../shared/git'
 import { samePath } from '../../../shared/launcher'
-import { focusedPane, gitRootOf } from '../../../shared/names'
+import { autoWorkspaceName, focusedPane, gitRootOf } from '../../../shared/names'
 import type { ProgramStatusState } from '../../../shared/program-status'
 import type { PtyState } from '../../../shared/pty-state'
 import {
@@ -81,13 +81,21 @@ export const findFavorite = (
 ): string | undefined =>
   dir === undefined ? undefined : w.favorites?.find((f) => samePath(f, dir))
 
-/** 즐겨찾기는 디렉토리의 상태라, 첫 pane 의 cwd 가 즐겨찾기에 있는 cell 은 모두 ★ 로 보인다. */
-export const isFavorite = (
-  w: { favorites?: readonly string[] },
-  c: { panes: readonly { cwd?: string }[] }
-): boolean => findFavorite(w, c.panes[0]?.cwd) !== undefined
-
 export { focusedPane }
+
+/**
+ * workspace 의 디렉토리다. 핀이 없으면 첫 pane 이 지금 있는 디렉토리다. 저장된 `dir` 은 첫 pane 의 cwd 가 바뀔 때만 따라가서,
+ * cell 순서를 바꿔 첫 pane 이 바뀐 뒤에는 옛 값일 수 있기 때문이다.
+ */
+export function workspaceDir(
+  w: Pick<Workspace, 'pinned' | 'dir'> & {
+    cells: readonly { panes: readonly Pick<Pane, 'cwd' | 'startDir'>[] }[]
+  }
+): string | undefined {
+  if (w.pinned) return w.dir
+  const first = w.cells[0]?.panes[0]
+  return first?.cwd ?? first?.startDir ?? w.dir
+}
 
 /**
  * `WorkspaceSidebar.vue` 가 cell 의 pane 을 이 순서로 나열한다. `stepPane` 은 같은 순서를 `panes(layout)` 으로 직접
@@ -170,15 +178,12 @@ export function createWorkspaces(
     }
   }
 
-  const isHome = (dir: string): boolean =>
-    home !== undefined && dir.replace(/\/+$/, '') === home.replace(/\/+$/, '')
-
   /**
-   * 홈 디렉토리인 `dir` 은 첫 pane 이 홈 밖으로 가면 바꾼다. 앱을 처음 열면 셸이 홈에서 뜨고, 홈으로 고정하면 셸이 어디로
-   * 가든 workspace 이름이 늘 `~` 가 되기 때문이다.
+   * 핀이 없는 workspace 의 `dir` 은 자동 이름처럼 첫 pane 이 있는 디렉토리를 따라간다. 핀을 꽂으면 굳는다. 셸이 디렉토리를
+   * 알리기 전에 꽂아 `dir` 이 없으면 처음 알린 디렉토리로 정한다.
    */
   function settleDir(w: Workspace, dir: string | undefined): void {
-    if (dir === undefined || (w.dir !== undefined && !isHome(w.dir))) return
+    if (dir === undefined || (w.pinned && w.dir !== undefined)) return
     w.dir = dir
   }
 
@@ -235,6 +240,10 @@ export function createWorkspaces(
     const w = workspaceByKey(key)
     if (!w) return undefined
     if (!w.pinned) {
+      // 핀은 cell 을 다 닫아도 workspace 를 남긴다. 자동 이름과 `dir` 은 첫 pane 을 따라가므로, cell 을 닫고 열 때마다
+      // 바뀌지 않게 지금 값으로 굳힌다.
+      w.name ??= autoWorkspaceName(w, home)
+      w.dir = workspaceDir(w)
       w.pinned = true
       return undefined
     }
@@ -250,13 +259,15 @@ export function createWorkspaces(
   }
 
   /**
-   * cell 의 첫 pane 의 cwd 를 workspace 의 즐겨찾기에 넣거나 뺀다. 첫 pane 의 cwd 를 몰라 넣지도 빼지도 못했으면 false 다.
+   * pane 의 cwd 를 workspace 의 즐겨찾기에 넣거나 뺀다. `pane` 이 없으면 cell 의 포커스된 pane 이다. 그 pane 의 cwd 를 몰라
+   * 넣지도 빼지도 못했으면 false 다.
    */
-  function toggleFavorite(key: number): boolean {
-    const w = workspaceOf(key)
-    const c = w?.cells.find((x) => x.key === key)
-    if (!w || !c) return true
-    const cwd = c.panes[0].cwd
+  function toggleFavorite(cell: number, pane?: number): boolean {
+    const w = workspaceOf(cell)
+    const c = w?.cells.find((x) => x.key === cell)
+    const p = c && (pane === undefined ? focusedPane(c) : c.panes.find((x) => x.key === pane))
+    if (!w || !p) return true
+    const cwd = p.cwd
     if (cwd === undefined) return false
     const had = findFavorite(w, cwd)
     if (had !== undefined) dropFavorite(w, had)
@@ -503,7 +514,7 @@ export function createWorkspaces(
   function applyState(ptyId: string): void {
     const p = paneByPty(ptyId)
     // main 은 끝난 pty 의 상태를 지우고, 그러면 cwd 는 셸을 띄운 디렉토리로 돌아간다. 그 알림이 셸의 exit 보다 먼저 오면,
-    // `dir` 이 없거나 홈인 채로 남는 workspace(`keeps`)에서는 cell 을 닫는 `detach` 가 그 디렉토리를 workspace 의 디렉토리로
+    // 핀 없이 즐겨찾기로 남는 workspace(`keeps`)에서는 cell 을 닫는 `detach` 가 그 디렉토리를 workspace 의 디렉토리로
     // 적는다. 그래서 상태가 지워졌을 때는 마지막 cwd 를 둔다.
     if (p) refresh(p, source.get(ptyId) === undefined)
   }
@@ -606,7 +617,7 @@ export function createWorkspaces(
         ...w,
         cells: w.cells.map((c) => ({ ...c, panes: c.panes.map(restorePane) }))
       }
-      // pty 에 다시 붙는 pane 은 `setSpawnedDir` 를 부르지 않으므로, `dir` 이 없으면 저장한 cwd 로 정한다.
+      // pty 에 다시 붙는 pane 은 `setSpawnedDir` 를 부르지 않으므로, 핀이 없으면 저장한 cwd 로 정한다.
       settleDir(r, w.cells[0]?.panes[0]?.cwd)
       return r
     })

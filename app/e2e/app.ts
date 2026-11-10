@@ -721,7 +721,7 @@ export function gridRows(page: Page) {
 
 /** cell 마다 하나인 사이드바의 첫 pane 줄. 누르면 그 pane 으로 가며 cell 을 고른다. */
 export function cellItems(page: Page) {
-  return page.locator('.sidebar .group > .pane-row:first-of-type')
+  return page.locator('.sidebar .group > .pane-line:first-of-type > .pane-row')
 }
 
 export function cellPlaces(page: Page) {
@@ -740,8 +740,9 @@ export function cellGroups(page: Page) {
   return page.locator('.sidebar .group')
 }
 
+/** cell 의 첫 pane 줄의 즐겨찾기 별. 그 줄에 마우스를 올려야 보인다. */
 export function cellFavorite(page: Page, i: number) {
-  return cellGroups(page).nth(i).locator(':scope > .favorite')
+  return cellGroups(page).nth(i).locator('.pane-line').first().locator('.favorite')
 }
 
 export function workspaceNames(page: Page) {

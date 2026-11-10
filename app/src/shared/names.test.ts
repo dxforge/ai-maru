@@ -114,7 +114,7 @@ describe('autoWorkspaceName', () => {
     expect(autoWorkspaceName({ cells: [] })).toBe('Shell')
   })
 
-  it('dir 이 아직 없으면 첫 pane 으로 짓는다', () => {
+  it('첫 pane 이 있으면 dir 과 상관없이 그 pane 으로 짓는다', () => {
     expect(
       autoWorkspaceName({
         cells: [{ panes: [{ cwd: '/r/x', git: { repo: 'ai-maru', sub: 'x' } }] }]
@@ -123,22 +123,18 @@ describe('autoWorkspaceName', () => {
     expect(autoWorkspaceName({ cells: [{ panes: [{ cwd: '/tmp/notes' }] }] })).toBe('notes')
   })
 
-  it('cell 이 있어도 dir 로 짓고, dir 이 첫 pane 의 작업 트리 안이면 저장소 이름이다', () => {
-    const at = (cwd: string, sub: string) => ({ cwd, git: { repo: 'ai-maru', sub } })
+  it('첫 pane 이 작업 트리 안이면 저장소 이름이고, 밖이면 그 cwd 의 디렉토리 이름이다', () => {
     const named = (dir: string, pane: Named) =>
       autoWorkspaceName({ dir, cells: [{ panes: [pane] }] })
-    expect(named('/mono', { cwd: '/tmp/notes' })).toBe('mono')
-    expect(named('/mono', at('/mono/ai-maru', ''))).toBe('mono')
-    expect(named('/mono/ai-maru', at('/mono/ai-maru/app', 'app'))).toBe('ai-maru')
-    expect(named('/mono/ai-maru/app', at('/mono/ai-maru', ''))).toBe('ai-maru')
-    expect(named('/mono/ai-maru2', at('/mono/ai-maru', ''))).toBe('ai-maru2')
-    expect(named('/mono', at('/mono/ai-maru/a/b', 'a/b'))).toBe('mono')
-    const stale = {
-      cwd: '/wt/foo/app',
-      git: { repo: 'ai-maru', sub: '' },
-      gitRoot: '/wt/foo'
-    }
-    expect(named('/wt/foo', stale)).toBe('ai-maru')
+    expect(named('/mono', { cwd: '/tmp/notes' })).toBe('notes')
+    expect(named('/mono', { cwd: '/mono/ai-maru', git: { repo: 'ai-maru', sub: '' } })).toBe(
+      'ai-maru'
+    )
+    expect(named('/h/u', { cwd: '/h/u' })).toBe('u')
+  })
+
+  it('첫 pane 의 cwd 를 아직 모르면 dir 로 짓는다', () => {
+    expect(autoWorkspaceName({ dir: '/r/ai-maru', cells: [{ panes: [{}] }] })).toBe('ai-maru')
   })
 })
 
@@ -189,10 +185,9 @@ describe('labelBase', () => {
     expect(labelBase({ cells: [] })).toBeUndefined()
   })
 
-  it('dir 이 첫 pane 의 작업 트리 밖이면 없다', () => {
+  it('dir 과 상관없이 첫 pane 이다', () => {
     const pane = { cwd: '/mono/ai-maru', git: { repo: 'ai-maru', sub: '' } }
-    expect(labelBase({ dir: '/mono', cells: [{ panes: [pane] }] })).toBeUndefined()
-    expect(labelBase({ dir: '/mono/ai-maru', cells: [{ panes: [pane] }] })).toBe(pane)
+    expect(labelBase({ dir: '/mono', cells: [{ panes: [pane] }] })).toBe(pane)
   })
 })
 

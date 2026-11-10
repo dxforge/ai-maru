@@ -48,18 +48,6 @@ export function sidebarLabel(p: Named, base: Named | undefined, home?: string): 
 type NamedWorkspace<P> = { name?: string; dir?: string; cells: readonly { panes: readonly P[] }[] }
 
 /**
- * `dir` 이 없거나 첫 pane 의 작업 트리 안에 있을 때만 첫 pane 을 돌려준다. 저장소 여럿을 모은 디렉토리를 workspace 로 연
- * 경우, 첫 cell 이 그 안의 저장소로 `cd` 해도 그 저장소 이름을 workspace 이름으로 쓰지 않기 위해서다.
- */
-function repoPane<P extends Named>(w: NamedWorkspace<P>): P | undefined {
-  const p = w.cells[0]?.panes[0]
-  if (!p || w.dir === undefined) return p
-  // `cd` 한 뒤 `git` 을 다시 읽기 전에는 `git.sub` 이 옛 cwd 의 것이라, 새 cwd 로 구하면 작업 트리 안에서도 이름이 깜빡인다.
-  const top = p.git && (p.gitRoot ?? (p.cwd && gitRootOf(p.cwd, p.git.sub)))
-  return top !== undefined && (w.dir === top || w.dir.startsWith(`${top}/`)) ? p : undefined
-}
-
-/**
  * `git` 을 읽은 cwd 에서 `sub` 를 떼어 작업 트리 최상위 경로를 구한다. `sub` 는 심링크를 푼 경로로 세므로, cwd 의
  * 끝이 `sub` 와 다르면 구하지 않는다.
  */
@@ -75,9 +63,9 @@ export function gitRootOf(cwd: string, sub: string | undefined): string | undefi
  * `home` 을 주면 홈 디렉토리를 `~` 로 쓴다. 사이드바가 pane 줄의 위치(`sidebarLabel`)와 맞추려고 준다.
  */
 export function autoWorkspaceName(w: NamedWorkspace<Named>, home?: string): string {
-  const p = repoPane(w)
+  const p = w.cells[0]?.panes[0]
   if (p?.git) return p.git.repo
-  return dirLabel(w.dir ?? p?.cwd, home)
+  return dirLabel(p?.cwd ?? w.dir, home)
 }
 
 export function workspaceName(w: NamedWorkspace<Named>, home?: string): string {
@@ -98,7 +86,7 @@ export function nameOnFocusLoss(typed: string, opened: string): string | null {
  * 저장소 이름을 온전히 적게 한다.
  */
 export function labelBase<P extends Named>(w: NamedWorkspace<P>): P | undefined {
-  return w.name === undefined ? repoPane(w) : undefined
+  return w.name === undefined ? w.cells[0]?.panes[0] : undefined
 }
 
 export function windowTitle(label: Label): string {

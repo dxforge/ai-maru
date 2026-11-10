@@ -92,7 +92,7 @@ test('저장소 안에서는 저장소 이름과 branch 를, 밖에서는 디렉
   await expect.poll(() => win(app)).toEqual({ title: 'notes', path: join(home, 'notes') })
 })
 
-test('workspace 이름 줄은 첫 pane 이 홈 밖으로 처음 간 디렉토리의 저장소 이름(저장소 밖이면 디렉토리 이름)이고 branch 가 없으며, 첫 cell 이 닫혀도 그대로고 접은 사이드바에서도 보인다', async ({
+test('workspace 이름 줄은 첫 pane 이 홈 밖으로 처음 간 디렉토리의 저장소 이름(저장소 밖이면 디렉토리 이름)이고 branch 가 없으며, 첫 cell 이 닫히면 남은 첫 pane 을 따르고 접은 사이드바에서도 보인다', async ({
   launch,
   dataDir
 }) => {
@@ -111,7 +111,7 @@ test('workspace 이름 줄은 첫 pane 이 홈 밖으로 처음 간 디렉토리
   await cellItems(page).nth(0).click()
   await page.keyboard.type('exit\n')
   await expect(cellPlaces(page)).toHaveText(['notes'])
-  await expect(workspaceNames(page)).toHaveText(['proj'])
+  await expect(workspaceNames(page)).toHaveText(['notes'])
 
   await collapseSidebar(app, page)
   await expect(workspaceNames(page)).toBeVisible()
@@ -971,9 +971,10 @@ const nameInput = (page: Page) => page.locator('.sidebar .workspace-name-input')
 const workspaceMenu = (page: Page) => page.locator('.sidebar .workspace-menu')
 
 // 메뉴는 ⋮ 아래에 오른쪽 끝을 맞춰 떠 그 아래 줄을 덮는다. ⋮ 오른쪽의 접기 화살표 아래인 줄의 오른쪽 끝만 덮지 않는다.
-async function clickRightEnd(el: Locator): Promise<void> {
+// 그 자리 안쪽에는 마우스를 올리면 즐겨찾기 별이 뜨므로 별 바깥의 끝을 누른다.
+async function clickRightEnd(el: Locator, inset = 3): Promise<void> {
   const b = (await el.boundingBox())!
-  await el.click({ position: { x: b.width - 16, y: b.height / 2 } })
+  await el.click({ position: { x: b.width - inset, y: b.height / 2 } })
 }
 
 async function openWorkspaceMenu(page: Page, i: number): Promise<void> {
@@ -1009,7 +1010,7 @@ test('workspace 메뉴의 이름 칸은 지금 이름을 들고 열리고, Enter
   await page.keyboard.type('cd ~/notes\n')
   await expect(cellPlaces(page)).toHaveText(['notes'])
   await expect(workspaceNames(page)).toHaveText(['review'])
-  await expect(head).toHaveAttribute('data-tooltip', 'proj')
+  await expect(head).toHaveAttribute('data-tooltip', 'notes')
 })
 
 test('메뉴에서 이름을 고치다 Esc 를 누르면 메뉴가 닫히고 이름이 그대로이며, 비우고 정하면 자동 이름으로 돌아가며, 두 경우 모두 터미널이 입력을 받는다', async ({
@@ -1146,7 +1147,7 @@ test('이름을 고치다 다른 workspace 줄을 누르면 친 이름으로 정
   await openWorkspaceMenu(page, 0)
   await expect(nameInput(page)).toBeFocused()
   await page.keyboard.type('review')
-  await clickRightEnd(heads.nth(1))
+  await clickRightEnd(heads.nth(1), 16)
   await expect(nameInput(page)).toHaveCount(0)
   await expect(workspaceNames(page).nth(0)).toHaveText('review')
   await expect(heads.nth(1)).toHaveAttribute('aria-expanded', 'false')
@@ -1200,15 +1201,15 @@ test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 자동 이�
   await clickRightEnd(cellItems(page).nth(0))
   await expect(nameInput(page)).toHaveCount(0)
   await page.keyboard.type('cd ~/notes\n')
-  await expect(workspaceNames(page)).toHaveText(['sub'])
+  await expect(workspaceNames(page)).toHaveText(['notes'])
 
   await openWorkspaceMenu(page, 0)
-  await expect(nameInput(page)).toHaveValue('sub')
+  await expect(nameInput(page)).toHaveValue('notes')
   await page.keyboard.press('Enter')
   await expect(nameInput(page)).toHaveCount(0)
   await page.keyboard.type('cd ~/proj/sub\n')
   await expect(head).toHaveAttribute('data-tooltip', 'proj')
-  await expect(workspaceNames(page)).toHaveText(['sub'])
+  await expect(workspaceNames(page)).toHaveText(['notes'])
 })
 
 test('workspace 핀은 핀을 꽂은 workspace 에 늘 보이고 아니면 헤더에 마우스가 있을 때만 보이며, 누르기는 접기·끌기로 번지지 않는다', async ({
@@ -1293,7 +1294,7 @@ test('workspace 메뉴는 헤더를 가리킬 때 접기 화살표 바로 왼쪽
   expect(m.y).toBeGreaterThanOrEqual(b.y + b.height)
   expect(m.y).toBeLessThan(b.y + b.height + 8)
   await expect(favoriteItems(page)).toHaveCount(0)
-  await expect(menuHint(page)).toHaveText('Star a cell to add its directory')
+  await expect(menuHint(page)).toHaveText('Star a pane to add its directory')
   await workspaceMenu(page).getByRole('menuitem', { name: 'Pin Workspace' }).click()
   await expect(workspaceMenu(page)).toHaveCount(0)
   await expect(workspaceHeads(page).nth(0).locator('.pin')).toHaveAttribute('aria-pressed', 'true')
@@ -1319,6 +1320,14 @@ test('workspace 메뉴는 헤더를 가리킬 때 접기 화살표 바로 왼쪽
 
 const dirRows = (page: Page) => page.locator('.sidebar .dir-row')
 const favoriteItems = (page: Page) => workspaceMenu(page).locator('.favorite-open')
+
+// 빼기 버튼은 즐겨찾기 줄에 마우스를 올려야 보인다.
+async function removeFavorite(page: Page, name: string): Promise<void> {
+  await workspaceMenu(page).locator('.favorite-item', { hasText: name }).hover()
+  await workspaceMenu(page)
+    .getByRole('button', { name: `Remove ${name} from Favorites` })
+    .click()
+}
 const menuHint = (page: Page) => workspaceMenu(page).locator('.hint')
 const launcher = (page: Page) => page.locator('.palette.launcher')
 
@@ -1356,7 +1365,7 @@ test('핀을 꽂은 workspace 는 마지막 cell 을 닫아도 이름과 함께 
   await expect(workspaceNames(page)).toHaveText(['atlas', 'sub'])
   await expect(dirRows(page)).toHaveCount(1)
   await expect(dirRows(page)).toContainText('sub')
-  await expect(dirRows(page).locator('.state svg[data-icon="terminal"]')).toBeVisible()
+  await expect(dirRows(page).locator('.state svg[data-icon="folder"]')).toBeVisible()
 
   await reopenShell(page, dirRows(page))
   await expect(cellItems(page)).toHaveCount(2)
@@ -1565,7 +1574,7 @@ test('workspace 메뉴에서 즐겨찾기를 빼면 그 디렉토리의 cell 도
   await cellFavorite(page, 1).click()
   await openWorkspaceMenu(page, 0)
   await expect(favoriteItems(page)).toHaveCount(2)
-  await workspaceMenu(page).getByRole('button', { name: 'Remove lib from Favorites' }).click()
+  await removeFavorite(page, 'lib')
   await expect(favoriteItems(page)).toHaveCount(1)
   await expect(cellFavorite(page, 2)).toHaveAttribute('aria-pressed', 'false')
   await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
@@ -1580,27 +1589,32 @@ test('workspace 메뉴에서 즐겨찾기를 빼면 그 디렉토리의 cell 도
   await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('workspace 메뉴의 즐겨찾기는 경로가 줄에 다 보이면 tooltip 을 달지 않고, 말줄임으로 잘리면 전체 경로를 tooltip 으로 단다', async ({
+test('workspace 메뉴는 workspace 디렉토리를 보이고, 즐겨찾기 줄의 tooltip 은 그 디렉토리 아래면 상대 경로를, 아니면 홈을 ~ 로 쓴 경로를 단다', async ({
   launch,
   dataDir
 }) => {
-  const long = 'a-directory-name-long-enough-to-be-cut-short-in-the-menu'
-  const home = zshHome(dataDir, 'sub', long)
+  const home = zshHome(dataDir, 'sub')
   const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
   const { page } = launched
   await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
   await newCell(launched, 2)
-  await run(page, `cd ~/${long} && echo long-$((1+1))`, 'long-2')
+  await run(page, 'cd ~/sub && mkdir -p deep && cd deep && echo deep-$((1+1))', 'deep-2')
   for (const i of [0, 1]) {
     await cellItems(page).nth(i).hover()
     await cellFavorite(page, i).click()
   }
 
   await openWorkspaceMenu(page, 0)
-  const open = workspaceMenu(page).locator('.favorite-open')
-  await expect(open).toHaveCount(2)
-  await expect(open.nth(0)).toHaveAttribute('data-tooltip', '')
-  await expect(open.nth(1)).toHaveAttribute('data-tooltip', `~/${long}`)
+  await expect(workspaceMenu(page).locator('.workspace-dir')).toHaveText('~/sub')
+  await expect(favoriteItems(page)).toHaveCount(2)
+  await expect(workspaceMenu(page).getByRole('menuitem', { name: 'Open sub' })).toHaveAttribute(
+    'data-tooltip',
+    '~/sub'
+  )
+  await expect(workspaceMenu(page).getByRole('menuitem', { name: 'Open deep' })).toHaveAttribute(
+    'data-tooltip',
+    'deep'
+  )
 })
 
 test('workspace 메뉴는 바깥 어디를 눌러도 닫히며 누른 자리의 동작도 하고, 열린 동안에는 창 드래그 영역을 꺼서 사이드바 빈 곳·제목 줄을 눌러도 닫힌다', async ({
@@ -1682,7 +1696,7 @@ test('workspace 메뉴 안의 버튼이 아닌 곳을 눌러도 메뉴가 남고
   await expect(cellItems(page)).toHaveCount(1)
   await expect(workspaceHeads(page)).toHaveCount(2)
   await openWorkspaceMenu(page, 0)
-  await workspaceMenu(page).getByRole('button', { name: 'Remove sub from Favorites' }).click()
+  await removeFavorite(page, 'sub')
   await expect(workspaceHeads(page)).toHaveCount(1)
   await expect(workspaceMenu(page)).toHaveCount(0)
   await run(page, 'echo gone-$((1+1))', 'gone-2')
@@ -1734,7 +1748,7 @@ test('고전 스크롤바 설정에서도 cell 의 별 가운데는 창 끌기 �
   expect(await appRegionAt(page, list.x + list.width / 2, list.y + list.height - 4)).toBe('drag')
 })
 
-test('팔레트의 Toggle Cell Favorite 는 고른 cell 의 디렉토리를 즐겨찾기에 넣고, 디렉토리가 없어진 즐겨찾기를 메뉴에서 고르면 런처를 띄우지 않고 이유를 보인다', async ({
+test('팔레트의 Toggle Favorite 는 고른 cell 의 포커스된 pane 의 디렉토리를 즐겨찾기에 넣고, 디렉토리가 없어진 즐겨찾기를 메뉴에서 고르면 런처를 띄우지 않고 이유를 보인다', async ({
   launch,
   dataDir
 }) => {
@@ -1746,7 +1760,7 @@ test('팔레트의 Toggle Cell Favorite 는 고른 cell 의 디렉토리를 즐�
   await run(page, 'cd gone && echo in-$((1+1))', 'in-2')
 
   await openPalette(launched)
-  await page.keyboard.type('cell favorite')
+  await page.keyboard.type('toggle favorite')
   await page.keyboard.press('Enter')
   await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')
   await expect(cellItems(page).nth(1)).toContainText('gone')
