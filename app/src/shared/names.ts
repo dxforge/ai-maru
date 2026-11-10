@@ -65,6 +65,18 @@ export function autoWorkspaceName(w: NamedWorkspace<Named>, home?: string): stri
   return dirLabel(p?.cwd ?? w.dir, home)
 }
 
+/**
+ * 이름 없이 핀을 꽂아 저장한 workspace 를 되살릴 때 굳힐 이름이다. 이전 빌드는 핀 workspace 의 이름을 `name` 에 굳히지 않고
+ * 그릴 때마다 지었다. 첫 pane 의 작업 트리 안에 `dir` 이 있을 때만 저장소 이름을 쓰고, 아니면 `dir` 이름을 썼다. 같은 규칙으로
+ * 지어야 새 빌드로 바꿔도 이름이 바뀌지 않는다.
+ */
+export function savedPinnedName(w: NamedWorkspace<Named>, dir: string, home?: string): string {
+  const p = w.cells[0]?.panes[0]
+  const top = p?.git && p.cwd !== undefined ? gitRootOf(p.cwd, p.git.sub) : undefined
+  if (p?.git && top !== undefined && (dir === top || dir.startsWith(`${top}/`))) return p.git.repo
+  return dirLabel(dir, home)
+}
+
 export function workspaceName(w: NamedWorkspace<Named>, home?: string): string {
   return w.name ?? autoWorkspaceName(w, home)
 }
@@ -79,11 +91,13 @@ export function nameOnFocusLoss(typed: string, opened: string): string | null {
 }
 
 /**
- * cell·pane 줄이 `sidebarLabel` 에 넘길 `base` 다. 바꾼 이름에는 저장소 이름이 없을 수 있으므로 `base` 를 두지 않고, 줄마다
- * 저장소 이름을 온전히 적게 한다.
+ * cell·pane 줄이 `sidebarLabel` 에 넘길 `base` 다. 이름이 첫 pane 의 저장소 이름과 다르면 이름에 저장소 이름이 없을 수
+ * 있으므로 `base` 를 두지 않고, 줄마다 저장소 이름을 온전히 적게 한다. 핀을 꽂아 자동 이름을 `name` 에 굳혀도 줄이 바뀌지
+ * 않도록, `name` 이 있는지가 아니라 저장소 이름과 같은지를 본다.
  */
 export function labelBase<P extends Named>(w: NamedWorkspace<P>): P | undefined {
-  return w.name === undefined ? w.cells[0]?.panes[0] : undefined
+  const p = w.cells[0]?.panes[0]
+  return w.name === undefined || w.name === p?.git?.repo ? p : undefined
 }
 
 export function windowTitle(label: Label): string {

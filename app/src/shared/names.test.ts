@@ -5,6 +5,7 @@ import {
   dirName,
   labelBase,
   nameOnFocusLoss,
+  savedPinnedName,
   sidebarLabel,
   type Named,
   windowTitle,
@@ -181,6 +182,12 @@ describe('labelBase', () => {
     expect(labelBase({ name: '리뷰', cells: [{ panes: [first] }] })).toBeUndefined()
   })
 
+  it('이름이 첫 pane 의 저장소 이름과 같으면 첫 pane 이다', () => {
+    const pane = { cwd: '/r/ai-maru', git: { repo: 'ai-maru', sub: '' } }
+    expect(labelBase({ name: 'ai-maru', cells: [{ panes: [pane] }] })).toBe(pane)
+    expect(labelBase({ name: 'ai-maru', cells: [{ panes: [first] }] })).toBeUndefined()
+  })
+
   it('cell 이 없으면 없다', () => {
     expect(labelBase({ cells: [] })).toBeUndefined()
   })
@@ -188,6 +195,23 @@ describe('labelBase', () => {
   it('dir 과 상관없이 첫 pane 이다', () => {
     const pane = { cwd: '/mono/ai-maru', git: { repo: 'ai-maru', sub: '' } }
     expect(labelBase({ dir: '/mono', cells: [{ panes: [pane] }] })).toBe(pane)
+  })
+})
+
+describe('savedPinnedName', () => {
+  const w = {
+    cells: [{ panes: [{ cwd: '/mono/ai-maru/app', git: { repo: 'ai-maru', sub: 'app' } }] }]
+  }
+
+  it('dir 이 첫 pane 의 작업 트리 안이면 저장소 이름이다', () => {
+    expect(savedPinnedName(w, '/mono/ai-maru')).toBe('ai-maru')
+    expect(savedPinnedName(w, '/mono/ai-maru/app')).toBe('ai-maru')
+  })
+
+  it('dir 이 작업 트리 밖이거나 첫 pane 이 저장소가 아니면 dir 이름이다', () => {
+    expect(savedPinnedName(w, '/mono')).toBe('mono')
+    expect(savedPinnedName(w, '/mono/ai-maru2')).toBe('ai-maru2')
+    expect(savedPinnedName({ cells: [] }, '/h', '/h')).toBe('~')
   })
 })
 

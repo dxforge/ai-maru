@@ -3,7 +3,7 @@ import type { GitHead } from '../../../shared/git'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import { isPtyId } from '../../../shared/pty'
 import type { PtyState } from '../../../shared/pty-state'
-import { autoWorkspaceName } from '../../../shared/names'
+import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import { parseScreen } from '../../../shared/screen'
 import {
   createWorkspaces,
@@ -1568,6 +1568,50 @@ describe('workspace 핀', () => {
     ws.setSpawnedDir(p.key, '/first')
     ws.setSpawnedDir(p.key, '/second')
     expect(ws.list.value[0].dir).toBe('/first')
+  })
+
+  it('셸이 디렉토리를 알리기 전에 꽂은 핀은 이름도 처음 알린 디렉토리로 굳힌다', () => {
+    const ws = createWorkspaces(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      '/h'
+    )
+    ws.open()
+    const p = selected(ws).panes[0]
+    ws.togglePin(wsKeys(ws)[0])
+    expect(ws.list.value[0]).not.toHaveProperty('name')
+    ws.setSpawnedDir(p.key, '/h/proj')
+    ws.setSpawnedDir(p.key, '/h/other')
+    expect(ws.list.value[0]).toMatchObject({ name: 'proj', dir: '/h/proj' })
+  })
+
+  it('핀을 꽂아 이름을 굳혀도 pane 줄이 쓰는 labelBase 는 그대로다', async () => {
+    const ws = createWorkspaces(async () => ({ repo: 'ai-maru', branch: 'main', sub: '' }))
+    ws.open('/r/ai-maru')
+    await new Promise((r) => setTimeout(r))
+    const before = labelBase(ws.list.value[0])
+    expect(before?.git?.repo).toBe('ai-maru')
+    ws.togglePin(wsKeys(ws)[0])
+    expect(ws.list.value[0].name).toBe('ai-maru')
+    expect(labelBase(ws.list.value[0])).toBe(before)
+  })
+
+  it('이름 없이 핀을 꽂아 저장한 workspace 는 되살릴 때 그 빌드가 보이던 이름으로 굳힌다', () => {
+    const from = createWorkspaces()
+    from.open('/mono')
+    const saved = from.snapshot()
+    Object.assign(saved.workspaces[0], { pinned: true, dir: '/mono' })
+    Object.assign(saved.workspaces[0].cells[0].panes[0], {
+      cwd: '/mono/ai-maru',
+      git: { repo: 'ai-maru', sub: '' }
+    })
+    const to = createWorkspaces()
+    to.restore(...full(saved))
+    expect(to.list.value[0]).toMatchObject({ name: 'mono', dir: '/mono' })
   })
 
   it('핀을 꽂을 때 붙인 이름은 그대로 두고, 핀을 빼도 굳힌 이름과 dir 은 남는다', () => {

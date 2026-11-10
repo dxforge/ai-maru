@@ -1,7 +1,7 @@
 import { readonly, ref } from 'vue'
 import { sameGitHead, type GitHead } from '../../../shared/git'
 import { samePath } from '../../../shared/launcher'
-import { autoWorkspaceName, focusedPane, gitRootOf } from '../../../shared/names'
+import { autoWorkspaceName, focusedPane, gitRootOf, savedPinnedName } from '../../../shared/names'
 import type { ProgramStatusState } from '../../../shared/program-status'
 import type { PtyState } from '../../../shared/pty-state'
 import {
@@ -185,6 +185,7 @@ export function createWorkspaces(
   function settleDir(w: Workspace, dir: string | undefined): void {
     if (dir === undefined || (w.pinned && w.dir !== undefined)) return
     w.dir = dir
+    if (w.pinned) w.name ??= autoWorkspaceName(w, home)
   }
 
   const headOf = (p: Pane): Workspace | undefined =>
@@ -241,9 +242,10 @@ export function createWorkspaces(
     if (!w) return undefined
     if (!w.pinned) {
       // 핀은 cell 을 다 닫아도 workspace 를 남긴다. 자동 이름과 `dir` 은 첫 pane 을 따라가므로, cell 을 닫고 열 때마다
-      // 바뀌지 않게 지금 값으로 굳힌다.
-      w.name ??= autoWorkspaceName(w, home)
+      // 바뀌지 않게 지금 값으로 굳힌다. 디렉토리를 모르면 자동 이름이 `Shell` 이므로, 이름은 `settleDir` 가 디렉토리를
+      // 정할 때 굳힌다.
       w.dir = workspaceDir(w)
+      if (w.dir !== undefined) w.name ??= autoWorkspaceName(w, home)
       w.pinned = true
       return undefined
     }
@@ -617,6 +619,8 @@ export function createWorkspaces(
         ...w,
         cells: w.cells.map((c) => ({ ...c, panes: c.panes.map(restorePane) }))
       }
+      if (r.pinned && r.name === undefined && r.dir !== undefined)
+        r.name = savedPinnedName(r, r.dir, home)
       // pty 에 다시 붙는 pane 은 `setSpawnedDir` 를 부르지 않으므로, 핀이 없으면 저장한 cwd 로 정한다.
       settleDir(r, w.cells[0]?.panes[0]?.cwd)
       return r
