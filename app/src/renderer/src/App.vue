@@ -569,7 +569,14 @@ function gridVars(cell: Size, font: TerminalFont) {
 const sameSize = (a: Size | undefined, b: Size): boolean =>
   a?.width === b.width && a.height === b.height
 
-/** cell 마다 pane 이 놓이는 영역(`.grid`)의 크기. CSS 가 정하는 여백을 JS 에서 다시 계산하지 않게 잰다. */
+/**
+ * cell 마다 pane 이 놓이는 영역(`.grid`)의 크기다. CSS 가 정하는 띠와 여백의 크기를 JS 에서 다시 계산하지 않도록
+ * `.grid` 를 잰다.
+ * `.grid` 를 직접 재도 되는 것은 `.grid` 를 둘러싼 띠·single 의 여백이 줄 높이(`--row`)를 따르지 않기 때문이다.
+ * 줄 높이를 따르는 요소가 `.grid` 밖에 생기면, 줄 높이가 바뀐 첫 렌더에서 pane 이 옛 영역 크기에 맞춰 놓이고 영역을
+ * 다시 잰 뒤 한 번 더 놓인다. 그래서 터미널 프로그램이 resize 를 두 번 받는다. 그때는 `.panes` 를 재고 그 요소의
+ * 높이를 뺀다.
+ */
 const gridSizes = reactive(new Map<number, Size>())
 const gridEls = new Map<number, Element>()
 const gridKeys = new WeakMap<Element, number>()
