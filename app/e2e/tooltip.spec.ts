@@ -3,8 +3,7 @@ import { join } from 'node:path'
 import type { Locator } from '@playwright/test'
 import { activeTerminal, cellGroups, expect, newCell, run, sidebarCard, test } from './app'
 
-const isOpen = (el: Locator) =>
-  el.evaluate((e) => e.matches(':popover-open'))
+const isOpen = (el: Locator) => el.evaluate((e) => e.matches(':popover-open'))
 
 test('사이드바 job 줄에 마우스를 올리면 명령과 종료 코드를 카드로 띄우고, ✕ 로 옮기면 바로 tooltip 으로 바꿔 띄우며 Esc 와 chord 키로 닫는다', async ({
   launch

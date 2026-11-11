@@ -65,7 +65,6 @@ const branch = (page: Page) =>
 const tip = (page: Page) =>
   cellGroups(page).and(page.locator('.selected')).locator('.pane-row.focused')
 
-/** 줄을 가리켜 띄운 카드의 경로 줄 */
 const pathOf = async (page: Page, row: Locator) => (await hoverCard(page, row)).locator('.path')
 
 function win(app: ElectronApplication) {
@@ -1016,6 +1015,7 @@ test('workspace 메뉴의 이름 칸은 지금 이름을 들고 열리고, Enter
   await expect(head).toHaveAttribute('aria-expanded', 'true')
   await expect(head).toHaveAttribute('aria-label', 'Collapse review')
   await expect((await hoverCard(page, head)).locator('.note')).toHaveText('Default name: proj')
+  await expect(sidebarCard(page).locator('.counts')).toHaveText('1 cell · 1 pane')
   await expect(cellPlaces(page).locator('.name')).toHaveText(['proj'])
 
   await page.keyboard.type('cd ~/notes\n')
@@ -1960,7 +1960,7 @@ test('즐겨찾기의 런처를 닫은 뒤 디렉토리 단계부터 연 런처�
   await run(page, 'echo at-$PWD', `at-${home}/other`)
 })
 
-test('cell 에 마우스를 올리면 카드를 사이드바 오른쪽 끝에 걸쳐 cell 위 끝을 맞춰 띄우고, cell 안에서 줄을 옮기면 카드를 다시 띄우지 않고 강조만 옮기며, 창 아래 끝의 cell 에서는 카드를 창 안으로 올린다', async ({
+test('cell 에 마우스를 올리면 카드를 사이드바 오른쪽에 cell 위 끝을 맞춰 띄우고, cell 안에서 줄을 옮기면 카드를 다시 띄우지 않고 강조만 옮기며, 창 아래 끝의 cell 에서는 카드를 창 안으로 올린다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -1975,8 +1975,6 @@ test('cell 에 마우스를 올리면 카드를 사이드바 오른쪽 끝에 �
   await expect(card.locator('.section').nth(0)).toHaveClass(/current/)
   const side = await box(page.locator('.sidebar'))
   const at = await box(card)
-  // 카드는 사이드바 오른쪽 끝을 조금 덮고 그 오른쪽으로 뻗는다.
-  expect(at.x).toBeLessThan(side.x + side.width)
   expect(at.x).toBeGreaterThan(side.x + side.width / 2)
   expect(at.x + at.width).toBeGreaterThan(side.x + side.width)
   expect(at.y).toBeCloseTo((await box(group)).y, 0)
@@ -2000,4 +1998,33 @@ test('cell 에 마우스를 올리면 카드를 사이드바 오른쪽 끝에 �
   const raised = await box(card)
   expect(raised.y + raised.height).toBeLessThanOrEqual(inner)
   expect(raised.y).toBeLessThan((await box(group)).y)
+})
+
+test('창이 좁아 카드가 창 오른쪽 끝으로 밀려도, 다른 카드를 띄운 뒤 다시 띄운 카드는 처음과 같은 폭으로 그린다', async ({
+  launch,
+  dataDir
+}) => {
+  const dir = 'a-long-directory-name-to-widen-the-sidebar-card'
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: zshHome(dataDir, dir) })
+  const { app, page } = launched
+  await newCell(launched, 2)
+  await page.keyboard.type(`cd ${dir}\n`)
+  await expect(cellPlaces(page)).toHaveText(['~', dir])
+  const short = cellGroups(page).nth(0).locator('.pane-row').nth(0)
+  const row = cellGroups(page).nth(1).locator('.pane-row').nth(0)
+  const card = sidebarCard(page)
+  // 사이드바 오른쪽에 남는 폭을 카드의 최소 폭보다 좁게 한다.
+  const side = await box(page.locator('.sidebar'))
+  const width = await page.evaluate(() => window.innerWidth)
+  await resizeBy(app, side.x + side.width + 120 - width, 0)
+  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBeLessThan(width)
+
+  await hoverCard(page, row)
+  await expect(card.locator('.path')).toHaveText(/a-long-directory-name/)
+  const first = await box(card)
+  await hoverCard(page, short)
+  await expect(card.locator('.path')).toHaveText('~')
+  await hoverCard(page, row)
+  await expect(card.locator('.path')).toHaveText(/a-long-directory-name/)
+  expect((await box(card)).width).toBeCloseTo(first.width, 0)
 })

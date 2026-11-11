@@ -1,19 +1,46 @@
 import { describe, expect, it } from 'vitest'
+import type { GitHead } from '../../../shared/git'
 import type { JobView } from '../../../shared/job'
 import type { CommandView } from '../../../shared/pane-name'
 import { CLAUDE_APP, type ProgramStatusRecord } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { dirCard, jobSection, paneSection, workspaceCard } from './sidebarCard'
+import {
+  cellCard,
+  dirCard,
+  jobSection,
+  keepsCardAt,
+  paneSection,
+  workspaceCard,
+  type CardAt
+} from './sidebarCard'
 import { dirRow, paneRow } from './sidebarRows'
 
 const MIN = 60_000
 
 function pane(
-  o: { record?: ProgramStatusRecord; command?: CommandView; notice?: PtyNotification; cwd?: string } = {}
+  o: {
+    record?: ProgramStatusRecord
+    command?: CommandView
+    notice?: PtyNotification
+    cwd?: string
+    git?: GitHead
+  } = {}
 ) {
-  const p = { key: 7, id: 'n-7', ptyId: 'p-7', title: 'vim', ...(o.cwd && { cwd: o.cwd }) }
+  const p = {
+    key: 7,
+    id: 'n-7',
+    ptyId: 'p-7',
+    title: 'vim',
+    ...(o.cwd && { cwd: o.cwd }),
+    git: o.git
+  }
   const r = paneRow(
-    { shown: () => o.record, command: () => o.command, notification: () => o.notice, home: '/Users/me' },
+    {
+      shown: () => o.record,
+      command: () => o.command,
+      notification: () => o.notice,
+      home: '/Users/me'
+    },
     p,
     false,
     p
@@ -34,7 +61,7 @@ const record = (o: Partial<ProgramStatusRecord> = {}): ProgramStatusRecord => ({
 
 describe('paneSection', () => {
   it('셸 pane 은 사이드바 줄의 아이콘과 이름·경로만 쓴다', () => {
-    expect(paneSection(pane({ cwd: '/Users/me/src/app' }), undefined, undefined, 0)).toEqual({
+    expect(paneSection(pane({ cwd: '/Users/me/src/app' }), 0)).toEqual({
       key: 'pane:7',
       title: 'vim',
       icon: { command: 'terminal' },
@@ -45,37 +72,36 @@ describe('paneSection', () => {
   it('아이콘과 색 class 는 사이드바 줄과 같다', () => {
     const rec = record({ state: 'blocked' })
     const r = pane({ record: rec })
-    expect(paneSection(r, undefined, rec, 0)).toMatchObject({ icon: r.icon, tone: 'blocked' })
+    expect(paneSection(r, 0)).toMatchObject({ icon: r.icon, tone: 'blocked' })
     const failed: CommandView = { running: false, text: 'make', exitCode: 2 }
-    expect(paneSection(pane({ command: failed }), undefined, undefined, 0)).toMatchObject({
+    expect(paneSection(pane({ command: failed }), 0)).toMatchObject({
       icon: { command: 'failed' },
       tone: 'command-failed'
     })
   })
 
   it('repo·branch 를 한 줄로 잇고, 경로에 있는 sub 와 없는 칸은 뺀다', () => {
-    const r = pane({ cwd: '/Users/me/src/app/core' })
-    expect(paneSection(r, { repo: 'app', branch: 'main', sub: 'core' }, undefined, 0).git).toBe(
-      'app · main'
-    )
-    expect(paneSection(r, { repo: 'app' }, undefined, 0).git).toBe('app')
+    const cwd = '/Users/me/src/app/core'
+    const git = { repo: 'app', branch: 'main', sub: 'core' }
+    expect(paneSection(pane({ cwd, git }), 0).git).toBe('app · main')
+    expect(paneSection(pane({ cwd, git: { repo: 'app' } }), 0).git).toBe('app')
   })
 
   it('프로그램 상태는 메시지만 쓰고, 메시지가 없으면 두지 않는다', () => {
     const rec = record({ state: 'blocked', message: 'Allow Bash?' })
-    expect(paneSection(pane({ record: rec }), undefined, rec, 0).message).toBe('Allow Bash?')
+    expect(paneSection(pane({ record: rec }), 0).message).toBe('Allow Bash?')
     const quiet = record()
-    expect(paneSection(pane({ record: quiet }), undefined, quiet, 0)).not.toHaveProperty('message')
+    expect(paneSection(pane({ record: quiet }), 0)).not.toHaveProperty('message')
   })
 
   it('도는 명령은 돈 시간을, 시작 시각을 모르면 Running 만 쓴다', () => {
     const run: CommandView = { running: true, text: 'sleep 30', startedAt: 0 }
-    expect(paneSection(pane({ command: run }), undefined, undefined, 3 * MIN).command).toEqual({
+    expect(paneSection(pane({ command: run }), 3 * MIN).command).toEqual({
       running: true,
       text: 'Running for 3m'
     })
     const unknown: CommandView = { running: true, text: 'sleep 30' }
-    expect(paneSection(pane({ command: unknown }), undefined, undefined, 3 * MIN).command).toEqual({
+    expect(paneSection(pane({ command: unknown }), 3 * MIN).command).toEqual({
       running: true,
       text: 'Running'
     })
@@ -83,7 +109,7 @@ describe('paneSection', () => {
 
   it('실패한 명령은 종료 코드를 쓴다', () => {
     const failed: CommandView = { running: false, text: 'make', exitCode: 2 }
-    expect(paneSection(pane({ command: failed }), undefined, undefined, 0).command).toEqual({
+    expect(paneSection(pane({ command: failed }), 0).command).toEqual({
       running: false,
       text: 'Exited with code 2'
     })
@@ -91,7 +117,7 @@ describe('paneSection', () => {
 
   it('읽지 않은 알림은 제목과 본문을 함께 쓴다', () => {
     const notice = { title: 'Done', body: 'Tests pass' } as PtyNotification
-    expect(paneSection(pane({ notice }), undefined, undefined, 0).notice).toBe('Done: Tests pass')
+    expect(paneSection(pane({ notice }), 0).notice).toBe('Done: Tests pass')
   })
 })
 
@@ -165,5 +191,33 @@ describe('dirCard', () => {
       sections: [{ key: 'dir', title: 'app', path: '~/src/app' }],
       foot: { counts: 'No open cells' }
     })
+  })
+})
+
+describe('cellCard', () => {
+  it('pane 구역을 받은 줄 순서로 두고 그 뒤에 job 구역을 둔다', () => {
+    const job: JobView = { pty: 'p-9', cell: 'c-1', command: ['pnpm', 'dev'], ports: [] }
+    const rows = [{ ...pane(), pane: 8 }, pane()]
+    expect(cellCard(rows, [job], 0).sections.map((s) => s.key)).toEqual([
+      'pane:8',
+      'pane:7',
+      'job:p-9'
+    ])
+  })
+})
+
+describe('keepsCardAt', () => {
+  const row: CardAt = { kind: 'cell', cell: 1, row: 'pane:7' }
+  const bare: CardAt = { kind: 'cell', cell: 1 }
+
+  it('같은 cell 의 줄에서 그 cell 의 빈 자리로 나오면 앞의 자리를 둔다', () => {
+    expect(keepsCardAt(row, bare)).toBe(true)
+  })
+
+  it('다른 cell, 줄, 헤더로 옮기거나 처음 띄우면 새 자리를 쓴다', () => {
+    expect(keepsCardAt(row, { kind: 'cell', cell: 2 })).toBe(false)
+    expect(keepsCardAt(bare, row)).toBe(false)
+    expect(keepsCardAt({ kind: 'head', workspace: 1 }, bare)).toBe(false)
+    expect(keepsCardAt(undefined, bare)).toBe(false)
   })
 })

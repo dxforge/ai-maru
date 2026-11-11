@@ -6,7 +6,6 @@ import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { EllipsisVertical, GitBranch, Star, X } from '@lucide/vue'
-import { commandClass } from '../icons'
 import { anchorWidth, type Anchor } from '../launcher/anchor'
 import type { TooltipCard } from '../tooltip'
 import FoldChevron from './FoldChevron.vue'
@@ -17,11 +16,12 @@ import StatusIcon from './StatusIcon.vue'
 import WorkspaceMenu from './WorkspaceMenu.vue'
 import { commandTail, elapsed } from '../workspace/display'
 import {
+  cellCard,
   dirCard,
-  jobSection,
-  paneSection,
+  keepsCardAt,
   SIDEBAR_CARD_ID,
   workspaceCard,
+  type CardAt,
   type CardView
 } from '../workspace/sidebarCard'
 import {
@@ -132,9 +132,7 @@ function cellGroup(
     selected,
     rows: orderedPanes(c).map((p) => ({
       ...paneRow(src, p, selected && p === current, base),
-      favorite: findFavorite(w, p.cwd) !== undefined,
-      pty: p.ptyId,
-      git: p.git
+      favorite: findFavorite(w, p.cwd) !== undefined
     }))
   }
 }
@@ -195,25 +193,12 @@ function toggleMenu(key: number): void {
   else emit('openMenu', key)
 }
 
-/**
- * 카드를 띄운 자리. cell 카드는 cell 안의 pane 줄·job 줄과 cell 자체(`row` 없음)에 단다. `row` 는 강조할 구역의
- * key(`CardSection.key`)다.
- */
-type CardAt =
-  | { kind: 'cell'; cell: number; row?: string }
-  | { kind: 'head'; workspace: number }
-  | { kind: 'dir'; workspace: number; dir: string }
-
 const hovered = shallowRef<{ at: CardAt; el: HTMLElement }>()
 
-// 같은 cell 의 줄에서 cell 의 빈 자리(손잡이·줄 사이)로 나오면 강조를 그대로 둔다. 줄 사이를 옮길 때마다 강조가 꺼졌다
-// 켜지지 않게 하기 위해서다.
 const sidebarCard: TooltipCard<CardAt> = {
   id: SIDEBAR_CARD_ID,
   show(el, at) {
-    const prev = hovered.value?.at
-    if (at.kind === 'cell' && at.row === undefined && prev?.kind === 'cell' && prev.cell === at.cell)
-      return
+    if (keepsCardAt(hovered.value?.at, at)) return
     hovered.value = { at, el }
   },
   hide() {
@@ -223,39 +208,38 @@ const sidebarCard: TooltipCard<CardAt> = {
 
 const cellTip = (cell: number, row?: string) => ({
   card: sidebarCard,
-  at: { kind: 'cell', cell, ...(row !== undefined && { row }) } as CardAt
+  at: { kind: 'cell' as const, cell, row }
 })
 
 // 돈 시간이 들어가므로 `groups` 밖에서 만든다.
 const cardView = computed((): CardView | undefined => {
   const at = hovered.value?.at
   if (!at) return undefined
-  const g = groups.value.find((g) =>
-    at.kind === 'cell' ? g.items.some((i) => i.c.key === at.cell) : g.w.key === at.workspace
-  )
+  if (at.kind === 'cell') {
+    const item = groups.value.flatMap((g) => g.items).find((i) => i.c.key === at.cell)
+    return (
+      item &&
+      cellCard(
+        item.rows,
+        jobs.filter((j) => j.cell === item.c.id),
+        now
+      )
+    )
+  }
+  const g = groups.value.find((g) => g.w.key === at.workspace)
   if (!g) return undefined
   if (at.kind === 'dir') {
     const d = g.empty.find((d) => d.dir === at.dir)
     return d && dirCard(d)
   }
-  if (at.kind === 'head') {
-    const ids = new Set(g.w.cells.map((c) => c.id))
-    return workspaceCard({
-      name: g.name,
-      auto: g.auto,
-      dir: g.dir,
-      states: g.w.cells.flatMap((c) => orderedPanes(c).map((p) => shown(p.ptyId)?.state)),
-      cells: g.w.cells.length,
-      jobs: jobs.filter((j) => ids.has(j.cell)).length
-    })
-  }
-  const item = g.items.find((i) => i.c.key === at.cell)!
-  return {
-    sections: [
-      ...item.rows.map((r) => paneSection(r, r.git, shown(r.pty), now)),
-      ...jobs.filter((j) => j.cell === item.c.id).map((j) => jobSection(j, now))
-    ]
-  }
+  return workspaceCard({
+    name: g.name,
+    auto: g.auto,
+    dir: g.dir,
+    states: g.w.cells.flatMap((c) => orderedPanes(c).map((p) => shown(p.ptyId)?.state)),
+    cells: g.w.cells.length,
+    jobs: g.w.cells.reduce((n, c) => n + (jobsByCell.value.get(c.id)?.length ?? 0), 0)
+  })
 })
 
 const cardAnchor = computed(() => {
@@ -424,10 +408,7 @@ const pinTip = (pinned: boolean): string =>
           @pointerdown="grabWorkspace($event, w.key, wi)"
           @click="emit('fold', w.key)"
         >
-          <span
-            v-if="state"
-            class="state status-icon"
-            :class="[state, { unread: notified }]"
+          <span v-if="state" class="state status-icon" :class="[state, { unread: notified }]"
             ><StatusIcon :state="state"
           /></span>
           <span class="workspace-name workspace-title">{{ name }}</span>
@@ -501,14 +482,12 @@ const pinTip = (pinned: boolean): string =>
             <button
               v-tooltip="cellTip(item.c.key, `pane:${r.pane}`)"
               class="row pane-row"
-              :class="[r.state ?? ['shell', commandClass(r.command)], { focused: r.focused }]"
+              :class="[r.tone, { shell: !r.state, focused: r.focused }]"
               :aria-label="r.aria"
               @mousedown.prevent
               @click="emit('focus', item.c.key, r.pane)"
             >
-              <span
-                class="state status-icon"
-                :class="{ unread: r.notice }"
+              <span class="state status-icon" :class="{ unread: r.notice }"
                 ><PaneIcon :icon="r.icon"
               /></span>
               <span class="title">{{ r.text }}</span>

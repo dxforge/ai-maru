@@ -7,7 +7,10 @@ import PaneIcon from './PaneIcon.vue'
 import StatusIcon from './StatusIcon.vue'
 import { SIDEBAR_CARD_ID, type CardView } from '../workspace/sidebarCard'
 
-/** `anchor` 의 위 끝과 `side`(사이드바)의 오른쪽 끝에 맞춰 띄운다. `current` 는 강조할 구역의 key 다. */
+/**
+ * 카드의 위 끝을 `anchor` 의 위 끝에 맞추고, `side`(사이드바)의 오른쪽 끝을 `OVERLAP` 만큼 덮게 띄운다. `current` 는
+ * 강조할 구역의 key 다.
+ */
 const {
   view = undefined,
   current = undefined,
@@ -22,11 +25,11 @@ const {
 
 const card = useTemplateRef<HTMLElement>('card')
 
-/** 카드를 사이드바 위로 겹쳐 띄우려고 사이드바 오른쪽 끝을 이만큼(px) 안으로 당겨 넘긴다. `placeBeside` 가 틈(`GAP`)을 더하므로 카드는 `OVERLAP - GAP` 만큼 사이드바를 덮는다. */
-const OVERLAP = 14
+/** 카드가 사이드바 오른쪽 끝을 덮는 폭(px) */
+const OVERLAP = 8
 
-// 내용이 바뀌면 높이도 바뀌므로 그릴 때마다 다시 잰다. 카드가 떠 있는 동안 스크롤하면 `vTooltip` 이 카드를 닫으므로
-// 기준 요소의 자리는 그동안 바뀌지 않는다.
+// 내용이 바뀌면 높이도 바뀌므로, prop 이 바뀔 때마다 크기를 다시 재어 자리를 잡는다. 카드가 떠 있는 동안 사이드바를
+// 스크롤하면 `vTooltip` 이 카드를 닫는다. 그래서 스크롤로 기준 요소가 옮겨 가는 것은 따라가지 않는다.
 function place(): void {
   const el = card.value
   if (!el) return
@@ -36,10 +39,13 @@ function place(): void {
     return
   }
   if (!open) el.showPopover()
+  // 창 오른쪽 끝에 있던 카드는 남은 폭만큼 좁아져 있으므로, 왼쪽 위로 옮겨 제 크기로 잰다.
+  el.style.left = '0px'
+  el.style.top = '0px'
   el.style.maxHeight = ''
   const size = el.getBoundingClientRect()
   const at = placeBeside(
-    { top: anchor.getBoundingClientRect().top, right: side.getBoundingClientRect().right - OVERLAP },
+    { top: anchor.getBoundingClientRect().top, left: side.getBoundingClientRect().right - OVERLAP },
     size,
     { width: innerWidth, height: innerHeight }
   )
@@ -73,7 +79,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="body" :class="{ indent: s.icon }">
             <div v-if="s.notice" class="notice">{{ s.notice }}</div>
-            <div v-if="s.note" class="sub note">{{ s.note }}</div>
+            <div v-if="s.note" class="note">{{ s.note }}</div>
             <div v-if="s.message" class="message">{{ s.message }}</div>
             <div v-if="s.command" class="command" :class="{ failed: !s.command.running }">
               {{ s.command.text }}
@@ -141,13 +147,11 @@ onBeforeUnmount(() => {
   background: var(--hover);
 }
 
-/* 경로와 git 은 이름·상태보다 덜 보는 정보라 맨 아래에 회색으로 둔다. */
 .where {
   margin-top: var(--space-2);
   color: var(--muted);
 }
 
-/* 이름 줄은 사이드바 줄처럼 아이콘과 이름을 잇는다. 아이콘 칸 폭(14px)은 사이드바 줄의 `.state` 와 같다. */
 .head {
   display: flex;
   align-items: baseline;
@@ -155,6 +159,8 @@ onBeforeUnmount(() => {
   font-size: var(--text-3);
 }
 
+/* 아이콘 칸 폭(14px)은 사이드바 줄의 `.state`(`WorkspaceSidebar.vue`)와 같아야 하고, `.body.indent` 도 이 폭을
+   쓴다. */
 .icon {
   flex: none;
   align-self: center;
@@ -186,8 +192,9 @@ onBeforeUnmount(() => {
   padding-left: calc(14px + var(--space-4));
 }
 
-/* 무엇을 하는지(메시지·job 의 명령)는 기본 글자색으로 두고, 얼마나 돌았는지·어떻게 끝났는지는 회색으로 둔다. */
-.sub,
+/* 자동 이름(`.note`)과 돈 시간·끝난 까닭(`.time`·`.command`)은 회색으로 두고, 무엇을 하는지(`.message`·`.run`)는
+   기본 글자색으로 둔다. */
+.note,
 .time,
 .command {
   color: var(--muted);
@@ -204,7 +211,6 @@ onBeforeUnmount(() => {
 }
 
 .with-icon .text-icon {
-  flex: none;
   align-self: center;
 }
 

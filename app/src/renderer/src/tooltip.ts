@@ -49,19 +49,15 @@ export function placeTooltip(
   return { left, top, side }
 }
 
-/**
- * 카드를 `anchor` 오른쪽에 두고 위 끝을 `anchor.top` 에 맞출 자리를 고른다. 창 아래로 넘치면 창 안으로 올리고, 창보다 높으면
- * 위 끝을 창 위 가장자리에 두고 `maxHeight` 로 아래를 자른다.
- */
 export function placeBeside(
-  anchor: { top: number; right: number },
+  at: { top: number; left: number },
   card: Size,
   view: Size
 ): { left: number; top: number; maxHeight?: number } {
-  const left = clamp(anchor.right + GAP, EDGE, view.width - EDGE - card.width)
+  const left = clamp(at.left, EDGE, view.width - EDGE - card.width)
   const room = view.height - 2 * EDGE
   if (card.height > room) return { left, top: EDGE, maxHeight: room }
-  return { left, top: clamp(anchor.top, EDGE, view.height - EDGE - card.height) }
+  return { left, top: clamp(at.top, EDGE, view.height - EDGE - card.height) }
 }
 
 // 창보다 큰 tooltip 은 왼쪽·위 가장자리에 붙인다.
@@ -82,7 +78,6 @@ export type CardValue<T extends object = object> = { card: TooltipCard<T>; at: T
 let box: HTMLDivElement | undefined
 /** tooltip 을 띄웠거나 띄우려고 기다리는 요소. */
 let current: HTMLElement | undefined
-/** 띄운 것. 텍스트 상자(`box`)거나 카드다. */
 let shown: HTMLDivElement | TooltipCard | undefined
 let pointerX = 0
 /** 띄울 때 잰 tooltip 상자의 크기. 커서를 따라 옮길 때는 내용이 그대로라 다시 재지 않는다. */
@@ -119,9 +114,7 @@ function ensureBox(): HTMLDivElement {
 }
 
 function describe(el: HTMLElement, id: string, on: boolean): void {
-  const rest = (el.getAttribute('aria-describedby') ?? '')
-    .split(/\s+/)
-    .filter((i) => i && i !== id)
+  const rest = (el.getAttribute('aria-describedby') ?? '').split(/\s+/).filter((i) => i && i !== id)
   const next = on ? [...rest, id] : rest
   if (next.length) el.setAttribute('aria-describedby', next.join(' '))
   else el.removeAttribute('aria-describedby')
@@ -143,7 +136,6 @@ function place(b: HTMLDivElement, at: Anchor): void {
   b.style.top = `${top}px`
 }
 
-/** 띄운 것을 닫는다. `el` 을 주면 그 요소의 `aria-describedby` 에서 뗀다. */
 function close(el?: HTMLElement): void {
   if (!shown) return
   if (el) describe(el, shown.id, false)
@@ -199,7 +191,6 @@ function wanted(): HTMLElement | undefined {
 function refresh(): void {
   const el = wanted()
   if (el && el === current) return
-  // 떠 있는 카드를 단 다른 요소로 옮기면 카드를 닫지 않고 옮긴 요소를 넘긴다.
   if (el && current && shown && shown === cards.get(el)?.card) {
     describe(current, shown.id, false)
     current = el
@@ -304,14 +295,9 @@ const EVENTS: [string, (e: Event) => void][] = [
  * `card` 를 넘기면 텍스트 상자 대신 그 카드를 띄운다.
  */
 export type TooltipValue =
-  | string
-  | { text: string; keys?: string }
-  | CardValue
-  | false
-  | null
-  | undefined
+  string | { text: string; keys?: string } | CardValue | false | null | undefined
 
-// `at` 은 그릴 때마다 새로 만드는 작은 객체라 필드를 하나씩 견준다.
+// `at` 은 그릴 때마다 새로 만드는 객체이고 필드가 모두 원시 값이므로, 필드를 하나씩 비교한다.
 const sameAt = (a: object, b: object): boolean => {
   const x = a as Record<string, unknown>
   const y = b as Record<string, unknown>

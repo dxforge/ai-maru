@@ -763,7 +763,7 @@ export function sidebarCard(page: Page) {
 /**
  * 사이드바 줄을 가리켜 카드를 띄우고 그 줄의 구역을 돌려준다. 헤더·닫힌 핀 줄의 카드는 구역이 하나뿐이라 그 구역이다.
  * 키 입력과 클릭이 카드를 닫으므로, 돌려받은 뒤 키를 눌렀으면 다시 부른다. 이미 가리키고 있던 줄이면 다시 띄우도록 먼저
- * 포인터를 사이드바 맨 위(창 끌기 영역)로 뺀다.
+ * 포인터를 사이드바 맨 위(창 드래그 영역)로 뺀다.
  */
 export async function hoverCard(page: Page, row: Locator): Promise<Locator> {
   await page.mouse.move(0, 0)

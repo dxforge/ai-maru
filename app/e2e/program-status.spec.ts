@@ -98,7 +98,9 @@ test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상�
   await page.keyboard.type(status('working'))
   await expect(paneRows(page)).toHaveClass(/working/)
   await expect(paneRows(page).locator('.title')).toHaveText('Claude')
-  await expect((await hoverCard(page, paneRows(page))).locator('.head .icon')).toHaveClass(/working/)
+  await expect((await hoverCard(page, paneRows(page))).locator('.head .icon')).toHaveClass(
+    /working/
+  )
   await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute(
     'data-tooltip',
     'Working'

@@ -430,28 +430,28 @@ describe('placeBeside', () => {
   const view = { width: 800, height: 600 }
   const card = { width: 300, height: 200 }
 
-  it('anchor 오른쪽에 GAP 을 두고 위 끝을 anchor 위 끝에 맞춘다', () => {
-    expect(placeBeside({ top: 100, right: 240 }, card, view)).toEqual({ left: 240 + GAP, top: 100 })
+  it('왼쪽 위 끝을 at 에 둔다', () => {
+    expect(placeBeside({ top: 100, left: 240 }, card, view)).toEqual({ left: 240, top: 100 })
   })
 
   it('창 아래로 넘치면 창 안으로 올린다', () => {
-    expect(placeBeside({ top: 500, right: 240 }, card, view)).toEqual({
-      left: 240 + GAP,
+    expect(placeBeside({ top: 500, left: 240 }, card, view)).toEqual({
+      left: 240,
       top: view.height - EDGE - card.height
     })
   })
 
   it('창보다 높으면 위 가장자리에 두고 아래를 자른다', () => {
     const tall = { width: 300, height: 700 }
-    expect(placeBeside({ top: 100, right: 240 }, tall, view)).toEqual({
-      left: 240 + GAP,
+    expect(placeBeside({ top: 100, left: 240 }, tall, view)).toEqual({
+      left: 240,
       top: EDGE,
       maxHeight: view.height - 2 * EDGE
     })
   })
 
   it('오른쪽에 자리가 없으면 창 안으로 민다', () => {
-    expect(placeBeside({ top: 100, right: 700 }, card, view).left).toBe(
+    expect(placeBeside({ top: 100, left: 700 }, card, view).left).toBe(
       view.width - EDGE - card.width
     )
   })
