@@ -33,19 +33,25 @@ export const URGENCY: readonly ProgramStatusState[] = [
 ]
 
 /**
- * 루트(`id` 가 `""`)와 하위 레코드 가운데 pane 의 상태로 보일 레코드. 루트가 없으면 없다. 루트가 working 이면 루트다.
- * 하위의 blocked 는 쓴 쪽이 아직 지우지 않은 것일 수 있기 때문이다. 그 밖에는 `URGENCY` 로 가장 급한 것이고, 같으면 루트,
- * 그다음 `records` 의 순서(maru-pty 가 보내는 id 순)다. 고른 레코드의 `app` 은 늘 루트의 `app` 이다. pane 의 이름·아이콘과
+ * 루트(`id` 가 `""`)와 하위 레코드 가운데 pane 의 상태로 보일 레코드. 루트가 없으면 없다. 루트가 `working` 이면 `kind` 가 있는
+ * 하위 `blocked` 가운데 `records` 의 순서(maru-pty 가 보내는 id 순)로 첫 것이고, 없으면 루트다. 사람이 답해야 하는 하위 레코드는
+ * 루트가 일하는 동안에도 보여야 하기 때문이다. 루트가 `working` 이면 `kind` 없는 하위 `blocked`(Claude Code 가 멈춘 task 에
+ * 보내는 것)는 고르지 않는다. 답할 것이 없기 때문이다. 쓴 쪽이 아직 지우지 않은 레코드일 수도 있다. 루트가 `working` 이 아니면
+ * `URGENCY` 로 가장 급한 것이고, 같으면 루트, 그다음 `records` 의 순서다. 고른 레코드의 `app` 은 늘 루트의 `app` 이다. pane 의 이름·아이콘과
  * `maru pane list` 의 APP 열은 그 pane 의 프로그램을 가리키고, 하위가 자기 `app` 을 가져도 바뀌지 않아야 하기 때문이다.
  */
 export function shownRecord(
   records: readonly ProgramStatusRecord[]
 ): ProgramStatusRecord | undefined {
   const root = records.find((r) => r.id === '')
-  if (!root || root.state === 'working') return root
+  if (!root) return root
   let shown = root
-  for (const r of records) {
-    if (URGENCY.indexOf(r.state) < URGENCY.indexOf(shown.state)) shown = r
+  if (root.state === 'working') {
+    shown = records.find((r) => r.id !== '' && r.state === 'blocked' && r.kind !== null) ?? root
+  } else {
+    for (const r of records) {
+      if (URGENCY.indexOf(r.state) < URGENCY.indexOf(shown.state)) shown = r
+    }
   }
   return shown.app === root.app ? shown : { ...shown, app: root.app }
 }
