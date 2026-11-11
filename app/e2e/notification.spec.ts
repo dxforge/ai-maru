@@ -54,7 +54,7 @@ async function splitAndLeave(
   return { tty, shellName }
 }
 
-test('다른 pane 에 OSC 777 알림이 오면 사이드바 행 제목이 알림 제목이 되고 pane 헤더에 제목·본문이 붙으며, 그 pane 에 들어가 머물면 떠나지 않아도 돌아온다', async ({
+test('다른 pane 에 OSC 777 알림이 오면 사이드바 행 제목이 알림 본문이 되고 pane 헤더에 제목·본문이 붙으며, 그 pane 에 들어가 머물면 떠나지 않아도 돌아온다', async ({
   launch,
   dataDir
 }) => {
@@ -64,7 +64,7 @@ test('다른 pane 에 OSC 777 알림이 오면 사이드바 행 제목이 알림
   const row = shellRows(page).nth(1)
   const header = paneHeader(page, 1)
   await page.keyboard.type(osc777('Tests', '3 failed; see log', tty))
-  await expect(row.locator('.title')).toHaveText('Tests')
+  await expect(row.locator('.title')).toHaveText('3 failed; see log')
   await expect(row.locator('.state')).toHaveClass(/unread/)
   await expect(row).toHaveAttribute(
     'data-tooltip',
@@ -115,7 +115,7 @@ test('OSC 9 알림은 본문을 행 제목과 헤더에 쓰고, 새 알림은 �
   await expect(row.locator('.title')).toHaveText('build done')
   await expect(header.locator('.notification')).toHaveText('build done')
   await page.keyboard.type(osc777('Deploy', 'ok', tty))
-  await expect(row.locator('.title')).toHaveText('Deploy')
+  await expect(row.locator('.title')).toHaveText('ok')
   await expect(header.locator('.notification')).toHaveText('Deploy: ok')
 })
 

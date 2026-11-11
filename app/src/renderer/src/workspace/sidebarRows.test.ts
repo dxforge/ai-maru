@@ -57,18 +57,22 @@ describe('paneRow', () => {
     expect(row({ command: failed }).icon).toEqual({ command: 'failed' })
   })
 
-  it('알림이 있으면 줄 글은 알림의 제목(없으면 본문)이고, 화면 낭독에 알림을 붙인다', () => {
+  it('알림이 있으면 줄 글은 알림의 본문(없으면 제목)이고, 화면 낭독에 알림을 붙인다', () => {
     const plain = row()
     expect(plain.text).toBe(plain.name)
     expect(plain.aria).toBe(plain.name)
 
     const titled = row({ notice: { title: 'Deploy', body: 'ok' } })
-    expect(titled.text).toBe('Deploy')
+    expect(titled.text).toBe('ok')
     expect(titled.aria).toBe(`${titled.name}. Notification: Deploy: ok`)
 
     const bodyOnly = row({ notice: { title: '', body: 'build done' } })
     expect(bodyOnly.text).toBe('build done')
     expect(bodyOnly.aria).toBe(`${bodyOnly.name}. Notification: build done`)
+
+    const titleOnly = row({ notice: { title: 'Deploy', body: '' } })
+    expect(titleOnly.text).toBe('Deploy')
+    expect(titleOnly.aria).toBe(`${titleOnly.name}. Notification: Deploy`)
   })
 
   it('상태가 있으면 화면 낭독은 상태 이름으로, 명령만 있으면 명령의 상태로 시작한다', () => {
