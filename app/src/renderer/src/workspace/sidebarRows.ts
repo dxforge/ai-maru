@@ -72,7 +72,7 @@ export function paneRow(
     focused,
     notice,
     name,
-    text: notice ? notice.title || notice.body : name,
+    text: notice ? notice.body || notice.title : name,
     place,
     path: p.cwd && tildePath(p.cwd, src.home),
     aria: notice ? `${aria}. Notification: ${notificationText(notice)}` : aria
