@@ -60,6 +60,12 @@
 //! | `job.kill` | `target` | `null` |
 //! | `app.restart` | `kill_ptys`(bool, 선택) | `null` |
 //! | `mcp.message` | `message`(MCP 의 JSON-RPC 2.0 메시지 객체) | `{"message":<MCP 응답 객체>}`, 안쪽이 알림이나 응답이면 `null` |
+//! | `claude.notification` | `message`(문자열), `type`(문자열, 선택), `title`(문자열, 선택) | `null` |
+//!
+//! `claude.notification` 은 앱 claude plugin 의 Notification hook 이 받은 claude 의 알림이다. `type` 은 hook 입력의
+//! `notification_type` 이다. 앱은 `type` 이 `idle_prompt` 인 것은 보이지 않고, 나머지는 pty 의 OSC 9/777 알림과 같은 곳에
+//! 보인다. 그리고 답하기 전에 그 pty 의 foreground 프로세스 그룹 리더를 기억해, 리더가 같은 동안 그 pty 에서 온 OSC 9/777
+//! 알림은 버린다. claude 는 hook 이 끝난 뒤 같은 알림을 OSC 로도 쓰기 때문이다.
 //!
 //! `pane.list` 는 창의 모든 workspace·cell 의 pane 을 화면 순서(workspace → cell → pane)로 돌려준다.
 //! job 은 들지 않는다. `state`·`kind`·`message` 는 사이드바가 보이는 program_status 레코드(루트와 하위
@@ -310,7 +316,7 @@ enum Command {
 #[derive(Subcommand)]
 enum ClaudeCommand {
     /// Read the claude hook payload on stdin. On SessionStart, print what claude should know
-    /// about this terminal.
+    /// about this terminal. On Notification, pass the notification to the app.
     Hook,
     /// Write the app's notifications to stdout, one per line, until stdout closes. The app's
     /// claude plugin runs this as a monitor.
@@ -945,6 +951,20 @@ fn claude_hook() -> Result<()> {
              When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n",
             target.pty
         )?;
+    }
+    // claude 는 이 hook 이 끝난 뒤 같은 알림을 OSC 로 쓴다. 앱이 그 OSC 를 버릴 수 있게 답을 받은 뒤 끝난다.
+    if event == "Notification" {
+        let mut params = Map::new();
+        params.insert(
+            "message".into(),
+            payload["message"].as_str().unwrap_or("").into(),
+        );
+        for (from, to) in [("notification_type", "type"), ("title", "title")] {
+            if let Some(v) = payload[from].as_str() {
+                params.insert(to.into(), v.into());
+            }
+        }
+        call(&target, "claude.notification", params)?;
     }
     Ok(())
 }

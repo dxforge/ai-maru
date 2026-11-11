@@ -73,7 +73,7 @@ Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸�
 
 ### `seen-ms`
 
-프로그램이 OSC 9·OSC 777 로 보낸 알림은 사이드바와 pane 헤더에 점으로 남고, Claude Code 가 일을 마친 pane 은 done 으로 남는다. 입력 focus 를 가진 pane 에 온 알림은 점을 띄우지 않고, 그 pane 에서 done 이 되면 바로 idle 로 바꾼다. 앱 창에 focus 가 없으면 focus 를 가진 pane 이 없는 것으로 친다. 다른 곳에 있을 때 온 점과 done 은 그 pane 에 들어가 `seen-ms` 만큼 머물면 지운다. 그보다 빨리 지나간 pane 은 그대로 둔다. ⌘] 로 pane 을 훑고 지나가도 점이 남게 하기 위해서다.
+프로그램이 OSC 9·OSC 777 로 보낸 알림과 Claude Code 의 알림은 사이드바와 pane 헤더에 점으로 남고, Claude Code 가 일을 마친 pane 은 done 으로 남는다. 입력 focus 를 가진 pane 에 온 알림은 점을 띄우지 않고, 그 pane 에서 done 이 되면 바로 idle 로 바꾼다. 앱 창에 focus 가 없으면 focus 를 가진 pane 이 없는 것으로 친다. 다른 곳에 있을 때 온 점과 done 은 그 pane 에 들어가 `seen-ms` 만큼 머물면 지운다. 그보다 빨리 지나간 pane 은 그대로 둔다. ⌘] 로 pane 을 훑고 지나가도 점이 남게 하기 위해서다.
 
 `0` 이면 들어가자마자 지운다. `false` 면 지우지 않고, 보고 있는 pane 에 온 알림과 done 도 남긴다. 2147483647(약 24.8일)보다 큰 값은 `false` 와 같다.
 

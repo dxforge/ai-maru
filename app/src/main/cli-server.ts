@@ -36,6 +36,13 @@ export function optionalBoolean(v: unknown, name: string): boolean {
   return v ?? false
 }
 
+export function optionalString(v: unknown, name: string): string | undefined {
+  if (v !== undefined && typeof v !== 'string') {
+    throw new InvalidParams(`params.${name} must be a string`)
+  }
+  return v
+}
+
 /** handler 가 앱이 정한 이유로 거절할 때 던진다. `data` 의 필드는 `error.data` 에 `code` 와 함께 들어간다. */
 export class CliError extends Error {
   constructor(

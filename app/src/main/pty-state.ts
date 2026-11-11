@@ -33,10 +33,7 @@ export function createPtyStates(deps: PtyStatesDeps) {
     const w: Watch = { ...from, close: () => {} }
     const current = (): boolean => watches.get(id) === w
     const update = (change: Partial<Watch>): void => {
-      if (!current()) return
-      Object.assign(w, change)
-      const entry = view(w)
-      if (entry) deps.emit(id, entry)
+      if (current()) set(id, w, change)
     }
     watches.set(id, w)
     w.close = deps.subscribe(id, {
@@ -55,13 +52,24 @@ export function createPtyStates(deps: PtyStatesDeps) {
         if (done.length) deps.doneWhileViewed(id, done)
       },
       notification: (notification) => {
-        if (!current() || deps.viewing(id)) return
-        update({ notification })
-        deps.notified(id, notification)
+        if (current()) notify(id, notification)
       },
       old: () => update({ entry: { old: true } }),
       closed: () => void reopen(id, w, got)
     })
+  }
+
+  function set(id: string, w: Watch, change: Partial<Watch>): void {
+    Object.assign(w, change)
+    const entry = view(w)
+    if (entry) deps.emit(id, entry)
+  }
+
+  function notify(id: string, notification: PtyNotification): void {
+    const w = watches.get(id)
+    if (!w || deps.viewing(id)) return
+    set(id, w, { notification })
+    deps.notified(id, notification)
   }
 
   async function reopen(id: string, w: Watch, got: boolean): Promise<void> {
@@ -85,6 +93,7 @@ export function createPtyStates(deps: PtyStatesDeps) {
     },
     /** 구독을 닫고 상태를 지운다. 끝낸 pty 에 부른다 — 이전 maru-pty 의 pty 는 끝나도 main 이 알 수 없다. */
     forget,
+    notify,
     seen(pty: string): void {
       const w = watches.get(pty)
       if (!w?.notification) return
