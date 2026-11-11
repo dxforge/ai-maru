@@ -133,12 +133,9 @@ describe('exitText', () => {
 describe('jobRow', () => {
   const job: JobView = { pty: 'p-2', cell: 'c-1', command: ['sleep', '600'], ports: [] }
 
-  it('툴팁은 명령이고, 끝난 job 은 끝난 까닭을 다음 줄에 붙인다', () => {
-    expect(jobRow(job).tip).toBe('sleep 600')
+  it('끝난 job 은 끝났다고 표시한다', () => {
     expect(jobRow(job).exited).toBe(false)
-    const exited = jobRow({ ...job, exit: { code: null, signal: 9 } })
-    expect(exited.tip).toBe('sleep 600\nKilled by signal 9')
-    expect(exited.exited).toBe(true)
+    expect(jobRow({ ...job, exit: { code: null, signal: 9 } }).exited).toBe(true)
   })
 
   it('이름이 없으면 명령을 이름으로 쓰고, 포트는 :포트 로 잇는다', () => {

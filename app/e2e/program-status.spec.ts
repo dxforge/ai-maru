@@ -6,6 +6,7 @@ import {
   clickMenu,
   expect,
   focusPane,
+  hoverCard,
   inProgram,
   newWorkspace,
   restartWith,
@@ -97,7 +98,9 @@ test('OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상�
   await page.keyboard.type(status('working'))
   await expect(paneRows(page)).toHaveClass(/working/)
   await expect(paneRows(page).locator('.title')).toHaveText('Claude')
-  await expect(paneRows(page).locator('.state')).toHaveAttribute('data-tooltip', 'Working')
+  await expect((await hoverCard(page, paneRows(page))).locator('.status')).toHaveText(
+    'Working · Claude'
+  )
   await expect(activeHeader(page).locator('.status-icon')).toHaveAttribute(
     'data-tooltip',
     'Working'

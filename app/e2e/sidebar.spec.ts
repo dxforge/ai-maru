@@ -10,6 +10,7 @@ import {
   expect,
   foregroundNames,
   git,
+  hoverCard,
   newWorkspace,
   openPalette,
   paneRows,
@@ -21,6 +22,7 @@ import {
   screen,
   shellRows,
   shellSize,
+  sidebarCard,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
   sidebarResizer,
@@ -63,6 +65,9 @@ const branch = (page: Page) =>
 const tip = (page: Page) =>
   cellGroups(page).and(page.locator('.selected')).locator('.pane-row.focused')
 
+/** 줄을 가리켜 띄운 카드의 경로 줄 */
+const pathOf = async (page: Page, row: Locator) => (await hoverCard(page, row)).locator('.path')
+
 function win(app: ElectronApplication) {
   return app.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows()[0]
@@ -70,7 +75,7 @@ function win(app: ElectronApplication) {
   })
 }
 
-test('저장소 안에서는 저장소 이름과 branch 를, 밖에서는 디렉토리 이름만 툴팁과 타이틀바에 보인다', async ({
+test('저장소 안에서는 저장소 이름과 branch 를, 밖에서는 디렉토리 이름만 카드와 타이틀바에 보인다', async ({
   launch,
   dataDir
 }) => {
@@ -78,12 +83,12 @@ test('저장소 안에서는 저장소 이름과 branch 를, 밖에서는 디렉
   const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await expect(cellPlaces(page)).toHaveText(['~'])
   await expect(branch(page)).toHaveCount(0)
-  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~$/)
+  await expect(await pathOf(page, tip(page))).toHaveText('~')
 
   await page.keyboard.type('cd proj/.git\n')
   await page.keyboard.type('cd ..; mkdir -p a/b; cd a/b\n')
   await expect(branch(page)).toHaveText(/main$/)
-  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/proj\/a\/b$/)
+  await expect(await pathOf(page, tip(page))).toHaveText('~/proj/a/b')
   await expect.poll(() => win(app)).toEqual({ title: 'proj — main', path: join(home, 'proj/a/b') })
 
   await page.keyboard.type('cd ~/notes\n')
@@ -201,7 +206,7 @@ test('셸로 branch 를 바꾸면 다음 프롬프트에 따라가고, worktree 
   await page.keyboard.type('git worktree add -q -b wt ../proj-wt && cd ../proj-wt\n')
   // worktree 로 cd 하기 전에도 cell 이름이 `proj` 이므로, branch 가 `wt` 로 바뀐 뒤에 이름을 확인한다.
   await expect(branch(page)).toHaveText(/wt$/, shellGit)
-  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/proj-wt$/)
+  await expect(await pathOf(page, tip(page))).toHaveText('~/proj-wt')
 })
 
 test('프롬프트가 뜨지 않아도 Claude 의 상태가 바뀌면 branch 를 다시 읽는다', async ({
@@ -236,10 +241,10 @@ test('돌고 있는 프로그램이 다른 worktree 로 옮겨 간 채 Claude �
   const report = programStatus('working').trimEnd()
   await page.keyboard.type(`(cd ../proj-wt && ${report} && sleep 30)\n`)
   await expect(paneRows(page)).toHaveClass(/working/)
-  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/proj-wt$/)
+  await expect(await pathOf(page, tip(page))).toHaveText('~/proj-wt')
 
   await page.keyboard.press('Control+C')
-  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/proj$/)
+  await expect(await pathOf(page, tip(page))).toHaveText('~/proj')
 })
 
 test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어도 pane 의 경로는 그대로 두고 branch 만 다시 읽는다', async ({
@@ -250,7 +255,7 @@ test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어
   symlinkSync(join(home, 'proj'), join(home, 'link'))
   const { app, page } = await launch({ SHELL: '/bin/zsh', HOME: home })
   await page.keyboard.type('cd link\n')
-  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/link$/)
+  await expect(await pathOf(page, tip(page))).toHaveText('~/link')
 
   // `foreground` 는 실제 경로(`~/proj`)를 답하고, OSC 7 은 `$PWD`(`~/link`)를 준다. branch 를 바꿔 두고, branch 를 다시 읽은
   // 것을 확인한 뒤에 경로를 확인한다.
@@ -258,7 +263,7 @@ test('셸이 심볼릭 링크 경로에 있으면 Claude 의 상태가 바뀌어
   await page.keyboard.type(`(git switch -q -c by-claude && ${report} && sleep 30)\n`)
   await expect(paneRows(page)).toHaveClass(/working/, shellGit)
   await expect(branch(page)).toHaveText(/by-claude$/)
-  await expect(tip(page)).toHaveAttribute('data-tooltip', /\n~\/link$/)
+  await expect(await pathOf(page, tip(page))).toHaveText('~/link')
   expect((await win(app)).path).toBe(join(home, 'link'))
 })
 
@@ -279,8 +284,9 @@ test('maru cell new 로 바로 띄운 Claude 가 한 상태에 머문 채 다른
   await page.keyboard.type('maru cell new --cwd ~/proj bash ~/claude.sh >/dev/null\n')
   const opened = cellGroups(page).nth(1).locator('.pane-row')
   await expect(paneRows(page)).toHaveClass(/working/)
-  await expect(opened).toHaveAttribute('data-tooltip', /\n~\/proj$/)
-  await expect(opened).toHaveAttribute('data-tooltip', /\n~\/proj-wt$/)
+  const path = await pathOf(page, opened)
+  await expect(path).toHaveText('~/proj')
+  await expect(path).toHaveText('~/proj-wt')
   await expect(paneRows(page)).toHaveClass(/working/)
 })
 
@@ -300,10 +306,10 @@ test('maru cell new --cwd 로 심볼릭 링크 경로에 바로 띄운 Claude �
   await page.keyboard.type('maru cell new --cwd ~/link bash ~/claude.sh >/dev/null\n')
   const opened = cellGroups(page).nth(1).locator('.pane-row')
   await expect(paneRows(page)).toHaveClass(/blocked/)
-  await expect(opened).toHaveAttribute('data-tooltip', /\n~\/link$/)
+  await expect(await pathOf(page, opened)).toHaveText('~/link')
 })
 
-test('경로는 cell 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남는다', async ({
+test('경로는 cell 마다 카드에 있고, 헤더를 눌러도 키 입력이 터미널에 남는다', async ({
   launch,
   dataDir
 }) => {
@@ -314,8 +320,8 @@ test('경로는 cell 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입
   await expect(branch(page)).toHaveText(/main$/)
   await newWorkspace(launched, 2)
   await page.keyboard.type('cd ~/notes\n')
-  await expect(cellItems(page).nth(1)).toHaveAttribute('data-tooltip', /\n~\/notes$/)
-  await expect(cellItems(page).nth(0)).toHaveAttribute('data-tooltip', /\n~\/proj$/)
+  await expect(await pathOf(page, cellItems(page).nth(1))).toHaveText('~/notes')
+  await expect(await pathOf(page, cellItems(page).nth(0))).toHaveText('~/proj')
 
   await cellItems(page).nth(0).click()
   await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
@@ -663,12 +669,12 @@ test('maru job 으로 띄운 job 은 그 cell 의 pane 줄 아래에 이름·듣
   const web = jobRows(page).first()
   await expect(web.locator('.state svg[data-icon="gear"]')).toBeVisible()
   await expect(web.locator('.title')).toHaveText('web')
-  await expect(web).toHaveAttribute(
-    'data-tooltip',
-    `python3 -m http.server ${port} --bind 127.0.0.1`
-  )
   await expect(web.locator('.time')).toHaveText('<1m')
   await expect(web.locator('.ports')).toHaveText(`:${port}`, { timeout: 15_000 })
+  const card = await hoverCard(page, web)
+  await expect(card.locator('.name')).toHaveText('web')
+  await expect(card.locator('.run')).toHaveText(`python3 -m http.server ${port} --bind 127.0.0.1`)
+  await expect(card.locator('.time')).toHaveText(`Running for <1m · :${port}`)
 
   await run(page, 'maru job new sleep 600 && echo second-$((1+1))', 'second-2')
   await expect(jobRows(page).locator('.title')).toHaveText(['web', 'sleep 600'])
@@ -684,7 +690,7 @@ test('maru job 으로 띄운 job 은 그 cell 의 pane 줄 아래에 이름·듣
   await expect(jobRows(page).locator('.title')).toHaveText(['sleep 600'])
 })
 
-test('끝난 job 은 남아 시간 자리에 exited 를 쓰고 종료 코드는 툴팁에 있으며, ✕ 를 누르면 묻지 않고 지운다', async ({
+test('끝난 job 은 남아 시간 자리에 exited 를 쓰고 종료 코드는 카드에 있으며, ✕ 를 누르면 묻지 않고 지운다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -693,9 +699,10 @@ test('끝난 job 은 남아 시간 자리에 exited 를 쓰고 종료 코드는 
   const build = jobRows(page).first()
   await expect(build).toHaveClass(/exited/)
   await expect(build.locator('.time')).toHaveText('exited')
-  await expect(build).toHaveAttribute('data-tooltip', 'sh -c exit 3\nExited with code 3')
+  const card = await hoverCard(page, build)
+  await expect(card.locator('.run')).toHaveText('sh -c exit 3')
+  await expect(card.locator('.time')).toHaveText('Exited with code 3')
 
-  await build.hover()
   await build.locator('.kill').click()
 
   await expect(jobRows(page)).toHaveCount(0)
@@ -912,8 +919,11 @@ test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리
   await expect(row.locator('.state svg[data-icon="running"]')).toBeVisible()
   await expect(row.locator('.command-tail')).toHaveText('<1m')
   await expect(row.locator('.place')).toHaveCount(0)
-  await expect(row).toHaveAttribute('data-tooltip', 'sleep 30\nRunning for <1m\n~')
   await expect(row).toHaveAttribute('aria-label', 'Running: sleep 30')
+  const running = await hoverCard(page, row)
+  await expect(running.locator('.name')).toHaveText('sleep 30')
+  await expect(running.locator('.command')).toHaveText('Running for <1m')
+  await expect(running.locator('.path')).toHaveText('~')
 
   // 셸은 preexec 에서 OSC 133 C 로 명령을 알린 뒤에 명령을 tty 의 foreground 로 넘긴다. 앱은 OSC 133 C 를 받으면 제목을
   // 바꾸므로, 제목이 바뀐 직후의 Ctrl-Z·Ctrl-C 는 명령이 아니라 셸이 받는다. 그래서 명령이 foreground 에 들어선 것을 본 뒤에 보낸다.
@@ -936,7 +946,10 @@ test('셸 pane 에서 명령이 도는 동안 이름 자리에 명령을, 꼬리
   await expect(row.locator('.title')).toHaveText("sh -c 'exit 3'")
   await expect(row.locator('.state svg[data-icon="failed"]')).toBeVisible()
   await expect(row.locator('.command-tail')).toHaveText('3')
-  await expect(row).toHaveAttribute('data-tooltip', "sh -c 'exit 3'\nExited with code 3\n~")
+  const failed = await hoverCard(page, row)
+  await expect(failed.locator('.name')).toHaveText("sh -c 'exit 3'")
+  await expect(failed.locator('.command')).toHaveText('Exited with code 3')
+  await expect(failed.locator('.path')).toHaveText('~')
 
   await page.keyboard.type('false\n')
   await expect(row.locator('.title')).toHaveText('false')
@@ -960,7 +973,9 @@ test('명령을 주어 띄운 pane 은 이름 자리에 명령 전체를 쓰고,
   await expect(row).toHaveClass(/command-running/)
   await expect(row.locator('.command-tail')).toHaveCount(0)
   await expect(row.locator('.place')).not.toHaveCount(0)
-  await expect(row).toHaveAttribute('data-tooltip', /^bash -c read x\nRunning for <1m\n/)
+  const card = await hoverCard(page, row)
+  await expect(card.locator('.name')).toHaveText('bash -c read x')
+  await expect(card.locator('.command')).toHaveText('Running for <1m')
 })
 
 const nameInput = (page: Page) => page.locator('.sidebar .workspace-name-input')
@@ -1000,13 +1015,13 @@ test('workspace 메뉴의 이름 칸은 지금 이름을 들고 열리고, Enter
   await expect(workspaceNames(page)).toHaveText(['review'])
   await expect(head).toHaveAttribute('aria-expanded', 'true')
   await expect(head).toHaveAttribute('aria-label', 'Collapse review')
-  await expect(head).toHaveAttribute('data-tooltip', 'proj')
+  await expect((await hoverCard(page, head)).locator('.note')).toHaveText('Default name: proj')
   await expect(cellPlaces(page).locator('.name')).toHaveText(['proj'])
 
   await page.keyboard.type('cd ~/notes\n')
   await expect(cellPlaces(page)).toHaveText(['notes'])
   await expect(workspaceNames(page)).toHaveText(['review'])
-  await expect(head).toHaveAttribute('data-tooltip', 'notes')
+  await expect((await hoverCard(page, head)).locator('.note')).toHaveText('Default name: notes')
 })
 
 test('메뉴에서 이름을 고치다 Esc 를 누르면 메뉴가 닫히고 이름이 그대로이며, 비우고 정하면 자동 이름으로 돌아가며, 두 경우 모두 터미널이 입력을 받는다', async ({
@@ -1204,7 +1219,7 @@ test('이름을 바꾸지 않은 채 다른 곳을 눌러 끝내면 자동 이�
   await page.keyboard.press('Enter')
   await expect(nameInput(page)).toHaveCount(0)
   await page.keyboard.type('cd ~/proj/sub\n')
-  await expect(head).toHaveAttribute('data-tooltip', 'proj')
+  await expect((await hoverCard(page, head)).locator('.note')).toHaveText('Default name: proj')
   await expect(workspaceNames(page)).toHaveText(['notes'])
 })
 
@@ -1943,4 +1958,43 @@ test('즐겨찾기의 런처를 닫은 뒤 디렉토리 단계부터 연 런처�
   await expect(workspaceNames(page)).toHaveCount(2)
   await expect(workspaceNames(page).nth(1)).toHaveText('other')
   await run(page, 'echo at-$PWD', `at-${home}/other`)
+})
+
+test('cell 에 마우스를 올리면 카드를 사이드바 오른쪽에 cell 위 끝을 맞춰 띄우고, cell 안에서 줄을 옮기면 카드를 다시 띄우지 않고 강조만 옮기며, 창 아래 끝의 cell 에서는 카드를 창 안으로 올린다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-down', 2)
+  const group = cellGroups(page).nth(0)
+  const rows = group.locator('.pane-row')
+  const card = sidebarCard(page)
+
+  await hoverCard(page, rows.nth(0))
+  await expect(card).toBeVisible()
+  await expect(card.locator('.section')).toHaveCount(2)
+  await expect(card.locator('.section').nth(0)).toHaveClass(/current/)
+  const side = await box(page.locator('.sidebar'))
+  const at = await box(card)
+  expect(at.x).toBeGreaterThan(side.x + side.width)
+  expect(at.y).toBeCloseTo((await box(group)).y, 0)
+
+  // 카드가 닫혔다 다시 뜨면 popover 의 toggle 이벤트가 난다.
+  await card.evaluate((el) => {
+    ;(window as { toggles?: number }).toggles = 0
+    el.addEventListener('toggle', () => (window as { toggles?: number }).toggles!++)
+  })
+  await rows.nth(1).hover()
+  await expect(card.locator('.section').nth(1)).toHaveClass(/current/)
+  await expect(card.locator('.section').nth(0)).not.toHaveClass(/current/)
+  expect((await box(card)).y).toBeCloseTo(at.y, 0)
+  expect(await page.evaluate(() => (window as { toggles?: number }).toggles)).toBe(0)
+
+  const height = await page.evaluate(() => window.innerHeight)
+  await resizeBy(app, 0, -(height - (await box(group)).y - 40))
+  await hoverCard(page, rows.nth(0))
+  await expect(card).toBeVisible()
+  const inner = await page.evaluate(() => window.innerHeight)
+  const raised = await box(card)
+  expect(raised.y + raised.height).toBeLessThanOrEqual(inner)
+  expect(raised.y).toBeLessThan((await box(group)).y)
 })

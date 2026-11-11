@@ -27,7 +27,6 @@ export type Row = {
 export type JobRow = {
   pty: string
   text: string
-  tip: string
   ports: string
   started?: number
   exited: boolean
@@ -84,11 +83,9 @@ export function exitText(e: NonNullable<JobView['exit']>): string {
 }
 
 export function jobRow(j: JobView): JobRow {
-  const command = j.command.join(' ')
   return {
     pty: j.pty,
     text: jobName(j),
-    tip: j.exit ? `${command}\n${exitText(j.exit)}` : command,
     ports: j.ports.map((p) => `:${p}`).join(' '),
     started: j.started,
     exited: !!j.exit

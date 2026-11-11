@@ -1,19 +1,29 @@
 <script setup lang="ts">
-import { computed, ref, useTemplateRef, type DeepReadonly } from 'vue'
+import { computed, ref, shallowRef, useTemplateRef, type DeepReadonly } from 'vue'
 import type { JobView } from '../../../shared/job'
 import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import { EllipsisVertical, GitBranch, Star, X } from '@lucide/vue'
-import { commandClass, STATE_LABELS } from '../icons'
+import { commandClass } from '../icons'
 import { anchorWidth, type Anchor } from '../launcher/anchor'
+import type { TooltipCard } from '../tooltip'
 import FoldChevron from './FoldChevron.vue'
 import LeadIcon from './LeadIcon.vue'
 import PaneIcon from './PaneIcon.vue'
+import SidebarCard from './SidebarCard.vue'
 import StatusIcon from './StatusIcon.vue'
 import WorkspaceMenu from './WorkspaceMenu.vue'
-import { commandLabel, commandTail, elapsed, notificationText } from '../workspace/display'
+import { commandTail, elapsed } from '../workspace/display'
+import {
+  dirCard,
+  jobSection,
+  paneSection,
+  SIDEBAR_CARD_ID,
+  workspaceCard,
+  type CardView
+} from '../workspace/sidebarCard'
 import {
   dropAt,
   scrollStep,
@@ -31,7 +41,6 @@ import {
   favoriteRow,
   workspaceMarks,
   type JobRow,
-  type Row,
   type RowSource
 } from '../workspace/sidebarRows'
 import { tildePath } from '../workspace/cwd'
@@ -123,7 +132,9 @@ function cellGroup(
     selected,
     rows: orderedPanes(c).map((p) => ({
       ...paneRow(src, p, selected && p === current, base),
-      favorite: findFavorite(w, p.cwd) !== undefined
+      favorite: findFavorite(w, p.cwd) !== undefined,
+      pty: p.ptyId,
+      git: p.git
     }))
   }
 }
@@ -184,14 +195,79 @@ function toggleMenu(key: number): void {
   else emit('openMenu', key)
 }
 
-// 이름 자리에서 잘릴 수 있는 명령을 툴팁에 다 보인다. 돈 시간이 들어가므로 `groups` 밖에서 만든다.
-function paneTip(r: Row): string {
-  const c = r.command
-  const time = c?.running && commandTail(c, now)
-  const detail = c && (time ? `${commandLabel(c)} for ${time}` : commandLabel(c))
-  const head = r.notice ? `${r.name} — ${notificationText(r.notice)}` : r.name
-  return [head, detail, r.path].filter(Boolean).join('\n')
+/**
+ * 카드를 띄운 자리. cell 카드는 cell 안의 pane 줄·job 줄과 cell 자체(`row` 없음)에 단다. `row` 는 강조할 구역의
+ * key(`CardSection.key`)다.
+ */
+type CardAt =
+  | { kind: 'cell'; cell: number; row?: string }
+  | { kind: 'head'; workspace: number }
+  | { kind: 'dir'; workspace: number; dir: string }
+
+const hovered = shallowRef<{ at: CardAt; el: HTMLElement }>()
+
+// 같은 cell 의 줄에서 cell 의 빈 자리(손잡이·줄 사이)로 나오면 강조를 그대로 둔다. 줄 사이를 옮길 때마다 강조가 꺼졌다
+// 켜지지 않게 하기 위해서다.
+const sidebarCard: TooltipCard<CardAt> = {
+  id: SIDEBAR_CARD_ID,
+  show(el, at) {
+    const prev = hovered.value?.at
+    if (at.kind === 'cell' && at.row === undefined && prev?.kind === 'cell' && prev.cell === at.cell)
+      return
+    hovered.value = { at, el }
+  },
+  hide() {
+    hovered.value = undefined
+  }
 }
+
+const cellTip = (cell: number, row?: string) => ({
+  card: sidebarCard,
+  at: { kind: 'cell', cell, ...(row !== undefined && { row }) } as CardAt
+})
+
+// 돈 시간이 들어가므로 `groups` 밖에서 만든다.
+const cardView = computed((): CardView | undefined => {
+  const at = hovered.value?.at
+  if (!at) return undefined
+  const g = groups.value.find((g) =>
+    at.kind === 'cell' ? g.items.some((i) => i.c.key === at.cell) : g.w.key === at.workspace
+  )
+  if (!g) return undefined
+  if (at.kind === 'dir') {
+    const d = g.empty.find((d) => d.dir === at.dir)
+    return d && dirCard(d)
+  }
+  if (at.kind === 'head') {
+    const ids = new Set(g.w.cells.map((c) => c.id))
+    return workspaceCard({
+      name: g.name,
+      auto: g.auto,
+      dir: g.dir,
+      states: g.w.cells.flatMap((c) => orderedPanes(c).map((p) => shown(p.ptyId)?.state)),
+      cells: g.w.cells.length,
+      jobs: jobs.filter((j) => ids.has(j.cell)).length
+    })
+  }
+  const item = g.items.find((i) => i.c.key === at.cell)!
+  return {
+    sections: [
+      ...item.rows.map((r) => paneSection(r, r.git, shown(r.pty), now)),
+      ...jobs.filter((j) => j.cell === item.c.id).map((j) => jobSection(j, now))
+    ]
+  }
+})
+
+const cardAnchor = computed(() => {
+  const h = hovered.value
+  if (!h) return undefined
+  return h.at.kind === 'cell' ? (h.el.closest<HTMLElement>('.group') ?? h.el) : h.el
+})
+
+const cardCurrent = computed(() => {
+  const at = hovered.value?.at
+  return at?.kind === 'cell' ? at.row : undefined
+})
 
 const nav = useTemplateRef<HTMLElement>('nav')
 const list = useTemplateRef<HTMLElement>('list')
@@ -320,7 +396,6 @@ const pinTip = (pinned: boolean): string =>
           {
             w,
             name,
-            auto,
             folded: wf,
             pinned,
             state,
@@ -340,7 +415,7 @@ const pinTip = (pinned: boolean): string =>
       >
         <button
           :ref="(el) => headRef(w.key, el)"
-          v-tooltip="auto"
+          v-tooltip="{ card: sidebarCard, at: { kind: 'head', workspace: w.key } }"
           class="workspace-head"
           :class="{ folded: wf, 'menu-open': menuFor === w.key }"
           :aria-label="wf ? `Expand ${name}` : `Collapse ${name}`"
@@ -351,7 +426,6 @@ const pinTip = (pinned: boolean): string =>
         >
           <span
             v-if="state"
-            v-tooltip="STATE_LABELS[state]"
             class="state status-icon"
             :class="[state, { unread: notified }]"
             ><StatusIcon :state="state"
@@ -400,7 +474,7 @@ const pinTip = (pinned: boolean): string =>
         />
         <div v-for="d in empty" :key="d.dir" class="dir-card">
           <button
-            v-tooltip="d.path"
+            v-tooltip="{ card: sidebarCard, at: { kind: 'dir', workspace: w.key, dir: d.dir } }"
             class="row dir-row"
             :aria-label="`Open ${d.name}`"
             @mousedown.prevent
@@ -413,6 +487,7 @@ const pinTip = (pinned: boolean): string =>
         <div
           v-for="item in entries"
           :key="item.c.key"
+          v-tooltip="cellTip(item.c.key)"
           class="group"
           :class="{ selected: item.selected, dragging: cellDragged(item.c.key) }"
         >
@@ -424,7 +499,7 @@ const pinTip = (pinned: boolean): string =>
           />
           <div v-for="r in item.rows" :key="r.pane" class="pane-line">
             <button
-              v-tooltip="paneTip(r)"
+              v-tooltip="cellTip(item.c.key, `pane:${r.pane}`)"
               class="row pane-row"
               :class="[r.state ?? ['shell', commandClass(r.command)], { focused: r.focused }]"
               :aria-label="r.aria"
@@ -432,7 +507,6 @@ const pinTip = (pinned: boolean): string =>
               @click="emit('focus', item.c.key, r.pane)"
             >
               <span
-                v-tooltip="r.state && STATE_LABELS[r.state]"
                 class="state status-icon"
                 :class="{ unread: r.notice }"
                 ><PaneIcon :icon="r.icon"
@@ -466,7 +540,7 @@ const pinTip = (pinned: boolean): string =>
           <div
             v-for="j in jobsByCell.get(item.c.id)"
             :key="j.pty"
-            v-tooltip="j.tip"
+            v-tooltip="cellTip(item.c.key, `job:${j.pty}`)"
             class="row job-row"
             :class="{ exited: j.exited }"
           >
@@ -499,6 +573,12 @@ const pinTip = (pinned: boolean): string =>
         :style="{ top: `${target.line}px` }"
       />
     </div>
+    <SidebarCard
+      :view="cardView"
+      :current="cardCurrent"
+      :anchor="cardAnchor"
+      :side="nav ?? undefined"
+    />
   </nav>
 </template>
 
