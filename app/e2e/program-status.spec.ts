@@ -129,10 +129,7 @@ test('상태 아이콘은 상태마다 SVG 로 그리고, working 만 움직이�
 }) => {
   keepDone(dataDir)
   const { page } = await launch()
-  const icons = [
-    paneRows(page).locator('.state'),
-    activeHeader(page).locator('.status-icon')
-  ]
+  const icons = [paneRows(page).locator('.state'), activeHeader(page).locator('.status-icon')]
   // 사이드바는 쉬는 agent 의 앞 칸에 상태 아이콘 대신 agent 아이콘을 두므로, agent 가 아닌 app 으로 모든 상태를 그린다.
   for (const state of Object.keys(STATE_LABELS)) {
     await page.keyboard.type(status(state, undefined, 'make'))

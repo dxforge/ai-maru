@@ -32,13 +32,14 @@ async function measure(app: ElectronApplication) {
       screen.height /
         parseFloat(getComputedStyle(document.querySelector('.panes')!).getPropertyValue('--row'))
     )
-    const [header, band] = ['.pane-header', '.cell-band'].map(
+    const [header, band, cell] = ['.pane-header', '.cell-band', '.panes.selected'].map(
       (s) => document.querySelector(s)!.getBoundingClientRect().height
     )
     return {
       winWidth: innerWidth,
       winHeight: innerHeight,
-      headerAndBand: header + band,
+      // cell 바깥의 여백(single 의 띠 반대쪽 끝)도 터미널이 채우지 않는 높이다.
+      notTerminal: header + band + innerHeight - cell,
       width: screen.width,
       height: screen.height,
       rows,
@@ -50,7 +51,7 @@ async function measure(app: ElectronApplication) {
 function expectFilled(m: Awaited<ReturnType<typeof measure>>) {
   expect(m.width).toBeLessThanOrEqual(m.winWidth)
   expect(m.height).toBeLessThanOrEqual(m.winHeight)
-  expect(m.winHeight - m.headerAndBand - m.height).toBeLessThan(m.cellHeight)
+  expect(m.winHeight - m.notTerminal - m.height).toBeLessThan(m.cellHeight)
 }
 
 test('창을 열면 터미널이 창의 높이를 줄 단위로 채운다', async ({ launch }) => {

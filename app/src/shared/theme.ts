@@ -137,7 +137,6 @@ function headerColor(bg: string, fg: string, light: boolean): string {
 /** cell 띠와 터미널 배경의 대비. 헤더 배경처럼 섞는 비율이 아니라 이 대비로 정한다. */
 export const CELL_BAND_CONTRAST = 2
 
-/** 글자색 쪽으로 섞어 닿지 못하면, 검정과 흰색 가운데 터미널 배경과 대비가 큰 쪽으로 섞는다. */
 function cellBandColor(bg: string, fg: string): string {
   const far = contrast(bg, '#000000') > contrast(bg, '#ffffff') ? '#000000' : '#ffffff'
   return (

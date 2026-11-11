@@ -65,7 +65,6 @@ import {
   edgesOf,
   EPSILON,
   rects,
-  type Edges,
   type Layout,
   type SplitDirection,
   type Widths
@@ -639,7 +638,7 @@ function setCell(font: TerminalFont, c: Size): void {
 
 type TerminalSize = { cols: number; rows: number }
 
-function placement(b: Box, unit: string, at: Edges, size?: TerminalSize) {
+function placement(b: Box, unit: string, size?: TerminalSize) {
   return {
     style: {
       left: `${b.left}${unit}`,
@@ -647,8 +646,7 @@ function placement(b: Box, unit: string, at: Edges, size?: TerminalSize) {
       width: `${b.width}${unit}`,
       height: `${b.height}${unit}`
     },
-    size,
-    at
+    size
   }
 }
 
@@ -670,22 +668,24 @@ function unitOf(cell: Size, cols: ColumnCols): Size {
 function placements(layout: Layout, size: Size | undefined, cell: Size, cols: ColumnCols) {
   const widths: Widths = cols === undefined ? 'even' : 'columns'
   const shares = rects(layout, widths)
-  const at = (pane: number): Edges => edgesOf(shares.get(pane)!)
+  const at = (pane: number) => edgesOf(shares.get(pane)!)
   // 영역을 재기 전의 첫 렌더는 비율로 그린다. 터미널은 열·행 수를 받을 때까지 pty 에 붙지 않는다.
   if (!size)
     return new Map(
       [...shares].map(([pane, r]) => [
         pane,
-        placement(
-          { left: r.x * 100, top: r.y * 100, width: r.w * 100, height: r.h * 100 },
-          '%',
-          at(pane)
-        )
+        {
+          ...placement(
+            { left: r.x * 100, top: r.y * 100, width: r.w * 100, height: r.h * 100 },
+            '%'
+          ),
+          at: at(pane)
+        }
       ])
     )
   return new Map(
     [...snapRects(layout, size, unitOf(cell, cols), widths, paneMin(cell, cols))].map(
-      ([pane, b]) => [pane, placement(b, 'px', at(pane), terminalSize(b, cell, cols))]
+      ([pane, b]) => [pane, { ...placement(b, 'px', terminalSize(b, cell, cols)), at: at(pane) }]
     )
   )
 }
@@ -1260,8 +1260,8 @@ void window.maru.restoreScreen().then((r) => {
   background: color-mix(in srgb, var(--side), var(--ground));
 }
 
-/* 사이드바가 펴지는 동안 pane 은 이전 폭으로 남아, 자르지 않으면 Canvas 를 덮는다. single 의 cell 은 이 영역을 채우므로
-   영역의 모서리가 cell 의 모서리다. */
+/* 사이드바가 펴지는 동안 pane 은 이전 폭으로 남아, 자르지 않으면 Canvas 를 덮는다. single 의 cell 은 띠 반대쪽 끝의
+   여백 말고는 이 영역을 채우므로, cell 의 모서리는 영역과 같은 반지름이다. */
 .single {
   --cell-radius: var(--terminals-radius);
   overflow: clip;
@@ -1270,7 +1270,6 @@ void window.maru.restoreScreen().then((r) => {
 /* single 의 cell 이 창 높이를 다 채우면, 띠 반대쪽 끝 pane 의 focus 테두리가 창 끝에 붙는다. 그 끝에만 여백을 둔다. */
 .single .panes {
   bottom: var(--space-2);
-  border-radius: var(--cell-radius);
 }
 
 .header-bottom .single .panes {
@@ -1279,13 +1278,14 @@ void window.maru.restoreScreen().then((r) => {
 }
 
 /* 보이지 않는 터미널도 자리를 차지해야 창 크기를 따라가고, 보일 때 다시 맞추지 않아도 된다. */
-/* 바탕이 띠 색이라, 둥글게 자른 pane 영역(`.grid`)의 모서리 바깥을 띠 색이 받친다. */
+/* 바탕을 띠 색으로 둔다. 둥글게 자른 pane 영역(`.grid`)의 띠 쪽 모서리 바깥이 띠와 같은 색으로 보여야 하기 때문이다. */
 .panes {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   visibility: hidden;
+  border-radius: var(--cell-radius);
   background: var(--cell-band);
 }
 
@@ -1293,7 +1293,6 @@ void window.maru.restoreScreen().then((r) => {
   visibility: visible;
 }
 
-/* cell 의 pane 들을 한 묶음으로 보이는 띠다. pane 헤더 쪽 가장자리에 자리를 차지해 놓인다. */
 .cell-band {
   flex: none;
   height: 4px;
@@ -1337,8 +1336,6 @@ void window.maru.restoreScreen().then((r) => {
 .columns .panes {
   position: relative;
   flex: none;
-  border-radius: var(--cell-radius);
-  overflow: clip;
   visibility: visible;
 }
 

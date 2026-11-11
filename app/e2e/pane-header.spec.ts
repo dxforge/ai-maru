@@ -306,7 +306,9 @@ for (const header of ['bottom', 'top'] as const) {
   })
 }
 
-test('pane 을 나누면 pane 마다 cell 의 어느 가장자리에 닿는지 class 로 단다', async ({ launch }) => {
+test('pane 을 나누면 pane 마다 cell 의 어느 가장자리에 닿는지 class 로 단다', async ({
+  launch
+}) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   await split(app, page, 'split-down', 3)
@@ -443,29 +445,29 @@ test('pane 헤더는 기본으로 pane 맨 아래에 있고 본문은 헤더 위
   expect(covered.hit).toBe(true)
 })
 
-test('columns 의 cell 띠는 기본으로 카드 맨 아래, pane 헤더 아래에 놓인다', async ({
-  launch
-}) => {
+test('columns 의 cell 띠는 기본으로 카드 맨 아래, pane 헤더 아래에 놓인다', async ({ launch }) => {
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
   await expect(page.locator('.cell-band')).toHaveCount(1)
   expect(await bandBelowPane(page)).toEqual({ gap: 0, above: 0 })
 })
 
-test('헤더가 위면 columns 의 cell 띠는 카드 맨 위, pane 헤더 위에 놓인다', async ({
-  launch,
-  dataDir
-}) => {
-  writeConfig(dataDir, '[layout]\nheader = "top"\n')
-  const { app, page } = await launch()
-  await toggleView({ app, page }, 'columns')
-  await expect(page.locator('.cell-band')).toHaveCount(1)
+for (const view of ['columns', 'single'] as const) {
+  test(`헤더가 위면 ${view} 의 cell 띠는 카드 맨 위, pane 헤더 위에 놓인다`, async ({
+    launch,
+    dataDir
+  }) => {
+    writeConfig(dataDir, '[layout]\nheader = "top"\n')
+    const { app, page } = await launch()
+    if (view === 'columns') await toggleView({ app, page }, 'columns')
+    await expect(page.locator('.cell-band')).toHaveCount(1)
 
-  const layout = await page.evaluate(() => {
-    const card = document.querySelector('.panes.selected')!.getBoundingClientRect()
-    const r = document.querySelector('.cell-band')!.getBoundingClientRect()
-    const pane = document.querySelector('.pane-header')!.getBoundingClientRect()
-    return { gap: r.top - card.top, below: pane.top - r.bottom }
+    const layout = await page.evaluate(() => {
+      const card = document.querySelector('.panes.selected')!.getBoundingClientRect()
+      const r = document.querySelector('.cell-band')!.getBoundingClientRect()
+      const pane = document.querySelector('.pane-header')!.getBoundingClientRect()
+      return { gap: r.top - card.top, below: pane.top - r.bottom }
+    })
+    expect(layout).toEqual({ gap: 0, below: 0 })
   })
-  expect(layout).toEqual({ gap: 0, below: 0 })
-})
+}
