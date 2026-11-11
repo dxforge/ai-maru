@@ -62,6 +62,7 @@ const {
   command,
   notification,
   tasks,
+  rootState,
   urgent,
   unread,
   folded,
@@ -78,6 +79,7 @@ const {
   command: (pty?: string) => CommandView | undefined
   notification: (pty?: string) => PtyNotification | undefined
   tasks: (pty?: string) => readonly ProgramStatusRecord[]
+  rootState: (pty: string) => ProgramStatusState | undefined
   urgent: ReadonlyMap<number, ProgramStatusState>
   /** 읽지 않은 알림이 있는 pane 을 든 workspace 의 key */
   unread: ReadonlySet<number>
@@ -148,7 +150,7 @@ const favoriteLabel = (favorite: boolean): string =>
   favorite ? 'Remove from Favorites' : 'Add to Favorites'
 
 const groups = computed(() => {
-  const src: RowSource = { shown, command, notification, tasks, home, shell }
+  const src: RowSource = { shown, command, notification, tasks, rootState, home, shell }
   return workspaces.map((w) => {
     const f = folded.has(w.key)
     const auto = autoWorkspaceName(w, home)

@@ -418,6 +418,8 @@ test('Claude 가 차례를 마친 뒤 도는 백그라운드 셸은 pane 을 wor
   )
   await expect(paneRows(page)).toHaveClass(/working/)
   const card = await hoverCard(page, paneRows(page))
+  // 보는 pane 이라 루트의 done 은 곧 idle 이 된다. 어느 쪽이든 카드는 Claude 가 보낸 상태로 보인다.
+  await expect(card.locator('.head .icon')).toHaveClass(/\b(done|idle)\b/)
   await expect(card.locator('.message')).toHaveText('finished')
   await expect(card.locator('.task')).toHaveCount(1)
   await expect(card.locator('.task .title.mono')).toHaveText('pnpm dev')

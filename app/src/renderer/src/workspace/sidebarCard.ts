@@ -90,8 +90,8 @@ export function paneSection(r: Row, now: number): CardSection {
   return {
     key: `pane:${r.pane}`,
     title: r.name,
-    icon: r.icon,
-    ...(r.tone && { tone: r.tone }),
+    icon: r.card?.icon ?? r.icon,
+    ...(r.tone && { tone: r.card?.tone ?? r.tone }),
     ...(r.notice && { notice: notificationText(r.notice) }),
     ...(r.path && { path: r.path }),
     ...(r.git && { git: [r.git.repo, r.git.branch].filter(Boolean).join(' · ') }),

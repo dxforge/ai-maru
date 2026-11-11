@@ -25,6 +25,7 @@ function pane(
     cwd?: string
     git?: GitHead
     tasks?: ProgramStatusRecord[]
+    root?: ProgramStatusRecord['state']
   } = {}
 ) {
   const p = {
@@ -41,6 +42,7 @@ function pane(
       command: () => o.command,
       notification: () => o.notice,
       tasks: () => o.tasks ?? [],
+      rootState: () => o.root,
       home: '/Users/me'
     },
     p,
@@ -75,6 +77,12 @@ describe('paneSection', () => {
         { key: 'bg/b2', state: 'error', title: 'bg/b2', mono: true }
       ]
     })
+  })
+
+  it('루트가 차례를 마쳤는데 하위 일로 working 인 pane 은 아이콘을 루트의 상태로 둔다', () => {
+    const tasks = [record({ id: 'bg/b1', title: 'pnpm dev' })]
+    const s = paneSection(pane({ record: record(), tasks, root: 'done' }), 0)
+    expect([s.icon, s.tone]).toEqual([{ state: 'done' }, 'done'])
   })
 
   it('백그라운드 일은 다섯 줄까지 두고 나머지는 수로 쓴다', () => {
