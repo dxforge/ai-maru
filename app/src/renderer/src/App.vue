@@ -1400,7 +1400,6 @@ void window.maru.restoreScreen().then((r) => {
   bottom: var(--row);
 }
 
-/* 마우스를 올린 pane 에는 테두리와 헤더 선을 붙이지 않는다. 입력이 가는 pane 을 테두리로 계속 구분하기 위해서다. */
 .pane:not(.focused):not(:hover) > .body::after {
   content: '';
   position: absolute;
@@ -1412,7 +1411,8 @@ void window.maru.restoreScreen().then((r) => {
 
 /* 입력을 받는 pane 의 테두리다. 경계선처럼 자리를 차지하지 않게 헤더와 터미널 가장자리 위에 겹친다. columns 에서는
    고른 cell 도 이 테두리로 알아본다. cell 의 모서리에 닿는 모서리만 cell 과 같은 반지름으로 둥글게 해, 그 모서리에서 테두리가
-   잘리지 않는다. 다른 모서리는 옆 pane 과 맞닿으므로 각지게 둔다. */
+   잘리지 않는다. 다른 모서리는 옆 pane 과 맞닿으므로 각지게 둔다. 마우스를 올린 pane 에는 이 테두리와 헤더 선을 붙이지
+   않는다. 입력이 가는 pane 을 테두리로 계속 구분하기 위해서다. */
 .pane.focused::after {
   content: '';
   position: absolute;
