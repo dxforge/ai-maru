@@ -253,6 +253,27 @@ test('columns 에서 다른 cell 의 pane 을 누르면 그 cell 을 선택하�
   await expect(cellViews(page).nth(1).locator('.pane')).toHaveCount(1)
 })
 
+test('columns 에서 고르지 않은 cell 의 pane 에 마우스를 올리면 덮은 것만 걷히고, cell 선택과 입력은 그대로다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await run(page, 'X=b-$((2+2)); echo set-$((2+3))', 'set-5')
+  await toggleView(launched, 'columns')
+  const other = cellViews(page).nth(0).locator('.pane')
+  const dimmed = () =>
+    other.locator('.body').evaluate((el) => getComputedStyle(el, '::after').content !== 'none')
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+  await expect.poll(dimmed).toBe(true)
+
+  await other.locator('.body').hover()
+
+  await expect.poll(dimmed).toBe(false)
+  await expect(cellViews(page).nth(0)).not.toHaveClass(/selected/)
+  await run(page, 'echo "x=$X"', 'x=b-4')
+})
+
 test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 pane 이 보이도록 따라간다', async ({
   launch
 }) => {

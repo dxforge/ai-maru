@@ -192,10 +192,15 @@ test('입력 pane 이 아닌 pane 에 마우스를 올리면 덮은 것만 걷�
   await panes(page).nth(0).locator('.body').hover()
   await expect.poll(() => dimmed(0)).toBe(false)
   await expect(panes(page).nth(0)).not.toHaveClass(/focused/)
+  await expect(panes(page).nth(1)).toHaveClass(/focused/)
   await typesInto(page, 1, 'hovered-left')
 
   await panes(page).nth(1).locator('.body').hover()
   await expect.poll(() => dimmed(0)).toBe(true)
+
+  await panes(page).nth(0).locator('.pane-header').hover()
+  await expect.poll(() => dimmed(0)).toBe(false)
+  await expect(panes(page).nth(1)).toHaveClass(/focused/)
 })
 
 test('pane 을 누르면 그 pane 이 포커스를 받는다', async ({ launch }) => {

@@ -1400,7 +1400,7 @@ void window.maru.restoreScreen().then((r) => {
   bottom: var(--row);
 }
 
-/* 마우스를 올린 pane 은 입력 pane 처럼 덮지 않는다. 테두리와 헤더 선은 입력 pane 에만 남겨, 입력이 가는 pane 은 계속 테두리로 알아본다. */
+/* 마우스를 올린 pane 에는 테두리와 헤더 선을 붙이지 않는다. 입력이 가는 pane 을 테두리로 계속 구분하기 위해서다. */
 .pane:not(.focused):not(:hover) > .body::after {
   content: '';
   position: absolute;
