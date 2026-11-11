@@ -626,6 +626,27 @@ fn claude_hook_on_session_start_tells_claude_its_pty_and_the_inbox() {
 
 #[test]
 fn claude_hook_on_session_start_without_a_terminal_still_tells_claude() {
+    let out = hook_without_terminal(r#"{"hook_event_name":"SessionStart","source":"startup"}"#);
+    assert!(
+        out.starts_with(&format!("You are in AI Maru pty {PTY}.")),
+        "{out}"
+    );
+    assert!(out.ends_with("exit=0\n"), "{out}");
+}
+
+#[test]
+fn claude_hook_that_must_write_records_fails_without_a_terminal() {
+    for input in [
+        r#"{"hook_event_name":"Stop"}"#,
+        r#"{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"sleep 9"},"tool_response":{"backgroundTaskId":"b1"}}"#,
+    ] {
+        let out = hook_without_terminal(input);
+        assert!(out.ends_with("exit=1\n"), "{input}: {out}");
+    }
+}
+
+/// 제어 터미널 없이 `maru claude hook` 에 `input` 을 넘긴다. 돌려주는 것은 stdout 과 `exit=<코드>` 줄이다.
+fn hook_without_terminal(input: &str) -> String {
     // 테스트를 띄운 프로세스가 제어 터미널을 가질 수 있으므로, 부모 셸을 먼저 끝내 CLI 의 조상에서 뺀다.
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
@@ -633,9 +654,10 @@ fn claude_hook_on_session_start_without_a_terminal_still_tells_claude() {
     let mut sh = Command::new("/bin/sh");
     sh.args([
         "-c",
-        r#"(sleep 0.5; echo '{"hook_event_name":"SessionStart","source":"startup"}' | "$MARU" claude hook; echo "exit=$?") >"$LOG" 2>/dev/null &"#,
+        r#"(sleep 0.5; printf '%s\n' "$INPUT" | "$MARU" claude hook; echo "exit=$?") >"$LOG" 2>/dev/null &"#,
     ])
     .env("MARU", env!("CARGO_BIN_EXE_maru"))
+    .env("INPUT", input)
     .env("MARU_SOCKET", &sock)
     .env("MARU_PTY_ID", PTY)
     .env("LOG", &log)
@@ -650,19 +672,14 @@ fn claude_hook_on_session_start_without_a_terminal_still_tells_claude() {
     }
     assert!(wait_within(sh.spawn().unwrap()).status.success());
     let deadline = Instant::now() + Duration::from_secs(15);
-    let out = loop {
+    loop {
         let out = std::fs::read_to_string(&log).unwrap_or_default();
         if out.contains("exit=") {
-            break out;
+            return out;
         }
         assert!(Instant::now() < deadline, "CLI 가 끝나지 않았다: {out}");
         std::thread::sleep(Duration::from_millis(10));
-    };
-    assert!(
-        out.starts_with(&format!("You are in AI Maru pty {PTY}.")),
-        "{out}"
-    );
-    assert!(out.ends_with("exit=0\n"), "{out}");
+    }
 }
 
 #[test]
@@ -742,6 +759,10 @@ fn claude_hook_on_stop_rewrites_the_running_shells() {
             {"id": "b3", "type": "shell", "status": "running", "command": "  echo a\n sleep 9\n"},
             {"id": "b4", "type": "shell", "status": "running", "description": "watch build"},
             {"id": "b5", "type": "shell", "status": "running", "command": long},
+            {"id": "b6", "type": "shell", "status": "running", "command": "\x1bx"},
+            {"id": "b7", "type": "shell", "status": "running", "description": "Bell", "command": "\x07"},
+            {"id": "b8", "type": "shell", "status": "running", "description": "Five", "command": 5},
+            {"type": "shell", "status": "running", "command": "no id"},
         ]
     });
     let tmp = tmpdir();
@@ -757,6 +778,9 @@ fn claude_hook_on_stop_rewrites_the_running_shells() {
             shell_record("b4", "watch build"),
             // 192 바이트에 걸친 글자는 통째로 뺀다.
             shell_record("b5", &format!("a{}", "é".repeat(95))),
+            shell_record("b6", "x"),
+            shell_record("b7", "Bell"),
+            shell_record("b8", "Five"),
         ]
         .concat()
     );

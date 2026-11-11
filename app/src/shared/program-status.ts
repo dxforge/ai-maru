@@ -39,8 +39,8 @@ export const URGENCY: readonly ProgramStatusState[] = [
  * 보내는 것)는 고르지 않는다. 답할 것이 없기 때문이다. 쓴 쪽이 아직 지우지 않은 레코드일 수도 있다. 루트가 `working` 이 아니면
  * `URGENCY` 로 가장 급한 것이고, 같으면 루트, 그다음 `records` 의 순서다. 다만 루트가 `done`·`idle` 이고 그렇게 고른 것이 루트나
  * 하위 `working` 일 때, 하위 `working` 이 있으면 `state` 만 `working` 으로 바꾼 루트다. 차례를 마친 뒤에도 백그라운드 일이 돌면
- * pane 은 일하는 중으로 보여야 하고, 보이는 문장은 루트의 것이어야 하기 때문이다. 루트가 `idle` 인 것은 사용자가 본 pane 의 `done` 을
- * 앱이 `idle` 로 바꿔서다. 고른 레코드의 `app` 은 늘 루트의 `app` 이다. pane 의 이름·아이콘과
+ * pane 은 일하는 중으로 보여야 하고, 보이는 문장은 루트의 것이어야 하기 때문이다. 루트가 `idle` 일 때도 올리는 것은
+ * 사용자가 본 pane 의 `done` 을 앱이 `idle` 로 바꾸기 때문이다. 고른 레코드의 `app` 은 늘 루트의 `app` 이다. pane 의 이름·아이콘과
  * `maru pane list` 의 APP 열은 그 pane 의 프로그램을 가리키고, 하위가 자기 `app` 을 가져도 바뀌지 않아야 하기 때문이다.
  */
 export function shownRecord(
@@ -91,7 +91,10 @@ export function runningTasks(records: readonly ProgramStatusRecord[]): ProgramSt
   )
 }
 
-/** `maru claude hook` 이 백그라운드 셸에 쓰는 레코드의 id 앞부분이다. 그 레코드의 `title` 은 셸의 명령이다. */
+/**
+ * `maru claude hook` 이 백그라운드 셸에 쓰는 레코드의 id 앞부분이다. 그 레코드의 `title` 은 셸의 명령이고, 명령이 없으면
+ * `description` 이다.
+ */
 export const SHELL_TASK_PREFIX = 'bg/'
 
 const KINDS: ReadonlySet<unknown> = new Set(['permission', 'question', 'auth'])

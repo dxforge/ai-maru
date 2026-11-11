@@ -214,9 +214,10 @@
 //!
 //! 앱 claude plugin 의 `hooks/hooks.json` 이 `SessionStart`·`PostToolUse`(Bash·Monitor)·`Stop` 에 `maru claude hook` 을
 //! 부른다. Claude Code 는 백그라운드 셸(Bash 의 `run_in_background`, Monitor)에는 상태 레코드를 보내지 않으므로, hook 이
-//! 셸마다 `bg/<task id>` working 레코드를 `maru status` 와 같은 경로로 쓴다. title 은 셸의 명령이다. `PostToolUse` 는 띄운
-//! 셸 하나를 더하고, `Stop`·`SessionStart` 는 `bg` 를 지운 뒤 `Stop` 의 `background_tasks` 에서 도는 셸을 다시 쓴다. 셸이
-//! 끝날 때는 hook 이 오지 않으므로, 끝난 셸의 레코드는 그다음 `Stop` 에서 빠진다.
+//! 셸마다 `bg/<task id>` working 레코드를 `maru status` 와 같은 경로로 쓴다. title 은 셸의 명령이고, 명령이 없으면
+//! `description` 이다. `PostToolUse` 는 띄운 셸 하나를 더하고, `Stop`·`SessionStart` 는 `bg` 를 지운 뒤 `Stop` 의
+//! `background_tasks` 에서 도는 셸을 다시 쓴다. 셸이 끝날 때는 hook 이 오지 않으므로, 끝난 셸의 레코드는 그다음 `Stop`
+//! 에서 빠진다.
 //!
 //! # claude monitor
 //!
@@ -1015,7 +1016,6 @@ fn claude_hook() -> Result<()> {
 /// 레코드의 id 다. 이 아래만 hook 이 지우고 다시 쓴다.
 const BACKGROUND_ID: &str = "bg";
 
-/// 백그라운드 셸 하나를 `bg/<task id>` working 레코드로 쓴다. id 로 쓸 수 없는 task id 는 건너뛴다.
 fn report_shell(task: &str, title: &str) -> Result<()> {
     let Some(report) = shell_report(task, title) else {
         return Ok(());
@@ -1023,8 +1023,8 @@ fn report_shell(task: &str, title: &str) -> Result<()> {
     write_once(open_terminal()?, &report)
 }
 
-/// `bg` 를 지우고 `shells`(task id, title)를 다시 쓴다. 한 번에 써서, 앞선 hook 이 실패해 남은 레코드와 끝난 셸의
-/// 레코드를 지금 도는 셸로 바로잡는다.
+/// `bg` 를 지우고 `shells`(task id, title)를 다시 쓴다. 앞선 hook 이 실패해 남은 레코드와 끝난 셸의 레코드는 이것으로
+/// 지워진다. 지우기와 쓰기를 한 번에 쓰는 것은 그 사이에 pane 이 잠깐 done 으로 보이지 않게 하기 위해서다.
 fn report_background(shells: &[(&str, &str)]) -> Result<()> {
     let mut bytes = status_report(StatusCommand::Clear {
         id: Some(BACKGROUND_ID.to_owned()),
@@ -1041,7 +1041,7 @@ fn report_background(shells: &[(&str, &str)]) -> Result<()> {
 fn shell_title(task: &Value) -> &str {
     task["command"]
         .as_str()
-        .filter(|c| !c.trim().is_empty())
+        .filter(|c| !c.chars().all(|ch| ch.is_whitespace() || ch.is_control()))
         .or(task["description"].as_str())
         .unwrap_or_default()
 }
@@ -1062,13 +1062,12 @@ fn shell_report(task: &str, title: &str) -> Option<Vec<u8>> {
     .ok()
 }
 
-/// 제어 문자(줄바꿈 포함)를 빈칸으로 바꾸고 앞뒤 빈칸을 뗀 뒤, `max` 바이트 안에 드는 글자까지 자른다.
 fn one_line(text: &str, max: usize) -> String {
     let line: String = text
-        .trim()
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect();
+    let line = line.trim_start();
     let mut end = line.len().min(max);
     while !line.is_char_boundary(end) {
         end -= 1;

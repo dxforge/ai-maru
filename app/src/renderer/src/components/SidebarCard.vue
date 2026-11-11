@@ -239,7 +239,6 @@ onBeforeUnmount(() => {
     monospace;
 }
 
-/* 백그라운드 일은 pane 의 것이 아니라 pane 에서 도는 것이므로 점선으로 떼어 둔다. */
 .tasks {
   display: flex;
   flex-direction: column;

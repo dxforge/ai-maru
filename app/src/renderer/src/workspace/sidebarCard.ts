@@ -33,7 +33,6 @@ export type CardSection = {
    * 모두 든다.
    */
   command?: { running: boolean; text: string }
-  /** pane 에서 도는 백그라운드 일. 앞 `MAX_TASKS` 개만 줄로 두고, 나머지는 `more` 에 수로 쓴다. */
   tasks?: { rows: CardTask[]; more?: string }
   /** job 의 명령 전체 */
   run?: string
@@ -41,7 +40,7 @@ export type CardSection = {
   time?: string
 }
 
-/** `mono` 는 title 이 셸 명령이라 고정폭 글꼴로 보일 것이다. */
+/** `mono` 면 title 이 셸 명령이므로 고정폭 글꼴로 보인다. */
 export type CardTask = { key: string; state: ProgramStatusState; title: string; mono: boolean }
 
 export const MAX_TASKS = 5

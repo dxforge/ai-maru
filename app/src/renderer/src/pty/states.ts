@@ -55,10 +55,8 @@ export function createPtyStates() {
   return {
     get,
     shown,
-    /** pane 에서 도는 백그라운드 일(`runningTasks`). 같은 레코드 배열에는 같은 배열을 돌려준다. */
     tasks,
     state: (pty?: string): ProgramStatusState | undefined => shown(pty)?.state,
-    /** `shown` 이 하위 일 때문에 working 으로 올린 루트가 보낸 상태(`restingRoot`) */
     resting: (pty?: string): 'done' | 'idle' | undefined =>
       pty === undefined ? undefined : restingRoot(records(pty)),
     rootState: (pty: string): ProgramStatusState | undefined =>

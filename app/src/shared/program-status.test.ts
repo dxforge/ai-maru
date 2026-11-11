@@ -108,6 +108,10 @@ describe('shownRecord', () => {
       const ask = { ...rec('ask', 'blocked'), kind: 'question' as const }
       expect(picked([root, rec('bg/b1', 'working'), ask])).toEqual(['ask', 'blocked'])
       expect(picked([root, rec('a1', 'error'), rec('bg/b1', 'working')])).toEqual(['a1', 'error'])
+      expect(picked([root, rec('a1', 'blocked'), rec('bg/b1', 'working')])).toEqual([
+        'a1',
+        'blocked'
+      ])
     })
 
     it('루트가 error·blocked 면 지금처럼 루트다', () => {
