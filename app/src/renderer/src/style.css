@@ -212,8 +212,8 @@ body,
   justify-content: flex-end;
 }
 
-/* 팔레트를 창 아래의 pane 헤더와 cell 헤더보다 위에 띄운다. 헤더 높이는 글자 크기를 따르지만, 그대로 따라가면 cell
-   마다 팔레트 자리가 바뀌므로 고정값으로 둔다. */
+/* 팔레트를 창 아래의 pane 헤더보다 위에 띄운다. 헤더 높이는 글자 크기를 따르지만, 그대로 따라가면 cell 마다 팔레트
+   자리가 바뀌므로 고정값으로 둔다. */
 .palette-backdrop.bottom .palette {
   max-height: calc(100% - 56px - var(--space-6));
   margin-bottom: 56px;

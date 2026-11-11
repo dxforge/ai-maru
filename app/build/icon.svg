@@ -51,7 +51,7 @@
     <path d="M914 608 H1494 V722 A60 60 0 0 1 1434 782 H974 A60 60 0 0 1 914 722 Z"/>
   </g>
 
-  <!-- 가운데 column 이 얼굴이다. 헤더 띠는 아래쪽에 둔다. 앱의 cell 헤더 기본 위치(layout.header = "bottom")가 아래쪽이기 때문이다. -->
+  <!-- 가운데 column 이 얼굴이다. 헤더 띠는 아래쪽에 둔다. 앱의 pane 헤더와 cell 띠의 기본 위치(layout.header = "bottom")가 아래쪽이기 때문이다. -->
   <rect x="150" y="150" width="724" height="724" rx="60" fill="url(#centerFill)" stroke="url(#centerStroke)" stroke-width="8"/>
   <path d="M150 700 H874 V814 A60 60 0 0 1 814 874 H210 A60 60 0 0 1 150 814 Z" fill="#000000" fill-opacity="0.28"/>
   </g>

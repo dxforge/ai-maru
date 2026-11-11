@@ -30,14 +30,14 @@ commands = ["claude", "codex"]
 | `terminal.font-size` | `14` | 8–32 의 숫자(px). 소수도 받는다. |
 | `terminal.line-height` | `1.2` | 1–2 의 숫자. 글자 높이에 곱한 값이 행 높이다. 글자 높이는 글꼴이 정하고 글꼴 크기보다 조금 크다(기본 글꼴 14px 이면 15px). |
 | `terminal.theme` | 없음(Ghostty 의 기본 색) | 테마 이름, 또는 라이트·다크 모드마다 다른 테마를 적는 `{ light = "…", dark = "…" }`. |
-| `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 cell 헤더를 pane·cell 의 아래에 둘지 위에 둘지. |
+| `layout.header` | `"bottom"` | `"bottom"` 또는 `"top"`. pane 헤더와 cell 띠를 pane·cell 의 아래에 둘지 위에 둘지. |
 | `layout.palette` | `"bottom"` | `"bottom"` 또는 `"top"`. 명령 팔레트와 런처를 창의 아래에 띄울지 위에 띄울지. |
 | `layout.column-cols` | `80` | 20–500 의 정수(열 수). columns 보기에서 pane 하나가 받는 터미널 열 수. |
 | `layout.column-step` | `20` | 1–480 의 정수(열 수). Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸는 열 수. |
 | `launcher.commands` | `["claude", "codex"]` | 비지 않은 문자열 배열. 런처(⌘O)가 띄울 명령. |
 | `notification.seen-ms` | `500` | 0 이상의 정수(ms), 또는 `false`. 알림 점과 done 이 온 pane 에 들어가 이만큼 머물면 지운다. |
 
-pane 헤더와 cell 헤더도 터미널의 글꼴과 크기를 따른다.
+pane 헤더도 터미널의 글꼴과 크기를 따른다.
 
 ### `header` 와 `palette`
 

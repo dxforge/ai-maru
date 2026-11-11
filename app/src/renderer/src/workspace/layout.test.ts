@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   columnCount,
+  edgesOf,
   neighbor,
   panes,
   rects,
@@ -167,6 +168,42 @@ describe('rects', () => {
     expect(all.get(3)!.w * 3).toBeCloseTo(1)
     expect(all.get(4)!.x * 3).toBeCloseTo(2)
     expect(all.get(4)!.w * 3).toBeCloseTo(1)
+  })
+})
+
+describe('edgesOf', () => {
+  it('3×3 으로 나눈 pane 마다 cell 의 어느 가장자리에 닿는지 가린다', () => {
+    const column = (top: number): Layout =>
+      splitPane(splitPane({ pane: top }, top, top + 1, 'down'), top + 1, top + 2, 'down')
+    const layout: Layout = {
+      split: 'right',
+      first: column(1),
+      second: { split: 'right', first: column(4), second: column(7) }
+    }
+    const touched = [...rects(layout)].map(([pane, r]) => {
+      const e = edgesOf(r)
+      return [pane, `${+e.left}${+e.top}${+e.right}${+e.bottom}`]
+    })
+    expect(touched).toEqual([
+      [1, '1100'],
+      [2, '1000'],
+      [3, '1001'],
+      [4, '0100'],
+      [5, '0000'],
+      [6, '0001'],
+      [7, '0110'],
+      [8, '0010'],
+      [9, '0011']
+    ])
+  })
+
+  it('나누지 않은 pane 은 네 가장자리에 모두 닿는다', () => {
+    expect(edgesOf(rects({ pane: 1 }).get(1)!)).toEqual({
+      left: true,
+      top: true,
+      right: true,
+      bottom: true
+    })
   })
 })
 

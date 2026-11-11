@@ -11,7 +11,7 @@ const tree = [
 ]
 
 describe('urgentStates', () => {
-  it('cell 은 그 pane 들의, workspace 는 그 cell 들의 가장 급한 상태다', () => {
+  it('workspace 는 그 안의 모든 pane 가운데 가장 급한 상태다', () => {
     const states: Record<string, ProgramStatusState> = {
       a: 'idle',
       b: 'blocked',
@@ -20,20 +20,12 @@ describe('urgentStates', () => {
       e: 'error'
     }
     const map = urgentStates(tree, (pty) => states[pty])
-    expect(Object.fromEntries(map)).toEqual({
-      10: 'blocked',
-      11: 'done',
-      1: 'blocked',
-      20: 'working',
-      2: 'working',
-      30: 'error',
-      3: 'error'
-    })
+    expect(Object.fromEntries(map)).toEqual({ 1: 'blocked', 2: 'working', 3: 'error' })
   })
 
-  it('상태가 있는 pane 이 없는 cell 과 workspace 는 표에 없다', () => {
+  it('상태가 있는 pane 이 없는 workspace 는 표에 없다', () => {
     const map = urgentStates(tree, (pty) => (pty === 'c' ? 'idle' : undefined))
-    expect(Object.fromEntries(map)).toEqual({ 11: 'idle', 1: 'idle' })
+    expect(Object.fromEntries(map)).toEqual({ 1: 'idle' })
   })
 })
 

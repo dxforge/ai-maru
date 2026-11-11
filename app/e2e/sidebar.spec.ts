@@ -303,7 +303,7 @@ test('maru cell new --cwd 로 심볼릭 링크 경로에 바로 띄운 Claude �
   await expect(opened).toHaveAttribute('data-tooltip', /\n~\/link$/)
 })
 
-test('경로는 cell 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남으며, cell 헤더에도 branch 가 붙는다', async ({
+test('경로는 cell 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입력이 터미널에 남는다', async ({
   launch,
   dataDir
 }) => {
@@ -320,10 +320,6 @@ test('경로는 cell 마다 헤더 툴팁에 있고, 헤더를 눌러도 키 입
   await cellItems(page).nth(0).click()
   await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
   await run(page, 'echo path-$((1+1))', 'path-2')
-
-  const branches = page.locator('.cell-header .branch')
-  await expect(branches).toHaveText(['main'])
-  await expect(branches).toBeVisible()
 })
 
 test('고른 cell 을 바꾸면 창 제목과 폴더 아이콘이 그것을 따른다', async ({ launch, dataDir }) => {

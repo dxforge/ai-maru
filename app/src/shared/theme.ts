@@ -95,7 +95,7 @@ export function isLight({ background }: TerminalTheme): boolean {
   return luminance(background) > 0.5
 }
 
-/** pane 헤더·cell 헤더와 터미널 배경의 대비. 헤더 배경은 섞는 비율이 아니라 이 대비로 정한다. 같은 비율로 섞으면 테마의 밝기에 따라 대비가 달라지기 때문이다. */
+/** pane 헤더와 터미널 배경의 대비. 헤더 배경은 섞는 비율이 아니라 이 대비로 정한다. 같은 비율로 섞으면 테마의 밝기에 따라 대비가 달라지기 때문이다. */
 export const HEADER_CONTRAST = 1.1
 
 /** `base` 를 `toward` 쪽으로 섞어 `base` 와의 대비가 `ratio` 가 되는 색. 끝까지 섞어도 닿지 못하면 null 이다. */
@@ -134,6 +134,16 @@ function headerColor(bg: string, fg: string, light: boolean): string {
   )
 }
 
+/** cell 띠와 터미널 배경의 대비. 헤더 배경처럼 섞는 비율이 아니라 이 대비로 정한다. */
+export const CELL_BAND_CONTRAST = 2
+
+function cellBandColor(bg: string, fg: string): string {
+  const far = contrast(bg, '#000000') > contrast(bg, '#ffffff') ? '#000000' : '#ffffff'
+  return (
+    reachContrast(bg, fg, CELL_BAND_CONTRAST) ?? reachContrast(bg, far, CELL_BAND_CONTRAST) ?? far
+  )
+}
+
 export function uiColors(theme: TerminalTheme) {
   const { background: bg, foreground: fg, ansi } = theme
   const light = isLight(theme)
@@ -156,6 +166,7 @@ export function uiColors(theme: TerminalTheme) {
     selected: fg + '1f',
     line,
     paneLine: paneLineColor(line, fg, [bg, hdr]),
+    cellBand: cellBandColor(bg, fg),
     muted: mix(fg, bg, 0.35),
     faint: mix(fg, bg, 0.55),
     dim: bg + '73',

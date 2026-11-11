@@ -2,7 +2,7 @@
 
 ## 화면의 층
 
-창은 workspace 목록을 보인다. workspace 는 cell 을 묶는다. cell 은 헤더·pane 배치·글꼴 크기·columns 폭·job 을 갖고, 선택과 single 보기의 단위다. pane 은 터미널 하나다. cell 의 마지막 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이 닫히면 workspace 가 닫힌다. 핀을 꽂았거나 즐겨찾기가 있는 workspace 는 마지막 cell 이 닫혀도 남는다. cell 이 없는 workspace 는 핀과 즐겨찾기가 모두 없어지면 닫힌다. 즐겨찾기는 workspace 가 갖는 디렉토리 목록이다.
+창은 workspace 목록을 보인다. workspace 는 cell 을 묶는다. cell 은 pane 배치·글꼴 크기·columns 폭·job 을 갖고, 선택과 single 보기의 단위다. pane 은 터미널 하나다. cell 의 마지막 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이 닫히면 workspace 가 닫힌다. 핀을 꽂았거나 즐겨찾기가 있는 workspace 는 마지막 cell 이 닫혀도 남는다. cell 이 없는 workspace 는 핀과 즐겨찾기가 모두 없어지면 닫힌다. 즐겨찾기는 workspace 가 갖는 디렉토리 목록이다.
 
 ## pty 를 여는 순서
 
@@ -54,7 +54,7 @@ renderer 는 상태를 main 에서만 받는다. 문서를 로드하면 `pty:sta
 
 `maru pane read`·`maru pane send` 도 대상이 이 창의 pane 인지 `lastScreen` 으로 확인하고, main 이 그 pty 의 maru-pty 에 `capture`·`input` 을 직접 보낸다(`app/src/main/pane.ts` 의 `paneIo`). `pane send`·`job send` 의 본문을 bracketed paste 로 감쌀지는 maru-pty 가 그 pty 의 mode 2004 와 본문의 길이·줄바꿈을 보고 정한다(`core/crates/maru-pty/src/paste.rs`). pty 의 mode 2004 상태는 maru-pty 안의 libghostty-vt 만 알기 때문이다.
 
-OSC 7501 레코드는 pane 마다 여럿일 수 있다(루트와 하위). 사이드바·pane 헤더·cell 헤더와 `maru pane list` 가 보일 레코드 하나는 `shownRecord`(`app/src/shared/program-status.ts`)가 고른다. renderer 와 main 이 같은 함수를 써서 화면과 `maru pane list` 가 같은 상태를 보인다.
+OSC 7501 레코드는 pane 마다 여럿일 수 있다(루트와 하위). 사이드바·pane 헤더와 `maru pane list` 가 보일 레코드 하나는 `shownRecord`(`app/src/shared/program-status.ts`)가 고른다. renderer 와 main 이 같은 함수를 써서 화면과 `maru pane list` 가 같은 상태를 보인다.
 
 `maru status` 는 앱 소켓을 쓰지 않고 터미널 장치(제어 터미널, 없으면 가장 가까운 조상 프로세스의 제어 터미널)에 OSC 7501 을 쓴다. 그래서 이 명령이 쓴 레코드도 터미널 안의 프로그램이 보낸 레코드처럼 maru-pty 가 해석하고 보관한다.
 
@@ -124,9 +124,11 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 나란히 놓인 pane 끼리 터미널 행이, 위아래로 놓인 pane 끼리 열이 이어지도록 pane 경계를 터미널 글자 칸 크기의 배수에 둔다. columns 보기의 좌우 경계는 pane 하나의 폭의 배수에 둔다. pane 하나의 폭(`columnWidth`(`columns.ts`))은 글자 칸 폭의 배수라, columns 보기에서도 위아래 pane 끼리 열이 이어진다. ⌘+ / ⌘- 로 cell 마다 글꼴 크기가 다를 수 있으므로 `App.vue` 는 글꼴마다 마지막으로 잰 글자 칸 크기를 둔다. cell 마다 그 글꼴의 글자 칸 크기를 `--row`·`--cell` 로, 터미널 왼쪽 여백 4px 를 `--pad` 로 그 cell 의 `.panes` 요소에 둔다. 여백은 `.xterm` 의 `padding-left` 다.
 
-`App.vue` 는 pane 배치(`snapRects`(`grid.ts`))와 함께 터미널의 열·행 수를 정해 `TerminalView` 에 `cols`·`rows` 로 넘긴다. `TerminalView` 는 처음 받은 열·행 수로 pty 에 붙고, 그 뒤에는 primary 일 때만 그 값으로 `term.resize` 를 부른다. pane 크기를 정하려고 화면에서 재는 것은 cell 마다 pane 이 놓일 영역(`.panes`)의 크기와 글자 칸 크기다. columns 보기는 영역 폭을 쓰지 않고, cell 의 pane 열 수(`layout.column-cols` 나 ⇧⌘. / ⇧⌘, 로 바꾼 값)로 pane 폭을 만든다.
+`App.vue` 는 pane 배치(`snapRects`(`grid.ts`))와 함께 터미널의 열·행 수를 정해 `TerminalView` 에 `cols`·`rows` 로 넘긴다. `TerminalView` 는 처음 받은 열·행 수로 pty 에 붙고, 그 뒤에는 primary 일 때만 그 값으로 `term.resize` 를 부른다. pane 크기를 정하려고 화면에서 재는 것은 cell 마다 pane 이 놓일 영역(`.grid`)의 크기와 글자 칸 크기다. columns 보기는 영역 폭을 쓰지 않고, cell 의 pane 열 수(`layout.column-cols` 나 ⇧⌘. / ⇧⌘, 로 바꾼 값)로 pane 폭을 만든다.
 
-pane 헤더는 터미널 한 행이다. 높이는 `--row` 이고 터미널과 같은 글꼴·크기로 쓴다. 헤더는 `config.toml` 의 `layout.header` 에 따라 pane 의 맨 아래(기본값)나 맨 위에 놓이고(`docs/config.md`), 터미널은 나머지 행을 쓴다. cell 헤더도 같은 쪽에 놓인다. pane 헤더·cell 헤더처럼 격자 위에 놓이는 것은 터미널 글꼴을, 사이드바·팔레트·Canvas 처럼 격자 밖의 것은 system-ui 를 쓴다.
+pane 헤더는 터미널 한 행이다. 높이는 `--row` 이고 터미널과 같은 글꼴·크기로 쓴다. 헤더는 `config.toml` 의 `layout.header` 에 따라 pane 의 맨 아래(기본값)나 맨 위에 놓이고(`docs/config.md`), 터미널은 나머지 행을 쓴다. pane 헤더처럼 격자 위에 놓이는 것은 터미널 글꼴을, 사이드바·팔레트·Canvas 처럼 격자 밖의 것은 system-ui 를 쓴다.
+
+cell 의 pane 들은 cell 띠(`.cell-band`)로 한 묶음으로 보인다. 띠는 pane 헤더와 같은 쪽의 cell 가장자리에 놓이고, 격자 밖에서 자리를 차지한다. 그래서 pane 이 놓일 영역은 cell 에서 띠를 뺀 나머지다.
 
 경계선은 자리를 차지하지 않는다. 1px 라도 자리를 차지하면 그 뒤 pane 이 격자에서 밀리기 때문이다. 좌우 pane 의 경계선은 오른쪽 pane 의 터미널 왼쪽 여백 위에 겹쳐 그리고, 위아래 pane 은 헤더가 아래면 위 pane 의 헤더가, 위면 아래 pane 의 헤더가 경계가 된다.
 

@@ -129,11 +129,7 @@ test('상태 아이콘은 상태마다 SVG 로 그리고, working 만 움직이�
 }) => {
   keepDone(dataDir)
   const { page } = await launch()
-  const icons = [
-    paneRows(page).locator('.state'),
-    activeHeader(page).locator('.status-icon'),
-    page.locator('.cell-header .status-icon')
-  ]
+  const icons = [paneRows(page).locator('.state'), activeHeader(page).locator('.status-icon')]
   // 사이드바는 쉬는 agent 의 앞 칸에 상태 아이콘 대신 agent 아이콘을 두므로, agent 가 아닌 app 으로 모든 상태를 그린다.
   for (const state of Object.keys(STATE_LABELS)) {
     await page.keyboard.type(status(state, undefined, 'make'))
@@ -152,9 +148,6 @@ test('상태 아이콘은 상태마다 SVG 로 그리고, working 만 움직이�
   const header = activeHeader(page).locator('.status-icon')
   await expect(header.locator('svg[data-state]:not([data-icon])')).toHaveCount(0)
   await expect(header.locator('svg[data-icon="terminal"]')).toBeVisible()
-  await expect(
-    page.locator('.cell-header .status-icon svg[data-state]:not([data-icon])')
-  ).toHaveCount(0)
 })
 
 test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아이콘 대신 app 값을 보인다', async ({
@@ -173,13 +166,12 @@ test('루트 레코드의 app 이 claude-code 가 아니면 Claude 이름·아�
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(0)
 })
 
-test('maru status 로 쓴 하위 레코드가 루트보다 급하면 사이드바·pane 헤더·cell 헤더가 그것을 보인다', async ({
+test('maru status 로 쓴 하위 레코드가 루트보다 급하면 사이드바·pane 헤더가 그것을 보인다', async ({
   launch,
   dataDir
 }) => {
   keepDone(dataDir)
   const { page } = await launch()
-  const cellHeader = page.locator('.cell-header')
   await inProgram(page)
   await page.keyboard.type(status('done'))
   await expect(paneRows(page)).toHaveClass(/done/)
@@ -189,7 +181,6 @@ test('maru status 로 쓴 하위 레코드가 루트보다 급하면 사이드�
   await expect(paneRows(page).locator('.title')).toHaveText('Claude')
   await expect(activeHeader(page)).toHaveClass(/blocked/)
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
-  await expect(cellHeader).toHaveClass(/blocked/)
 })
 
 test('pane 줄은 그 터미널의 cell 아래에만, pane 헤더는 보이는 pane 의 상태를 따른다', async ({
@@ -252,17 +243,6 @@ test('상태가 있는 pane 의 셸이 끝나면 pane 과 함께 사라지고, �
   await expect(paneRows(page)).toHaveClass(/working/)
 })
 
-test('cell 헤더는 pane 상태 가운데 급한 것을 보인다', async ({ launch }) => {
-  const { app, page } = await launch()
-  await split(app, page, 'split-right', 2)
-  const header = page.locator('.cell-header')
-  await page.keyboard.type(status('working'))
-  await expect(header).toHaveClass(/working/)
-  await focusPane(app, page, 'focus-pane-left', 0)
-  await page.keyboard.type(status('blocked'))
-  await expect(header).toHaveClass(/blocked/)
-})
-
 test('셸 pane 의 줄을 눌러도 그 pane 에 키 입력이 간다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
@@ -312,7 +292,6 @@ test('다른 pane 에 있을 때 done 이 된 pane 에 들어가 머물면 떠�
   await expect(paneHeader(page, 0)).toHaveClass(/idle/)
   await expect(paneRows(page)).toHaveClass(/idle/)
   await expect(paneRows(page).locator('.title')).toHaveText('Claude')
-  await expect(page.locator('.cell-header')).toHaveClass(/idle/)
 })
 
 test('보고 있는 pane 에 온 done 은 바로 idle 이 되고, 앱 창에 focus 가 없을 때 온 done 은 남는다', async ({

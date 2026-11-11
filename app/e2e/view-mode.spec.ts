@@ -328,7 +328,7 @@ test('columns 에서 pane 의 디렉토리가 바뀌어도 스크롤한 자리�
   await newWorkspace(launched, 2)
   await newWorkspace(launched, 3)
   await toggleView(launched, 'columns')
-  const names = page.locator('.cell-header .name')
+  const names = page.locator('.panes .pane-header .cwd')
   await expect(names).toHaveText(['home', 'home', 'home'])
   await page.keyboard.type('sleep 2; cd notes\n')
 
@@ -508,7 +508,7 @@ async function hitAt(page: Page, { x, y }: { x: number; y: number }): Promise<st
     ({ x, y }) => {
       const hit = document.elementFromPoint(x, y)!
       if (hit.closest('.os-scrollbar')) return 'scrollbar'
-      if (hit.closest('.cell-header')) return 'cell-header'
+      if (hit.closest('.cell-band')) return 'cell-band'
       if (hit.closest('.pane-header')) return 'pane-header'
       if (hit.closest('.body')) return 'terminal'
       return hit.className
@@ -519,7 +519,7 @@ async function hitAt(page: Page, { x, y }: { x: number; y: number }): Promise<st
 
 for (const [header, under] of [
   ['top', 'terminal'],
-  ['bottom', 'cell-header']
+  ['bottom', 'cell-band']
 ]) {
   test(`고전 스크롤바 설정의 columns 에서 헤더가 ${header} 이면, 숨은 가로 스크롤바는 그 아래 ${under} 의 클릭을 가져가지 않고, 스크롤해 나타난 동안에만 받는다`, async ({
     launch,

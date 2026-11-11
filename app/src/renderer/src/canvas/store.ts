@@ -24,7 +24,7 @@ export function docKey(id: string, cell?: string): string {
   return JSON.stringify([cell ?? null, id])
 }
 
-/** cell 의 workspace 이름과, 화면의 cell 헤더와 같은 cell 이름. workspace 는 cell 이 지금 속한 것이다. */
+/** cell 의 workspace 이름과, 창 제목과 같은 cell 이름. workspace 는 cell 이 지금 속한 것이다. */
 export type CellName = { workspace: string; cell: Label }
 
 export type OpenCell = { id: string; group: string; name: CellName }

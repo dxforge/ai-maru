@@ -652,7 +652,7 @@ describe('viewKey', () => {
 })
 
 describe('openCells', () => {
-  it('workspace 순서, 그 안의 cell 순서로 workspace 와 이름을 붙이고, cell 이름은 cell 헤더처럼 포커스된 pane 으로 정한다', () => {
+  it('workspace 순서, 그 안의 cell 순서로 workspace 와 이름을 붙이고, cell 이름은 창 제목처럼 포커스된 pane 으로 정한다', () => {
     const home = '/Users/me'
     const pane = (key: number, cwd: string, git?: { repo: string; branch: string }) => ({
       key,

@@ -5,24 +5,14 @@ type Tree = readonly {
   cells: readonly { key: number; panes: readonly { ptyId: string }[] }[]
 }[]
 
-/**
- * cell 과 workspace 마다 그 안의 pane 상태 가운데 가장 급한 것(`URGENCY`). workspace 와 cell 의 key 는 겹치지 않으므로
- * 한 표에 둔다. 상태가 있는 pane 이 없으면 표에 넣지 않는다.
- */
 export function urgentStates(
   workspaces: Tree,
   stateOf: (pty: string) => ProgramStatusState | undefined
 ): Map<number, ProgramStatusState> {
   const map = new Map<number, ProgramStatusState>()
   for (const w of workspaces) {
-    const all = new Set<string | undefined>()
-    for (const c of w.cells) {
-      const states = new Set(c.panes.map((p) => stateOf(p.ptyId)))
-      const state = URGENCY.find((s) => states.has(s))
-      if (state) map.set(c.key, state)
-      all.add(state)
-    }
-    const state = URGENCY.find((s) => all.has(s))
+    const states = new Set(w.cells.flatMap((c) => c.panes.map((p) => stateOf(p.ptyId))))
+    const state = URGENCY.find((s) => states.has(s))
     if (state) map.set(w.key, state)
   }
   return map

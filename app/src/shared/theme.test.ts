@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CELL_BAND_CONTRAST,
   contrast,
   GHOSTTY,
   HEADER_CONTRAST,
@@ -63,6 +64,22 @@ describe('uiColors', () => {
       expect(contrast(ansi[4], surface)).toBeGreaterThanOrEqual(3)
     expect(contrast(ansi[4], ui.raised)).toBeLessThan(3)
     expect(uiColors({ ...GHOSTTY, ansi }).working).toBe(ansi[12])
+  })
+
+  it('cell 띠는 터미널 배경을 글자색 쪽으로 섞어 정한 대비를 낸다', () => {
+    const dark = uiColors(GHOSTTY)
+    expect(contrast(dark.cellBand, dark.ground)).toBeCloseTo(CELL_BAND_CONTRAST, 1)
+    expect(brightness(dark.cellBand)).toBeGreaterThan(brightness(dark.ground))
+    const light = uiColors({ background: '#eff1f5', foreground: '#4c4f69', ansi: GHOSTTY.ansi })
+    expect(contrast(light.cellBand, light.ground)).toBeCloseTo(CELL_BAND_CONTRAST, 1)
+    expect(brightness(light.cellBand)).toBeLessThan(brightness(light.ground))
+  })
+
+  it('글자색으로 cell 띠의 대비에 닿지 못하면 검정·흰색 가운데 배경과 대비가 큰 쪽으로 섞는다', () => {
+    const ui = uiColors({ background: '#808080', foreground: '#8a8a8a', ansi: GHOSTTY.ansi })
+    expect(contrast(ui.fg, ui.ground)).toBeLessThan(CELL_BAND_CONTRAST)
+    expect(contrast(ui.cellBand, ui.ground)).toBeCloseTo(CELL_BAND_CONTRAST, 1)
+    expect(brightness(ui.cellBand)).toBeLessThan(brightness(ui.ground))
   })
 
   it('구분선이 터미널·pane 헤더와 이미 구별되면 pane 경계선은 구분선과 같은 색이다', () => {
