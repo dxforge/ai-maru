@@ -21,6 +21,10 @@ updates:
       # 먼저 맞는 group 에 들어가므로 minor-and-patch 보다 앞에 둔다.
       xterm:
         patterns: ["@xterm/*"]
+      # electron 새 버전은 위 결함이 남아 있을 수 있으므로 따로 PR 을 받아 e2e 로 확인한다.
+      # electron 이 minor-and-patch PR 에 섞이면, 그 PR 을 받지 않는 동안 함께 묶인 다른 패키지 업데이트도 받지 못한다.
+      electron:
+        patterns: ["electron"]
       minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
