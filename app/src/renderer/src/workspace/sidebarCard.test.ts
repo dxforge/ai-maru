@@ -33,37 +33,39 @@ const record = (o: Partial<ProgramStatusRecord> = {}): ProgramStatusRecord => ({
 })
 
 describe('paneSection', () => {
-  it('셸 pane 은 이름과 경로만 쓴다', () => {
+  it('셸 pane 은 사이드바 줄의 아이콘과 이름·경로만 쓴다', () => {
     expect(paneSection(pane({ cwd: '/Users/me/src/app' }), undefined, undefined, 0)).toEqual({
       key: 'pane:7',
       title: 'vim',
+      icon: { command: 'terminal' },
       path: '~/src/app'
     })
   })
 
-  it('repo·branch·sub 를 한 줄로 잇고, 없는 칸은 뺀다', () => {
-    const r = pane({ cwd: '/Users/me/src/app' })
+  it('아이콘과 색 class 는 사이드바 줄과 같다', () => {
+    const rec = record({ state: 'blocked' })
+    const r = pane({ record: rec })
+    expect(paneSection(r, undefined, rec, 0)).toMatchObject({ icon: r.icon, tone: 'blocked' })
+    const failed: CommandView = { running: false, text: 'make', exitCode: 2 }
+    expect(paneSection(pane({ command: failed }), undefined, undefined, 0)).toMatchObject({
+      icon: { command: 'failed' },
+      tone: 'command-failed'
+    })
+  })
+
+  it('repo·branch 를 한 줄로 잇고, 경로에 있는 sub 와 없는 칸은 뺀다', () => {
+    const r = pane({ cwd: '/Users/me/src/app/core' })
     expect(paneSection(r, { repo: 'app', branch: 'main', sub: 'core' }, undefined, 0).git).toBe(
-      'app · main · core'
+      'app · main'
     )
     expect(paneSection(r, { repo: 'app' }, undefined, 0).git).toBe('app')
   })
 
-  it('프로그램 상태는 상태 이름·앱과 메시지를 쓴다', () => {
+  it('프로그램 상태는 메시지만 쓰고, 메시지가 없으면 두지 않는다', () => {
     const rec = record({ state: 'blocked', message: 'Allow Bash?' })
-    expect(paneSection(pane({ record: rec }), undefined, rec, 0).status).toEqual({
-      state: 'blocked',
-      text: 'Blocked · Claude',
-      message: 'Allow Bash?'
-    })
-  })
-
-  it('메시지가 없으면 상태 줄에 메시지를 두지 않는다', () => {
-    const rec = record({ app: 'codex' })
-    expect(paneSection(pane({ record: rec }), undefined, rec, 0).status).toEqual({
-      state: 'working',
-      text: 'Working · codex'
-    })
+    expect(paneSection(pane({ record: rec }), undefined, rec, 0).message).toBe('Allow Bash?')
+    const quiet = record()
+    expect(paneSection(pane({ record: quiet }), undefined, quiet, 0)).not.toHaveProperty('message')
   })
 
   it('도는 명령은 돈 시간을, 시작 시각을 모르면 Running 만 쓴다', () => {
@@ -106,6 +108,7 @@ describe('jobSection', () => {
     expect(jobSection(job({ name: 'web', started: 0, ports: [5173, 5174] }), 3 * MIN)).toEqual({
       key: 'job:p-9',
       title: 'web',
+      icon: 'job',
       run: 'pnpm dev',
       time: 'Running for 3m · :5173 · :5174'
     })
@@ -135,11 +138,13 @@ describe('workspaceCard', () => {
     expect(workspaceCard({ ...ws, states: [] }).sections[0].note).toBeUndefined()
   })
 
-  it('상태별 pane 수를 급한 순서로 쓰고, 가장 급한 상태를 띠의 상태로 둔다', () => {
+  it('상태별 pane 수를 급한 순서로 쓴다', () => {
     const view = workspaceCard({ ...ws, states: ['working', undefined, 'blocked', 'working'] })
     expect(view.foot).toEqual({
-      state: 'blocked',
-      states: '1 Blocked · 2 Working',
+      states: [
+        { state: 'blocked', text: '1 Blocked' },
+        { state: 'working', text: '2 Working' }
+      ],
       counts: '1 cell · 4 panes'
     })
   })

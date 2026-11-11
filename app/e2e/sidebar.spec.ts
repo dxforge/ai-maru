@@ -1960,7 +1960,7 @@ test('즐겨찾기의 런처를 닫은 뒤 디렉토리 단계부터 연 런처�
   await run(page, 'echo at-$PWD', `at-${home}/other`)
 })
 
-test('cell 에 마우스를 올리면 카드를 사이드바 오른쪽에 cell 위 끝을 맞춰 띄우고, cell 안에서 줄을 옮기면 카드를 다시 띄우지 않고 강조만 옮기며, 창 아래 끝의 cell 에서는 카드를 창 안으로 올린다', async ({
+test('cell 에 마우스를 올리면 카드를 사이드바 오른쪽 끝에 걸쳐 cell 위 끝을 맞춰 띄우고, cell 안에서 줄을 옮기면 카드를 다시 띄우지 않고 강조만 옮기며, 창 아래 끝의 cell 에서는 카드를 창 안으로 올린다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -1975,7 +1975,10 @@ test('cell 에 마우스를 올리면 카드를 사이드바 오른쪽에 cell �
   await expect(card.locator('.section').nth(0)).toHaveClass(/current/)
   const side = await box(page.locator('.sidebar'))
   const at = await box(card)
-  expect(at.x).toBeGreaterThan(side.x + side.width)
+  // 카드는 사이드바 오른쪽 끝을 조금 덮고 그 오른쪽으로 뻗는다.
+  expect(at.x).toBeLessThan(side.x + side.width)
+  expect(at.x).toBeGreaterThan(side.x + side.width / 2)
+  expect(at.x + at.width).toBeGreaterThan(side.x + side.width)
   expect(at.y).toBeCloseTo((await box(group)).y, 0)
 
   // 카드가 닫혔다 다시 뜨면 popover 의 toggle 이벤트가 난다.

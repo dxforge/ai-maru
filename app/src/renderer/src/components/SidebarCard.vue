@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, useTemplateRef, watch } from 'vue'
-import { Clock, GitBranch } from '@lucide/vue'
-import { commandClass } from '../icons'
+import { GitBranch } from '@lucide/vue'
 import { placeBeside } from '../tooltip'
+import LeadIcon from './LeadIcon.vue'
+import PaneIcon from './PaneIcon.vue'
+import StatusIcon from './StatusIcon.vue'
 import { SIDEBAR_CARD_ID, type CardView } from '../workspace/sidebarCard'
 
 /** `anchor` 의 위 끝과 `side`(사이드바)의 오른쪽 끝에 맞춰 띄운다. `current` 는 강조할 구역의 key 다. */
@@ -20,6 +22,9 @@ const {
 
 const card = useTemplateRef<HTMLElement>('card')
 
+/** 카드를 사이드바 위로 겹쳐 띄우려고 사이드바 오른쪽 끝을 이만큼(px) 안으로 당겨 넘긴다. `placeBeside` 가 틈(`GAP`)을 더하므로 카드는 `OVERLAP - GAP` 만큼 사이드바를 덮는다. */
+const OVERLAP = 14
+
 // 내용이 바뀌면 높이도 바뀌므로 그릴 때마다 다시 잰다. 카드가 떠 있는 동안 스크롤하면 `vTooltip` 이 카드를 닫으므로
 // 기준 요소의 자리는 그동안 바뀌지 않는다.
 function place(): void {
@@ -34,7 +39,7 @@ function place(): void {
   el.style.maxHeight = ''
   const size = el.getBoundingClientRect()
   const at = placeBeside(
-    { top: anchor.getBoundingClientRect().top, right: side.getBoundingClientRect().right },
+    { top: anchor.getBoundingClientRect().top, right: side.getBoundingClientRect().right - OVERLAP },
     size,
     { width: innerWidth, height: innerHeight }
   )
@@ -60,26 +65,35 @@ onBeforeUnmount(() => {
           :class="{ current: s.key === current }"
           :data-section="s.key"
         >
-          <div class="name">{{ s.title }}</div>
-          <div v-if="s.notice" class="notice">{{ s.notice }}</div>
-          <div v-if="s.note" class="sub note">{{ s.note }}</div>
-          <div v-if="s.path" class="sub path">{{ s.path }}</div>
-          <div v-if="s.git" class="sub git with-icon">
-            <GitBranch class="text-icon" />{{ s.git }}
+          <div class="head">
+            <span v-if="s.icon" class="icon" :class="s.tone"
+              ><LeadIcon v-if="s.icon === 'job'" name="gear" /><PaneIcon v-else :icon="s.icon"
+            /></span>
+            <span class="name">{{ s.title }}</span>
           </div>
-          <div v-if="s.status" class="status" :class="s.status.state">
-            <span class="dot" />{{ s.status.text }}
+          <div class="body" :class="{ indent: s.icon }">
+            <div v-if="s.notice" class="notice">{{ s.notice }}</div>
+            <div v-if="s.note" class="sub note">{{ s.note }}</div>
+            <div v-if="s.message" class="message">{{ s.message }}</div>
+            <div v-if="s.command" class="command" :class="{ failed: !s.command.running }">
+              {{ s.command.text }}
+            </div>
+            <div v-if="s.run" class="run">{{ s.run }}</div>
+            <div v-if="s.time" class="time">{{ s.time }}</div>
+            <div v-if="s.path || s.git" class="where">
+              <div v-if="s.path" class="path">{{ s.path }}</div>
+              <div v-if="s.git" class="git with-icon">
+                <GitBranch class="text-icon" />{{ s.git }}
+              </div>
+            </div>
           </div>
-          <div v-if="s.status?.message" class="message">{{ s.status.message }}</div>
-          <div v-if="s.command" class="status command" :class="commandClass(s.command)">
-            <span class="dot" />{{ s.command.text }}
-          </div>
-          <div v-if="s.run" class="run">{{ s.run }}</div>
-          <div v-if="s.time" class="sub time with-icon"><Clock class="text-icon" />{{ s.time }}</div>
         </section>
         <footer v-if="view.foot" class="foot">
-          <div v-if="view.foot.states" class="status" :class="view.foot.state">
-            <span class="dot" />{{ view.foot.states }}
+          <div v-if="view.foot.states" class="states">
+            <span v-for="f in view.foot.states" :key="f.state" class="with-icon"
+              ><span class="icon" :class="f.state"><StatusIcon :state="f.state" /></span
+              >{{ f.text }}</span
+            >
           </div>
           <div class="counts">{{ view.foot.counts }}</div>
         </footer>
@@ -113,7 +127,10 @@ onBeforeUnmount(() => {
 }
 
 .section {
-  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-5);
 }
 
 .section + .section {
@@ -124,22 +141,63 @@ onBeforeUnmount(() => {
   background: var(--hover);
 }
 
+/* 경로와 git 은 이름·상태보다 덜 보는 정보라 맨 아래에 회색으로 둔다. */
+.where {
+  margin-top: var(--space-2);
+  color: var(--muted);
+}
+
+/* 이름 줄은 사이드바 줄처럼 아이콘과 이름을 잇는다. 아이콘 칸 폭(14px)은 사이드바 줄의 `.state` 와 같다. */
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  font-size: var(--text-3);
+}
+
+.icon {
+  flex: none;
+  align-self: center;
+  width: 14px;
+  color: var(--claude, var(--faint));
+}
+
+.icon :deep(svg) {
+  margin: 0 auto;
+}
+
 .name {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  min-width: 0;
   overflow: hidden;
-  font-size: var(--text-3);
   font-weight: 600;
 }
 
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* 아이콘이 있는 구역은 아래 줄을 이름이 시작하는 자리에 맞춘다. */
+.body.indent {
+  padding-left: calc(14px + var(--space-4));
+}
+
+/* 무엇을 하는지(메시지·job 의 명령)는 기본 글자색으로 두고, 얼마나 돌았는지·어떻게 끝났는지는 회색으로 둔다. */
 .sub,
-.message {
+.time,
+.command {
   color: var(--muted);
 }
 
-.with-icon,
-.status {
+.command.failed {
+  color: var(--error);
+}
+
+.with-icon {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
@@ -150,25 +208,21 @@ onBeforeUnmount(() => {
   align-self: center;
 }
 
-.dot {
-  flex: none;
-  align-self: center;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--claude, var(--faint));
+.states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  color: var(--fg);
 }
 
-/* 상태 줄의 글자 앞 점(8px)과 틈만큼 들여, 메시지가 상태 이름 아래에서 시작하게 한다. */
-.message {
-  padding-left: calc(8px + var(--space-2));
+.states .icon {
+  width: auto;
 }
 
 .run {
-  color: var(--muted);
   white-space: pre-wrap;
   font:
-    var(--text-1) / 1.45 var(--font-mono),
+    var(--text-2) / 1.45 var(--font-mono),
     monospace;
 }
 
