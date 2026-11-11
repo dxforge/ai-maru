@@ -81,6 +81,18 @@ export function rects(
   return new Map([...rects(layout.first, widths, a), ...rects(layout.second, widths, b)])
 }
 
+export type Edges = { left: boolean; top: boolean; right: boolean; bottom: boolean }
+
+/** `rects` 의 상자 `r` 이 cell 의 어느 가장자리에 닿는지. */
+export function edgesOf(r: Rect): Edges {
+  return {
+    left: r.x < EPSILON,
+    top: r.y < EPSILON,
+    right: r.x + r.w > 1 - EPSILON,
+    bottom: r.y + r.h > 1 - EPSILON
+  }
+}
+
 export const EPSILON = 1e-9
 
 export function neighbor(

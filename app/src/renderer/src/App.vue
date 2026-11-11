@@ -61,7 +61,15 @@ import {
   type ColumnCols,
   type Size
 } from './workspace/grid'
-import { EPSILON, rects, type Layout, type SplitDirection, type Widths } from './workspace/layout'
+import {
+  edgesOf,
+  EPSILON,
+  rects,
+  type Edges,
+  type Layout,
+  type SplitDirection,
+  type Widths
+} from './workspace/layout'
 import { arrangementKey, easeInOut, smoothReveal } from './workspace/reveal'
 import { unreadWorkspaces, urgentStates } from './workspace/status'
 import {
@@ -631,7 +639,7 @@ function setCell(font: TerminalFont, c: Size): void {
 
 type TerminalSize = { cols: number; rows: number }
 
-function placement(b: Box, unit: string, size?: TerminalSize) {
+function placement(b: Box, unit: string, at: Edges, size?: TerminalSize) {
   return {
     style: {
       left: `${b.left}${unit}`,
@@ -640,7 +648,7 @@ function placement(b: Box, unit: string, size?: TerminalSize) {
       height: `${b.height}${unit}`
     },
     size,
-    edge: b.left > 0
+    at
   }
 }
 
@@ -661,17 +669,23 @@ function unitOf(cell: Size, cols: ColumnCols): Size {
 
 function placements(layout: Layout, size: Size | undefined, cell: Size, cols: ColumnCols) {
   const widths: Widths = cols === undefined ? 'even' : 'columns'
+  const shares = rects(layout, widths)
+  const at = (pane: number): Edges => edgesOf(shares.get(pane)!)
   // 영역을 재기 전의 첫 렌더는 비율로 그린다. 터미널은 열·행 수를 받을 때까지 pty 에 붙지 않는다.
   if (!size)
     return new Map(
-      [...rects(layout, widths)].map(([pane, r]) => [
+      [...shares].map(([pane, r]) => [
         pane,
-        placement({ left: r.x * 100, top: r.y * 100, width: r.w * 100, height: r.h * 100 }, '%')
+        placement(
+          { left: r.x * 100, top: r.y * 100, width: r.w * 100, height: r.h * 100 },
+          '%',
+          at(pane)
+        )
       ])
     )
   return new Map(
     [...snapRects(layout, size, unitOf(cell, cols), widths, paneMin(cell, cols))].map(
-      ([pane, b]) => [pane, placement(b, 'px', terminalSize(b, cell, cols))]
+      ([pane, b]) => [pane, placement(b, 'px', at(pane), terminalSize(b, cell, cols))]
     )
   )
 }
@@ -1091,10 +1105,16 @@ void window.maru.restoreScreen().then((r) => {
         <div class="cell-band" @mousedown.prevent="selectCell(c.key)" />
         <div :ref="(el) => observeGrid(c.key, el)" class="grid">
           <div
-            v-for="{ p, active, style, size, edge } in panes"
+            v-for="{ p, active, style, size, at } in panes"
             :key="p.key"
             class="pane"
-            :class="{ 'edge-left': edge, focused: active }"
+            :class="{
+              focused: active,
+              'at-left': at.left,
+              'at-top': at.top,
+              'at-right': at.right,
+              'at-bottom': at.bottom
+            }"
             :data-pty="p.ptyId"
             :style="style"
             @focusin="focusPane(c.key, p.key)"
@@ -1237,6 +1257,7 @@ void window.maru.restoreScreen().then((r) => {
   box-shadow:
     0 0 0 1px var(--line),
     0 4px 24px rgb(0 0 0 / 0.65);
+  background: color-mix(in srgb, var(--side), var(--ground));
 }
 
 /* 사이드바가 펴지는 동안 pane 은 이전 폭으로 남아, 자르지 않으면 Canvas 를 덮는다. single 의 cell 은 이 영역을 채우므로
@@ -1244,6 +1265,17 @@ void window.maru.restoreScreen().then((r) => {
 .single {
   --cell-radius: var(--terminals-radius);
   overflow: clip;
+}
+
+/* single 의 cell 이 창 높이를 다 채우면, 띠 반대쪽 끝 pane 의 focus 테두리가 창 끝에 붙는다. 그 끝에만 여백을 둔다. */
+.single .panes {
+  bottom: var(--space-2);
+  border-radius: var(--cell-radius);
+}
+
+.header-bottom .single .panes {
+  top: var(--space-2);
+  bottom: 0;
 }
 
 /* 보이지 않는 터미널도 자리를 차지해야 창 크기를 따라가고, 보일 때 다시 맞추지 않아도 된다. */
@@ -1287,7 +1319,6 @@ void window.maru.restoreScreen().then((r) => {
   padding: var(--space-4);
   /* 포커스를 따라 scrollIntoView 할 때도 카드를 영역 끝에 붙이지 않고 같은 여백을 남긴다. */
   scroll-padding: var(--space-4);
-  background: color-mix(in srgb, var(--side), var(--ground));
   /* 시스템 스크롤바가 overlay 인지는 `attachOverlayScroll` 이 처음 씌울 때 한 번만 잰다. 그 뒤 시스템 설정을 고전
      스크롤바로 바꾸면 native 스크롤바가 자리를 차지한다. 그때도 넘치기 시작하거나 그칠 때 터미널의 줄 수가 바뀌지 않게
      스크롤바 자리를 늘 잡아 둔다. */
@@ -1320,7 +1351,7 @@ void window.maru.restoreScreen().then((r) => {
 }
 
 /* 좌우 pane 의 경계선. 자리를 차지하지 않게 겹친다 — docs/architecture.md 의 "pane 경계와 글자 칸 격자". */
-.edge-left::before {
+.pane:not(.at-left)::before {
   content: '';
   position: absolute;
   top: 0;
@@ -1375,16 +1406,31 @@ void window.maru.restoreScreen().then((r) => {
 }
 
 /* 입력을 받는 pane 의 테두리다. 경계선처럼 자리를 차지하지 않게 헤더와 터미널 가장자리 위에 겹친다. columns 에서는
-   고른 cell 도 이 테두리로 알아본다. 네 모서리를 모두 cell 과 같은 반지름으로 둥글게 해, cell 의 둥근 모서리에 닿아도 테두리가
-   잘리지 않는다. */
+   고른 cell 도 이 테두리로 알아본다. cell 의 모서리에 닿는 모서리만 cell 과 같은 반지름으로 둥글게 해, 그 모서리에서 테두리가
+   잘리지 않는다. 다른 모서리는 옆 pane 과 맞닿으므로 각지게 둔다. */
 .pane.focused::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: 4;
-  border-radius: var(--cell-radius);
   box-shadow: inset 0 0 0 1px var(--accent);
   pointer-events: none;
+}
+
+.pane.at-top.at-left::after {
+  border-top-left-radius: var(--cell-radius);
+}
+
+.pane.at-top.at-right::after {
+  border-top-right-radius: var(--cell-radius);
+}
+
+.pane.at-bottom.at-left::after {
+  border-bottom-left-radius: var(--cell-radius);
+}
+
+.pane.at-bottom.at-right::after {
+  border-bottom-right-radius: var(--cell-radius);
 }
 
 .pane.focused > .pane-header {

@@ -306,6 +306,23 @@ for (const header of ['bottom', 'top'] as const) {
   })
 }
 
+test('pane 을 나누면 pane 마다 cell 의 어느 가장자리에 닿는지 class 로 단다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-down', 3)
+
+  const edges = await page.evaluate(() =>
+    [...document.querySelectorAll('.panes.selected .pane')].map((p) =>
+      ['left', 'top', 'right', 'bottom'].filter((e) => p.classList.contains(`at-${e}`))
+    )
+  )
+  expect(edges).toEqual([
+    ['left', 'top', 'bottom'],
+    ['top', 'right'],
+    ['right', 'bottom']
+  ])
+})
+
 test('창 크기를 바꿔도 pane 경계는 행·열 격자에 놓인다', async ({ launch }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-down', 2)
