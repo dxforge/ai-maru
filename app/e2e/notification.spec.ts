@@ -169,6 +169,50 @@ test('접은 workspace 는 읽지 않은 알림이 있으면 이름 뒤에 점�
   await expect(head.locator('.unread-dot')).toHaveCount(1)
 })
 
+test('claude 의 Notification hook 은 알림을 넣고, 그 뒤 foreground 프로그램이 바뀌기 전까지 그 pane 의 OSC 알림은 버린다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  const row = shellRows(page).nth(1)
+  const shellName = await shellNameOf(page, row)
+  const pty = await shellValue(page, dataDir, 'pty', '$MARU_PTY_ID')
+  const tty = await ttyOf(page, dataDir, 'right')
+  await focusPane(app, page, 'focus-pane-left', 0)
+
+  const payload = JSON.stringify({
+    hook_event_name: 'Notification',
+    notification_type: 'permission_prompt',
+    message: 'Claude needs your permission'
+  })
+  await run(
+    page,
+    `printf '%s' '${payload}' | MARU_PTY_ID=${pty} "$MARU_CLI" claude hook && echo hooked-$((1+1))`,
+    'hooked-2'
+  )
+  await expect(row.locator('.title')).toHaveText('Claude needs your permission')
+
+  await focusPane(app, page, 'focus-pane-right', 1)
+  await expect(row.locator('.title')).toHaveText(shellName)
+  await focusPane(app, page, 'focus-pane-left', 0)
+  await run(page, `${osc9('dropped', tty).trimEnd()}; echo sent-$((1+1))`, 'sent-2')
+  // 알림은 화면 글자와 다른 경로로 오므로, 띄웠다면 보일 만큼 기다린다.
+  await page.waitForTimeout(SEEN_MS)
+  await expect(row.locator('.title')).toHaveText(shellName)
+
+  await focusPane(app, page, 'focus-pane-right', 1)
+  await page.keyboard.type('sleep 600\n')
+  await focusPane(app, page, 'focus-pane-left', 0)
+  // sleep 이 foreground 가 되는 때를 화면으로 알 수 없어, 보일 때까지 다시 보낸다.
+  await expect
+    .poll(async () => {
+      await page.keyboard.type(osc9('shown', tty))
+      return row.locator('.title').textContent()
+    })
+    .toBe('shown')
+})
+
 test('job 의 pty 로 pane:select 가 오면 그 job 이 든 cell 을 고른다', async ({
   launch,
   dataDir

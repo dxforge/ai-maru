@@ -227,6 +227,18 @@ describe('createPtyStates', () => {
     expect(t.states.entries()).toEqual({})
   })
 
+  it('notify 로 넣은 알림은 구독으로 온 알림처럼 들고 알리며, 구독하지 않는 pty 의 것은 버린다', () => {
+    const t = setup()
+    t.states.watch('p-1')
+    t.last().on.state(state())
+    t.states.notify('p-1', first)
+    expect(t.notified).toEqual([['p-1', first]])
+    expect(t.emitted.at(-1)).toEqual(['p-1', { state: state(), notification: first }])
+    t.states.notify('p-2', second)
+    expect(t.notified).toHaveLength(1)
+    expect(t.states.entries()).toEqual({ 'p-1': { state: state(), notification: first } })
+  })
+
   it('살아 있는지 묻는 동안 forget 하면 다시 구독하지 않는다', async () => {
     const t = setup()
     let answer!: (v: boolean) => void
@@ -260,6 +272,7 @@ describe('createPtyStates 의 보고 있는 pty', () => {
     t.viewed.pty = 'p-1'
     const count = t.emitted.length
     t.last().on.notification(first)
+    t.states.notify('p-1', first)
     expect(t.notified).toEqual([])
     expect(t.emitted).toHaveLength(count)
     expect(t.states.entries()).toEqual({ 'p-1': { state: state() } })

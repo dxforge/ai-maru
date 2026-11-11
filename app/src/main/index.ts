@@ -81,6 +81,7 @@ import {
 import type { HostEvent, KillRequest, OpenRequest, QuitRequest } from './pty-host'
 import { createPtyCells } from './pty-cells'
 import { createPtyStates } from './pty-state'
+import { createClaudeNotifications } from './claude-notification'
 import { createSeen } from './seen'
 import {
   createStateStore,
@@ -229,9 +230,18 @@ const desktopNotifications = createDesktopNotifications({
 // renderer 가 `pane:viewed` 로 알린, 입력 focus 를 가진 pane 의 pty. renderer 를 다시 읽으면 renderer 가 다시 알리기 전까지 보고 있는 pty 가 없는 것으로 친다.
 let viewedPty: string | null = null
 
+const claudeNotifications = createClaudeNotifications({
+  leader: async (pty) => (await foreground(ptyDir(), pty)).pid,
+  notify: (pty, n) => ptyStates.notify(pty, n)
+})
+
 // main 은 renderer 가 붙어 있든 아니든 pty 마다 상태 구독을 열어 마지막 상태를 든다(docs/architecture.md 의 "pty 상태는 main 이 구독해 든다").
 const ptyStates = createPtyStates({
-  subscribe: (id, on) => subscribeState(ptyDir(), id, on),
+  subscribe: (id, on) =>
+    subscribeState(ptyDir(), id, {
+      ...on,
+      notification: (n) => void claudeNotifications.terminal(id, n, on.notification)
+    }),
   isLive: (id) => ptyLive(ptyDir(), id),
   emit: (pty, entry) => sendToWindows('pty:state', pty, entry),
   notified: desktopNotifications,
@@ -529,6 +539,7 @@ const cliHandlers: Handlers = {
   'canvas.put': putDoc,
   ...mcpHandlers({ put: putDoc, version: app.getVersion() }),
   ...monitor.handlers,
+  ...claudeNotifications.handlers,
   ...inbox,
   ...panes.handlers,
   ...paneIo({
@@ -883,6 +894,7 @@ function start(): void {
     // cell 의 마지막 pane 을 지우면 renderer 가 cell 도 지운다(docs/architecture.md).
     if (closed.closed) void jobTable.closeCell(closed.closed)
     ptyStates.forget(closed.pty)
+    claudeNotifications.forget(closed.pty)
     const req: KillRequest = { type: 'kill', id: closed.pty, dir: ptyDir() }
     void ready.then(() => ptyHost().postMessage(req))
   }

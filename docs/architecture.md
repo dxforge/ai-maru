@@ -64,6 +64,8 @@ renderer 는 입력 focus 를 가진 pane 의 pty 를 main 에 `pane:viewed` 로
 
 프로그램이 OSC 9·OSC 777 로 보낸 알림도 같은 `subscribe` 연결로 온다. 상태와 달리 한 번 일어난 일이라 maru-pty 는 알림을 들지 않고 받을 때마다 구독자에게 보낸다. main 은 pty 마다 읽지 않은 마지막 알림 하나를 상태와 함께 든다(`pty:state` 의 `notification`). 새 알림은 이전 것을 대신한다. main 은 `pane:viewed` 로 받은 pty 에 온 알림을 들지 않고, 그 전에 온 알림은 위의 done 과 같이 `pane:seen` 을 받으면 지운다. maru-pty 가 알림을 들지 않으므로 앱을 끄면 읽지 않은 알림은 사라진다. 데스크톱 알림은 main 이 한 번만 띄운다(`app/src/main/desktop-notification.ts`). 같은 pty 에 붙은 창이나 클라이언트가 여럿이어도 겹치지 않게 하기 위해서다. 앱의 창이 포커스되어 있으면 사이드바와 pane 헤더에 보이므로 띄우지 않는다. 알림을 누르면 main 이 창을 앞으로 가져오고 `pane:select` 로 renderer 에 그 pane 을 고르게 한다.
 
+Claude Code 의 알림은 앱이 싣는 plugin 의 Notification hook 으로 받는다. hook 이 부르는 `maru claude hook` 이 앱에 `claude.notification` 으로 넘기고, main 은 OSC 알림과 같이 든다. `idle_prompt` 는 상태 레코드로 이미 보이므로 알림으로 보이지 않는다. 같은 claude 는 hook 이 끝난 뒤 그 알림을 OSC 알림으로도 쓴다. main 은 hook 을 받을 때 그 pty 의 foreground 리더를 기억하고, 리더가 같은 동안 그 pty 에서 온 OSC 9·777 알림을 버린다(`app/src/main/claude-notification.ts`). plugin 없이 뜬 claude 는 hook 을 보내지 않으므로 OSC 알림이 그대로 보인다.
+
 버전 1 의 maru-pty 가운데는 `subscribe` 를 모르는 것이 있어서, main 은 그 pty 를 `old` 로 renderer 에 알리고 renderer 는 그 pty 에 한해 attach 스트림의 `program_status` 를 레코드로 쓴다. 앱은 `MIN_PROTOCOL_VERSION` 보다 낮은 버전의 pty 에 붙지 않으므로, 이 경로에는 닿지 않는다.
 
 ## 앱은 pty 의 레코드 버전으로 요청한다
@@ -106,7 +108,7 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 ## claude 는 PATH 의 shim 이 plugin 을 싣는다
 
-앱은 터미널 PATH 앞에 claude shim(`app/resources/bin/claude`)이 든 디렉토리를 둔다. shim 은 PATH 의 실행 파일이라, 스크립트·`exec`·`command claude`·새로 연 셸에서 띄운 claude 도 거친다. shim 은 PATH 에서 shim 이 아닌 첫 claude 를 찾아 `--plugin-dir` 을 붙여 exec 한다. 자식으로 띄우지 않는 것은 foreground 리더가 claude 여야 표시 cwd 와 닫기 확인 창의 이름이 claude 를 따르기 때문이다.
+앱은 터미널 PATH 앞에 claude shim(`app/resources/bin/claude`)이 든 디렉토리를 둔다. shim 은 PATH 의 실행 파일이라, 스크립트·`exec`·`command claude`·새로 연 셸에서 띄운 claude 도 거친다. shim 은 PATH 에서 shim 이 아닌 첫 claude 를 찾아 `--plugin-dir` 을 붙여 exec 한다. 자식으로 띄우지 않는 것은 foreground 리더가 claude 여야 표시 cwd 와 닫기 확인 창의 이름이 claude 를 따르고, claude 가 끝난 뒤 그 pane 의 OSC 알림을 다시 보이기 때문이다.
 
 ## MCP 도구는 `maru mcp` 가 앱에 중계한다
 

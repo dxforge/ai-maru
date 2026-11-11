@@ -601,6 +601,62 @@ fn claude_hook_on_other_events_does_nothing() {
 }
 
 #[test]
+fn claude_hook_on_notification_passes_it_to_the_app() {
+    let cases = [
+        (
+            r#"{"hook_event_name":"Notification","notification_type":"permission_prompt","message":"Claude needs your permission","cwd":"/x"}"#,
+            json!({ "type": "permission_prompt", "message": "Claude needs your permission" }),
+        ),
+        (
+            r#"{"hook_event_name":"Notification","notification_type":"plugin_notification","message":"m","title":"T"}"#,
+            json!({ "type": "plugin_notification", "message": "m", "title": "T" }),
+        ),
+        // 종류가 없는 입력도 넘긴다 — 무엇을 보일지는 앱이 정한다.
+        (
+            r#"{"hook_event_name":"Notification","message":"m"}"#,
+            json!({ "message": "m" }),
+        ),
+        (
+            r#"{"hook_event_name":"Notification","notification_type":"permission_prompt","message":1}"#,
+            json!({ "type": "permission_prompt", "message": "" }),
+        ),
+    ];
+    for (input, expected) in cases {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, |req| result(req, Value::Null));
+        let out = maru_claude(&sock, &["claude", "hook"], input.as_bytes(), &[]);
+        let req = server.join().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(stdout(&out), "");
+        assert_eq!(req["method"], "claude.notification");
+        let mut params = req["params"].as_object().unwrap().clone();
+        assert_eq!(params.remove("pty"), Some(json!(PTY)));
+        assert!(params.remove("protocol_version").is_some());
+        assert_eq!(Value::Object(params), expected);
+    }
+}
+
+#[test]
+fn claude_hook_on_notification_fails_when_the_app_refuses() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| {
+        error(
+            req,
+            -32601,
+            "unknown method claude.notification",
+            json!({ "code": "unknown_method" }),
+        )
+    });
+    let input =
+        br#"{"hook_event_name":"Notification","notification_type":"idle_prompt","message":"m"}"#;
+    let out = maru_claude(&sock, &["claude", "hook"], input, &[]);
+    assert_fails_with(&out, "unknown method claude.notification");
+    server.join().unwrap();
+}
+
+#[test]
 fn claude_hook_rejects_payloads_it_cannot_use() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
