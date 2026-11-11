@@ -4,7 +4,8 @@ import { sidebarLabel, type SidebarLabel } from '../../../shared/names'
 import { paneName, type CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { AGENT_ICONS, commandIcon, STATE_LABELS, type PaneIcon } from '../icons'
+import type { GitHead } from '../../../shared/git'
+import { AGENT_ICONS, commandClass, commandIcon, STATE_LABELS, type PaneIcon } from '../icons'
 import { relativeTo, tildePath } from './cwd'
 import { commandLabel, notificationText } from './display'
 import type { Pane } from './store'
@@ -13,6 +14,11 @@ export type Row = {
   pane: number
   state?: ProgramStatusState
   icon: PaneIcon
+  /** 아이콘 색을 정하는 class. 상태가 있으면 상태, 없으면 `commandClass` 다. */
+  tone: string
+  /** 프로그램 상태의 메시지. 상태가 없으면 두지 않는다. */
+  message?: string
+  git?: DeepReadonly<GitHead>
   command?: CommandView
   commandTail: boolean
   focused: boolean
@@ -27,7 +33,6 @@ export type Row = {
 export type JobRow = {
   pty: string
   text: string
-  tip: string
   ports: string
   started?: number
   exited: boolean
@@ -67,6 +72,9 @@ export function paneRow(
     pane: p.key,
     state: s,
     icon: agent ? { agent } : s ? { state: s } : { command: commandIcon(cmd) },
+    tone: s ?? commandClass(cmd),
+    message: (s && r.message) || undefined,
+    git: p.git,
     command: cmd,
     commandTail: tail,
     focused,
@@ -84,11 +92,9 @@ export function exitText(e: NonNullable<JobView['exit']>): string {
 }
 
 export function jobRow(j: JobView): JobRow {
-  const command = j.command.join(' ')
   return {
     pty: j.pty,
     text: jobName(j),
-    tip: j.exit ? `${command}\n${exitText(j.exit)}` : command,
     ports: j.ports.map((p) => `:${p}`).join(' '),
     started: j.started,
     exited: !!j.exit

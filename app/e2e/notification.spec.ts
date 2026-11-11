@@ -3,6 +3,7 @@ import {
   cellGroups,
   expect,
   focusPane,
+  hoverCard,
   type Launched,
   newWorkspace,
   paneHeader,
@@ -66,11 +67,10 @@ test('다른 pane 에 OSC 777 알림이 오면 사이드바 행 제목이 알림
   await page.keyboard.type(osc777('Tests', '3 failed; see log', tty))
   await expect(row.locator('.title')).toHaveText('3 failed; see log')
   await expect(row.locator('.state')).toHaveClass(/unread/)
-  await expect(row).toHaveAttribute(
-    'data-tooltip',
-    new RegExp(`^${shellName} — Tests: 3 failed; see log\n`)
-  )
   await expect(row).toHaveAttribute('aria-label', /\. Notification: Tests: 3 failed; see log$/)
+  const card = await hoverCard(page, row)
+  await expect(card.locator('.name')).toHaveText(shellName)
+  await expect(card.locator('.notice')).toHaveText('Tests: 3 failed; see log')
   await expect(header.locator('.title')).toHaveText(shellName)
   await expect(header.locator('.notification')).toHaveText('Tests: 3 failed; see log')
   await expect(header.locator('.status-icon')).toHaveClass(/unread/)
