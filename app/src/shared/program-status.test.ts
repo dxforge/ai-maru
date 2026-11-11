@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   parseProgramStatus,
   programName,
+  restingRoot,
   runningTasks,
   shownRecord,
   type ProgramStatusRecord,
@@ -149,6 +150,18 @@ describe('shownRecord', () => {
     expect(
       shownRecord([{ ...rec('', 'done', 'x'), message: 'root' }, ask as ProgramStatusRecord])
     ).toEqual({ ...ask, app: 'x' })
+  })
+})
+
+describe('restingRoot', () => {
+  it('shownRecord 가 하위 working 때문에 working 으로 올린 루트의 상태만 돌려준다', () => {
+    const bg = rec('bg/b1', 'working')
+    expect(restingRoot([rec('', 'done'), bg])).toBe('done')
+    expect(restingRoot([rec('', 'idle'), bg])).toBe('idle')
+    expect(restingRoot([rec('', 'working'), bg])).toBeUndefined()
+    expect(restingRoot([rec('', 'done')])).toBeUndefined()
+    expect(restingRoot([rec('', 'done'), rec('a1', 'error'), bg])).toBeUndefined()
+    expect(restingRoot([bg])).toBeUndefined()
   })
 })
 

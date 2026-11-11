@@ -976,11 +976,10 @@ fn claude_hook() -> Result<()> {
             }
         }
         "Stop" => {
-            let tasks = payload["background_tasks"]
+            let shells: Vec<(&str, &str)> = payload["background_tasks"]
                 .as_array()
-                .map_or(&[][..], |a| a);
-            let shells: Vec<(&str, &str)> = tasks
-                .iter()
+                .into_iter()
+                .flatten()
                 .filter(|t| t["type"] == "shell" && t["status"] == "running")
                 // 앱 claude plugin 의 monitor 는 claude 가 떠 있는 동안 늘 돈다. Claude Code 는 `monitors.json` 의 명령을
                 // `$MARU_CLI` 를 풀지 않은 채 싣는다(Claude Code 2.1.322 실측).

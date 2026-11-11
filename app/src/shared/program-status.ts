@@ -46,8 +46,21 @@ export const URGENCY: readonly ProgramStatusState[] = [
 export function shownRecord(
   records: readonly ProgramStatusRecord[]
 ): ProgramStatusRecord | undefined {
+  return pick(records)?.shown
+}
+
+/**
+ * `shownRecord` 가 하위 `working` 때문에 루트를 `working` 으로 바꿔 보일 때, 루트가 보낸 상태(`done`·`idle`). 그 밖에는 없다.
+ */
+export function restingRoot(records: readonly ProgramStatusRecord[]): 'done' | 'idle' | undefined {
+  return pick(records)?.resting
+}
+
+function pick(
+  records: readonly ProgramStatusRecord[]
+): { shown: ProgramStatusRecord; resting?: 'done' | 'idle' } | undefined {
   const root = records.find((r) => r.id === '')
-  if (!root) return root
+  if (!root) return undefined
   let shown = root
   if (root.state === 'working') {
     shown = records.find((r) => r.id !== '' && r.state === 'blocked' && r.kind !== null) ?? root
@@ -55,12 +68,12 @@ export function shownRecord(
     for (const r of records) {
       if (URGENCY.indexOf(r.state) < URGENCY.indexOf(shown.state)) shown = r
     }
-    const resting = root.state === 'done' || root.state === 'idle'
+    const resting = root.state === 'done' || root.state === 'idle' ? root.state : undefined
     if (resting && (shown === root || shown.state === 'working') && records.some(isRunning)) {
-      return { ...root, state: 'working' }
+      return { shown: { ...root, state: 'working' }, resting }
     }
   }
-  return shown.app === root.app ? shown : { ...shown, app: root.app }
+  return { shown: shown.app === root.app ? shown : { ...shown, app: root.app } }
 }
 
 const isRunning = (r: ProgramStatusRecord): boolean => r.id !== '' && r.state === 'working'

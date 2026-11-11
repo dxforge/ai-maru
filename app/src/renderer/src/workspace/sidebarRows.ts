@@ -50,7 +50,7 @@ export type RowSource = {
   command: (pty?: string) => CommandView | undefined
   notification: (pty?: string) => PtyNotification | undefined
   tasks: (pty?: string) => readonly ProgramStatusRecord[]
-  rootState: (pty: string) => ProgramStatusState | undefined
+  resting: (pty?: string) => 'done' | 'idle' | undefined
   home?: string
   shell?: string
 }
@@ -81,8 +81,7 @@ export function paneRow(
     const agent = st === 'idle' && r ? AGENT_ICONS.get(r.app) : undefined
     return agent ? { agent } : st ? { state: st } : { command: commandIcon(cmd) }
   }
-  const root = s === 'working' && r?.id === '' && p.ptyId ? src.rootState(p.ptyId) : undefined
-  const resting = root === 'done' || root === 'idle' ? root : undefined
+  const resting = src.resting(p.ptyId)
   return {
     pane: p.key,
     state: s,

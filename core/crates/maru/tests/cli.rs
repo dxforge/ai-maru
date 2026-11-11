@@ -2084,10 +2084,7 @@ fn writes(args: &[&str], body: &str) {
     );
     assert!(out.stdout.is_empty());
     assert!(out.stderr.is_empty());
-    assert_eq!(
-        String::from_utf8_lossy(&got),
-        format!("\x1b]7501;{body}\x1b\\")
-    );
+    assert_eq!(String::from_utf8_lossy(&got), osc(body));
 }
 
 fn refuses(args: &[&str], expected: &str) {
@@ -2406,11 +2403,7 @@ fn status_with_pty_writes_to_that_ptys_terminal_only() {
             "{args:?}: {}",
             String::from_utf8_lossy(&mine)
         );
-        assert_eq!(
-            String::from_utf8_lossy(&other),
-            format!("\x1b]7501;{body}\x1b\\"),
-            "{args:?}"
-        );
+        assert_eq!(String::from_utf8_lossy(&other), osc(body), "{args:?}");
     }
 }
 
