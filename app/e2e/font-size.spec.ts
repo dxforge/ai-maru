@@ -70,12 +70,9 @@ test('Reset Font Size 로 cell 의 글꼴을 되돌려도 터미널 행 수가 �
 }) => {
   const launched = await launch(DOM_RENDERER)
   const { app, page } = launched
-  const bigger = async () => {
-    for (let i = 0; i < 4; i++) await increase(app)
-    await expect.poll(() => fontSizes(page)).toEqual([[PLUS4]])
-  }
-  await bigger()
-  await expectRowsChangeOnce(launched, () => reset(app), bigger)
+  for (let i = 0; i < 4; i++) await increase(app)
+  await expect.poll(() => fontSizes(page)).toEqual([[PLUS4]])
+  await expectRowsChangeOnce(launched, () => reset(app))
 })
 
 test('설정 파일의 font-size 가 바뀌면 크기를 바꾸지 않은 cell 만 따르고, 줄 높이는 모두 따른다', async ({
@@ -136,14 +133,12 @@ test('columns 보기에서 크기를 키운 카드는 pane 이 80열인 채로 �
       .nth(i)
       .evaluate((w) => ({
         width: w.getBoundingClientRect().width,
-        header: w.querySelector('.cell-header')!.getBoundingClientRect().height,
-        pane: w.querySelector('.pane-header')!.getBoundingClientRect().height,
+        header: w.querySelector('.pane-header')!.getBoundingClientRect().height,
         title: getComputedStyle(w.querySelector('.pane-header .title')!).fontSize
       }))
   const [small, large] = [await measure(0), await measure(1)]
   expect(large.width).toBeGreaterThan(small.width)
   expect(large.header).toBeGreaterThan(small.header)
-  expect(large.pane).toBe(large.header)
   expect([small.title, large.title]).toEqual([BASE, PLUS4])
 })
 

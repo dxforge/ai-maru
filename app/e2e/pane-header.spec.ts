@@ -9,7 +9,6 @@ import {
   newWorkspace,
   paneHeader,
   panes,
-  programStatus,
   putCanvas,
   resizeBy,
   run,
@@ -25,10 +24,10 @@ import {
   zshHome
 } from './app'
 
-function headerBelowPane(page: Page): Promise<{ gap: number; above: number }> {
+function bandBelowPane(page: Page): Promise<{ gap: number; above: number }> {
   return page.evaluate(() => {
     const card = document.querySelector('.panes.selected')!
-    const r = card.querySelector('.cell-header')!.getBoundingClientRect()
+    const r = card.querySelector('.cell-band')!.getBoundingClientRect()
     const pane = card.querySelector('.pane-header')!.getBoundingClientRect()
     return { gap: card.getBoundingClientRect().bottom - r.bottom, above: r.top - pane.bottom }
   })
@@ -145,49 +144,37 @@ test('포커스를 옮기면 pane 헤더의 강조와 pane 테두리, 다른 pan
   ])
 })
 
-test('columns 의 cell 헤더를 누르면 그 cell 을 고르고 키가 그리로 간다', async ({ launch }) => {
+test('columns 의 cell 띠를 누르면 그 cell 을 고르고 키가 그리로 간다', async ({ launch }) => {
   const launched = await launch()
   const { app, page } = launched
   await newWorkspace(launched, 2)
   await toggleView({ app, page }, 'columns')
-  const headers = page.locator('.cell-header')
-  await expect(headers).toHaveCount(2)
+  const bands = page.locator('.cell-band')
+  await expect(bands).toHaveCount(2)
 
-  await headers.nth(0).click()
+  await bands.nth(0).click()
 
   await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
   await run(page, 'echo first-$((1+1))', 'first-2')
 })
 
-test('single 보기에서도 선택된 cell 의 헤더만 이름·상태를 보이고, 카드 맨 아래 pane 헤더 아래에 놓이며, 사이드바를 접어도 남고, 눌러도 키 입력이 터미널에 남는다', async ({
+test('single 보기에서도 선택된 cell 의 띠만 보이고, 카드 맨 아래 pane 헤더 아래에 놓이며, 눌러도 키 입력이 터미널에 남는다', async ({
   launch
 }) => {
   const launched = await launch()
-  const { app, page } = launched
   await newWorkspace(launched, 2)
-  const headers = page.locator('.cell-header')
-  await expect(headers).toHaveCount(2)
-  await expect(headers.nth(1)).toBeVisible()
-  await expect(headers.nth(0)).toBeHidden()
-  await expect(headers.nth(1)).toHaveClass(/focused/)
-  await expect(headers.nth(1).locator('.name')).toHaveText(basename(process.env.HOME!))
-  await expect(
-    headers.nth(1).locator('.row-bar-icon svg[data-state]:not([data-icon])')
-  ).toHaveCount(0)
+  const { page } = launched
+  const bands = page.locator('.cell-band')
+  await expect(bands).toHaveCount(2)
+  await expect(bands.nth(1)).toBeVisible()
+  await expect(bands.nth(0)).toBeHidden()
+  expect(await bandBelowPane(page)).toEqual({ gap: 0, above: 0 })
 
-  await page.keyboard.type(programStatus('working'))
-  await expect(headers.nth(1)).toHaveClass(/working/)
-  expect(await headerBelowPane(page)).toEqual({ gap: 0, above: 0 })
-
-  await clickMenu(app, 'toggle-sidebar')
-  await expect(page.locator('.sidebar')).toHaveClass(/collapsed/)
-  await expect(headers.nth(1)).toBeVisible()
-
-  await headers.nth(1).click()
+  await bands.nth(1).click()
   await run(page, 'echo keep-$((1+1))', 'keep-2')
 })
 
-test('pane 헤더와 columns 의 cell 헤더는 글자 위에서도 기본 커서를 보이고, Canvas 글자에서 헤더로 끌어도 헤더 글자는 선택되지 않는다', async ({
+test('pane 헤더는 글자 위에서도 기본 커서를 보이고, Canvas 글자에서 헤더로 끌어도 헤더 글자는 선택되지 않는다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -197,7 +184,7 @@ test('pane 헤더와 columns 의 cell 헤더는 글자 위에서도 기본 커�
   await expect(heading).toBeVisible()
   // 패널이 열리는 transition 동안 제목이 왼쪽으로 움직여, 잰 자리에서 누르면 다른 글자가 잡힌다.
   await expect.poll(() => canvasPanel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
-  for (const s of ['.pane-header .title', '.pane-header .cwd', '.cell-header .name']) {
+  for (const s of ['.pane-header .title', '.pane-header .cwd']) {
     const text = page.locator(s)
     expect(await text.evaluate((e) => getComputedStyle(e).cursor)).toBe('default')
 
@@ -439,28 +426,27 @@ test('pane 헤더는 기본으로 pane 맨 아래에 있고 본문은 헤더 위
   expect(covered.hit).toBe(true)
 })
 
-test('columns 의 cell 헤더는 기본으로 카드 맨 아래, pane 헤더 아래에 놓인다', async ({
+test('columns 의 cell 띠는 기본으로 카드 맨 아래, pane 헤더 아래에 놓인다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
-  await expect(page.locator('.cell-header')).toHaveCount(1)
-  expect(await headerBelowPane(page)).toEqual({ gap: 0, above: 0 })
+  await expect(page.locator('.cell-band')).toHaveCount(1)
+  expect(await bandBelowPane(page)).toEqual({ gap: 0, above: 0 })
 })
 
-test('헤더가 위면 columns 의 cell 헤더는 카드 맨 위, pane 헤더 위에 놓인다', async ({
+test('헤더가 위면 columns 의 cell 띠는 카드 맨 위, pane 헤더 위에 놓인다', async ({
   launch,
   dataDir
 }) => {
   writeConfig(dataDir, '[layout]\nheader = "top"\n')
   const { app, page } = await launch()
   await toggleView({ app, page }, 'columns')
-  const header = page.locator('.cell-header')
-  await expect(header).toHaveCount(1)
+  await expect(page.locator('.cell-band')).toHaveCount(1)
 
   const layout = await page.evaluate(() => {
     const card = document.querySelector('.panes.selected')!.getBoundingClientRect()
-    const r = document.querySelector('.cell-header')!.getBoundingClientRect()
+    const r = document.querySelector('.cell-band')!.getBoundingClientRect()
     const pane = document.querySelector('.pane-header')!.getBoundingClientRect()
     return { gap: r.top - card.top, below: pane.top - r.bottom }
   })

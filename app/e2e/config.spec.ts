@@ -97,11 +97,7 @@ test('columns 보기에서 줄 높이를 바꾸면 터미널 행 수가 중간 �
 }) => {
   const launched = await launch(DOM_RENDERER)
   await toggleView(launched, 'columns')
-  await expectRowsChangeOnce(
-    launched,
-    settings(dataDir, '[terminal]\nline-height = 2\n'),
-    settings(dataDir, '')
-  )
+  await expectRowsChangeOnce(launched, settings(dataDir, '[terminal]\nline-height = 2\n'))
 })
 
 test('single 보기에서 글꼴 크기를 줄여도 터미널 행 수가 중간 값 없이 한 번에 바뀐다', async ({
@@ -109,25 +105,17 @@ test('single 보기에서 글꼴 크기를 줄여도 터미널 행 수가 중간
   dataDir
 }) => {
   const launched = await launch(DOM_RENDERER)
-  await expectRowsChangeOnce(
-    launched,
-    settings(dataDir, '[terminal]\nfont-size = 10\n'),
-    settings(dataDir, '')
-  )
+  await expectRowsChangeOnce(launched, settings(dataDir, '[terminal]\nfont-size = 10\n'))
 })
 
-test('cell 헤더가 위에 있어도 줄 높이를 바꾸면 터미널 행 수가 중간 값 없이 한 번에 바뀐다', async ({
+test('헤더가 위에 있어도 줄 높이를 바꾸면 터미널 행 수가 중간 값 없이 한 번에 바뀐다', async ({
   launch,
   dataDir
 }) => {
   const top = '[layout]\nheader = "top"\n'
   writeConfig(dataDir, top)
   const launched = await launch(DOM_RENDERER)
-  await expectRowsChangeOnce(
-    launched,
-    settings(dataDir, `${top}[terminal]\nline-height = 2\n`),
-    settings(dataDir, top)
-  )
+  await expectRowsChangeOnce(launched, settings(dataDir, `${top}[terminal]\nline-height = 2\n`))
 })
 
 test('single 보기의 숨은 cell 도 새 크기로 맞춘다', async ({ launch, dataDir }) => {

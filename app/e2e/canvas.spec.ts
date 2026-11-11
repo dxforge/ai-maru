@@ -871,7 +871,7 @@ test('터미널에서 보낸 문서는 그 cell 을 고른 동안 보이고, 드
   await expect(titles(page)).toHaveCount(0)
   await expect(viewButton(page)).not.toContainText('second')
   await page.keyboard.type('cd ~/second\n')
-  await expect(page.locator('.panes.selected .cell-header .name')).toHaveText('second')
+  await expect(page.locator('.panes.selected .pane-header .cwd')).toHaveText('second')
   await expect(viewButton(page).locator('.cell')).toHaveText('second')
   await page.keyboard.type("printf '# Second' | maru canvas put >/dev/null\n")
   await expect(titles(page)).toHaveText(['Second'])

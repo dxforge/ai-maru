@@ -3,7 +3,7 @@ import { PANE_MAX_COLS, PANE_MIN } from '../../../shared/layout'
 export type Position = 'top' | 'bottom'
 
 /**
- * `header` 는 pane 헤더와 cell 헤더, `palette` 는 명령 팔레트가 놓이는 쪽이다. `columnCols` 는 columns 보기에서
+ * `header` 는 pane 헤더와 cell 띠, `palette` 는 명령 팔레트가 놓이는 쪽이다. `columnCols` 는 columns 보기에서
  * Widen·Narrow Cell 로 폭을 바꾸지 않은 cell 의 pane 폭(열 수)이다. `columnStep` 은 두 명령이 한 번에 바꾸는 열 수다.
  */
 export type LayoutConfig = {

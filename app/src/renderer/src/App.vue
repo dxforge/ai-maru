@@ -31,7 +31,6 @@ import { createChordKeys } from './chord'
 import PaneHeader from './components/PaneHeader.vue'
 import PanelBar, { type Panel } from './components/PanelBar.vue'
 import { FileText } from '@lucide/vue'
-import StatusIcon from './components/StatusIcon.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import TerminalView from './components/TerminalView.vue'
 import ToastStack from './components/ToastStack.vue'
@@ -563,21 +562,15 @@ function gridVars(cell: Size, font: TerminalFont) {
 const sameSize = (a: Size | undefined, b: Size): boolean =>
   a?.width === b.width && a.height === b.height
 
-/** cell 마다 `.panes` 의 크기. CSS 가 정하는 여백을 JS 에서 다시 계산하지 않게 잰다. */
-const panesSizes = reactive(new Map<number, Size>())
-// pane 이 놓이는 영역은 `.panes` 에서 cell 헤더(높이 `--row`)를 뺀 것이다. 영역을 직접 재면 줄 높이가 바뀐 첫 렌더는
-// 헤더만 새 높이이고 잰 영역은 옛 높이라, pane 이 한 프레임 동안 옛 영역에 맞춰 놓여 프로그램에 resize 가 두 번 간다.
-function gridOf(key: number, cell: Size): Size | undefined {
-  const s = panesSizes.get(key)
-  return s && { width: s.width, height: Math.max(0, s.height - rowOf(cell)) }
-}
-const panesEls = new Map<number, Element>()
-const panesKeys = new WeakMap<Element, number>()
+/** cell 마다 pane 이 놓이는 영역(`.grid`)의 크기. CSS 가 정하는 여백을 JS 에서 다시 계산하지 않게 잰다. */
+const gridSizes = reactive(new Map<number, Size>())
+const gridEls = new Map<number, Element>()
+const gridKeys = new WeakMap<Element, number>()
 // 사이드바·Canvas 폭이 transition 으로 바뀌는 동안 pane 크기를 다시 재면 터미널이 프레임마다 맞춰져 PTY 크기가
 // 여러 번 바뀐다. 그동안은 재지 않고, 끝난 뒤 다시 잰다.
 const panels = (): Element[] => [side.value, canvasPanel.value?.panel].filter((el) => !!el)
 // `transitionrun` 은 transition 이 생긴 다음 프레임에 온다. 그래서 그것으로 움직임을 알면, 그 전 프레임의 크기로 터미널을
-// 한 번 더 맞춘다. transition 은 스타일을 계산할 때 생기므로, `panesObserver` 콜백이 돌 때는 `getAnimations()` 에 이미 있다.
+// 한 번 더 맞춘다. transition 은 스타일을 계산할 때 생기므로, `gridObserver` 콜백이 돌 때는 `getAnimations()` 에 이미 있다.
 // 폭이 아닌 transition 은 보지 않는다. Canvas 가 닫힐 때의 visibility 는 늘 180ms 를 다 채워, 되돌아가느라 일찍 끝난
 // 폭의 `transitionend` 를 놓치게 한다.
 const PANEL_SIZES = ['width', 'flex-basis']
@@ -592,32 +585,32 @@ const panelsMoving = (): boolean =>
           PANEL_SIZES.includes(a.transitionProperty)
       )
   )
-const panesObserver = new ResizeObserver((entries) => {
+const gridObserver = new ResizeObserver((entries) => {
   if (panelsMoving()) return
   for (const {
     target,
     contentRect: { width, height }
   } of entries) {
-    const key = panesKeys.get(target)
+    const key = gridKeys.get(target)
     if (key === undefined) continue
-    const old = panesSizes.get(key)
-    if (!sameSize(old, { width, height })) panesSizes.set(key, { width, height })
+    const old = gridSizes.get(key)
+    if (!sameSize(old, { width, height })) gridSizes.set(key, { width, height })
   }
 })
-function observePanes(key: number, el: unknown): void {
-  const old = panesEls.get(key)
+function observeGrid(key: number, el: unknown): void {
+  const old = gridEls.get(key)
   if (old === el) return
-  if (old) panesObserver.unobserve(old)
+  if (old) gridObserver.unobserve(old)
   if (el instanceof Element) {
-    panesEls.set(key, el)
-    panesKeys.set(el, key)
-    panesObserver.observe(el)
+    gridEls.set(key, el)
+    gridKeys.set(el, key)
+    gridObserver.observe(el)
   } else {
-    panesEls.delete(key)
-    panesSizes.delete(key)
+    gridEls.delete(key)
+    gridSizes.delete(key)
   }
 }
-onBeforeUnmount(() => panesObserver.disconnect())
+onBeforeUnmount(() => gridObserver.disconnect())
 
 function panelTransition(e: TransitionEvent): void {
   if (!PANEL_SIZES.includes(e.propertyName)) return
@@ -625,9 +618,9 @@ function panelTransition(e: TransitionEvent): void {
   // 움직이는 도중에 다시 토글하면 `transitioncancel` 이 오지만, 그때는 이미 반대로 가는 transition 이 돌고 있다.
   if (panelsMoving()) return
   // 다시 observe 하면 지금 크기로 콜백이 한 번 온다.
-  for (const el of panesEls.values()) {
-    panesObserver.unobserve(el)
-    panesObserver.observe(el)
+  for (const el of gridEls.values()) {
+    gridObserver.unobserve(el)
+    gridObserver.observe(el)
   }
 }
 
@@ -694,7 +687,7 @@ function roomFor(from: number, direction: SplitDirection, full: boolean): boolea
   if (!c) return true
   const cell = cellOf(fontOf(c))
   return roomForSplit(
-    { layout: c.layout, cell, measured: gridOf(c.key, cell), cols: columnColsOf(c) },
+    { layout: c.layout, cell, measured: gridSizes.get(c.key), cols: columnColsOf(c) },
     { from, direction, full }
   )
 }
@@ -723,7 +716,7 @@ const views = computed(() =>
     const selected = c.key === workspaces.selectedKey.value
     const font = fontOf(c)
     const cell = cellOf(font)
-    const measured = gridOf(c.key, cell)
+    const measured = gridSizes.get(c.key)
     const cols = columnColsOf(c)
     const width = columnsWidthOf(c.layout, cols, cell)
     const places = placements(
@@ -745,11 +738,6 @@ const views = computed(() =>
       }))
     }
   })
-)
-
-// pane 의 cwd·branch 가 바뀔 때마다 views 와 스크롤 watch 가 지켜보는 배치를 다시 계산하지 않게 views 밖에 둔다.
-const labels = computed(
-  () => new Map(workspaces.cells().map((c) => [c.key, cellLabel(focusedPane(c))]))
 )
 
 const urgent = computed(() => urgentStates(workspaces.list.value, ptyStates.state))
@@ -1029,7 +1017,7 @@ void window.maru.restoreScreen().then((r) => {
   // 되살린 cell 은 아직 그려지기 전이라 잰 것이 없다. cell 을 다 잰 뒤 `flush: 'post'` 인 스크롤 watch 가 먼저
   // 돌도록, `settled` 는 그다음 프레임에 켠다.
   const unwatch = watch(
-    () => workspaces.cells().every((c) => panesSizes.has(c.key)),
+    () => workspaces.cells().every((c) => gridSizes.has(c.key)),
     (all) => {
       if (!all) return
       unwatch()
@@ -1095,26 +1083,13 @@ void window.maru.restoreScreen().then((r) => {
       <div
         v-for="{ c, selected, width, font, vars, panes } in views"
         :key="c.key"
-        :ref="(el) => observePanes(c.key, el)"
         class="panes"
         :data-cell="c.id"
         :class="{ selected }"
         :style="{ width, ...vars }"
       >
-        <div
-          class="row-bar cell-header"
-          :class="[urgent.get(c.key), { focused: selected }]"
-          @mousedown.prevent="selectCell(c.key)"
-        >
-          <span class="row-bar-icon status-icon"
-            ><StatusIcon v-if="urgent.has(c.key)" :state="urgent.get(c.key)!"
-          /></span>
-          <span class="row-bar-text name">{{ labels.get(c.key)!.name }}</span>
-          <span v-if="labels.get(c.key)!.branch" class="row-bar-text branch">{{
-            labels.get(c.key)!.branch
-          }}</span>
-        </div>
-        <div class="grid">
+        <div class="cell-band" @mousedown.prevent="selectCell(c.key)" />
+        <div :ref="(el) => observeGrid(c.key, el)" class="grid">
           <div
             v-for="{ p, active, style, size, edge } in panes"
             :key="p.key"
@@ -1272,22 +1247,36 @@ void window.maru.restoreScreen().then((r) => {
 }
 
 /* 보이지 않는 터미널도 자리를 차지해야 창 크기를 따라가고, 보일 때 다시 맞추지 않아도 된다. */
+/* 바탕이 띠 색이라, 둥글게 자른 pane 영역(`.grid`)의 모서리 바깥을 띠 색이 받친다. */
 .panes {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   visibility: hidden;
+  background: var(--cell-band);
 }
 
 .panes.selected {
   visibility: visible;
 }
 
+/* cell 의 pane 들을 한 묶음으로 보이는 띠다. pane 헤더 쪽 가장자리에 자리를 차지해 놓인다. */
+.cell-band {
+  flex: none;
+  height: 4px;
+}
+
+.header-bottom .cell-band {
+  order: 1;
+}
+
 .grid {
   position: relative;
   flex: 1;
   min-height: 0;
+  border-radius: var(--cell-radius);
+  overflow: clip;
 }
 
 .columns {
@@ -1306,7 +1295,7 @@ void window.maru.restoreScreen().then((r) => {
 }
 
 /* columns 의 가로 스크롤바는 숨은 동안 클릭을 받지 않는다. 숨은 막대가 cell 의 아래 끝을 덮어, 헤더가 위면 터미널
-   마지막 줄의 클릭을, 헤더가 아래면 cell 헤더의 클릭을 가져가기 때문이다. 그래서 이 막대는 다른 영역과 달리 숨은 자리에
+   마지막 줄의 클릭을, 헤더가 아래면 cell 띠의 클릭을 가져가기 때문이다. 그래서 이 막대는 다른 영역과 달리 숨은 자리에
    마우스를 올려도 나타나지 않는다. 스크롤해 나타난 동안과 그 위에 마우스를 올린 동안(`os-scrollbar-interaction`)에만
    클릭을 받는다. 라이브러리가 트랙과 손잡이에 `pointer-events: auto` 를 따로 걸므로, 자식에도 `none` 을 건다. */
 .columns > :deep(.os-scrollbar-auto-hide-hidden:not(.os-scrollbar-interaction)),
@@ -1320,19 +1309,6 @@ void window.maru.restoreScreen().then((r) => {
   border-radius: var(--cell-radius);
   overflow: clip;
   visibility: visible;
-}
-
-/* cell 헤더와 pane 헤더 사이의 경계선은 맞닿은 pane 헤더가 그린다. cell 헤더에도 선을 그리면 2px 로 겹친다. */
-.header-bottom .cell-header {
-  order: 1;
-}
-
-.cell-header .name {
-  font-weight: bold;
-}
-
-.cell-header .branch {
-  color: var(--faint);
 }
 
 .pane {
