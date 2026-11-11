@@ -1071,6 +1071,7 @@ void window.maru.restoreScreen().then((r) => {
         :shown="ptyStates.shown"
         :command="ptyStates.command"
         :notification="ptyStates.notification"
+        :tasks="ptyStates.tasks"
         :urgent="urgent"
         :unread="unread"
         :folded="folded"

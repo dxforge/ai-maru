@@ -18,6 +18,8 @@ export type Row = {
   tone: string
   /** 프로그램 상태의 메시지. 상태가 없으면 두지 않는다. */
   message?: string
+  /** pane 에서 도는 백그라운드 일(`runningTasks`). 없으면 두지 않는다. */
+  tasks?: readonly ProgramStatusRecord[]
   git?: DeepReadonly<GitHead>
   command?: CommandView
   commandTail: boolean
@@ -42,6 +44,7 @@ export type RowSource = {
   shown: (pty?: string) => ProgramStatusRecord | undefined
   command: (pty?: string) => CommandView | undefined
   notification: (pty?: string) => PtyNotification | undefined
+  tasks: (pty?: string) => readonly ProgramStatusRecord[]
   home?: string
   shell?: string
 }
@@ -63,6 +66,7 @@ export function paneRow(
   const place = p.cwd && !tail ? sidebarLabel(p, base, src.home) : undefined
   const name = paneName(p, r, src.shell, cmd)
   const notice = src.notification(p.ptyId)
+  const tasks = src.tasks(p.ptyId)
   const where = place && [place.name, place.branch, place.sub].filter(Boolean).join(' ')
   const named = where ? `${name}, ${where}` : name
   const label = s ? STATE_LABELS[s] : cmd && commandLabel(cmd)
@@ -74,6 +78,7 @@ export function paneRow(
     icon: agent ? { agent } : s ? { state: s } : { command: commandIcon(cmd) },
     tone: s ?? commandClass(cmd),
     message: (s && r.message) || undefined,
+    ...(tasks.length && { tasks }),
     git: p.git,
     command: cmd,
     commandTail: tail,

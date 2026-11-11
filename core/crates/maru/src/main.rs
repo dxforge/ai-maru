@@ -210,6 +210,14 @@
 //! 디렉토리의 `<id>.json` 의 `tty` 에서 읽으므로, `--pty` 는 `MARU_SOCKET` 이 있어야 한다. 앱은 사용자가 확인한 pane 의
 //! done 레코드를 이 옵션으로 idle 로 바꾼다.
 //!
+//! # claude hook
+//!
+//! 앱 claude plugin 의 `hooks/hooks.json` 이 `SessionStart`·`PostToolUse`(Bash·Monitor)·`Stop` 에 `maru claude hook` 을
+//! 부른다. Claude Code 는 백그라운드 셸(Bash 의 `run_in_background`, Monitor)에는 상태 레코드를 보내지 않으므로, hook 이
+//! 셸마다 `bg/<task id>` working 레코드를 `maru status` 와 같은 경로로 쓴다. title 은 셸의 명령이다. `PostToolUse` 는 띄운
+//! 셸 하나를 더하고, `Stop`·`SessionStart` 는 `bg` 를 지운 뒤 `Stop` 의 `background_tasks` 에서 도는 셸을 다시 쓴다. 셸이
+//! 끝날 때는 hook 이 오지 않으므로, 끝난 셸의 레코드는 그다음 `Stop` 에서 빠진다.
+//!
 //! # claude monitor
 //!
 //! 앱 claude plugin 의 `monitors/monitors.json` 이 대화형 claude 마다 `maru claude monitor` 를 띄운다.
@@ -316,7 +324,8 @@ enum Command {
 #[derive(Subcommand)]
 enum ClaudeCommand {
     /// Read the claude hook payload on stdin. On SessionStart, print what claude should know
-    /// about this terminal. On Notification, pass the notification to the app.
+    /// about this terminal. On Notification, pass the notification to the app. On PostToolUse
+    /// and Stop, report claude's background shells as status records under `bg`.
     Hook,
     /// Write the app's notifications to stdout, one per line, until stdout closes. The app's
     /// claude plugin runs this as a monitor.
@@ -941,32 +950,131 @@ fn claude_hook() -> Result<()> {
     let Some(event) = payload["hook_event_name"].as_str() else {
         bail!("the hook payload has no hook_event_name");
     };
-    // SessionStart hook 의 stdout 은 claude 의 컨텍스트에 들어간다.
-    if event == "SessionStart" {
-        write!(
-            std::io::stdout(),
-            "You are in AI Maru pty {}. Messages from other ptys arrive as\n\
-             monitor notifications. Send: `maru inbox push <pty> <message>`. Unread: `maru inbox read`.\n\
-             Background processes (dev servers, builds, watchers): `maru job new --name <name> <command>`.\n\
-             When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n",
-            target.pty
-        )?;
-    }
-    // claude 는 이 hook 이 끝난 뒤 같은 알림을 OSC 로 쓴다. 앱이 그 OSC 를 버릴 수 있게 답을 받은 뒤 끝난다.
-    if event == "Notification" {
-        let mut params = Map::new();
-        params.insert(
-            "message".into(),
-            payload["message"].as_str().unwrap_or("").into(),
-        );
-        for (from, to) in [("notification_type", "type"), ("title", "title")] {
-            if let Some(v) = payload[from].as_str() {
-                params.insert(to.into(), v.into());
+    match event {
+        // SessionStart hook 의 stdout 은 claude 의 컨텍스트에 들어간다.
+        "SessionStart" => {
+            write!(
+                std::io::stdout(),
+                "You are in AI Maru pty {}. Messages from other ptys arrive as\n\
+                 monitor notifications. Send: `maru inbox push <pty> <message>`. Unread: `maru inbox read`.\n\
+                 Background processes (dev servers, builds, watchers): `maru job new --name <name> <command>`.\n\
+                 When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n",
+                target.pty
+            )?;
+            // 실패해도 hook 을 실패시키지 않는다. 실패한 hook 의 stdout 은 claude 의 컨텍스트에 들어가지 않기 때문이다.
+            let _ = report_background(&[]);
+        }
+        "PostToolUse" => {
+            let response = &payload["tool_response"];
+            let task = match payload["tool_name"].as_str() {
+                Some("Bash") => response["backgroundTaskId"].as_str(),
+                Some("Monitor") => response["taskId"].as_str(),
+                _ => None,
+            };
+            if let Some(id) = task {
+                report_shell(id, shell_title(&payload["tool_input"]))?;
             }
         }
-        call(&target, "claude.notification", params)?;
+        "Stop" => {
+            let tasks = payload["background_tasks"]
+                .as_array()
+                .map_or(&[][..], |a| a);
+            let shells: Vec<(&str, &str)> = tasks
+                .iter()
+                .filter(|t| t["type"] == "shell" && t["status"] == "running")
+                // 앱 claude plugin 의 monitor 는 claude 가 떠 있는 동안 늘 돈다. Claude Code 는 `monitors.json` 의 명령을
+                // `$MARU_CLI` 를 풀지 않은 채 싣는다(Claude Code 2.1.322 실측).
+                .filter(|t| {
+                    !t["command"]
+                        .as_str()
+                        .is_some_and(|c| c.trim_end().ends_with(" claude monitor"))
+                })
+                .filter_map(|t| Some((t["id"].as_str()?, shell_title(t))))
+                .collect();
+            report_background(&shells)?;
+        }
+        // claude 는 이 hook 이 끝난 뒤 같은 알림을 OSC 로 쓴다. 앱이 그 OSC 를 버릴 수 있게 답을 받은 뒤 끝난다.
+        "Notification" => {
+            let mut params = Map::new();
+            params.insert(
+                "message".into(),
+                payload["message"].as_str().unwrap_or("").into(),
+            );
+            for (from, to) in [("notification_type", "type"), ("title", "title")] {
+                if let Some(v) = payload[from].as_str() {
+                    params.insert(to.into(), v.into());
+                }
+            }
+            call(&target, "claude.notification", params)?;
+        }
+        _ => {}
     }
     Ok(())
+}
+
+/// Claude Code 가 상태 레코드를 보내지 않는 백그라운드 셸(Bash 의 `run_in_background`·Monitor)을 hook 이 넣는
+/// 레코드의 id 다. 이 아래만 hook 이 지우고 다시 쓴다.
+const BACKGROUND_ID: &str = "bg";
+
+/// 백그라운드 셸 하나를 `bg/<task id>` working 레코드로 쓴다. id 로 쓸 수 없는 task id 는 건너뛴다.
+fn report_shell(task: &str, title: &str) -> Result<()> {
+    let Some(report) = shell_report(task, title) else {
+        return Ok(());
+    };
+    write_once(open_terminal()?, &report)
+}
+
+/// `bg` 를 지우고 `shells`(task id, title)를 다시 쓴다. 한 번에 써서, 앞선 hook 이 실패해 남은 레코드와 끝난 셸의
+/// 레코드를 지금 도는 셸로 바로잡는다.
+fn report_background(shells: &[(&str, &str)]) -> Result<()> {
+    let mut bytes = status_report(StatusCommand::Clear {
+        id: Some(BACKGROUND_ID.to_owned()),
+    })?;
+    for (task, title) in shells {
+        if let Some(report) = shell_report(task, title) {
+            bytes.extend(report);
+        }
+    }
+    write_once(open_terminal()?, &bytes)
+}
+
+/// 셸의 레코드 title. 명령이 없을 때만 `description` 을 쓴다. 사이드바 카드가 셸 레코드의 title 을 명령으로 보이기 때문이다.
+fn shell_title(task: &Value) -> &str {
+    task["command"]
+        .as_str()
+        .filter(|c| !c.trim().is_empty())
+        .or(task["description"].as_str())
+        .unwrap_or_default()
+}
+
+fn shell_report(task: &str, title: &str) -> Option<Vec<u8>> {
+    if !is_name(task) {
+        return None;
+    }
+    status_report(StatusCommand::Put {
+        state: StatusState::Working,
+        id: Some(format!("{BACKGROUND_ID}/{task}")),
+        kind: None,
+        progress: None,
+        app: None,
+        title: Some(one_line(title, MAX_TITLE_BYTES)),
+        msg: None,
+    })
+    .ok()
+}
+
+/// 제어 문자(줄바꿈 포함)를 빈칸으로 바꾸고 앞뒤 빈칸을 뗀 뒤, `max` 바이트 안에 드는 글자까지 자른다.
+fn one_line(text: &str, max: usize) -> String {
+    let line: String = text
+        .trim()
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let mut end = line.len().min(max);
+    while !line.is_char_boundary(end) {
+        end -= 1;
+    }
+    line[..end].trim_end().to_owned()
 }
 
 fn claude_monitor() -> Result<()> {

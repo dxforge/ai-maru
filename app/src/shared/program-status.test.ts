@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   parseProgramStatus,
   programName,
+  runningTasks,
   shownRecord,
   type ProgramStatusRecord,
   type ProgramStatusState
@@ -76,7 +77,6 @@ describe('shownRecord', () => {
 
   it('그 밖에는 blocked, error, done, working, idle 순으로 가장 급한 레코드다', () => {
     expect(picked([rec('', 'done'), rec('b', 'error')])).toEqual(['b', 'error'])
-    expect(picked([rec('', 'idle'), rec('b', 'working')])).toEqual(['b', 'working'])
     expect(picked([rec('', 'error'), rec('ask', 'blocked')])).toEqual(['ask', 'blocked'])
     expect(picked([rec('', 'done'), rec('ask', 'blocked'), rec('b', 'error')])).toEqual([
       'ask',
@@ -84,6 +84,36 @@ describe('shownRecord', () => {
     ])
     expect(picked([rec('', 'blocked'), rec('b', 'error')])).toEqual(['', 'blocked'])
     expect(picked([rec('', 'done'), rec('b', 'idle')])).toEqual(['', 'done'])
+  })
+
+  describe('루트가 차례를 마쳤는데 하위 working 이 돌 때', () => {
+    const root = { ...rec('', 'done', 'claude-code'), title: 'Claude', message: 'Finished' }
+
+    it('루트가 done·idle 이면 state 만 working 으로 바꾼 루트다', () => {
+      for (const state of ['done', 'idle'] as const) {
+        const shown = shownRecord([
+          { ...root, state },
+          { ...rec('bg/b1', 'working'), title: 'pnpm dev' }
+        ])
+        expect(shown).toEqual({ ...root, state: 'working' })
+      }
+    })
+
+    it('하위 working 이 없으면 루트 그대로다', () => {
+      expect(shownRecord([root, rec('bg/b1', 'done'), rec('a1', 'idle')])).toBe(root)
+    })
+
+    it('더 급한 하위가 있으면 그 하위다', () => {
+      const ask = { ...rec('ask', 'blocked'), kind: 'question' as const }
+      expect(picked([root, rec('bg/b1', 'working'), ask])).toEqual(['ask', 'blocked'])
+      expect(picked([root, rec('a1', 'error'), rec('bg/b1', 'working')])).toEqual(['a1', 'error'])
+    })
+
+    it('루트가 error·blocked 면 지금처럼 루트다', () => {
+      for (const state of ['error', 'blocked'] as const) {
+        expect(picked([rec('', state), rec('bg/b1', 'working')])).toEqual(['', state])
+      }
+    })
   })
 
   it('같은 상태가 여럿이면 루트, 그다음 받은 순서(id 순)다', () => {
@@ -119,6 +149,23 @@ describe('shownRecord', () => {
     expect(
       shownRecord([{ ...rec('', 'done', 'x'), message: 'root' }, ask as ProgramStatusRecord])
     ).toEqual({ ...ask, app: 'x' })
+  })
+})
+
+describe('runningTasks', () => {
+  it('하위 working·error 와 kind 없는 blocked 를 받은 순서로 고른다', () => {
+    const ask = { ...rec('ask', 'blocked'), kind: 'permission' as const }
+    const records = [
+      rec('', 'working'),
+      rec('a1', 'working'),
+      rec('a2', 'done'),
+      ask,
+      rec('a3', 'blocked'),
+      rec('a4', 'idle'),
+      rec('bg/b1', 'error'),
+      rec('bg/b2', 'working')
+    ]
+    expect(runningTasks(records).map((r) => r.id)).toEqual(['a1', 'a3', 'bg/b1', 'bg/b2'])
   })
 })
 

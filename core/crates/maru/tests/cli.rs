@@ -2,7 +2,7 @@ use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
@@ -566,17 +566,52 @@ fn maru_claude(sock: &Path, args: &[&str], input: &[u8], vars: &[(&str, &str)]) 
     run_with_input(cmd, input)
 }
 
+/// pty 를 제어 터미널로 두고 `maru claude hook` 에 `input` 을 넘긴다. 돌려주는 것은 그 터미널에 쓴 것이다.
+fn hook_on_tty(sock: &Path, input: &Value) -> (Output, String) {
+    let mut cmd = maru_cmd(Some(sock), &["claude", "hook"]);
+    cmd.current_dir(sock.parent().unwrap());
+    let (out, got) = run_on_tty_with(cmd, Some(input.to_string().as_bytes()));
+    (out, String::from_utf8_lossy(&got).into_owned())
+}
+
+fn osc(body: &str) -> String {
+    format!("\x1b]7501;{body}\x1b\\")
+}
+
+fn b64(text: &str) -> String {
+    const DIGITS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in text.as_bytes().chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, &b)| n | u32::from(b) << (16 - 8 * i));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() {
+                char::from(DIGITS[(n >> (18 - 6 * i) & 63) as usize])
+            } else {
+                '='
+            });
+        }
+    }
+    out
+}
+
+fn shell_record(task: &str, title: &str) -> String {
+    osc(&format!("state=working:id=bg/{task}:title={}", b64(title)))
+}
+
 #[test]
 fn claude_hook_on_session_start_tells_claude_its_pty_and_the_inbox() {
     for source in ["startup", "resume", "clear", "compact"] {
         let tmp = tmpdir();
         // 듣는 앱이 없는 소켓 경로다 — hook 은 앱에 아무것도 보내지 않는다.
         let sock = sock_in(&tmp);
-        let input = format!(
-            r#"{{"session_id":"c-1","hook_event_name":"SessionStart","source":"{source}"}}"#
-        );
-        let out = maru_claude(&sock, &["claude", "hook"], input.as_bytes(), &[]);
+        let input =
+            json!({"session_id": "c-1", "hook_event_name": "SessionStart", "source": source});
+        let (out, got) = hook_on_tty(&sock, &input);
         assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(got, osc("state=clear:id=bg"));
         assert_eq!(
             stdout(&out),
             format!(
@@ -590,14 +625,149 @@ fn claude_hook_on_session_start_tells_claude_its_pty_and_the_inbox() {
 }
 
 #[test]
+fn claude_hook_on_session_start_without_a_terminal_still_tells_claude() {
+    // 테스트를 띄운 프로세스가 제어 터미널을 가질 수 있으므로, 부모 셸을 먼저 끝내 CLI 의 조상에서 뺀다.
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let log = tmp.path().join("out");
+    let mut sh = Command::new("/bin/sh");
+    sh.args([
+        "-c",
+        r#"(sleep 0.5; echo '{"hook_event_name":"SessionStart","source":"startup"}' | "$MARU" claude hook; echo "exit=$?") >"$LOG" 2>/dev/null &"#,
+    ])
+    .env("MARU", env!("CARGO_BIN_EXE_maru"))
+    .env("MARU_SOCKET", &sock)
+    .env("MARU_PTY_ID", PTY)
+    .env("LOG", &log)
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null());
+    unsafe {
+        sh.pre_exec(|| {
+            nix::unistd::setsid()?;
+            Ok(())
+        });
+    }
+    assert!(wait_within(sh.spawn().unwrap()).status.success());
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let out = loop {
+        let out = std::fs::read_to_string(&log).unwrap_or_default();
+        if out.contains("exit=") {
+            break out;
+        }
+        assert!(Instant::now() < deadline, "CLI 가 끝나지 않았다: {out}");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(
+        out.starts_with(&format!("You are in AI Maru pty {PTY}.")),
+        "{out}"
+    );
+    assert!(out.ends_with("exit=0\n"), "{out}");
+}
+
+#[test]
 fn claude_hook_on_other_events_does_nothing() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let input =
-        br#"{"session_id":"c-1","hook_event_name":"UserPromptSubmit","prompt":"hi","cwd":"/x"}"#;
-    let out = maru_claude(&sock, &["claude", "hook"], input, &[]);
+    let input = json!({"session_id": "c-1", "hook_event_name": "UserPromptSubmit", "prompt": "hi", "cwd": "/x"});
+    let (out, got) = hook_on_tty(&sock, &input);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out), "");
+    assert_eq!(got, "");
+}
+
+#[test]
+fn claude_hook_after_a_background_bash_or_monitor_reports_the_shell() {
+    let cases = [
+        (
+            json!({"tool_name": "Bash",
+                "tool_input": {"command": "sleep 120", "description": "Sleep", "run_in_background": true},
+                "tool_response": {"stdout": "", "backgroundTaskId": "bvil2q4bs"}}),
+            shell_record("bvil2q4bs", "sleep 120"),
+        ),
+        (
+            json!({"tool_name": "Monitor",
+                "tool_input": {"command": "tail -f app.log", "description": "errors", "timeout_ms": 300000},
+                "tool_response": {"taskId": "bfr0t9znq", "timeoutMs": 300000}}),
+            shell_record("bfr0t9znq", "tail -f app.log"),
+        ),
+        (
+            json!({"tool_name": "Monitor",
+                "tool_input": {"ws": {"url": "wss://example.com"}, "description": "deploy events"},
+                "tool_response": {"taskId": "b1"}}),
+            shell_record("b1", "deploy events"),
+        ),
+    ];
+    for (mut input, expected) in cases {
+        input["hook_event_name"] = "PostToolUse".into();
+        let tmp = tmpdir();
+        let (out, got) = hook_on_tty(&sock_in(&tmp), &input);
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(stdout(&out), "");
+        assert_eq!(got, expected, "{input}");
+    }
+}
+
+#[test]
+fn claude_hook_after_a_foreground_tool_or_an_unusable_task_id_writes_nothing() {
+    let cases = [
+        json!({"tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": {"stdout": "a"}}),
+        json!({"tool_name": "Read", "tool_input": {}, "tool_response": {"taskId": "x"}}),
+        json!({"tool_name": "Bash", "tool_input": {"command": "ls"},
+            "tool_response": {"backgroundTaskId": "a".repeat(33)}}),
+        json!({"tool_name": "Bash", "tool_input": {"command": "ls"},
+            "tool_response": {"backgroundTaskId": "a/b"}}),
+    ];
+    for mut input in cases {
+        input["hook_event_name"] = "PostToolUse".into();
+        let tmp = tmpdir();
+        let (out, got) = hook_on_tty(&sock_in(&tmp), &input);
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(got, "", "{input}");
+    }
+}
+
+#[test]
+fn claude_hook_on_stop_rewrites_the_running_shells() {
+    let long = format!("a{}", "é".repeat(96));
+    let input = json!({
+        "hook_event_name": "Stop",
+        "background_tasks": [
+            {"id": "bo0f9dw2s", "type": "shell", "status": "running",
+                "description": "AI Maru notifications — safe to stop on exit",
+                "command": "\"$MARU_CLI\" claude monitor"},
+            {"id": "b1", "type": "shell", "status": "running", "description": "Dev", "command": "pnpm dev"},
+            {"id": "b2", "type": "shell", "status": "completed", "command": "sleep 1"},
+            {"id": "a1", "type": "local_agent", "status": "running", "description": "Explore"},
+            {"id": "b3", "type": "shell", "status": "running", "command": "  echo a\n sleep 9\n"},
+            {"id": "b4", "type": "shell", "status": "running", "description": "watch build"},
+            {"id": "b5", "type": "shell", "status": "running", "command": long},
+        ]
+    });
+    let tmp = tmpdir();
+    let (out, got) = hook_on_tty(&sock_in(&tmp), &input);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert_eq!(
+        got,
+        [
+            osc("state=clear:id=bg"),
+            shell_record("b1", "pnpm dev"),
+            shell_record("b3", "echo a  sleep 9"),
+            shell_record("b4", "watch build"),
+            // 192 바이트에 걸친 글자는 통째로 뺀다.
+            shell_record("b5", &format!("a{}", "é".repeat(95))),
+        ]
+        .concat()
+    );
+}
+
+#[test]
+fn claude_hook_on_stop_without_background_tasks_clears_the_shells() {
+    let tmp = tmpdir();
+    let (out, got) = hook_on_tty(&sock_in(&tmp), &json!({"hook_event_name": "Stop"}));
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(got, osc("state=clear:id=bg"));
 }
 
 #[test]
@@ -1854,7 +2024,12 @@ fn on_tty(args: &[&str]) -> (Output, Vec<u8>) {
     run_on_tty(status_cmd(args))
 }
 
-fn run_on_tty(mut cmd: Command) -> (Output, Vec<u8>) {
+fn run_on_tty(cmd: Command) -> (Output, Vec<u8>) {
+    run_on_tty_with(cmd, None)
+}
+
+/// `input` 이 있으면 stdin 은 그것을 쓰는 pipe 이고, pty 는 제어 터미널로만 둔다.
+fn run_on_tty_with(mut cmd: Command, input: Option<&[u8]>) -> (Output, Vec<u8>) {
     let pty = nix::pty::openpty(None, None).unwrap();
     let mut master = std::fs::File::from(pty.master);
     // slave 가 모두 닫히면 master 읽기가 끝난다. 쓴 것을 놓치지 않게 띄우기 전부터 읽는다.
@@ -1866,20 +2041,36 @@ fn run_on_tty(mut cmd: Command) -> (Output, Vec<u8>) {
         }
         got
     });
-    cmd.stdin(Stdio::from(pty.slave));
+    let slave = pty.slave;
+    let tty = slave.as_raw_fd();
+    cmd.stdin(match input {
+        Some(_) => Stdio::piped(),
+        None => Stdio::from(slave.try_clone().unwrap()),
+    });
     unsafe {
-        cmd.pre_exec(|| {
+        cmd.pre_exec(move || {
             nix::unistd::setsid()?;
-            if nix::libc::ioctl(0, nix::libc::TIOCSCTTY.into(), 0) == -1 {
+            if nix::libc::ioctl(tty, nix::libc::TIOCSCTTY.into(), 0) == -1 {
                 return Err(std::io::Error::last_os_error());
             }
             Ok(())
         });
     }
-    let child = cmd.spawn().unwrap();
-    // cmd 가 든 slave 를 닫아야 CLI 가 끝난 뒤 master 읽기가 끝난다.
+    let mut child = cmd.spawn().unwrap();
+    // 부모와 cmd 가 든 slave 를 닫아야 CLI 가 끝난 뒤 master 읽기가 끝난다.
     drop(cmd);
+    drop(slave);
+    let writer = input.map(|input| {
+        let mut stdin = child.stdin.take().unwrap();
+        let input = input.to_vec();
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&input);
+        })
+    });
     let out = wait_within(child);
+    if let Some(writer) = writer {
+        writer.join().unwrap();
+    }
     (out, reader.join().unwrap())
 }
 

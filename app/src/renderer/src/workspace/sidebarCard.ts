@@ -1,5 +1,10 @@
 import { jobName, type JobView } from '../../../shared/job'
-import { URGENCY, type ProgramStatusState } from '../../../shared/program-status'
+import {
+  SHELL_TASK_PREFIX,
+  URGENCY,
+  type ProgramStatusRecord,
+  type ProgramStatusState
+} from '../../../shared/program-status'
 import { STATE_LABELS, type PaneIcon } from '../icons'
 import { commandLabel, commandTail, elapsed, notificationText } from './display'
 import { exitText, type DirRow, type Row } from './sidebarRows'
@@ -28,11 +33,18 @@ export type CardSection = {
    * 모두 든다.
    */
   command?: { running: boolean; text: string }
+  /** pane 에서 도는 백그라운드 일. 앞 `MAX_TASKS` 개만 줄로 두고, 나머지는 `more` 에 수로 쓴다. */
+  tasks?: { rows: CardTask[]; more?: string }
   /** job 의 명령 전체 */
   run?: string
   /** job 의 돈 시간·포트, 끝났으면 끝난 까닭 */
   time?: string
 }
+
+/** `mono` 는 title 이 셸 명령이라 고정폭 글꼴로 보일 것이다. */
+export type CardTask = { key: string; state: ProgramStatusState; title: string; mono: boolean }
+
+export const MAX_TASKS = 5
 
 /** 카드 아래 띠. `states` 는 상태별 pane 수를 급한 상태부터 늘어놓은 것이다. */
 export type CardFoot = {
@@ -89,8 +101,20 @@ export function paneSection(r: Row, now: number): CardSection {
         running: c.running,
         text: time ? `${commandLabel(c)} for ${time}` : commandLabel(c)
       }
-    })
+    }),
+    ...(r.tasks && { tasks: taskList(r.tasks) })
   }
+}
+
+function taskList(tasks: readonly ProgramStatusRecord[]): NonNullable<CardSection['tasks']> {
+  const rows = tasks.slice(0, MAX_TASKS).map((t) => ({
+    key: t.id,
+    state: t.state,
+    title: t.title || t.id,
+    mono: t.id.startsWith(SHELL_TASK_PREFIX)
+  }))
+  const more = tasks.length - rows.length
+  return more ? { rows, more: `+${more} more` } : { rows }
 }
 
 export function jobSection(j: JobView, now: number): CardSection {
