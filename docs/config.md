@@ -77,6 +77,8 @@ Widen Cell · Narrow Cell 이 선택한 cell 의 pane 폭을 한 번에 바꾸�
 
 `0` 이면 들어가자마자 지운다. `false` 면 지우지 않고, 보고 있는 pane 에 온 알림과 done 도 남긴다. 2147483647(약 24.8일)보다 큰 값은 `false` 와 같다.
 
+Claude Code 의 알림은 앱이 싣는 plugin 으로 받는다. 권한 확인·질문·입력 기다림처럼 상태 아이콘이 같은 내용을 보이는 알림에는 앱이 사이드바와 pane 헤더의 글을 바꾸지 않고 점만 단다. Claude Code 설정의 `preferredNotifChannel` 이 `ghostty` 처럼 OSC 9·OSC 777 로 알리는 값이면 앱은 같은 알림을 OSC 알림으로도 받는다. `"preferredNotifChannel": "notifications_disabled"` 로 두면 앱은 plugin 으로만 알림을 받는다. 이 값은 앱 밖에서 띄운 claude 에도 걸린다.
+
 ### `font-family`
 
 적은 글꼴은 기본 글꼴 목록 앞에 붙는다. 적은 글꼴에 없는 글자(한글, Nerd Font 아이콘 등)는 뒤의 기본 글꼴이 그린다. 이름은 따옴표로 감싸도 되고 감싸지 않아도 된다(`"'Sarasa Term K', Menlo"`). 이름 안에 `"` `'` `;` `\` 나 줄바꿈 같은 제어 문자가 있거나 빈 이름이 있으면 값 전체를 버리고 기본 글꼴을 쓴다.

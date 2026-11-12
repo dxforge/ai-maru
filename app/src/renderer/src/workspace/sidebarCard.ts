@@ -1,10 +1,11 @@
 import { jobName, type JobView } from '../../../shared/job'
 import {
+  STATE_LABELS,
   URGENCY,
   type ProgramStatusRecord,
   type ProgramStatusState
 } from '../../../shared/program-status'
-import { STATE_LABELS, type PaneIcon } from '../icons'
+import type { PaneIcon } from '../icons'
 import { commandLabel, commandTail, elapsed, notificationText } from './display'
 import { exitText, type DirRow, type Row } from './sidebarRows'
 
@@ -84,12 +85,13 @@ const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' 
 export function paneSection(r: Row, now: number): CardSection {
   const c = r.command
   const time = c?.running ? commandTail(c, now) : undefined
+  const notice = r.notice && notificationText(r.notice)
   return {
     key: `pane:${r.pane}`,
     title: r.name,
     icon: r.icon,
     ...(r.tone && { tone: r.tone }),
-    ...(r.notice && { notice: notificationText(r.notice) }),
+    ...(notice && { notice }),
     ...(r.path && { path: r.path }),
     ...(r.git && { git: [r.git.repo, r.git.branch].filter(Boolean).join(' · ') }),
     ...(r.message && { message: r.message }),

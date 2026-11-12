@@ -2,10 +2,14 @@ import type { DeepReadonly } from 'vue'
 import { jobName, type JobView } from '../../../shared/job'
 import { sidebarLabel, type SidebarLabel } from '../../../shared/names'
 import { paneName, type CommandView } from '../../../shared/pane-name'
-import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
+import {
+  STATE_LABELS,
+  type ProgramStatusRecord,
+  type ProgramStatusState
+} from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
 import type { GitHead } from '../../../shared/git'
-import { AGENT_ICONS, commandClass, commandIcon, STATE_LABELS, type PaneIcon } from '../icons'
+import { AGENT_ICONS, commandClass, commandIcon, type PaneIcon } from '../icons'
 import { relativeTo, tildePath } from './cwd'
 import { commandLabel, notificationText } from './display'
 import type { Pane } from './store'
@@ -85,11 +89,16 @@ export function paneRow(
     focused,
     notice,
     name,
-    text: notice ? notice.body || notice.title : name,
+    text: (notice && (notice.body || notice.title)) || name,
     place,
     path: p.cwd && tildePath(p.cwd, src.home),
-    aria: notice ? `${aria}. Notification: ${notificationText(notice)}` : aria
+    aria: notice ? `${aria}. ${noticeAria(notice)}` : aria
   }
+}
+
+function noticeAria(n: PtyNotification): string {
+  const text = notificationText(n)
+  return text ? `Notification: ${text}` : 'Notification'
 }
 
 export function exitText(e: NonNullable<JobView['exit']>): string {

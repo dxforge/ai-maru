@@ -145,6 +145,10 @@ describe('paneSection', () => {
     const notice = { title: 'Done', body: 'Tests pass' } as PtyNotification
     expect(paneSection(pane({ notice }), 0).notice).toBe('Done: Tests pass')
   })
+
+  it('글 없는 알림은 알림 글을 두지 않는다', () => {
+    expect(paneSection(pane({ notice: { title: '', body: '' } }), 0)).not.toHaveProperty('notice')
+  })
 })
 
 describe('jobSection', () => {

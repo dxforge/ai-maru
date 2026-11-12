@@ -6,7 +6,10 @@ import {
   type DesktopNotice
 } from './desktop-notification'
 
-function setup(labels: Record<string, string> = { 'p-1': 'claude', 'p-2': 'zsh' }) {
+function setup(
+  labels: Record<string, string> = { 'p-1': 'claude', 'p-2': 'zsh' },
+  statuses: Record<string, string> = {}
+) {
   let now = 10_000
   let focused = false
   const shown: { notice: DesktopNotice; click: () => void }[] = []
@@ -15,6 +18,7 @@ function setup(labels: Record<string, string> = { 'p-1': 'claude', 'p-2': 'zsh' 
     now: () => now,
     focused: () => focused,
     label: (pty) => labels[pty],
+    status: (pty) => statuses[pty],
     show: (_pty, notice, click) => void shown.push({ notice, click }),
     open: (pty) => void opened.push(pty)
   })
@@ -36,6 +40,46 @@ describe('createDesktopNotifications', () => {
     expect(t.shown.map((s) => s.notice)).toEqual([
       { title: 'Tests', subtitle: 'claude', body: '3 failed' },
       { title: 'zsh', subtitle: 'zsh', body: 'build done' }
+    ])
+  })
+
+  it('글 없는 알림은 제목에 pane 이름을, 본문에 그 pane 의 상태를 쓰고, 상태가 없으면 본문을 비운다', () => {
+    const t = setup(undefined, { 'p-1': 'approve Bash: ls' })
+    t.notify('p-1', { title: '', body: '' })
+    t.advance(NOTIFICATION_INTERVAL_MS)
+    t.notify('p-2', { title: '', body: '' })
+    expect(t.shown.map((s) => s.notice)).toEqual([
+      { title: 'claude', subtitle: 'claude', body: 'approve Bash: ls' },
+      { title: 'zsh', subtitle: 'zsh', body: '' }
+    ])
+  })
+
+  it('글이 있는 알림은 상태를 쓰지 않는다', () => {
+    const t = setup(undefined, { 'p-1': 'approve Bash: ls' })
+    t.notify('p-1', { title: 'Tests', body: '' })
+    expect(t.shown[0].notice).toEqual({ title: 'Tests', subtitle: 'claude', body: '' })
+  })
+
+  it('글 없는 알림의 같은 알림 제한은 본문에 쓴 상태로 가른다', () => {
+    const statuses: Record<string, string> = { 'p-1': 'approve Bash: ls' }
+    const t = setup(undefined, statuses)
+    t.notify('p-1', { title: '', body: '' })
+    t.advance(NOTIFICATION_INTERVAL_MS)
+    t.notify('p-1', { title: '', body: '' })
+    expect(t.shown).toHaveLength(1)
+    statuses['p-1'] = 'Idle'
+    t.notify('p-1', { title: '', body: '' })
+    expect(t.shown.map((s) => s.notice.body)).toEqual(['approve Bash: ls', 'Idle'])
+  })
+
+  it('같은 알림 제한은 띄운 제목으로 가른다 — 다른 pane 의 글 없는 알림은 상태가 같아도 띄운다', () => {
+    const t = setup(undefined, { 'p-1': 'Idle', 'p-2': 'Idle' })
+    t.notify('p-1', { title: '', body: '' })
+    t.advance(NOTIFICATION_INTERVAL_MS)
+    t.notify('p-2', { title: '', body: '' })
+    expect(t.shown.map((s) => s.notice)).toEqual([
+      { title: 'claude', subtitle: 'claude', body: 'Idle' },
+      { title: 'zsh', subtitle: 'zsh', body: 'Idle' }
     ])
   })
 

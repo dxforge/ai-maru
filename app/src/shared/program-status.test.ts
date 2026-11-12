@@ -4,6 +4,7 @@ import {
   programName,
   runningTasks,
   shownRecord,
+  statusText,
   type ProgramStatusRecord,
   type ProgramStatusState
 } from './program-status'
@@ -16,6 +17,19 @@ const picked = (records: ProgramStatusRecord[]) => {
   const r = shownRecord(records)
   return r && [r.id, r.state]
 }
+
+describe('statusText', () => {
+  it('보일 레코드의 메시지를 쓰고, 메시지가 없으면 상태 이름을, 레코드가 없으면 undefined 를 낸다', () => {
+    const ask = {
+      ...rec('ask', 'blocked'),
+      kind: 'permission' as const,
+      message: 'approve Bash: ls'
+    }
+    expect(statusText([rec('', 'working'), ask])).toBe('approve Bash: ls')
+    expect(statusText([rec('', 'idle')])).toBe('Idle')
+    expect(statusText([rec('ask', 'blocked')])).toBeUndefined()
+  })
+})
 
 describe('shownRecord', () => {
   it('루트가 없으면 하위가 있어도 없다', () => {
