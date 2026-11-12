@@ -1305,6 +1305,7 @@ test('workspace 메뉴는 헤더를 가리킬 때 접기 화살표 바로 왼쪽
   expect(m.y).toBeGreaterThanOrEqual(b.y + b.height)
   expect(m.y).toBeLessThan(b.y + b.height + 8)
   await expect(favoriteItems(page)).toHaveCount(0)
+  await expect(baseItem(page)).toBeVisible()
   await expect(menuHint(page)).toHaveText('Star a pane to add its directory')
   await workspaceMenu(page).getByRole('menuitem', { name: 'Pin Workspace' }).click()
   await expect(workspaceMenu(page)).toHaveCount(0)
@@ -1662,6 +1663,15 @@ test('workspace 메뉴는 Favorites 맨 위에 지울 수 없는 workspace 디�
   await expect(favoriteItems(page)).toHaveText(['deep', 'sub'])
   await expect(favoriteItems(page).nth(1)).toHaveAttribute('data-tooltip', '~/sub')
   await expect(favoriteItems(page).nth(0)).toHaveAttribute('data-tooltip', 'deep')
+
+  await baseItem(page).click()
+  await expect(workspaceMenu(page)).toHaveCount(0)
+  await expect(launcher(page)).toBeVisible()
+  await page.keyboard.type('shell')
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await expect(cellItems(page)).toHaveCount(3)
+  await run(page, 'pwd', `${home}/sub`)
 })
 
 test('workspace 메뉴는 바깥 어디를 눌러도 닫히며 누른 자리의 동작도 하고, 열린 동안에는 창 드래그 영역을 꺼서 사이드바 빈 곳·제목 줄을 눌러도 닫힌다', async ({

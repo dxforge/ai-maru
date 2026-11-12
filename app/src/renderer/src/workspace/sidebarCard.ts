@@ -162,7 +162,7 @@ export function workspaceCard(w: {
   }
 }
 
-/** 닫힌 workspace 카드. 줄마다 구역을 줄 순서로 둔다. 같은 디렉토리가 두 줄에 있을 수 있어 key 는 줄 번호다. */
+/** 닫힌 workspace 카드다. 같은 디렉토리가 두 줄에 있을 수 있으므로 구역 key 는 줄 번호다. */
 export function dirCard(lines: readonly DirRow[]): CardView {
   return {
     sections: lines.map((d, i) => ({ key: dirKey(i), title: d.name, path: d.path })),

@@ -45,7 +45,6 @@ import {
   type JobRow,
   type RowSource
 } from '../workspace/sidebarRows'
-import { tildePath } from '../workspace/cwd'
 import PinIcon from './PinIcon.vue'
 import {
   focusedPane,
@@ -155,6 +154,8 @@ const groups = computed(() => {
     const f = folded.has(w.key)
     const auto = autoWorkspaceName(w, home)
     const dir = workspaceDir(w)
+    const root = dir === undefined ? undefined : dirRow(dir, home)
+    const favorites = favoriteRows(w.favorites ?? [], dir, home)
     return {
       w,
       name: w.name ?? auto,
@@ -162,10 +163,9 @@ const groups = computed(() => {
       folded: f,
       pinned: !!w.pinned,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
-      dir: dir === undefined ? undefined : tildePath(dir, home),
-      root: dir === undefined ? undefined : dirRow(dir, home),
-      favorites: favoriteRows(w.favorites ?? [], dir, home),
-      empty: f ? [] : emptyRows(w, home),
+      root,
+      favorites,
+      empty: f ? [] : emptyRows(w.cells.length, root, favorites, home),
       items: f ? [] : cells(src, w)
     }
   })
@@ -237,7 +237,7 @@ const cardView = computed((): CardView | undefined => {
   return workspaceCard({
     name: g.name,
     auto: g.auto,
-    dir: g.dir,
+    dir: g.root?.path,
     states: g.w.cells.flatMap((c) => orderedPanes(c).map((p) => shown(p.ptyId)?.state)),
     cells: g.w.cells.length,
     jobs: g.w.cells.reduce((n, c) => n + (jobsByCell.value.get(c.id)?.length ?? 0), 0)
@@ -254,7 +254,7 @@ const cardAnchor = computed(() => {
 
 const cardCurrent = computed(() => {
   const at = hovered.value?.at
-  return at?.kind === 'cell' || at?.kind === 'dir' ? at.row : undefined
+  return at && 'row' in at ? at.row : undefined
 })
 
 const nav = useTemplateRef<HTMLElement>('nav')

@@ -215,6 +215,11 @@ describe('favoriteRows', () => {
     expect(names(['/h/w/gamma', '/h/w/beta', '/h/w/Alpha'])).toEqual(['Alpha', 'beta', 'gamma'])
   })
 
+  it('대소문자·악센트만 다른 두 디렉토리도 추가한 순서와 상관없이 같은 자리에 둔다', () => {
+    expect(names(['/h/w/app', '/h/w/App'])).toEqual(names(['/h/w/App', '/h/w/app']))
+    expect(names(['/h/w/cafe', '/h/w/café'])).toEqual(names(['/h/w/café', '/h/w/cafe']))
+  })
+
   it('이름의 숫자는 숫자 크기로 비교한다', () => {
     expect(names(['/h/w/r10', '/h/w/r2', '/h/w/r1'])).toEqual(['r1', 'r2', 'r10'])
   })
@@ -231,18 +236,25 @@ describe('favoriteRows', () => {
 })
 
 describe('emptyRows', () => {
-  it('cell 이 없으면 dir 줄 하나이고, dir 도 없으면 없다', () => {
-    expect(emptyRows({ dir: '/h/notes', cells: [] }, '/h')).toEqual([
+  it('즐겨찾기가 없으면 디렉토리 줄 하나이고, 디렉토리도 없으면 없다', () => {
+    expect(emptyRows(0, dirRow('/h/notes', '/h'), [], '/h')).toEqual([
       { dir: '/h/notes', name: 'notes', path: '~/notes', label: '~/notes', root: true }
     ])
-    expect(emptyRows({ cells: [] })).toEqual([])
+    expect(emptyRows(0, undefined, [])).toEqual([])
   })
 
-  it('dir 줄 아래에 즐겨찾기를 이름순으로 두고, 줄 글자는 dir 아래면 상대 경로, tooltip 경로는 ~ 경로다', () => {
-    const rows = emptyRows(
-      { dir: '/h/w', cells: [], favorites: ['/h/w/b', '/opt/a', '/h/w', '/h/w/A'] },
-      '/h'
-    )
+  it('디렉토리를 모르면 즐겨찾기가 있어도 줄이 없다', () => {
+    expect(emptyRows(0, undefined, favoriteRows(['/h/x'], undefined, '/h'), '/h')).toEqual([])
+  })
+
+  it('cell 이 있으면 줄이 없다', () => {
+    const favorites = favoriteRows(['/h/notes/x'], '/h/notes', '/h')
+    expect(emptyRows(1, dirRow('/h/notes', '/h'), favorites, '/h')).toEqual([])
+  })
+
+  it('디렉토리 줄 아래에 즐겨찾기를 받은 순서로 두고, 줄 글자는 디렉토리 아래면 상대 경로, tooltip 경로는 ~ 경로다', () => {
+    const favorites = favoriteRows(['/h/w/b', '/opt/a', '/h/w', '/h/w/A'], '/h/w', '/h')
+    const rows = emptyRows(0, dirRow('/h/w', '/h'), favorites, '/h')
     expect(rows.map((r) => [r.label, r.path, r.root])).toEqual([
       ['~/w', '~/w', true],
       ['/opt/a', '/opt/a', false],
@@ -250,9 +262,5 @@ describe('emptyRows', () => {
       ['b', '~/w/b', false],
       ['~/w', '~/w', false]
     ])
-  })
-
-  it('cell 이 있으면 줄이 없다', () => {
-    expect(emptyRows({ dir: '/h/notes', cells: [{}], favorites: ['/h/x'] })).toEqual([])
   })
 })

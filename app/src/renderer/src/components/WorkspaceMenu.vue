@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { Folder, FolderRoot, X } from '@lucide/vue'
 import { nameOnFocusLoss } from '../../../shared/names'
 import type { Anchor } from '../launcher/anchor'
@@ -30,6 +30,11 @@ const emit = defineEmits<{
   togglePin: []
   closeWorkspace: []
 }>()
+
+const rows = computed(() => [
+  ...(base ? [{ ...base, base: true }] : []),
+  ...favorites.map((f) => ({ ...f, base: false }))
+])
 
 const GAP = 4
 const MARGIN = 8
@@ -159,19 +164,12 @@ function openFavorite(dir: string): void {
     </div>
     <hr />
     <div class="section">Favorites</div>
-    <div v-if="base" class="favorite-item base-item">
-      <button
-        v-tooltip="base.path"
-        class="favorite-open"
-        role="menuitem"
-        :aria-label="`Open ${base.name}`"
-        @click="openFavorite(base.dir)"
-      >
-        <FolderRoot class="icon" /><span class="title">{{ base.name }}</span>
-      </button>
-      <span class="favorite-remove remove-slot icon-button" aria-hidden="true" />
-    </div>
-    <div v-for="f in favorites" :key="f.dir" class="favorite-item">
+    <div
+      v-for="f in rows"
+      :key="f.base ? '' : f.dir"
+      class="favorite-item"
+      :class="{ 'base-item': f.base }"
+    >
       <button
         v-tooltip="f.path"
         class="favorite-open"
@@ -179,9 +177,13 @@ function openFavorite(dir: string): void {
         :aria-label="`Open ${f.name}`"
         @click="openFavorite(f.dir)"
       >
-        <Folder class="icon" /><span class="title">{{ f.name }}</span>
+        <component :is="f.base ? FolderRoot : Folder" class="icon" /><span class="title">{{
+          f.name
+        }}</span>
       </button>
+      <span v-if="f.base" class="favorite-remove remove-slot icon-button" aria-hidden="true" />
       <button
+        v-else
         v-tooltip="'Remove from Favorites'"
         class="favorite-remove icon-button"
         :aria-label="`Remove ${f.name} from Favorites`"
@@ -284,7 +286,7 @@ button {
   opacity: 1;
 }
 
-/* 줄 글자가 다른 즐겨찾기 줄과 같은 자리에서 잘리게 X 자리만 차지한다. */
+/* 다른 즐겨찾기 줄과 글자 끝을 맞추려고 보이지 않는 X 자리를 둔다. */
 .remove-slot {
   visibility: hidden;
 }
