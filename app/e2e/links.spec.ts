@@ -42,9 +42,15 @@ const paths = (app: ElectronApplication) => app.evaluate(() => (globalThis as Op
 async function pointAt(page: Page, text: string): Promise<{ x: number; y: number }> {
   const screen = (await page.locator('.terminal-view.active .xterm-screen').boundingBox())!
   const cell = await cellSize(page)
-  const lines = await rows(page).locator('> div').allInnerTexts()
+  // `run` 은 `maru pane read` 로 읽은 글자를 보고 끝나므로, 그때 xterm 은 그 행을 아직 그리지 않았을 수 있다.
+  let lines: string[] = []
+  await expect
+    .poll(async () => {
+      lines = await rows(page).locator('> div').allInnerTexts()
+      return lines.some((l) => l.includes(text))
+    }, `${text} 가 화면에 없다`)
+    .toBe(true)
   const row = lines.findLastIndex((l) => l.includes(text))
-  expect(row, `${text} 가 화면에 없다: ${JSON.stringify(lines)}`).toBeGreaterThanOrEqual(0)
   const col = lines[row].indexOf(text) + 1
   return { x: screen.x + (col + 0.5) * cell.width, y: screen.y + (row + 0.5) * cell.height }
 }

@@ -1,19 +1,16 @@
 <script setup lang="ts">
-import { OverlayScrollbars } from 'overlayscrollbars'
-import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import type { CodeBody } from '../canvas/code'
-import { attachOverlayScroll, detachOverlayScroll } from '../overlayScroll'
+import { HoverScrollbars } from '../overlayScroll'
 
 const { body } = defineProps<{ body: CodeBody }>()
 const root = useTemplateRef<HTMLElement>('root')
 const band = useTemplateRef<HTMLElement>('band')
 
-const numbers = computed(() => Array.from({ length: body.count }, (_, i) => i + 1).join('\n'))
-
 // 강조는 worker 에서 받는다. 받기 전과 강조하지 않는 파일은 글자만 그린다. `CanvasDoc` 이 본문마다 이 컴포넌트를 새로
 // 만들므로, 앞 본문의 결과가 늦게 와도 지금 본문에 붙지 않는다.
 const html = ref(body.html ?? null)
-if (body.html === undefined) void body.highlighted().then((h) => (html.value = h))
+void body.highlighted().then((h) => (html.value = h))
 
 // `CardStream` 이 카드 자리를 맞추는 post watcher 가 먼저 돈 뒤에 그 줄로 스크롤한다. 닫혀 있던 Canvas 가 이 문서로
 // 열리면 그때는 패널의 폭이 0 이라 스크롤되지 않으므로, 폭이 생기기를 기다린다.
@@ -35,15 +32,13 @@ watch(
 )
 onBeforeUnmount(() => sized?.disconnect())
 
-// 가로 스크롤바는 `CanvasDoc` 의 코드 블록처럼 포인터가 처음 들어올 때 씌운다(그쪽 주석).
-const classic = !OverlayScrollbars.env().scrollbarsOverlaid.x
-let attached: HTMLElement | undefined
+// 가로 스크롤바는 `CanvasDoc` 의 코드 블록처럼 포인터가 처음 들어올 때 씌운다.
+const scrollbars = new HoverScrollbars()
+const classic = scrollbars.classic
 function hover(): void {
-  if (!classic || attached || !root.value) return
-  attached = root.value
-  attachOverlayScroll(attached, 'x')
+  if (root.value) scrollbars.attach(root.value)
 }
-onBeforeUnmount(() => attached && detachOverlayScroll(attached))
+onBeforeUnmount(() => scrollbars.release())
 </script>
 
 <template>
@@ -55,7 +50,7 @@ onBeforeUnmount(() => attached && detachOverlayScroll(attached))
         class="band"
         :style="{ top: `calc(${body.line - 1} * var(--code-line))` }"
       />
-      <pre class="gutter" aria-hidden="true">{{ numbers }}</pre>
+      <pre class="gutter" aria-hidden="true">{{ body.numbers }}</pre>
       <!-- eslint-disable-next-line vue/no-v-html -- highlight.ts 의 tokensHtml 이 글자와 style 을 escape 한 HTML 이다 -->
       <pre v-if="html !== null" class="text" v-html="html" />
       <pre v-else class="text">{{ body.code }}</pre>

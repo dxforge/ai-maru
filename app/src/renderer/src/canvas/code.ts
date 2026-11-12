@@ -41,6 +41,12 @@ export class CodeBody {
     return (this.#scrolled = true)
   }
 
+  #numbers: string | undefined
+  /** 줄 번호 칸의 글자. 카드를 펼 때마다 다시 만들지 않는다. */
+  get numbers(): string {
+    return (this.#numbers ??= Array.from({ length: this.count }, (_, i) => i + 1).join('\n'))
+  }
+
   #highlighted: Promise<string | null> | undefined
   /** 받아 둔 강조. 아직 받지 못했으면 undefined, 강조하지 않으면 null 이다. */
   html: string | null | undefined

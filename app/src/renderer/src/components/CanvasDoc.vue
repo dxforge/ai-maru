@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { OverlayScrollbars } from 'overlayscrollbars'
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
 import { fillBody } from '../canvas/fill'
 import { bodyOf, codeBodyOf, type CanvasEntry } from '../canvas/store'
-import { attachOverlayScroll, detachOverlayScroll } from '../overlayScroll'
+import { HoverScrollbars } from '../overlayScroll'
 import CodeView from './CodeView.vue'
 
 const { doc } = defineProps<{ doc: CanvasEntry }>()
@@ -21,7 +20,7 @@ let stop: (() => void) | undefined
 function reset(): void {
   stop?.()
   stop = undefined
-  release()
+  scrollbars.release()
 }
 watch(
   root,
@@ -32,24 +31,12 @@ watch(
   { flush: 'post' }
 )
 
-// 코드 블록(`pre`)의 스크롤바는 포인터가 그 블록에 처음 들어올 때 씌운다. 큰 문서의 블록을 한꺼번에 씌우면 창이
-// 오래 멈추기 때문이다. 이 스크롤바는 hover·스크롤 때만 보이고, 블록을 스크롤하려면 포인터가 먼저 그 위에 있어야 하므로
-// 한꺼번에 씌울 때와 쓰는 법은 같다.
-//
-// 시스템 스크롤바가 overlay 면 `attachOverlayScroll` 을 부르지 않는다. `OverlayScrollbars` 는 이때 초기화를 취소하지만 블록마다
-// scroll-timeline 애니메이션을 두 개 만들고 끄지 않으므로, 문서를 넣고 지울 때마다 애니메이션이 쌓여 레이아웃이 점점 느려진다.
-const classic = !OverlayScrollbars.env().scrollbarsOverlaid.x
-let blocks: HTMLElement[] = []
+// 코드 블록(`pre`)의 스크롤바는 포인터가 그 블록에 처음 들어올 때 씌운다.
+const scrollbars = new HoverScrollbars()
+const classic = scrollbars.classic
 function hover(e: PointerEvent): void {
-  if (!classic) return
   const pre = (e.target as Element).closest('pre')
-  if (!pre || blocks.includes(pre)) return
-  blocks.push(pre)
-  attachOverlayScroll(pre, 'x')
-}
-function release(): void {
-  for (const b of blocks) detachOverlayScroll(b)
-  blocks = []
+  if (pre) scrollbars.attach(pre)
 }
 onBeforeUnmount(reset)
 </script>
