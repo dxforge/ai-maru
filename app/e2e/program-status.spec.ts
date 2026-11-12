@@ -186,6 +186,25 @@ test('maru status 로 쓴 하위 레코드가 루트보다 급하면 사이드�
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
 })
 
+test('maru status 로 쓴 하위 working 은 사이드바 카드에 title 로 늘어놓고, 지우면 목록에서 빠진다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await inProgram(page)
+  await run(
+    page,
+    'maru status put working --app claude-code && maru status put working --id a1 --title Explore && maru status put done --id a2 --title Finished; echo put-$((1+1))',
+    'put-2'
+  )
+  const card = await hoverCard(page, paneRows(page))
+  await expect(card.locator('.task')).toHaveCount(1)
+  await expect(card.locator('.task .title')).toHaveText('Explore')
+  await expect(card.locator('.task .icon')).toHaveClass(/working/)
+
+  await run(page, 'maru status clear --id a1; echo cleared-$((1+1))', 'cleared-2')
+  await expect((await hoverCard(page, paneRows(page))).locator('.tasks')).toHaveCount(0)
+})
+
 test('pane 줄은 그 터미널의 cell 아래에만, pane 헤더는 보이는 pane 의 상태를 따른다', async ({
   launch
 }) => {
@@ -391,41 +410,4 @@ test('idle 로 바꿀 때 루트와 하위의 done 은 idle 이 되고 blocked·
     .map((l) => l.split('\t'))
     .find((cols) => cols[0] === left)!
   expect([row[1], row[2], row[7]]).toEqual(['idle', 'claude-code', 'finished'])
-})
-
-test('Claude 가 차례를 마친 뒤 도는 백그라운드 셸은 pane 을 working 으로 두고 카드에 명령으로 늘어놓으며, 다음 Stop 에 셸이 없으면 working 에서 벗어나고 목록을 지운다', async ({
-  launch,
-  dataDir
-}) => {
-  const { page } = await launch()
-  const stop = (tasks: object[]): string => {
-    const file = join(dataDir, `stop-${tasks.length}.json`)
-    writeFileSync(file, JSON.stringify({ hook_event_name: 'Stop', background_tasks: tasks }))
-    return file
-  }
-  const shell = (id: string, command: string) => ({ id, type: 'shell', status: 'running', command })
-  const running = stop([
-    shell('b0', '"$MARU_CLI" claude monitor'),
-    shell('b1', 'pnpm dev'),
-    { id: 'a1', type: 'local_agent', status: 'running', description: 'Explore' }
-  ])
-  const none = stop([])
-  await inProgram(page)
-  await run(
-    page,
-    `maru status put done --app claude-code --msg finished && maru claude hook <${running}; echo hooked-$?`,
-    'hooked-0'
-  )
-  await expect(paneRows(page)).toHaveClass(/working/)
-  const card = await hoverCard(page, paneRows(page))
-  // 보는 pane 이라 루트의 done 은 곧 idle 이 된다. 어느 쪽이든 카드는 Claude 가 보낸 상태로 보인다.
-  await expect(card.locator('.head .icon')).toHaveClass(/\b(done|idle)\b/)
-  await expect(card.locator('.message')).toHaveText('finished')
-  await expect(card.locator('.task')).toHaveCount(1)
-  await expect(card.locator('.task .title.mono')).toHaveText('pnpm dev')
-
-  await run(page, `maru claude hook <${none}; echo hooked-$((1+1))`, 'hooked-2')
-  // 사용자가 보는 pane 이라 앱이 루트의 done 을 idle 로 바꿔 둔다.
-  await expect(paneRows(page)).toHaveClass(/idle/)
-  await expect((await hoverCard(page, paneRows(page))).locator('.tasks')).toHaveCount(0)
 })

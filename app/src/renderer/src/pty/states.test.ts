@@ -38,9 +38,9 @@ describe('createPtyStates', () => {
 
   it('도는 백그라운드 일은 같은 상태에서 같은 배열이고, 새 상태가 오면 다시 고른다', () => {
     const s = createPtyStates()
-    s.apply('p-1', { state: state([rec('done'), rec('working', 'bg/b1'), rec('done', 'a1')]) })
+    s.apply('p-1', { state: state([rec('done'), rec('working', 'a1'), rec('done', 'a2')]) })
     const first = s.tasks('p-1')
-    expect(first.map((r) => r.id)).toEqual(['bg/b1'])
+    expect(first.map((r) => r.id)).toEqual(['a1'])
     expect(s.tasks('p-1')).toBe(first)
     s.apply('p-1', { state: state([rec('done')]) })
     expect(s.tasks('p-1')).toEqual([])

@@ -30,15 +30,13 @@ function source(
     command?: CommandView
     notice?: PtyNotification
     tasks?: ProgramStatusRecord[]
-    resting?: 'done' | 'idle'
   } = {}
 ): RowSource {
   return {
     shown: () => o.record,
     command: () => o.command,
     notification: () => o.notice,
-    tasks: () => o.tasks ?? [],
-    resting: () => o.resting
+    tasks: () => o.tasks ?? []
   }
 }
 
@@ -46,19 +44,9 @@ const row = (o: Parameters<typeof source>[0] = {}) => paneRow(source(o), pane, f
 
 describe('paneRow', () => {
   it('도는 백그라운드 일이 있을 때만 tasks 를 둔다', () => {
-    const task = { ...record('working'), id: 'bg/b1', title: 'pnpm dev' }
+    const task = { ...record('working'), id: 'a1', title: 'Explore the code' }
     expect(row({ record: record('working'), tasks: [task] }).tasks).toEqual([task])
     expect(row({ record: record('working') })).not.toHaveProperty('tasks')
-  })
-
-  it('루트가 차례를 마쳤는데 하위 일로 working 이면 카드 아이콘만 루트의 상태로 둔다', () => {
-    const task = { ...record('working'), id: 'bg/b1' }
-    const done = row({ record: record('working'), tasks: [task], resting: 'done' })
-    expect([done.icon, done.tone]).toEqual([{ state: 'working' }, 'working'])
-    expect(done.card).toEqual({ icon: { state: 'done' }, tone: 'done' })
-    const idle = row({ record: record('working'), tasks: [task], resting: 'idle' })
-    expect(idle.card).toEqual({ icon: { agent: 'claude' }, tone: 'idle' })
-    expect(row({ record: record('working'), tasks: [task] })).not.toHaveProperty('card')
   })
 
   it('agent 가 쉬는 동안은 앞 칸에 agent 아이콘을 둔다', () => {

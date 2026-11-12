@@ -1,7 +1,6 @@
 import { shallowReactive } from 'vue'
 import { commandView, type CommandView } from '../../../shared/pane-name'
 import {
-  restingRoot,
   runningTasks,
   shownRecord,
   type ProgramStatusRecord,
@@ -57,8 +56,6 @@ export function createPtyStates() {
     shown,
     tasks,
     state: (pty?: string): ProgramStatusState | undefined => shown(pty)?.state,
-    resting: (pty?: string): 'done' | 'idle' | undefined =>
-      pty === undefined ? undefined : restingRoot(records(pty)),
     rootState: (pty: string): ProgramStatusState | undefined =>
       records(pty).find((r) => r.id === '')?.state,
     command,

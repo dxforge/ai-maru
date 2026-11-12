@@ -1,6 +1,5 @@
 import { jobName, type JobView } from '../../../shared/job'
 import {
-  SHELL_TASK_PREFIX,
   URGENCY,
   type ProgramStatusRecord,
   type ProgramStatusState
@@ -40,8 +39,7 @@ export type CardSection = {
   time?: string
 }
 
-/** `mono` 면 title 이 셸 명령이므로 고정폭 글꼴로 보인다. */
-export type CardTask = { key: string; state: ProgramStatusState; title: string; mono: boolean }
+export type CardTask = { key: string; state: ProgramStatusState; title: string }
 
 export const MAX_TASKS = 5
 
@@ -89,8 +87,8 @@ export function paneSection(r: Row, now: number): CardSection {
   return {
     key: `pane:${r.pane}`,
     title: r.name,
-    icon: r.card?.icon ?? r.icon,
-    ...(r.tone && { tone: r.card?.tone ?? r.tone }),
+    icon: r.icon,
+    ...(r.tone && { tone: r.tone }),
     ...(r.notice && { notice: notificationText(r.notice) }),
     ...(r.path && { path: r.path }),
     ...(r.git && { git: [r.git.repo, r.git.branch].filter(Boolean).join(' · ') }),
@@ -109,8 +107,7 @@ function taskList(tasks: readonly ProgramStatusRecord[]): NonNullable<CardSectio
   const rows = tasks.slice(0, MAX_TASKS).map((t) => ({
     key: t.id,
     state: t.state,
-    title: t.title || t.id,
-    mono: t.id.startsWith(SHELL_TASK_PREFIX)
+    title: t.title || t.id
   }))
   const more = tasks.length - rows.length
   return more ? { rows, more: `+${more} more` } : { rows }

@@ -95,7 +95,7 @@ onBeforeUnmount(() => {
             <ul v-if="s.tasks" class="tasks">
               <li v-for="t in s.tasks.rows" :key="t.key" class="task with-icon" :data-task="t.key">
                 <span class="icon" :class="t.state"><StatusIcon :state="t.state" /></span
-                ><span class="title" :class="{ mono: t.mono }">{{ t.title }}</span>
+                ><span class="title">{{ t.title }}</span>
               </li>
               <li v-if="s.tasks.more" class="more">{{ s.tasks.more }}</li>
             </ul>
@@ -259,10 +259,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.task .mono {
-  font-family: var(--font-mono), monospace;
 }
 
 .more {

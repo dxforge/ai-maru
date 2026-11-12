@@ -20,11 +20,6 @@ export type Row = {
   message?: string
   /** pane 에서 도는 백그라운드 일(`runningTasks`). 없으면 두지 않는다. */
   tasks?: readonly ProgramStatusRecord[]
-  /**
-   * 카드 머리줄의 아이콘. 루트가 차례를 마쳤는데 하위 일이 돌아 `state` 가 working 이면, 카드는 루트가 보낸 상태로 보여
-   * 프로그램은 쉬고 하위 일만 도는 것을 드러낸다. 그 밖에는 두지 않고 `icon`·`tone` 을 쓴다.
-   */
-  card?: { icon: PaneIcon; tone: string }
   git?: DeepReadonly<GitHead>
   command?: CommandView
   commandTail: boolean
@@ -50,7 +45,6 @@ export type RowSource = {
   command: (pty?: string) => CommandView | undefined
   notification: (pty?: string) => PtyNotification | undefined
   tasks: (pty?: string) => readonly ProgramStatusRecord[]
-  resting: (pty?: string) => 'done' | 'idle' | undefined
   home?: string
   shell?: string
 }
@@ -77,19 +71,14 @@ export function paneRow(
   const named = where ? `${name}, ${where}` : name
   const label = s ? STATE_LABELS[s] : cmd && commandLabel(cmd)
   const aria = label ? `${label}: ${named}` : named
-  const icon = (st: ProgramStatusState | undefined): PaneIcon => {
-    const agent = st === 'idle' && r ? AGENT_ICONS.get(r.app) : undefined
-    return agent ? { agent } : st ? { state: st } : { command: commandIcon(cmd) }
-  }
-  const resting = src.resting(p.ptyId)
+  const agent = s === 'idle' && r ? AGENT_ICONS.get(r.app) : undefined
   return {
     pane: p.key,
     state: s,
-    icon: icon(s),
+    icon: agent ? { agent } : s ? { state: s } : { command: commandIcon(cmd) },
     tone: s ?? commandClass(cmd),
     message: (s && r.message) || undefined,
     ...(tasks.length && { tasks }),
-    ...(resting && { card: { icon: icon(resting), tone: resting } }),
     git: p.git,
     command: cmd,
     commandTail: tail,

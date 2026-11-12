@@ -1,13 +1,6 @@
 {
   "hooks": {
     "SessionStart": [{ "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }],
-    "Notification": [{ "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }],
-    "PostToolUse": [
-      {
-        "matcher": "Bash|Monitor",
-        "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }]
-      }
-    ],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }]
+    "Notification": [{ "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }]
   }
 }

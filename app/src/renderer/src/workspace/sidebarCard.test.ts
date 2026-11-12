@@ -25,7 +25,6 @@ function pane(
     cwd?: string
     git?: GitHead
     tasks?: ProgramStatusRecord[]
-    resting?: 'done' | 'idle'
   } = {}
 ) {
   const p = {
@@ -42,7 +41,6 @@ function pane(
       command: () => o.command,
       notification: () => o.notice,
       tasks: () => o.tasks ?? [],
-      resting: () => o.resting,
       home: '/Users/me'
     },
     p,
@@ -64,25 +62,17 @@ const record = (o: Partial<ProgramStatusRecord> = {}): ProgramStatusRecord => ({
 })
 
 describe('paneSection', () => {
-  it('백그라운드 일을 받은 순서로 상태와 title 로 두고, 셸 명령만 mono 로 둔다', () => {
+  it('백그라운드 일을 받은 순서로 상태와 title 로 두고, title 이 없으면 id 를 쓴다', () => {
     const tasks = [
       record({ id: 'a1', title: 'Explore the code' }),
-      record({ id: 'bg/b1', title: 'pnpm dev' }),
-      record({ id: 'bg/b2', state: 'error', title: '' })
+      record({ id: 'a2', state: 'error', title: '' })
     ]
     expect(paneSection(pane({ record: record(), tasks }), 0).tasks).toEqual({
       rows: [
-        { key: 'a1', state: 'working', title: 'Explore the code', mono: false },
-        { key: 'bg/b1', state: 'working', title: 'pnpm dev', mono: true },
-        { key: 'bg/b2', state: 'error', title: 'bg/b2', mono: true }
+        { key: 'a1', state: 'working', title: 'Explore the code' },
+        { key: 'a2', state: 'error', title: 'a2' }
       ]
     })
-  })
-
-  it('루트가 차례를 마쳤는데 하위 일로 working 인 pane 은 아이콘을 루트의 상태로 둔다', () => {
-    const tasks = [record({ id: 'bg/b1', title: 'pnpm dev' })]
-    const s = paneSection(pane({ record: record(), tasks, resting: 'done' }), 0)
-    expect([s.icon, s.tone]).toEqual([{ state: 'done' }, 'done'])
   })
 
   it('백그라운드 일은 다섯 줄까지 두고 나머지는 수로 쓴다', () => {
