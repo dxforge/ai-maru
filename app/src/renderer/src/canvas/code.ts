@@ -9,13 +9,11 @@ export function prepareCode(text: string): { code: string; count: number } {
   return { code, count: code.split('\n').length }
 }
 
-/** 링크의 줄을 파일 안으로 맞춘다. 줄이 없거나 1보다 작으면 undefined, 줄 수를 넘으면 마지막 줄이다. */
 export function clampLine(line: number | undefined, count: number): number | undefined {
   if (line === undefined || line < 1) return undefined
   return Math.min(line, count)
 }
 
-/** 코드 문서의 본문. 같은 id 로 다시 온 문서는 새 본문이라, 늦게 온 강조 결과는 `id` 로 가려 버린다. */
 export class CodeBody {
   static #count = 0
   readonly id = ++CodeBody.#count
@@ -42,7 +40,6 @@ export class CodeBody {
   }
 
   #numbers: string | undefined
-  /** 줄 번호 칸의 글자. 카드를 펼 때마다 다시 만들지 않는다. */
   get numbers(): string {
     return (this.#numbers ??= Array.from({ length: this.count }, (_, i) => i + 1).join('\n'))
   }
@@ -51,14 +48,12 @@ export class CodeBody {
   /** 받아 둔 강조. 아직 받지 못했으면 undefined, 강조하지 않으면 null 이다. */
   html: string | null | undefined
 
-  /** 강조한 HTML. 한 번만 worker 에 보내고, 카드를 접었다 펴면 받아 둔 것을 쓴다. 강조하지 않으면 null 이다. */
   highlighted(): Promise<string | null> {
     return (this.#highlighted ??= (
       this.code.length > HIGHLIGHT_MAX_CHARS ? Promise.resolve(null) : highlight(this)
     ).then((html) => (this.html = html)))
   }
 
-  /** 강조를 `ms` 까지 기다린다. */
   ready(ms: number): Promise<void> {
     return Promise.race([
       this.highlighted().then(
@@ -72,7 +67,8 @@ export class CodeBody {
 
 /**
  * worker 를 띄우고 작은 조각을 강조해 둔다. 처음 하는 tokenize 는 같은 크기의 두 번째보다 약 0.2초 더 걸려(빌드한 앱에서
- * TypeScript 5KB 225ms, 두 번째 24ms), 처음 여는 코드 문서가 그만큼 늦게 강조되기 때문이다.
+ * TypeScript 5KB 225ms, 두 번째 24ms), 처음 여는 코드 문서가 그만큼 늦게 강조되기 때문이다. 첫 비용은 파일이 처음 쓰는
+ * 문법 규칙마다 들어, 작은 조각으로는 다 치르지 못한다(데운 뒤에도 TypeScript 5KB 를 처음 열면 196~214ms).
  */
 export function warmHighlighter(): void {
   void new CodeBody('const a = 1\n', 'warm.ts').highlighted()

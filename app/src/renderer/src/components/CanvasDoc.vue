@@ -31,7 +31,6 @@ watch(
   { flush: 'post' }
 )
 
-// 코드 블록(`pre`)의 스크롤바는 포인터가 그 블록에 처음 들어올 때 씌운다.
 const scrollbars = new HoverScrollbars()
 const classic = scrollbars.classic
 function hover(e: PointerEvent): void {

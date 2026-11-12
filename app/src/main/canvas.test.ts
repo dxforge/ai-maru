@@ -86,6 +86,8 @@ describe('canvasDocFor', () => {
       text: 'a\r\n한글\n'
     })
     expect(await canvasDocFor(path, 3)).toMatchObject({ kind: 'code', line: 3 })
+    expect(await canvasDocFor(path, 0)).not.toHaveProperty('line')
+    expect(await canvasDocFor(file('a.md', [...Buffer.from('# a')]), 3)).not.toHaveProperty('line')
     expect(await canvasDocFor(file('Makefile', []))).toMatchObject({ kind: 'code', text: '' })
   })
 

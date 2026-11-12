@@ -342,7 +342,6 @@ describe('readJoinedLines·joinedPaths', () => {
     const rows = ['2) /x/a.ts:40', '3) b'].map((r) => line([...r]))
     expect(joinedPaths(readJoinedLines(buffer(rows), 1))).toEqual([])
     expect(joinedPaths(readJoinedLines(buffer(rows), 2))).toEqual([])
-    // 앞 줄이 경로에서 끝나면 다음 줄의 `:줄` 은 그 경로의 것이다.
     const split = ['2) /x/a.ts', ':40 b'].map((r) => line([...r]))
     expect(joinedPaths(readJoinedLines(buffer(split), 2))).toEqual([
       { offset: 3, candidates: { text: '/x/a.ts:40', starts: [0, 7], ends: [10] } }

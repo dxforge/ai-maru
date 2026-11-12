@@ -32,7 +32,6 @@ watch(
 )
 onBeforeUnmount(() => sized?.disconnect())
 
-// 가로 스크롤바는 `CanvasDoc` 의 코드 블록처럼 포인터가 처음 들어올 때 씌운다.
 const scrollbars = new HoverScrollbars()
 const classic = scrollbars.classic
 function hover(): void {
@@ -115,7 +114,7 @@ pre {
 }
 
 /* 라이트·다크는 `prefers-color-scheme` 으로 고른다. 터미널 테마가 하나면 `themeSource` 를 그 테마의 밝기로 두고, 한 쌍이면 OS 를
-   따라 고른 테마를 쓰므로(`themes/index.ts`) 이 값이 배경과 맞는다. */
+   따라 고른 테마를 쓰므로(`themes/index.ts`) `--shiki-light`·`--shiki-dark` 가운데 고른 색이 배경과 맞는다. */
 .text :deep(span) {
   color: var(--shiki-light);
 }

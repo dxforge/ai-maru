@@ -27,6 +27,11 @@ describe('CodeBody', () => {
     expect(a.id).not.toBe(b.id)
     expect(new CodeBody('a\r\nb\r\nc', 'a.ts', 3).line).toBe(3)
   })
+
+  it('링크의 줄로는 처음 한 번만 스크롤한다 — 카드를 접었다 펴도 다시 가지 않는다', () => {
+    const body = new CodeBody('a\nb', 'a.ts', 2)
+    expect([body.firstScroll(), body.firstScroll()]).toEqual([true, false])
+  })
 })
 
 describe('CodeBody.highlighted', () => {

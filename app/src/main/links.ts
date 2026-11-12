@@ -19,7 +19,7 @@ const SCHEME_RE = /^([a-zA-Z][a-zA-Z0-9+.-]*):/
 
 /**
  * 파일로 보는 것은 `file:` URL 과 scheme 이 없는 경로뿐이다. 그 밖의 scheme 은 이름을 가리지 않고 OS 에 넘긴다.
- * `mailto:`·`vscode://` 를 경로로 잘못 보면 조용히 실패하기 때문이다. 경로 뒤의 `:줄:칸` 은 떼고, 줄은 `line` 으로 남긴다.
+ * `mailto:`·`vscode://` 를 경로로 잘못 보면 조용히 실패하기 때문이다. 경로 뒤의 `:줄:칸` 은 뗀다.
  * `file://host/x` 의 호스트가 이 머신의 이름이면 지운다(GNU `ls --hyperlink` 가 이 꼴로 찍는다). 다른 호스트면
  * `fileURLToPath` 가 throw 한다.
  */

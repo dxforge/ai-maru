@@ -26,7 +26,6 @@ for (const l of bundledLanguagesInfo) {
 }
 for (const [ext, id] of Object.entries(EXTRA_EXTENSIONS)) LANGUAGES.set(ext, id)
 
-/** 파일 이름으로 고른 shiki 언어 id. 확장자를 먼저 보고, 없거나 모르면 이름 전체(`Makefile`·`Dockerfile`)를 본다. */
 export function languageFor(name: string): string | null {
   const lower = name.toLowerCase()
   const dot = lower.lastIndexOf('.')
@@ -51,7 +50,7 @@ export function tokensHtml(lines: readonly (readonly ThemedToken[])[]): string {
 }
 
 // WASM 을 쓰는 oniguruma 엔진 대신 JavaScript 정규식 엔진을 쓴다. renderer 의 CSP(`index.html`)에 `wasm-unsafe-eval` 이
-// 없기 때문이다. 그 CSP 가 worker 에도 걸리는지는 재지 않았다.
+// 없기 때문이다. 그 CSP 가 worker 에도 걸리는지는 확인하지 않았다.
 let highlighter: Promise<HighlighterCore> | undefined
 const getHighlighter = (): Promise<HighlighterCore> =>
   (highlighter ??= createHighlighterCore({

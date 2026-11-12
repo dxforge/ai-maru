@@ -276,7 +276,6 @@ function release(entry: CanvasEntry): void {
 const bodies = new WeakMap<CanvasEntry, MarkdownBody>()
 const codeBodies = new WeakMap<CanvasEntry, CodeBody>()
 
-/** 코드 문서를 넣기 전에 강조를 기다리는 시간. 넘으면 강조 없이 넣고, 받으면 색을 입힌다. */
 export const CODE_WAIT_MS = 100
 
 export function bodyOf(entry: CanvasEntry): MarkdownBody | undefined {
