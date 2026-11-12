@@ -139,6 +139,15 @@ export function favoriteRow(dir: string, base: string | undefined, home?: string
   return rel ? { ...row, path: rel } : row
 }
 
+const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+
+/** 저장된 순서(추가한 순서)는 그대로 두고, 메뉴에는 이름순으로 보인다. 이름이 같으면 보이는 경로로 가른다. */
+export function favoriteRows(dirs: readonly string[], base: string | undefined, home?: string): DirRow[] {
+  return dirs
+    .map((d) => favoriteRow(d, base, home))
+    .sort((a, b) => byName.compare(a.name, b.name) || byName.compare(a.path, b.path))
+}
+
 /** cell 이 없는 workspace 는 `dir` 줄 하나를 두어, 그 디렉토리에서 cell 을 다시 열 수 있게 한다. */
 export function emptyRow(w: { dir?: string; cells: readonly unknown[] }, home?: string): DirRow[] {
   return !w.cells.length && w.dir !== undefined ? [dirRow(w.dir, home)] : []

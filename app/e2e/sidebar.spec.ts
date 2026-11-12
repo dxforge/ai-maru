@@ -1806,7 +1806,8 @@ test('나눈 cell 에서 Toggle Favorite 메뉴 항목은 포커스된 둘째 pa
   await star(0).click()
   await expect(star(0)).toHaveAttribute('aria-pressed', 'true')
   await openWorkspaceMenu(page, 0)
-  await expect(favoriteItems(page)).toHaveText(['sub', '~'])
+  // 추가한 순서는 sub, ~ 이지만 메뉴는 이름순이다.
+  await expect(favoriteItems(page)).toHaveText(['~', 'sub'])
 })
 
 function useTool(dataDir: string): string {

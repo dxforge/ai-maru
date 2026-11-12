@@ -38,7 +38,7 @@ import {
   jobRow,
   paneRow,
   emptyRow,
-  favoriteRow,
+  favoriteRows,
   workspaceMarks,
   type JobRow,
   type RowSource
@@ -161,7 +161,7 @@ const groups = computed(() => {
       pinned: !!w.pinned,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       dir: dir === undefined ? undefined : tildePath(dir, home),
-      favorites: (w.favorites ?? []).map((d) => favoriteRow(d, dir, home)),
+      favorites: favoriteRows(w.favorites ?? [], dir, home),
       empty: f ? [] : emptyRow(w, home),
       items: f ? [] : cells(src, w)
     }

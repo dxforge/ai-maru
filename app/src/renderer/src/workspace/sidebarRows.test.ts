@@ -12,6 +12,7 @@ import {
   emptyRow,
   exitText,
   favoriteRow,
+  favoriteRows,
   jobRow,
   paneRow,
   workspaceMarks,
@@ -203,6 +204,29 @@ describe('favoriteRow', () => {
     expect(favoriteRow('/h/r2x/a', '/h/r2', '/h').path).toBe('~/r2x/a')
     expect(favoriteRow('/h/r2', '/h/r2', '/h').path).toBe('~/r2')
     expect(favoriteRow('/opt/x', undefined, '/h').path).toBe('/opt/x')
+  })
+})
+
+describe('favoriteRows', () => {
+  const names = (dirs: string[]) => favoriteRows(dirs, '/h/w', '/h').map((r) => r.path)
+
+  it('추가한 순서와 상관없이 이름순이고, 대소문자를 가리지 않는다', () => {
+    expect(names(['/h/w/beta', '/h/w/Alpha', '/h/w/gamma'])).toEqual(['Alpha', 'beta', 'gamma'])
+    expect(names(['/h/w/gamma', '/h/w/beta', '/h/w/Alpha'])).toEqual(['Alpha', 'beta', 'gamma'])
+  })
+
+  it('이름의 숫자는 숫자 크기로 비교한다', () => {
+    expect(names(['/h/w/r10', '/h/w/r2', '/h/w/r1'])).toEqual(['r1', 'r2', 'r10'])
+  })
+
+  it('이름이 같으면 보이는 경로로 가른다', () => {
+    expect(names(['/h/w/b/app', '/opt/app', '/h/w/a/app'])).toEqual(['/opt/app', 'a/app', 'b/app'])
+  })
+
+  it('넘긴 배열의 순서를 바꾸지 않는다', () => {
+    const dirs = ['/h/w/b', '/h/w/a']
+    favoriteRows(dirs, '/h/w', '/h')
+    expect(dirs).toEqual(['/h/w/b', '/h/w/a'])
   })
 })
 
