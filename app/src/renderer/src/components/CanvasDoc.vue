@@ -2,8 +2,9 @@
 import { OverlayScrollbars } from 'overlayscrollbars'
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
 import { fillBody } from '../canvas/fill'
-import { bodyOf, type CanvasEntry } from '../canvas/store'
+import { bodyOf, codeBodyOf, type CanvasEntry } from '../canvas/store'
 import { attachOverlayScroll, detachOverlayScroll } from '../overlayScroll'
+import CodeView from './CodeView.vue'
 
 const { doc } = defineProps<{ doc: CanvasEntry }>()
 const root = useTemplateRef<HTMLElement>('root')
@@ -14,6 +15,7 @@ const root = useTemplateRef<HTMLElement>('root')
 // 않아, 앞 문서의 나머지 묶음이 남기 때문이다.
 const body = computed(() => bodyOf(doc))
 const first = computed(() => body.value?.html(0) ?? '')
+const code = computed(() => codeBodyOf(doc))
 // 요소가 바뀌거나 사라지면(같은 id 로 이미지가 오면 이 컴포넌트는 남고 요소만 사라진다) 앞 요소에 붙이던 것을 멈춘다.
 let stop: (() => void) | undefined
 function reset(): void {
@@ -64,7 +66,8 @@ onBeforeUnmount(reset)
     v-html="first"
   />
   <!-- eslint-enable vue/no-v-html -->
-  <img v-else class="image" :src="doc.url" :alt="doc.title" />
+  <CodeView v-else-if="code" :key="code.id" :body="code" />
+  <img v-else-if="doc.kind === 'image'" class="image" :src="doc.url" :alt="doc.title" />
 </template>
 
 <style scoped>

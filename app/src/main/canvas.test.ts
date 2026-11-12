@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import {
   canvasDocFor,
   canvasPaste,
+  CODE_MAX_BYTES,
   canvasPut,
   putCanvas,
   type CellOf,
@@ -76,8 +77,37 @@ describe('canvasDocFor', () => {
     await expect(canvasDocFor(path)).rejects.toThrow()
   })
 
-  it('`.md`·이미지가 아니면 문서가 없다', async () => {
-    expect(await canvasDocFor(file('notes.txt', [1]))).toBeNull()
+  it('`.md`·이미지가 아닌 텍스트 파일은 코드 문서다 — id 는 경로, 줄을 받으면 든다', async () => {
+    const path = file('notes.txt', [...Buffer.from('a\r\n한글\n')])
+    expect(await canvasDocFor(path)).toEqual({
+      id: path,
+      kind: 'code',
+      name: 'notes.txt',
+      text: 'a\r\n한글\n'
+    })
+    expect(await canvasDocFor(path, 3)).toMatchObject({ kind: 'code', line: 3 })
+    expect(await canvasDocFor(file('Makefile', []))).toMatchObject({ kind: 'code', text: '' })
+  })
+
+  it('앞 8000바이트에 NUL 이 있으면 코드 문서가 아니고, 그 뒤의 NUL 은 보지 않는다', async () => {
+    expect(await canvasDocFor(file('a.dat', [0x41, 0, 0x42]))).toBeNull()
+    expect(await canvasDocFor(file('b.dat', [...Array(7999).fill(0x41), 0]))).toBeNull()
+    expect(await canvasDocFor(file('c.dat', [...Array(8000).fill(0x41), 0]))).toMatchObject({
+      kind: 'code'
+    })
+  })
+
+  it('UTF-8 로 읽히지 않으면 코드 문서가 아니다', async () => {
+    expect(await canvasDocFor(file('latin1.txt', [0x63, 0x61, 0x66, 0xe9]))).toBeNull()
+  })
+
+  it('5 MiB 를 넘으면 코드 문서가 아니고, 꼭 5 MiB 면 코드 문서다', async () => {
+    const path = join(dir, 'big.log')
+    writeFileSync(path, Buffer.alloc(CODE_MAX_BYTES, 0x61))
+    expect(CODE_MAX_BYTES).toBe(5 * 1024 * 1024)
+    expect(await canvasDocFor(path)).toMatchObject({ kind: 'code' })
+    writeFileSync(path, Buffer.alloc(CODE_MAX_BYTES + 1, 0x61))
+    expect(await canvasDocFor(path)).toBeNull()
   })
 })
 

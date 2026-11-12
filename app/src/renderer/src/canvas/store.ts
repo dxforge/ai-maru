@@ -7,12 +7,14 @@ import {
   type Label,
   type Named
 } from '../../../shared/names'
+import { CodeBody } from './code'
 import { MarkdownBody, prepareMarkdown } from './markdown'
 
 // `at` 은 renderer 가 문서를 받은 시각(ms)이다. 문서를 고쳐 보냈으면 고친 시각이다.
 export type CanvasEntry = CanvasOwner & { key: string } & (
     | { id: string; kind: 'markdown'; title: string; at: number }
     | { id: string; kind: 'image'; title: string; at: number; url: string }
+    | { id: string; kind: 'code'; title: string; at: number }
   )
 
 /**
@@ -253,9 +255,14 @@ function release(entry: CanvasEntry): void {
 // 렌더한 HTML 은 문서마다 담아 두어, 카드를 접었다 펴거나 보기를 바꿔 본문을 다시 그릴 때 렌더하지 않는다. 같은 id 로
 // 다시 오면 새 entry 라 새로 렌더한다. reactive 한 목록에 넣으면 Vue 가 토큰까지 proxy 로 감싸므로 entry 밖에 둔다.
 const bodies = new WeakMap<CanvasEntry, MarkdownBody>()
+const codeBodies = new WeakMap<CanvasEntry, CodeBody>()
 
 export function bodyOf(entry: CanvasEntry): MarkdownBody | undefined {
   return bodies.get(toRaw(entry))
+}
+
+export function codeBodyOf(entry: CanvasEntry): CodeBody | undefined {
+  return codeBodies.get(toRaw(entry))
 }
 
 function toEntry(item: CanvasItem, at: number): CanvasEntry {
@@ -269,6 +276,11 @@ function toEntry(item: CanvasItem, at: number): CanvasEntry {
     const title = item.title || heading || 'Markdown'
     const entry: CanvasEntry = { id: item.id, kind: 'markdown', title, at, ...owner }
     bodies.set(entry, new MarkdownBody(parts))
+    return entry
+  }
+  if (item.kind === 'code') {
+    const entry: CanvasEntry = { id: item.id, kind: 'code', title: item.name, at, ...owner }
+    codeBodies.set(entry, new CodeBody(item.text, item.name, item.line))
     return entry
   }
   const url = URL.createObjectURL(new Blob([item.bytes as BlobPart], { type: item.mime }))

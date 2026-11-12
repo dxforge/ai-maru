@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import type { CanvasDoc, CanvasImage, CanvasMarkdown, CanvasOwner } from '../shared/canvas'
@@ -24,13 +24,34 @@ async function imageFile(path: string, mime: string): Promise<CanvasImage> {
   return { id: path, kind: 'image', name: basename(path), mime, bytes: await readFile(path) }
 }
 
-/** Canvas 가 그릴 수 있는 파일(`.md`·이미지)이면 그 문서. id 는 경로라, 같은 cell 에서 같은 파일을 다시 열면 그 문서를 바꾼다. */
-export async function canvasDocFor(path: string): Promise<CanvasDoc | null> {
+export const CODE_MAX_BYTES = 5 * 1024 * 1024
+// git 이 바이너리를 가를 때 보는 길이다(`buffer_is_binary` 의 FIRST_FEW_BYTES).
+const BINARY_PROBE_BYTES = 8000
+
+/** 앞 8000바이트에 NUL 이 없고 UTF-8 로 읽히면 그 글자. 깨진 글자를 보이지 않으려고 디코드 실패는 null 이다. */
+export function codeText(bytes: Uint8Array): string | null {
+  if (bytes.subarray(0, BINARY_PROBE_BYTES).includes(0)) return null
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Canvas 가 그릴 수 있는 파일이면 그 문서. `.md`·이미지가 아니면 5 MiB 이하의 텍스트 파일을 코드 문서로 보고, `line` 을
+ * 붙인다. id 는 경로라, 같은 cell 에서 같은 파일을 다시 열면 그 문서를 바꾼다.
+ */
+export async function canvasDocFor(path: string, line?: number): Promise<CanvasDoc | null> {
   if (extname(path).toLowerCase() === '.md') {
     return { id: path, kind: 'markdown', text: await readFile(path, 'utf8'), title: basename(path) }
   }
   const mime = imageType(path)
-  return mime ? imageFile(path, mime) : null
+  if (mime) return imageFile(path, mime)
+  if ((await stat(path)).size > CODE_MAX_BYTES) return null
+  const text = codeText(await readFile(path))
+  if (text === null) return null
+  return { id: path, kind: 'code', name: basename(path), text, ...(line ? { line } : {}) }
 }
 
 /** Electron `clipboard.read()` 의 항목 가운데 쓰는 것. */

@@ -11,14 +11,15 @@ import {
 } from '../shared/link'
 import { canvasDocFor } from './canvas'
 
-export type LinkTarget = { kind: 'external'; url: string } | { kind: 'file'; path: string }
+export type LinkTarget =
+  { kind: 'external'; url: string } | { kind: 'file'; path: string; line?: number }
 
 // RFC 3986 scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
 const SCHEME_RE = /^([a-zA-Z][a-zA-Z0-9+.-]*):/
 
 /**
  * 파일로 보는 것은 `file:` URL 과 scheme 이 없는 경로뿐이다. 그 밖의 scheme 은 이름을 가리지 않고 OS 에 넘긴다.
- * `mailto:`·`vscode://` 를 경로로 잘못 보면 조용히 실패하기 때문이다. 경로 뒤의 `:줄:칸` 은 뗀다.
+ * `mailto:`·`vscode://` 를 경로로 잘못 보면 조용히 실패하기 때문이다. 경로 뒤의 `:줄:칸` 은 떼고, 줄은 `line` 으로 남긴다.
  * `file://host/x` 의 호스트가 이 머신의 이름이면 지운다(GNU `ls --hyperlink` 가 이 꼴로 찍는다). 다른 호스트면
  * `fileURLToPath` 가 throw 한다.
  */
@@ -26,10 +27,13 @@ export function resolveLinkTarget(text: string): LinkTarget {
   const scheme = SCHEME_RE.exec(text)?.[1]?.toLowerCase()
   if (scheme && scheme !== 'file') return { kind: 'external', url: text }
   const path = scheme === 'file' ? fileURLToPath(withoutOwnHost(text)) : text
-  return { kind: 'file', path: withoutPosition(path) }
+  const [, bare, line] = POSITION_RE.exec(path)!
+  return { kind: 'file', path: bare!, ...(line ? { line: Number(line) } : {}) }
 }
 
-const withoutPosition = (path: string): string => path.replace(/:\d+(?::\d+)?$/, '')
+const POSITION_RE = /^(.*?)(?::(\d+)(?::\d+)?)?$/s
+
+const withoutPosition = (path: string): string => POSITION_RE.exec(path)![1]!
 
 function withoutOwnHost(fileUrl: string): URL {
   const url = new URL(fileUrl)
@@ -73,7 +77,7 @@ async function open(text: string, ptyId: string, opener: LinkOpener): Promise<Li
   }
   const info = await stat(path).catch(() => null)
   if (!info) return { ok: false, reason: `${path} doesn't exist` }
-  const doc = info.isFile() ? await canvasDocFor(path) : null
+  const doc = info.isFile() ? await canvasDocFor(path, target.line) : null
   if (doc) {
     await opener.putCanvas(doc, ptyId)
     return { ok: true }

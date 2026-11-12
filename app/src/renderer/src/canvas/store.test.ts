@@ -5,6 +5,7 @@ import type { CanvasItem } from '../../../shared/canvas'
 import {
   bodyOf,
   clockTime,
+  codeBodyOf,
   createCanvas,
   docKey,
   groupChoices,
@@ -69,6 +70,26 @@ describe('createCanvas', () => {
     expect(c.docs.value.map((d) => d.id)).toEqual(['b', 'a'])
     expect(docOf(c, 'a')?.title).toBe('A2')
     expect(c.expanded.has(k('a'))).toBe(false)
+  })
+
+  it('코드 문서는 파일 이름이 제목이고, 같은 id 로 다시 오면 새 본문과 새 줄로 바뀐다', () => {
+    const c = createCanvas()
+    const code = (line?: number): CanvasItem => ({
+      id: '/r/a.ts',
+      kind: 'code',
+      name: 'a.ts',
+      text: 'a\nb\nc\n',
+      ...(line === undefined ? {} : { line })
+    })
+    c.put(code(2))
+    const first = codeBodyOf(docOf(c, '/r/a.ts')!)!
+    expect(docOf(c, '/r/a.ts')?.title).toBe('a.ts')
+    expect([first.code, first.count, first.line]).toEqual(['a\nb\nc', 3, 2])
+    c.put(code(9))
+    const second = codeBodyOf(docOf(c, '/r/a.ts')!)!
+    expect(second.id).not.toBe(first.id)
+    expect(second.line).toBe(3)
+    expect(c.docs.value).toHaveLength(1)
   })
 
   it('받은 시각을 붙이고, 같은 id 로 고치면 고친 시각으로 바꾼다', () => {

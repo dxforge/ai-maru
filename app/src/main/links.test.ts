@@ -38,10 +38,15 @@ describe('resolveLinkTarget', () => {
     expect(() => resolveLinkTarget('file://other-host.invalid/tmp/x.md')).toThrow()
   })
 
-  it('경로 뒤의 :줄:칸 은 뗀다', () => {
-    expect(resolveLinkTarget('/a/b.ts:12:3')).toEqual({ kind: 'file', path: '/a/b.ts' })
-    expect(resolveLinkTarget('src/x.vue:7')).toEqual({ kind: 'file', path: 'src/x.vue' })
-    expect(resolveLinkTarget('file:///a/b.ts:12')).toEqual({ kind: 'file', path: '/a/b.ts' })
+  it('경로 뒤의 :줄:칸 은 떼고, 줄은 남기고 칸은 버린다', () => {
+    expect(resolveLinkTarget('/a/b.ts:12:3')).toEqual({ kind: 'file', path: '/a/b.ts', line: 12 })
+    expect(resolveLinkTarget('src/x.vue:7')).toEqual({ kind: 'file', path: 'src/x.vue', line: 7 })
+    expect(resolveLinkTarget('file:///a/b.ts:12')).toEqual({
+      kind: 'file',
+      path: '/a/b.ts',
+      line: 12
+    })
+    expect(resolveLinkTarget('/a/b.ts')).toEqual({ kind: 'file', path: '/a/b.ts' })
   })
 })
 
@@ -100,9 +105,22 @@ describe('openLink', () => {
     ])
   })
 
-  it('그 밖의 파일과 디렉토리는 OS 기본 앱으로 열고, OS 가 거절하면 그 이유를 준다', async () => {
-    const file = join(dir, 'a.txt')
-    writeFileSync(file, 'x')
+  it('코드 파일은 Canvas 에 코드 문서로 띄우고, 링크의 줄을 넘긴다', async () => {
+    const path = join(dir, 'main.ts')
+    writeFileSync(path, 'const a = 1\n')
+    const { o, docs, paths } = opener()
+    expect(await openLink(`${path}:12:3`, 'p-1', o)).toEqual({ ok: true })
+    expect(await openLink(path, 'p-1', o)).toEqual({ ok: true })
+    expect(docs).toEqual([
+      { id: path, kind: 'code', name: 'main.ts', text: 'const a = 1\n', line: 12 },
+      { id: path, kind: 'code', name: 'main.ts', text: 'const a = 1\n' }
+    ])
+    expect(paths).toEqual([])
+  })
+
+  it('바이너리 파일과 디렉토리는 OS 기본 앱으로 열고, OS 가 거절하면 그 이유를 준다', async () => {
+    const file = join(dir, 'a.bin')
+    writeFileSync(file, Buffer.from([0x41, 0, 0x42]))
     const { o, paths, docs } = opener()
     expect(await openLink(file, 'p-1', o)).toEqual({ ok: true })
     expect(await openLink(`${dir}/:3`, 'p-1', o)).toEqual({ ok: true })
