@@ -339,12 +339,13 @@ onBeforeUnmount(() => {
   padding: var(--space-5) var(--space-6) var(--space-6);
 }
 
+/* 접은 카드에도 투명한 선을 두어, 접고 펼 때 제목 줄의 글자가 0.5px 오르내리지 않게 한다. */
 .card > .row {
-  border-bottom: none;
+  border-bottom-color: transparent;
 }
 
 .card > .row.open {
-  border-bottom: 1px solid var(--line);
+  border-bottom-color: var(--line);
 }
 
 .pins {

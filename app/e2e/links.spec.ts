@@ -206,8 +206,12 @@ test('코드 파일은 Canvas 의 코드 뷰로 열고, 링크의 줄로 스크�
   await scroller.evaluate((el) => el.scrollTo(0, 0))
   await expect(band).not.toBeInViewport()
   const title = canvasTitles(page).first()
+  const titleTop = async () => (await title.boundingBox())!.y
+  const expanded = await titleTop()
   await title.click()
   await expect(band).toHaveCount(0)
+  // 접은 제목 줄의 글자도 펼친 때와 같은 높이에 있다.
+  expect(await titleTop()).toBe(expanded)
   await title.click()
   await expect(band).toHaveCount(1)
   await page.waitForTimeout(200)
