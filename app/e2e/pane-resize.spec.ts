@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import {
   cellSize,
   cellViews,
+  clickMenu,
   expect,
   paneBox,
   panes,
@@ -125,4 +126,32 @@ test('columns 보기에서 cell 오른쪽 끝을 끌면 마지막 pane 의 열 �
     card.width + 6 * cell.width,
     0
   )
+})
+
+test('columns 보기에서 끝까지 스크롤한 cell 의 경계를 좁히는 동안 경계가 포인터를 따라간다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  await split(app, page, 'split-right', 2)
+  await clickMenu(app, 'new-cell')
+  await expect(cellViews(page)).toHaveCount(2)
+  await split(app, page, 'split-right', 2)
+  const area = page.locator('.terminals')
+  await expect
+    .poll(() => area.evaluate((e) => e.scrollWidth - e.clientWidth - e.scrollLeft))
+    .toBeLessThanOrEqual(1)
+  const cell = await cellSize(page)
+  const line = cellViews(page).nth(1).locator('.split-handle.right')
+  const box = (await line.boundingBox())!
+  const y = box.y + box.height / 2
+
+  await page.mouse.move(box.x + box.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 - 5 * cell.width, y, { steps: 5 })
+  await expect
+    .poll(async () => (await line.boundingBox())!.x)
+    .toBeCloseTo(box.x - 5 * cell.width, 0)
+  await page.mouse.up()
 })

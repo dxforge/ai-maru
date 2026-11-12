@@ -808,6 +808,7 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
   const unit = d.split === 'right' ? ctx.cell.width : ctx.cell.height
   const from = e[axis]
   preview.value = { cell: c.key, layout: base, by: 'drag' }
+  holdScroll()
   const handle = e.currentTarget as Element
   handle.setPointerCapture(e.pointerId)
   const step = (m: PointerEvent): void => {
@@ -823,11 +824,20 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
     window.removeEventListener('pointermove', step)
     window.removeEventListener('pointerup', end)
     window.removeEventListener('pointercancel', end)
+    scrollHold.value = 0
     commitPreview()
   }
   window.addEventListener('pointermove', step)
   window.addEventListener('pointerup', end)
   window.addEventListener('pointercancel', end)
+}
+
+// columns 보기에서 끝까지 스크롤한 채 pane 을 좁히면 내용 폭이 줄어 브라우저가 스크롤을 당기고, 그만큼 cell 이
+// 포인터 밑에서 미끄러진다. 끄는 동안은 시작할 때의 스크롤 폭을 붙잡아 둔다.
+const scrollHold = ref(0)
+function holdScroll(): void {
+  const area = terminalsArea.value
+  if (viewMode.value === 'columns' && area) scrollHold.value = area.scrollWidth
 }
 
 function handleKey(d: Divider): string {
@@ -1393,6 +1403,7 @@ void window.maru.restoreScreen().then((r) => {
           @dblclick="equalizeAt(c, edge)"
         />
       </div>
+      <div v-if="scrollHold" class="scroll-hold" :style="{ left: `${scrollHold - 1}px` }" />
     </div>
     <div
       v-if="canvas.open.value"
@@ -1636,6 +1647,14 @@ void window.maru.restoreScreen().then((r) => {
   width: var(--split-grab);
   transform: translateX(50%);
   cursor: col-resize;
+}
+
+.scroll-hold {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
 }
 
 .size-badge {
