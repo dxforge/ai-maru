@@ -56,6 +56,19 @@ export function shownRecord(
   return shown.app === root.app ? shown : { ...shown, app: root.app }
 }
 
+/**
+ * pane 에서 도는 백그라운드 일(하위 레코드)로 사이드바 카드에 늘어놓을 것. `records` 의 순서다. `working`·`error` 와 `kind` 없는
+ * `blocked`(Claude Code 가 멈춘 task 에 보내는 것)다. 끝난 것(`done`·`idle`)은 넣지 않고, `kind` 가 있는 `blocked` 는 pane 의 상태로
+ * 이미 보이므로 넣지 않는다.
+ */
+export function runningTasks(records: readonly ProgramStatusRecord[]): ProgramStatusRecord[] {
+  return records.filter(
+    (r) =>
+      r.id !== '' &&
+      (r.state === 'working' || r.state === 'error' || (r.state === 'blocked' && r.kind === null))
+  )
+}
+
 const KINDS: ReadonlySet<unknown> = new Set(['permission', 'question', 'auth'])
 const STATES: ReadonlySet<unknown> = new Set(PROGRAM_STATUS_STATES)
 

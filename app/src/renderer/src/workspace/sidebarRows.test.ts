@@ -25,18 +25,30 @@ function record(state: ProgramStatusState, app = CLAUDE_APP): ProgramStatusRecor
 }
 
 function source(
-  o: { record?: ProgramStatusRecord; command?: CommandView; notice?: PtyNotification } = {}
+  o: {
+    record?: ProgramStatusRecord
+    command?: CommandView
+    notice?: PtyNotification
+    tasks?: ProgramStatusRecord[]
+  } = {}
 ): RowSource {
   return {
     shown: () => o.record,
     command: () => o.command,
-    notification: () => o.notice
+    notification: () => o.notice,
+    tasks: () => o.tasks ?? []
   }
 }
 
 const row = (o: Parameters<typeof source>[0] = {}) => paneRow(source(o), pane, false, pane)
 
 describe('paneRow', () => {
+  it('도는 백그라운드 일이 있을 때만 tasks 를 둔다', () => {
+    const task = { ...record('working'), id: 'a1', title: 'Explore the code' }
+    expect(row({ record: record('working'), tasks: [task] }).tasks).toEqual([task])
+    expect(row({ record: record('working') })).not.toHaveProperty('tasks')
+  })
+
   it('agent 가 쉬는 동안은 앞 칸에 agent 아이콘을 둔다', () => {
     expect(row({ record: record('idle') }).icon).toEqual({ agent: 'claude' })
   })

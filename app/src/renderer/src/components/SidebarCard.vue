@@ -92,6 +92,13 @@ onBeforeUnmount(() => {
                 <GitBranch class="text-icon" />{{ s.git }}
               </div>
             </div>
+            <ul v-if="s.tasks" class="tasks">
+              <li v-for="t in s.tasks.rows" :key="t.key" class="task with-icon" :data-task="t.key">
+                <span class="icon" :class="t.state"><StatusIcon :state="t.state" /></span
+                ><span class="title">{{ t.title }}</span>
+              </li>
+              <li v-if="s.tasks.more" class="more">{{ s.tasks.more }}</li>
+            </ul>
           </div>
         </section>
         <footer v-if="view.foot" class="foot">
@@ -230,6 +237,32 @@ onBeforeUnmount(() => {
   font:
     var(--text-2) / 1.45 var(--font-mono),
     monospace;
+}
+
+.tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px dashed var(--line);
+  list-style: none;
+}
+
+.tasks .icon {
+  width: auto;
+  font-size: var(--text-1);
+}
+
+.task .title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.more {
+  color: var(--muted);
 }
 
 .foot {

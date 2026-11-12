@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   parseProgramStatus,
   programName,
+  runningTasks,
   shownRecord,
   type ProgramStatusRecord,
   type ProgramStatusState
@@ -119,6 +120,23 @@ describe('shownRecord', () => {
     expect(
       shownRecord([{ ...rec('', 'done', 'x'), message: 'root' }, ask as ProgramStatusRecord])
     ).toEqual({ ...ask, app: 'x' })
+  })
+})
+
+describe('runningTasks', () => {
+  it('하위 working·error 와 kind 없는 blocked 를 받은 순서로 고른다', () => {
+    const ask = { ...rec('ask', 'blocked'), kind: 'permission' as const }
+    const records = [
+      rec('', 'working'),
+      rec('a1', 'working'),
+      rec('a2', 'done'),
+      ask,
+      rec('a3', 'blocked'),
+      rec('a4', 'idle'),
+      rec('a5', 'error'),
+      rec('a6', 'working')
+    ]
+    expect(runningTasks(records).map((r) => r.id)).toEqual(['a1', 'a3', 'a5', 'a6'])
   })
 })
 

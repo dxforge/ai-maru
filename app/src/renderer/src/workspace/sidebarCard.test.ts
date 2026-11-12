@@ -24,6 +24,7 @@ function pane(
     notice?: PtyNotification
     cwd?: string
     git?: GitHead
+    tasks?: ProgramStatusRecord[]
   } = {}
 ) {
   const p = {
@@ -39,6 +40,7 @@ function pane(
       shown: () => o.record,
       command: () => o.command,
       notification: () => o.notice,
+      tasks: () => o.tasks ?? [],
       home: '/Users/me'
     },
     p,
@@ -60,6 +62,30 @@ const record = (o: Partial<ProgramStatusRecord> = {}): ProgramStatusRecord => ({
 })
 
 describe('paneSection', () => {
+  it('백그라운드 일을 받은 순서로 상태와 title 로 두고, title 이 없으면 id 를 쓴다', () => {
+    const tasks = [
+      record({ id: 'a1', title: 'Explore the code' }),
+      record({ id: 'a2', state: 'error', title: '' })
+    ]
+    expect(paneSection(pane({ record: record(), tasks }), 0).tasks).toEqual({
+      rows: [
+        { key: 'a1', state: 'working', title: 'Explore the code' },
+        { key: 'a2', state: 'error', title: 'a2' }
+      ]
+    })
+  })
+
+  it('백그라운드 일은 다섯 줄까지 두고 나머지는 수로 쓴다', () => {
+    const tasks = (n: number) =>
+      Array.from({ length: n }, (_, i) => record({ id: `a${i}`, title: `task ${i}` }))
+    const five = paneSection(pane({ record: record(), tasks: tasks(5) }), 0).tasks
+    expect(five?.rows.map((t) => t.key)).toEqual(['a0', 'a1', 'a2', 'a3', 'a4'])
+    expect(five).not.toHaveProperty('more')
+    const seven = paneSection(pane({ record: record(), tasks: tasks(7) }), 0).tasks
+    expect(seven?.rows.map((t) => t.key)).toEqual(['a0', 'a1', 'a2', 'a3', 'a4'])
+    expect(seven?.more).toBe('+2 more')
+  })
+
   it('셸 pane 은 사이드바 줄의 아이콘과 이름·경로만 쓴다', () => {
     expect(paneSection(pane({ cwd: '/Users/me/src/app' }), 0)).toEqual({
       key: 'pane:7',

@@ -186,6 +186,25 @@ test('maru status 로 쓴 하위 레코드가 루트보다 급하면 사이드�
   await expect(activeHeader(page).locator('.claude-icon')).toHaveCount(1)
 })
 
+test('maru status 로 쓴 하위 working 은 사이드바 카드에 title 로 늘어놓고, 지우면 목록에서 빠진다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await inProgram(page)
+  await run(
+    page,
+    'maru status put working --app claude-code && maru status put working --id a1 --title Explore && maru status put done --id a2 --title Finished; echo put-$((1+1))',
+    'put-2'
+  )
+  const card = await hoverCard(page, paneRows(page))
+  await expect(card.locator('.task')).toHaveCount(1)
+  await expect(card.locator('.task .title')).toHaveText('Explore')
+  await expect(card.locator('.task .icon')).toHaveClass(/working/)
+
+  await run(page, 'maru status clear --id a1; echo cleared-$((1+1))', 'cleared-2')
+  await expect((await hoverCard(page, paneRows(page))).locator('.tasks')).toHaveCount(0)
+})
+
 test('pane 줄은 그 터미널의 cell 아래에만, pane 헤더는 보이는 pane 의 상태를 따른다', async ({
   launch
 }) => {
