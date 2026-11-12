@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { Folder, Play, Settings, SquareTerminal } from '@lucide/vue'
+import { Folder, FolderRoot, Play, Settings, SquareTerminal } from '@lucide/vue'
 
-const ICONS = { terminal: SquareTerminal, running: Play, gear: Settings, folder: Folder }
+const ICONS = {
+  terminal: SquareTerminal,
+  running: Play,
+  gear: Settings,
+  folder: Folder,
+  'folder-root': FolderRoot
+}
 
 // lucide 의 24 격자는 둘레에 여백이 있어, 1em 상자에 그대로 그리면 같은 자리의 상태 아이콘보다 작아 보인다. 13px 글꼴에서
 // 15px 로 그렸을 때 잉크가 상태 아이콘과 맞으므로, viewBox 를 가운데의 24×13/15 로 좁혀 1em 상자에서 같은 배율이 되게 한다.

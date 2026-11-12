@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
-import { Folder, X } from '@lucide/vue'
+import { Folder, FolderRoot, X } from '@lucide/vue'
 import { nameOnFocusLoss } from '../../../shared/names'
 import type { Anchor } from '../launcher/anchor'
 import type { DirRow } from '../workspace/sidebarRows'
@@ -8,14 +8,14 @@ import PinIcon from './PinIcon.vue'
 
 const {
   name,
-  dir = undefined,
+  base = undefined,
   favorites,
   pinned,
   head
 } = defineProps<{
   name: string
-  /** workspace 의 디렉토리(`workspaceDir`)다. 홈을 `~` 로 쓴다. */
-  dir?: string
+  /** workspace 의 디렉토리(`workspaceDir`)다. Favorites 맨 위에 지울 수 없는 줄로 둔다. */
+  base?: DirRow
   favorites: readonly DirRow[]
   pinned: boolean
   /** 메뉴를 연 workspace 헤더. 메뉴는 그 안의 ⋮ 버튼 아래에 오른쪽 끝을 맞춰 뜬다. */
@@ -156,10 +156,21 @@ function openFavorite(dir: string): void {
         aria-label="Workspace name"
         spellcheck="false"
       />
-      <div v-if="dir" v-tooltip="dir" class="workspace-dir">{{ dir }}</div>
     </div>
     <hr />
     <div class="section">Favorites</div>
+    <div v-if="base" class="favorite-item base-item">
+      <button
+        v-tooltip="base.path"
+        class="favorite-open"
+        role="menuitem"
+        :aria-label="`Open ${base.name}`"
+        @click="openFavorite(base.dir)"
+      >
+        <FolderRoot class="icon" /><span class="title">{{ base.name }}</span>
+      </button>
+      <span class="favorite-remove remove-slot icon-button" aria-hidden="true" />
+    </div>
     <div v-for="f in favorites" :key="f.dir" class="favorite-item">
       <button
         v-tooltip="f.path"
@@ -218,15 +229,6 @@ button {
   width: 100%;
 }
 
-.workspace-dir {
-  padding: var(--space-2) var(--space-2) 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--faint);
-  font-size: var(--text-1);
-}
-
 .section {
   padding: var(--space-1) var(--space-5);
   color: var(--faint);
@@ -280,6 +282,11 @@ button {
 .favorite-item:hover .favorite-remove,
 .favorite-remove:focus-visible {
   opacity: 1;
+}
+
+/* 줄 글자가 다른 즐겨찾기 줄과 같은 자리에서 잘리게 X 자리만 차지한다. */
+.remove-slot {
+  visibility: hidden;
 }
 
 .icon {

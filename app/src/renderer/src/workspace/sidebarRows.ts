@@ -142,13 +142,35 @@ export function favoriteRow(dir: string, base: string | undefined, home?: string
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
 /** 저장된 순서(추가한 순서)는 그대로 두고, 메뉴에는 이름순으로 보인다. 이름이 같으면 보이는 경로로 가른다. */
-export function favoriteRows(dirs: readonly string[], base: string | undefined, home?: string): DirRow[] {
+export function favoriteRows(
+  dirs: readonly string[],
+  base: string | undefined,
+  home?: string
+): DirRow[] {
   return dirs
     .map((d) => favoriteRow(d, base, home))
     .sort((a, b) => byName.compare(a.name, b.name) || byName.compare(a.path, b.path))
 }
 
-/** cell 이 없는 workspace 는 `dir` 줄 하나를 두어, 그 디렉토리에서 cell 을 다시 열 수 있게 한다. */
-export function emptyRow(w: { dir?: string; cells: readonly unknown[] }, home?: string): DirRow[] {
-  return !w.cells.length && w.dir !== undefined ? [dirRow(w.dir, home)] : []
+/** 닫힌 workspace 카드의 줄. `label` 은 줄에 쓰는 글자이고, `path` 는 tooltip 에 쓰는 홈을 `~` 로 쓴 경로다. */
+export type DirLine = DirRow & { label: string; root: boolean }
+
+/**
+ * cell 이 없는 workspace 는 `dir` 줄을 두고 그 아래에 즐겨찾기 줄을 이름순으로 두어, 그 디렉토리들에서 cell 을 다시 열 수
+ * 있게 한다. 즐겨찾기의 `label` 은 메뉴처럼 `dir` 아래면 상대 경로다.
+ */
+export function emptyRows(
+  w: { dir?: string; cells: readonly unknown[]; favorites?: readonly string[] },
+  home?: string
+): DirLine[] {
+  if (w.cells.length || w.dir === undefined) return []
+  const root = dirRow(w.dir, home)
+  return [
+    { ...root, label: root.path, root: true },
+    ...favoriteRows(w.favorites ?? [], w.dir, home).map((f) => ({
+      ...dirRow(f.dir, home),
+      label: f.path,
+      root: false
+    }))
+  ]
 }

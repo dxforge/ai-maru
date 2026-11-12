@@ -54,13 +54,13 @@ export type CardView = { sections: CardSection[]; foot?: CardFoot }
 export const SIDEBAR_CARD_ID = 'sidebar-card'
 
 /**
- * 카드를 띄운 자리. cell 카드는 cell 안의 pane 줄·job 줄과 cell 자체(`row` 없음)에 단다. `row` 는 강조할 구역의
- * key(`CardSection.key`)다.
+ * 카드를 띄운 자리. cell 카드는 cell 안의 pane 줄·job 줄과 cell 자체(`row` 없음)에, 닫힌 workspace 카드는 그 줄마다
+ * 단다. `row` 는 강조할 구역의 key(`CardSection.key`)다.
  */
 export type CardAt =
   | { kind: 'cell'; cell: number; row?: string }
   | { kind: 'head'; workspace: number }
-  | { kind: 'dir'; workspace: number; dir: string }
+  | { kind: 'dir'; workspace: number; row: string }
 
 /**
  * 같은 cell 의 줄에서 cell 의 빈 자리(손잡이·줄 사이)로 나오면 앞의 자리를 그대로 둔다. 줄 사이를 옮길 때마다 강조가
@@ -162,9 +162,12 @@ export function workspaceCard(w: {
   }
 }
 
-export function dirCard(d: DirRow): CardView {
+/** 닫힌 workspace 카드. 줄마다 구역을 줄 순서로 둔다. 같은 디렉토리가 두 줄에 있을 수 있어 key 는 줄 번호다. */
+export function dirCard(lines: readonly DirRow[]): CardView {
   return {
-    sections: [{ key: 'dir', title: d.name, path: d.path }],
+    sections: lines.map((d, i) => ({ key: dirKey(i), title: d.name, path: d.path })),
     foot: { counts: 'No open cells' }
   }
 }
+
+export const dirKey = (i: number): string => `dir:${i}`

@@ -18,6 +18,7 @@ import { commandTail, elapsed } from '../workspace/display'
 import {
   cellCard,
   dirCard,
+  dirKey,
   keepsCardAt,
   SIDEBAR_CARD_ID,
   workspaceCard,
@@ -37,7 +38,8 @@ import {
 import {
   jobRow,
   paneRow,
-  emptyRow,
+  dirRow,
+  emptyRows,
   favoriteRows,
   workspaceMarks,
   type JobRow,
@@ -161,8 +163,9 @@ const groups = computed(() => {
       pinned: !!w.pinned,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       dir: dir === undefined ? undefined : tildePath(dir, home),
+      root: dir === undefined ? undefined : dirRow(dir, home),
       favorites: favoriteRows(w.favorites ?? [], dir, home),
-      empty: f ? [] : emptyRow(w, home),
+      empty: f ? [] : emptyRows(w, home),
       items: f ? [] : cells(src, w)
     }
   })
@@ -230,10 +233,7 @@ const cardView = computed((): CardView | undefined => {
   }
   const g = groups.value.find((g) => g.w.key === at.workspace)
   if (!g) return undefined
-  if (at.kind === 'dir') {
-    const d = g.empty.find((d) => d.dir === at.dir)
-    return d && dirCard(d)
-  }
+  if (at.kind === 'dir') return g.empty.length ? dirCard(g.empty) : undefined
   return workspaceCard({
     name: g.name,
     auto: g.auto,
@@ -247,12 +247,14 @@ const cardView = computed((): CardView | undefined => {
 const cardAnchor = computed(() => {
   const h = hovered.value
   if (!h) return undefined
-  return h.at.kind === 'cell' ? (h.el.closest<HTMLElement>('.group') ?? h.el) : h.el
+  if (h.at.kind === 'cell') return h.el.closest<HTMLElement>('.group') ?? h.el
+  if (h.at.kind === 'dir') return h.el.closest<HTMLElement>('.dir-card') ?? h.el
+  return h.el
 })
 
 const cardCurrent = computed(() => {
   const at = hovered.value?.at
-  return at?.kind === 'cell' ? at.row : undefined
+  return at?.kind === 'cell' || at?.kind === 'dir' ? at.row : undefined
 })
 
 const nav = useTemplateRef<HTMLElement>('nav')
@@ -387,7 +389,7 @@ const pinTip = (pinned: boolean): string =>
             state,
             notified,
             dot,
-            dir,
+            root,
             favorites,
             empty,
             items: entries
@@ -445,7 +447,7 @@ const pinTip = (pinned: boolean): string =>
           v-if="menuFor === w.key && heads.get(w.key)"
           :ref="menuRef"
           :name="name"
-          :dir="dir"
+          :base="root"
           :favorites="favorites"
           :pinned="pinned"
           :head="heads.get(w.key)!"
@@ -455,16 +457,18 @@ const pinTip = (pinned: boolean): string =>
           @toggle-pin="emit('togglePin', w.key)"
           @close-workspace="emit('closeWorkspace', w.key)"
         />
-        <div v-for="d in empty" :key="d.dir" class="dir-card">
+        <div v-if="empty.length" class="dir-card">
           <button
-            v-tooltip="{ card: sidebarCard, at: { kind: 'dir', workspace: w.key, dir: d.dir } }"
+            v-for="(d, i) in empty"
+            :key="i"
+            v-tooltip="{ card: sidebarCard, at: { kind: 'dir', workspace: w.key, row: dirKey(i) } }"
             class="row dir-row"
             :aria-label="`Open ${d.name}`"
             @mousedown.prevent
             @click="openRow($event, w.key, d.dir)"
           >
-            <span class="state"><LeadIcon name="folder" /></span>
-            <span class="title">{{ d.path }}</span>
+            <span class="state"><LeadIcon :name="d.root ? 'folder-root' : 'folder'" /></span>
+            <span class="title">{{ d.label }}</span>
           </button>
         </div>
         <div
@@ -722,14 +726,14 @@ const pinTip = (pinned: boolean): string =>
 }
 
 .grip + .pane-line > .row,
-.dir-row {
+.dir-row:first-child {
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
 }
 
 .group > .row:last-child,
 .group > .pane-line:last-child > .row,
-.dir-row {
+.dir-row:last-child {
   border-bottom-left-radius: var(--radius-2);
   border-bottom-right-radius: var(--radius-2);
 }
