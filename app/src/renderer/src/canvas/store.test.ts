@@ -2,9 +2,12 @@ import { resolveObjectURL } from 'node:buffer'
 import { Marked } from 'marked'
 import { describe, expect, it, vi } from 'vitest'
 import type { CanvasItem } from '../../../shared/canvas'
+import { CodeBody } from './code'
 import {
   bodyOf,
   clockTime,
+  CODE_WAIT_MS,
+  codeBodyOf,
   createCanvas,
   docKey,
   groupChoices,
@@ -69,6 +72,60 @@ describe('createCanvas', () => {
     expect(c.docs.value.map((d) => d.id)).toEqual(['b', 'a'])
     expect(docOf(c, 'a')?.title).toBe('A2')
     expect(c.expanded.has(k('a'))).toBe(false)
+  })
+
+  const code = (line?: number): CanvasItem => ({
+    id: '/r/a.ts',
+    kind: 'code',
+    name: 'a.ts',
+    text: 'a\nb\nc\n',
+    ...(line === undefined ? {} : { line })
+  })
+
+  it('코드 문서는 파일 이름이 제목이고, 같은 id 로 다시 오면 새 본문과 새 줄로 바뀐다', async () => {
+    vi.spyOn(CodeBody.prototype, 'highlighted').mockResolvedValue('<span>a</span>')
+    const c = createCanvas()
+    c.put(code(2))
+    await vi.waitFor(() => expect(docOf(c, '/r/a.ts')).toBeDefined())
+    const first = codeBodyOf(docOf(c, '/r/a.ts')!)!
+    expect(docOf(c, '/r/a.ts')?.title).toBe('a.ts')
+    expect([first.code, first.count, first.line]).toEqual(['a\nb\nc', 3, 2])
+    c.put(code(9))
+    await vi.waitFor(() => expect(codeBodyOf(docOf(c, '/r/a.ts')!)!.id).not.toBe(first.id))
+    expect(codeBodyOf(docOf(c, '/r/a.ts')!)!.line).toBe(3)
+    expect(c.docs.value).toHaveLength(1)
+    vi.restoreAllMocks()
+  })
+
+  it('코드 문서는 강조를 기다렸다 넣고, 기다리는 시간이 지나면 강조 없이 넣는다', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(CodeBody.prototype, 'highlighted').mockReturnValue(new Promise(() => {}))
+    const c = createCanvas()
+    c.put(code())
+    await vi.advanceTimersByTimeAsync(CODE_WAIT_MS - 1)
+    expect(c.docs.value).toEqual([])
+    expect(c.open.value).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(c.docs.value.map((d) => d.id)).toEqual(['/r/a.ts'])
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('강조를 기다리는 동안 같은 문서가 다시 오면, 앞 것이 늦게 끝나도 마지막에 온 것을 덮지 않는다', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(CodeBody.prototype, 'highlighted')
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValue('<span>a</span>')
+    const c = createCanvas()
+    c.put(code(1))
+    c.put(code(2))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(codeBodyOf(c.docs.value[0])!.line).toBe(2)
+    await vi.advanceTimersByTimeAsync(CODE_WAIT_MS)
+    expect(c.docs.value).toHaveLength(1)
+    expect(codeBodyOf(c.docs.value[0])!.line).toBe(2)
+    vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it('받은 시각을 붙이고, 같은 id 로 고치면 고친 시각으로 바꾼다', () => {

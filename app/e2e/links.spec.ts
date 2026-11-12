@@ -42,9 +42,15 @@ const paths = (app: ElectronApplication) => app.evaluate(() => (globalThis as Op
 async function pointAt(page: Page, text: string): Promise<{ x: number; y: number }> {
   const screen = (await page.locator('.terminal-view.active .xterm-screen').boundingBox())!
   const cell = await cellSize(page)
-  const lines = await rows(page).locator('> div').allInnerTexts()
+  // `run` 은 `maru pane read` 로 읽은 글자를 보고 끝나므로, 그때 xterm 은 그 행을 아직 그리지 않았을 수 있다.
+  let lines: string[] = []
+  await expect
+    .poll(async () => {
+      lines = await rows(page).locator('> div').allInnerTexts()
+      return lines.some((l) => l.includes(text))
+    }, `${text} 가 화면에 없다`)
+    .toBe(true)
   const row = lines.findLastIndex((l) => l.includes(text))
-  expect(row, `${text} 가 화면에 없다: ${JSON.stringify(lines)}`).toBeGreaterThanOrEqual(0)
   const col = lines[row].indexOf(text) + 1
   return { x: screen.x + (col + 0.5) * cell.width, y: screen.y + (row + 0.5) * cell.height }
 }
@@ -160,7 +166,8 @@ test('줄 끝에서 끊겨 다음 줄에 이어 찍힌 경로는 어느 줄을 �
   mkdirSync(join(dataDir, 'sub', 'c769d050-299b'), { recursive: true })
   // 상대경로는 foreground 프로세스의 cwd 로 푼다. 그 cwd 는 symlink 를 푼 경로(`/private/var/…`)이므로 기대값도 `realpathSync` 로 푼다.
   const file = join(realpathSync(dataDir), 'sub', 'c769d050-299b', 'robot.txt')
-  writeFileSync(file, 'x')
+  // 텍스트 파일은 Canvas 로 가므로, NUL 을 넣은 바이너리로 두어 OS 기본 앱으로 가게 한다.
+  writeFileSync(file, 'x\0')
   // Claude Code 처럼 경로를 끊고, 다음 줄은 앞에 공백 두 칸을 두고 잇는다.
   await run(
     page,
@@ -172,6 +179,45 @@ test('줄 끝에서 끊겨 다음 줄에 이어 찍힌 경로는 어느 줄을 �
   await expect.poll(() => paths(app)).toEqual([file])
   await metaClick(page, 'sub/c769d050')
   await expect.poll(() => paths(app)).toEqual([file, file])
+})
+
+test('코드 파일은 Canvas 의 코드 뷰로 열고, 링크의 줄로 스크롤해 강조한다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch(DOM_RENDERER)
+  await recordShell(app)
+  const lines = Array.from({ length: 120 }, (_, i) => `const v${i + 1} = ${i + 1}`)
+  writeFileSync(join(dataDir, 'code.ts'), lines.join('\n') + '\n')
+  await run(page, `cd '${dataDir}'; echo ./code.ts:90; echo done-$((1+1))`, 'done-2')
+
+  await metaClick(page, 'code.ts:90')
+  await expect(canvasTitles(page)).toHaveText(['code.ts'])
+  const band = page.locator('.canvas .code .band')
+  await expect(band).toBeInViewport()
+  await expect(band).toHaveAttribute('style', /calc\(89 \*/)
+  // 강조는 worker 가 file:// 로 띄운 앱에서도 돈다.
+  await expect(page.locator('.canvas .code .text span').first()).toHaveText('const')
+
+  const scroller = page.locator('.canvas .scroll')
+  await scroller.evaluate((el) => el.scrollTo(0, 0))
+  await expect(band).not.toBeInViewport()
+  const title = canvasTitles(page).first()
+  await title.click()
+  await expect(band).toHaveCount(0)
+  await title.click()
+  await expect(band).toHaveCount(1)
+  await page.waitForTimeout(200)
+  expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0)
+  await expect(band).not.toBeInViewport()
+
+  // Canvas 가 열려 터미널 폭이 줄었으므로 다음 링크는 그 뒤에 찍는다. 두 링크를 같은 경로로 풀도록 둘 다 상대경로로 둔다.
+  await run(page, `echo ./code.ts:5:2; echo done-$((2+2))`, 'done-4')
+  await metaClick(page, './code.ts:5')
+  await expect(canvasTitles(page)).toHaveText(['code.ts'])
+  await expect(band).toBeInViewport()
+  await expect(band).toHaveAttribute('style', /calc\(4 \*/)
+  expect(await paths(app)).toEqual([])
 })
 
 test('상대경로는 돌고 있는 명령의 cwd 기준이다', async ({ launch, dataDir }) => {

@@ -50,6 +50,31 @@ export function detachOverlayScroll(el: HTMLElement): void {
   OverlayScrollbars(el)?.destroy()
 }
 
+/**
+ * 포인터가 처음 들어온 요소에만 가로 스크롤바를 씌운다. 큰 문서의 블록을 한꺼번에 씌우면 창이 오래 멈추기 때문이다. 이
+ * 스크롤바는 hover·스크롤 때만 보이고, 블록을 스크롤하려면 포인터가 먼저 그 위에 있어야 하므로 한꺼번에 씌울 때와 쓰는 법은
+ * 같다.
+ *
+ * 시스템 스크롤바가 overlay 면 `attachOverlayScroll` 을 부르지 않는다. `OverlayScrollbars` 는 이때 초기화를 취소하지만 요소마다
+ * scroll-timeline 애니메이션을 두 개 만들고 끄지 않으므로, 문서를 넣고 지울 때마다 애니메이션이 쌓여 레이아웃이 점점 느려진다.
+ */
+export class HoverScrollbars {
+  /** 고전 스크롤바 설정이다. 씌우기 전의 요소가 시스템 스크롤바로 높이를 바꾸지 않게 `scrollbar-width: none` 을 둘 때 쓴다. */
+  readonly classic = !OverlayScrollbars.env().scrollbarsOverlaid.x
+  #attached: HTMLElement[] = []
+
+  attach(el: HTMLElement): void {
+    if (!this.classic || this.#attached.includes(el)) return
+    this.#attached.push(el)
+    attachOverlayScroll(el, 'x')
+  }
+
+  release(): void {
+    for (const el of this.#attached) detachOverlayScroll(el)
+    this.#attached = []
+  }
+}
+
 export const vOverlayScroll: Directive<HTMLElement, ScrollAxis, 'children'> = {
   mounted(el, { value, modifiers }) {
     attachOverlayScroll(el, value, modifiers.children)

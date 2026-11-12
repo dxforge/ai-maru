@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import App from './App.vue'
+import { warmHighlighter } from './canvas/code'
 import { vOverlayScroll } from './overlayScroll'
 import { vTooltip } from './tooltip'
 import './style.css'
@@ -13,3 +14,4 @@ void document.fonts
       .directive('tooltip', vTooltip)
       .mount('#app')
   )
+requestIdleCallback(warmHighlighter)

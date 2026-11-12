@@ -11,7 +11,8 @@ import {
 } from '../shared/link'
 import { canvasDocFor } from './canvas'
 
-export type LinkTarget = { kind: 'external'; url: string } | { kind: 'file'; path: string }
+export type LinkTarget =
+  { kind: 'external'; url: string } | { kind: 'file'; path: string; line?: number }
 
 // RFC 3986 scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
 const SCHEME_RE = /^([a-zA-Z][a-zA-Z0-9+.-]*):/
@@ -26,10 +27,13 @@ export function resolveLinkTarget(text: string): LinkTarget {
   const scheme = SCHEME_RE.exec(text)?.[1]?.toLowerCase()
   if (scheme && scheme !== 'file') return { kind: 'external', url: text }
   const path = scheme === 'file' ? fileURLToPath(withoutOwnHost(text)) : text
-  return { kind: 'file', path: withoutPosition(path) }
+  const [, bare, line] = POSITION_RE.exec(path)!
+  return { kind: 'file', path: bare!, ...(line ? { line: Number(line) } : {}) }
 }
 
-const withoutPosition = (path: string): string => path.replace(/:\d+(?::\d+)?$/, '')
+const POSITION_RE = /^(.*?)(?::(\d+)(?::\d+)?)?$/s
+
+const withoutPosition = (path: string): string => POSITION_RE.exec(path)![1]!
 
 function withoutOwnHost(fileUrl: string): URL {
   const url = new URL(fileUrl)
@@ -73,7 +77,7 @@ async function open(text: string, ptyId: string, opener: LinkOpener): Promise<Li
   }
   const info = await stat(path).catch(() => null)
   if (!info) return { ok: false, reason: `${path} doesn't exist` }
-  const doc = info.isFile() ? await canvasDocFor(path) : null
+  const doc = info.isFile() ? await canvasDocFor(path, target.line) : null
   if (doc) {
     await opener.putCanvas(doc, ptyId)
     return { ok: true }

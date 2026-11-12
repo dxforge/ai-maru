@@ -7,12 +7,14 @@ import {
   type Label,
   type Named
 } from '../../../shared/names'
+import { CodeBody } from './code'
 import { MarkdownBody, prepareMarkdown } from './markdown'
 
 // `at` 은 renderer 가 문서를 받은 시각(ms)이다. 문서를 고쳐 보냈으면 고친 시각이다.
 export type CanvasEntry = CanvasOwner & { key: string } & (
     | { id: string; kind: 'markdown'; title: string; at: number }
     | { id: string; kind: 'image'; title: string; at: number; url: string }
+    | { id: string; kind: 'code'; title: string; at: number }
   )
 
 /**
@@ -158,9 +160,28 @@ export function createCanvas(now: () => number = Date.now) {
     return groups
   })
 
-  // 지금 보기에 들지 않는 문서로는 닫힌 패널을 열지 않는다. 열어도 그 문서는 보이지 않고 터미널 영역만 좁아지기 때문이다.
+  // 같은 문서가 강조를 기다리는 동안 다시 오면, 늦게 끝난 앞 것이 새 것을 덮지 않게 마지막으로 온 것만 넣는다.
+  const waiting = new Map<string, CanvasEntry>()
+
+  // 코드 문서는 강조를 잠깐 기다렸다 넣는다. 강조가 제때 오면 색 없는 글자를 그렸다가 색을 입히는 깜빡임 없이 처음부터
+  // 색 입힌 화면을 그린다.
   function put(item: CanvasItem): void {
     const entry = toEntry(item, now())
+    const code = codeBodyOf(entry)
+    if (!code) {
+      waiting.delete(entry.key)
+      return show(entry)
+    }
+    waiting.set(entry.key, entry)
+    void code.ready(CODE_WAIT_MS).then(() => {
+      if (waiting.get(entry.key) !== entry) return
+      waiting.delete(entry.key)
+      show(entry)
+    })
+  }
+
+  // 지금 보기에 들지 않는 문서로는 닫힌 패널을 열지 않는다. 열어도 그 문서는 보이지 않고 터미널 영역만 좁아지기 때문이다.
+  function show(entry: CanvasEntry): void {
     if (holding) return void held.value.push(entry)
     place(entry)
     if (inView(entry)) open.value = true
@@ -253,9 +274,16 @@ function release(entry: CanvasEntry): void {
 // 렌더한 HTML 은 문서마다 담아 두어, 카드를 접었다 펴거나 보기를 바꿔 본문을 다시 그릴 때 렌더하지 않는다. 같은 id 로
 // 다시 오면 새 entry 라 새로 렌더한다. reactive 한 목록에 넣으면 Vue 가 토큰까지 proxy 로 감싸므로 entry 밖에 둔다.
 const bodies = new WeakMap<CanvasEntry, MarkdownBody>()
+const codeBodies = new WeakMap<CanvasEntry, CodeBody>()
+
+export const CODE_WAIT_MS = 100
 
 export function bodyOf(entry: CanvasEntry): MarkdownBody | undefined {
   return bodies.get(toRaw(entry))
+}
+
+export function codeBodyOf(entry: CanvasEntry): CodeBody | undefined {
+  return codeBodies.get(toRaw(entry))
 }
 
 function toEntry(item: CanvasItem, at: number): CanvasEntry {
@@ -269,6 +297,11 @@ function toEntry(item: CanvasItem, at: number): CanvasEntry {
     const title = item.title || heading || 'Markdown'
     const entry: CanvasEntry = { id: item.id, kind: 'markdown', title, at, ...owner }
     bodies.set(entry, new MarkdownBody(parts))
+    return entry
+  }
+  if (item.kind === 'code') {
+    const entry: CanvasEntry = { id: item.id, kind: 'code', title: item.name, at, ...owner }
+    codeBodies.set(entry, new CodeBody(item.text, item.name, item.line))
     return entry
   }
   const url = URL.createObjectURL(new Blob([item.bytes as BlobPart], { type: item.mime }))
