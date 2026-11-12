@@ -23,12 +23,13 @@ export type DesktopNotificationDeps = {
 
 /**
  * 앱 창이 포커스되어 있지 않을 때 프로그램의 알림을 데스크톱 알림으로 띄운다. 창을 보고 있으면 사이드바와 pane 헤더에 보이므로
- * 띄우지 않는다. ghostty 의 방식대로 제목이 없으면 pane 이름을 제목으로 쓰고, 부제에는 늘 pane 이름을 쓴다. 글 없는 알림은
- * 본문에 그 pane 의 상태를 쓴다. 빈도도 ghostty 의 방식대로 앱 전체에서 1초에 하나, 마지막으로 띄운 것과 같은 제목·본문은
- * 5초에 하나로 제한한다. 제한에 걸린 알림은 버린다.
+ * 띄우지 않는다. ghostty 의 방식대로 제목이 없으면 pane 이름을 제목으로 쓰고, 부제에는 늘 pane 이름을 쓴다. 빈도는
+ * ghostty 의 방식대로 앱 전체에서 1초에 하나, 마지막으로 띄운 것과 같은 알림은 5초에 하나로 제한한다. 제한에 걸린 알림은
+ * 버린다. 같은 알림인지는 pty·제목·본문으로 가린다. 제목이 없으면 pane 이름을 제목으로 쓰므로, 이름이 같은 다른 pane 의
+ * 알림을 버리지 않으려고 pty 도 비교한다.
  */
 export function createDesktopNotifications(deps: DesktopNotificationDeps) {
-  let last: { at: number; title: string; body: string } | null = null
+  let last: { at: number; pty: string; title: string; body: string } | null = null
   return (pty: string, n: PtyNotification): void => {
     if (deps.focused()) return
     const now = deps.now()
@@ -38,10 +39,10 @@ export function createDesktopNotifications(deps: DesktopNotificationDeps) {
     if (last) {
       const since = now - last.at
       if (since < NOTIFICATION_INTERVAL_MS) return
-      if (last.title === title && last.body === body && since < SAME_NOTIFICATION_INTERVAL_MS)
-        return
+      const same = last.pty === pty && last.title === title && last.body === body
+      if (same && since < SAME_NOTIFICATION_INTERVAL_MS) return
     }
-    last = { at: now, title, body }
+    last = { at: now, pty, title, body }
     deps.show(pty, { title, subtitle: label, body }, () => deps.open(pty))
   }
 }

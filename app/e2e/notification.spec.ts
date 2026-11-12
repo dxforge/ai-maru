@@ -169,7 +169,7 @@ test('접은 workspace 는 읽지 않은 알림이 있으면 이름 뒤에 점�
   await expect(head.locator('.unread-dot')).toHaveCount(1)
 })
 
-test('claude 의 Notification hook 은 상태가 같은 내용을 보이는 종류면 점만 달고, 그 밖의 종류는 글을 보이며, 그 pane 의 OSC 알림도 그대로 보인다', async ({
+test('claude 의 Notification hook 은 상태가 같은 내용을 보이는 종류면 점만 달고 앞 알림의 글을 두며, 그 밖의 종류는 글을 보이고, 그 pane 의 OSC 알림도 그대로 보인다', async ({
   launch,
   dataDir
 }) => {
@@ -206,6 +206,10 @@ test('claude 의 Notification hook 은 상태가 같은 내용을 보이는 종�
   await expect(row.locator('.title')).toHaveText('shown')
 
   await hook('push_notification', 'Deploy finished', 'pushed')
+  await expect(row.locator('.title')).toHaveText('Deploy finished')
+  await expect(header.locator('.notification')).toHaveText('Deploy finished')
+
+  await hook('idle_prompt', 'Claude is waiting for your input', 'idle')
   await expect(row.locator('.title')).toHaveText('Deploy finished')
   await expect(header.locator('.notification')).toHaveText('Deploy finished')
 })

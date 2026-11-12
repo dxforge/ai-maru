@@ -8,6 +8,9 @@ const SHOWN_BY_STATUS: ReadonlySet<string> = new Set([
   'elicitation_dialog'
 ])
 
+/** MCP elicitation 에 사용자가 답하거나 취소·거절한 직후 오는 종류다. 사용자가 방금 한 일을 되풀이하므로 pty 에 넣지 않는다. */
+const ELICITATION_RESPONSE = 'elicitation_response'
+
 /** maru-pty 가 OSC 알림의 텍스트를 다듬는 규칙(`line_text`)과 같게 한 줄로 다듬는다. */
 export function lineText(text: string): string {
   return (
@@ -29,6 +32,7 @@ export function claudeNotificationHandlers(
       if (message === undefined) throw new InvalidParams('params.message must be a string')
       const type = optionalString(params.type, 'type')
       const title = optionalString(params.title, 'title')
+      if (type === ELICITATION_RESPONSE) return null
       if (type !== undefined && SHOWN_BY_STATUS.has(type)) {
         notify(pty, { title: '', body: '' })
         return null

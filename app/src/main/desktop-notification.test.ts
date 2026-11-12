@@ -72,7 +72,7 @@ describe('createDesktopNotifications', () => {
     expect(t.shown.map((s) => s.notice.body)).toEqual(['approve Bash: ls', 'Idle'])
   })
 
-  it('같은 알림 제한은 띄운 제목으로 가른다 — 다른 pane 의 글 없는 알림은 상태가 같아도 띄운다', () => {
+  it('다른 pane 의 글 없는 알림은 상태가 같아도 띄운다', () => {
     const t = setup(undefined, { 'p-1': 'Idle', 'p-2': 'Idle' })
     t.notify('p-1', { title: '', body: '' })
     t.advance(NOTIFICATION_INTERVAL_MS)
@@ -81,6 +81,18 @@ describe('createDesktopNotifications', () => {
       { title: 'claude', subtitle: 'claude', body: 'Idle' },
       { title: 'zsh', subtitle: 'zsh', body: 'Idle' }
     ])
+  })
+
+  it('이름이 같은 다른 pane 의 알림은 제목·본문이 같아도 띄운다', () => {
+    const t = setup({ 'p-1': 'claude', 'p-2': 'claude' }, { 'p-1': 'Idle', 'p-2': 'Idle' })
+    t.notify('p-1', { title: '', body: '' })
+    t.advance(NOTIFICATION_INTERVAL_MS)
+    t.notify('p-2', { title: '', body: '' })
+    t.advance(NOTIFICATION_INTERVAL_MS)
+    t.notify('p-1', { title: 'T', body: 'x' })
+    t.advance(NOTIFICATION_INTERVAL_MS)
+    t.notify('p-2', { title: 'T', body: 'x' })
+    expect(t.shown).toHaveLength(4)
   })
 
   it('pane 이름을 모르면 부제를 비우고 알림 제목만 쓴다', () => {
@@ -110,11 +122,11 @@ describe('createDesktopNotifications', () => {
     expect(t.shown.map((s) => s.notice.body)).toEqual(['1', '3'])
   })
 
-  it('마지막으로 띄운 것과 제목·본문이 같으면 5초가 지나야 다시 띄운다', () => {
+  it('마지막으로 띄운 것과 pty·제목·본문이 같으면 5초가 지나야 다시 띄운다', () => {
     const t = setup()
     t.notify('p-1', { title: 'a', body: 'same' })
     t.advance(SAME_NOTIFICATION_INTERVAL_MS - 1)
-    t.notify('p-2', { title: 'a', body: 'same' })
+    t.notify('p-1', { title: 'a', body: 'same' })
     expect(t.shown).toHaveLength(1)
     t.notify('p-2', { title: 'a', body: 'other' })
     expect(t.shown).toHaveLength(2)

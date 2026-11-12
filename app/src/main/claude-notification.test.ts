@@ -38,6 +38,14 @@ describe('claude.notification', () => {
     ])
   })
 
+  it('elicitation_response 는 넣지 않고, elicitation_complete 는 글을 싣는다', () => {
+    const t = setup()
+    const response = 'Elicitation response for server "srv": cancel'
+    expect(t.hook({ type: 'elicitation_response', message: response })).toBeNull()
+    t.hook({ type: 'elicitation_complete', message: 'done' })
+    expect(t.notified).toEqual([['p-1', { title: '', body: 'done' }]])
+  })
+
   it('글을 maru-pty 처럼 한 줄로 다듬고, 다듬어 둘 다 비면 넣지 않는다', () => {
     const t = setup()
     t.hook({ type: 'push_notification', message: ' a\nb\tc\r\u0007\u009b ', title: '\n' })
