@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   writeFileSync
@@ -12,10 +13,14 @@ import {
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import electronBin from 'electron'
-import { QUIT_TIMEOUT_MS } from '../src/main/pty'
+import { processExists, QUIT_TIMEOUT_MS, readRecord } from '../src/main/pty'
+import { holderPid } from '../src/main/takeover'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
+import { STATE_VERSIONS } from '../src/shared/screen'
+import type { ElectronApplication } from '@playwright/test'
 import {
   attachFromOutside,
+  cli,
   clickMenu,
   DOM_RENDERER,
   expect,
@@ -30,6 +35,7 @@ import {
   screen,
   slowPtyBin,
   sockets,
+  spawnApp,
   stateFile,
   split,
   stubDialog,
@@ -63,6 +69,105 @@ test('두 번째 실행은 pty 를 더 띄우지 않고 끝난다', async ({ lau
   expect(printed && realpathSync(printed), stderr).toBe(realpathSync(dataDir))
   expect(sockets(dataDir)).toHaveLength(1)
 })
+
+/** 진짜 `lsappinfo` 가 LaunchServices 가 모르는 pid 에 내는 것처럼, 빈 줄을 내고 exit 0 으로 끝나는 가짜 `lsappinfo` 를 만든다. */
+function unknownToLaunchServices(dataDir: string): string {
+  const bin = join(dataDir, 'lsappinfo')
+  writeFileSync(bin, '#!/bin/sh\necho\n')
+  chmodSync(bin, 0o755)
+  return bin
+}
+
+function lockedBy(dataDir: string): number | null {
+  try {
+    return holderPid(readlinkSync(join(dataDir, 'SingletonLock')))
+  } catch {
+    return null
+  }
+}
+
+test('LaunchServices 에 없는 첫 인스턴스는 두 번째 실행에 넘겨 pty 를 남기고 끝나고, 두 번째가 다시 띄운 앱이 같은 pty 에 붙는다', async ({
+  launch,
+  dataDir,
+  defer
+}) => {
+  const { app, page } = await launch()
+  await page.keyboard.type('echo before-$((1+1))\n')
+  await expect(screen(page)).toShow('before-2')
+  const pty = (await panes(page).first().getAttribute('data-pty'))!
+  const shell = (await readRecord(ptyDir(dataDir), pty))!.shell_pid
+
+  const relaunched = await handOverToSecond(app, dataDir, defer)
+  await expect
+    .poll(async () => (await cli(dataDir, pty, ['pane', 'list']).catch(() => '')).split('\n'))
+    .toContainEqual(expect.stringMatching(new RegExp(`^${pty}\\t`)))
+  expect((await readRecord(ptyDir(dataDir), pty))!.shell_pid).toBe(shell)
+  expect(processExists(shell)).toBe(true)
+  expect(await cli(dataDir, pty, ['pane', 'read', pty])).toContain('before-2')
+  await quitApp(relaunched)
+})
+
+test('넘겨받을 때 설치본의 cells 형식이 다르면 묻지 않고 pty 를 남긴 채 끝나, 다시 띄운 앱이 그 pty 에 붙는다', async ({
+  launch,
+  dataDir,
+  defer
+}) => {
+  const file = join(dataDir, 'installed-versions.json')
+  writeFileSync(file, JSON.stringify({ ...STATE_VERSIONS, cells: STATE_VERSIONS.cells + 1 }))
+  const { app, page } = await launch({ MARU_STATE_VERSIONS_FILE: file })
+  await expect(panes(page)).toHaveCount(1)
+  const pty = (await panes(page).first().getAttribute('data-pty'))!
+  // 대화상자를 띄우면 취소를 골라, 앱이 끝나지 않아 테스트가 실패하게 한다.
+  await stubDialog(app, 1)
+
+  const relaunched = await handOverToSecond(app, dataDir, defer)
+  expect(sockets(dataDir)).toHaveLength(1)
+  await expect
+    .poll(async () => (await cli(dataDir, pty, ['pane', 'list']).catch(() => '')).split('\n'))
+    .toContainEqual(expect.stringMatching(new RegExp(`^${pty}\\t`)))
+  await quitApp(relaunched)
+})
+
+/**
+ * 가짜 `lsappinfo` 로 두 번째 인스턴스를 띄워 `app` 을 넘겨받게 하고, 두 번째가 다시 띄운 앱의 pid 를 돌려준다. 테스트가 어디서
+ * 실패해도 두 번째 인스턴스와 다시 띄운 앱을 끈다.
+ */
+async function handOverToSecond(
+  app: ElectronApplication,
+  dataDir: string,
+  defer: (fn: () => unknown) => void
+): Promise<number> {
+  const first = await app.evaluate(() => process.pid)
+  const closed = app.waitForEvent('close')
+  const second = spawnApp(dataDir, { MARU_LSAPPINFO_BIN: unknownToLaunchServices(dataDir) })
+  defer(() => {
+    second.kill('SIGKILL')
+    const holder = lockedBy(dataDir)
+    if (holder !== null && holder !== first && processExists(holder))
+      process.kill(holder, 'SIGKILL')
+  })
+  let stderr = ''
+  second.stderr!.on('data', (d) => (stderr += d))
+  const exited = new Promise((resolve) => second.once('exit', (code) => resolve(code)))
+  await closed
+  expect(await exited, stderr).toBe(0)
+  expect(stderr).toContain(`instance ${first} has lost its connection to the window server`)
+
+  let relaunched: number | null = null
+  await expect
+    .poll(() => {
+      relaunched = lockedBy(dataDir)
+      return relaunched !== null && relaunched !== first && processExists(relaunched)
+    })
+    .toBe(true)
+  return relaunched!
+}
+
+/** SIGTERM 으로 끄면 앱이 pty 도 끄므로 이 테스트가 띄운 shell 이 남지 않는다. */
+async function quitApp(pid: number): Promise<void> {
+  process.kill(pid, 'SIGTERM')
+  await expect.poll(() => processExists(pid), { timeout: 15_000 }).toBe(false)
+}
 
 test('다른 클라이언트가 primary 를 가져가면 창은 그 크기를 따르고 창 크기로 되돌리지 않는다', async ({
   launch,

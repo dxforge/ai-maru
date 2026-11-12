@@ -16,6 +16,7 @@
     "src/main/frame.ts",
     "src/main/pty.ts",
     "src/main/pty-protocol.ts",
+    "src/main/takeover.ts",
     "src/main/test-repo-env.ts",
     "src/renderer/src/font.ts",
     "src/renderer/src/icons.ts",

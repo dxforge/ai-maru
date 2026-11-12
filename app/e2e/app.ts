@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import {
   chmodSync,
   closeSync,
@@ -27,6 +27,7 @@ import {
   type Locator,
   type Page
 } from '@playwright/test'
+import electronPath from 'electron'
 import { encodeFrame, TAG_TEXT } from '../src/main/frame'
 import { appSocketPath, foreground, killPtys, runDir } from '../src/main/pty'
 import { gitEnv } from '../src/main/test-repo-env'
@@ -235,20 +236,18 @@ async function withXcrunLock<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-async function launchApp(
+function appEnv(
   dataDir: string,
   env: Record<string, string>,
-  executablePath: string | undefined,
-  args: string[],
-  beforeWindow?: (app: ElectronApplication) => Promise<void>
-): Promise<Launched> {
+  packaged: boolean
+): Record<string, string> {
   const inherited = gitEnv()
   // 패키징한 앱이 번들 안의 바이너리를 쓰는지 봐야 하므로 바깥의 덮어쓰기를 물려주지 않는다.
-  if (executablePath) {
+  if (packaged) {
     delete inherited.MARU_PTY_BIN
     delete inherited.MARU_CLI_BIN
   }
-  const launchEnv = {
+  return {
     ...inherited,
     MARU_UNOBTRUSIVE: '1',
     SHELL: '/bin/bash',
@@ -259,18 +258,52 @@ async function launchApp(
     MARU_RUN_DIR: runBase(dataDir),
     ...env
   } as Record<string, string>
+}
+
+function appArgs(dataDir: string, packaged: boolean, args: string[]): string[] {
+  return [
+    ...(packaged ? [] : ['.']),
+    `--user-data-dir=${dataDir}`,
+    ...IGNORE_SAVED_WINDOWS,
+    ...(args.some((a) => a.startsWith(`${SCALE_SWITCH}=`)) ? [] : [`${SCALE_SWITCH}=2`]),
+    ...args
+  ]
+}
+
+/**
+ * `launch` 와 같은 env·인자로 앱을 하나 더 띄운다. Playwright 로 띄우지 않는 것은 곧 끝나는 두 번째 인스턴스와 그것이
+ * `app.relaunch()` 로 띄운 앱에 Playwright 가 붙을 수 없기 때문이다.
+ */
+export function spawnApp(dataDir: string, env: Record<string, string>): ChildProcess {
+  return spawn(electronPath as unknown as string, appArgs(dataDir, false, []), {
+    cwd: join(__dirname, '..'),
+    env: appEnv(dataDir, env, false),
+    stdio: ['ignore', 'ignore', 'pipe']
+  })
+}
+
+/** Playwright 가 띄우지 않은 앱에 그 앱의 CLI 소켓으로 `maru` 를 돌린다. `pty` 의 pane 안에서 부른 것으로 친다. */
+export async function cli(dataDir: string, pty: string, args: string[]): Promise<string> {
+  const { stdout } = await promisify(execFile)(CLI_BIN, args, {
+    env: { ...process.env, MARU_SOCKET: appSocketPath(ptyDir(dataDir)), MARU_PTY_ID: pty }
+  })
+  return stdout
+}
+
+async function launchApp(
+  dataDir: string,
+  env: Record<string, string>,
+  executablePath: string | undefined,
+  args: string[],
+  beforeWindow?: (app: ElectronApplication) => Promise<void>
+): Promise<Launched> {
+  const launchEnv = appEnv(dataDir, env, Boolean(executablePath))
   await checkXcodeLicense(launchEnv)
   const app = await electron.launch({
     executablePath,
     // Playwright 의 기본 colorScheme 은 `prefers-color-scheme` 을 light 로 고정해, renderer 가 `nativeTheme.themeSource` 를 따르지 못한다.
     colorScheme: null,
-    args: [
-      ...(executablePath ? [] : ['.']),
-      `--user-data-dir=${dataDir}`,
-      ...IGNORE_SAVED_WINDOWS,
-      ...(args.some((a) => a.startsWith(`${SCALE_SWITCH}=`)) ? [] : [`${SCALE_SWITCH}=2`]),
-      ...args
-    ],
+    args: appArgs(dataDir, Boolean(executablePath), args),
     env: launchEnv
   })
   // main 의 JS 가 끝난(`exit`) 뒤 Electron 이 하는 뒷정리(Chromium 의 종료 작업, macOS CoreAnalytics 의 exit barrier)는

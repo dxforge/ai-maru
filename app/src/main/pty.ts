@@ -84,7 +84,7 @@ export function ptyLive(dir: string, id: string): Promise<boolean> {
   return isLive(socketPath(dir, id))
 }
 
-function processExists(pid: number): boolean {
+export function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
