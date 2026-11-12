@@ -9,9 +9,10 @@ import {
 import type { PtyNotification } from '../../../shared/pty-state'
 import {
   dirRow,
-  emptyRow,
+  emptyRows,
   exitText,
   favoriteRow,
+  favoriteRows,
   jobRow,
   paneRow,
   workspaceMarks,
@@ -206,14 +207,60 @@ describe('favoriteRow', () => {
   })
 })
 
-describe('emptyRow', () => {
-  it('cell 이 없으면 dir 줄 하나이고, dir 도 없으면 없다', () => {
-    const row = { dir: '/h/notes', name: 'notes', path: '~/notes' }
-    expect(emptyRow({ dir: '/h/notes', cells: [] }, '/h')).toEqual([row])
-    expect(emptyRow({ cells: [] })).toEqual([])
+describe('favoriteRows', () => {
+  const names = (dirs: string[]) => favoriteRows(dirs, '/h/w', '/h').map((r) => r.path)
+
+  it('추가한 순서와 상관없이 이름순이고, 대소문자를 가리지 않는다', () => {
+    expect(names(['/h/w/beta', '/h/w/Alpha', '/h/w/gamma'])).toEqual(['Alpha', 'beta', 'gamma'])
+    expect(names(['/h/w/gamma', '/h/w/beta', '/h/w/Alpha'])).toEqual(['Alpha', 'beta', 'gamma'])
   })
 
-  it('cell 이 있으면 dir 줄은 없다', () => {
-    expect(emptyRow({ dir: '/h/notes', cells: [{}] })).toEqual([])
+  it('대소문자·악센트만 다른 두 디렉토리도 추가한 순서와 상관없이 같은 자리에 둔다', () => {
+    expect(names(['/h/w/app', '/h/w/App'])).toEqual(names(['/h/w/App', '/h/w/app']))
+    expect(names(['/h/w/cafe', '/h/w/café'])).toEqual(names(['/h/w/café', '/h/w/cafe']))
+  })
+
+  it('이름의 숫자는 숫자 크기로 비교한다', () => {
+    expect(names(['/h/w/r10', '/h/w/r2', '/h/w/r1'])).toEqual(['r1', 'r2', 'r10'])
+  })
+
+  it('이름이 같으면 보이는 경로로 가른다', () => {
+    expect(names(['/h/w/b/app', '/opt/app', '/h/w/a/app'])).toEqual(['/opt/app', 'a/app', 'b/app'])
+  })
+
+  it('넘긴 배열의 순서를 바꾸지 않는다', () => {
+    const dirs = ['/h/w/b', '/h/w/a']
+    favoriteRows(dirs, '/h/w', '/h')
+    expect(dirs).toEqual(['/h/w/b', '/h/w/a'])
+  })
+})
+
+describe('emptyRows', () => {
+  it('즐겨찾기가 없으면 디렉토리 줄 하나이고, 디렉토리도 없으면 없다', () => {
+    expect(emptyRows(0, dirRow('/h/notes', '/h'), [], '/h')).toEqual([
+      { dir: '/h/notes', name: 'notes', path: '~/notes', label: '~/notes', root: true }
+    ])
+    expect(emptyRows(0, undefined, [])).toEqual([])
+  })
+
+  it('디렉토리를 모르면 즐겨찾기가 있어도 줄이 없다', () => {
+    expect(emptyRows(0, undefined, favoriteRows(['/h/x'], undefined, '/h'), '/h')).toEqual([])
+  })
+
+  it('cell 이 있으면 줄이 없다', () => {
+    const favorites = favoriteRows(['/h/notes/x'], '/h/notes', '/h')
+    expect(emptyRows(1, dirRow('/h/notes', '/h'), favorites, '/h')).toEqual([])
+  })
+
+  it('디렉토리 줄 아래에 즐겨찾기를 받은 순서로 두고, 줄 글자는 디렉토리 아래면 상대 경로, tooltip 경로는 ~ 경로다', () => {
+    const favorites = favoriteRows(['/h/w/b', '/opt/a', '/h/w', '/h/w/A'], '/h/w', '/h')
+    const rows = emptyRows(0, dirRow('/h/w', '/h'), favorites, '/h')
+    expect(rows.map((r) => [r.label, r.path, r.root])).toEqual([
+      ['~/w', '~/w', true],
+      ['/opt/a', '/opt/a', false],
+      ['A', '~/w/A', false],
+      ['b', '~/w/b', false],
+      ['~/w', '~/w', false]
+    ])
   })
 })

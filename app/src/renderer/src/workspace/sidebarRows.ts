@@ -131,7 +131,7 @@ export function dirRow(dir: string, home?: string): DirRow {
 
 /**
  * workspace 메뉴의 즐겨찾기 줄이다. 줄에는 디렉토리 이름만 쓰고, `path` 는 workspace 디렉토리(`base`) 아래면 그로부터의
- * 상대 경로를, 밖이면 홈을 `~` 로 쓴 경로를 쓴다. 메뉴 위에 workspace 디렉토리가 이미 보이기 때문이다.
+ * 상대 경로를, 밖이면 홈을 `~` 로 쓴 경로를 쓴다. Favorites 맨 위 줄에 workspace 디렉토리가 보이기 때문이다.
  */
 export function favoriteRow(dir: string, base: string | undefined, home?: string): DirRow {
   const row = dirRow(dir, home)
@@ -139,7 +139,41 @@ export function favoriteRow(dir: string, base: string | undefined, home?: string
   return rel ? { ...row, path: rel } : row
 }
 
-/** cell 이 없는 workspace 는 `dir` 줄 하나를 두어, 그 디렉토리에서 cell 을 다시 열 수 있게 한다. */
-export function emptyRow(w: { dir?: string; cells: readonly unknown[] }, home?: string): DirRow[] {
-  return !w.cells.length && w.dir !== undefined ? [dirRow(w.dir, home)] : []
+const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+
+/** 저장된 `favorites` 배열은 추가한 순서로 두고, 메뉴와 닫힌 workspace 카드에 보일 때만 이름순으로 정렬한다. 저장 형식과 복원을 바꾸지 않기 때문이다. */
+export function favoriteRows(
+  dirs: readonly string[],
+  base: string | undefined,
+  home?: string
+): DirRow[] {
+  return dirs
+    .map((d) => favoriteRow(d, base, home))
+    .sort(
+      (a, b) =>
+        byName.compare(a.name, b.name) ||
+        byName.compare(a.path, b.path) ||
+        // 대소문자·악센트만 다른 두 디렉토리도 추가한 순서와 상관없이 같은 자리에 두려고 마지막에 그대로 비교한다.
+        (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
+    )
+}
+
+/** 닫힌 workspace 카드의 줄. `label` 은 줄에 쓰는 글자이고, `path` 는 tooltip 에 쓰는 홈을 `~` 로 쓴 경로다. */
+export type DirLine = DirRow & { label: string; root: boolean }
+
+/**
+ * cell 이 없는 workspace 의 사이드바 줄이다. 디렉토리(`root`) 줄 아래에 즐겨찾기 줄을 받은 순서로 둔다. 줄을 누르면 그 디렉토리에서 cell 을 다시 연다.
+ * 즐겨찾기의 `label` 은 메뉴와 같이 `root` 아래면 상대 경로다.
+ */
+export function emptyRows(
+  cells: number,
+  root: DirRow | undefined,
+  favorites: readonly DirRow[],
+  home?: string
+): DirLine[] {
+  if (cells || !root) return []
+  return [
+    { ...root, label: root.path, root: true },
+    ...favorites.map((f) => ({ ...f, path: tildePath(f.dir, home), label: f.path, root: false }))
+  ]
 }

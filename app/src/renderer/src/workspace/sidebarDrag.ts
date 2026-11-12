@@ -23,7 +23,7 @@ export type WorkspaceSpan = Span & {
   count: number
   cells: Span[]
   folded: boolean
-  /** cell 이 없는 workspace 의 `dir` 줄의 아래 끝. 그 줄이 없으면 비운다. */
+  /** cell 이 없는 workspace 의 디렉토리 줄과 즐겨찾기 줄을 담은 카드의 아래 끝. 그 카드가 없으면 비운다. */
   dirBottom?: number
 }
 
