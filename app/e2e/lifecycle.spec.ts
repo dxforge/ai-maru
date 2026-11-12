@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import electronBin from 'electron'
 import { processExists, QUIT_TIMEOUT_MS, readRecord } from '../src/main/pty'
-import { holderPid } from '../src/main/takeover'
+import { holderPid, waitGone } from '../src/main/takeover'
 import { PROTOCOL_VERSION } from '../src/shared/protocol'
 import { STATE_VERSIONS } from '../src/shared/screen'
 import type { ElectronApplication } from '@playwright/test'
@@ -104,7 +104,8 @@ test('LaunchServices 에 없는 첫 인스턴스는 두 번째 실행에 넘겨 
   expect((await readRecord(ptyDir(dataDir), pty))!.shell_pid).toBe(shell)
   expect(processExists(shell)).toBe(true)
   expect(await cli(dataDir, pty, ['pane', 'read', pty])).toContain('before-2')
-  await quitApp(relaunched)
+  await quitApp(relaunched, dataDir)
+  await expect.poll(() => processExists(shell)).toBe(false)
 })
 
 test('넘겨받을 때 설치본의 cells 형식이 다르면 묻지 않고 pty 를 남긴 채 끝나, 다시 띄운 앱이 그 pty 에 붙는다', async ({
@@ -125,7 +126,7 @@ test('넘겨받을 때 설치본의 cells 형식이 다르면 묻지 않고 pty 
   await expect
     .poll(async () => (await cli(dataDir, pty, ['pane', 'list']).catch(() => '')).split('\n'))
     .toContainEqual(expect.stringMatching(new RegExp(`^${pty}\\t`)))
-  await quitApp(relaunched)
+  await quitApp(relaunched, dataDir)
 })
 
 /**
@@ -163,10 +164,18 @@ async function handOverToSecond(
   return relaunched!
 }
 
-/** SIGTERM 으로 끄면 앱이 pty 도 끄므로 이 테스트가 띄운 shell 이 남지 않는다. */
-async function quitApp(pid: number): Promise<void> {
+/**
+ * SIGTERM 으로 끄면 앱이 pty 도 끄므로 이 테스트가 띄운 shell 이 남지 않는다. 다시 띄운 앱은 Playwright 가 띄우지 않아
+ * fixture 가 `exit` 때 거는 SIGKILL 이 없다. 그래서 `will-quit` 이 끝나 `SingletonLock` 이 풀리면 SIGKILL 로 끝낸다.
+ */
+async function quitApp(pid: number, dataDir: string): Promise<void> {
   process.kill(pid, 'SIGTERM')
-  await expect.poll(() => processExists(pid), { timeout: 15_000 }).toBe(false)
+  expect(await waitGone(pid, dataDir, 15_000)).toBe(true)
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    // 이미 끝났다.
+  }
 }
 
 test('다른 클라이언트가 primary 를 가져가면 창은 그 크기를 따르고 창 크기로 되돌리지 않는다', async ({
