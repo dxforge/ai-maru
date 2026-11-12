@@ -21,7 +21,7 @@ let sized: ResizeObserver | undefined
 watch(
   band,
   (el) => {
-    if (!el || !root.value) return
+    if (!el || !root.value || !body.firstScroll()) return
     const scroll = (): void => el.scrollIntoView({ block: 'center', inline: 'nearest' })
     if (root.value.clientWidth > 0) return scroll()
     sized = new ResizeObserver(([e]) => {

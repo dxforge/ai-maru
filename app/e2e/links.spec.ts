@@ -201,6 +201,19 @@ test('코드 파일은 Canvas 의 코드 뷰로 열고, 링크의 줄로 스크�
   // 강조는 worker 가 file:// 로 띄운 앱에서도 돈다.
   await expect(page.locator('.canvas .code .text span').first()).toHaveText('const')
 
+  // 접었다 펴면 링크의 줄로 다시 스크롤하지 않고, 카드 자리를 지킨다.
+  const scroller = page.locator('.canvas .scroll')
+  await scroller.evaluate((el) => el.scrollTo(0, 0))
+  await expect(band).not.toBeInViewport()
+  const title = canvasTitles(page).first()
+  await title.click()
+  await expect(band).toHaveCount(0)
+  await title.click()
+  await expect(band).toHaveCount(1)
+  await page.waitForTimeout(200)
+  expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0)
+  await expect(band).not.toBeInViewport()
+
   // Canvas 가 열려 터미널 폭이 줄었으므로 다음 링크는 그 뒤에 찍는다. 두 링크를 같은 경로로 풀도록 둘 다 상대경로로 둔다.
   await run(page, `echo ./code.ts:5:2; echo done-$((2+2))`, 'done-4')
   await metaClick(page, './code.ts:5')

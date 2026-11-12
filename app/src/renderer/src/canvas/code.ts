@@ -34,6 +34,13 @@ export class CodeBody {
     this.line = clampLine(line, count)
   }
 
+  #scrolled = false
+  /** 처음 부를 때만 true 다. 카드를 접었다 펴면 그 줄로 다시 스크롤하지 않고 카드 자리를 지킨다. */
+  firstScroll(): boolean {
+    if (this.#scrolled) return false
+    return (this.#scrolled = true)
+  }
+
   #highlighted: Promise<string | null> | undefined
   /** 받아 둔 강조. 아직 받지 못했으면 undefined, 강조하지 않으면 null 이다. */
   html: string | null | undefined
