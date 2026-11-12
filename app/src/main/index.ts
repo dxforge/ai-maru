@@ -67,6 +67,7 @@ import {
   JOB_KILL_TIMEOUT_MS,
   JOB_SPAWN_TIMEOUT_MS,
   QUIT_TIMEOUT_MS,
+  processExists,
   readRecord,
   runDir,
   ptyLive,
@@ -94,6 +95,14 @@ import {
   type Outcome,
   type StateStore
 } from './state'
+import {
+  lostInstance,
+  runLsappinfo,
+  secondInstanceAction,
+  TAKEOVER_REQUEST,
+  takeOver,
+  waitGone
+} from './takeover'
 import {
   initialPlacement,
   restoreWindowState,
@@ -336,22 +345,30 @@ function finishWith(o: Outcome, options?: FinishOptions, keep: string[] = []): v
     if (o === 'keep') jobs?.resume()
     throw err
   }
+  settle(o, keep)
+}
+
+function settle(o: Outcome, keep: string[]): void {
   outcome = o
   keptPtys = new Set(keep)
   quitPermission.allow()
 }
 
-function quitWith(o: Outcome): void {
+function quitWith(o: Outcome, options?: FinishOptions, keep: string[] = []): void {
   try {
-    finishWith(o)
+    finishWith(o, options, keep)
   } catch (err) {
     console.error('maru: cannot save the state before quitting:', err)
     // 고른 대로 끝낸다. pty 를 남기면 다음 실행이 디스크에 남은 마지막 상태로 다시 붙을 수 있다.
     if (o === 'keep') jobs?.detach()
     store?.stop()
-    outcome = o
-    quitPermission.allow()
+    settle(o, keep)
   }
+}
+
+function finishRestart(check: RestartCheck, finish = finishWith): void {
+  const next = restartOutcome(check)
+  finish(next.outcome, { drop: next.drop }, next.keep)
 }
 
 function relaunch(): void {
@@ -361,13 +378,23 @@ function relaunch(): void {
   app.quit()
 }
 
+/**
+ * 창을 잃은 앱을 끝내, 새 세션의 두 번째 인스턴스가 다시 띄울 수 있게 한다(`takeover.ts`). 창을 보일 수 없으므로 대화상자를
+ * 띄우지 않는다. `restartCheck` 가 맞지 않아도 `restartOutcome` 이 고른 대로 끝낸다. 넘겨받지 않으면 사용자가 결국 프로세스를
+ * 꺼 pty 를 모두 잃기 때문이다.
+ */
+async function handOver(): Promise<void> {
+  if (devServer) return
+  finishRestart(await restartCheck(), quitWith)
+  app.quit()
+}
+
 async function restartByUser(): Promise<void> {
   const check = await restartCheck()
   if (!check.ok && check.reason === 'dev_server') return
   if (!check.ok && !(await confirm(restartDialog(check)))) return
   try {
-    const next = restartOutcome(check)
-    finishWith(next.outcome, { drop: next.drop }, next.keep)
+    finishRestart(check)
   } catch (err) {
     dialog.showErrorBox('Cannot restart', err instanceof Error ? err.message : String(err))
     return
@@ -420,8 +447,7 @@ const restartHandlers: Handlers = {
         result: check.result
       })
     }
-    const next = restartOutcome(check)
-    finishWith(next.outcome, { drop: next.drop }, next.keep)
+    finishRestart(check)
     return new AfterReply(null, relaunch)
   }
 }
@@ -653,16 +679,44 @@ function ptyHost(): UtilityProcess {
   return host
 }
 
+/**
+ * 넘겨받기 요청을 받은 첫 인스턴스가 끝나기를 기다리는 상한이다. 첫 인스턴스의 `will-quit` 이 pty host 를 `QUIT_TIMEOUT_MS`
+ * 까지 기다리므로 그보다 3초 길게 잡는다.
+ */
+const TAKEOVER_WAIT_MS = QUIT_TIMEOUT_MS + 3000
+
+const lost = lostInstance({
+  platform: process.platform,
+  userData: app.getPath('userData'),
+  self: process.pid,
+  alive: processExists,
+  run: runLsappinfo(process.env.MARU_LSAPPINFO_BIN ?? '/usr/bin/lsappinfo')
+})
+
 // 두 번째 실행이 같은 pty 디렉토리에서 pty 를 하나 더 띄우지 않게 끝낸다.
-if (!app.requestSingleInstanceLock()) {
-  console.error(
-    `maru: another instance is using ${app.getPath('userData')}; quitting. Start with --user-data-dir=<dir> (pnpm dev -- --user-data-dir=<dir>) to run alongside it.`
-  )
-  app.quit()
+if (!app.requestSingleInstanceLock(lost === null ? undefined : TAKEOVER_REQUEST)) {
+  if (lost !== null) {
+    void takeOver(lost, {
+      gone: (pid) => waitGone(pid, app.getPath('userData'), TAKEOVER_WAIT_MS),
+      // 이 프로세스는 새 세션에서 떴으므로 다시 띄운 앱은 창을 띄운다.
+      relaunch: () => {
+        app.relaunch()
+        app.exit()
+      },
+      quit: () => app.quit(),
+      log: (message) => console.error(message)
+    })
+  } else {
+    console.error(
+      `maru: another instance is using ${app.getPath('userData')}; quitting. Start with --user-data-dir=<dir> (pnpm dev -- --user-data-dir=<dir>) to run alongside it.`
+    )
+    app.quit()
+  }
 } else {
-  app.on('second-instance', () => {
-    if (unobtrusive) return
-    bringToFront(mainWindow())
+  app.on('second-instance', (_event, _argv, _cwd, data) => {
+    const action = secondInstanceAction(data, app.isReady(), unobtrusive)
+    if (action === 'hand-over') void handOver()
+    else if (action === 'front') bringToFront(mainWindow())
   })
   app.whenReady().then(start)
 }
