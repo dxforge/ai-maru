@@ -102,18 +102,21 @@ export async function takeOver(pid: number, deps: TakeOverDeps): Promise<void> {
 const POLL_MS = 100
 
 /**
- * `pid` 가 `limitMs` 안에 끝나면 true 다. 첫 인스턴스는 이 프로세스의 자식이 아니어서 `waitpid` 로 기다릴 수 없으므로, 살아
- * 있는지 되풀이해 본다.
+ * `SingletonLock` 이 이 pid 를 더 가리키지 않으면 pid 가 아직 살아 있어도 끝난 것으로 본다. lock 은 `will-quit` 이 끝난 뒤에
+ * 풀리므로, 그때 다시 띄운 앱은 첫 인스턴스가 남긴 pty 에 붙을 수 있다. JS 가 `exit` 한 뒤 Electron 이 프로세스를 끝내기까지는
+ * 부하에서 40ms~11.9초 걸렸다(실측). 이 시간은 `TAKEOVER_WAIT_MS`(10초)를 넘길 수 있으므로 pid 가 끝나기만 기다리지 않는다.
+ * 첫 인스턴스는 이 프로세스의 자식이 아니어서 `waitpid` 로 기다릴 수 없으므로, `POLL_MS` 마다 다시 확인한다.
  */
 export async function waitGone(
   pid: number,
+  userData: string,
   limitMs: number,
   alive: (pid: number) => boolean = processExists,
   wait: (ms: number) => Promise<unknown> = sleep,
   now: () => number = Date.now
 ): Promise<boolean> {
   const until = now() + limitMs
-  while (alive(pid)) {
+  while (alive(pid) && lockHolder(userData) === pid) {
     if (now() >= until) return false
     await wait(POLL_MS)
   }

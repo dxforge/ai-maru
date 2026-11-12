@@ -28,7 +28,7 @@ function userDataWithLock(target: string | null): string {
   return dir
 }
 
-const REGISTERED = 'ASN:0x0-0x444263e2-"AI_Maru":\n'
+const REGISTERED = 'ASN:0x0-0x1234567-"AI_Maru":\n'
 
 function deps(over: Partial<LostInstanceDeps> = {}): LostInstanceDeps {
   return {
@@ -43,7 +43,7 @@ function deps(over: Partial<LostInstanceDeps> = {}): LostInstanceDeps {
 
 describe('holderPid', () => {
   it('호스트 이름에 - 가 있어도 마지막 - 뒤의 숫자를 pid 로 읽는다', () => {
-    expect(holderPid('MacBook-Pro-95433')).toBe(95433)
+    expect(holderPid('My-Mac-Pro.local-4242')).toBe(4242)
     expect(holderPid('host-1')).toBe(1)
   })
 
@@ -189,26 +189,52 @@ describe('takeOver', () => {
 })
 
 describe('waitGone', () => {
-  function clock() {
+  function clock(onWait: (t: number) => void = () => {}) {
     let t = 0
-    return { now: () => t, wait: async (ms: number) => void (t += ms) }
+    return {
+      now: () => t,
+      wait: async (ms: number) => {
+        t += ms
+        onWait(t)
+      }
+    }
   }
 
-  it('상한 안에 끝나면 true 다', async () => {
+  it('상한 안에 pid 가 끝나면 true 다', async () => {
     const c = clock()
-    expect(await waitGone(1, 10_000, () => c.now() < 3000, c.wait, c.now)).toBe(true)
+    const dir = userDataWithLock('host-4242')
+    expect(await waitGone(4242, dir, 10_000, () => c.now() < 3000, c.wait, c.now)).toBe(true)
     expect(c.now()).toBe(3000)
+  })
+
+  it('pid 가 살아 있어도 lock 이 풀리면 그때 true 다', async () => {
+    const dir = userDataWithLock('host-4242')
+    const c = clock((t) => {
+      if (t === 300) rmSync(join(dir, 'SingletonLock'))
+    })
+    expect(await waitGone(4242, dir, 10_000, () => true, c.wait, c.now)).toBe(true)
+    expect(c.now()).toBe(300)
+  })
+
+  it('pid 가 살아 있어도 lock 이 다른 pid 를 가리키면 true 다', async () => {
+    const c = clock()
+    expect(
+      await waitGone(4242, userDataWithLock('host-5151'), 10_000, () => true, c.wait, c.now)
+    ).toBe(true)
+    expect(c.now()).toBe(0)
   })
 
   it('이미 끝났으면 기다리지 않는다', async () => {
     const c = clock()
-    expect(await waitGone(1, 10_000, () => false, c.wait, c.now)).toBe(true)
+    const dir = userDataWithLock('host-4242')
+    expect(await waitGone(4242, dir, 10_000, () => false, c.wait, c.now)).toBe(true)
     expect(c.now()).toBe(0)
   })
 
-  it('상한까지 끝나지 않으면 false 다', async () => {
+  it('상한까지 pid 가 살아 있고 lock 을 쥐고 있으면 false 다', async () => {
     const c = clock()
-    expect(await waitGone(1, 10_000, () => true, c.wait, c.now)).toBe(false)
+    const dir = userDataWithLock('host-4242')
+    expect(await waitGone(4242, dir, 10_000, () => true, c.wait, c.now)).toBe(false)
     expect(c.now()).toBe(10_000)
   })
 })

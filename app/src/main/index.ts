@@ -697,7 +697,7 @@ const lost = lostInstance({
 if (!app.requestSingleInstanceLock(lost === null ? undefined : TAKEOVER_REQUEST)) {
   if (lost !== null) {
     void takeOver(lost, {
-      gone: (pid) => waitGone(pid, TAKEOVER_WAIT_MS),
+      gone: (pid) => waitGone(pid, app.getPath('userData'), TAKEOVER_WAIT_MS),
       // 이 프로세스는 새 세션에서 떴으므로 다시 띄운 앱은 창을 띄운다.
       relaunch: () => {
         app.relaunch()
