@@ -170,6 +170,8 @@ export function readJoinedLines<C extends CellLike>(buffer: BufferLike<C>, y: nu
   return { text, cells, joints, self, start, end }
 }
 
+const POSITION_END = /:\d+(?::\d+)?$/
+
 export type JoinedPath = {
   /** 후보들이 놓인 `JoinedLines.text` 의 인덱스. 후보의 인덱스는 여기서부터 센다. */
   offset: number
@@ -186,13 +188,19 @@ export function joinedPaths(lines: JoinedLines): JoinedPath[] {
   const { text, joints, start, end } = lines
   if (joints.length === 0) return []
   return detectLinks(text).flatMap((link) => {
-    const inside = joints.filter((j) => link.startIndex < j && j < link.endIndex)
-    const touches = link.startIndex < end && link.endIndex > start
-    if (inside.length === 0 || !touches || !isPathText(link.text)) return []
     const offset = link.startIndex
+    // `:줄` 로 끝난 줄에서 match 를 끊는다. 이으면 다음 줄 첫 숫자가 줄 번호에 붙는다(`:40` + `3) …` → `:403`).
+    const cut = joints.find(
+      (j) => offset < j && j < link.endIndex && POSITION_END.test(text.slice(offset, j))
+    )
+    const linkEnd = cut ?? link.endIndex
+    const linkText = text.slice(offset, linkEnd)
+    const inside = joints.filter((j) => offset < j && j < linkEnd)
+    const touches = offset < end && linkEnd > start
+    if (inside.length === 0 || !touches || !isPathText(linkText)) return []
     const starts = [0, ...inside.filter((j) => j <= start).map((j) => j - offset)]
-    const ends = [...inside.filter((j) => j >= end).map((j) => j - offset), link.text.length]
-    return [{ offset, candidates: { text: link.text, starts, ends } }]
+    const ends = [...inside.filter((j) => j >= end).map((j) => j - offset), linkText.length]
+    return [{ offset, candidates: { text: linkText, starts, ends } }]
   })
 }
 

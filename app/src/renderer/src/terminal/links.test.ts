@@ -337,6 +337,18 @@ describe('readJoinedLines·joinedPaths', () => {
     ])
   })
 
+  it('`:줄` 로 끝난 줄은 다음 줄의 숫자를 줄 번호에 잇지 않는다', () => {
+    // 좁은 pane 에서 `a.ts:40` 이 줄 끝에 닿고 다음 줄이 `3) …` 으로 시작하면 이은 글자는 `a.ts:403` 이 된다.
+    const rows = ['2) /x/a.ts:40', '3) b'].map((r) => line([...r]))
+    expect(joinedPaths(readJoinedLines(buffer(rows), 1))).toEqual([])
+    expect(joinedPaths(readJoinedLines(buffer(rows), 2))).toEqual([])
+    // 앞 줄이 경로에서 끝나면 다음 줄의 `:줄` 은 그 경로의 것이다.
+    const split = ['2) /x/a.ts', ':40 b'].map((r) => line([...r]))
+    expect(joinedPaths(readJoinedLines(buffer(split), 2))).toEqual([
+      { offset: 3, candidates: { text: '/x/a.ts:40', starts: [0, 7], ends: [10] } }
+    ])
+  })
+
   it('글자 칸이 십만 개를 넘는 접힌 줄과 그 이웃 줄도 읽는다', () => {
     const wide = Array.from({ length: 1040 }, (_, i) => line([...'x'.repeat(150)], i > 0))
     const rows = [line([...'see /a/b.md']), ...wide, line([...'after'])]
