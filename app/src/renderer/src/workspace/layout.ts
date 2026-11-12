@@ -8,20 +8,20 @@ export type Rect = { x: number; y: number; w: number; h: number }
 
 /**
  * 좌우로 나눈 폭을 `even` 은 그 방향으로 늘어선 항목(pane 하나, 또는 다른 방향으로 나눈 부분 하나)의 몫(`weight`)
- * 비율로 나눈다. `{ cols }` 는 columns 보기로, pane 마다 열 수(`cols`, 없으면 `cols`)로 폭을 정한다. 위아래로 나눈
- * 높이는 두 값 모두 몫 비율로 나눈다.
+ * 비율로 나눈다. `{ cols }` 는 columns 보기로, pane 마다 열 수(pane 의 `cols`, 없으면 `{ cols }` 의
+ * 값)로 폭을 정한다. 위아래로 나눈 높이는 두 값 모두 몫 비율로 나눈다.
  */
 export type Widths = 'even' | { cols: number }
 
-type Split = Extract<Layout, { split: SplitDirection }>
+export type Split = Extract<Layout, { split: SplitDirection }>
 
-function withoutWeight(layout: Layout): Layout {
+export function withoutWeight(layout: Layout): Layout {
   const copy = { ...layout }
   delete copy.weight
   return copy
 }
 
-function withoutCols(layout: Layout): Layout {
+export function withoutCols(layout: Layout): Layout {
   const copy = { ...layout }
   if ('pane' in copy) delete copy.cols
   return copy
@@ -32,7 +32,8 @@ function withWeight(layout: Layout, weight: number | undefined): Layout {
 }
 
 /**
- * 줄 `root` 의 크기를 지운다 — 항목의 몫과, 좌우 줄이면 잎 항목의 열 수. 항목 안쪽의 다른 방향 나눔은 그대로 둔다.
+ * 줄 `root` 의 크기를 지운다 — 항목의 몫과, 좌우 줄이면 항목 안 pane 의 열 수. 항목 안쪽의 다른 방향 나눔의 몫은
+ * 그대로 둔다.
  * `root` 의 몫은 바깥 줄의 것이라 남긴다.
  */
 export function resetLine(root: Split): Split {
@@ -41,7 +42,7 @@ export function resetLine(root: Split): Split {
     if ('split' in bare && bare.split === root.split) {
       return { ...bare, first: reset(bare.first), second: reset(bare.second) }
     }
-    return root.split === 'right' ? withoutCols(bare) : bare
+    return root.split === 'right' ? clearCols(bare) : bare
   }
   return { ...root, first: reset(root.first), second: reset(root.second) }
 }
@@ -102,8 +103,7 @@ function remove(layout: Layout, target: number, outer?: SplitDirection): Removed
     const r = remove(layout[side], target, split)
     if (!r) continue
     const next: Split = { ...layout, [side]: r.layout }
-    if (!r.lineChanged) return { ...r, layout: next }
-    if (split === outer) return { ...r, layout: next }
+    if (!r.lineChanged || split === outer) return { ...r, layout: next }
     return { layout: resetLine(next), next: r.next, lineChanged: false }
   }
   return null
@@ -118,22 +118,14 @@ export function removePane(
   return r && { layout: withoutWeight(r.layout), next: r.next }
 }
 
-/** Widen·Narrow Cell 이 cell 의 모든 pane 을 새 열 수로 맞출 때 pane 마다 바꾼 열 수를 지운다. */
 export function clearCols(layout: Layout): Layout {
   if ('pane' in layout) return withoutCols(layout)
   return { ...layout, first: clearCols(layout.first), second: clearCols(layout.second) }
 }
 
-/** 크기 필드를 빼고 같은 트리인지. */
 export function sameShape(a: Layout, b: Layout): boolean {
   if ('pane' in a || 'pane' in b) return 'pane' in a && 'pane' in b && a.pane === b.pane
   return a.split === b.split && sameShape(a.first, b.first) && sameShape(a.second, b.second)
-}
-
-export function columnCount(layout: Layout): number {
-  if ('pane' in layout) return 1
-  const [a, b] = [columnCount(layout.first), columnCount(layout.second)]
-  return layout.split === 'right' ? a + b : Math.max(a, b)
 }
 
 export function line(layout: Layout, split: SplitDirection): Layout[] {

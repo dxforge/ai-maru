@@ -1,16 +1,19 @@
 import { PANE_MIN } from '../../../shared/layout'
 import { naturalWidth, required, type Box, type Size } from './grid'
 import {
+  clearCols,
   EPSILON,
   line,
   panes,
+  withoutCols,
+  withoutWeight,
   type FocusDirection,
   type Layout,
+  type Split,
   type SplitDirection,
   type Widths
 } from './layout'
 
-type Split = Extract<Layout, { split: SplitDirection }>
 type Side = 'first' | 'second'
 export type Path = Side[]
 
@@ -18,10 +21,7 @@ export type Path = Side[]
  * 끌 수 있는 경계. `line` 은 `path` 의 줄에서 `index` 번째 항목과 그다음 항목 사이고, `edge` 는 columns 보기에서 cell 의
  * 오른쪽 끝이다. `pos` 는 경계의 px 위치, `start`·`end` 는 경계가 걸친 범위다.
  */
-export type Divider = (
-  | { kind: 'line'; path: Path; index: number; split: SplitDirection }
-  | { kind: 'edge'; split: 'right' }
-) & { pos: number; start: number; end: number }
+export type Divider = Target & { pos: number; start: number; end: number }
 
 export type Target =
   | { kind: 'line'; path: Path; index: number; split: SplitDirection }
@@ -90,7 +90,7 @@ const isColumns = (widths: Widths, split: SplitDirection): widths is { cols: num
   widths !== 'even' && split === 'right'
 
 export function dividers(layout: Layout, boxes: Map<number, Box>, widths: Widths): Divider[] {
-  if ([...panes(layout)].some((p) => !boxes.has(p))) return []
+  if (panes(layout).some((p) => !boxes.has(p))) return []
   const out: Divider[] = lines(layout).flatMap(({ path, root }) => {
     const items = line(root, root.split)
     const area = bounds(root, boxes)
@@ -121,7 +121,6 @@ export function dividers(layout: Layout, boxes: Map<number, Box>, widths: Widths
   return out
 }
 
-/** columns 보기에서 `layout` 안의 pane 마다 열 수로 잰 오른쪽 끝. */
 function naturalRights(
   layout: Layout,
   cols: number,
@@ -136,6 +135,15 @@ function naturalRights(
   ])
 }
 
+function touchingRight(region: Layout, cols: number, cellWidth: number): Set<number> {
+  const edge = naturalWidth(region, cols, cellWidth)
+  return new Set(
+    [...naturalRights(region, cols, cellWidth)]
+      .filter(([, r]) => Math.abs(r - edge) < EPSILON)
+      .map(([p]) => p)
+  )
+}
+
 /**
  * columns 보기의 좌우 밀기. `region` 안에서 열 수로 잰 오른쪽 끝이 `region` 의 오른쪽 끝에 닿는 pane 들의 열 수를
  * `delta` 만큼 바꾼다. 그 pane 들 모두 20열과 `maxCols` 사이에 있게 `delta` 를 줄인다.
@@ -146,37 +154,24 @@ function pushCols(
   ctx: ResizeContext & { widths: { cols: number } }
 ): Layout {
   const { cols } = ctx.widths
-  const cw = ctx.cell.width
-  const edge = naturalWidth(region, cols, cw)
-  const touching = new Set(
-    [...naturalRights(region, cols, cw)]
-      .filter(([, r]) => Math.abs(r - edge) < EPSILON)
-      .map(([p]) => p)
-  )
-  let low = 0
-  let high = 0
-  let first = true
-  mapLeaves(region, (leaf) => {
-    if (!touching.has(leaf.pane)) return leaf
-    const cur = leaf.cols ?? cols
-    const [lo, hi] = [
-      Math.min(0, PANE_MIN.cols - cur),
-      Math.max(0, Math.max(ctx.maxCols, cur) - cur)
-    ]
-    ;[low, high] = first ? [lo, hi] : [Math.max(low, lo), Math.min(high, hi)]
-    first = false
-    return leaf
-  })
+  const touching = touchingRight(region, cols, ctx.cell.width)
+  const curs = panes(region)
+    .filter((p) => touching.has(p))
+    .map((p) => colsOf(region, p) ?? cols)
+  const low = Math.max(...curs.map((cur) => Math.min(0, PANE_MIN.cols - cur)))
+  const high = Math.min(...curs.map((cur) => Math.max(0, Math.max(ctx.maxCols, cur) - cur)))
   const by = Math.max(low, Math.min(high, delta))
   if (by === 0) return region
   return mapLeaves(region, (leaf) => {
     if (!touching.has(leaf.pane)) return leaf
     const next = (leaf.cols ?? cols) + by
-    const copy = { ...leaf }
-    if (next === cols) delete copy.cols
-    else copy.cols = next
-    return copy
+    return next === cols ? withoutCols(leaf) : { ...leaf, cols: next }
   })
+}
+
+function colsOf(layout: Layout, pane: number): number | undefined {
+  if ('pane' in layout) return layout.pane === pane ? layout.cols : undefined
+  return colsOf(layout.first, pane) ?? colsOf(layout.second, pane)
 }
 
 /**
@@ -251,19 +246,9 @@ export function keyResize(
   const sign = dir === 'right' || dir === 'down' ? 1 : -1
   if (isColumns(ctx.widths, split)) {
     const widths = ctx.widths
-    return mapLeaves(layout, (leaf) => {
-      if (leaf.pane !== focused) return leaf
-      const cur = leaf.cols ?? widths.cols
-      const next = Math.max(
-        Math.min(cur, PANE_MIN.cols),
-        Math.min(Math.max(ctx.maxCols, cur), cur + sign)
-      )
-      if (next === cur) return leaf
-      const copy = { ...leaf }
-      if (next === widths.cols) delete copy.cols
-      else copy.cols = next
-      return copy
-    })
+    return mapLeaves(layout, (leaf) =>
+      leaf.pane === focused ? pushCols(leaf, sign, { ...ctx, widths }) : leaf
+    )
   }
   const owners = linesOf(layout, focused)
     .filter((l) => l.split === split)
@@ -280,37 +265,20 @@ export function keyResize(
   return moveDivider(layout, { kind: 'line', path: l.path, index, split }, sign, ctx)
 }
 
-function clearWeight(node: Layout): Layout {
-  if (node.weight === undefined) return node
-  const copy = { ...node }
-  delete copy.weight
-  return copy
-}
-
-function clearCols(node: Layout): Layout {
-  return mapLeaves(node, (leaf) => {
-    if (leaf.cols === undefined) return leaf
-    const copy = { ...leaf }
-    delete copy.cols
-    return copy
-  })
-}
-
 /**
  * 경계 `d` 가 나누는 줄을 같은 크기로 되돌린다. 비율로 나누는 줄은 항목의 몫만 지워 안쪽 나눔은 그대로 둔다. columns
  * 보기의 좌우 줄은 그 줄 안 pane 의 열 수를, cell 오른쪽 끝은 그 끝이 미는 pane 의 열 수를 지운다.
  */
-export function equalizeLine(layout: Layout, d: Target, widths: Widths): Layout {
+export function equalizeLine(layout: Layout, d: Target, widths: Widths, cellWidth: number): Layout {
   if (d.kind === 'edge') {
     if (widths === 'even') return layout
-    const edge = naturalWidth(layout, widths.cols, 1)
-    const touching = [...naturalRights(layout, widths.cols, 1)]
-      .filter(([, r]) => Math.abs(r - edge) < EPSILON)
-      .map(([p]) => p)
-    return mapLeaves(layout, (leaf) => (touching.includes(leaf.pane) ? clearCols(leaf) : leaf))
+    const touching = touchingRight(layout, widths.cols, cellWidth)
+    return mapLeaves(layout, (leaf) => (touching.has(leaf.pane) ? withoutCols(leaf) : leaf))
   }
   const root = nodeAt(layout, d.path) as Split
-  const next = isColumns(widths, d.split) ? (clearCols(root) as Split) : mapItems(root, clearWeight)
+  const next = isColumns(widths, d.split)
+    ? (clearCols(root) as Split)
+    : mapItems(root, withoutWeight)
   return replaceAt(layout, d.path, next)
 }
 
@@ -318,8 +286,8 @@ export function equalizeLine(layout: Layout, d: Target, widths: Widths): Layout 
 export function equalizeAll(layout: Layout, widths: Widths): Layout {
   const walk = (node: Layout, outer?: SplitDirection): Layout => {
     const keep = outer !== undefined && isColumns(widths, outer)
-    const bare = keep ? node : clearWeight(node)
-    if ('pane' in bare) return widths === 'even' ? bare : clearCols(bare)
+    const bare = keep ? node : withoutWeight(node)
+    if ('pane' in bare) return widths === 'even' ? bare : withoutCols(bare)
     return { ...bare, first: walk(bare.first, bare.split), second: walk(bare.second, bare.split) }
   }
   return walk(layout)

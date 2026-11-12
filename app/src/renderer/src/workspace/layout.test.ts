@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  columnCount,
+  naturalCols,
   edgesOf,
   neighbor,
   panes,
@@ -208,17 +208,17 @@ describe('edgesOf', () => {
   })
 })
 
-describe('columnCount', () => {
+describe('naturalCols', () => {
   it('좌우로 나누면 양쪽을 더하고, 위아래로 나누면 큰 쪽을 쓴다', () => {
-    expect(columnCount({ pane: 1 })).toBe(1)
-    expect(columnCount(threePanes())).toBe(2)
-    expect(columnCount(splitPane(threePanes(), 3, 4, 'right'))).toBe(3)
-    expect(columnCount(splitPane({ pane: 1 }, 1, 2, 'down'))).toBe(1)
+    expect(naturalCols({ pane: 1 }, 1)).toBe(1)
+    expect(naturalCols(threePanes(), 1)).toBe(2)
+    expect(naturalCols(splitPane(threePanes(), 3, 4, 'right'), 1)).toBe(3)
+    expect(naturalCols(splitPane({ pane: 1 }, 1, 2, 'down'), 1)).toBe(1)
   })
 
   it('고르지 않게 나눠도 늘어선 pane 수다', () => {
     const layout = splitPane(splitPane({ pane: 1 }, 1, 2, 'right'), 2, 3, 'right')
-    expect(columnCount(layout)).toBe(3)
+    expect(naturalCols(layout, 1)).toBe(3)
   })
 })
 
@@ -302,8 +302,38 @@ describe('크기 필드와 split·닫기', () => {
     })
   })
 
+  it('좌우 줄에 pane 이 늘거나 줄면 항목 안 위아래 묶음의 열 수도 지운다', () => {
+    const grouped: Layout = {
+      split: 'right',
+      first: { pane: 1 },
+      second: { split: 'down', first: { pane: 2, cols: 120, weight: 2 }, second: { pane: 3 } }
+    }
+    const bare = { split: 'down', first: { pane: 2, weight: 2 }, second: { pane: 3 } }
+    const groupOf = (l: Layout): Layout => {
+      if ('pane' in l) throw new Error('pane')
+      return 'pane' in l.second
+        ? groupOf(l.first)
+        : l.second.split === 'down'
+          ? l.second
+          : groupOf(l.second)
+    }
+    expect(groupOf(splitPane(grouped, 1, 4, 'right'))).toEqual(bare)
+    expect(groupOf(splitRoot(grouped, 4, 'right'))).toEqual(bare)
+    const wider: Layout = {
+      ...grouped,
+      first: { split: 'right', first: { pane: 1 }, second: { pane: 5 } }
+    }
+    expect(groupOf(removePane(wider, 5)!.layout)).toEqual(bare)
+    expect(splitRoot(grouped, 4, 'right')).toMatchObject({ first: { second: bare } })
+    expect(
+      removePane(
+        { ...grouped, first: { split: 'right', first: { pane: 1 }, second: { pane: 5 } } },
+        5
+      )!.layout
+    ).toMatchObject({ second: bare })
+  })
+
   it('줄 안쪽의 다른 방향 나눔과 바깥 줄은 그대로 둔다', () => {
-    // A | (B / C) 에서 B 를 아래로 나누면 B·C 줄만 지운다.
     const layout: Layout = {
       split: 'right',
       first: { pane: 1, weight: 2 },

@@ -15,10 +15,6 @@ export function required(layout: Layout, min: Size): Size {
     : { width: Math.max(a.width, b.width), height: a.height + b.height }
 }
 
-/**
- * columns 보기에서 `layout` 의 px 폭. pane 은 열 수(`cols`, 없으면 `cols`)가 들어가는 폭이고, 좌우는 더하고 위아래는
- * 큰 쪽이다. 글자 칸 폭을 모르면 0 이다.
- */
 export function naturalWidth(layout: Layout, cols: number, cellWidth: number): number {
   if ('pane' in layout) return columnWidth(layout.cols ?? cols, cellWidth)
   const [a, b] = [

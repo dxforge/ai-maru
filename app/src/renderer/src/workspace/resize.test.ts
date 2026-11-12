@@ -249,7 +249,7 @@ describe('keyResize', () => {
 
 describe('균등분할', () => {
   it('A | B 경계를 맞추면 A·B 묶음·C 의 몫만 지우고 B1/B2 는 그대로 둔다', () => {
-    expect(equalizeLine(grouped, between, 'even')).toEqual({
+    expect(equalizeLine(grouped, between, 'even', 8)).toEqual({
       split: 'right',
       first: { pane: 1 },
       second: {
@@ -266,11 +266,11 @@ describe('균등분할', () => {
 
   it('B1/B2 경계를 맞추면 그 둘만 지운다', () => {
     const d: Target = { kind: 'line', path: ['second', 'first'], index: 0, split: 'down' }
-    expect(equalizeLine(grouped, d, 'even')).toMatchObject({
+    expect(equalizeLine(grouped, d, 'even', 8)).toMatchObject({
       first: { weight: 10 },
       second: { first: { first: { pane: 2 }, second: { pane: 3 }, weight: 30 } }
     })
-    expect(equalizeLine(grouped, d, 'even')).not.toHaveProperty('second.first.first.weight')
+    expect(equalizeLine(grouped, d, 'even', 8)).not.toHaveProperty('second.first.first.weight')
   })
 
   it('cell 전체를 맞추면 모든 몫을 지운다', () => {
@@ -301,11 +301,24 @@ describe('균등분할', () => {
       first: { pane: 1, weight: 3 },
       second: { split: 'down', first: { pane: 2 }, second: { pane: 3 }, weight: 1 }
     })
-    expect(equalizeLine(layout, between, { cols: 80 })).toMatchObject({
+    expect(equalizeLine(layout, between, { cols: 80 }, 8)).toMatchObject({
       first: { pane: 1, weight: 3 },
       second: { weight: 1, first: { weight: 2 } }
     })
-    expect(equalizeLine(layout, between, { cols: 80 })).not.toHaveProperty('first.cols')
+    expect(equalizeLine(layout, between, { cols: 80 }, 8)).not.toHaveProperty('first.cols')
+  })
+
+  it('columns 의 cell 오른쪽 끝은 끌 때와 같은 글자 칸 폭으로 그 끝에 닿는 pane 을 찾는다', () => {
+    // 글자 칸 4px 에서 위 줄(80열 둘)과 아래 pane(163열)의 오른쪽 끝이 같다.
+    const layout: Layout = {
+      split: 'down',
+      first: { split: 'right', first: { pane: 1 }, second: { pane: 2 } },
+      second: { pane: 3, cols: 163 }
+    }
+    expect(equalizeLine(layout, { kind: 'edge', split: 'right' }, { cols: 80 }, 4)).toEqual({
+      ...layout,
+      second: { pane: 3 }
+    })
   })
 
   it('columns 의 cell 오른쪽 끝은 그 끝이 미는 pane 의 열 수만 지운다', () => {
@@ -314,7 +327,7 @@ describe('균등분할', () => {
       first: { pane: 1, cols: 100 },
       second: { pane: 2, cols: 60 }
     }
-    expect(equalizeLine(layout, { kind: 'edge', split: 'right' }, { cols: 80 })).toEqual({
+    expect(equalizeLine(layout, { kind: 'edge', split: 'right' }, { cols: 80 }, 8)).toEqual({
       split: 'right',
       first: { pane: 1, cols: 100 },
       second: { pane: 2 }

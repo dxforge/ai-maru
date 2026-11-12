@@ -19,7 +19,6 @@ import {
 const handle = (page: Page) => page.locator('.panes.selected .split-handle.right')
 const badges = (page: Page) => page.locator('.panes.selected .size-badge')
 
-// 셸이 받은 SIGWINCH 를 센다. 끄는 동안 pty 크기가 바뀌면 이 수가 는다.
 async function countResizes(page: Page): Promise<void> {
   await run(page, "n=0; trap 'n=$((n+1))' WINCH; echo trap-$((1+1))", 'trap-2')
 }
@@ -154,4 +153,27 @@ test('columns 보기에서 끝까지 스크롤한 cell 의 경계를 좁히는 �
     .poll(async () => (await line.boundingBox())!.x)
     .toBeCloseTo(box.x - 5 * cell.width, 0)
   await page.mouse.up()
+})
+
+test('경계를 끄는 중에 ⌃⌘방향키로 바꾼 크기는 이어지는 끌기가 덮지 않는다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  const before = await shellSize(page)
+  const cell = await cellSize(page)
+  const from = await center(page)
+
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x - 6 * cell.width, from.y, { steps: 3 })
+  await expect(badges(page).nth(1)).toHaveText(`${before.cols + 6}×${before.rows}`)
+  await page.keyboard.down('Control')
+  await page.keyboard.down('Meta')
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  await page.mouse.move(from.x - 7 * cell.width, from.y)
+  await page.mouse.up()
+  await page.keyboard.up('Meta')
+  await page.keyboard.up('Control')
+
+  await expect.poll(async () => (await shellSize(page)).cols).toBe(before.cols + 8)
 })

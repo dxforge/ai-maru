@@ -743,8 +743,8 @@ function splitSelected(direction: SplitDirection, init?: PaneInit): void {
 }
 
 /**
- * 끌거나 ⌃⌘방향키로 바꾸는 중인 cell 의 layout. pane 상자는 이것으로 그리고 터미널의 열·행 수는 저장된 layout 으로 주어,
- * 놓을 때 pty 크기가 한 번만 바뀐다 — 끄는 동안 크기 변경이 몰리면 claude 가 거듭 다시 그린다.
+ * 끌거나 ⌃⌘방향키로 바꾸는 중인 cell 의 layout. pane 상자는 이것으로 그리고, 터미널의 열·행 수는 저장된 layout 으로
+ * 준다. 그래서 놓을 때 pty 크기가 한 번만 바뀐다. 끄는 동안 크기 변경이 몰리면 claude 가 거듭 다시 그리기 때문이다.
  */
 type Preview = { cell: number; layout: Layout; by: 'drag' | 'key' }
 const preview = shallowRef<Preview | null>(null)
@@ -768,7 +768,6 @@ function boxesOf(c: Cell, layout: Layout): Map<number, Box> | undefined {
   )
 }
 
-// columns 에서 pane 하나는 보이는 터미널 영역보다 넓게 끌지 않는다.
 function visibleCols(cellWidth: number): number {
   const area = terminalsArea.value
   if (!area) return PANE_MAX_COLS
@@ -798,6 +797,10 @@ function commitPreview(): void {
   if (c && p.layout !== c.layout) workspaces.resize(c.key, p.layout)
 }
 
+// columns 보기에서 끝까지 스크롤한 채 pane 을 좁히면 내용 폭이 줄어 브라우저가 스크롤을 당긴다. 그만큼 cell 이 포인터
+// 밑에서 옆으로 밀린다. 끄는 동안은 시작할 때의 스크롤 폭을 붙잡아 둔다.
+const scrollHold = ref(0)
+
 function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
   if (e.button !== 0) return
   commitPreview()
@@ -807,17 +810,23 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
   const axis = d.split === 'right' ? 'clientX' : 'clientY'
   const unit = d.split === 'right' ? ctx.cell.width : ctx.cell.height
   const from = e[axis]
+  let last = 0
   preview.value = { cell: c.key, layout: base, by: 'drag' }
-  holdScroll()
+  const area = terminalsArea.value
+  if (viewMode.value === 'columns' && area) scrollHold.value = area.scrollWidth
   const handle = e.currentTarget as Element
   handle.setPointerCapture(e.pointerId)
   const step = (m: PointerEvent): void => {
+    // 끄는 중에 ⌃⌘방향키로 바꾼 크기를 덮지 않도록 끌기를 그친다.
+    if (preview.value?.cell !== c.key || preview.value.by !== 'drag') return end()
     // 끄는 동안 pane 이 닫히거나 나뉘면 끌던 경계가 없어진 것이라 버린다.
-    if (preview.value?.cell !== c.key || !sameShape(c.layout, base)) {
+    if (!sameShape(c.layout, base)) {
       preview.value = null
       return end()
     }
     const delta = Math.round((m[axis] - from) / unit)
+    if (delta === last) return
+    last = delta
     preview.value = { cell: c.key, layout: moveDivider(base, d, delta, ctx), by: 'drag' }
   }
   const end = (): void => {
@@ -832,14 +841,6 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
   window.addEventListener('pointercancel', end)
 }
 
-// columns 보기에서 끝까지 스크롤한 채 pane 을 좁히면 내용 폭이 줄어 브라우저가 스크롤을 당기고, 그만큼 cell 이
-// 포인터 밑에서 미끄러진다. 끄는 동안은 시작할 때의 스크롤 폭을 붙잡아 둔다.
-const scrollHold = ref(0)
-function holdScroll(): void {
-  const area = terminalsArea.value
-  if (viewMode.value === 'columns' && area) scrollHold.value = area.scrollWidth
-}
-
 function handleKey(d: Divider): string {
   return d.kind === 'line' ? `${d.path.join('.')}:${d.index}` : 'edge'
 }
@@ -852,7 +853,10 @@ function handleStyle(d: Divider): Record<string, string> {
 
 function equalizeAt(c: Cell, d: Target): void {
   commitPreview()
-  workspaces.resize(c.key, equalizeLine(c.layout, d, widthsOf(columnColsOf(c))))
+  workspaces.resize(
+    c.key,
+    equalizeLine(c.layout, d, widthsOf(columnColsOf(c)), cellOf(fontOf(c)).width)
+  )
 }
 
 function equalizeSelected(): void {

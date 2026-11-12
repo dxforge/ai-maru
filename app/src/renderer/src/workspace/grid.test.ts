@@ -160,7 +160,6 @@ describe('snapRects', () => {
 
   it('columns 에서 열 수를 바꾼 pane 은 그 열 수의 폭을 받고, 좁은 줄의 마지막 pane 이 남는 폭을 채운다', () => {
     const cw = 9
-    // (A|B)/C 에서 A 가 100열.
     const layout: Layout = {
       split: 'down',
       first: { split: 'right', first: { pane: 1, cols: 100 }, second: { pane: 2 } },

@@ -23,7 +23,6 @@
   --text-4: 14px;
   /* 사이드바·Canvas·panel bar 맨 위 줄의 높이다. 세 줄의 아래 선이 같은 높이에 놓이도록 이 값 하나로 맞춘다. */
   --titlebar-height: 36px;
-  /* pane 경계를 잡는 영역의 폭. 보이는 선은 1px 그대로다. */
   --split-grab: 8px;
   --font-ui: system-ui;
   --font-mono: ui-monospace;

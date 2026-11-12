@@ -124,9 +124,9 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 ## pane 경계와 글자 칸 격자
 
-나란히 놓인 pane 끼리 터미널 행이, 위아래로 놓인 pane 끼리 열이 이어지도록 pane 경계를 터미널 글자 칸 크기의 배수에 둔다. columns 보기의 좌우 경계는 pane 하나의 폭의 배수에 둔다. pane 하나의 폭(`columnWidth`(`columns.ts`))은 글자 칸 폭의 배수라, columns 보기에서도 위아래 pane 끼리 열이 이어진다. ⌘+ / ⌘- 로 cell 마다 글꼴 크기가 다를 수 있으므로 `App.vue` 는 글꼴마다 마지막으로 잰 글자 칸 크기를 둔다. cell 마다 그 글꼴의 글자 칸 크기를 `--row`·`--cell` 로, 터미널 왼쪽 여백 4px 를 `--pad` 로 그 cell 의 `.panes` 요소에 둔다. 여백은 `.xterm` 의 `padding-left` 다.
+나란히 놓인 pane 끼리 터미널 행이, 위아래로 놓인 pane 끼리 열이 이어지도록 pane 경계를 터미널 글자 칸 크기의 배수에 둔다. columns 보기의 좌우 경계는 pane 마다 그 열 수로 잰 폭(`columnWidth`(`columns.ts`))을 더한 곳에 둔다. 그 폭은 글자 칸 폭의 배수라, columns 보기에서도 위아래 pane 끼리 열이 이어진다. ⌘+ / ⌘- 로 cell 마다 글꼴 크기가 다를 수 있으므로 `App.vue` 는 글꼴마다 마지막으로 잰 글자 칸 크기를 둔다. cell 마다 그 글꼴의 글자 칸 크기를 `--row`·`--cell` 로, 터미널 왼쪽 여백 4px 를 `--pad` 로 그 cell 의 `.panes` 요소에 둔다. 여백은 `.xterm` 의 `padding-left` 다.
 
-`App.vue` 는 pane 배치(`snapRects`(`grid.ts`))와 함께 터미널의 열·행 수를 정해 `TerminalView` 에 `cols`·`rows` 로 넘긴다. `TerminalView` 는 처음 받은 열·행 수로 pty 에 붙고, 그 뒤에는 primary 일 때만 그 값으로 `term.resize` 를 부른다. pane 크기를 정하려고 화면에서 재는 것은 cell 마다 pane 이 놓일 영역(`.grid`)의 크기와 글자 칸 크기다. columns 보기는 영역 폭을 쓰지 않고, pane 마다 열 수(끌어서 바꾼 pane 의 `cols`, 없으면 `layout.column-cols` 나 ⇧⌘. / ⇧⌘, 로 바꾼 cell 의 값)로 pane 폭을 만든다.
+`App.vue` 는 pane 배치(`snapRects`(`grid.ts`))와 함께 터미널의 열·행 수를 정해 `TerminalView` 에 `cols`·`rows` 로 넘긴다. `TerminalView` 는 처음 받은 열·행 수로 pty 에 붙고, 그 뒤에는 primary 일 때만 그 값으로 `term.resize` 를 부른다. pane 크기를 정하려고 화면에서 재는 것은 cell 마다 pane 이 놓일 영역(`.grid`)의 크기와 글자 칸 크기다. columns 보기는 영역 폭을 쓰지 않고, pane 마다 열 수(끌거나 ⌃⌘←/→ 로 바꾼 pane 의 `cols`, 없으면 `layout.column-cols` 나 ⇧⌘. / ⇧⌘, 로 바꾼 cell 의 값)로 pane 폭을 만든다.
 
 pane 헤더는 터미널 한 행이다. 높이는 `--row` 이고 터미널과 같은 글꼴·크기로 쓴다. 헤더는 `config.toml` 의 `layout.header` 에 따라 pane 의 맨 아래(기본값)나 맨 위에 놓이고(`docs/config.md`), 터미널은 나머지 행을 쓴다. pane 헤더처럼 격자 위에 놓이는 것은 터미널 글꼴을, 사이드바·팔레트·Canvas 처럼 격자 밖의 것은 system-ui 를 쓴다.
 
@@ -134,9 +134,7 @@ cell 의 pane 들은 cell 띠(`.cell-band`)로 한 묶음으로 보인다. 띠�
 
 경계선은 자리를 차지하지 않는다. 1px 라도 자리를 차지하면 그 뒤 pane 이 격자에서 밀리기 때문이다. 좌우 pane 의 경계선은 오른쪽 pane 의 터미널 왼쪽 여백 위에 겹쳐 그리고, 위아래 pane 은 헤더가 아래면 위 pane 의 헤더가, 위면 아래 pane 의 헤더가 경계가 된다.
 
-pane 은 터미널 20열 × 5행(`PANE_MIN`(`app/src/shared/layout.ts`)) 아래로 내려가지 않는다. 열은 왼쪽 여백·스크롤바를 뺀 터미널 열, 행은 헤더를 뺀 터미널 행이다. `snapRects`(`grid.ts`)는 같은 방향으로 늘어선 항목(pane 하나, 또는 다른 방향으로 나눈 부분 하나)을 한 번에 나눈다. 고르게 나눈 몫보다 필요한 크기(`required`)가 큰 항목은 그 크기를 먼저 받고, 나머지 항목은 남은 길이를 고르게 나눠 받는다. 항목마다 몫(`weight`)이 있으면 고르게 나누지 않고 몫 비율로 나눈다. columns 보기의 좌우는 비율로 나누지 않고 항목마다 열 수로 잰 폭(`naturalWidth`)을 주고, 줄의 마지막 항목이 남는 폭을 채운다.
-
-pane 경계를 끌거나 ⌃⌘방향키로 옮기는 동안 `App.vue` 는 바꾼 layout(미리보기)으로 pane 상자만 그리고, 터미널의 열·행 수는 저장된 layout 으로 준다. 놓거나 ⌃⌘ 를 놓을 때 미리보기를 저장해 pty 크기가 한 번만 바뀐다. 끄는 동안 크기 변경이 몰리면 claude 같은 프로그램이 거듭 다시 그리기 때문이다. 경계를 옮기는 계산은 `resize.ts` 에 있다. 창·사이드바·글꼴 크기가 바뀌어 cell 이 pane 들이 필요한 크기보다 작아지면 뒤쪽 pane 이 cell 끝 밖으로 나가 잘린다. cell 안에서 스크롤하지 않는다. 나눠서 밖으로 나가는 길이가 늘어나는 split 은 `canSplit` 이 거절한다. 단축키·메뉴는 토스트를 띄우고, `maru pane new` 는 `no_space` 오류를 받는다. columns 보기의 좌우 split 은 cell 이 그만큼 넓어지므로 거절하지 않는다.
+pane 은 터미널 20열 × 5행(`PANE_MIN`(`app/src/shared/layout.ts`)) 아래로 내려가지 않는다. 열은 왼쪽 여백·스크롤바를 뺀 터미널 열, 행은 헤더를 뺀 터미널 행이다. `snapRects`(`grid.ts`)는 같은 방향으로 늘어선 항목(pane 하나, 또는 다른 방향으로 나눈 부분 하나)을 한 번에 나눈다. 고르게 나눈 몫보다 필요한 크기(`required`)가 큰 항목은 그 크기를 먼저 받고, 나머지 항목은 남은 길이를 몫(`weight`) 비율로 나눠 받는다. 몫이 없는 항목은 1 이다. 창·사이드바·글꼴 크기가 바뀌어 cell 이 pane 들이 필요한 크기보다 작아지면 뒤쪽 pane 이 cell 끝 밖으로 나가 잘린다. cell 안에서 스크롤하지 않는다. 나눠서 밖으로 나가는 길이가 늘어나는 split 은 `canSplit` 이 거절한다. 단축키·메뉴는 토스트를 띄우고, `maru pane new` 는 `no_space` 오류를 받는다. columns 보기의 좌우 split 은 cell 이 그만큼 넓어지므로 거절하지 않는다.
 
 ## 글자 폭
 
