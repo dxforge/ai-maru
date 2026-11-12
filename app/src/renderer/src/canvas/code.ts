@@ -35,12 +35,34 @@ export class CodeBody {
   }
 
   #highlighted: Promise<string | null> | undefined
+  /** 받아 둔 강조. 아직 받지 못했으면 undefined, 강조하지 않으면 null 이다. */
+  html: string | null | undefined
 
   /** 강조한 HTML. 한 번만 worker 에 보내고, 카드를 접었다 펴면 받아 둔 것을 쓴다. 강조하지 않으면 null 이다. */
   highlighted(): Promise<string | null> {
-    return (this.#highlighted ??=
-      this.code.length > HIGHLIGHT_MAX_CHARS ? Promise.resolve(null) : highlight(this))
+    return (this.#highlighted ??= (
+      this.code.length > HIGHLIGHT_MAX_CHARS ? Promise.resolve(null) : highlight(this)
+    ).then((html) => (this.html = html)))
   }
+
+  /** 강조를 `ms` 까지 기다린다. */
+  ready(ms: number): Promise<void> {
+    return Promise.race([
+      this.highlighted().then(
+        () => {},
+        () => {}
+      ),
+      new Promise<void>((resolve) => setTimeout(resolve, ms))
+    ])
+  }
+}
+
+/**
+ * worker 를 띄우고 작은 조각을 강조해 둔다. 처음 하는 tokenize 는 같은 크기의 두 번째보다 약 0.2초 더 걸려(빌드한 앱에서
+ * TypeScript 5KB 225ms, 두 번째 24ms), 처음 여는 코드 문서가 그만큼 늦게 강조되기 때문이다.
+ */
+export function warmHighlighter(): void {
+  void new CodeBody('const a = 1\n', 'warm.ts').highlighted()
 }
 
 /**

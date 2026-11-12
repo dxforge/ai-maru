@@ -160,9 +160,28 @@ export function createCanvas(now: () => number = Date.now) {
     return groups
   })
 
-  // 지금 보기에 들지 않는 문서로는 닫힌 패널을 열지 않는다. 열어도 그 문서는 보이지 않고 터미널 영역만 좁아지기 때문이다.
+  // 같은 문서가 강조를 기다리는 동안 다시 오면, 늦게 끝난 앞 것이 새 것을 덮지 않게 마지막으로 온 것만 넣는다.
+  const waiting = new Map<string, CanvasEntry>()
+
+  // 코드 문서는 강조를 잠깐 기다렸다 넣는다. 강조가 제때 오면 색 없는 글자를 그렸다가 색을 입히는 깜빡임 없이 처음부터
+  // 색 입힌 화면을 그린다.
   function put(item: CanvasItem): void {
     const entry = toEntry(item, now())
+    const code = codeBodyOf(entry)
+    if (!code) {
+      waiting.delete(entry.key)
+      return show(entry)
+    }
+    waiting.set(entry.key, entry)
+    void code.ready(CODE_WAIT_MS).then(() => {
+      if (waiting.get(entry.key) !== entry) return
+      waiting.delete(entry.key)
+      show(entry)
+    })
+  }
+
+  // 지금 보기에 들지 않는 문서로는 닫힌 패널을 열지 않는다. 열어도 그 문서는 보이지 않고 터미널 영역만 좁아지기 때문이다.
+  function show(entry: CanvasEntry): void {
     if (holding) return void held.value.push(entry)
     place(entry)
     if (inView(entry)) open.value = true
@@ -256,6 +275,9 @@ function release(entry: CanvasEntry): void {
 // 다시 오면 새 entry 라 새로 렌더한다. reactive 한 목록에 넣으면 Vue 가 토큰까지 proxy 로 감싸므로 entry 밖에 둔다.
 const bodies = new WeakMap<CanvasEntry, MarkdownBody>()
 const codeBodies = new WeakMap<CanvasEntry, CodeBody>()
+
+/** 코드 문서를 넣기 전에 강조를 기다리는 시간. 넘으면 강조 없이 넣고, 받으면 색을 입힌다. */
+export const CODE_WAIT_MS = 100
 
 export function bodyOf(entry: CanvasEntry): MarkdownBody | undefined {
   return bodies.get(toRaw(entry))

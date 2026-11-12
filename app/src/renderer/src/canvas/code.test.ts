@@ -31,6 +31,9 @@ describe('CodeBody', () => {
 
 describe('CodeBody.highlighted', () => {
   it('기준보다 긴 파일은 worker 에 보내지 않고 강조 없이 둔다', async () => {
-    expect(await new CodeBody('x'.repeat(HIGHLIGHT_MAX_CHARS + 1), 'a.ts').highlighted()).toBeNull()
+    const body = new CodeBody('x'.repeat(HIGHLIGHT_MAX_CHARS + 1), 'a.ts')
+    expect(body.html).toBeUndefined()
+    expect(await body.highlighted()).toBeNull()
+    expect(body.html).toBeNull()
   })
 })

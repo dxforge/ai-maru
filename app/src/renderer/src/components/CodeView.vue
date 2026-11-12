@@ -12,8 +12,8 @@ const numbers = computed(() => Array.from({ length: body.count }, (_, i) => i + 
 
 // 강조는 worker 에서 받는다. 받기 전과 강조하지 않는 파일은 글자만 그린다. `CanvasDoc` 이 본문마다 이 컴포넌트를 새로
 // 만들므로, 앞 본문의 결과가 늦게 와도 지금 본문에 붙지 않는다.
-const html = ref<string | null>(null)
-void body.highlighted().then((h) => (html.value = h))
+const html = ref(body.html ?? null)
+if (body.html === undefined) void body.highlighted().then((h) => (html.value = h))
 
 // `CardStream` 이 카드 자리를 맞추는 post watcher 가 먼저 돈 뒤에 그 줄로 스크롤한다. 닫혀 있던 Canvas 가 이 문서로
 // 열리면 그때는 패널의 폭이 0 이라 스크롤되지 않으므로, 폭이 생기기를 기다린다.
