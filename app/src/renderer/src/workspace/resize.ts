@@ -145,8 +145,10 @@ function touchingRight(region: Layout, cols: number, cellWidth: number): Set<num
 }
 
 /**
- * columns 보기의 좌우 밀기. `region` 안에서 열 수로 잰 오른쪽 끝이 `region` 의 오른쪽 끝에 닿는 pane 들의 열 수를
- * `delta` 만큼 바꾼다. 그 pane 들 모두 20열과 `maxCols` 사이에 있게 `delta` 를 줄인다.
+ * columns 보기의 좌우 밀기. `region` 의 오른쪽 끝을 `delta` 글자 칸 옮긴다. 넓힐 때는 열 수로 잰 오른쪽 끝이 `region`
+ * 의 끝에 닿는 pane 들을 넓힌다. 좁힐 때는 새 끝을 넘는 pane 을 모두 새 끝까지 좁힌다. 위아래로 나눈 항목의 좁은 pane
+ * 도 같이 줄이지 않으면 저장한 열 수가 보이는 폭보다 작아지기 때문이다. 바뀌는 pane 이 모두 20열과 `maxCols` 사이에 있게
+ * `delta` 를 줄인다.
  */
 function pushCols(
   region: Layout,
@@ -154,17 +156,23 @@ function pushCols(
   ctx: ResizeContext & { widths: { cols: number } }
 ): Layout {
   const { cols } = ctx.widths
-  const touching = touchingRight(region, cols, ctx.cell.width)
-  const curs = panes(region)
-    .filter((p) => touching.has(p))
-    .map((p) => colsOf(region, p) ?? cols)
-  const low = Math.max(...curs.map((cur) => Math.min(0, PANE_MIN.cols - cur)))
-  const high = Math.min(...curs.map((cur) => Math.max(0, Math.max(ctx.maxCols, cur) - cur)))
+  const width = ctx.cell.width
+  if (width <= 0) return region
+  const edge = naturalWidth(region, cols, width)
+  const rights = naturalRights(region, cols, width)
+  const gap = (p: number) => Math.round((edge - rights.get(p)!) / width)
+  const all = panes(region).map((p) => ({ p, gap: gap(p), cur: colsOf(region, p) ?? cols }))
+  const touching = all.filter((x) => x.gap === 0)
+  const low = Math.min(0, Math.max(...all.map((x) => PANE_MIN.cols - x.cur - x.gap)))
+  const high = Math.min(...touching.map((x) => Math.max(0, Math.max(ctx.maxCols, x.cur) - x.cur)))
   const by = Math.max(low, Math.min(high, delta))
   if (by === 0) return region
+  const gaps = new Map(all.map((x) => [x.p, x.gap]))
   return mapLeaves(region, (leaf) => {
-    if (!touching.has(leaf.pane)) return leaf
-    const next = (leaf.cols ?? cols) + by
+    const g = gaps.get(leaf.pane)!
+    const change = by > 0 ? (g === 0 ? by : 0) : -Math.max(0, -by - g)
+    if (change === 0) return leaf
+    const next = (leaf.cols ?? cols) + change
     return next === cols ? withoutCols(leaf) : { ...leaf, cols: next }
   })
 }
@@ -233,8 +241,28 @@ function linesOf(
 }
 
 /**
+ * columns 보기에서 pane 상자의 오른쪽 끝에 놓인 경계. 좁은 pane 이나 남는 폭을 채우는 pane 은 열 수로 잰 폭보다 넓게
+ * 그려지므로, 그 pane 의 열 수가 아니라 화면에서 오른쪽에 닿은 경계를 옮겨야 화면이 바뀐다.
+ */
+function rightOf(layout: Layout, pane: number, ctx: ResizeContext): Target | undefined {
+  const box = ctx.boxes.get(pane)
+  if (!box) return undefined
+  const right = box.left + box.width
+  const found = dividers(layout, ctx.boxes, ctx.widths)
+    .filter(
+      (d) =>
+        d.split === 'right' &&
+        Math.abs(d.pos - right) < 0.5 &&
+        d.start <= box.top + EPSILON &&
+        d.end >= box.top + box.height - EPSILON
+    )
+    .sort((a, b) => a.end - a.start - (b.end - b.start))
+  return found[0]
+}
+
+/**
  * 포커스된 pane 의 `dir` 쪽 경계를 그쪽으로 한 글자 칸(위아래는 한 행) 옮긴다. 그쪽에 경계가 없으면 반대쪽 경계를
- * 그쪽으로 옮긴다. columns 보기의 좌우는 포커스된 pane 의 열 수를 하나 늘리거나 줄인다.
+ * 그쪽으로 옮긴다. columns 보기의 좌우는 포커스된 pane 의 오른쪽 끝에 놓인 경계를 끌기처럼 한 글자 칸 옮긴다.
  */
 export function keyResize(
   layout: Layout,
@@ -245,10 +273,8 @@ export function keyResize(
   const split: SplitDirection = dir === 'left' || dir === 'right' ? 'right' : 'down'
   const sign = dir === 'right' || dir === 'down' ? 1 : -1
   if (isColumns(ctx.widths, split)) {
-    const widths = ctx.widths
-    return mapLeaves(layout, (leaf) =>
-      leaf.pane === focused ? pushCols(leaf, sign, { ...ctx, widths }) : leaf
-    )
+    const d = rightOf(layout, focused, ctx)
+    return d ? moveDivider(layout, d, sign, ctx) : layout
   }
   const owners = linesOf(layout, focused)
     .filter((l) => l.split === split)

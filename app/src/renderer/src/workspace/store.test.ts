@@ -521,6 +521,16 @@ describe('workspaces', () => {
     expect(ws.cells().map((w) => 'paneCols' in w)).toEqual([false, false])
   })
 
+  it('setPaneCols 는 끌어서 바꾼 pane 의 열 수를 지운다', () => {
+    const ws = opened(1)
+    ws.split('right')
+    const c = selected(ws)
+    const [a, b] = c.panes.map((p) => p.key)
+    ws.resize(c.key, { split: 'right', first: { pane: a, cols: 120 }, second: { pane: b } })
+    ws.setPaneCols(c.key, 100)
+    expect(selected(ws).layout).toEqual({ split: 'right', first: { pane: a }, second: { pane: b } })
+  })
+
   it('나눈 pane 과 새로 연 cell 은 pane 폭을 바꾸거나 물려받지 않는다', () => {
     const ws = opened(1)
     ws.setPaneCols(selected(ws).key, 144)

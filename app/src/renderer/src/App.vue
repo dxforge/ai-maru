@@ -811,6 +811,7 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
   const unit = d.split === 'right' ? ctx.cell.width : ctx.cell.height
   const from = e[axis]
   let last = 0
+  let moved = false
   preview.value = { cell: c.key, layout: base, by: 'drag' }
   const area = terminalsArea.value
   if (viewMode.value === 'columns' && area) scrollHold.value = area.scrollWidth
@@ -827,18 +828,33 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
     const delta = Math.round((m[axis] - from) / unit)
     if (delta === last) return
     last = delta
+    moved = true
     preview.value = { cell: c.key, layout: moveDivider(base, d, delta, ctx), by: 'drag' }
   }
-  const end = (): void => {
+  const end = (u?: PointerEvent): void => {
     window.removeEventListener('pointermove', step)
     window.removeEventListener('pointerup', end)
     window.removeEventListener('pointercancel', end)
     scrollHold.value = 0
     commitPreview()
+    // `.split-handle` 이 경계 오른쪽 pane 의 왼쪽 여백을 덮는다. 끌지 않고 놓으면 그 여백을 누른 것처럼 밑의 pane 에 포커스를 준다.
+    if (!moved && u?.type === 'pointerup') {
+      const pane = paneAt(c, u.clientX, u.clientY)
+      if (pane !== undefined) terminals.get(pane)?.focus()
+    }
   }
   window.addEventListener('pointermove', step)
   window.addEventListener('pointerup', end)
   window.addEventListener('pointercancel', end)
+}
+
+function paneAt(c: Cell, x: number, y: number): number | undefined {
+  const el = document
+    .elementsFromPoint(x, y)
+    .map((e) => e.closest<HTMLElement>('.pane'))
+    .find((e) => e !== null)
+  const pty = el?.dataset.pty
+  return pty === undefined ? undefined : c.panes.find((p) => p.ptyId === pty)?.key
 }
 
 function handleKey(d: Divider): string {

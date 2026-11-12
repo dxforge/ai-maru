@@ -147,6 +147,40 @@ describe('columns 의 좌우 밀기', () => {
     })
   })
 
+  it('위아래로 나눈 왼쪽 항목을 좁은 pane 보다 좁히면 좁은 pane 도 새 끝까지 줄인다', () => {
+    // (A 120열 / B 80열) | C. B 는 A 폭으로 그려지므로, B 의 열 수를 그대로 두면 저장한 열 수가 보이는 폭보다 작아진다.
+    const layout: Layout = {
+      split: 'right',
+      first: { split: 'down', first: { pane: 1, cols: 120 }, second: { pane: 2 } },
+      second: { pane: 3 }
+    }
+    expect(moveDivider(layout, between, -30, ctxOf(layout, cols))).toMatchObject({
+      first: { first: { pane: 1, cols: 90 }, second: { pane: 2 } }
+    })
+    expect(moveDivider(layout, between, -50, ctxOf(layout, cols))).toMatchObject({
+      first: { first: { pane: 1, cols: 70 }, second: { pane: 2, cols: 70 } }
+    })
+    expect(moveDivider(layout, between, -200, ctxOf(layout, cols))).toMatchObject({
+      first: { first: { pane: 1, cols: 20 }, second: { pane: 2, cols: 20 } }
+    })
+  })
+
+  it('cell 의 오른쪽 끝을 좁은 줄보다 왼쪽으로 끌면 좁은 줄의 pane 도 줄인다', () => {
+    // (A | B) / C 에서 C 가 150열이면 위 줄이 12글자 칸 넓다(pane 마다 여백 2글자 칸). 끝을 20글자 칸 당기면 C 는 8열 줄어든다.
+    const layout: Layout = {
+      split: 'down',
+      first: { split: 'right', first: { pane: 1 }, second: { pane: 2 } },
+      second: { pane: 3, cols: 150 }
+    }
+    expect(moveDivider(layout, { kind: 'edge', split: 'right' }, -20, ctxOf(layout, cols))).toEqual(
+      {
+        split: 'down',
+        first: { split: 'right', first: { pane: 1 }, second: { pane: 2, cols: 60 } },
+        second: { pane: 3, cols: 142 }
+      }
+    )
+  })
+
   it('위아래 경계는 비율로 옮긴다', () => {
     const down: Layout = { split: 'down', first: { pane: 1 }, second: { pane: 2 } }
     expect(moveDivider(down, { ...between, split: 'down' }, 3, ctxOf(down, cols))).toEqual({
@@ -235,6 +269,34 @@ describe('keyResize', () => {
 
   it('그 축으로 나눈 줄이 없으면 그대로다', () => {
     expect(keyResize(ab, 1, 'up', ctxOf(ab))).toBe(ab)
+  })
+
+  it('columns 에서 위 pane 보다 좁은 pane 은 그려진 오른쪽 끝이 한 글자 칸 움직인다', () => {
+    const layout: Layout = {
+      split: 'right',
+      first: { split: 'down', first: { pane: 1, cols: 120 }, second: { pane: 2 } },
+      second: { pane: 3 }
+    }
+    const right = (l: Layout) => {
+      const b = snapRects(l, { width: 2000, height: area.height }, cell, { cols: 80 }, min).get(2)!
+      return b.left + b.width
+    }
+    const wider = keyResize(layout, 2, 'right', ctxOf(layout, { cols: 80 }))
+    expect(right(wider) - right(layout)).toBe(8)
+    const narrower = keyResize(layout, 2, 'left', ctxOf(layout, { cols: 80 }))
+    expect(right(narrower) - right(layout)).toBe(-8)
+  })
+
+  it('columns 에서 남는 폭을 채우는 pane 은 cell 오른쪽 끝을 옮긴다', () => {
+    const layout: Layout = {
+      split: 'down',
+      first: { split: 'right', first: { pane: 1, cols: 100 }, second: { pane: 2 } },
+      second: { pane: 3 }
+    }
+    expect(keyResize(layout, 3, 'right', ctxOf(layout, { cols: 80 }))).toEqual({
+      ...layout,
+      first: { ...layout.first, second: { pane: 2, cols: 81 } }
+    })
   })
 
   it('columns 의 좌우는 포커스된 pane 의 열 수를 하나 바꾼다', () => {

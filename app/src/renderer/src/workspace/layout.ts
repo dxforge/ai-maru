@@ -154,17 +154,36 @@ function share(layout: Extract<Layout, { split: SplitDirection }>, widths: Width
   return first / (first + weight(layout.second, split, widths))
 }
 
+/**
+ * cell 을 0..1 로 둔 pane 상자. columns 보기의 좌우는 `snapRects`(`grid.ts`)처럼 항목마다 열 수만큼 주고, 줄의 마지막
+ * 항목이 남는 폭을 채운다 — 줄마다 열 수가 다르면 좁은 줄의 마지막 pane 이 넓어진다.
+ */
 export function rects(
   layout: Layout,
   widths: Widths = 'even',
-  at: Rect = { x: 0, y: 0, w: 1, h: 1 }
+  at: Rect = { x: 0, y: 0, w: 1, h: 1 },
+  perCol = widths === 'even' ? 0 : at.w / naturalCols(layout, widths.cols)
 ): Map<number, Rect> {
   if ('pane' in layout) return new Map([[layout.pane, at]])
+  if (layout.split === 'right' && widths !== 'even') {
+    const parts = line(layout, 'right')
+    const out = new Map<number, Rect>()
+    let x = at.x
+    parts.forEach((part, i) => {
+      const w = i === parts.length - 1 ? at.x + at.w - x : naturalCols(part, widths.cols) * perCol
+      for (const entry of rects(part, widths, { ...at, x, w }, perCol)) out.set(...entry)
+      x += w
+    })
+    return out
+  }
   const [along, length] = layout.split === 'right' ? (['x', 'w'] as const) : (['y', 'h'] as const)
   const n = at[length] * share(layout, widths)
   const a = { ...at, [length]: n }
   const b = { ...at, [along]: at[along] + n, [length]: at[length] - n }
-  return new Map([...rects(layout.first, widths, a), ...rects(layout.second, widths, b)])
+  return new Map([
+    ...rects(layout.first, widths, a, perCol),
+    ...rects(layout.second, widths, b, perCol)
+  ])
 }
 
 export type Edges = { left: boolean; top: boolean; right: boolean; bottom: boolean }

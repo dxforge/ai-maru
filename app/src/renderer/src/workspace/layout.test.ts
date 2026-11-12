@@ -264,6 +264,22 @@ describe('neighbor', () => {
     expect(neighbor(layout, 2, 'down', { cols: 80 })).toBe(6)
   })
 
+  it('columns 에서 줄마다 열 수가 다르면 남는 폭을 채운 pane 까지 그린 자리로 잰다', () => {
+    // 위 100열 둘, 아래 30열 셋. 아래의 마지막 pane 이 남는 폭을 채워 pane 1 과 가장 길게 맞닿는다.
+    const layout: Layout = {
+      split: 'down',
+      first: { split: 'right', first: { pane: 1, cols: 100 }, second: { pane: 2, cols: 100 } },
+      second: {
+        split: 'right',
+        first: { pane: 3, cols: 30 },
+        second: { split: 'right', first: { pane: 4, cols: 30 }, second: { pane: 5, cols: 30 } }
+      }
+    }
+    const five = rects(layout, { cols: 80 }).get(5)!
+    expect([five.x, five.w].map((v) => v.toFixed(6))).toEqual(['0.300000', '0.700000'])
+    expect(neighbor(layout, 1, 'down', { cols: 80 })).toBe(5)
+  })
+
   it('그 방향에 pane 이 없거나 모서리만 닿으면 undefined 다', () => {
     const layout = threePanes()
     expect(neighbor(layout, 1, 'left')).toBeUndefined()
