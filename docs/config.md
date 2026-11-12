@@ -49,7 +49,7 @@ Claude Code 의 입력창은 터미널 아래에 있어 시선이 아래에 머�
 
 columns 보기에서 cell 은 pane 하나가 이 열 수를 받는 폭으로 그려진다. 좌우로 나눈 cell 은 pane 수만큼 넓어진다. 터미널 열 수라서 글꼴 크기를 바꾸면 픽셀 폭도 바뀐다.
 
-Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-step` 만큼 넓히거나 좁힌다. 두 명령으로 폭을 바꾼 cell 은 `column-cols` 가 바뀌어도 그 폭을 지킨다. 바꾸지 않은 cell 은 저장하면 바로 새 폭이 된다. 두 명령으로 `column-cols` 와 같은 폭에 돌아온 cell 은 다시 `column-cols` 를 따른다. 바꾼 폭은 `config.toml` 에 쓰지 않고, 다음 실행이 레이아웃을 되살릴 때 남는다(앱을 끌 때 End everything 을 고르지 않았을 때).
+Widen Cell · Narrow Cell 은 선택한 cell 의 pane 폭을 `column-step` 만큼 넓히거나 좁힌다. 두 명령으로 폭을 바꾼 cell 은 `column-cols` 가 바뀌어도 그 폭을 지킨다. 바꾸지 않은 cell 은 저장하면 바로 새 폭이 된다. 두 명령으로 `column-cols` 와 같은 폭에 돌아온 cell 은 다시 `column-cols` 를 따른다. 두 명령은 그 cell 에서 경계를 끌어 바꾼 pane 폭도 지우고 모든 pane 을 새 폭으로 맞춘다. 바꾼 폭은 `config.toml` 에 쓰지 않고, 다음 실행이 레이아웃을 되살릴 때 남는다(앱을 끌 때 End everything 을 고르지 않았을 때).
 
 ### `column-step`
 

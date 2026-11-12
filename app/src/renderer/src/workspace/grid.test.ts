@@ -3,6 +3,7 @@ import {
   areaOf,
   canSplit,
   columnsWidthOf,
+  naturalWidth,
   NO_MIN,
   overflow,
   paneMin,
@@ -89,8 +90,8 @@ describe('snapRects', () => {
       [20, 10]
     ]
     expect(rows(snapRects(down, { width: 800, height: 30 * 18 }, cell))).toEqual(thirds)
-    const column = { width: 82 * 9, height: 18 }
-    expect(rows(snapRects(down, { width: 82 * 9, height: 30 * 18 }, column, 'columns'))).toEqual(
+    const column = { width: 9, height: 18 }
+    expect(rows(snapRects(down, { width: 82 * 9, height: 30 * 18 }, column, { cols: 80 }))).toEqual(
       thirds
     )
     const side = snapRects(right, { width: 60 * 8, height: 700 }, cell)
@@ -122,7 +123,7 @@ describe('snapRects', () => {
       layout,
       { width: 3 * 82 * 9, height: 700 },
       { width: 9, height: 18 },
-      'columns'
+      { cols: 80 }
     )
     expect([...boxes.values()].map((b) => [b.left, b.width])).toEqual([
       [0, 82 * 9],
@@ -131,8 +132,9 @@ describe('snapRects', () => {
     ])
   })
 
-  it('columns 에서 폭의 단위를 pane 하나의 폭으로 주면 좌우 경계를 그 배수에 두고, 높이는 글자 칸 배수에 둔다', () => {
-    const pane = 80 * 7.82666 + 12
+  it('columns 에서 좌우 경계는 pane 마다 열 수가 들어가는 폭에 두고, 높이는 글자 칸 배수에 둔다', () => {
+    const cw = 7.82666
+    const pane = 82 * cw
     const layout: Layout = {
       split: 'right',
       first: { pane: 1 },
@@ -145,15 +147,51 @@ describe('snapRects', () => {
     const boxes = snapRects(
       layout,
       { width: 3 * pane, height: 700 },
-      { width: pane, height: 18 },
-      'columns',
-      { width: pane, height: 6 * 18 }
+      { width: cw, height: 18 },
+      { cols: 80 },
+      { width: 22 * cw, height: 6 * 18 }
     )
     expect(boxes.get(1)).toMatchObject({ left: 0, width: pane })
     expect(boxes.get(2)).toMatchObject({ left: pane, width: 2 * pane, height: 19 * 18 })
     expect(boxes.get(3)).toMatchObject({ left: pane, width: pane, top: 19 * 18 })
     expect(boxes.get(4)!.left).toBeCloseTo(2 * pane)
     expect(boxes.get(4)!.width).toBeCloseTo(pane)
+  })
+
+  it('columns 에서 열 수를 바꾼 pane 은 그 열 수의 폭을 받고, 좁은 줄의 마지막 pane 이 남는 폭을 채운다', () => {
+    const cw = 9
+    // (A|B)/C 에서 A 가 100열.
+    const layout: Layout = {
+      split: 'down',
+      first: { split: 'right', first: { pane: 1, cols: 100 }, second: { pane: 2 } },
+      second: { pane: 3 }
+    }
+    const width = naturalWidth(layout, 80, cw)
+    expect(width).toBe((102 + 82) * cw)
+    const boxes = snapRects(
+      layout,
+      { width, height: 20 * 18 },
+      { width: cw, height: 18 },
+      {
+        cols: 80
+      }
+    )
+    expect(boxes.get(1)).toMatchObject({ left: 0, width: 102 * cw })
+    expect(boxes.get(2)).toMatchObject({ left: 102 * cw, width: 82 * cw })
+    expect(boxes.get(3)).toMatchObject({ left: 0, width })
+  })
+
+  it('weight 비율로 나눈다', () => {
+    const layout: Layout = {
+      split: 'right',
+      first: { pane: 1, weight: 2 },
+      second: { pane: 2, weight: 1 }
+    }
+    const boxes = snapRects(layout, { width: 30 * 8, height: 700 }, cell)
+    expect([...boxes.values()].map((b) => b.width / 8)).toEqual([20, 10])
+    const down: Layout = { split: 'down', first: { pane: 1 }, second: { pane: 2, weight: 3 } }
+    const rows = snapRects(down, { width: 800, height: 40 * 18 }, cell)
+    expect([...rows.values()].map((b) => b.height / 18)).toEqual([10, 30])
   })
 
   describe('하한', () => {
@@ -395,18 +433,13 @@ describe('snapRects', () => {
 })
 
 describe('paneMin', () => {
-  it('single 에서는 터미널 20열과 여백·스크롤바가 들어가는 글자 칸 폭, 헤더를 더한 6행 높이다', () => {
+  it('터미널 20열과 여백·스크롤바가 들어가는 글자 칸 폭, 헤더를 더한 6행 높이다', () => {
     // 20열 + 여백 4px·스크롤바 8px(1.5칸)을 글자 칸 수로 올리면 22칸이다.
-    expect(paneMin(cell, undefined)).toEqual({ width: 22 * 8, height: 6 * 18 })
-  })
-
-  it('columns 에서는 pane 하나의 폭이 폭의 하한이다', () => {
-    expect(paneMin(cell, 80)).toEqual({ width: 82 * 8, height: 6 * 18 })
+    expect(paneMin(cell)).toEqual({ width: 22 * 8, height: 6 * 18 })
   })
 
   it('글자 칸 크기를 모르면 0 이다', () => {
-    expect(paneMin({ width: 0, height: 0 }, undefined)).toEqual(NO_MIN)
-    expect(paneMin({ width: 0, height: 0 }, 80)).toEqual(NO_MIN)
+    expect(paneMin({ width: 0, height: 0 })).toEqual(NO_MIN)
   })
 })
 

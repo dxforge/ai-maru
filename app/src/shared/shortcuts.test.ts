@@ -68,6 +68,14 @@ describe('commandKeys', () => {
     expect(formatKeys(commandKeys('narrow-cell')!)).toBe('⇧⌘,')
   })
 
+  it('pane 크기 조정은 ⌃⌘방향키, 균등분할은 ⌃⌘= 다', () => {
+    expect(formatKeys(commandKeys('resize-pane-left')!)).toBe('⌃⌘←')
+    expect(formatKeys(commandKeys('resize-pane-right')!)).toBe('⌃⌘→')
+    expect(formatKeys(commandKeys('resize-pane-up')!)).toBe('⌃⌘↑')
+    expect(formatKeys(commandKeys('resize-pane-down')!)).toBe('⌃⌘↓')
+    expect(toAccelerator(commandKeys('equalize-panes')!)).toBe('Control+Command+=')
+  })
+
   it('workspace 이름 바꾸기는 ⇧⌘R 이고 메뉴에 건다', () => {
     expect(toAccelerator(commandKeys('rename-workspace')!)).toBe('Shift+Command+R')
     expect(commandLabel('rename-workspace')).toBe('⇧⌘R')

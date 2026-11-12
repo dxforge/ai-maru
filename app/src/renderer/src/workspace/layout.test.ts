@@ -6,6 +6,7 @@ import {
   panes,
   rects,
   removePane,
+  sameShape,
   splitPane,
   splitRoot,
   type Layout,
@@ -92,7 +93,7 @@ describe('rects', () => {
     const full = splitRoot(splitRoot({ pane: 1 }, 2, 'down'), 3, 'down')
     const below = splitPane(splitPane({ pane: 1 }, 1, 2, 'down'), 2, 3, 'down')
     const above = splitPane(splitPane({ pane: 1 }, 1, 2, 'down'), 1, 3, 'down')
-    for (const widths of ['even', 'columns'] as const) {
+    for (const widths of ['even', { cols: 80 }] as const) {
       expect(thirds(full, widths, 'y')).toEqual(evenly)
       expect(thirds(below, widths, 'y')).toEqual(evenly)
       expect(thirds(above, widths, 'y')).toEqual([
@@ -153,14 +154,14 @@ describe('rects', () => {
 
   it('columns 는 좌우로 나눈 폭을 양쪽의 늘어선 pane 수 비율로 나눈다', () => {
     const right = splitPane(splitPane({ pane: 1 }, 1, 2, 'right'), 2, 3, 'right')
-    expect(thirds(right, 'columns', 'x')).toEqual(evenly)
+    expect(thirds(right, { cols: 80 }, 'x')).toEqual(evenly)
     const full = splitRoot(splitPane({ pane: 1 }, 1, 2, 'right'), 3, 'right')
-    expect(thirds(full, 'columns', 'x')).toEqual(evenly)
+    expect(thirds(full, { cols: 80 }, 'x')).toEqual(evenly)
   })
 
   it('columns 에서 위아래 두 쪽의 늘어선 pane 수가 다르면 적은 쪽 pane 이 넓어진다', () => {
     const layout = splitPane(threePanes(), 3, 4, 'right')
-    const all = rects(layout, 'columns')
+    const all = rects(layout, { cols: 80 })
     expect(all.get(1)!.w * 3).toBeCloseTo(1)
     expect(all.get(2)).toMatchObject({ y: 0, h: 0.5 })
     expect(all.get(2)!.x * 3).toBeCloseTo(1)
@@ -260,7 +261,7 @@ describe('neighbor', () => {
       }
     }
     expect(neighbor(layout, 2, 'down')).toBe(5)
-    expect(neighbor(layout, 2, 'down', 'columns')).toBe(6)
+    expect(neighbor(layout, 2, 'down', { cols: 80 })).toBe(6)
   })
 
   it('그 방향에 pane 이 없거나 모서리만 닿으면 undefined 다', () => {
@@ -270,5 +271,128 @@ describe('neighbor', () => {
     expect(neighbor(layout, 2, 'right')).toBeUndefined()
     expect(neighbor({ pane: 1 }, 1, 'down')).toBeUndefined()
     expect(neighbor(layout, 9, 'down')).toBeUndefined()
+  })
+})
+
+describe('크기 필드와 split·닫기', () => {
+  const sized: Layout = {
+    split: 'right',
+    first: { pane: 1, weight: 3, cols: 100 },
+    second: { pane: 2, weight: 1, cols: 40 }
+  }
+
+  it('다른 방향으로 나누면 새 나눔 노드가 그 pane 의 몫을 잇고, 줄은 그대로다', () => {
+    expect(splitPane(sized, 2, 3, 'down')).toEqual({
+      split: 'right',
+      first: { pane: 1, weight: 3, cols: 100 },
+      second: { split: 'down', first: { pane: 2, cols: 40 }, second: { pane: 3 }, weight: 1 }
+    })
+  })
+
+  it('같은 방향으로 나누면 그 줄의 몫과 열 수를 지운다', () => {
+    expect(splitPane(sized, 2, 3, 'right')).toEqual({
+      split: 'right',
+      first: { pane: 1 },
+      second: { split: 'right', first: { pane: 2 }, second: { pane: 3 } }
+    })
+    expect(splitRoot(sized, 3, 'right')).toEqual({
+      split: 'right',
+      first: { split: 'right', first: { pane: 1 }, second: { pane: 2 } },
+      second: { pane: 3 }
+    })
+  })
+
+  it('줄 안쪽의 다른 방향 나눔과 바깥 줄은 그대로 둔다', () => {
+    // A | (B / C) 에서 B 를 아래로 나누면 B·C 줄만 지운다.
+    const layout: Layout = {
+      split: 'right',
+      first: { pane: 1, weight: 2 },
+      second: {
+        split: 'down',
+        first: { pane: 2, weight: 3 },
+        second: { pane: 3, weight: 1 },
+        weight: 1
+      }
+    }
+    expect(splitPane(layout, 2, 4, 'down')).toEqual({
+      split: 'right',
+      first: { pane: 1, weight: 2 },
+      second: {
+        split: 'down',
+        first: { split: 'down', first: { pane: 2 }, second: { pane: 4 } },
+        second: { pane: 3 },
+        weight: 1
+      }
+    })
+  })
+
+  it('root 를 다른 방향으로 나누면 크기가 그대로다', () => {
+    expect(splitRoot(sized, 3, 'down')).toEqual({
+      split: 'down',
+      first: sized,
+      second: { pane: 3 }
+    })
+  })
+
+  it('A | (B / C) 에서 B 를 닫으면 C 가 그 자리의 몫을 잇는다', () => {
+    const layout: Layout = {
+      split: 'right',
+      first: { pane: 1, weight: 2 },
+      second: { split: 'down', first: { pane: 2 }, second: { pane: 3, weight: 5 }, weight: 1 }
+    }
+    expect(removePane(layout, 2)!.layout).toEqual({
+      split: 'right',
+      first: { pane: 1, weight: 2 },
+      second: { pane: 3, weight: 1 }
+    })
+  })
+
+  it('A | (B / (C | D)) 에서 B 를 닫으면 A | C | D 한 줄이 되어 몫을 지운다', () => {
+    const layout: Layout = {
+      split: 'right',
+      first: { pane: 1, weight: 2, cols: 90 },
+      second: {
+        split: 'down',
+        first: { pane: 2 },
+        second: {
+          split: 'right',
+          first: { pane: 3, weight: 3 },
+          second: { pane: 4, weight: 1, cols: 30 }
+        },
+        weight: 1
+      }
+    }
+    expect(removePane(layout, 2)!.layout).toEqual({
+      split: 'right',
+      first: { pane: 1 },
+      second: { split: 'right', first: { pane: 3 }, second: { pane: 4 } }
+    })
+  })
+
+  it('A | B | C 에서 B 를 닫으면 그 줄을 지우고, 줄이 든 바깥 줄은 그대로다', () => {
+    const layout: Layout = {
+      split: 'down',
+      first: {
+        split: 'right',
+        first: { pane: 1, weight: 2 },
+        second: { split: 'right', first: { pane: 2 }, second: { pane: 3, weight: 4 } },
+        weight: 3
+      },
+      second: { pane: 4, weight: 1 }
+    }
+    expect(removePane(layout, 2)!.layout).toEqual({
+      split: 'down',
+      first: { split: 'right', first: { pane: 1 }, second: { pane: 3 }, weight: 3 },
+      second: { pane: 4, weight: 1 }
+    })
+  })
+
+  it('남은 pane 이 root 가 되면 몫이 없다', () => {
+    expect(removePane(sized, 2)!.layout).toEqual({ pane: 1, cols: 100 })
+  })
+
+  it('sameShape 는 크기 필드를 보지 않는다', () => {
+    expect(sameShape(sized, { split: 'right', first: { pane: 1 }, second: { pane: 2 } })).toBe(true)
+    expect(sameShape(sized, { split: 'down', first: { pane: 1 }, second: { pane: 2 } })).toBe(false)
   })
 })

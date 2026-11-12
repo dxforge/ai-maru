@@ -12,13 +12,13 @@ import {
   watchEffect
 } from 'vue'
 import { available, commands, type CommandId } from '../../shared/commands'
-import { PANE_MIN } from '../../shared/layout'
+import { PANE_MAX_COLS, PANE_MIN } from '../../shared/layout'
 import { cellLabel, windowTitle, workspaceName } from '../../shared/names'
 import type { JobView } from '../../shared/job'
 import type { PaneReply } from '../../shared/pane'
 import type { ProgramStatusRecord } from '../../shared/program-status'
 import { clampCanvasWidth, clampSidebarWidth, type ScreenState } from '../../shared/screen'
-import { chords, secondaryCommand } from '../../shared/shortcuts'
+import { chords, commandKeys, matchesKeys, secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
 import { createCanvas, openCells } from './canvas/store'
 import { createSeenTracker } from './pty/seen'
@@ -44,13 +44,7 @@ import { fontSizeOverride, stepFontSize, type TerminalFont } from './config/term
 import { activeTheme, windowTheme } from './themes'
 import { restoreToast } from './toast/restore'
 import { createToasts } from './toast/store'
-import {
-  columnWidth,
-  fitCols,
-  paneColsOf,
-  stepPaneColsOverride,
-  TERMINAL_PADDING
-} from './workspace/columns'
+import { fitCols, paneColsOf, stepPaneColsOverride, TERMINAL_PADDING } from './workspace/columns'
 import { tildePath } from './workspace/cwd'
 import {
   areaOf,
@@ -58,6 +52,7 @@ import {
   paneMin,
   roomForSplit,
   snapRects,
+  widthsOf,
   type Box,
   type ColumnCols,
   type Size
@@ -66,10 +61,21 @@ import {
   edgesOf,
   EPSILON,
   rects,
+  sameShape,
   type Layout,
-  type SplitDirection,
-  type Widths
+  type FocusDirection,
+  type SplitDirection
 } from './workspace/layout'
+import {
+  dividers,
+  equalizeAll,
+  equalizeLine,
+  keyResize,
+  moveDivider,
+  type Divider,
+  type ResizeContext,
+  type Target
+} from './workspace/resize'
 import { arrangementKey, easeInOut, smoothReveal } from './workspace/reveal'
 import { unreadWorkspaces, urgentStates } from './workspace/status'
 import { switcherRows } from './workspace/switcherRows'
@@ -547,7 +553,6 @@ function resizeCanvas(e: PointerEvent): void {
 }
 
 const viewMode = ref<'single' | 'columns'>(prefs.viewMode ?? 'columns')
-const widths = computed<Widths>(() => (viewMode.value === 'columns' ? 'columns' : 'even'))
 // 글자 칸 크기는 글꼴이 정하므로 글꼴마다 마지막으로 잰 값 하나로 셈한다. 그래서 새로 연 cell 도 같은 글꼴의 터미널이
 // 잰 값으로 바로 그린다.
 const cells = reactive(new Map<string, Size>())
@@ -664,23 +669,15 @@ function placement(b: Box, unit: string, size?: TerminalSize) {
   }
 }
 
-/**
- * pane 상자 `b` 에 놓을 터미널의 열·행 수. 행 수는 헤더 한 행을 뺀 높이로 센다. columns 보기에서 pane 하나 폭인 pane 은
- * 그 폭을 `cols` 로 만들었으므로 `cols` 열이고, pane 여럿의 폭에 걸친 pane 만 그 폭에 들어가는 만큼 더 많은 열을 받는다.
- */
-function terminalSize(b: Box, cell: Size, cols: ColumnCols): TerminalSize | undefined {
+/** pane 상자 `b` 에 놓을 터미널의 열·행 수. 행 수는 헤더 한 행을 뺀 높이로 센다. */
+function terminalSize(b: Box, cell: Size): TerminalSize | undefined {
   if (cell.width <= 0 || cell.height <= 0) return undefined
   const rows = Math.max(0, Math.floor(b.height / cell.height - 1 + EPSILON))
-  const fit = fitCols(b.width, cell.width)
-  return { cols: cols === undefined ? fit : Math.max(cols, fit), rows }
-}
-
-function unitOf(cell: Size, cols: ColumnCols): Size {
-  return cols === undefined ? cell : { ...cell, width: columnWidth(cols, cell.width) }
+  return { cols: fitCols(b.width, cell.width), rows }
 }
 
 function placements(layout: Layout, size: Size | undefined, cell: Size, cols: ColumnCols) {
-  const widths: Widths = cols === undefined ? 'even' : 'columns'
+  const widths = widthsOf(cols)
   const shares = rects(layout, widths)
   const at = (pane: number) => edgesOf(shares.get(pane)!)
   // 영역을 재기 전의 첫 렌더는 비율로 그린다. 터미널은 열·행 수를 받을 때까지 pty 에 붙지 않는다.
@@ -698,9 +695,10 @@ function placements(layout: Layout, size: Size | undefined, cell: Size, cols: Co
       ])
     )
   return new Map(
-    [...snapRects(layout, size, unitOf(cell, cols), widths, paneMin(cell, cols))].map(
-      ([pane, b]) => [pane, { ...placement(b, 'px', terminalSize(b, cell, cols)), at: at(pane) }]
-    )
+    [...snapRects(layout, size, cell, widths, paneMin(cell))].map(([pane, b]) => [
+      pane,
+      { ...placement(b, 'px', terminalSize(b, cell)), at: at(pane) }
+    ])
   )
 }
 
@@ -708,6 +706,11 @@ function columnColsOf(c: Pick<Cell, 'paneCols'>): ColumnCols {
   return viewMode.value === 'columns'
     ? paneColsOf(c.paneCols, config.layout.value.columnCols)
     : undefined
+}
+
+function moveFocus(direction: FocusDirection): void {
+  const c = workspaces.selected()
+  if (c) workspaces.moveFocus(direction, widthsOf(columnColsOf(c)))
 }
 
 function roomFor(from: number, direction: SplitDirection, full: boolean): boolean {
@@ -739,6 +742,126 @@ function splitSelected(direction: SplitDirection, init?: PaneInit): void {
   if (canSplit(direction)) workspaces.split(direction, init)
 }
 
+/**
+ * 끌거나 ⌃⌘방향키로 바꾸는 중인 cell 의 layout. pane 상자는 이것으로 그리고 터미널의 열·행 수는 저장된 layout 으로 주어,
+ * 놓을 때 pty 크기가 한 번만 바뀐다 — 끄는 동안 크기 변경이 몰리면 claude 가 거듭 다시 그린다.
+ */
+type Preview = { cell: number; layout: Layout; by: 'drag' | 'key' }
+const preview = shallowRef<Preview | null>(null)
+
+function shownLayout(c: Cell): Layout {
+  const p = preview.value
+  return p && p.cell === c.key && sameShape(p.layout, c.layout) ? p.layout : c.layout
+}
+
+function boxesOf(c: Cell, layout: Layout): Map<number, Box> | undefined {
+  const measured = gridSizes.get(c.key)
+  const cell = cellOf(fontOf(c))
+  if (!measured || cell.width <= 0 || cell.height <= 0) return undefined
+  const cols = columnColsOf(c)
+  return snapRects(
+    layout,
+    areaOf(layout, cols, cell, measured),
+    cell,
+    widthsOf(cols),
+    paneMin(cell)
+  )
+}
+
+// columns 에서 pane 하나는 보이는 터미널 영역보다 넓게 끌지 않는다.
+function visibleCols(cellWidth: number): number {
+  const area = terminalsArea.value
+  if (!area) return PANE_MAX_COLS
+  const style = getComputedStyle(area)
+  const width = area.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+  return Math.min(PANE_MAX_COLS, fitCols(width, cellWidth))
+}
+
+function resizeContext(c: Cell, layout: Layout): ResizeContext | undefined {
+  const boxes = boxesOf(c, layout)
+  if (!boxes) return undefined
+  const cell = cellOf(fontOf(c))
+  return {
+    boxes,
+    cell,
+    min: paneMin(cell),
+    widths: widthsOf(columnColsOf(c)),
+    maxCols: visibleCols(cell.width)
+  }
+}
+
+function commitPreview(): void {
+  const p = preview.value
+  if (!p) return
+  preview.value = null
+  const c = workspaces.cells().find((x) => x.key === p.cell)
+  if (c && p.layout !== c.layout) workspaces.resize(c.key, p.layout)
+}
+
+function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
+  if (e.button !== 0) return
+  commitPreview()
+  const base = c.layout
+  const ctx = resizeContext(c, base)
+  if (!ctx) return
+  const axis = d.split === 'right' ? 'clientX' : 'clientY'
+  const unit = d.split === 'right' ? ctx.cell.width : ctx.cell.height
+  const from = e[axis]
+  preview.value = { cell: c.key, layout: base, by: 'drag' }
+  const handle = e.currentTarget as Element
+  handle.setPointerCapture(e.pointerId)
+  const step = (m: PointerEvent): void => {
+    // 끄는 동안 pane 이 닫히거나 나뉘면 끌던 경계가 없어진 것이라 버린다.
+    if (preview.value?.cell !== c.key || !sameShape(c.layout, base)) {
+      preview.value = null
+      return end()
+    }
+    const delta = Math.round((m[axis] - from) / unit)
+    preview.value = { cell: c.key, layout: moveDivider(base, d, delta, ctx), by: 'drag' }
+  }
+  const end = (): void => {
+    window.removeEventListener('pointermove', step)
+    window.removeEventListener('pointerup', end)
+    window.removeEventListener('pointercancel', end)
+    commitPreview()
+  }
+  window.addEventListener('pointermove', step)
+  window.addEventListener('pointerup', end)
+  window.addEventListener('pointercancel', end)
+}
+
+function handleKey(d: Divider): string {
+  return d.kind === 'line' ? `${d.path.join('.')}:${d.index}` : 'edge'
+}
+
+function handleStyle(d: Divider): Record<string, string> {
+  const [along, across, length] =
+    d.split === 'right' ? ['left', 'top', 'height'] : ['top', 'left', 'width']
+  return { [along]: `${d.pos}px`, [across]: `${d.start}px`, [length]: `${d.end - d.start}px` }
+}
+
+function equalizeAt(c: Cell, d: Target): void {
+  commitPreview()
+  workspaces.resize(c.key, equalizeLine(c.layout, d, widthsOf(columnColsOf(c))))
+}
+
+function equalizeSelected(): void {
+  commitPreview()
+  const c = workspaces.selected()
+  if (c) workspaces.resize(c.key, equalizeAll(c.layout, widthsOf(columnColsOf(c))))
+}
+
+function resizeSelected(dir: FocusDirection, commit: boolean): void {
+  const c = workspaces.selected()
+  if (!c) return
+  if (preview.value && (preview.value.cell !== c.key || preview.value.by !== 'key')) commitPreview()
+  const base = shownLayout(c)
+  const ctx = resizeContext(c, base)
+  if (!ctx) return
+  preview.value = { cell: c.key, layout: keyResize(base, c.focused, dir, ctx), by: 'key' }
+  if (commit) commitPreview()
+}
+
 const views = computed(() =>
   workspaces.cells().map((c) => {
     const selected = c.key === workspaces.selectedKey.value
@@ -746,24 +869,34 @@ const views = computed(() =>
     const cell = cellOf(font)
     const measured = gridSizes.get(c.key)
     const cols = columnColsOf(c)
-    const width = columnsWidthOf(c.layout, cols, cell)
-    const places = placements(
-      c.layout,
-      measured && areaOf(c.layout, cols, cell, measured),
-      cell,
-      cols
-    )
+    const shown = shownLayout(c)
+    const width = columnsWidthOf(shown, cols, cell)
+    const place = (l: Layout) =>
+      placements(l, measured && areaOf(l, cols, cell, measured), cell, cols)
+    const places = place(shown)
+    const saved = shown === c.layout ? places : place(c.layout)
+    const boxes = selected || viewMode.value === 'columns' ? boxesOf(c, shown) : undefined
+    const lines = boxes ? dividers(shown, boxes, widthsOf(cols)) : []
     return {
       c,
       selected,
       font,
       vars: gridVars(cell, font),
       width: width === undefined ? undefined : `${width}px`,
-      panes: c.panes.map((p) => ({
-        p,
-        active: selected && p.key === c.focused,
-        ...places.get(p.key)!
-      }))
+      handles: lines.filter((d) => d.kind === 'line'),
+      edge: lines.find((d) => d.kind === 'edge'),
+      panes: c.panes.map((p) => {
+        const { size: next, ...rest } = places.get(p.key)!
+        const size = saved.get(p.key)!.size
+        const changed = next && size && (next.cols !== size.cols || next.rows !== size.rows)
+        return {
+          p,
+          active: selected && p.key === c.focused,
+          ...rest,
+          size,
+          badge: changed ? `${next.cols}×${next.rows}` : undefined
+        }
+      })
     }
   })
 )
@@ -986,10 +1119,15 @@ const handlers: Record<CommandId, () => void> = {
   'previous-cell': () => stepCell(-1),
   'next-pane': () => stepPane(1),
   'previous-pane': () => stepPane(-1),
-  'focus-pane-left': () => workspaces.moveFocus('left', widths.value),
-  'focus-pane-right': () => workspaces.moveFocus('right', widths.value),
-  'focus-pane-up': () => workspaces.moveFocus('up', widths.value),
-  'focus-pane-down': () => workspaces.moveFocus('down', widths.value),
+  'focus-pane-left': () => moveFocus('left'),
+  'focus-pane-right': () => moveFocus('right'),
+  'focus-pane-up': () => moveFocus('up'),
+  'focus-pane-down': () => moveFocus('down'),
+  'resize-pane-left': () => resizeSelected('left', true),
+  'resize-pane-right': () => resizeSelected('right', true),
+  'resize-pane-up': () => resizeSelected('up', true),
+  'resize-pane-down': () => resizeSelected('down', true),
+  'equalize-panes': equalizeSelected,
   launcher: () => openOverlay(OPENS.launcher),
   'command-palette': () => openOverlay(OPENS['command-palette']),
   'go-to-pane': () => openOverlay(OPENS['go-to-pane']),
@@ -1050,6 +1188,30 @@ window.addEventListener(
   },
   { capture: true }
 )
+
+const RESIZE_KEYS = (['left', 'right', 'up', 'down'] as const).map((dir) => ({
+  dir,
+  keys: commandKeys(`resize-pane-${dir}`)!
+}))
+// ⌃⌘방향키는 메뉴보다 먼저 받아 미리보기만 옮기고, ⌃ 나 ⌘ 를 놓을 때 한 번에 반영한다. 메뉴로 받으면 누르고 있는 동안
+// 반복 입력마다 pty 크기가 바뀐다.
+window.addEventListener(
+  'keydown',
+  (e) => {
+    const dir = RESIZE_KEYS.find((k) => matchesKeys(e, k.keys))?.dir
+    if (!dir || overlay.value !== null || isTextInput(e.target)) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    resizeSelected(dir, false)
+  },
+  { capture: true }
+)
+window.addEventListener('keyup', (e) => {
+  if ((e.key === 'Control' || e.key === 'Meta') && preview.value?.by === 'key') commitPreview()
+})
+window.addEventListener('blur', () => {
+  if (preview.value?.by === 'key') commitPreview()
+})
 
 // ⇧⌘방향키는 macOS 의 텍스트 선택 키이므로, 입력창에 포커스가 있으면 `secondaryCommand` 의 키는 입력창에 맡긴다. 메뉴에 건 키는 입력창에서도 돈다.
 window.addEventListener('keydown', (e) => {
@@ -1149,7 +1311,7 @@ void window.maru.restoreScreen().then((r) => {
       @wheel.capture="keepHorizontalScroll"
     >
       <div
-        v-for="{ c, selected, width, font, vars, panes } in views"
+        v-for="{ c, selected, width, font, vars, panes, handles, edge } in views"
         :key="c.key"
         class="panes"
         :data-cell="c.id"
@@ -1159,7 +1321,7 @@ void window.maru.restoreScreen().then((r) => {
         <div class="cell-band" @mousedown.prevent="selectCell(c.key)" />
         <div :ref="(el) => observeGrid(c.key, el)" class="grid">
           <div
-            v-for="{ p, active, style, size, at } in panes"
+            v-for="{ p, active, style, size, at, badge } in panes"
             :key="p.key"
             class="pane"
             :class="{
@@ -1210,8 +1372,26 @@ void window.maru.restoreScreen().then((r) => {
                 @cell="(cell) => setCell(fontOf(c), cell)"
               />
             </div>
+            <div v-if="badge" class="size-badge">{{ badge }}</div>
           </div>
+          <div
+            v-for="d in handles"
+            :key="handleKey(d)"
+            class="split-handle"
+            :class="d.split"
+            :style="handleStyle(d)"
+            @mousedown.prevent
+            @pointerdown="(e) => dragDivider(e, c, d)"
+            @dblclick="equalizeAt(c, d)"
+          />
         </div>
+        <div
+          v-if="edge"
+          class="cell-edge"
+          @mousedown.prevent
+          @pointerdown="(e) => dragDivider(e, c, edge)"
+          @dblclick="equalizeAt(c, edge)"
+        />
       </div>
     </div>
     <div
@@ -1426,6 +1606,52 @@ void window.maru.restoreScreen().then((r) => {
   z-index: 3;
   width: 1px;
   background: var(--pane-line);
+}
+
+/* pane 경계를 끄는 손잡이. 보이는 선은 1px 경계선 그대로 두고, 잡는 영역만 선 양쪽으로 넓힌다. */
+.split-handle {
+  position: absolute;
+  z-index: 5;
+}
+
+.split-handle.right {
+  width: var(--split-grab);
+  transform: translateX(-50%);
+  cursor: col-resize;
+}
+
+.split-handle.down {
+  height: var(--split-grab);
+  transform: translateY(-50%);
+  cursor: row-resize;
+}
+
+/* columns 의 cell 오른쪽 끝. `.grid` 가 자르지 않게 `.panes` 에 둔다. */
+.cell-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 5;
+  width: var(--split-grab);
+  transform: translateX(50%);
+  cursor: col-resize;
+}
+
+.size-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-2);
+  background: var(--raised);
+  color: var(--fg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+  font: var(--text-3) var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 /* 위아래 pane 의 경계선. 헤더의 터미널 반대쪽 가장자리에 자리를 차지하지 않게 겹친다 — docs/architecture.md 의 "pane 경계와 글자 칸 격자". */
