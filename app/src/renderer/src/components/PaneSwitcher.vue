@@ -1,19 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
-import { GitBranch } from '@lucide/vue'
 import type { Position } from '../config/layout'
-import { filterSwitcher, type SwitcherRows } from '../workspace/switcherRows'
+import { filterSwitcher, switcherItems, type SwitcherRows } from '../workspace/switcherRows'
 import LeadIcon from './LeadIcon.vue'
 import PaneIcon from './PaneIcon.vue'
+import PanePlace from './PanePlace.vue'
 import { arrowIndex, closeOnFocusLoss, revealSelected } from './palette'
 
-/**
- * ⌘P 전환기다. pane 줄과 디렉토리 줄을 한 목록으로 이어 붙여, 화살표는 두 묶음을 건너 움직인다. 묶음 이름 줄은 고를 수
- * 없다. 아래 팔레트는 목록을 column-reverse 로 그리므로, 묶음 이름 줄을 DOM 에서 묶음 뒤에 두어야 화면에서 묶음 위에 온다.
- */
 const { position, rows } = defineProps<{ position: Position; rows: SwitcherRows }>()
 const emit = defineEmits<{
-  pane: [cell: number, pane: number]
+  pane: [workspace: number, cell: number, pane: number]
   dir: [workspace: number, dir: string]
   close: []
 }>()
@@ -24,6 +20,8 @@ const index = ref(0)
 const matches = computed(() => filterSwitcher(rows, query.value))
 const count = computed(() => matches.value.panes.length + matches.value.dirs.length)
 watch(query, () => (index.value = 0))
+// 떠 있는 동안 pane 이 닫혀 줄이 줄면 선택이 목록 밖에 남으므로 마지막 줄로 당긴다.
+watch(count, (n) => (index.value = Math.min(index.value, Math.max(n - 1, 0))))
 revealSelected(useTemplateRef<HTMLUListElement>('list'), index)
 
 const focus = (): void => input.value?.focus()
@@ -34,7 +32,7 @@ const onBlur = closeOnFocusLoss(input, () => emit('close'))
 function pick(i: number): void {
   const { panes, dirs } = matches.value
   const p = panes[i]
-  if (p) return emit('pane', p.cell, p.pane)
+  if (p) return emit('pane', p.workspace, p.cell, p.pane)
   const d = dirs[i - panes.length]
   if (d) emit('dir', d.workspace, d.dir)
 }
@@ -50,7 +48,7 @@ function onKeydown(e: KeyboardEvent): void {
   e.preventDefault()
 }
 
-const headLast = computed(() => position === 'bottom')
+const items = computed(() => switcherItems(matches.value, position === 'bottom'))
 </script>
 
 <template>
@@ -66,52 +64,43 @@ const headLast = computed(() => position === 'bottom')
         @blur="onBlur"
       />
       <ul ref="list" v-overlay-scroll="'y'" class="list">
-        <li v-if="matches.panes.length && !headLast" class="head workspace-title">Panes</li>
-        <li
-          v-for="(r, i) in matches.panes"
-          :key="`pane:${r.pane}`"
-          class="item pane-item"
-          :class="[r.tone, { selected: i === index, current: r.focused }]"
-          :aria-label="r.aria"
-          :aria-current="r.focused || undefined"
-          @mousemove="index = i"
-          @click="pick(i)"
-        >
-          <span class="main"
-            ><span class="state status-icon" :class="{ unread: r.notice }"
-              ><PaneIcon :icon="r.icon" /></span
-            ><span class="title">{{ r.name }}</span
-            ><span v-if="r.place" class="place"
-              ><span v-if="r.place.name">{{ r.place.name }}</span
-              ><span v-if="r.place.branch" class="branch"
-                ><GitBranch class="text-icon" /><span class="branch-name">{{
-                  r.place.branch
-                }}</span></span
-              ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
-            ></span
+        <template v-for="it in items" :key="it.key">
+          <li v-if="it.kind === 'head'" class="head workspace-title">{{ it.title }}</li>
+          <li
+            v-else-if="it.kind === 'pane'"
+            class="item pane-item"
+            :class="[it.row.tone, { selected: it.i === index }]"
+            :aria-label="it.row.aria"
+            :aria-current="it.row.focused || undefined"
+            @mousemove="index = it.i"
+            @click="pick(it.i)"
           >
-          <span class="where"
-            ><span v-if="r.focused" class="current-label">Current</span>{{ r.workspaceName }}</span
+            <span class="main"
+              ><span class="state status-icon" :class="{ unread: it.row.notice }"
+                ><PaneIcon :icon="it.row.icon" /></span
+              ><span class="title">{{ it.row.name }}</span
+              ><PanePlace v-if="it.row.place" class="tail" :place="it.row.place"
+            /></span>
+            <span class="where"
+              ><span v-if="it.row.focused" class="current-label">Current</span
+              >{{ it.row.workspaceName }}</span
+            >
+          </li>
+          <li
+            v-else
+            class="item dir-item"
+            :class="{ selected: it.i === index }"
+            @mousemove="index = it.i"
+            @click="pick(it.i)"
           >
-        </li>
-        <li v-if="matches.panes.length && headLast" class="head workspace-title">Panes</li>
-        <li v-if="matches.dirs.length && !headLast" class="head workspace-title">Favorites</li>
-        <li
-          v-for="(d, i) in matches.dirs"
-          :key="`dir:${d.workspace}:${d.dir}`"
-          class="item dir-item"
-          :class="{ selected: i + matches.panes.length === index }"
-          @mousemove="index = i + matches.panes.length"
-          @click="pick(i + matches.panes.length)"
-        >
-          <span class="main"
-            ><span class="state"><LeadIcon :name="d.root ? 'folder-root' : 'folder'" /></span
-            ><span class="title">{{ d.name }}</span
-            ><span class="place">{{ d.path }}</span></span
-          >
-          <span class="where">{{ d.workspaceName }}</span>
-        </li>
-        <li v-if="matches.dirs.length && headLast" class="head workspace-title">Favorites</li>
+            <span class="main"
+              ><span class="state"><LeadIcon :name="it.row.root ? 'folder-root' : 'folder'" /></span
+              ><span class="title">{{ it.row.name }}</span
+              ><span class="tail path">{{ it.row.path }}</span></span
+            >
+            <span class="where">{{ it.row.workspaceName }}</span>
+          </li>
+        </template>
         <li v-if="!count" class="empty">No matching panes or favorites</li>
       </ul>
     </div>
@@ -152,27 +141,12 @@ const headLast = computed(() => position === 'bottom')
   white-space: nowrap;
 }
 
-.place {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
+.tail {
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
   font-size: var(--text-1);
   white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.branch {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.branch-name {
-  overflow: hidden;
   text-overflow: ellipsis;
 }
 

@@ -150,7 +150,7 @@ export function favoriteRow(dir: string, base: string | undefined, home?: string
 
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-/** 저장된 `favorites` 배열은 추가한 순서로 두고, 메뉴와 닫힌 workspace 카드에 보일 때만 이름순으로 정렬한다. 저장 형식과 복원을 바꾸지 않기 때문이다. */
+/** 저장된 `favorites` 배열은 추가한 순서로 두고, 화면에 보일 때만 이름순으로 정렬한다. 저장 형식과 복원을 바꾸지 않기 때문이다. */
 export function favoriteRows(
   dirs: readonly string[],
   base: string | undefined,
@@ -180,9 +180,21 @@ export function emptyRows(
   favorites: readonly DirRow[],
   home?: string
 ): DirLine[] {
-  if (cells || !root) return []
+  return cells || !root ? [] : dirLines(root, favorites, home)
+}
+
+/**
+ * workspace 디렉토리(`root`) 줄과 그 아래 즐겨찾기 줄이다. 즐겨찾기의 `label` 은 workspace 메뉴의 상대 경로이고, `path` 는
+ * 홈에서 본 경로다. `path` 는 ⌘P 전환기처럼 이름 옆에 경로를 보이는 자리에 쓴다. 그 자리에 상대 경로를 두면 `docs docs`
+ * 처럼 이름과 겹쳐, 여러 workspace 가 섞인 목록에서 어디인지 알 수 없기 때문이다.
+ */
+export function dirLines(
+  root: DirRow | undefined,
+  favorites: readonly DirRow[],
+  home?: string
+): DirLine[] {
   return [
-    { ...root, label: root.path, root: true },
+    ...(root ? [{ ...root, label: root.path, root: true }] : []),
     ...favorites.map((f) => ({ ...f, path: tildePath(f.dir, home), label: f.path, root: false }))
   ]
 }

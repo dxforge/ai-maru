@@ -489,11 +489,15 @@ async function openIn(workspace: number, dir: string, pane: PaneCommand): Promis
   if (key !== undefined) selectCell(key)
 }
 
-/** `anchor` 가 없으면 런처를 다른 팔레트처럼 창 아래(위) 가운데에 띄운다. ⌘P 전환기가 고른 디렉토리가 그렇다. */
-async function openDir(workspace: number, dir: string, anchor?: Anchor): Promise<void> {
-  if (!(await isDirectory(dir))) return closeOverlay('switcher')
+/**
+ * `anchor` 가 없으면 런처를 다른 팔레트처럼 창 아래(위) 가운데에 띄운다. 디렉토리가 없어 런처를 띄우지 않았으면 false 를
+ * 돌려준다.
+ */
+async function openDir(workspace: number, dir: string, anchor?: Anchor): Promise<boolean> {
+  if (!(await isDirectory(dir))) return false
   launchAt.value = { dir, where: 'cell', inWorkspace: workspace, shell: true, anchor }
   overlay.value = 'launch'
+  return true
 }
 
 const SIDEBAR_WIDTH = 280
@@ -786,13 +790,16 @@ function selectPane(cell: number, pane: number): void {
   selectCell(cell)
 }
 
-// 데스크톱 알림을 누르면 그 pane 을 선택한다. job 은 pane 이 없으므로 job 이 든 cell 을 선택한다. 접은 workspace 는 편다.
+function reveal(workspace: number, cell: number, pane?: number): void {
+  folded.delete(workspace)
+  if (pane !== undefined) selectPane(cell, pane)
+  else selectCell(cell)
+}
+
+// 데스크톱 알림을 누르면 그 pane 을 선택한다. job 은 pane 이 없으므로 job 이 든 cell 을 선택한다.
 window.maru.onPaneSelect((pty) => {
   const at = workspaces.locate(pty, jobs.value.find((j) => j.pty === pty)?.cell)
-  if (!at) return
-  folded.delete(at.workspace)
-  if (at.pane !== undefined) selectPane(at.cell, at.pane)
-  else selectCell(at.cell)
+  if (at) reveal(at.workspace, at.cell, at.pane)
 })
 
 // 순서가 바뀌면 Vue 가 터미널의 DOM 을 옮기고, 옮겨진 터미널은 포커스를 잃는다.
@@ -866,7 +873,10 @@ function keepHorizontalScroll(e: WheelEvent): void {
 
 type Overlay = 'palette' | 'launcher' | 'launch' | 'switcher'
 const overlay = ref<Overlay | null>(null)
-/** `inWorkspace` 가 있으면 사이드바의 workspace 메뉴의 즐겨찾기나 cell 이 없는 workspace 의 디렉토리 줄이 띄운 런처다. */
+/**
+ * `inWorkspace` 가 있으면 고른 디렉토리(workspace 메뉴의 즐겨찾기, cell 이 없는 workspace 의 디렉토리 줄, ⌘P 전환기의
+ * Favorites 줄)로 그 workspace 에 cell 을 여는 런처다.
+ */
 type LaunchAt =
   | { dir?: string; where: LaunchWhere; inWorkspace?: undefined }
   | { dir: string; where: 'cell'; inWorkspace: number; shell: true; anchor?: Anchor }
@@ -889,12 +899,26 @@ const switcherList = computed(() =>
   )
 )
 
-// 접은 workspace 의 pane 을 고르면 그 workspace 를 편다. 데스크톱 알림을 눌렀을 때(`onPaneSelect`)와 같다.
-function switchTo(cell: number, pane: number): void {
-  const w = workspaces.list.value.find((w) => w.cells.some((c) => c.key === cell))
-  if (w) folded.delete(w.key)
+function switchTo(workspace: number, cell: number, pane: number): void {
   closeOverlay('switcher')
-  selectPane(cell, pane)
+  reveal(workspace, cell, pane)
+}
+
+async function switchToDir(workspace: number, dir: string): Promise<void> {
+  if (!(await openDir(workspace, dir))) closeOverlay('switcher')
+}
+
+const OPENS = {
+  launcher: 'launcher',
+  'command-palette': 'palette',
+  'go-to-pane': 'switcher'
+} as const satisfies Partial<Record<CommandId, Overlay>>
+
+const overlayInputs = { launcher, palette, switcher }
+
+function openOverlay(which: keyof typeof overlayInputs): void {
+  overlay.value = which
+  overlayInputs[which].value?.focus()
 }
 
 /**
@@ -966,18 +990,9 @@ const handlers: Record<CommandId, () => void> = {
   'focus-pane-right': () => workspaces.moveFocus('right', widths.value),
   'focus-pane-up': () => workspaces.moveFocus('up', widths.value),
   'focus-pane-down': () => workspaces.moveFocus('down', widths.value),
-  launcher: () => {
-    overlay.value = 'launcher'
-    launcher.value?.focus()
-  },
-  'command-palette': () => {
-    overlay.value = 'palette'
-    palette.value?.focus()
-  },
-  'go-to-pane': () => {
-    overlay.value = 'switcher'
-    switcher.value?.focus()
-  },
+  launcher: () => openOverlay(OPENS.launcher),
+  'command-palette': () => openOverlay(OPENS['command-palette']),
+  'go-to-pane': () => openOverlay(OPENS['go-to-pane']),
   'toggle-sidebar': () => {
     sidebarOpen.value = !sidebarOpen.value
     // 사이드바를 접거나 펴면 메뉴가 ⋮ 버튼에서 떨어진다. 터미널에 포커스를 주면 메뉴가 포커스를 잃어 고치던 이름을 정하고
@@ -997,11 +1012,11 @@ const handlers: Record<CommandId, () => void> = {
   restart: window.maru.restart
 }
 
-// 팔레트·런처·전환기·chord 의 명령 목록을 부르는 명령은 여기서 닫지 않는다. 같은 쪽을 다시 부르면 입력을 그대로 두고 포커스만 되찾고, 다른 쪽을
-// 부르면 `overlay` 가 바뀌며 떠 있던 쪽이 닫히기 때문이다.
+// `runCommand` 는 overlay 를 여는 명령(`OPENS`)과 chord 의 명령 목록을 부르는 명령을 실행할 때 떠 있는 overlay 를
+// 닫지 않는다. 같은 overlay 를 다시 열면 입력을 그대로 두고 포커스만 되찾고, 다른 overlay 를 열면 `overlay` 가 바뀌며
+// 떠 있던 overlay 가 닫히기 때문이다.
 function runCommand(id: CommandId): void {
-  if (id !== 'command-palette' && id !== 'launcher' && id !== 'go-to-pane' && !(id in chords))
-    closeOverlay()
+  if (!(id in OPENS) && !(id in chords)) closeOverlay()
   handlers[id]()
 }
 window.maru.onCommand(runCommand)
@@ -1240,7 +1255,7 @@ void window.maru.restoreScreen().then((r) => {
       :position="config.layout.value.palette"
       :rows="switcherList"
       @pane="switchTo"
-      @dir="openDir"
+      @dir="switchToDir"
       @close="closeOverlay('switcher')"
     />
     <LauncherPalette

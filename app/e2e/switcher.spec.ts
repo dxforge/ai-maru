@@ -48,8 +48,8 @@ test('⌘P 전환기는 모든 workspace 의 pane 을 지금 pane 을 표시해 
   await openSwitcher(launched)
   await expect(paneItems(page).locator('.title')).toHaveText(['zsh', 'zsh'])
   await expect(paneItems(page).locator('.place')).toHaveText(['alpha', 'beta'])
-  await expect(paneItems(page).nth(1)).toHaveClass(/current/)
-  await expect(paneItems(page).nth(0)).not.toHaveClass(/current/)
+  await expect(paneItems(page).nth(1)).toHaveAttribute('aria-current', 'true')
+  await expect(paneItems(page).nth(0)).not.toHaveAttribute('aria-current')
   await expect(paneItems(page).nth(0)).toHaveClass(/selected/)
   await expect(dirItems(page).locator('.title')).toHaveText(['alpha', 'beta'])
 

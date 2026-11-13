@@ -1,23 +1,27 @@
 import type { DeepReadonly } from 'vue'
 import { matchesWords } from '../../../shared/commands'
 import { labelBase, workspaceName } from '../../../shared/names'
-import { tildePath } from './cwd'
-import { dirRow, favoriteRows, paneRow, type DirRow, type Row, type RowSource } from './sidebarRows'
+import {
+  dirLines,
+  dirRow,
+  favoriteRows,
+  paneRow,
+  type DirLine,
+  type Row,
+  type RowSource
+} from './sidebarRows'
 import { focusedPane, orderedPanes, workspaceDir, type Workspace } from './store'
 
 export type SwitcherPane = Row & {
   cell: number
   workspace: number
   workspaceName: string
-  /** 거르기에 맞춰 보는 글이다. */
   search: string
 }
 
-export type SwitcherDir = DirRow & {
+export type SwitcherDir = DirLine & {
   workspace: number
   workspaceName: string
-  /** workspace 디렉토리(workspace 메뉴의 Favorites 맨 윗줄)면 true 다. */
-  root: boolean
   search: string
 }
 
@@ -53,16 +57,10 @@ export function switcherRows(
       }
     }
     const dir = workspaceDir(w)
-    const rows = [
-      ...(dir === undefined ? [] : [{ ...dirRow(dir, src.home), root: true }]),
-      ...favoriteRows(w.favorites ?? [], dir, src.home).map((f) => ({ ...f, root: false }))
-    ]
-    // workspace 메뉴는 favorite 을 workspace 디렉토리에서 본 상대 경로로 보이지만, 여러 workspace 의 줄이 섞이는
-    // 전환기에서는 그 경로가 이름과 겹쳐 어디인지 알 수 없으므로 홈에서 본 경로로 보인다.
-    for (const f of rows) {
-      const path = tildePath(f.dir, src.home)
-      const words = [f.name, path, name]
-      dirs.push({ ...f, path, workspace: w.key, workspaceName: name, search: join(words) })
+    const root = dir === undefined ? undefined : dirRow(dir, src.home)
+    for (const f of dirLines(root, favoriteRows(w.favorites ?? [], dir, src.home), src.home)) {
+      const words = [f.name, f.path, name]
+      dirs.push({ ...f, workspace: w.key, workspaceName: name, search: join(words) })
     }
   }
   return { panes, dirs }
@@ -70,7 +68,40 @@ export function switcherRows(
 
 const join = (words: readonly (string | undefined)[]): string => words.filter(Boolean).join(' ')
 
-/** ⇧⌘P 팔레트(`filterCommands`)처럼 입력한 단어가 모두 들어 있는 줄만 남긴다. */
+export type SwitcherItem =
+  | { kind: 'head'; key: string; title: string }
+  | { kind: 'pane'; key: string; i: number; row: SwitcherPane }
+  | { kind: 'dir'; key: string; i: number; row: SwitcherDir }
+
+/**
+ * 전환기가 그릴 줄을 DOM 순서로 둔다. `i` 는 고를 수 있는 줄의 번호로, pane 줄 다음에 디렉토리 줄이 이어진다. 묶음 이름
+ * 줄은 그 묶음에 줄이 있을 때만 둔다. 아래 팔레트는 목록을 column-reverse 로 그리므로, `headLast` 면 묶음 이름 줄을 DOM
+ * 에서 묶음 뒤에 두어 화면에서 묶음 위에 오게 한다.
+ */
+export function switcherItems({ panes, dirs }: SwitcherRows, headLast: boolean): SwitcherItem[] {
+  const list: SwitcherItem[] = []
+  const group = (title: string, rows: SwitcherItem[]): void => {
+    if (!rows.length) return
+    const head: SwitcherItem = { kind: 'head', key: `head:${title}`, title }
+    list.push(...(headLast ? [...rows, head] : [head, ...rows]))
+  }
+  group(
+    'Panes',
+    panes.map((row, i) => ({ kind: 'pane', key: `pane:${row.pane}`, i, row }))
+  )
+  // workspace 디렉토리를 즐겨찾기에도 넣으면 두 줄의 `dir` 이 같으므로, workspace 디렉토리 줄은 `dir` 을 key 에 쓰지 않는다.
+  group(
+    'Favorites',
+    dirs.map((row, i) => ({
+      kind: 'dir',
+      key: `dir:${row.workspace}:${row.root ? '' : row.dir}`,
+      i: i + panes.length,
+      row
+    }))
+  )
+  return list
+}
+
 export function filterSwitcher({ panes, dirs }: SwitcherRows, query: string): SwitcherRows {
   return {
     panes: panes.filter((r) => matchesWords(r.search, query)),
