@@ -5,7 +5,7 @@ import {
   dirName,
   labelBase,
   nameOnFocusLoss,
-  savedPinnedName,
+  savedKeptName,
   sidebarLabel,
   type Named,
   windowTitle,
@@ -198,20 +198,20 @@ describe('labelBase', () => {
   })
 })
 
-describe('savedPinnedName', () => {
+describe('savedKeptName', () => {
   const w = {
     cells: [{ panes: [{ cwd: '/mono/ai-maru/app', git: { repo: 'ai-maru', sub: 'app' } }] }]
   }
 
   it('dir 이 첫 pane 의 작업 트리 안이면 저장소 이름이다', () => {
-    expect(savedPinnedName(w, '/mono/ai-maru')).toBe('ai-maru')
-    expect(savedPinnedName(w, '/mono/ai-maru/app')).toBe('ai-maru')
+    expect(savedKeptName(w, '/mono/ai-maru')).toBe('ai-maru')
+    expect(savedKeptName(w, '/mono/ai-maru/app')).toBe('ai-maru')
   })
 
   it('dir 이 작업 트리 밖이거나 첫 pane 이 저장소가 아니면 dir 이름이다', () => {
-    expect(savedPinnedName(w, '/mono')).toBe('mono')
-    expect(savedPinnedName(w, '/mono/ai-maru2')).toBe('ai-maru2')
-    expect(savedPinnedName({ cells: [] }, '/h', '/h')).toBe('~')
+    expect(savedKeptName(w, '/mono')).toBe('mono')
+    expect(savedKeptName(w, '/mono/ai-maru2')).toBe('ai-maru2')
+    expect(savedKeptName({ cells: [] }, '/h', '/h')).toBe('~')
   })
 })
 

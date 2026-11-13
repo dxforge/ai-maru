@@ -1,11 +1,10 @@
 import { readonly, ref } from 'vue'
 import { sameGitHead, type GitHead } from '../../../shared/git'
 import { samePath } from '../../../shared/launcher'
-import { autoWorkspaceName, focusedPane, gitRootOf, savedPinnedName } from '../../../shared/names'
+import { autoWorkspaceName, focusedPane, gitRootOf, savedKeptName } from '../../../shared/names'
 import type { ProgramStatusState } from '../../../shared/program-status'
 import type { PtyState } from '../../../shared/pty-state'
 import {
-  keeps,
   layoutKeys,
   type LayoutPane,
   type SavedLayout,
@@ -73,7 +72,7 @@ export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
 export type Cell = Omit<ScreenCell, 'panes'> & { panes: Pane[] }
 
 /**
- * 마지막 cell 이 닫히면 workspace 도 닫힌다. 핀을 꽂았거나 즐겨찾기가 있는 workspace(`keeps`)만 `cells` 가 빈 채로 남는다.
+ * 마지막 cell 이 닫히면 workspace 도 닫힌다. keep 을 켠 workspace 만 `cells` 가 빈 채로 남는다.
  */
 export type Workspace = Omit<ScreenWorkspace, 'cells'> & { cells: Cell[] }
 
@@ -86,15 +85,15 @@ export const findFavorite = (
 export { focusedPane }
 
 /**
- * workspace 의 디렉토리다. 핀이 없으면 첫 pane 이 지금 있는 디렉토리이고, 저장된 `dir` 은 그대로 쓰지 않는다. `dir` 은 첫
+ * workspace 의 디렉토리다. keep 을 껐으면 첫 pane 이 지금 있는 디렉토리이고, 저장된 `dir` 은 그대로 쓰지 않는다. `dir` 은 첫
  * pane 의 cwd 가 바뀔 때만 따라가므로, cell 순서를 바꿔 첫 pane 이 바뀐 뒤에는 옛 값일 수 있기 때문이다.
  */
 export function workspaceDir(
-  w: Pick<Workspace, 'pinned' | 'dir'> & {
+  w: Pick<Workspace, 'kept' | 'dir'> & {
     cells: readonly { panes: readonly Pick<Pane, 'cwd' | 'startDir'>[] }[]
   }
 ): string | undefined {
-  if (w.pinned) return w.dir
+  if (w.kept) return w.dir
   const first = w.cells[0]?.panes[0]
   return first?.cwd ?? first?.startDir ?? w.dir
 }
@@ -112,7 +111,8 @@ export function orderedPanes<P extends { key: number }>(c: {
 
 export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
 
-export type Removed = { workspace: Workspace; at: number }
+/** keep 을 끈 workspace 와, 닫았으면 그 자리 `at`, 지웠으면 그 즐겨찾기다. */
+export type Unkept = { workspace: Workspace; at?: number; favorites?: string[] }
 
 export type PaneCommand = Pick<Pane, 'command' | 'keep'>
 
@@ -181,13 +181,13 @@ export function createWorkspaces(
   }
 
   /**
-   * 핀이 없는 workspace 의 `dir` 은 자동 이름처럼 첫 pane 이 있는 디렉토리를 따라간다. 핀을 꽂으면 굳는다. 셸이 디렉토리를
-   * 알리기 전에 꽂아 `dir` 이 없으면 처음 알린 디렉토리로 정한다.
+   * keep 을 끈 workspace 의 `dir` 은 자동 이름처럼 첫 pane 이 있는 디렉토리를 따라간다. keep 을 켜면 굳는다. 셸이 디렉토리를
+   * 알리기 전에 keep 을 켜 `dir` 이 없으면 처음 알린 디렉토리로 정한다.
    */
   function settleDir(w: Workspace, dir: string | undefined): void {
-    if (dir === undefined || (w.pinned && w.dir !== undefined)) return
+    if (dir === undefined || (w.kept && w.dir !== undefined)) return
     w.dir = dir
-    if (w.pinned) w.name ??= autoWorkspaceName(w, home)
+    if (w.kept) w.name ??= autoWorkspaceName(w, home)
   }
 
   const headOf = (p: Pane): Workspace | undefined =>
@@ -227,56 +227,63 @@ export function createWorkspaces(
     return c
   }
 
-  /** cell 이 없고 남을 이유(`keeps`)도 없는 workspace 를 닫고 그 자리를 돌려준다. 닫지 않았으면 -1 이다. */
   function dropUnkept(w: Workspace): number {
-    if (w.cells.length || keeps(w)) return -1
+    if (w.cells.length || w.kept) return -1
     const at = list.value.indexOf(w)
     list.value.splice(at, 1)
     return at
   }
 
   /**
-   * 핀을 꽂거나 뺀다. workspace 는 자리를 옮기지 않는다. 핀을 빼서 남을 이유가 없어진 빈 workspace 는 닫는다. 그때는
-   * `reinstate` 로 되살릴 수 있게 그 workspace 와 자리를 돌려주고, 아니면 `undefined` 를 돌려준다.
+   * keep 을 켜거나 끈다. workspace 는 자리를 옮기지 않는다. 즐겨찾기는 keep 을 켠 workspace 만 가지므로 끌 때 함께 지우고,
+   * cell 이 없는 workspace 는 닫는다. 즐겨찾기를 지웠거나 workspace 를 닫았으면 `reinstate` 로 되돌릴 수 있게 그것을
+   * 돌려주고, 아니면 `undefined` 를 돌려준다.
    */
-  function togglePin(key: number): Removed | undefined {
+  function toggleKeep(key: number): Unkept | undefined {
     const w = workspaceByKey(key)
     if (!w) return undefined
-    if (!w.pinned) {
-      // 핀은 cell 을 다 닫아도 workspace 를 남긴다. 자동 이름과 `dir` 은 첫 pane 을 따라가므로, cell 을 닫고 열 때마다
+    if (!w.kept) {
+      // keep 은 cell 을 다 닫아도 workspace 를 남긴다. 자동 이름과 `dir` 은 첫 pane 을 따라가므로, cell 을 닫고 열 때마다
       // 바뀌지 않게 지금 값으로 굳힌다. 디렉토리를 모르면 자동 이름이 `Shell` 이므로, 이름은 `settleDir` 가 디렉토리를
       // 정할 때 굳힌다.
       w.dir = workspaceDir(w)
       if (w.dir !== undefined) w.name ??= autoWorkspaceName(w, home)
-      w.pinned = true
+      w.kept = true
       return undefined
     }
-    delete w.pinned
+    const { favorites } = w
+    delete w.kept
+    delete w.favorites
     const at = dropUnkept(w)
-    return at < 0 ? undefined : { workspace: w, at }
+    if (at < 0) return favorites && { workspace: w, favorites }
+    return { workspace: w, at, favorites }
   }
 
-  function reinstate({ workspace: w, at }: Removed): void {
-    if (workspaceByKey(w.key)) return
-    w.pinned = true
-    list.value.splice(Math.min(at, list.value.length), 0, w)
+  function reinstate({ workspace: w, at, favorites }: Unkept): void {
+    const gone = !workspaceByKey(w.key)
+    if (at !== undefined && !gone) return
+    w.kept = true
+    // 즐겨찾기만 지운 뒤에도 Undo 전에 마지막 cell 을 닫아 workspace 가 닫히거나, keep 을 다시 켜 즐겨찾기를 더할 수 있다.
+    if (favorites) w.favorites = [...new Set([...favorites, ...(w.favorites ?? [])])]
+    if (gone) list.value.splice(Math.min(at ?? list.value.length, list.value.length), 0, w)
   }
 
   /**
-   * pane 의 cwd 를 workspace 의 즐겨찾기에 넣거나 뺀다. `pane` 이 없으면 cell 의 포커스된 pane 이다. 그 pane 의 cwd 를 몰라
-   * 넣지도 빼지도 못했으면 false 다.
+   * pane 의 cwd 를 workspace 의 즐겨찾기에 넣거나 뺀다. `pane` 이 없으면 cell 의 포커스된 pane 이다. keep 을 켜지 않은
+   * workspace 이면 `'not-kept'`, 그 pane 의 cwd 를 몰라 넣지도 빼지도 못했으면 `'no-dir'` 다.
    */
-  function toggleFavorite(cell: number, pane?: number): boolean {
+  function toggleFavorite(cell: number, pane?: number): 'ok' | 'not-kept' | 'no-dir' {
     const w = workspaceOf(cell)
     const c = w?.cells.find((x) => x.key === cell)
     const p = c && (pane === undefined ? focusedPane(c) : c.panes.find((x) => x.key === pane))
-    if (!w || !p) return true
+    if (!w || !p) return 'ok'
+    if (!w.kept) return 'not-kept'
     const cwd = p.cwd
-    if (cwd === undefined) return false
+    if (cwd === undefined) return 'no-dir'
     const had = findFavorite(w, cwd)
     if (had !== undefined) dropFavorite(w, had)
     else w.favorites = [...(w.favorites ?? []), cwd]
-    return true
+    return 'ok'
   }
 
   function dropFavorite(w: Workspace, dir: string): void {
@@ -285,12 +292,9 @@ export function createWorkspaces(
     else delete w.favorites
   }
 
-  /** 즐겨찾기를 빼서 남을 이유가 없어진 빈 workspace 는 닫는다. */
   function removeFavorite(workspace: number, dir: string): void {
     const w = workspaceByKey(workspace)
-    if (!w) return
-    dropFavorite(w, dir)
-    dropUnkept(w)
+    if (w) dropFavorite(w, dir)
   }
 
   function openIn(workspace: number, dir: string, extra: PaneCommand = {}): number | undefined {
@@ -354,8 +358,8 @@ export function createWorkspaces(
 
   /**
    * cell 을 `to.workspace` 의 `to.index` 번째 cell 앞(옮기기 전 목록의 자리)으로 옮긴다. `'new'` 면 그 cell 하나로 된
-   * workspace 를 목록 끝에 둔다. 남을 이유(`keeps`)가 없고 cell 이 하나뿐인 workspace 면 새로 만들지 않고 그 workspace 를
-   * id 그대로 끝으로 옮긴다. 선택·포커스는 바꾸지 않는다. 마지막 cell 이 빠진 workspace 는 남을 이유가 없으면 닫는다.
+   * workspace 를 목록 끝에 둔다. keep 을 끄고 cell 이 하나뿐인 workspace 면 새로 만들지 않고 그 workspace 를
+   * id 그대로 끝으로 옮긴다. 선택·포커스는 바꾸지 않는다. 마지막 cell 이 빠진 workspace 는 keep 을 껐으면 닫는다.
    */
   function moveCell(key: number, to: { workspace: number; index: number } | 'new'): void {
     const from = workspaceOf(key)
@@ -363,7 +367,7 @@ export function createWorkspaces(
     const at = from.cells.findIndex((c) => c.key === key)
     if (to === 'new') {
       // 새 workspace 를 만들지 않는 것은 닫기 확인이 보는 workspace id 를 바꾸지 않기 위해서다.
-      if (from.cells.length === 1 && !keeps(from)) return moveWorkspace(from.key, list.value.length)
+      if (from.cells.length === 1 && !from.kept) return moveWorkspace(from.key, list.value.length)
       const c = detach(from, at)
       const w = createWorkspace(c)
       settleDir(w, c.panes[0].cwd)
@@ -371,7 +375,7 @@ export function createWorkspaces(
       return
     }
     const dest = workspaceByKey(to.workspace)
-    // cell 이 하나뿐인 workspace 안에서 그 cell 을 옮기면 아무것도 하지 않는다. 남을 이유가 없으면 `detach` 가 cell 을 빼면서 그
+    // cell 이 하나뿐인 workspace 안에서 그 cell 을 옮기면 아무것도 하지 않는다. keep 을 껐으면 `detach` 가 cell 을 빼면서 그
     // workspace 를 목록에서 지우므로, 그대로 넣으면 cell 이 목록에 없는 workspace 에 들어가 사라지기 때문이다.
     if (!dest || (dest === from && from.cells.length === 1)) return
     const c = detach(from, at)
@@ -518,7 +522,7 @@ export function createWorkspaces(
   function applyState(ptyId: string): void {
     const p = paneByPty(ptyId)
     // main 은 끝난 pty 의 상태를 지우고, 그러면 cwd 는 셸을 띄운 디렉토리로 돌아간다. 그 알림이 셸의 exit 보다 먼저 오면,
-    // 핀 없이 즐겨찾기로 남는 workspace(`keeps`)에서는 cell 을 닫는 `detach` 가 그 디렉토리를 workspace 의 디렉토리로
+    // keep 을 켰지만 아직 `dir` 이 없는 workspace 에서는 cell 을 닫는 `detach` 가 그 디렉토리를 workspace 의 디렉토리로
     // 적는다. 그래서 상태가 지워졌을 때는 마지막 cwd 를 둔다.
     if (p) refresh(p, source.get(ptyId) === undefined)
   }
@@ -628,9 +632,9 @@ export function createWorkspaces(
         ...w,
         cells: w.cells.map((c) => ({ ...c, panes: c.panes.map(restorePane) }))
       }
-      if (r.pinned && r.name === undefined && r.dir !== undefined)
-        r.name = savedPinnedName(r, r.dir, home)
-      // pty 에 다시 붙는 pane 은 `setSpawnedDir` 를 부르지 않으므로, 핀이 없으면 저장한 cwd 로 정한다.
+      if (r.kept && r.name === undefined && r.dir !== undefined)
+        r.name = savedKeptName(r, r.dir, home)
+      // pty 에 다시 붙는 pane 은 `setSpawnedDir` 를 부르지 않으므로, keep 을 껐으면 저장한 cwd 로 정한다.
       settleDir(r, w.cells[0]?.panes[0]?.cwd)
       return r
     })
@@ -651,7 +655,7 @@ export function createWorkspaces(
     moveCell,
     moveWorkspace,
     rename,
-    togglePin,
+    toggleKeep,
     reinstate,
     toggleFavorite,
     removeFavorite,

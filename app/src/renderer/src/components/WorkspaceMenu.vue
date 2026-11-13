@@ -1,23 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
-import { Folder, FolderRoot, X } from '@lucide/vue'
+import { Anchor as AnchorIcon, Check, Folder, FolderRoot, X } from '@lucide/vue'
 import { nameOnFocusLoss } from '../../../shared/names'
 import type { Anchor } from '../launcher/anchor'
 import type { DirRow } from '../workspace/sidebarRows'
-import PinIcon from './PinIcon.vue'
 
 const {
   name,
   base = undefined,
   favorites,
-  pinned,
+  kept,
   head
 } = defineProps<{
   name: string
   /** workspace 의 디렉토리(`workspaceDir`)다. Favorites 맨 위에 지울 수 없는 줄로 둔다. */
   base?: DirRow
   favorites: readonly DirRow[]
-  pinned: boolean
+  kept: boolean
   /** 메뉴를 연 workspace 헤더. 메뉴는 그 안의 ⋮ 버튼 아래에 오른쪽 끝을 맞춰 뜬다. */
   head: HTMLElement
 }>()
@@ -27,7 +26,7 @@ const emit = defineEmits<{
   done: [name: string | null, refocus: boolean]
   openFavorite: [dir: string, anchor: Anchor]
   removeFavorite: [dir: string]
-  togglePin: []
+  toggleKeep: []
   closeWorkspace: []
 }>()
 
@@ -192,10 +191,17 @@ function openFavorite(dir: string): void {
         <X class="icon" />
       </button>
     </div>
-    <div v-if="!favorites.length" class="hint">Star a pane to add its directory</div>
+    <div v-if="!favorites.length" class="hint">
+      {{ kept ? 'Star a pane to add its directory' : 'Keep Workspace to add favorites' }}
+    </div>
     <hr />
-    <button class="action pin-action" role="menuitem" @click="act(() => emit('togglePin'))">
-      <PinIcon class="icon" :filled="pinned" />{{ pinned ? 'Unpin Workspace' : 'Pin Workspace' }}
+    <button
+      class="action"
+      role="menuitemcheckbox"
+      :aria-checked="kept"
+      @click="act(() => emit('toggleKeep'))"
+    >
+      <AnchorIcon class="icon" />Keep Workspace<Check v-if="kept" class="icon check" />
     </button>
     <button class="action close-action" role="menuitem" @click="act(() => emit('closeWorkspace'))">
       <X class="icon" />Close Workspace
@@ -296,5 +302,9 @@ button {
   width: 12px;
   height: 12px;
   color: var(--muted);
+}
+
+.check {
+  margin-left: auto;
 }
 </style>

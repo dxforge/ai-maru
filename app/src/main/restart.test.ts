@@ -241,7 +241,7 @@ describe('checkRestart', () => {
     expect(
       restartDialog((await check(bin, join(dir, 'missing.json'))) as Incompatible).detail
     ).toBe(
-      "The installed app's saved-state format couldn't be determined. All cells will close. Workspaces will be unpinned and lose their custom names and favorites. Workspaces without cells will be removed."
+      "The installed app's saved-state format couldn't be determined. All cells will close. Workspaces will lose their custom names, favorites and Keep Workspace. Workspaces without cells will be removed."
     )
   })
 })
@@ -335,7 +335,7 @@ describe('restartDialog · restartRefusal', () => {
     recovered: 2,
     formats: ['panes']
   }
-  const pins: Incompatible = {
+  const details: Incompatible = {
     ok: false,
     reason: 'incompatible',
     result: 'full',
@@ -372,11 +372,11 @@ describe('restartDialog · restartRefusal', () => {
         'The installed app uses a different saved-state format for the panes. Each cell will reopen with one new shell. 2 terminals will keep running in a new workspace named Recovered.',
       buttons: ['Restart with one shell per cell', 'Cancel']
     })
-    expect(restartDialog(pins)).toEqual({
-      message: 'Restart without workspace pins?',
+    expect(restartDialog(details)).toEqual({
+      message: 'Restart and lose workspace details?',
       detail:
-        'The installed app uses a different saved-state format for the workspaces. Workspaces will be unpinned and lose their custom names and favorites. Workspaces without cells will be removed.',
-      buttons: ['Restart without workspace pins', 'Cancel']
+        'The installed app uses a different saved-state format for the workspaces. Workspaces will lose their custom names, favorites and Keep Workspace. Workspaces without cells will be removed.',
+      buttons: ['Restart and lose workspace details', 'Cancel']
     })
     expect(
       restartDialog({ ...layout, formats: ['workspaces', 'cells', 'sessions'] }).detail
@@ -395,13 +395,13 @@ describe('restartDialog · restartRefusal', () => {
     expect(restartRefusal(panes).message).toMatch(
       /Pass --kill-ptys to restart with one shell per cell\.$/
     )
-    expect(restartRefusal(pins).message).toMatch(
-      /Pass --kill-ptys to restart without workspace pins\.$/
+    expect(restartRefusal(details).message).toMatch(
+      /Pass --kill-ptys to restart and lose workspace details\.$/
     )
   })
 
-  it('pty 를 끌 때만 ptys_would_end, 배치를 잃으면 layout_would_be_lost, workspaces 표만 잃으면 pins_would_be_lost 로 거절한다', () => {
-    expect(restartRefusal(pins).code).toBe('pins_would_be_lost')
+  it('pty 를 끌 때만 ptys_would_end, 배치를 잃으면 layout_would_be_lost, workspaces 표만 잃으면 workspace_details_would_be_lost 로 거절한다', () => {
+    expect(restartRefusal(details).code).toBe('workspace_details_would_be_lost')
     expect(restartRefusal(protocol).code).toBe('ptys_would_end')
     expect(restartRefusal(layout).code).toBe('layout_would_be_lost')
     expect(restartRefusal(panes).code).toBe('layout_would_be_lost')

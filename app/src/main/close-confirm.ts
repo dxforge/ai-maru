@@ -115,7 +115,7 @@ export function quitDialog({ open, panes, jobs }: Running & { open: number }): D
       `${running.length ? `${count}; ${running.join(' and ')}` : count}.\n\n` +
       'Choose Keep terminals to leave the terminals running for the next launch. Choose Keep ' +
       'layout only to end the terminals and reopen the panes with new shells next time. Choose ' +
-      'End everything to end the terminals and close all cells. Pinned workspaces and workspaces with favorites stay.',
+      'End everything to end the terminals and close all cells. Kept workspaces stay.',
     buttons: ['Keep terminals', 'Keep layout only', 'End everything', 'Cancel']
   }
 }

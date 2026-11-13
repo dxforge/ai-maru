@@ -60,13 +60,13 @@ const job: JobRecord = {
 }
 
 const { workspaces: screenWorkspaces, cells, panes, ptys } = splitScreen(screen)
-// store 는 표끼리 맞는지 보지 않는다 — End everything 이 핀이나 즐겨찾기가 있는 줄만 남기는지 보려고 cell 없는 줄을 더한다.
+// store 는 표끼리 맞는지 보지 않는다 — End everything 이 keep 을 켠 줄만 남기는지 보려고 cell 없는 줄을 더한다.
 const workspaces = {
   ...screenWorkspaces,
   rows: [
     ...screenWorkspaces.rows,
-    { id: 'w-00000009', name: 'atlas', pinned: true as const },
-    { id: 'w-0000000a', favorites: ['/r'] }
+    { id: 'w-00000009', name: 'atlas', kept: true as const },
+    { id: 'w-0000000a', name: 'lib' }
   ]
 }
 const sessions: SessionsPart = { version: STATE_VERSIONS.sessions, ptys, jobs: [job] }
@@ -436,7 +436,7 @@ describe('recoverPtys', () => {
 
   it('고른 cell 이 없는 배치면 Recovered 의 첫 cell 을 고른다', () => {
     const layout = {
-      workspaces: [{ key: 0, id: 'w-00000009', pinned: true as const, cells: [] }],
+      workspaces: [{ key: 0, id: 'w-00000009', kept: true as const, cells: [] }],
       selected: null
     }
     const r = recoverPtys(layout, { attach: {}, keep: [] }, [rec('p-0000000a', 1)], ids())
@@ -563,7 +563,7 @@ describe('createStateStore', () => {
     expect(s.current().view).toMatchObject({ window, theme: { background: '#ffffff' } })
   })
 
-  const kept = { ...workspaces, rows: workspaces.rows.slice(1) }
+  const kept = { ...workspaces, rows: workspaces.rows.filter((w) => w.kept) }
   it.each([
     ['keep', full],
     ['layout', { ...full, sessions: null }],
@@ -626,19 +626,19 @@ describe('createStateStore', () => {
     expect(existsSync(path)).toBe(false)
   })
 
-  it('화면의 핀 workspace 는 workspaces 표의 줄에 pinned 로 담는다', () => {
+  it('화면의 keep 을 켠 workspace 는 workspaces 표의 줄에 kept 로 담는다', () => {
     const w = {
       ...screen.workspaces[0],
       name: 'atlas',
       dir: '/tmp',
-      pinned: true as const,
+      kept: true as const,
       favorites: ['/tmp']
     }
     const s = store(full)
     s.setScreen({ ...screen, workspaces: [w] })
     expect(s.current()).toMatchObject({
       workspaces: {
-        rows: [{ id: 'w-00000001', name: 'atlas', pinned: true, dir: '/tmp', favorites: ['/tmp'] }]
+        rows: [{ id: 'w-00000001', name: 'atlas', kept: true, dir: '/tmp', favorites: ['/tmp'] }]
       },
       cells,
       panes
