@@ -68,7 +68,7 @@ describe('switcherRows', () => {
     expect(panes).toHaveLength(4)
   })
 
-  it('favorite 줄은 workspace 마다 workspace 디렉토리를 맨 위에, 즐겨찾기를 이름순으로 그 아래에 둔다', () => {
+  it('favorite 줄은 workspace 마다 workspace 디렉토리를 맨 위에, 즐겨찾기를 이름순으로 그 아래에 두고 경로는 홈에서 본 경로로 보인다', () => {
     const fav = [
       workspace(1, [cell(10, [pane(100, '/h/app')])], {
         favorites: ['/h/app/web', '/opt/data', '/h/app/api']
@@ -78,9 +78,9 @@ describe('switcherRows', () => {
     const { dirs } = switcherRows(fav, src, 10)
     expect(dirs.map((r) => [r.workspace, r.dir, r.name, r.path, r.root, r.workspaceName])).toEqual([
       [1, '/h/app', 'app', '~/app', true, 'app'],
-      [1, '/h/app/api', 'api', 'api', false, 'app'],
+      [1, '/h/app/api', 'api', '~/app/api', false, 'app'],
       [1, '/opt/data', 'data', '/opt/data', false, 'app'],
-      [1, '/h/app/web', 'web', 'web', false, 'app'],
+      [1, '/h/app/web', 'web', '~/app/web', false, 'app'],
       [2, '/h/srv', 'srv', '~/srv', true, 'srv']
     ])
   })

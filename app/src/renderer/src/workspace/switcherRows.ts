@@ -57,9 +57,12 @@ export function switcherRows(
       ...(dir === undefined ? [] : [{ ...dirRow(dir, src.home), root: true }]),
       ...favoriteRows(w.favorites ?? [], dir, src.home).map((f) => ({ ...f, root: false }))
     ]
+    // workspace 메뉴는 favorite 을 workspace 디렉토리에서 본 상대 경로로 보이지만, 여러 workspace 의 줄이 섞이는
+    // 전환기에서는 그 경로가 이름과 겹쳐 어디인지 알 수 없으므로 홈에서 본 경로로 보인다.
     for (const f of rows) {
-      const words = [f.name, f.path, tildePath(f.dir, src.home), name]
-      dirs.push({ ...f, workspace: w.key, workspaceName: name, search: join(words) })
+      const path = tildePath(f.dir, src.home)
+      const words = [f.name, path, name]
+      dirs.push({ ...f, path, workspace: w.key, workspaceName: name, search: join(words) })
     }
   }
   return { panes, dirs }
