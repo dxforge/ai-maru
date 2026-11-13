@@ -2,7 +2,7 @@ import { isBodyless, type PtyNotification } from '../shared/pty-state'
 
 /** 데스크톱 알림은 이 간격에 하나만 띄운다. ghostty 의 값이다. */
 export const NOTIFICATION_INTERVAL_MS = 1_000
-/** 마지막으로 띄운 알림과 제목·본문이 같으면 이 간격 안에는 띄우지 않는다. ghostty 의 값이다. */
+/** 마지막으로 띄운 알림과 pty·제목·본문이 같으면 이 간격 안에는 띄우지 않는다. ghostty 의 값이다. */
 export const SAME_NOTIFICATION_INTERVAL_MS = 5_000
 
 export type DesktopNotice = { title: string; subtitle: string; body: string }
