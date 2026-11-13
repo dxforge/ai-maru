@@ -137,11 +137,12 @@ function headerColor(bg: string, fg: string, light: boolean): string {
 /** cell 띠와 터미널 배경의 대비. 헤더 배경처럼 섞는 비율이 아니라 이 대비로 정한다. */
 export const CELL_BAND_CONTRAST = 2
 
-function cellBandColor(bg: string, fg: string): string {
+/** 고른 cell 의 테두리와 터미널 배경의 대비. cell 띠보다 커야 띠 위를 지나는 테두리가 띠와 구별된다. */
+export const CELL_EDGE_CONTRAST = 4
+
+function towardForeground(bg: string, fg: string, ratio: number): string {
   const far = contrast(bg, '#000000') > contrast(bg, '#ffffff') ? '#000000' : '#ffffff'
-  return (
-    reachContrast(bg, fg, CELL_BAND_CONTRAST) ?? reachContrast(bg, far, CELL_BAND_CONTRAST) ?? far
-  )
+  return reachContrast(bg, fg, ratio) ?? reachContrast(bg, far, ratio) ?? far
 }
 
 export function uiColors(theme: TerminalTheme) {
@@ -166,7 +167,8 @@ export function uiColors(theme: TerminalTheme) {
     selected: fg + '1f',
     line,
     paneLine: paneLineColor(line, fg, [bg, hdr]),
-    cellBand: cellBandColor(bg, fg),
+    cellBand: towardForeground(bg, fg, CELL_BAND_CONTRAST),
+    cellEdge: towardForeground(bg, fg, CELL_EDGE_CONTRAST),
     muted: mix(fg, bg, 0.35),
     faint: mix(fg, bg, 0.55),
     dim: bg + '73',

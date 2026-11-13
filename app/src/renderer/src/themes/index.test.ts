@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   CELL_BAND_CONTRAST,
+  CELL_EDGE_CONTRAST,
   contrast,
   GHOSTTY,
   HEADER_CONTRAST,
@@ -64,6 +65,21 @@ describe('themeNamed', () => {
     for (const name of themeNames()) {
       const ui = uiColors(themeNamed(name)!)
       expect(near(contrast(ui.cellBand, ui.ground), CELL_BAND_CONTRAST), name).toBe(true)
+    }
+  })
+
+  it('모든 테마에서 고른 cell 의 테두리는 터미널 배경과 같은 대비로 구별된다', () => {
+    for (const name of themeNames()) {
+      const ui = uiColors(themeNamed(name)!)
+      expect(near(contrast(ui.cellEdge, ui.ground), CELL_EDGE_CONTRAST), name).toBe(true)
+    }
+  })
+
+  it('모든 테마에서 고른 cell 의 테두리는 띠 위에 겹친 자리에서 띠와 구별된다', () => {
+    for (const name of themeNames()) {
+      const ui = uiColors(themeNamed(name)!)
+      const ratio = CELL_EDGE_CONTRAST / CELL_BAND_CONTRAST
+      expect(near(contrast(ui.cellEdge, ui.cellBand), ratio), name).toBe(true)
     }
   })
 

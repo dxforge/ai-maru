@@ -1347,6 +1347,12 @@ void window.maru.restoreScreen().then((r) => {
   visibility: visible;
 }
 
+/* 고른 cell 의 테두리다. 띠는 테두리 밖에 두고, pane 영역(`.grid`)만 그 바깥 1px 로 감싼다. pane 영역 안쪽에 그리면
+   그 위에 놓인 pane 이 덮어 보이지 않기 때문이다. 띠 쪽 테두리는 띠 1px 위에 겹친다. single 은 고른 cell 하나만 보이므로 그리지 않는다. */
+.columns .panes.selected .grid {
+  box-shadow: 0 0 0 1px var(--cell-edge);
+}
+
 .pane {
   position: absolute;
   /* 다른 클라이언트가 primary 면 터미널은 그 클라이언트의 열·행 수를 따르므로, pane 보다 넓으면 옆 pane 과 패널을 덮는다.
@@ -1410,10 +1416,10 @@ void window.maru.restoreScreen().then((r) => {
   pointer-events: none;
 }
 
-/* 입력을 받는 pane 의 테두리다. 경계선처럼 자리를 차지하지 않게 헤더와 터미널 가장자리 위에 겹친다. columns 에서는
-   고른 cell 도 이 테두리로 알아본다. cell 의 모서리에 닿는 모서리만 cell 과 같은 반지름으로 둥글게 해, 그 모서리에서 테두리가
-   잘리지 않는다. 다른 모서리는 옆 pane 과 맞닿으므로 각지게 둔다. 마우스를 올린 pane 에는 이 테두리와 헤더 선을 붙이지
-   않는다. 입력이 가는 pane 을 테두리로 계속 구분하기 위해서다. */
+/* 입력을 받는 pane 의 테두리다. 경계선처럼 자리를 차지하지 않게 헤더와 터미널 가장자리 위에 겹친다. cell 의 모서리에
+   닿는 모서리만 cell 과 같은 반지름으로 둥글게 해, 그 모서리에서 테두리가 잘리지 않는다. 다른 모서리는 옆 pane 과
+   맞닿으므로 각지게 둔다. 마우스를 올린 pane 에는 이 테두리와 헤더 선을 붙이지 않는다. 입력이 가는 pane 을 테두리로
+   계속 구분하기 위해서다. */
 .pane.focused::after {
   content: '';
   position: absolute;
