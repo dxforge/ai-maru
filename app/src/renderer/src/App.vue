@@ -1301,6 +1301,25 @@ void window.maru.restoreScreen().then((r) => {
   visibility: visible;
 }
 
+/* 고른 cell 의 테두리다. 띠까지 cell 전체를 감싼다. single 의 cell 은 영역을 채우므로 바깥에 그리면 영역의
+   `overflow: clip` 에 잘린다. 그래서 cell 가장자리 안쪽에 겹치고, pane 경계선 위, 입력 pane 의 테두리 아래에 둔다. */
+.panes.selected::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: var(--cell-radius);
+  box-shadow: inset 0 0 0 1px var(--cell-edge);
+  pointer-events: none;
+}
+
+/* columns 에서는 cell 바깥에 그린다. 안쪽에 그리면 입력 pane 의 테두리가 띠 말고는 다 덮기 때문이다. cell 사이 틈이
+   있어 잘리지 않는다. */
+.columns .panes.selected::after {
+  inset: -1px;
+  border-radius: calc(var(--cell-radius) + 1px);
+}
+
 .cell-band {
   flex: none;
   height: 4px;
