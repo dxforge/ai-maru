@@ -740,7 +740,7 @@ const pinTip = (pinned: boolean): string =>
   background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
-.dir-row {
+.row.dir-row {
   color: var(--faint);
 }
 
