@@ -73,7 +73,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['toggle-pin-workspace', 'Toggle Workspace Pin', 'Alt+Command+P'],
     ['toggle-favorite-cell', 'Toggle Favorite', 'Control+Command+T']
   ])
-  expect(menus.view.slice(0, 20)).toEqual([
+  expect(menus.view.slice(0, 25)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
     ['go-to-pane', 'Go to Pane or Favorite…', 'Command+P'],
     ['next-cell', 'Next Cell', 'Shift+Command+]'],
@@ -87,6 +87,11 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['focus-pane-right', 'Focus Pane Right', 'Alt+Command+Right'],
     ['focus-pane-up', 'Focus Pane Up', 'Alt+Command+Up'],
     ['focus-pane-down', 'Focus Pane Down', 'Alt+Command+Down'],
+    ['resize-pane-left', 'Resize Pane Left', 'Control+Command+Left'],
+    ['resize-pane-right', 'Resize Pane Right', 'Control+Command+Right'],
+    ['resize-pane-up', 'Resize Pane Up', 'Control+Command+Up'],
+    ['resize-pane-down', 'Resize Pane Down', 'Control+Command+Down'],
+    ['equalize-panes', 'Equalize Panes', 'Control+Command+='],
     ['increase-font-size', 'Increase Font Size', 'Command+Plus'],
     ['decrease-font-size', 'Decrease Font Size', 'Command+-'],
     ['reset-font-size', 'Reset Font Size', 'Command+0'],

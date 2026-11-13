@@ -16,9 +16,11 @@ import {
 import { newPtyId, randomId } from '../../../shared/pty'
 import { paneCwd, paneTitle } from './display'
 import {
+  clearCols,
   neighbor,
   panes,
   removePane,
+  sameShape,
   splitPane,
   splitRoot,
   type FocusDirection,
@@ -594,6 +596,13 @@ export function createWorkspaces(
     if (!c) return
     if (cols === undefined) delete c.paneCols
     else c.paneCols = cols
+    c.layout = clearCols(c.layout)
+  }
+
+  /** 크기만 바꾼 `layout` 으로 갈아 끼운다. pane 구조가 다르면 그동안 split·닫기가 있었던 것이라 버린다. */
+  function resize(key: number, layout: Layout): void {
+    const c = cell(key)
+    if (c && sameShape(c.layout, layout)) c.layout = layout
   }
 
   // IPC 로 보내므로 JSON 으로 reactive proxy 를 벗긴다. `git` 은 main 이 `maru pane list` 의 이름을 짓는 데 쓴다.
@@ -665,6 +674,7 @@ export function createWorkspaces(
     reopen,
     setFontSize,
     setPaneCols,
+    resize,
     snapshot,
     restore,
     selected,

@@ -21,6 +21,11 @@ export type CommandId =
   | 'focus-pane-right'
   | 'focus-pane-up'
   | 'focus-pane-down'
+  | 'resize-pane-left'
+  | 'resize-pane-right'
+  | 'resize-pane-up'
+  | 'resize-pane-down'
+  | 'equalize-panes'
   | 'command-palette'
   | 'go-to-pane'
   | 'toggle-sidebar'
@@ -69,6 +74,11 @@ export const commands: readonly Command[] = [
   { id: 'focus-pane-right', title: 'Focus Pane Right', menu: 'view' },
   { id: 'focus-pane-up', title: 'Focus Pane Up', menu: 'view' },
   { id: 'focus-pane-down', title: 'Focus Pane Down', menu: 'view' },
+  { id: 'resize-pane-left', title: 'Resize Pane Left', menu: 'view' },
+  { id: 'resize-pane-right', title: 'Resize Pane Right', menu: 'view' },
+  { id: 'resize-pane-up', title: 'Resize Pane Up', menu: 'view' },
+  { id: 'resize-pane-down', title: 'Resize Pane Down', menu: 'view' },
+  { id: 'equalize-panes', title: 'Equalize Panes', menu: 'view' },
   { id: 'increase-font-size', title: 'Increase Font Size', menu: 'view' },
   { id: 'decrease-font-size', title: 'Decrease Font Size', menu: 'view' },
   { id: 'reset-font-size', title: 'Reset Font Size', menu: 'view' },

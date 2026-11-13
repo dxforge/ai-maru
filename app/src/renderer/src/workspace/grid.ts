@@ -1,15 +1,6 @@
 import { PANE_MIN, type SplitDirection } from '../../../shared/layout'
 import { columnWidth, paneCells } from './columns'
-import {
-  columnCount,
-  EPSILON,
-  line,
-  splitPane,
-  splitRoot,
-  weight,
-  type Layout,
-  type Widths
-} from './layout'
+import { EPSILON, line, splitPane, splitRoot, weight, type Layout, type Widths } from './layout'
 
 export type Size = { width: number; height: number }
 export type Box = { left: number; top: number; width: number; height: number }
@@ -24,9 +15,19 @@ export function required(layout: Layout, min: Size): Size {
     : { width: Math.max(a.width, b.width), height: a.height + b.height }
 }
 
+export function naturalWidth(layout: Layout, cols: number, cellWidth: number): number {
+  if ('pane' in layout) return columnWidth(layout.cols ?? cols, cellWidth)
+  const [a, b] = [
+    naturalWidth(layout.first, cols, cellWidth),
+    naturalWidth(layout.second, cols, cellWidth)
+  ]
+  return layout.split === 'right' ? a + b : Math.max(a, b)
+}
+
 /**
- * pane 경계를 `unit` 의 배수로 반올림한 px 상자. `unit` 은 글자 칸 크기이고, columns 보기에서는 `unit` 의 폭으로 pane
- * 하나의 폭을 받는다. cell 끝에 닿는 경계는 그대로 둔다 — docs/architecture.md 의 "pane 경계와 글자 칸 격자". `min` 은 pane 하나의
+ * pane 경계를 `unit` 의 배수로 반올림한 px 상자. `unit` 은 글자 칸 크기다. columns 보기의 좌우는 항목마다
+ * `naturalWidth` 를 주고, 줄의 마지막 항목이 남는 폭을 채운다 — 줄마다 폭이 다르면 좁은 줄의 마지막 pane 이 넓어진다.
+ * cell 끝에 닿는 경계는 그대로 둔다 — docs/architecture.md 의 "pane 경계와 글자 칸 격자". `min` 은 pane 하나의
  * px 하한이고 `unit` 의 배수다. cell 이 `required` 보다 작으면 그 크기에 놓아, 뒤쪽 pane 이 cell 밖으로 나간다.
  */
 export function snapRects(
@@ -63,6 +64,17 @@ function place(
     split === 'right' ? (['left', 'width'] as const) : (['top', 'height'] as const)
   const step = unit[length] > 0 ? unit[length] : 1
   const total = box[length]
+  if (split === 'right' && widths !== 'even' && unit.width > 0) {
+    const parts = line(layout, split)
+    let start = 0
+    parts.forEach((part, i) => {
+      const size =
+        i === parts.length - 1 ? total - start : naturalWidth(part, widths.cols, unit.width)
+      place(part, { ...box, left: box.left + start, width: size }, unit, widths, min, boxes)
+      start += size
+    })
+    return
+  }
   const steps = Math.floor(total / step + EPSILON)
   const items = line(layout, split).map((part) => ({
     part,
@@ -131,21 +143,20 @@ export function canSplit(
 /** columns 보기에서는 cell 의 pane 열 수, single 보기에서는 없다. */
 export type ColumnCols = number | undefined
 
-// columns 보기에서는 pane 하나의 폭을 폭의 하한으로 둔다. `layout.column-cols` 와 ⇧⌘. / ⇧⌘, 로 바꾼 값은
-// `PANE_MIN.cols` 이상이므로 이 하한이 `PANE_MIN` 도 지킨다.
-export function paneMin(cell: Size, cols: ColumnCols): Size {
+export function paneMin(cell: Size): Size {
   return {
-    width:
-      cols === undefined
-        ? paneCells(PANE_MIN.cols, cell.width) * cell.width
-        : columnWidth(cols, cell.width),
+    width: paneCells(PANE_MIN.cols, cell.width) * cell.width,
     height: (PANE_MIN.rows + 1) * cell.height
   }
 }
 
+export function widthsOf(cols: ColumnCols): Widths {
+  return cols === undefined ? 'even' : { cols }
+}
+
 export function columnsWidthOf(layout: Layout, cols: ColumnCols, cell: Size): number | undefined {
   if (cols === undefined) return undefined
-  return columnCount(layout) * columnWidth(cols, cell.width)
+  return naturalWidth(layout, cols, cell.width)
 }
 
 export function areaOf(layout: Layout, cols: ColumnCols, cell: Size, measured: Size): Size {
@@ -171,5 +182,5 @@ export function roomForSplit(
   if (!measured) return true
   const next = full ? splitRoot(layout, -1, direction) : splitPane(layout, from, -1, direction)
   const area = (l: Layout): Size => areaOf(l, cols, cell, measured)
-  return canSplit(layout, area(layout), next, area(next), paneMin(cell, cols))
+  return canSplit(layout, area(layout), next, area(next), paneMin(cell))
 }

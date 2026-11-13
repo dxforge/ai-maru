@@ -113,6 +113,43 @@ describe('parseScreen', () => {
     expect(parseScreen(s)!.workspaces[0].cells[0].paneCols).toBe(110)
   })
 
+  it('layout 의 크기 필드를 옮기고, 잘못된 값은 그 필드만 버린다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].cells[0].layout = {
+      split: 'down',
+      first: { pane: 0, cols: 120, weight: 1.5 },
+      second: { pane: 2, weight: 2 },
+      weight: 3
+    }
+    expect(parseScreen(reread(s))!.workspaces[0].cells[0].layout).toEqual(
+      s.workspaces[0].cells[0].layout
+    )
+    const bad = clone()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 잘못된 값을 넣는다.
+    ;(bad as any).workspaces[0].cells[0].layout = {
+      split: 'down',
+      first: { pane: 0, cols: 19, weight: 0 },
+      second: { pane: 2, cols: 501, weight: 'x' },
+      weight: -1
+    }
+    expect(parseScreen(bad)).toEqual(screen)
+  })
+
+  it('표로 나눴다 합쳐도 크기 필드가 남는다', () => {
+    const s = reread(screen)
+    const layout = {
+      split: 'down',
+      first: { pane: 0, cols: 120 },
+      second: { pane: 2, weight: 2 }
+    } as const
+    s.workspaces[0].cells[0].layout = layout
+    // 합칠 때 pane key 를 새로 매긴다.
+    expect(joinTables(reparse(splitScreen(s)))!.workspaces[0].cells[0].layout).toMatchObject({
+      first: { cols: 120 },
+      second: { weight: 2 }
+    })
+  })
+
   it('예전 판이 쓴 cell 의 pin·favorite 과 workspace 의 favorite 은 버린다', () => {
     const s = clone()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 예전 판의 키를 넣는다.

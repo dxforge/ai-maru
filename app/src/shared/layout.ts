@@ -1,8 +1,16 @@
 export type SplitDirection = 'right' | 'down'
 
-/** 잎은 화면 안에서는 pane 의 key, `state.json` 의 `cells` 표에서는 pane 의 id 다. */
-export type Layout<P = number> =
-  { pane: P } | { split: SplitDirection; first: Layout<P>; second: Layout<P> }
+/**
+ * 잎은 화면 안에서는 pane 의 key, `state.json` 의 `cells` 표에서는 pane 의 id 다.
+ *
+ * 크기 필드는 사용자가 pane 크기를 바꿨을 때만 있다. 없으면 같은 크기로 나눈다.
+ * - `weight` 는 이 노드가 같은 방향으로 늘어선 줄(`line`)의 항목일 때 그 줄에서 받는 몫이다. 좌우 줄의 몫은 single
+ *   보기의 폭만, 위아래 줄의 몫은 두 보기의 높이를 정한다. 줄의 항목 가운데 몫이 없는 항목은 1 이다.
+ * - `cols` 는 columns 보기에서 이 pane 이 받는 터미널 열 수다. 없으면 cell 의 열 수(`paneCols`, 없으면 `layout.column-cols`)다.
+ */
+export type Layout<P = number> = (
+  { pane: P; cols?: number } | { split: SplitDirection; first: Layout<P>; second: Layout<P> }
+) & { weight?: number }
 
 /** 잎을 왼쪽(위)부터 돌려준다. 화면의 pane 순서다. */
 export function panes<P>(layout: Layout<P>): P[] {

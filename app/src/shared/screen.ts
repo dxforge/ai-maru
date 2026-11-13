@@ -1,6 +1,6 @@
 import versions from '../../resources/state-versions.json'
 import type { GitHead } from './git'
-import { panes as leaves, type Layout } from './layout'
+import { PANE_MAX_COLS, PANE_MIN, panes as leaves, type Layout } from './layout'
 import { isPtyId, randomId } from './pty'
 
 /**
@@ -158,13 +158,25 @@ function parseList<T>(v: unknown, parse: (x: unknown) => T | null, empty = false
 
 // 아래 parse 함수는 검사한 필드만 새 객체로 옮긴다. 받은 객체를 그대로 돌려주면 옛 빌드가 쓴 필드가 메모리에 남아 다음 저장에 다시 쓰인다.
 
+// 크기 필드는 잘못된 값이면 그 필드만 버린다. 크기가 없으면 같은 크기로 그리므로 레이아웃은 그대로 살린다.
+const sizeOf = (v: Obj): { weight?: number; cols?: number } =>
+  compact({
+    weight:
+      typeof v.weight === 'number' && Number.isFinite(v.weight) && v.weight > 0
+        ? v.weight
+        : undefined,
+    cols: isKey(v.cols) && v.cols >= PANE_MIN.cols && v.cols <= PANE_MAX_COLS ? v.cols : undefined
+  })
+
 function parseLayout<P>(v: unknown, isLeaf: (x: unknown) => x is P): Layout<P> | null {
   if (!isObj(v)) return null
-  if ('pane' in v) return isLeaf(v.pane) ? { pane: v.pane } : null
+  const { weight, cols } = sizeOf(v)
+  const size = compact({ weight })
+  if ('pane' in v) return isLeaf(v.pane) ? compact({ pane: v.pane, cols, weight }) : null
   if (v.split !== 'right' && v.split !== 'down') return null
   const first = parseLayout(v.first, isLeaf)
   const second = parseLayout(v.second, isLeaf)
-  return first && second ? { split: v.split, first, second } : null
+  return first && second ? { split: v.split, first, second, ...size } : null
 }
 
 const isString = (v: unknown): v is string => typeof v === 'string'
@@ -295,8 +307,8 @@ export const parsePanesTable = (v: unknown): Table<PaneRow> | null =>
 
 function mapLayout<P, Q>(l: Layout<P>, f: (p: P) => Q): Layout<Q> {
   return 'pane' in l
-    ? { pane: f(l.pane) }
-    : { split: l.split, first: mapLayout(l.first, f), second: mapLayout(l.second, f) }
+    ? { ...l, pane: f(l.pane) }
+    : { ...l, first: mapLayout(l.first, f), second: mapLayout(l.second, f) }
 }
 
 export type SplitScreen = {
