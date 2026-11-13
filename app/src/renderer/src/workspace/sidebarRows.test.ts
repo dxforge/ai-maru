@@ -9,7 +9,7 @@ import {
 import type { PtyNotification } from '../../../shared/pty-state'
 import {
   dirRow,
-  emptyRows,
+  dirLines,
   exitText,
   favoriteRow,
   favoriteRows,
@@ -242,32 +242,16 @@ describe('favoriteRows', () => {
   })
 })
 
-describe('emptyRows', () => {
-  it('즐겨찾기가 없으면 디렉토리 줄 하나이고, 디렉토리도 없으면 없다', () => {
-    expect(emptyRows(0, dirRow('/h/notes', '/h'), [], '/h')).toEqual([
-      { dir: '/h/notes', name: 'notes', path: '~/notes', label: '~/notes', root: true }
-    ])
-    expect(emptyRows(0, undefined, [])).toEqual([])
-  })
-
-  it('디렉토리를 모르면 즐겨찾기가 있어도 줄이 없다', () => {
-    expect(emptyRows(0, undefined, favoriteRows(['/h/x'], undefined, '/h'), '/h')).toEqual([])
-  })
-
-  it('cell 이 있으면 줄이 없다', () => {
-    const favorites = favoriteRows(['/h/notes/x'], '/h/notes', '/h')
-    expect(emptyRows(1, dirRow('/h/notes', '/h'), favorites, '/h')).toEqual([])
-  })
-
-  it('디렉토리 줄 아래에 즐겨찾기를 받은 순서로 두고, 줄 글자는 디렉토리 아래면 상대 경로, tooltip 경로는 ~ 경로다', () => {
+describe('dirLines', () => {
+  it('디렉토리 줄 아래에 즐겨찾기를 받은 순서로 두고, 즐겨찾기의 경로는 ~ 경로다', () => {
     const favorites = favoriteRows(['/h/w/b', '/opt/a', '/h/w', '/h/w/A'], '/h/w', '/h')
-    const rows = emptyRows(0, dirRow('/h/w', '/h'), favorites, '/h')
-    expect(rows.map((r) => [r.label, r.path, r.root])).toEqual([
-      ['~/w', '~/w', true],
-      ['/opt/a', '/opt/a', false],
-      ['A', '~/w/A', false],
-      ['b', '~/w/b', false],
-      ['~/w', '~/w', false]
+    const rows = dirLines(dirRow('/h/w', '/h'), favorites, '/h')
+    expect(rows.map((r) => [r.path, r.root])).toEqual([
+      ['~/w', true],
+      ['/opt/a', false],
+      ['~/w/A', false],
+      ['~/w/b', false],
+      ['~/w', false]
     ])
   })
 })

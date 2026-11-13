@@ -5,7 +5,7 @@ import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { Anchor as AnchorIcon, EllipsisVertical, Star, X } from '@lucide/vue'
+import { Bookmark, EllipsisVertical, Star, X } from '@lucide/vue'
 import { anchorWidth, type Anchor } from '../launcher/anchor'
 import type { TooltipCard } from '../tooltip'
 import FoldChevron from './FoldChevron.vue'
@@ -14,12 +14,11 @@ import PaneIcon from './PaneIcon.vue'
 import PanePlace from './PanePlace.vue'
 import SidebarCard from './SidebarCard.vue'
 import StatusIcon from './StatusIcon.vue'
+import FavoritesMenu from './FavoritesMenu.vue'
 import WorkspaceMenu from './WorkspaceMenu.vue'
 import { commandTail, elapsed } from '../workspace/display'
 import {
   cellCard,
-  dirCard,
-  dirKey,
   keepsCardAt,
   SIDEBAR_CARD_ID,
   workspaceCard,
@@ -40,7 +39,6 @@ import {
   jobRow,
   paneRow,
   dirRow,
-  emptyRows,
   favoriteRows,
   workspaceMarks,
   type JobRow,
@@ -165,7 +163,7 @@ const groups = computed(() => {
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       root,
       favorites,
-      empty: f ? [] : emptyRows(w.cells.length, root, favorites, home),
+      line: f || !w.kept ? undefined : root,
       items: f ? [] : cells(src, w)
     }
   })
@@ -187,6 +185,20 @@ const heads = new Map<number, HTMLElement>()
 function headRef(key: number, el: unknown): void {
   if (el instanceof HTMLElement) heads.set(key, el)
   else heads.delete(key)
+}
+
+const favoritesFor = ref<{ key: number; card: HTMLElement; toggle: HTMLElement } | null>(null)
+
+function toggleFavorites(e: MouseEvent, key: number): void {
+  const toggle = e.currentTarget as HTMLElement
+  const card = toggle.closest<HTMLElement>('.dir-card')!
+  favoritesFor.value = favoritesFor.value?.key === key ? null : { key, card, toggle }
+}
+
+// 키보드로 다른 workspace 의 `+N` 을 누르면 pointerdown 없이 열린 목록이 바로 바뀐다. 그때 unmount 되는 앞 목록이 보내는
+// `close` 가 새로 연 목록을 지우지 않게 자기 workspace 의 것일 때만 지운다.
+function closeFavorites(key: number): void {
+  if (favoritesFor.value?.key === key) favoritesFor.value = null
 }
 
 let menu: InstanceType<typeof WorkspaceMenu> | null = null
@@ -233,7 +245,6 @@ const cardView = computed((): CardView | undefined => {
   }
   const g = groups.value.find((g) => g.w.key === at.workspace)
   if (!g) return undefined
-  if (at.kind === 'dir') return g.empty.length ? dirCard(g.empty) : undefined
   return workspaceCard({
     name: g.name,
     auto: g.auto,
@@ -248,13 +259,12 @@ const cardAnchor = computed(() => {
   const h = hovered.value
   if (!h) return undefined
   if (h.at.kind === 'cell') return h.el.closest<HTMLElement>('.group') ?? h.el
-  if (h.at.kind === 'dir') return h.el.closest<HTMLElement>('.dir-card') ?? h.el
   return h.el
 })
 
 const cardCurrent = computed(() => {
   const at = hovered.value?.at
-  return at && 'row' in at ? at.row : undefined
+  return at?.kind === 'cell' ? at.row : undefined
 })
 
 const nav = useTemplateRef<HTMLElement>('nav')
@@ -378,20 +388,7 @@ const keepTip = (kept: boolean): string =>
     <div ref="list" v-overlay-scroll="'y'" class="list">
       <div
         v-for="(
-          {
-            w,
-            name,
-            folded: wf,
-            kept,
-            state,
-            notified,
-            dot,
-            root,
-            favorites,
-            empty,
-            items: entries
-          },
-          wi
+          { w, name, folded: wf, kept, state, notified, dot, favorites, line, items: entries }, wi
         ) in groups"
         :key="w.key"
         class="workspace"
@@ -424,7 +421,7 @@ const keepTip = (kept: boolean): string =>
               :aria-pressed="kept"
               @pointerdown.stop
               @click.stop="emit('toggleKeep', w.key)"
-              ><AnchorIcon class="text-icon" /></span
+              ><Bookmark class="text-icon" :fill="kept ? 'currentColor' : 'none'" /></span
           ></span>
           <span
             v-tooltip="menuFor === w.key ? undefined : 'Workspace Menu'"
@@ -443,30 +440,69 @@ const keepTip = (kept: boolean): string =>
           v-if="menuFor === w.key && heads.get(w.key)"
           :ref="menuRef"
           :name="name"
-          :base="root"
-          :favorites="favorites"
           :kept="kept"
           :head="heads.get(w.key)!"
           @done="(n, refocus) => emit('closeMenu', w.key, n, refocus)"
-          @open-favorite="(dir, at) => emit('openDir', w.key, dir, at)"
-          @remove-favorite="(dir) => emit('removeFavorite', w.key, dir)"
           @toggle-keep="emit('toggleKeep', w.key)"
           @close-workspace="emit('closeWorkspace', w.key)"
         />
-        <div v-if="empty.length" class="dir-card">
+        <div v-if="line" class="dir-card">
           <button
-            v-for="(d, i) in empty"
-            :key="i"
-            v-tooltip="{ card: sidebarCard, at: { kind: 'dir', workspace: w.key, row: dirKey(i) } }"
+            v-tooltip="line.path"
             class="row dir-row"
-            :aria-label="`Open ${d.name}`"
+            :aria-label="`Open ${line.name}`"
             @mousedown.prevent
-            @click="openRow($event, w.key, d.dir)"
+            @click="openRow($event, w.key, line.dir)"
           >
-            <span class="state"><LeadIcon :name="d.root ? 'folder-root' : 'folder'" /></span>
-            <span class="title">{{ d.label }}</span>
+            <span class="state"><LeadIcon name="folder-root" /></span>
+            <span class="title">{{ line.path }}</span>
+          </button>
+          <template v-if="!entries.length">
+            <div v-for="f in favorites" :key="f.dir" class="dir-line">
+              <button
+                v-tooltip="f.path"
+                class="row dir-row"
+                :aria-label="`Open ${f.name}`"
+                @mousedown.prevent
+                @click="openRow($event, w.key, f.dir)"
+              >
+                <span class="state"><LeadIcon name="folder" /></span>
+                <span class="title">{{ f.path }}</span>
+              </button>
+              <button
+                v-tooltip="'Remove from Favorites'"
+                class="remove"
+                :aria-label="`Remove ${f.name} from Favorites`"
+                @mousedown.prevent
+                @click="emit('removeFavorite', w.key, f.dir)"
+              >
+                <X class="text-icon" />
+              </button>
+            </div>
+          </template>
+          <button
+            v-else-if="favorites.length"
+            v-tooltip="favoritesFor?.key === w.key ? undefined : 'Favorites'"
+            class="more"
+            :aria-label="`${favorites.length} ${favorites.length === 1 ? 'favorite' : 'favorites'}`"
+            aria-haspopup="menu"
+            :aria-expanded="favoritesFor?.key === w.key"
+            @mousedown.prevent
+            @click="toggleFavorites($event, w.key)"
+          >
+            +{{ favorites.length }}
           </button>
         </div>
+        <FavoritesMenu
+          v-if="line && favoritesFor?.key === w.key && entries.length && favorites.length"
+          :root="line"
+          :favorites="favorites"
+          :card="favoritesFor.card"
+          :toggle="favoritesFor.toggle"
+          @close="closeFavorites(w.key)"
+          @open="(dir, at) => emit('openDir', w.key, dir, at)"
+          @remove="(dir) => emit('removeFavorite', w.key, dir)"
+        />
         <div
           v-for="item in entries"
           :key="item.c.key"
@@ -715,15 +751,13 @@ const keepTip = (kept: boolean): string =>
   border-radius: var(--radius-2);
 }
 
-.grip + .pane-line > .row,
-.dir-row:first-child {
+.grip + .pane-line > .row {
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
 }
 
 .group > .row:last-child,
-.group > .pane-line:last-child > .row,
-.dir-row:last-child {
+.group > .pane-line:last-child > .row {
   border-bottom-left-radius: var(--radius-2);
   border-bottom-right-radius: var(--radius-2);
 }
@@ -740,8 +774,10 @@ const keepTip = (kept: boolean): string =>
   color: var(--faint);
 }
 
-/* 테두리 대신 안쪽으로 그은 outline 이라 박스 높이가 열린 cell 과 같다. */
+/* 테두리 대신 안쪽으로 그은 outline 이라 박스 높이가 열린 cell 과 같다. 줄마다 radius 를 주지 않고 카드에서 자른다. 펼친
+   즐겨찾기 줄이 있으면 첫 줄·끝 줄이 바뀌기 때문이다. */
 .dir-card {
+  overflow: hidden;
   outline: 1px dashed color-mix(in srgb, var(--fg) 18%, transparent);
   outline-offset: -1px;
 }
@@ -750,14 +786,40 @@ const keepTip = (kept: boolean): string =>
   background: var(--hover);
 }
 
-.pane-line {
+/* `+N`(`.more`)은 디렉토리 줄의 오른쪽 끝에 겹쳐 둔다. 줄의 글자가 그 밑으로 가지 않게 줄의 오른쪽을 비운다. */
+.dir-card:has(.more) > .dir-row {
+  padding-right: calc(var(--space-3) + 28px);
+}
+
+.more {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  min-width: 24px;
+  justify-content: center;
+  height: 20px;
+  padding: 0 var(--space-2);
+  transform: translateY(-50%);
+  border-radius: var(--radius-1);
+  color: var(--faint);
+}
+
+.more:hover,
+.more[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--muted);
+}
+
+.pane-line,
+.dir-line {
   position: relative;
   display: flex;
   align-items: center;
 }
 
 /* `.kill` 처럼 키보드로도 닿게 display 대신 opacity 로 숨긴다. */
-.favorite {
+.favorite,
+.remove {
   position: absolute;
   right: var(--space-3);
   width: 16px;
@@ -770,8 +832,19 @@ const keepTip = (kept: boolean): string =>
 }
 
 .pane-line:hover .favorite,
-.favorite:focus-visible {
+.favorite:focus-visible,
+.dir-line:hover .remove,
+.remove:focus-visible {
   opacity: 1;
+}
+
+.remove:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.dir-line:hover > .dir-row {
+  background: var(--hover);
 }
 
 .favorite.on,
@@ -787,7 +860,8 @@ const keepTip = (kept: boolean): string =>
   display: none;
 }
 
-.pane-line:has(.favorite):hover > .pane-row {
+.pane-line:has(.favorite):hover > .pane-row,
+.dir-line:hover > .dir-row {
   padding-right: calc(var(--space-3) + 16px + var(--space-2));
 }
 

@@ -7,7 +7,7 @@ import {
 } from '../../../shared/program-status'
 import type { PaneIcon } from '../icons'
 import { commandLabel, commandTail, elapsed, notificationText } from './display'
-import { exitText, type DirRow, type Row } from './sidebarRows'
+import { exitText, type Row } from './sidebarRows'
 
 /**
  * 사이드바 카드의 구역 하나. cell 카드는 pane·job 마다 구역을 하나씩 둔다. `key` 는 pane 이면 `pane:<key>`, job 이면
@@ -55,13 +55,11 @@ export type CardView = { sections: CardSection[]; foot?: CardFoot }
 export const SIDEBAR_CARD_ID = 'sidebar-card'
 
 /**
- * 카드를 띄운 자리. cell 카드는 cell 안의 pane 줄·job 줄과 cell 자체(`row` 없음)에, 닫힌 workspace 카드는 그 줄마다
- * 단다. `row` 는 강조할 구역의 key(`CardSection.key`)다.
+ * 카드를 띄운 자리. cell 카드는 cell 안의 pane 줄·job 줄과 cell 자체(`row` 없음)에 단다. `row` 는 강조할 구역의
+ * key(`CardSection.key`)다.
  */
 export type CardAt =
-  | { kind: 'cell'; cell: number; row?: string }
-  | { kind: 'head'; workspace: number }
-  | { kind: 'dir'; workspace: number; row: string }
+  { kind: 'cell'; cell: number; row?: string } | { kind: 'head'; workspace: number }
 
 /**
  * 같은 cell 의 줄에서 cell 의 빈 자리(손잡이·줄 사이)로 나오면 앞의 자리를 그대로 둔다. 줄 사이를 옮길 때마다 강조가
@@ -163,13 +161,3 @@ export function workspaceCard(w: {
     }
   }
 }
-
-/** 닫힌 workspace 카드다. 같은 디렉토리가 두 줄에 있을 수 있으므로 구역 key 는 줄 번호다. */
-export function dirCard(lines: readonly DirRow[]): CardView {
-  return {
-    sections: lines.map((d, i) => ({ key: dirKey(i), title: d.name, path: d.path })),
-    foot: { counts: 'No open cells' }
-  }
-}
-
-export const dirKey = (i: number): string => `dir:${i}`

@@ -23,7 +23,10 @@ export type WorkspaceSpan = Span & {
   count: number
   cells: Span[]
   folded: boolean
-  /** cell 이 없는 workspace 의 디렉토리 줄과 즐겨찾기 줄을 담은 카드의 아래 끝. 그 카드가 없으면 비운다. */
+  /**
+   * cell 카드들 위에 있는 점선 카드(keep 을 켠 workspace 의 디렉토리 줄과, 열린 cell 이 없을 때 그 아래 즐겨찾기 줄)의
+   * 아래 끝이다. 그 카드가 없으면 비운다.
+   */
   dirBottom?: number
 }
 

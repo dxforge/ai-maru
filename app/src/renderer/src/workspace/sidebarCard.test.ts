@@ -6,14 +6,13 @@ import { CLAUDE_APP, type ProgramStatusRecord } from '../../../shared/program-st
 import type { PtyNotification } from '../../../shared/pty-state'
 import {
   cellCard,
-  dirCard,
   jobSection,
   keepsCardAt,
   paneSection,
   workspaceCard,
   type CardAt
 } from './sidebarCard'
-import { dirRow, paneRow } from './sidebarRows'
+import { paneRow } from './sidebarRows'
 
 const MIN = 60_000
 
@@ -212,21 +211,6 @@ describe('workspaceCard', () => {
     expect(workspaceCard({ ...ws, cells: 1, jobs: 2, states: [] }).foot?.counts).toBe(
       '1 cell · 0 panes · 2 jobs'
     )
-  })
-})
-
-describe('dirCard', () => {
-  it('줄마다 이름과 경로를 줄 순서로 쓰고, 띠에 열린 cell 이 없다고 한 번 쓴다', () => {
-    const app = dirRow('/Users/me/src/app', '/Users/me')
-    const lib = dirRow('/Users/me/src/app/lib', '/Users/me')
-    expect(dirCard([app, lib, app])).toEqual({
-      sections: [
-        { key: 'dir:0', title: 'app', path: '~/src/app' },
-        { key: 'dir:1', title: 'lib', path: '~/src/app/lib' },
-        { key: 'dir:2', title: 'app', path: '~/src/app' }
-      ],
-      foot: { counts: 'No open cells' }
-    })
   })
 })
 

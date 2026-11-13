@@ -1042,10 +1042,6 @@ function keepHorizontalScroll(e: WheelEvent): void {
 
 type Overlay = 'palette' | 'launcher' | 'launch' | 'switcher'
 const overlay = ref<Overlay | null>(null)
-/**
- * `inWorkspace` 가 있으면 고른 디렉토리(workspace 메뉴의 즐겨찾기, cell 이 없는 workspace 의 디렉토리 줄, ⌘P 전환기의
- * Favorites 줄)로 그 workspace 에 cell 을 여는 런처다.
- */
 type LaunchAt =
   | { dir?: string; where: LaunchWhere; inWorkspace?: undefined }
   | { dir: string; where: 'cell'; inWorkspace: number; shell: true; anchor?: Anchor }

@@ -29,8 +29,7 @@ export type SwitcherRows = { panes: SwitcherPane[]; dirs: SwitcherDir[] }
 
 /**
  * ⌘P 전환기의 줄이다. pane 줄은 사이드바 순서(workspace → cell → pane)로 모든 pane 을 두고, 고른 cell 의 포커스된
- * pane 은 `focused` 로 표시한다. 디렉토리 줄은 workspace 순서대로 workspace 메뉴의 Favorites 와 같은 줄(workspace
- * 디렉토리, 그 아래 이름순 즐겨찾기)을 둔다.
+ * pane 은 `focused` 로 표시한다.
  */
 export function switcherRows(
   workspaces: readonly DeepReadonly<Workspace>[],
