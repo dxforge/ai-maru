@@ -187,11 +187,18 @@ function headRef(key: number, el: unknown): void {
   else heads.delete(key)
 }
 
-const favoritesFor = ref<{ key: number; card: HTMLElement } | null>(null)
+const favoritesFor = ref<{ key: number; card: HTMLElement; toggle: HTMLElement } | null>(null)
 
 function toggleFavorites(e: MouseEvent, key: number): void {
-  const card = (e.currentTarget as HTMLElement).closest<HTMLElement>('.dir-card')!
-  favoritesFor.value = favoritesFor.value?.key === key ? null : { key, card }
+  const toggle = e.currentTarget as HTMLElement
+  const card = toggle.closest<HTMLElement>('.dir-card')!
+  favoritesFor.value = favoritesFor.value?.key === key ? null : { key, card, toggle }
+}
+
+// 키보드로 다른 workspace 의 `+N` 을 누르면 pointerdown 없이 열린 목록이 바로 바뀐다. 그때 unmount 되는 앞 목록이 보내는
+// `close` 가 새로 연 목록을 지우지 않게 자기 workspace 의 것일 때만 지운다.
+function closeFavorites(key: number): void {
+  if (favoritesFor.value?.key === key) favoritesFor.value = null
 }
 
 let menu: InstanceType<typeof WorkspaceMenu> | null = null
@@ -477,7 +484,7 @@ const keepTip = (kept: boolean): string =>
             v-else-if="favorites.length"
             v-tooltip="favoritesFor?.key === w.key ? undefined : 'Favorites'"
             class="more"
-            :aria-label="`${favorites.length} Favorites`"
+            :aria-label="`${favorites.length} ${favorites.length === 1 ? 'favorite' : 'favorites'}`"
             aria-haspopup="menu"
             :aria-expanded="favoritesFor?.key === w.key"
             @mousedown.prevent
@@ -491,7 +498,8 @@ const keepTip = (kept: boolean): string =>
           :root="line"
           :favorites="favorites"
           :card="favoritesFor.card"
-          @close="favoritesFor = null"
+          :toggle="favoritesFor.toggle"
+          @close="closeFavorites(w.key)"
           @open="(dir, at) => emit('openDir', w.key, dir, at)"
           @remove="(dir) => emit('removeFavorite', w.key, dir)"
         />
@@ -778,7 +786,7 @@ const keepTip = (kept: boolean): string =>
   background: var(--hover);
 }
 
-/* 디렉토리 줄 위 오른쪽 끝에 얹는다. 줄의 글자가 그 밑으로 가지 않게 줄의 오른쪽을 비운다. */
+/* `+N`(`.more`)은 디렉토리 줄의 오른쪽 끝에 겹쳐 둔다. 줄의 글자가 그 밑으로 가지 않게 줄의 오른쪽을 비운다. */
 .dir-card:has(.more) > .dir-row {
   padding-right: calc(var(--space-3) + 28px);
 }

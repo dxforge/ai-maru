@@ -1,19 +1,20 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { Folder, FolderRoot, X } from '@lucide/vue'
 import type { Anchor } from '../launcher/anchor'
 import { popupTop, usePopupDismiss } from '../popupDismiss'
 import type { DirRow } from '../workspace/sidebarRows'
 
 /**
- * 점선 카드의 `+N` 을 누르면 그 카드 바로 아래에 카드의 폭으로 뜨는 즐겨찾기 목록이다. 아래의 cell 을 밀지 않고 그 위에
- * 뜬다. 터미널의 포커스를 가져가지 않으므로 Esc 는 document 에서 받는다.
+ * 점선 카드의 `+N` 을 누르면 카드의 폭으로 뜨는 즐겨찾기 목록이다. 카드 아래에 뜨고, 아래 자리가 모자라면 위에 뜬다.
+ * 아래의 cell 을 밀지 않는다. 터미널의 포커스를 가져가지 않으므로 Esc 는 document 에서 받는다.
  */
-const { root, favorites, card } = defineProps<{
-  /** workspace 의 디렉토리다. 맨 위에 지울 수 없는 줄로 둔다. */
+const { root, favorites, card, toggle } = defineProps<{
   root: DirRow
   favorites: readonly DirRow[]
   card: HTMLElement
+  /** 목록을 여닫는 `+N` 이다. */
+  toggle: HTMLElement
 }>()
 
 const emit = defineEmits<{
@@ -30,22 +31,35 @@ const rows = computed(() => [
 const menu = useTemplateRef<HTMLElement>('menu')
 const at = ref({ left: 0, top: 0, width: 0 })
 
-// `+N` 은 점선 카드 안에 있고 스스로 목록을 여닫으므로, 카드를 누를 때는 닫지 않는다.
 usePopupDismiss(
-  (t) => !!menu.value?.contains(t) || card.contains(t),
+  (t) => !!menu.value?.contains(t) || toggle.contains(t),
   () => emit('close')
 )
 
-onMounted(() => {
+function place(): void {
   const b = card.getBoundingClientRect()
   const height = menu.value!.getBoundingClientRect().height
   at.value = { left: b.left, top: popupTop(b, height), width: b.width }
+}
+
+// 카드 위로 뜬 목록에서 즐겨찾기를 빼면 목록이 짧아져 카드와 떨어지므로 자리를 다시 잡는다.
+watch(() => favorites.length, place, { flush: 'post' })
+
+// 목록은 화면에 고정돼 있어 사이드바가 스크롤되면 카드와 떨어지므로 닫는다.
+function onScroll(e: Event): void {
+  if (!menu.value?.contains(e.target as Node)) emit('close')
+}
+
+onMounted(() => {
+  place()
   document.addEventListener('keydown', onKeydown, true)
+  document.addEventListener('scroll', onScroll, true)
 })
-// 목록을 띄운 조건(cell 이 있다, 즐겨찾기가 있다)이 사라져 목록이 내려갈 때도 열림 상태를 지운다. 지우지 않으면 조건이
-// 돌아올 때 누르지 않은 목록이 다시 뜬다.
+// 목록을 띄운 조건(cell 이 있다, 즐겨찾기가 있다)이 사라져 목록이 unmount 될 때도 열림 상태를 지운다. 지우지 않으면
+// 조건이 돌아올 때 누르지 않은 목록이 다시 뜬다.
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown, true)
+  document.removeEventListener('scroll', onScroll, true)
   emit('close')
 })
 

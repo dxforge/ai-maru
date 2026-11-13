@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted } from 'vue'
 export const POPUP_GAP = 4
 export const POPUP_MARGIN = 8
 
-// 팝업 둘이 잠깐 겹쳐 열려도 먼저 닫힌 쪽이 드래그 영역을 다시 켜지 않게 센다.
+// 팝업 둘이 함께 열려 있다가 한쪽이 닫혀도 드래그 영역을 다시 켜지 않게 열린 팝업 수를 센다.
 let dragOff = 0
 
 /**
@@ -30,10 +30,13 @@ export function usePopupDismiss(inside: (t: Element) => boolean, close: () => vo
   })
 }
 
-/** `anchor` 아래에 높이 `height` 의 팝업을 둘 top 이다. 아래가 모자라고 위에 자리가 있으면 위로 올린다. */
-export function popupTop(anchor: DOMRect, height: number): number {
+export function popupTop(
+  anchor: Pick<DOMRect, 'top' | 'bottom'>,
+  height: number,
+  viewport = innerHeight
+): number {
   const below = anchor.bottom + POPUP_GAP
   const above = anchor.top - POPUP_GAP - height
-  const top = below + height <= innerHeight - POPUP_MARGIN || above < POPUP_MARGIN ? below : above
-  return Math.max(POPUP_MARGIN, Math.min(top, innerHeight - POPUP_MARGIN - height))
+  const top = below + height <= viewport - POPUP_MARGIN || above < POPUP_MARGIN ? below : above
+  return Math.max(POPUP_MARGIN, Math.min(top, viewport - POPUP_MARGIN - height))
 }

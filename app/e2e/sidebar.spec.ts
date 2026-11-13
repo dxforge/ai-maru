@@ -1637,7 +1637,7 @@ test('keep 을 켜지 않은 workspace 에는 별로도 메뉴의 Toggle Favorit
   await expect(favoriteItems(page)).toHaveCount(1)
 })
 
-test('keep 을 켠 workspace 는 cell 이 없으면 디렉토리 줄 아래에 즐겨찾기 줄을 펼치고, 줄에 올리면 경로를 기본 tooltip 으로 보이며, 즐겨찾기 줄을 누르면 그 디렉토리에 cell 을 열고 cell 위에 디렉토리 줄 하나와 즐겨찾기 수로 접힌다', async ({
+test('keep 을 켠 workspace 는 cell 이 없으면 디렉토리 줄 아래에 즐겨찾기 줄을 펼치고, 줄에 올리면 경로를 기본 tooltip 으로 보이며, 즐겨찾기 줄을 누르면 그 디렉토리에 cell 을 열고 cell 위에 디렉토리 줄 하나와 즐겨찾기 수로 접히며, 펼친 줄의 × 로 즐겨찾기를 뺀다', async ({
   launch,
   dataDir
 }) => {
@@ -1680,6 +1680,53 @@ test('keep 을 켠 workspace 는 cell 이 없으면 디렉토리 줄 아래에 �
   expect((await box(ws.locator('.dir-row'))).y).toBeLessThan(
     (await box(ws.locator('.group').first())).y
   )
+
+  await page.keyboard.type('exit\n')
+  await expect(dirRows(page)).toHaveText(['~/sub', '~/lib'])
+  await dirRows(page).nth(1).hover()
+  await sidebar.getByRole('button', { name: 'Remove lib from Favorites' }).click()
+  await expect(dirRows(page)).toHaveText(['~/sub'])
+  await expect(launcher(page)).toHaveCount(0)
+})
+
+test('즐겨찾기 목록이 열린 채 키보드로 다른 workspace 의 +N 을 누르면 그 목록으로 바뀌고, 같은 +N 을 다시 누르거나 디렉토리 줄을 누르거나 사이드바가 스크롤되면 닫힌다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'sub', 'lib')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await keepWorkspace(page, 0)
+  await cellItems(page).nth(0).hover()
+  await cellFavorite(page, 0).click()
+  await newWorkspace(launched, 2)
+  await run(page, 'cd ~/lib && echo lib-$((1+1))', 'lib-2')
+  await keepWorkspace(page, 1)
+  await cellItems(page).nth(1).hover()
+  await cellFavorite(page, 1).click()
+  await expect(moreButton(page, 1)).toHaveText('+1')
+
+  await openFavorites(page, 0)
+  await expect(baseItem(page)).toHaveText('sub')
+  await moreButton(page, 1).focus()
+  await page.keyboard.press('Enter')
+  await expect(favoritesMenu(page)).toHaveCount(1)
+  await expect(baseItem(page)).toHaveText('lib')
+
+  await moreButton(page, 1).click()
+  await expect(favoritesMenu(page)).toHaveCount(0)
+
+  await openFavorites(page, 1)
+  await dirRows(page).nth(1).click()
+  await expect(favoritesMenu(page)).toHaveCount(0)
+  await expect(launcher(page)).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(launcher(page)).toHaveCount(0)
+
+  await openFavorites(page, 1)
+  await page.locator('.sidebar').dispatchEvent('scroll')
+  await expect(favoritesMenu(page)).toHaveCount(0)
 })
 
 test('즐겨찾기 목록은 맨 위에 지울 수 없는 workspace 디렉토리 줄을 두고, 즐겨찾기 줄의 tooltip 은 그 디렉토리 아래면 상대 경로를, 아니면 홈을 ~ 로 쓴 경로를 달며, Esc 로 닫힌다', async ({
