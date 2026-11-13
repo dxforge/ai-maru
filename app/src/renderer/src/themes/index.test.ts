@@ -75,6 +75,14 @@ describe('themeNamed', () => {
     }
   })
 
+  it('모든 테마에서 고른 cell 의 테두리는 띠 위에 겹친 자리에서 띠와 구별된다', () => {
+    for (const name of themeNames()) {
+      const ui = uiColors(themeNamed(name)!)
+      const ratio = CELL_EDGE_CONTRAST / CELL_BAND_CONTRAST
+      expect(near(contrast(ui.cellEdge, ui.cellBand), ratio), name).toBe(true)
+    }
+  })
+
   it('모든 테마에서 pane 경계선은 터미널·pane 헤더와 구별된다', () => {
     for (const name of themeNames()) {
       const ui = uiColors(themeNamed(name)!)

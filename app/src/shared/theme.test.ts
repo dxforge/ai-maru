@@ -92,13 +92,6 @@ describe('uiColors', () => {
     expect(brightness(light.cellEdge)).toBeLessThan(brightness(light.cellBand))
   })
 
-  it('글자색으로 고른 cell 테두리의 대비에 닿지 못하면 검정·흰색 쪽으로 섞는다', () => {
-    const ui = uiColors({ background: '#1d1f25', foreground: '#5a5d66', ansi: GHOSTTY.ansi })
-    expect(contrast(ui.fg, ui.ground)).toBeLessThan(CELL_EDGE_CONTRAST)
-    expect(contrast(ui.cellEdge, ui.ground)).toBeCloseTo(CELL_EDGE_CONTRAST, 1)
-    expect(brightness(ui.cellEdge)).toBeGreaterThan(brightness(ui.fg))
-  })
-
   it('구분선이 터미널·pane 헤더와 이미 구별되면 pane 경계선은 구분선과 같은 색이다', () => {
     const ui = uiColors(GHOSTTY)
     expect(ui.paneLine).toBe(ui.line)

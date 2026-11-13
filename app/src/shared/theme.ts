@@ -140,7 +140,6 @@ export const CELL_BAND_CONTRAST = 2
 /** 고른 cell 의 테두리와 터미널 배경의 대비. cell 띠보다 커야 띠 위를 지나는 테두리가 띠와 구별된다. */
 export const CELL_EDGE_CONTRAST = 4
 
-/** 터미널 배경을 글자색 쪽으로 섞어 `ratio` 의 대비를 내는 색. 글자색으로 닿지 못하면 검정·흰색 가운데 배경과 대비가 큰 쪽으로 섞는다. */
 function towardForeground(bg: string, fg: string, ratio: number): string {
   const far = contrast(bg, '#000000') > contrast(bg, '#ffffff') ? '#000000' : '#ffffff'
   return reachContrast(bg, fg, ratio) ?? reachContrast(bg, far, ratio) ?? far
