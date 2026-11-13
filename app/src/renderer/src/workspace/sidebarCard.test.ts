@@ -6,14 +6,13 @@ import { CLAUDE_APP, type ProgramStatusRecord } from '../../../shared/program-st
 import type { PtyNotification } from '../../../shared/pty-state'
 import {
   cellCard,
-  dirCard,
   jobSection,
   keepsCardAt,
   paneSection,
   workspaceCard,
   type CardAt
 } from './sidebarCard'
-import { dirRow, paneRow } from './sidebarRows'
+import { paneRow } from './sidebarRows'
 
 const MIN = 60_000
 
@@ -212,15 +211,6 @@ describe('workspaceCard', () => {
     expect(workspaceCard({ ...ws, cells: 1, jobs: 2, states: [] }).foot?.counts).toBe(
       '1 cell · 0 panes · 2 jobs'
     )
-  })
-})
-
-describe('dirCard', () => {
-  it('디렉토리의 이름과 경로만 한 줄로 쓰고 띠는 없다', () => {
-    expect(dirCard(dirRow('/Users/me/src/app/lib', '/Users/me'))).toEqual({
-      sections: [{ key: 'dir', title: 'lib', path: '~/src/app/lib' }],
-      line: true
-    })
   })
 })
 

@@ -1638,7 +1638,7 @@ test('keep 을 켜지 않은 workspace 에는 별로도 메뉴의 Toggle Favorit
   await expect(favoriteItems(page)).toHaveCount(1)
 })
 
-test('keep 을 켠 workspace 의 디렉토리 줄은 cell 이 없어도 한 줄에 즐겨찾기 수를 달고, 줄에 올리면 그 줄 높이에 이름과 경로를 한 줄로 쓴 카드가 뜨며, 수를 눌러 뜬 목록에서 고르면 그 디렉토리에 cell 을 열고 줄은 cell 위에 남는다', async ({
+test('keep 을 켠 workspace 의 디렉토리 줄은 cell 이 없어도 한 줄에 즐겨찾기 수를 달고, 줄에 올리면 경로를 기본 tooltip 으로 보이며, 수를 눌러 뜬 목록에서 고르면 그 디렉토리에 cell 을 열고 줄은 cell 위에 남는다', async ({
   launch,
   dataDir
 }) => {
@@ -1662,12 +1662,7 @@ test('keep 을 켠 workspace 의 디렉토리 줄은 cell 이 없어도 한 줄�
   await expect(dirRows(page)).toHaveText(['~/sub'])
   await expect(dirRows(page).locator('.state svg[data-icon="folder-root"]')).toBeVisible()
   await expect(moreButton(page, 1)).toHaveText('+1')
-  const card = sidebarCard(page)
-  await hoverCard(page, dirRows(page))
-  await expect(card.locator('.section .name')).toHaveText(['sub'])
-  await expect(card.locator('.section .path')).toHaveText(['~/sub'])
-  await expect(card.locator('.foot')).toHaveCount(0)
-  await expectBeside(card, dirRows(page))
+  await expect(dirRows(page)).toHaveAttribute('data-tooltip', '~/sub')
 
   await openFavorites(page, 1)
   await expect(favoriteItems(page)).toHaveText(['lib'])
@@ -1947,17 +1942,6 @@ function useTool(dataDir: string): string {
 }
 
 const box = async (el: Locator) => (await el.boundingBox())!
-
-/** 카드가 `row` 와 같은 높이에서 같은 높이로 떠 있다. */
-async function expectBeside(card: Locator, row: Locator): Promise<void> {
-  const r = await box(row)
-  await expect
-    .poll(async () => {
-      const c = await box(card)
-      return [Math.round(c.y - r.y), Math.round(c.height - r.height)]
-    })
-    .toEqual([0, 0])
-}
 
 test('즐겨찾기 목록에서 고르면 목록이 있던 자리에 목록의 폭으로 셸이 든 명령 목록이 뜨되 사이드바의 줄을 밀지 않고, Esc 는 아무것도 띄우지 않으며, 고른 명령은 workspace 끝의 cell 로 그 디렉토리에 뜬다', async ({
   launch,

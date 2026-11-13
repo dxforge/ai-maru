@@ -19,7 +19,6 @@ import WorkspaceMenu from './WorkspaceMenu.vue'
 import { commandTail, elapsed } from '../workspace/display'
 import {
   cellCard,
-  dirCard,
   keepsCardAt,
   SIDEBAR_CARD_ID,
   workspaceCard,
@@ -239,7 +238,6 @@ const cardView = computed((): CardView | undefined => {
   }
   const g = groups.value.find((g) => g.w.key === at.workspace)
   if (!g) return undefined
-  if (at.kind === 'dir') return g.line && dirCard(g.line)
   return workspaceCard({
     name: g.name,
     auto: g.auto,
@@ -443,7 +441,7 @@ const keepTip = (kept: boolean): string =>
         />
         <div v-if="line" :ref="(el) => dirCardRef(w.key, el)" class="dir-card">
           <button
-            v-tooltip="{ card: sidebarCard, at: { kind: 'dir', workspace: w.key } }"
+            v-tooltip="line.path"
             class="row dir-row"
             :aria-label="`Open ${line.name}`"
             @mousedown.prevent
