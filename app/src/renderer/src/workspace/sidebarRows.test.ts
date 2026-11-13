@@ -243,15 +243,15 @@ describe('favoriteRows', () => {
 })
 
 describe('dirLines', () => {
-  it('디렉토리 줄 아래에 즐겨찾기를 받은 순서로 두고, 줄 글자는 디렉토리 아래면 상대 경로, tooltip 경로는 ~ 경로다', () => {
+  it('디렉토리 줄 아래에 즐겨찾기를 받은 순서로 두고, 즐겨찾기의 경로는 ~ 경로다', () => {
     const favorites = favoriteRows(['/h/w/b', '/opt/a', '/h/w', '/h/w/A'], '/h/w', '/h')
     const rows = dirLines(dirRow('/h/w', '/h'), favorites, '/h')
-    expect(rows.map((r) => [r.label, r.path, r.root])).toEqual([
-      ['~/w', '~/w', true],
-      ['/opt/a', '/opt/a', false],
-      ['A', '~/w/A', false],
-      ['b', '~/w/b', false],
-      ['~/w', '~/w', false]
+    expect(rows.map((r) => [r.path, r.root])).toEqual([
+      ['~/w', true],
+      ['/opt/a', false],
+      ['~/w/A', false],
+      ['~/w/b', false],
+      ['~/w', false]
     ])
   })
 })

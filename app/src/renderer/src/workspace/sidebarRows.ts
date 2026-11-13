@@ -169,13 +169,11 @@ export function favoriteRows(
     )
 }
 
-/** ⌘P 전환기의 디렉토리 줄. `label` 은 줄에 쓰는 글자이고, `path` 는 홈을 `~` 로 쓴 경로다. */
-export type DirLine = DirRow & { label: string; root: boolean }
+export type DirLine = DirRow & { root: boolean }
 
 /**
- * workspace 디렉토리(`root`) 줄과 그 아래 즐겨찾기 줄이다. 즐겨찾기의 `label` 은 점선 카드의 상대 경로이고, `path` 는
- * 홈에서 본 경로다. `path` 는 ⌘P 전환기처럼 이름 옆에 경로를 보이는 자리에 쓴다. 그 자리에 상대 경로를 두면 `docs docs`
- * 처럼 이름과 겹쳐, 여러 workspace 가 섞인 목록에서 어디인지 알 수 없기 때문이다.
+ * 즐겨찾기의 `path` 를 홈에서 본 경로로 바꾼다. ⌘P 전환기는 이름 옆에 경로를 표시한다. 상대 경로를 두면 `docs docs` 처럼
+ * 이름과 겹쳐, 여러 workspace 가 섞인 목록에서 어느 디렉토리인지 알 수 없기 때문이다.
  */
 export function dirLines(
   root: DirRow | undefined,
@@ -183,7 +181,7 @@ export function dirLines(
   home?: string
 ): DirLine[] {
   return [
-    ...(root ? [{ ...root, label: root.path, root: true }] : []),
-    ...favorites.map((f) => ({ ...f, path: tildePath(f.dir, home), label: f.path, root: false }))
+    ...(root ? [{ ...root, root: true }] : []),
+    ...favorites.map((f) => ({ ...f, path: tildePath(f.dir, home), root: false }))
   ]
 }
