@@ -414,7 +414,7 @@ const keepTip = (kept: boolean): string =>
               :aria-pressed="kept"
               @pointerdown.stop
               @click.stop="emit('toggleKeep', w.key)"
-              ><Bookmark class="text-icon" /></span
+              ><Bookmark class="text-icon" :fill="kept ? 'currentColor' : 'none'" /></span
           ></span>
           <span
             v-tooltip="menuFor === w.key ? undefined : 'Workspace Menu'"
