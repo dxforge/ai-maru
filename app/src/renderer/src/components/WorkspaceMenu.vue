@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
-import { Anchor as AnchorIcon, Check, X } from '@lucide/vue'
+import { Bookmark, Check, X } from '@lucide/vue'
 import { nameOnFocusLoss } from '../../../shared/names'
 
 const { name, kept, head } = defineProps<{
@@ -144,7 +144,7 @@ function act(run: () => void): void {
       :aria-checked="kept"
       @click="act(() => emit('toggleKeep'))"
     >
-      <AnchorIcon class="icon" />Keep Workspace<Check v-if="kept" class="icon check" />
+      <Bookmark class="icon" />Keep Workspace<Check v-if="kept" class="icon check" />
     </button>
     <button class="action close-action" role="menuitem" @click="act(() => emit('closeWorkspace'))">
       <X class="icon" />Close Workspace

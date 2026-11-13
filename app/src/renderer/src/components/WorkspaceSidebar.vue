@@ -5,7 +5,7 @@ import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { Anchor as AnchorIcon, EllipsisVertical, Star, X } from '@lucide/vue'
+import { Bookmark, EllipsisVertical, Star, X } from '@lucide/vue'
 import { anchorWidth, type Anchor } from '../launcher/anchor'
 import type { TooltipCard } from '../tooltip'
 import FoldChevron from './FoldChevron.vue'
@@ -414,7 +414,7 @@ const keepTip = (kept: boolean): string =>
               :aria-pressed="kept"
               @pointerdown.stop
               @click.stop="emit('toggleKeep', w.key)"
-              ><AnchorIcon class="text-icon" /></span
+              ><Bookmark class="text-icon" /></span
           ></span>
           <span
             v-tooltip="menuFor === w.key ? undefined : 'Workspace Menu'"
