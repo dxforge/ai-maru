@@ -1,21 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
-import { Anchor as AnchorIcon, Check, Folder, FolderRoot, X } from '@lucide/vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { Anchor as AnchorIcon, Check, X } from '@lucide/vue'
 import { nameOnFocusLoss } from '../../../shared/names'
-import type { Anchor } from '../launcher/anchor'
-import type { DirRow } from '../workspace/sidebarRows'
 
-const {
-  name,
-  base = undefined,
-  favorites,
-  kept,
-  head
-} = defineProps<{
+const { name, kept, head } = defineProps<{
   name: string
-  /** workspace 의 디렉토리(`workspaceDir`)다. Favorites 맨 위에 지울 수 없는 줄로 둔다. */
-  base?: DirRow
-  favorites: readonly DirRow[]
   kept: boolean
   /** 메뉴를 연 workspace 헤더. 메뉴는 그 안의 ⋮ 버튼 아래에 오른쪽 끝을 맞춰 뜬다. */
   head: HTMLElement
@@ -24,16 +13,9 @@ const {
 const emit = defineEmits<{
   /** `name` 이 null 이면 이름을 바꾸지 않는다. `refocus` 면 터미널에 포커스를 돌려준다. */
   done: [name: string | null, refocus: boolean]
-  openFavorite: [dir: string, anchor: Anchor]
-  removeFavorite: [dir: string]
   toggleKeep: []
   closeWorkspace: []
 }>()
-
-const rows = computed(() => [
-  ...(base ? [{ ...base, base: true }] : []),
-  ...favorites.map((f) => ({ ...f, base: false }))
-])
 
 const GAP = 4
 const MARGIN = 8
@@ -111,7 +93,7 @@ function onFocusOut(e: FocusEvent): void {
   if (!next || !root.value?.contains(next)) close(false)
 }
 
-// 제목·안내 문구·구분선·여백은 포커스를 받지 않는다. 그 자리를 누르면 포커스가 body 로 가 `onFocusOut` 이 메뉴를 닫으므로,
+// 구분선·여백은 포커스를 받지 않는다. 그 자리를 누르면 포커스가 body 로 가 `onFocusOut` 이 메뉴를 닫으므로,
 // 이름 칸이 아닌 곳을 누를 때는 기본 동작을 막는다.
 function onMouseDown(e: MouseEvent): void {
   if (e.target !== input.value) e.preventDefault()
@@ -135,12 +117,6 @@ function act(run: () => void): void {
   close(true)
   run()
 }
-
-// 메뉴는 닫히므로 런처는 메뉴가 있던 자리에 메뉴의 폭으로 띄운다.
-function openFavorite(dir: string): void {
-  const r = root.value!.getBoundingClientRect()
-  act(() => emit('openFavorite', dir, { left: r.left, top: r.top, bottom: r.top, width: r.width }))
-}
 </script>
 
 <template>
@@ -160,39 +136,6 @@ function openFavorite(dir: string): void {
         aria-label="Workspace name"
         spellcheck="false"
       />
-    </div>
-    <hr />
-    <div class="section">Favorites</div>
-    <div
-      v-for="f in rows"
-      :key="f.base ? '' : f.dir"
-      class="favorite-item"
-      :class="{ 'base-item': f.base }"
-    >
-      <button
-        v-tooltip="f.path"
-        class="favorite-open"
-        role="menuitem"
-        :aria-label="`Open ${f.name}`"
-        @click="openFavorite(f.dir)"
-      >
-        <component :is="f.base ? FolderRoot : Folder" class="icon" /><span class="title">{{
-          f.name
-        }}</span>
-      </button>
-      <span v-if="f.base" class="favorite-remove remove-slot icon-button" aria-hidden="true" />
-      <button
-        v-else
-        v-tooltip="'Remove from Favorites'"
-        class="favorite-remove icon-button"
-        :aria-label="`Remove ${f.name} from Favorites`"
-        @click="emit('removeFavorite', f.dir)"
-      >
-        <X class="icon" />
-      </button>
-    </div>
-    <div v-if="!favorites.length" class="hint">
-      {{ kept ? 'Star a pane to add its directory' : 'Keep Workspace to add favorites' }}
     </div>
     <hr />
     <button
@@ -237,64 +180,10 @@ button {
   width: 100%;
 }
 
-.section {
-  padding: var(--space-1) var(--space-5);
-  color: var(--faint);
-  font-size: var(--text-1);
-}
-
-.hint {
-  padding: var(--space-2) var(--space-5);
-  color: var(--faint);
-}
-
-.popup-menu .action,
-.popup-menu .favorite-open {
+.popup-menu .action {
   display: flex;
   align-items: center;
   gap: var(--space-4);
-}
-
-.favorite-item {
-  display: flex;
-  align-items: center;
-}
-
-.favorite-item:hover {
-  background: var(--hover);
-}
-
-.popup-menu .favorite-open {
-  flex: 1;
-  min-width: 0;
-  padding-right: var(--space-2);
-}
-
-.popup-menu .favorite-open:hover {
-  background: none;
-}
-
-.title {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.favorite-remove {
-  flex: none;
-  margin-right: var(--space-4);
-  opacity: 0;
-}
-
-.favorite-item:hover .favorite-remove,
-.favorite-remove:focus-visible {
-  opacity: 1;
-}
-
-/* 다른 즐겨찾기 줄과 글자 끝을 맞추려고 보이지 않는 X 자리를 둔다. */
-.remove-slot {
-  visibility: hidden;
 }
 
 .icon {

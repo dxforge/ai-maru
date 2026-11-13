@@ -56,13 +56,13 @@ export type CardView = { sections: CardSection[]; foot?: CardFoot; line?: boolea
 export const SIDEBAR_CARD_ID = 'sidebar-card'
 
 /**
- * 카드를 띄운 자리. cell 카드는 cell 안의 pane 줄·job 줄과 cell 자체(`row` 없음)에, 닫힌 workspace 카드는 그 줄마다
- * 단다. `row` 는 강조할 구역의 key(`CardSection.key`)다.
+ * 카드를 띄운 자리. cell 카드는 cell 안의 pane 줄·job 줄과 cell 자체(`row` 없음)에, 디렉토리 카드는 점선 카드의
+ * 디렉토리 줄에 단다. `row` 는 강조할 구역의 key(`CardSection.key`)다.
  */
 export type CardAt =
   | { kind: 'cell'; cell: number; row?: string }
   | { kind: 'head'; workspace: number }
-  | { kind: 'dir'; workspace: number; row: string }
+  | { kind: 'dir'; workspace: number }
 
 /**
  * 같은 cell 의 줄에서 cell 의 빈 자리(손잡이·줄 사이)로 나오면 앞의 자리를 그대로 둔다. 줄 사이를 옮길 때마다 강조가
@@ -165,11 +165,7 @@ export function workspaceCard(w: {
   }
 }
 
-/** 점선 카드에서 마우스를 올린 줄의 디렉토리 하나만 보인다. 같은 디렉토리가 두 줄에 있을 수 있으므로 구역 key 는 줄 번호다. */
-export function dirCard(lines: readonly DirRow[], row: string): CardView | undefined {
-  const i = lines.findIndex((_, j) => dirKey(j) === row)
-  if (i < 0) return undefined
-  return { sections: [{ key: row, title: lines[i].name, path: lines[i].path }], line: true }
+/** 점선 카드의 디렉토리 줄에 띄우는 카드다. */
+export function dirCard(d: DirRow): CardView {
+  return { sections: [{ key: 'dir', title: d.name, path: d.path }], line: true }
 }
-
-export const dirKey = (i: number): string => `dir:${i}`

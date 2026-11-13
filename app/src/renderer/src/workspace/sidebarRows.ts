@@ -169,29 +169,8 @@ export function favoriteRows(
     )
 }
 
-/**
- * 닫힌 workspace 카드의 줄. `label` 은 줄에 쓰는 글자이고, `path` 는 tooltip 에 쓰는 홈을 `~` 로 쓴 경로다. `more` 는
- * 줄을 펼치지 않은 즐겨찾기 수다.
- */
-export type DirLine = DirRow & { label: string; root: boolean; more?: number }
-
-/**
- * keep 을 켠 workspace(`kept`)의 점선 카드 줄이다. cell 이 없으면 디렉토리(`root`) 줄 아래에 즐겨찾기 줄을 받은
- * 순서로 둔다. cell 이 있으면 디렉토리 줄 하나만 두고 즐겨찾기 수를 `more` 로 단다. 줄을 누르면 그 디렉토리에서 cell 을
- * 연다. 즐겨찾기의 `label` 은 메뉴와 같이 `root` 아래면 상대 경로다.
- */
-export function emptyRows(
-  cells: number,
-  kept: boolean,
-  root: DirRow | undefined,
-  favorites: readonly DirRow[],
-  home?: string
-): DirLine[] {
-  if (!root || !kept) return []
-  if (!cells) return dirLines(root, favorites, home)
-  const line: DirLine = { ...root, label: root.path, root: true }
-  return [favorites.length ? { ...line, more: favorites.length } : line]
-}
+/** 닫힌 workspace 카드의 줄. `label` 은 줄에 쓰는 글자이고, `path` 는 tooltip 에 쓰는 홈을 `~` 로 쓴 경로다. */
+export type DirLine = DirRow & { label: string; root: boolean }
 
 /**
  * workspace 디렉토리(`root`) 줄과 그 아래 즐겨찾기 줄이다. 즐겨찾기의 `label` 은 workspace 메뉴의 상대 경로이고, `path` 는

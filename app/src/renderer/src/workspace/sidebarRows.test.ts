@@ -9,7 +9,7 @@ import {
 import type { PtyNotification } from '../../../shared/pty-state'
 import {
   dirRow,
-  emptyRows,
+  dirLines,
   exitText,
   favoriteRow,
   favoriteRows,
@@ -242,46 +242,16 @@ describe('favoriteRows', () => {
   })
 })
 
-describe('emptyRows', () => {
-  it('즐겨찾기가 없으면 디렉토리 줄 하나이고, 디렉토리도 없으면 없다', () => {
-    expect(emptyRows(0, true, dirRow('/h/notes', '/h'), [], '/h')).toEqual([
-      { dir: '/h/notes', name: 'notes', path: '~/notes', label: '~/notes', root: true }
-    ])
-    expect(emptyRows(0, true, undefined, [])).toEqual([])
-  })
-
-  it('디렉토리를 모르면 즐겨찾기가 있어도 줄이 없다', () => {
-    expect(emptyRows(0, true, undefined, favoriteRows(['/h/x'], undefined, '/h'), '/h')).toEqual([])
-    expect(emptyRows(2, true, undefined, favoriteRows(['/h/x'], undefined, '/h'), '/h')).toEqual([])
-  })
-
-  it('keep 을 켜지 않은 workspace 는 줄이 없다', () => {
-    expect(emptyRows(1, false, dirRow('/h/notes', '/h'), [], '/h')).toEqual([])
-    expect(emptyRows(0, false, dirRow('/h/notes', '/h'), [], '/h')).toEqual([])
-  })
-
-  it('cell 이 있으면 디렉토리 줄 하나만 두고 즐겨찾기 수를 단다', () => {
-    const favorites = favoriteRows(['/h/notes/x', '/opt/y'], '/h/notes', '/h')
-    expect(emptyRows(1, true, dirRow('/h/notes', '/h'), favorites, '/h')).toEqual([
-      { dir: '/h/notes', name: 'notes', path: '~/notes', label: '~/notes', root: true, more: 2 }
-    ])
-  })
-
-  it('cell 이 있고 즐겨찾기가 없으면 수를 달지 않는다', () => {
-    expect(emptyRows(3, true, dirRow('/h/notes', '/h'), [], '/h')).toEqual([
-      { dir: '/h/notes', name: 'notes', path: '~/notes', label: '~/notes', root: true }
-    ])
-  })
-
+describe('dirLines', () => {
   it('디렉토리 줄 아래에 즐겨찾기를 받은 순서로 두고, 줄 글자는 디렉토리 아래면 상대 경로, tooltip 경로는 ~ 경로다', () => {
     const favorites = favoriteRows(['/h/w/b', '/opt/a', '/h/w', '/h/w/A'], '/h/w', '/h')
-    const rows = emptyRows(0, true, dirRow('/h/w', '/h'), favorites, '/h')
-    expect(rows.map((r) => [r.label, r.path, r.root, r.more])).toEqual([
-      ['~/w', '~/w', true, undefined],
-      ['/opt/a', '/opt/a', false, undefined],
-      ['A', '~/w/A', false, undefined],
-      ['b', '~/w/b', false, undefined],
-      ['~/w', '~/w', false, undefined]
+    const rows = dirLines(dirRow('/h/w', '/h'), favorites, '/h')
+    expect(rows.map((r) => [r.label, r.path, r.root])).toEqual([
+      ['~/w', '~/w', true],
+      ['/opt/a', '/opt/a', false],
+      ['A', '~/w/A', false],
+      ['b', '~/w/b', false],
+      ['~/w', '~/w', false]
     ])
   })
 })

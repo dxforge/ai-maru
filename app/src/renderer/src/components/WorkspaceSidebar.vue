@@ -14,12 +14,12 @@ import PaneIcon from './PaneIcon.vue'
 import PanePlace from './PanePlace.vue'
 import SidebarCard from './SidebarCard.vue'
 import StatusIcon from './StatusIcon.vue'
+import FavoritesMenu from './FavoritesMenu.vue'
 import WorkspaceMenu from './WorkspaceMenu.vue'
 import { commandTail, elapsed } from '../workspace/display'
 import {
   cellCard,
   dirCard,
-  dirKey,
   keepsCardAt,
   SIDEBAR_CARD_ID,
   workspaceCard,
@@ -40,7 +40,6 @@ import {
   jobRow,
   paneRow,
   dirRow,
-  emptyRows,
   favoriteRows,
   workspaceMarks,
   type JobRow,
@@ -165,7 +164,7 @@ const groups = computed(() => {
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       root,
       favorites,
-      empty: f ? [] : emptyRows(w.cells.length, !!w.kept, root, favorites, home),
+      line: f || !w.kept ? undefined : root,
       items: f ? [] : cells(src, w)
     }
   })
@@ -188,6 +187,13 @@ function headRef(key: number, el: unknown): void {
   if (el instanceof HTMLElement) heads.set(key, el)
   else heads.delete(key)
 }
+
+const dirCards = new Map<number, HTMLElement>()
+function dirCardRef(key: number, el: unknown): void {
+  if (el instanceof HTMLElement) dirCards.set(key, el)
+  else dirCards.delete(key)
+}
+const favoritesFor = ref<number | null>(null)
 
 let menu: InstanceType<typeof WorkspaceMenu> | null = null
 function menuRef(el: unknown): void {
@@ -233,7 +239,7 @@ const cardView = computed((): CardView | undefined => {
   }
   const g = groups.value.find((g) => g.w.key === at.workspace)
   if (!g) return undefined
-  if (at.kind === 'dir') return dirCard(g.empty, at.row)
+  if (at.kind === 'dir') return g.line && dirCard(g.line)
   return workspaceCard({
     name: g.name,
     auto: g.auto,
@@ -377,20 +383,7 @@ const keepTip = (kept: boolean): string =>
     <div ref="list" v-overlay-scroll="'y'" class="list">
       <div
         v-for="(
-          {
-            w,
-            name,
-            folded: wf,
-            kept,
-            state,
-            notified,
-            dot,
-            root,
-            favorites,
-            empty,
-            items: entries
-          },
-          wi
+          { w, name, folded: wf, kept, state, notified, dot, favorites, line, items: entries }, wi
         ) in groups"
         :key="w.key"
         class="workspace"
@@ -442,31 +435,44 @@ const keepTip = (kept: boolean): string =>
           v-if="menuFor === w.key && heads.get(w.key)"
           :ref="menuRef"
           :name="name"
-          :base="root"
-          :favorites="favorites"
           :kept="kept"
           :head="heads.get(w.key)!"
           @done="(n, refocus) => emit('closeMenu', w.key, n, refocus)"
-          @open-favorite="(dir, at) => emit('openDir', w.key, dir, at)"
-          @remove-favorite="(dir) => emit('removeFavorite', w.key, dir)"
           @toggle-keep="emit('toggleKeep', w.key)"
           @close-workspace="emit('closeWorkspace', w.key)"
         />
-        <div v-if="empty.length" class="dir-card">
+        <div v-if="line" :ref="(el) => dirCardRef(w.key, el)" class="dir-card">
           <button
-            v-for="(d, i) in empty"
-            :key="i"
-            v-tooltip="{ card: sidebarCard, at: { kind: 'dir', workspace: w.key, row: dirKey(i) } }"
+            v-tooltip="{ card: sidebarCard, at: { kind: 'dir', workspace: w.key } }"
             class="row dir-row"
-            :aria-label="`Open ${d.name}`"
+            :aria-label="`Open ${line.name}`"
             @mousedown.prevent
-            @click="openRow($event, w.key, d.dir)"
+            @click="openRow($event, w.key, line.dir)"
           >
-            <span class="state"><LeadIcon :name="d.root ? 'folder-root' : 'folder'" /></span>
-            <span class="title">{{ d.label }}</span>
-            <span v-if="d.more" class="tail">+{{ d.more }}</span>
+            <span class="state"><LeadIcon name="folder-root" /></span>
+            <span class="title">{{ line.path }}</span>
+          </button>
+          <button
+            v-if="favorites.length"
+            v-tooltip="favoritesFor === w.key ? undefined : 'Favorites'"
+            class="more"
+            :aria-label="`${favorites.length} Favorites`"
+            aria-haspopup="menu"
+            :aria-expanded="favoritesFor === w.key"
+            @mousedown.prevent
+            @click="favoritesFor = favoritesFor === w.key ? null : w.key"
+          >
+            +{{ favorites.length }}
           </button>
         </div>
+        <FavoritesMenu
+          v-if="favoritesFor === w.key && favorites.length && dirCards.get(w.key)"
+          :favorites="favorites"
+          :card="dirCards.get(w.key)!"
+          @close="favoritesFor = null"
+          @open="(dir, at) => emit('openDir', w.key, dir, at)"
+          @remove="(dir) => emit('removeFavorite', w.key, dir)"
+        />
         <div
           v-for="item in entries"
           :key="item.c.key"
@@ -716,14 +722,14 @@ const keepTip = (kept: boolean): string =>
 }
 
 .grip + .pane-line > .row,
-.dir-row:first-child {
+.dir-row {
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
 }
 
 .group > .row:last-child,
 .group > .pane-line:last-child > .row,
-.dir-row:last-child {
+.dir-row {
   border-bottom-left-radius: var(--radius-2);
   border-bottom-right-radius: var(--radius-2);
 }
@@ -748,6 +754,30 @@ const keepTip = (kept: boolean): string =>
 
 .dir-row:hover {
   background: var(--hover);
+}
+
+/* 디렉토리 줄 위 오른쪽 끝에 얹는다. 줄의 글자가 그 밑으로 가지 않게 줄의 오른쪽을 비운다. */
+.dir-card:has(.more) > .dir-row {
+  padding-right: calc(var(--space-3) + 28px);
+}
+
+.more {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  min-width: 24px;
+  justify-content: center;
+  height: 20px;
+  padding: 0 var(--space-2);
+  transform: translateY(-50%);
+  border-radius: var(--radius-1);
+  color: var(--faint);
+}
+
+.more:hover,
+.more[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--muted);
 }
 
 .pane-line {
