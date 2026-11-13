@@ -74,10 +74,16 @@ describe('commandKeys', () => {
     expect(secondaryCommand(press('KeyR', { shiftKey: true, metaKey: true }))).toBeUndefined()
   })
 
-  it('런처는 ⌘O 이고 메뉴에 걸며, ⌘P 에는 아무것도 걸지 않는다', () => {
+  it('런처는 ⌘O 이고 메뉴에 건다', () => {
     expect(toAccelerator(commandKeys('launcher')!)).toBe('Command+O')
     expect(commandLabel('launcher')).toBe('⌘O')
-    expect(shortcuts.some((s) => matchesKeys(press('KeyP', { metaKey: true }), s))).toBe(false)
+  })
+
+  it('pane 전환기는 ⌘P 이고 메뉴에 걸며, ⌘P 에는 그 명령 하나만 건다', () => {
+    expect(toAccelerator(commandKeys('go-to-pane')!)).toBe('Command+P')
+    expect(commandLabel('go-to-pane')).toBe('⌘P')
+    const hit = shortcuts.filter((s) => matchesKeys(press('KeyP', { metaKey: true }), s))
+    expect(hit).toEqual([{ target: 'command', action: 'go-to-pane', key: 'P', meta: true }])
   })
 
   it('스크롤백 지우기는 ⌘K 다', () => {

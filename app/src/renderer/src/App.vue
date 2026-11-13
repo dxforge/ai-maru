@@ -27,6 +27,7 @@ import { syncJobs } from './workspace/jobs'
 import CanvasPanel from './components/CanvasPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import LauncherPalette, { type Launch, type LaunchWhere } from './components/LauncherPalette.vue'
+import PaneSwitcher from './components/PaneSwitcher.vue'
 import { createChordKeys } from './chord'
 import PaneHeader from './components/PaneHeader.vue'
 import PanelBar, { type Panel } from './components/PanelBar.vue'
@@ -71,6 +72,7 @@ import {
 } from './workspace/layout'
 import { arrangementKey, easeInOut, smoothReveal } from './workspace/reveal'
 import { unreadWorkspaces, urgentStates } from './workspace/status'
+import { switcherRows } from './workspace/switcherRows'
 import {
   createWorkspaces,
   focusedPane,
@@ -487,8 +489,9 @@ async function openIn(workspace: number, dir: string, pane: PaneCommand): Promis
   if (key !== undefined) selectCell(key)
 }
 
-async function openDir(workspace: number, dir: string, anchor: Anchor): Promise<void> {
-  if (!(await isDirectory(dir))) return
+/** `anchor` 가 없으면 런처를 다른 팔레트처럼 창 아래(위) 가운데에 띄운다. ⌘P 전환기가 고른 디렉토리가 그렇다. */
+async function openDir(workspace: number, dir: string, anchor?: Anchor): Promise<void> {
+  if (!(await isDirectory(dir))) return closeOverlay('switcher')
   launchAt.value = { dir, where: 'cell', inWorkspace: workspace, shell: true, anchor }
   overlay.value = 'launch'
 }
@@ -861,15 +864,38 @@ function keepHorizontalScroll(e: WheelEvent): void {
   if (viewMode.value === 'columns' && Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.stopPropagation()
 }
 
-type Overlay = 'palette' | 'launcher' | 'launch'
+type Overlay = 'palette' | 'launcher' | 'launch' | 'switcher'
 const overlay = ref<Overlay | null>(null)
 /** `inWorkspace` 가 있으면 사이드바의 workspace 메뉴의 즐겨찾기나 cell 이 없는 workspace 의 디렉토리 줄이 띄운 런처다. */
 type LaunchAt =
   | { dir?: string; where: LaunchWhere; inWorkspace?: undefined }
-  | { dir: string; where: 'cell'; inWorkspace: number; shell: true; anchor: Anchor }
+  | { dir: string; where: 'cell'; inWorkspace: number; shell: true; anchor?: Anchor }
 const launchAt = ref<LaunchAt>({ where: 'cell' })
 const palette = useTemplateRef<InstanceType<typeof CommandPalette>>('palette')
 const launcher = useTemplateRef<InstanceType<typeof LauncherPalette>>('launcher')
+const switcher = useTemplateRef<InstanceType<typeof PaneSwitcher>>('switcher')
+const switcherList = computed(() =>
+  switcherRows(
+    workspaces.list.value,
+    {
+      shown: ptyStates.shown,
+      command: ptyStates.command,
+      notification: ptyStates.notification,
+      tasks: ptyStates.tasks,
+      home,
+      shell
+    },
+    workspaces.selectedKey.value
+  )
+)
+
+// 접은 workspace 의 pane 을 고르면 그 workspace 를 편다. 데스크톱 알림을 눌렀을 때(`onPaneSelect`)와 같다.
+function switchTo(cell: number, pane: number): void {
+  const w = workspaces.list.value.find((w) => w.cells.some((c) => c.key === cell))
+  if (w) folded.delete(w.key)
+  closeOverlay('switcher')
+  selectPane(cell, pane)
+}
 
 /**
  * `which` 를 주면 그것이 떠 있을 때만 닫는다. 팔레트와 런처를 바꿔 열면 닫히는 쪽이 보낸 close 가 늦게 와서 새로 연
@@ -948,6 +974,10 @@ const handlers: Record<CommandId, () => void> = {
     overlay.value = 'palette'
     palette.value?.focus()
   },
+  'go-to-pane': () => {
+    overlay.value = 'switcher'
+    switcher.value?.focus()
+  },
   'toggle-sidebar': () => {
     sidebarOpen.value = !sidebarOpen.value
     // 사이드바를 접거나 펴면 메뉴가 ⋮ 버튼에서 떨어진다. 터미널에 포커스를 주면 메뉴가 포커스를 잃어 고치던 이름을 정하고
@@ -967,10 +997,11 @@ const handlers: Record<CommandId, () => void> = {
   restart: window.maru.restart
 }
 
-// 팔레트·런처·chord 의 명령 목록을 부르는 명령은 여기서 닫지 않는다. 같은 쪽을 다시 부르면 입력을 그대로 두고 포커스만 되찾고, 다른 쪽을
+// 팔레트·런처·전환기·chord 의 명령 목록을 부르는 명령은 여기서 닫지 않는다. 같은 쪽을 다시 부르면 입력을 그대로 두고 포커스만 되찾고, 다른 쪽을
 // 부르면 `overlay` 가 바뀌며 떠 있던 쪽이 닫히기 때문이다.
 function runCommand(id: CommandId): void {
-  if (id !== 'command-palette' && id !== 'launcher' && !(id in chords)) closeOverlay()
+  if (id !== 'command-palette' && id !== 'launcher' && id !== 'go-to-pane' && !(id in chords))
+    closeOverlay()
   handlers[id]()
 }
 window.maru.onCommand(runCommand)
@@ -1202,6 +1233,15 @@ void window.maru.restoreScreen().then((r) => {
       :home="home"
       @launch="launch"
       @close="closeOverlay('launcher')"
+    />
+    <PaneSwitcher
+      v-else-if="overlay === 'switcher'"
+      ref="switcher"
+      :position="config.layout.value.palette"
+      :rows="switcherList"
+      @pane="switchTo"
+      @dir="openDir"
+      @close="closeOverlay('switcher')"
     />
     <LauncherPalette
       v-else-if="overlay === 'launch'"

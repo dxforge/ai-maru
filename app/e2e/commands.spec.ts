@@ -73,8 +73,9 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['toggle-pin-workspace', 'Toggle Workspace Pin', 'Alt+Command+P'],
     ['toggle-favorite-cell', 'Toggle Favorite', 'Control+Command+T']
   ])
-  expect(menus.view.slice(0, 19)).toEqual([
+  expect(menus.view.slice(0, 20)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
+    ['go-to-pane', 'Go to Pane or Favorite…', 'Command+P'],
     ['next-cell', 'Next Cell', 'Shift+Command+]'],
     ['previous-cell', 'Previous Cell', 'Shift+Command+['],
     ['next-pane', 'Next Pane', 'Command+]'],
