@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
-import { Folder, X } from '@lucide/vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { Folder, FolderRoot, X } from '@lucide/vue'
 import type { Anchor } from '../launcher/anchor'
 import type { DirRow } from '../workspace/sidebarRows'
 
@@ -8,7 +8,13 @@ import type { DirRow } from '../workspace/sidebarRows'
  * 점선 카드의 `+N` 을 누르면 그 카드 바로 아래에 카드의 폭으로 뜨는 즐겨찾기 목록이다. 아래의 cell 을 밀지 않고 그 위에
  * 뜬다. 터미널의 포커스를 가져가지 않으므로 Esc 는 document 에서 받는다.
  */
-const { favorites, card } = defineProps<{
+const {
+  root: base,
+  favorites,
+  card
+} = defineProps<{
+  /** workspace 의 디렉토리다. 맨 위에 지울 수 없는 줄로 둔다. */
+  root: DirRow
   favorites: readonly DirRow[]
   card: HTMLElement
 }>()
@@ -18,6 +24,11 @@ const emit = defineEmits<{
   open: [dir: string, anchor: Anchor]
   remove: [dir: string]
 }>()
+
+const rows = computed(() => [
+  { ...base, base: true },
+  ...favorites.map((f) => ({ ...f, base: false }))
+])
 
 const GAP = 4
 const MARGIN = 8
@@ -74,7 +85,12 @@ function open(dir: string): void {
     role="menu"
     :style="{ left: `${at.left}px`, top: `${at.top}px`, width: `${at.width}px` }"
   >
-    <div v-for="f in favorites" :key="f.dir" class="favorite-item">
+    <div
+      v-for="f in rows"
+      :key="f.base ? '' : f.dir"
+      class="favorite-item"
+      :class="{ 'base-item': f.base }"
+    >
       <button
         v-tooltip="f.path"
         class="favorite-open"
@@ -83,9 +99,13 @@ function open(dir: string): void {
         @mousedown.prevent
         @click="open(f.dir)"
       >
-        <Folder class="icon" /><span class="title">{{ f.name }}</span>
+        <component :is="f.base ? FolderRoot : Folder" class="icon" /><span class="title">{{
+          f.name
+        }}</span>
       </button>
+      <span v-if="f.base" class="favorite-remove remove-slot icon-button" aria-hidden="true" />
       <button
+        v-else
         v-tooltip="'Remove from Favorites'"
         class="favorite-remove icon-button"
         :aria-label="`Remove ${f.name} from Favorites`"
@@ -148,6 +168,11 @@ button {
   flex: none;
   margin-right: var(--space-4);
   opacity: 0;
+}
+
+/* 다른 즐겨찾기 줄과 글자 끝을 맞추려고 보이지 않는 X 자리를 둔다. */
+.remove-slot {
+  visibility: hidden;
 }
 
 .favorite-item:hover .favorite-remove,

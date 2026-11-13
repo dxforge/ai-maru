@@ -466,7 +466,8 @@ const keepTip = (kept: boolean): string =>
           </button>
         </div>
         <FavoritesMenu
-          v-if="favoritesFor === w.key && favorites.length && dirCards.get(w.key)"
+          v-if="favoritesFor === w.key && line && favorites.length && dirCards.get(w.key)"
+          :root="line"
           :favorites="favorites"
           :card="dirCards.get(w.key)!"
           @close="favoritesFor = null"

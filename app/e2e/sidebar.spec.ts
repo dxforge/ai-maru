@@ -1341,7 +1341,9 @@ test('workspace 메뉴는 헤더를 가리킬 때 접기 화살표 바로 왼쪽
 
 const dirRows = (page: Page) => page.locator('.sidebar .dir-row')
 const favoritesMenu = (page: Page) => page.locator('.favorites-menu')
-const favoriteItems = (page: Page) => favoritesMenu(page).locator('.favorite-open')
+const favoriteItems = (page: Page) =>
+  favoritesMenu(page).locator('.favorite-item:not(.base-item) .favorite-open')
+const baseItem = (page: Page) => favoritesMenu(page).locator('.base-item .favorite-open')
 const moreButton = (page: Page, i: number) =>
   page.locator('.sidebar .workspace').nth(i).locator('.dir-card .more')
 
@@ -1685,7 +1687,7 @@ test('keep 을 켠 workspace 의 디렉토리 줄은 cell 이 없어도 한 줄�
   )
 })
 
-test('즐겨찾기 목록에는 workspace 디렉토리 줄이 없고, 즐겨찾기 줄의 tooltip 은 그 디렉토리 아래면 상대 경로를, 아니면 홈을 ~ 로 쓴 경로를 달며, Esc 로 닫힌다', async ({
+test('즐겨찾기 목록은 맨 위에 지울 수 없는 workspace 디렉토리 줄을 두고, 즐겨찾기 줄의 tooltip 은 그 디렉토리 아래면 상대 경로를, 아니면 홈을 ~ 로 쓴 경로를 달며, Esc 로 닫힌다', async ({
   launch,
   dataDir
 }) => {
@@ -1702,12 +1704,27 @@ test('즐겨찾기 목록에는 workspace 디렉토리 줄이 없고, 즐겨찾�
   }
 
   await openFavorites(page, 0)
+  await expect(baseItem(page)).toHaveText('sub')
+  await expect(baseItem(page)).toHaveAttribute('data-tooltip', '~/sub')
+  await expect(
+    favoritesMenu(page).getByRole('button', { name: 'Remove sub from Favorites' })
+  ).toHaveCount(1)
   await expect(favoriteItems(page)).toHaveText(['deep', 'sub'])
   await expect(favoriteItems(page).nth(1)).toHaveAttribute('data-tooltip', '~/sub')
   await expect(favoriteItems(page).nth(0)).toHaveAttribute('data-tooltip', 'deep')
   await page.keyboard.press('Escape')
   await expect(favoritesMenu(page)).toHaveCount(0)
   await run(page, 'echo esc-$((1+1))', 'esc-2')
+
+  await openFavorites(page, 0)
+  await baseItem(page).click()
+  await expect(favoritesMenu(page)).toHaveCount(0)
+  await expect(launcher(page)).toBeVisible()
+  await page.keyboard.type('shell')
+  await page.keyboard.press('Enter')
+  await expect(launcher(page)).toHaveCount(0)
+  await expect(cellItems(page)).toHaveCount(3)
+  await run(page, 'pwd', `${home}/sub`)
 })
 
 test('workspace 메뉴는 바깥 어디를 눌러도 닫히며 누른 자리의 동작도 하고, 열린 동안에는 창 드래그 영역을 꺼서 사이드바 빈 곳·제목 줄을 눌러도 닫힌다', async ({
