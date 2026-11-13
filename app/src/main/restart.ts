@@ -187,7 +187,7 @@ function restartDetail(check: Incompatible): string {
   }[check.result]
   const workspaces = check.formats.includes('workspaces')
     ? [
-        'Workspaces will be unpinned and lose their custom names and favorites. Workspaces without cells will be removed.'
+        'Workspaces will lose their custom names, favorites and Keep Workspace. Workspaces without cells will be removed.'
       ]
     : []
   return [...reasons(check), ...ending, ...after, ...moving, ...workspaces].join(' ')
@@ -195,7 +195,7 @@ function restartDetail(check: Incompatible): string {
 
 export function restartDialog(check: Incompatible): Dialog {
   const action = {
-    full: 'Restart without workspace pins',
+    full: 'Restart and lose workspace details',
     layout: 'Restart with layout only',
     cells: 'Restart with one shell per cell',
     empty: 'Restart and close all cells'
@@ -204,11 +204,11 @@ export function restartDialog(check: Incompatible): Dialog {
 }
 
 export function restartRefusal(check: Incompatible): {
-  code: 'pins_would_be_lost' | 'layout_would_be_lost' | 'ptys_would_end'
+  code: 'workspace_details_would_be_lost' | 'layout_would_be_lost' | 'ptys_would_end'
   message: string
 } {
   const result = {
-    full: 'without workspace pins',
+    full: 'and lose workspace details',
     layout: 'with the layout only',
     cells: 'with one shell per cell',
     empty: 'and close all cells'
@@ -218,7 +218,7 @@ export function restartRefusal(check: Incompatible): {
       check.protocol !== undefined
         ? 'ptys_would_end'
         : check.result === 'full'
-          ? 'pins_would_be_lost'
+          ? 'workspace_details_would_be_lost'
           : 'layout_would_be_lost',
     message: `${restartDetail(check)} Pass --kill-ptys to restart ${result}.`
   }

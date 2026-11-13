@@ -324,7 +324,7 @@ test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살
 
 const dirRows = (page: Launched['page']) => page.locator('.sidebar .dir-row')
 
-test('state.json 의 cells 를 읽지 못하면 핀이나 즐겨찾기가 있는 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리고, 살아 있는 pty 는 띄운 순서로 Recovered workspace 에 cell 하나씩으로 열며 알린다', async ({
+test('state.json 의 cells 를 읽지 못하면 keep 을 켰거나 즐겨찾기가 있는 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리고, 살아 있는 pty 는 띄운 순서로 Recovered workspace 에 cell 하나씩으로 열며 알린다', async ({
   launch,
   dataDir
 }) => {
@@ -359,14 +359,14 @@ test('state.json 의 cells 를 읽지 못하면 핀이나 즐겨찾기가 있는
   expect(sockets(dataDir).sort()).toEqual(old.sort())
 })
 
-async function pinAs(launched: Launched, name: string): Promise<void> {
+async function keepAs(launched: Launched, name: string): Promise<void> {
   await clickMenu(launched.app, 'rename-workspace')
   await expect(launched.page.locator('.sidebar .workspace-name-input')).toBeFocused()
   await launched.page.keyboard.type(name)
   await launched.page.keyboard.press('Enter')
   await expect(workspaceNames(launched.page).nth(0)).toHaveText(name)
-  await clickMenu(launched.app, 'toggle-pin-workspace')
-  await expect(workspaceHeads(launched.page).nth(0).locator('.pin')).toHaveAttribute(
+  await clickMenu(launched.app, 'toggle-keep-workspace')
+  await expect(workspaceHeads(launched.page).nth(0).locator('.keep')).toHaveAttribute(
     'aria-pressed',
     'true'
   )
@@ -403,12 +403,12 @@ test('state.json 의 panes 를 읽지 못하면 cell 마다 workspace 의 dir �
   expect(sockets(dataDir)).toEqual(expect.arrayContaining(old))
 })
 
-test('state.json 의 workspaces 를 읽지 못하면 cell 과 셸은 되살리고, 이름·핀을 잃었다고 알린다', async ({
+test('state.json 의 workspaces 를 읽지 못하면 cell 과 셸은 되살리고, 이름·keep 을 잃었다고 알린다', async ({
   launch,
   dataDir
 }) => {
   const first = await launch()
-  await pinAs(first, 'atlas')
+  await keepAs(first, 'atlas')
   await run(first.page, 'export MARK=kept-$((1+1)) && echo set-$((2+2))', 'set-4')
   await restartWith(first.app)
   const saved = readState(dataDir)
@@ -422,9 +422,11 @@ test('state.json 의 workspaces 를 읽지 못하면 cell 과 셸은 되살리�
   await run(page, 'echo $MARK', 'kept-2')
 })
 
-test('End everything 으로 끈 뒤에도 접어 둔 핀 workspace 는 접힌 채 뜬다', async ({ launch }) => {
+test('End everything 으로 끈 뒤에도 접어 둔 keep 을 켠 workspace 는 접힌 채 뜬다', async ({
+  launch
+}) => {
   const first = await launch()
-  await pinAs(first, 'atlas')
+  await keepAs(first, 'atlas')
   await newWorkspace(first, 2)
   await workspaceHeads(first.page).nth(0).click()
   await expect(workspaceHeads(first.page).nth(0)).toHaveAttribute('aria-expanded', 'false')
@@ -792,7 +794,7 @@ test('panes 형식이 다른 빌드로는 cell 마다 셸 하나로 재시작할
   await expect(toast(page)).toHaveCount(0)
 })
 
-test('workspaces 형식만 다른 빌드로는 핀을 잃고 재시작할지 묻고, 확인하면 pty 를 남긴 채 재시작한다', async ({
+test('workspaces 형식만 다른 빌드로는 workspace 의 이름·즐겨찾기·keep 을 잃고 재시작할지 묻고, 확인하면 pty 를 남긴 채 재시작한다', async ({
   launch,
   dataDir
 }) => {
@@ -805,9 +807,9 @@ test('workspaces 형식만 다른 빌드로는 핀을 잃고 재시작할지 묻
     .poll(() => dialogCalls(app))
     .toMatchObject([
       {
-        message: 'Restart without workspace pins?',
+        message: 'Restart and lose workspace details?',
         detail: expect.stringContaining('a different saved-state format for the workspaces.'),
-        buttons: ['Restart without workspace pins', 'Cancel']
+        buttons: ['Restart and lose workspace details', 'Cancel']
       }
     ])
   expect((await dialogCalls(app))[0].detail).not.toContain('This will end')

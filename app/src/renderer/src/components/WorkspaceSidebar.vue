@@ -2,10 +2,11 @@
 import { computed, ref, shallowRef, useTemplateRef, type DeepReadonly } from 'vue'
 import type { JobView } from '../../../shared/job'
 import { autoWorkspaceName, labelBase } from '../../../shared/names'
+import { stays } from '../../../shared/screen'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { EllipsisVertical, Star, X } from '@lucide/vue'
+import { Anchor as AnchorIcon, EllipsisVertical, Star, X } from '@lucide/vue'
 import { anchorWidth, type Anchor } from '../launcher/anchor'
 import type { TooltipCard } from '../tooltip'
 import FoldChevron from './FoldChevron.vue'
@@ -46,7 +47,6 @@ import {
   type JobRow,
   type RowSource
 } from '../workspace/sidebarRows'
-import PinIcon from './PinIcon.vue'
 import {
   focusedPane,
   findFavorite,
@@ -101,7 +101,7 @@ const emit = defineEmits<{
   openMenu: [workspace: number]
   /** `name` 이 null 이면 이름을 바꾸지 않는다. `refocus` 면 터미널에 포커스를 돌려준다. */
   closeMenu: [workspace: number, name: string | null, refocus: boolean]
-  togglePin: [workspace: number]
+  toggleKeep: [workspace: number]
   toggleFavorite: [cell: number, pane: number]
   openDir: [workspace: number, dir: string, anchor: Anchor]
   removeFavorite: [workspace: number, dir: string]
@@ -162,7 +162,7 @@ const groups = computed(() => {
       name: w.name ?? auto,
       auto,
       folded: f,
-      pinned: !!w.pinned,
+      keep: keepState(w),
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       root,
       favorites,
@@ -369,11 +369,15 @@ const cellDragged = (cell: number): boolean =>
   dragged.value?.kind === 'cell' && dragged.value.cell === cell
 const workspaceDragged = (workspace: number): boolean =>
   dragged.value?.kind === 'workspace' && dragged.value.workspace === workspace
-const pinLabel = (pinned: boolean): string => (pinned ? 'Unpin Workspace' : 'Pin Workspace')
-const pinTip = (pinned: boolean): string =>
-  pinned
-    ? pinLabel(pinned)
-    : `${pinLabel(pinned)} — keep it in the sidebar after its last cell closes`
+/** `favorites` 는 keep 을 끄고도 즐겨찾기 때문에 마지막 cell 이 닫혀도 남는 workspace 다. */
+type KeepState = 'on' | 'favorites' | 'off'
+const keepState = (w: DeepReadonly<Workspace>): KeepState =>
+  w.kept ? 'on' : stays(w) ? 'favorites' : 'off'
+const keepTips: Record<KeepState, string> = {
+  on: 'Keep Workspace',
+  favorites: 'Keep Workspace — it already stays in the sidebar because it has favorites',
+  off: 'Keep Workspace — keep it in the sidebar after its last cell closes'
+}
 </script>
 
 <template>
@@ -386,7 +390,7 @@ const pinTip = (pinned: boolean): string =>
             w,
             name,
             folded: wf,
-            pinned,
+            keep,
             state,
             notified,
             dot,
@@ -418,18 +422,18 @@ const pinTip = (pinned: boolean): string =>
           /></span>
           <span class="workspace-name workspace-title">{{ name }}</span>
           <span v-if="dot" class="unread-dot" />
-          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. 핀과 메뉴 버튼의 pointerdown·click 이 헤더의 끌기·접기로 전해지지 않게 막는다. -->
-          <span class="pin-slot" :class="{ on: pinned }"
+          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. keep 버튼과 메뉴 버튼의 pointerdown·click 이 헤더의 끌기·접기로 전해지지 않게 막는다. -->
+          <span class="keep-slot" :class="{ shown: keep !== 'off' }"
             ><span
-              v-tooltip="pinTip(pinned)"
+              v-tooltip="keepTips[keep]"
               role="button"
-              class="pin icon-button"
-              :class="{ on: pinned }"
-              :aria-label="pinLabel(pinned)"
-              :aria-pressed="pinned"
+              class="keep icon-button"
+              :class="keep"
+              aria-label="Keep Workspace"
+              :aria-pressed="keep === 'on'"
               @pointerdown.stop
-              @click.stop="emit('togglePin', w.key)"
-              ><PinIcon :filled="pinned" /></span
+              @click.stop="emit('toggleKeep', w.key)"
+              ><AnchorIcon class="text-icon" /></span
           ></span>
           <span
             v-tooltip="menuFor === w.key ? undefined : 'Workspace Menu'"
@@ -450,12 +454,12 @@ const pinTip = (pinned: boolean): string =>
           :name="name"
           :base="root"
           :favorites="favorites"
-          :pinned="pinned"
+          :kept="keep === 'on'"
           :head="heads.get(w.key)!"
           @done="(n, refocus) => emit('closeMenu', w.key, n, refocus)"
           @open-favorite="(dir, at) => emit('openDir', w.key, dir, at)"
           @remove-favorite="(dir) => emit('removeFavorite', w.key, dir)"
-          @toggle-pin="emit('togglePin', w.key)"
+          @toggle-keep="emit('toggleKeep', w.key)"
           @close-workspace="emit('closeWorkspace', w.key)"
         />
         <div v-if="empty.length" class="dir-card">
@@ -633,42 +637,51 @@ const pinTip = (pinned: boolean): string =>
   text-overflow: ellipsis;
 }
 
-.pin-slot {
+.keep-slot {
   flex: none;
   align-self: stretch;
   display: flex;
   align-items: center;
 }
 
-/* 핀이 없는 workspace 의 핀은 hover·focus 때만 보이므로 이름 폭을 줄이지 않는다. 접은 사이드바에서 이름이 핀 폭만큼 더
-   잘리지 않게 하기 위해서다. 핀의 자리는 이름보다 먼저 0 까지 준다. 자리가 줄면 핀은 자리의 오른쪽 끝에 붙은 채 왼쪽으로
-   넘쳐 이름 끝 글자를 가린다. 이름 뒤에 빈 폭이 있으면 핀은 이름 뒤에 선다. 자리의 왼쪽 margin 은 헤더의 gap 을 빼고, 핀의
-   왼쪽 margin 이 그 gap 을 핀 앞에 다시 둔다. */
-.pin-slot:not(.on) {
+/* 마지막 cell 이 닫히면 닫히는 workspace 의 keep 버튼은 hover·focus 때만 보이므로 이름 폭을 줄이지 않는다. 접은 사이드바에서
+   이름이 버튼 폭만큼 더 잘리지 않게 하기 위해서다. 버튼의 자리는 이름보다 먼저 0 까지 준다. 자리가 줄면 버튼은 자리의 오른쪽
+   끝에 붙은 채 왼쪽으로 넘쳐 이름 끝 글자를 가린다. 이름 뒤에 빈 폭이 있으면 버튼은 이름 뒤에 선다. 자리의 왼쪽 margin 은
+   헤더의 gap 을 빼고, 버튼의 왼쪽 margin 이 그 gap 을 버튼 앞에 다시 둔다. */
+.keep-slot:not(.shown) {
   flex: 0 1000 auto;
   min-width: 0;
   justify-content: flex-end;
   margin-left: calc(-1 * var(--space-4));
 }
 
-.pin-slot:not(.on) .pin {
+.keep-slot:not(.shown) .keep {
   flex: none;
   margin-left: var(--space-4);
   background-color: var(--side);
 }
 
-.pin {
+.keep {
   visibility: hidden;
 }
 
-.pin.on,
-.workspace-head:hover .pin,
-.workspace-head:focus-visible .pin,
-.workspace-head.menu-open .pin {
+.keep.on,
+.keep.favorites,
+.workspace-head:hover .keep,
+.workspace-head:focus-visible .keep,
+.workspace-head.menu-open .keep {
   visibility: visible;
 }
 
-/* 메뉴 버튼은 헤더를 가리킬 때와 메뉴가 열려 있을 때만 보인다. 핀과 달리 자리를 늘 차지해 이름이 hover 때 밀리지 않는다. */
+.keep.on {
+  color: var(--fg);
+}
+
+.keep.favorites {
+  color: var(--faint);
+}
+
+/* 메뉴 버튼은 헤더를 가리킬 때와 메뉴가 열려 있을 때만 보인다. keep 버튼과 달리 자리를 늘 차지해 이름이 hover 때 밀리지 않는다. */
 .workspace-menu-button {
   flex: none;
   margin-left: auto;
@@ -685,8 +698,8 @@ const pinTip = (pinned: boolean): string =>
   color: var(--fg);
 }
 
-/* 이름 위에 겹친 핀은 바탕색으로 이름을 가리므로, hover 색은 `.icon-button` 처럼 바탕색을 바꾸지 않고 그 위에 덧칠한다. */
-.pin:hover {
+/* 이름 위에 겹친 keep 버튼은 바탕색으로 이름을 가리므로, hover 색은 `.icon-button` 처럼 바탕색을 바꾸지 않고 그 위에 덧칠한다. */
+.keep:hover {
   background-color: transparent;
   background-image: linear-gradient(var(--hover), var(--hover));
 }

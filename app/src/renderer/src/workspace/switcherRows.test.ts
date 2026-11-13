@@ -86,7 +86,7 @@ describe('switcherRows', () => {
   })
 
   it('cell 이 없는 workspace 는 pane 줄 없이 디렉토리 줄만 둔다', () => {
-    const empty = [workspace(3, [], { pinned: true, dir: '/h/kept', favorites: ['/h/kept/a'] })]
+    const empty = [workspace(3, [], { kept: true, dir: '/h/kept', favorites: ['/h/kept/a'] })]
     const rows = switcherRows(empty, src, null)
     expect(rows.panes).toEqual([])
     expect(rows.dirs.map((r) => [r.dir, r.root])).toEqual([

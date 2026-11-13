@@ -153,7 +153,7 @@
 //! `layout_would_be_lost` 로 답하고, `data.recovered` 는 Recovered workspace 로 옮겨질 pty 수다. 두
 //! 경우 모두 `data.result` 는 `kill_ptys` 를 주면 다시 뜬 앱이 되살릴 것이다. 배치만 되살리면
 //! `layout`, cell 마다 셸 하나로 열면 `cells`, cell 을 모두 닫으면 `empty` 다. `workspaces` 표의 형식 버전만 다르면 다시 뜬 앱은 pty 에
-//! 다시 붙지만 핀과 workspace 의 이름·즐겨찾기를 잃는다. 이때는 -32001 `pins_would_be_lost` 로 답하고,
+//! 다시 붙지만 workspace 의 이름·즐겨찾기·Keep Workspace 를 잃는다. 이때는 -32001 `workspace_details_would_be_lost` 로 답하고,
 //! `data.result` 는 `full` 이다. `kill_ptys` 가 true 면 그 결과로 재시작한다 — 범위 밖 버전의 pty 만
 //! 끈다. dev 서버로 띄운 앱이면 -32001 `restart_unavailable` 로 답한다. 상태를 저장하지 못하면
 //! 재시작하지 않고 `internal_error` 로 답한다.
@@ -516,11 +516,11 @@ enum AppCommand {
     /// mismatch reopens each cell with a new shell. A pty protocol or terminal-sessions mismatch
     /// restores the pane layout with new shells. A pty protocol mismatch ends only the terminals
     /// the installed app can't reattach to. Other terminals that cannot be matched to restored
-    /// panes keep running in a new workspace named Recovered. A workspaces format mismatch unpins
-    /// workspaces and drops their custom names and favorites, and removes pinned workspaces with
-    /// no cells.
+    /// panes keep running in a new workspace named Recovered. A workspaces format mismatch drops
+    /// the custom names, favorites and Keep Workspace of workspaces, and removes workspaces with no
+    /// cells.
     Restart {
-        /// Restart even if it means ending terminals or losing the layout or workspace pins.
+        /// Restart even if it means ending terminals or losing the layout or workspace details.
         #[arg(long)]
         kill_ptys: bool,
     },

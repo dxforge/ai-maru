@@ -15,7 +15,7 @@ export type CommandId =
   | 'close-pane'
   | 'close-workspace'
   | 'rename-workspace'
-  | 'toggle-pin-workspace'
+  | 'toggle-keep-workspace'
   | 'toggle-favorite-cell'
   | 'focus-pane-left'
   | 'focus-pane-right'
@@ -59,7 +59,7 @@ export const commands: readonly Command[] = [
   { id: 'close-pane', title: 'Close Pane', menu: 'file' },
   { id: 'close-workspace', title: 'Close Workspace', menu: 'file' },
   { id: 'rename-workspace', title: 'Rename Workspace…', menu: 'file' },
-  { id: 'toggle-pin-workspace', title: 'Toggle Workspace Pin', menu: 'file' },
+  { id: 'toggle-keep-workspace', title: 'Keep Workspace', menu: 'file' },
   { id: 'toggle-favorite-cell', title: 'Toggle Favorite', menu: 'file' },
   { id: 'command-palette', title: 'Command Palette…', menu: 'view', palette: false },
   { id: 'go-to-pane', title: 'Go to Pane or Favorite…', menu: 'view' },

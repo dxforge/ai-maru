@@ -312,7 +312,7 @@ async function launchApp(
   await app.evaluate(() => {
     process.once('exit', () => process.kill(process.pid, 'SIGKILL'))
   })
-  // 끄기는 늘 묻는다. 묻는 것을 재지 않는 테스트가 확인 창에 막히지 않게, pty 를 끄고 핀이나 즐겨찾기가 있는 workspace 만 남기는 End everything 으로 답한다.
+  // 끄기는 늘 묻는다. 묻는 것을 재지 않는 테스트가 확인 창에 막히지 않게, pty 를 끄고 keep 을 켰거나 즐겨찾기가 있는 workspace 만 남기는 End everything 으로 답한다.
   await stubDialog(app, END_EVERYTHING)
   await beforeWindow?.(app)
   const page = await app.firstWindow()
@@ -794,7 +794,7 @@ export function sidebarCard(page: Page) {
 }
 
 /**
- * 사이드바 줄을 가리켜 카드를 띄우고 그 줄의 구역을 돌려준다. 헤더·닫힌 핀 줄의 카드는 구역이 하나뿐이라 그 구역이다.
+ * 사이드바 줄을 가리켜 카드를 띄우고 그 줄의 구역을 돌려준다. 헤더·cell 이 없는 workspace 의 줄의 카드는 구역이 하나뿐이라 그 구역이다.
  * 키 입력과 클릭이 카드를 닫으므로, 돌려받은 뒤 키를 눌렀으면 다시 부른다. 이미 가리키고 있던 줄이면 다시 띄우도록 먼저
  * 포인터를 사이드바 맨 위(창 드래그 영역)로 뺀다.
  */

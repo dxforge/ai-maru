@@ -292,7 +292,7 @@ function selectedWorkspace() {
   return c && workspaces.workspaceOf(c.key)
 }
 
-// 마지막 cell 이 닫히면 store 가 남을 이유(핀·즐겨찾기)가 없는 workspace 를 지운다. 남은 workspace 는 이어서 목록에서 뺀다.
+// 마지막 cell 이 닫히면 store 가 남을 이유(keep·즐겨찾기)가 없는 workspace 를 지운다. 남은 workspace 는 이어서 목록에서 뺀다.
 // cell 의 job 은 cell 이 닫힐 때 main 이 끈다.
 async function closeWorkspace(key?: number): Promise<void> {
   const w =
@@ -455,10 +455,10 @@ function toggleFavorite(cell: number, pane?: number): void {
 
 const UNDO_TIMEOUT = 8000
 
-function togglePin(workspace: number): void {
-  const removed = workspaces.togglePin(workspace)
+function toggleKeep(workspace: number): void {
+  const removed = workspaces.toggleKeep(workspace)
   if (removed) {
-    toasts.put('unpin', {
+    toasts.put('unkeep', {
       level: 'info',
       title: `Removed '${workspaceName(removed.workspace, home)}'`,
       lines: [],
@@ -1137,9 +1137,9 @@ const handlers: Record<CommandId, () => void> = {
     const w = selectedWorkspace()
     if (w) openMenu(w.key)
   },
-  'toggle-pin-workspace': () => {
+  'toggle-keep-workspace': () => {
     const w = selectedWorkspace()
-    if (w) togglePin(w.key)
+    if (w) toggleKeep(w.key)
   },
   'toggle-favorite-cell': () => {
     const key = workspaces.selectedKey.value
@@ -1325,7 +1325,7 @@ void window.maru.restoreScreen().then((r) => {
         @move-workspace="moveWorkspace"
         @open-menu="openMenu"
         @close-menu="closeMenu"
-        @toggle-pin="togglePin"
+        @toggle-keep="toggleKeep"
         @toggle-favorite="toggleFavorite"
         @open-dir="openDir"
         @remove-favorite="workspaces.removeFavorite"
