@@ -219,6 +219,7 @@ describe('parseScreen', () => {
       })
     expect(table({ pinned: true })!.rows).toEqual([{ id: 'w-00000001', kept: true }])
     expect(table({ pinned: 1 })).toBeNull()
+    expect(table({ kept: false })).toBeNull()
     expect(table({ kept: true, pinned: 1 })!.rows).toEqual([{ id: 'w-00000001', kept: true }])
     expect(table({})!.rows).toEqual([{ id: 'w-00000001' }])
 

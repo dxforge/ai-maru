@@ -191,7 +191,9 @@ function openFavorite(dir: string): void {
         <X class="icon" />
       </button>
     </div>
-    <div v-if="!favorites.length" class="hint">Star a pane to add its directory</div>
+    <div v-if="!favorites.length" class="hint">
+      {{ kept ? 'Star a pane to add its directory' : 'Keep Workspace to add favorites' }}
+    </div>
     <hr />
     <button
       class="action"

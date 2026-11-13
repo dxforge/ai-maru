@@ -769,7 +769,6 @@ export function workspaceHeads(page: Page) {
   return page.locator('.sidebar .workspace-head')
 }
 
-/** 즐겨찾기는 keep 을 켠 workspace 만 가지므로, 즐겨찾기를 넣기 전에 i 번째 workspace 의 keep 을 켠다. */
 export async function keepWorkspace(page: Page, i: number): Promise<void> {
   const keep = workspaceHeads(page).nth(i).locator('.keep')
   await workspaceHeads(page).nth(i).hover()

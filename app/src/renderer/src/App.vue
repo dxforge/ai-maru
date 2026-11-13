@@ -292,7 +292,7 @@ function selectedWorkspace() {
   return c && workspaces.workspaceOf(c.key)
 }
 
-// 마지막 cell 이 닫히면 store 가 남을 이유(keep·즐겨찾기)가 없는 workspace 를 지운다. 남은 workspace 는 이어서 목록에서 뺀다.
+// 마지막 cell 이 닫히면 store 가 keep 을 끈 workspace 를 지운다. 남은 workspace 는 이어서 목록에서 뺀다.
 // cell 의 job 은 cell 이 닫힐 때 main 이 끈다.
 async function closeWorkspace(key?: number): Promise<void> {
   const w =
@@ -466,7 +466,7 @@ function toggleKeep(workspace: number): void {
     const name = workspaceName(unkept.workspace, home)
     toasts.put('unkeep', {
       level: 'info',
-      title: unkept.at < 0 ? `Removed the favorites of '${name}'` : `Removed '${name}'`,
+      title: unkept.at === undefined ? `Removed favorites from '${name}'` : `Removed '${name}'`,
       lines: [],
       action: { label: 'Undo', run: () => workspaces.reinstate(unkept) },
       timeout: UNDO_TIMEOUT

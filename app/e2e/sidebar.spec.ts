@@ -1282,7 +1282,7 @@ test('keep 을 켜거나 꺼도 workspace 들의 세로 위치가 그대로다',
   await expect.poll(tops).toEqual(before)
 })
 
-test('workspace 메뉴는 헤더를 가리킬 때 접기 화살표 바로 왼쪽에 보이는 ⋮ 를 누르면 그 버튼 아래에 오른쪽 끝을 맞춰 사이드바 안에 뜨고, 즐겨찾기가 없으면 안내 한 줄을 보이며, Keep Workspace 는 keep 을 켜고 그 항목에 체크 표시를 하며 Close Workspace 는 고른 cell 이 아니라 그 workspace 를 확인 창을 거쳐 닫는다', async ({
+test('workspace 메뉴는 헤더를 가리킬 때 접기 화살표 바로 왼쪽에 보이는 ⋮ 를 누르면 그 버튼 아래에 오른쪽 끝을 맞춰 사이드바 안에 뜨고, 즐겨찾기가 없으면 keep 을 켰는지에 따라 안내 한 줄을 보이며, Keep Workspace 는 keep 을 켜고 그 항목에 체크 표시를 하며 Close Workspace 는 고른 cell 이 아니라 그 workspace 를 확인 창을 거쳐 닫는다', async ({
   launch,
   dataDir
 }) => {
@@ -1307,7 +1307,7 @@ test('workspace 메뉴는 헤더를 가리킬 때 접기 화살표 바로 왼쪽
   expect(m.y).toBeLessThan(b.y + b.height + 8)
   await expect(favoriteItems(page)).toHaveCount(0)
   await expect(baseItem(page)).toBeVisible()
-  await expect(menuHint(page)).toHaveText('Star a pane to add its directory')
+  await expect(menuHint(page)).toHaveText('Keep Workspace to add favorites')
   const keepItem = workspaceMenu(page).getByRole('menuitemcheckbox', { name: 'Keep Workspace' })
   await expect(keepItem).toHaveAttribute('aria-checked', 'false')
   await keepItem.click()
@@ -1317,6 +1317,7 @@ test('workspace 메뉴는 헤더를 가리킬 때 접기 화살표 바로 왼쪽
 
   await openWorkspaceMenu(page, 0)
   await expect(keepItem).toHaveAttribute('aria-checked', 'true')
+  await expect(menuHint(page)).toHaveText('Star a pane to add its directory')
   await page.keyboard.press('Escape')
   await expect(workspaceMenu(page)).toHaveCount(0)
 
@@ -1612,7 +1613,7 @@ test('keep 을 켜지 않은 workspace 에는 별로도 메뉴의 Toggle Favorit
   await expect(keep).toHaveAttribute('aria-pressed', 'false')
   await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'false')
   await expect(cellItems(page)).toHaveCount(3)
-  await expect(toast(page)).toContainText('Removed the favorites of')
+  await expect(toast(page)).toContainText('Removed favorites from')
   await toast(page).getByRole('button', { name: 'Undo' }).click()
   await expect(keep).toHaveAttribute('aria-pressed', 'true')
   await expect(cellFavorite(page, 1)).toHaveAttribute('aria-pressed', 'true')

@@ -636,7 +636,7 @@ const keepTip = (kept: boolean): string =>
   align-items: center;
 }
 
-/* 마지막 cell 이 닫히면 닫히는 workspace 의 keep 버튼은 hover·focus 때만 보이므로 이름 폭을 줄이지 않는다. 접은 사이드바에서
+/* keep 을 끈 workspace 의 keep 버튼은 hover·focus 때만 보이므로 이름 폭을 줄이지 않는다. 접은 사이드바에서
    이름이 버튼 폭만큼 더 잘리지 않게 하기 위해서다. 버튼의 자리는 이름보다 먼저 0 까지 준다. 자리가 줄면 버튼은 자리의 오른쪽
    끝에 붙은 채 왼쪽으로 넘쳐 이름 끝 글자를 가린다. 이름 뒤에 빈 폭이 있으면 버튼은 이름 뒤에 선다. 자리의 왼쪽 margin 은
    헤더의 gap 을 빼고, 버튼의 왼쪽 margin 이 그 gap 을 버튼 앞에 다시 둔다. */

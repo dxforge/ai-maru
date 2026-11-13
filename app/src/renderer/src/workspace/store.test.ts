@@ -1718,7 +1718,7 @@ describe('workspace keep', () => {
     ws.toggleKeep(a)
     ws.toggleFavorite(x)
     const unkept = ws.toggleKeep(a)!
-    expect(unkept).toMatchObject({ at: -1, favorites: ['/d-0'] })
+    expect(unkept).toEqual({ workspace: expect.anything(), favorites: ['/d-0'] })
     expect(wsKeys(ws)).toEqual([a, b])
     expect(ws.list.value[0]).not.toHaveProperty('kept')
     expect(ws.list.value[0]).not.toHaveProperty('favorites')
@@ -1726,6 +1726,29 @@ describe('workspace keep', () => {
     expect(wsKeys(ws)).toEqual([a, b])
     expect(ws.list.value[0]).toMatchObject({ kept: true, favorites: ['/d-0'] })
     expect(ws.list.value[0].cells.map((c) => c.key)).toEqual([x])
+  })
+
+  it('즐겨찾기만 지운 뒤 마지막 cell 을 닫아 workspace 가 닫혔으면 reinstate 가 목록 끝에 되살리고, keep 을 다시 켜 더한 즐겨찾기는 남긴다', () => {
+    const ws = opened(2)
+    const [a, b] = wsKeys(ws)
+    const [x, y] = keys(ws)
+    ws.toggleKeep(a)
+    ws.toggleFavorite(x)
+    const closed = ws.toggleKeep(a)!
+    shut(ws, x)
+    expect(wsKeys(ws)).toEqual([b])
+    ws.reinstate(closed)
+    expect(wsKeys(ws)).toEqual([b, a])
+    expect(ws.list.value[1]).toMatchObject({ kept: true, favorites: ['/d-0'] })
+
+    ws.toggleKeep(b)
+    ws.toggleFavorite(y)
+    const unkept = ws.toggleKeep(b)!
+    ws.toggleKeep(b)
+    ws.cells().find((c) => c.key === y)!.panes[0].cwd = '/new'
+    ws.toggleFavorite(y)
+    ws.reinstate(unkept)
+    expect(ws.list.value[0]).toMatchObject({ kept: true, favorites: ['/d-1', '/new'] })
   })
 
   it('reinstate 는 그 사이 목록이 줄었으면 끝에 두고, 이미 목록에 있으면 아무것도 하지 않는다', () => {

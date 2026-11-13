@@ -111,8 +111,8 @@ export function orderedPanes<P extends { key: number }>(c: {
 
 export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
 
-/** keep 을 꺼서 닫은 workspace 의 자리 `at`(닫지 않았으면 -1)과 함께 지운 즐겨찾기다. */
-export type Unkept = { workspace: Workspace; at: number; favorites?: string[] }
+/** keep 을 끈 workspace 와, 닫았으면 그 자리 `at`, 지웠으면 그 즐겨찾기다. */
+export type Unkept = { workspace: Workspace; at?: number; favorites?: string[] }
 
 export type PaneCommand = Pick<Pane, 'command' | 'keep'>
 
@@ -182,7 +182,7 @@ export function createWorkspaces(
 
   /**
    * keep 을 끈 workspace 의 `dir` 은 자동 이름처럼 첫 pane 이 있는 디렉토리를 따라간다. keep 을 켜면 굳는다. 셸이 디렉토리를
-   * 알리기 전에 꽂아 `dir` 이 없으면 처음 알린 디렉토리로 정한다.
+   * 알리기 전에 keep 을 켜 `dir` 이 없으면 처음 알린 디렉토리로 정한다.
    */
   function settleDir(w: Workspace, dir: string | undefined): void {
     if (dir === undefined || (w.kept && w.dir !== undefined)) return
@@ -227,7 +227,6 @@ export function createWorkspaces(
     return c
   }
 
-  /** cell 이 없고 keep 도 끈 workspace 를 닫고 그 자리를 돌려준다. 닫지 않았으면 -1 이다. */
   function dropUnkept(w: Workspace): number {
     if (w.cells.length || w.kept) return -1
     const at = list.value.indexOf(w)
@@ -256,14 +255,17 @@ export function createWorkspaces(
     delete w.kept
     delete w.favorites
     const at = dropUnkept(w)
-    return at < 0 && !favorites ? undefined : { workspace: w, at, ...(favorites && { favorites }) }
+    if (at < 0) return favorites && { workspace: w, favorites }
+    return { workspace: w, at, favorites }
   }
 
   function reinstate({ workspace: w, at, favorites }: Unkept): void {
-    if (at >= 0 && workspaceByKey(w.key)) return
+    const gone = !workspaceByKey(w.key)
+    if (at !== undefined && !gone) return
     w.kept = true
-    if (favorites) w.favorites = favorites
-    if (at >= 0) list.value.splice(Math.min(at, list.value.length), 0, w)
+    // 즐겨찾기만 지운 뒤에도 Undo 전에 마지막 cell 을 닫아 workspace 가 닫히거나, keep 을 다시 켜 즐겨찾기를 더할 수 있다.
+    if (favorites) w.favorites = [...new Set([...favorites, ...(w.favorites ?? [])])]
+    if (gone) list.value.splice(Math.min(at ?? list.value.length, list.value.length), 0, w)
   }
 
   /**
@@ -373,7 +375,7 @@ export function createWorkspaces(
       return
     }
     const dest = workspaceByKey(to.workspace)
-    // cell 이 하나뿐인 workspace 안에서 그 cell 을 옮기면 아무것도 하지 않는다. 남을 이유가 없으면 `detach` 가 cell 을 빼면서 그
+    // cell 이 하나뿐인 workspace 안에서 그 cell 을 옮기면 아무것도 하지 않는다. keep 을 껐으면 `detach` 가 cell 을 빼면서 그
     // workspace 를 목록에서 지우므로, 그대로 넣으면 cell 이 목록에 없는 workspace 에 들어가 사라지기 때문이다.
     if (!dest || (dest === from && from.cells.length === 1)) return
     const c = detach(from, at)
