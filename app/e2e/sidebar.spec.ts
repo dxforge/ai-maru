@@ -1792,6 +1792,33 @@ test('즐겨찾기 목록은 열린 동안 창 드래그 영역을 꺼서 사이
   }
 })
 
+test('즐겨찾기 목록이 열린 채 마지막 cell 이 닫혀 목록이 사라지면, 그 workspace 에 cell 을 다시 열어도 목록이 다시 뜨지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'sub')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await keepWorkspace(page, 0)
+  await cellItems(page).nth(0).hover()
+  await cellFavorite(page, 0).click()
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+
+  await openFavorites(page, 0)
+  await page.keyboard.type('exit\n')
+  await expect(cellItems(page)).toHaveCount(0)
+  await expect(favoritesMenu(page)).toHaveCount(0)
+
+  await dirRows(page).first().click()
+  await expect(launcher(page)).toBeVisible()
+  await page.keyboard.type('shell')
+  await page.keyboard.press('Enter')
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect(moreButton(page, 0)).toHaveText('+1')
+  await expect(favoritesMenu(page)).toHaveCount(0)
+})
+
 test('workspace 메뉴 안의 버튼이 아닌 곳을 눌러도 메뉴가 남고 이름 칸이 입력을 받으며, 창 크기가 바뀌어 닫히거나 keep 을 꺼 workspace 와 함께 사라져도 터미널이 입력을 받는다', async ({
   launch,
   dataDir

@@ -2,17 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { Folder, FolderRoot, X } from '@lucide/vue'
 import type { Anchor } from '../launcher/anchor'
+import { popupTop, usePopupDismiss } from '../popupDismiss'
 import type { DirRow } from '../workspace/sidebarRows'
 
 /**
  * 점선 카드의 `+N` 을 누르면 그 카드 바로 아래에 카드의 폭으로 뜨는 즐겨찾기 목록이다. 아래의 cell 을 밀지 않고 그 위에
  * 뜬다. 터미널의 포커스를 가져가지 않으므로 Esc 는 document 에서 받는다.
  */
-const {
-  root: base,
-  favorites,
-  card
-} = defineProps<{
+const { root, favorites, card } = defineProps<{
   /** workspace 의 디렉토리다. 맨 위에 지울 수 없는 줄로 둔다. */
   root: DirRow
   favorites: readonly DirRow[]
@@ -26,40 +23,31 @@ const emit = defineEmits<{
 }>()
 
 const rows = computed(() => [
-  { ...base, base: true },
+  { ...root, base: true },
   ...favorites.map((f) => ({ ...f, base: false }))
 ])
 
-const GAP = 4
-const MARGIN = 8
-const root = useTemplateRef<HTMLElement>('root')
+const menu = useTemplateRef<HTMLElement>('menu')
 const at = ref({ left: 0, top: 0, width: 0 })
+
+// `+N` 은 점선 카드 안에 있고 스스로 목록을 여닫으므로, 카드를 누를 때는 닫지 않는다.
+usePopupDismiss(
+  (t) => !!menu.value?.contains(t) || card.contains(t),
+  () => emit('close')
+)
 
 onMounted(() => {
   const b = card.getBoundingClientRect()
-  const height = root.value!.getBoundingClientRect().height
-  const below = b.bottom + GAP
-  const top = below + height <= innerHeight - MARGIN ? below : b.top - GAP - height
-  at.value = { left: b.left, top: Math.max(MARGIN, top), width: b.width }
-  // 창 드래그 영역은 pointerdown 을 받지 못해, 그대로 두면 사이드바 빈 곳·제목 줄을 눌러도 목록이 닫히지 않는다.
-  document.documentElement.classList.add('window-drag-off')
-  document.addEventListener('pointerdown', onPointerDown, true)
+  const height = menu.value!.getBoundingClientRect().height
+  at.value = { left: b.left, top: popupTop(b, height), width: b.width }
   document.addEventListener('keydown', onKeydown, true)
-  window.addEventListener('resize', onResize)
 })
+// 목록을 띄운 조건(cell 이 있다, 즐겨찾기가 있다)이 사라져 목록이 내려갈 때도 열림 상태를 지운다. 지우지 않으면 조건이
+// 돌아올 때 누르지 않은 목록이 다시 뜬다.
 onBeforeUnmount(() => {
-  document.documentElement.classList.remove('window-drag-off')
-  document.removeEventListener('pointerdown', onPointerDown, true)
   document.removeEventListener('keydown', onKeydown, true)
-  window.removeEventListener('resize', onResize)
-})
-
-// `+N` 은 스스로 목록을 여닫으므로 여기서 닫지 않는다.
-function onPointerDown(e: PointerEvent): void {
-  const t = e.target as Element | null
-  if (t && (root.value?.contains(t) || card.contains(t))) return
   emit('close')
-}
+})
 
 function onKeydown(e: KeyboardEvent): void {
   if (e.key !== 'Escape' || e.isComposing) return
@@ -68,14 +56,9 @@ function onKeydown(e: KeyboardEvent): void {
   emit('close')
 }
 
-// 창 크기가 바뀌면 점선 카드가 움직여 목록이 카드에서 떨어진다.
-function onResize(): void {
-  emit('close')
-}
-
 // 목록은 닫히므로 런처는 목록이 있던 자리에 목록의 폭으로 띄운다.
 function open(dir: string): void {
-  const r = root.value!.getBoundingClientRect()
+  const r = menu.value!.getBoundingClientRect()
   emit('close')
   emit('open', dir, { left: r.left, top: r.top, bottom: r.top, width: r.width })
 }
@@ -83,7 +66,7 @@ function open(dir: string): void {
 
 <template>
   <div
-    ref="root"
+    ref="menu"
     class="favorites-menu popup-menu"
     role="menu"
     :style="{ left: `${at.left}px`, top: `${at.top}px`, width: `${at.width}px` }"

@@ -28,8 +28,8 @@
   --font-mono: ui-monospace;
 }
 
-/* 창 드래그 영역이다. 드래그 영역을 누르면 페이지에 pointerdown 이 오지 않으므로, 바깥을 눌러 닫는 메뉴가 열린 동안에는
-   `.window-drag-off` 로 끈다. */
+/* 창 드래그 영역이다. 드래그 영역을 누르면 페이지에 pointerdown 이 오지 않으므로, 바깥을 눌러 닫는 팝업이 열린 동안에는
+   `usePopupDismiss`(`popupDismiss.ts`)가 `.window-drag-off` 로 끈다. */
 .window-drag {
   -webkit-app-region: drag;
 }

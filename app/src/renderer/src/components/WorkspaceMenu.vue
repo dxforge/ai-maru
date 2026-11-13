@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { Bookmark, Check, X } from '@lucide/vue'
 import { nameOnFocusLoss } from '../../../shared/names'
+import { POPUP_GAP, POPUP_MARGIN, popupTop, usePopupDismiss } from '../popupDismiss'
 
 const { name, kept, head } = defineProps<{
   name: string
@@ -17,8 +18,6 @@ const emit = defineEmits<{
   closeWorkspace: []
 }>()
 
-const GAP = 4
-const MARGIN = 8
 const WIDTH = 260
 const MIN_WIDTH = 180
 const root = useTemplateRef<HTMLElement>('root')
@@ -46,45 +45,29 @@ onMounted(async () => {
   el.value = name
   el.focus()
   el.select()
-  document.documentElement.classList.add('window-drag-off')
-  document.addEventListener('pointerdown', onPointerDown, true)
-  window.addEventListener('resize', onResize)
   window.addEventListener('focus', onWindowFocus)
   // 오른쪽 끝을 ⋮ 에 맞추고 왼쪽 여백까지만 넓혀 사이드바 안에 둔다.
   const b = (menuButton() ?? head).getBoundingClientRect()
-  const width = Math.max(MIN_WIDTH, Math.min(WIDTH, b.right - MARGIN))
-  at.value = { left: b.right - width, top: b.bottom + GAP, width }
+  const width = Math.max(MIN_WIDTH, Math.min(WIDTH, b.right - POPUP_MARGIN))
+  at.value = { left: b.right - width, top: b.bottom + POPUP_GAP, width }
   await nextTick()
-  const r = root.value!.getBoundingClientRect()
-  const below = b.bottom + GAP
-  const above = b.top - GAP - r.height
-  const top = below + r.height <= innerHeight - MARGIN || above < MARGIN ? below : above
   at.value = {
-    left: Math.max(MARGIN, Math.min(b.right - width, innerWidth - MARGIN - width)),
-    top: Math.max(MARGIN, Math.min(top, innerHeight - MARGIN - r.height)),
+    left: Math.max(POPUP_MARGIN, Math.min(b.right - width, innerWidth - POPUP_MARGIN - width)),
+    top: popupTop(b, root.value!.getBoundingClientRect().height),
     width
   }
 })
 onBeforeUnmount(() => {
-  document.documentElement.classList.remove('window-drag-off')
-  document.removeEventListener('pointerdown', onPointerDown, true)
-  window.removeEventListener('resize', onResize)
   window.removeEventListener('focus', onWindowFocus)
 })
 
 const menuButton = (): Element | null => head.querySelector('.workspace-menu-button')
 
 // 메뉴를 여닫는 헤더의 ⋮ 버튼은 스스로 메뉴를 닫으므로 여기서 닫지 않는다.
-function onPointerDown(e: PointerEvent): void {
-  const t = e.target as Element | null
-  if (t && (root.value?.contains(t) || menuButton()?.contains(t))) return
-  close(true)
-}
-
-// 창 크기가 바뀌면 헤더가 움직여 메뉴가 ⋮ 버튼에서 떨어진다.
-function onResize(): void {
-  close(true)
-}
+usePopupDismiss(
+  (t) => !!root.value?.contains(t) || !!menuButton()?.contains(t),
+  () => close(true)
+)
 
 // 창이 포커스를 잃을 때도 focusout 이 오는데, 그때는 닫지 않고 창이 돌아왔을 때 포커스가 메뉴 밖이면 닫는다.
 function onFocusOut(e: FocusEvent): void {

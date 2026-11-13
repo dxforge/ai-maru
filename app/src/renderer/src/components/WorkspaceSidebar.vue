@@ -187,12 +187,12 @@ function headRef(key: number, el: unknown): void {
   else heads.delete(key)
 }
 
-const dirCards = new Map<number, HTMLElement>()
-function dirCardRef(key: number, el: unknown): void {
-  if (el instanceof HTMLElement) dirCards.set(key, el)
-  else dirCards.delete(key)
+const favoritesFor = ref<{ key: number; card: HTMLElement } | null>(null)
+
+function toggleFavorites(e: MouseEvent, key: number): void {
+  const card = (e.currentTarget as HTMLElement).closest<HTMLElement>('.dir-card')!
+  favoritesFor.value = favoritesFor.value?.key === key ? null : { key, card }
 }
-const favoritesFor = ref<number | null>(null)
 
 let menu: InstanceType<typeof WorkspaceMenu> | null = null
 function menuRef(el: unknown): void {
@@ -439,7 +439,7 @@ const keepTip = (kept: boolean): string =>
           @toggle-keep="emit('toggleKeep', w.key)"
           @close-workspace="emit('closeWorkspace', w.key)"
         />
-        <div v-if="line" :ref="(el) => dirCardRef(w.key, el)" class="dir-card">
+        <div v-if="line" class="dir-card">
           <button
             v-tooltip="line.path"
             class="row dir-row"
@@ -475,28 +475,22 @@ const keepTip = (kept: boolean): string =>
           </template>
           <button
             v-else-if="favorites.length"
-            v-tooltip="favoritesFor === w.key ? undefined : 'Favorites'"
+            v-tooltip="favoritesFor?.key === w.key ? undefined : 'Favorites'"
             class="more"
             :aria-label="`${favorites.length} Favorites`"
             aria-haspopup="menu"
-            :aria-expanded="favoritesFor === w.key"
+            :aria-expanded="favoritesFor?.key === w.key"
             @mousedown.prevent
-            @click="favoritesFor = favoritesFor === w.key ? null : w.key"
+            @click="toggleFavorites($event, w.key)"
           >
             +{{ favorites.length }}
           </button>
         </div>
         <FavoritesMenu
-          v-if="
-            favoritesFor === w.key &&
-            line &&
-            entries.length &&
-            favorites.length &&
-            dirCards.get(w.key)
-          "
+          v-if="line && favoritesFor?.key === w.key && entries.length && favorites.length"
           :root="line"
           :favorites="favorites"
-          :card="dirCards.get(w.key)!"
+          :card="favoritesFor.card"
           @close="favoritesFor = null"
           @open="(dir, at) => emit('openDir', w.key, dir, at)"
           @remove="(dir) => emit('removeFavorite', w.key, dir)"
@@ -749,11 +743,6 @@ const keepTip = (kept: boolean): string =>
   border-radius: var(--radius-2);
 }
 
-/* 줄마다 radius 를 주지 않고 카드에서 자른다. 펼친 즐겨찾기 줄이 있으면 첫 줄·끝 줄이 바뀌기 때문이다. */
-.dir-card {
-  overflow: hidden;
-}
-
 .grip + .pane-line > .row {
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
@@ -777,8 +766,10 @@ const keepTip = (kept: boolean): string =>
   color: var(--faint);
 }
 
-/* 테두리 대신 안쪽으로 그은 outline 이라 박스 높이가 열린 cell 과 같다. */
+/* 테두리 대신 안쪽으로 그은 outline 이라 박스 높이가 열린 cell 과 같다. 줄마다 radius 를 주지 않고 카드에서 자른다. 펼친
+   즐겨찾기 줄이 있으면 첫 줄·끝 줄이 바뀌기 때문이다. */
 .dir-card {
+  overflow: hidden;
   outline: 1px dashed color-mix(in srgb, var(--fg) 18%, transparent);
   outline-offset: -1px;
 }
@@ -811,48 +802,16 @@ const keepTip = (kept: boolean): string =>
   color: var(--muted);
 }
 
+.pane-line,
 .dir-line {
-  position: relative;
-}
-
-/* `.kill` 처럼 키보드로도 닿게 display 대신 opacity 로 숨긴다. */
-.remove {
-  position: absolute;
-  top: 50%;
-  right: var(--space-3);
-  width: 16px;
-  height: 16px;
-  justify-content: center;
-  transform: translateY(-50%);
-  border-radius: var(--radius-1);
-  color: var(--faint);
-  font-size: 12px;
-  opacity: 0;
-}
-
-.dir-line:hover .remove,
-.remove:focus-visible {
-  opacity: 1;
-}
-
-.remove:hover {
-  background: var(--hover);
-  color: var(--fg);
-}
-
-.dir-line:hover > .dir-row {
-  background: var(--hover);
-  padding-right: calc(var(--space-3) + 16px + var(--space-2));
-}
-
-.pane-line {
   position: relative;
   display: flex;
   align-items: center;
 }
 
 /* `.kill` 처럼 키보드로도 닿게 display 대신 opacity 로 숨긴다. */
-.favorite {
+.favorite,
+.remove {
   position: absolute;
   right: var(--space-3);
   width: 16px;
@@ -865,8 +824,19 @@ const keepTip = (kept: boolean): string =>
 }
 
 .pane-line:hover .favorite,
-.favorite:focus-visible {
+.favorite:focus-visible,
+.dir-line:hover .remove,
+.remove:focus-visible {
   opacity: 1;
+}
+
+.remove:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.dir-line:hover > .dir-row {
+  background: var(--hover);
 }
 
 .favorite.on,
@@ -882,7 +852,8 @@ const keepTip = (kept: boolean): string =>
   display: none;
 }
 
-.pane-line:has(.favorite):hover > .pane-row {
+.pane-line:has(.favorite):hover > .pane-row,
+.dir-line:hover > .dir-row {
   padding-right: calc(var(--space-3) + 16px + var(--space-2));
 }
 
