@@ -2,7 +2,6 @@
 import { computed, ref, shallowRef, useTemplateRef, type DeepReadonly } from 'vue'
 import type { JobView } from '../../../shared/job'
 import { autoWorkspaceName, labelBase } from '../../../shared/names'
-import { stays } from '../../../shared/screen'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
@@ -162,7 +161,7 @@ const groups = computed(() => {
       name: w.name ?? auto,
       auto,
       folded: f,
-      keep: keepState(w),
+      kept: !!w.kept,
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       root,
       favorites,
@@ -369,15 +368,8 @@ const cellDragged = (cell: number): boolean =>
   dragged.value?.kind === 'cell' && dragged.value.cell === cell
 const workspaceDragged = (workspace: number): boolean =>
   dragged.value?.kind === 'workspace' && dragged.value.workspace === workspace
-/** `favorites` 는 keep 을 끄고도 즐겨찾기 때문에 마지막 cell 이 닫혀도 남는 workspace 다. */
-type KeepState = 'on' | 'favorites' | 'off'
-const keepState = (w: DeepReadonly<Workspace>): KeepState =>
-  w.kept ? 'on' : stays(w) ? 'favorites' : 'off'
-const keepTips: Record<KeepState, string> = {
-  on: 'Keep Workspace',
-  favorites: 'Keep Workspace — it already stays in the sidebar because it has favorites',
-  off: 'Keep Workspace — keep it in the sidebar after its last cell closes'
-}
+const keepTip = (kept: boolean): string =>
+  kept ? 'Keep Workspace' : 'Keep Workspace — keep it in the sidebar after its last cell closes'
 </script>
 
 <template>
@@ -390,7 +382,7 @@ const keepTips: Record<KeepState, string> = {
             w,
             name,
             folded: wf,
-            keep,
+            kept,
             state,
             notified,
             dot,
@@ -423,14 +415,13 @@ const keepTips: Record<KeepState, string> = {
           <span class="workspace-name workspace-title">{{ name }}</span>
           <span v-if="dot" class="unread-dot" />
           <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. keep 버튼과 메뉴 버튼의 pointerdown·click 이 헤더의 끌기·접기로 전해지지 않게 막는다. -->
-          <span class="keep-slot" :class="{ shown: keep !== 'off' }"
+          <span class="keep-slot" :class="{ on: kept }"
             ><span
-              v-tooltip="keepTips[keep]"
+              v-tooltip="keepTip(kept)"
               role="button"
               class="keep icon-button"
-              :class="keep"
               aria-label="Keep Workspace"
-              :aria-pressed="keep === 'on'"
+              :aria-pressed="kept"
               @pointerdown.stop
               @click.stop="emit('toggleKeep', w.key)"
               ><AnchorIcon class="text-icon" /></span
@@ -454,7 +445,7 @@ const keepTips: Record<KeepState, string> = {
           :name="name"
           :base="root"
           :favorites="favorites"
-          :kept="keep === 'on'"
+          :kept="kept"
           :head="heads.get(w.key)!"
           @done="(n, refocus) => emit('closeMenu', w.key, n, refocus)"
           @open-favorite="(dir, at) => emit('openDir', w.key, dir, at)"
@@ -509,13 +500,14 @@ const keepTips: Record<KeepState, string> = {
             </button>
             <button
               v-if="r.path"
-              v-tooltip="favoriteLabel(r.favorite)"
+              v-tooltip="kept ? favoriteLabel(r.favorite) : 'Keep Workspace to add favorites'"
               class="favorite"
               :class="{ on: r.favorite }"
               :aria-label="favoriteLabel(r.favorite)"
               :aria-pressed="r.favorite"
+              :aria-disabled="!kept"
               @mousedown.prevent
-              @click="emit('toggleFavorite', item.c.key, r.pane)"
+              @click="kept && emit('toggleFavorite', item.c.key, r.pane)"
             >
               <Star class="text-icon" :fill="r.favorite ? 'currentColor' : 'none'" />
             </button>
@@ -648,37 +640,28 @@ const keepTips: Record<KeepState, string> = {
    이름이 버튼 폭만큼 더 잘리지 않게 하기 위해서다. 버튼의 자리는 이름보다 먼저 0 까지 준다. 자리가 줄면 버튼은 자리의 오른쪽
    끝에 붙은 채 왼쪽으로 넘쳐 이름 끝 글자를 가린다. 이름 뒤에 빈 폭이 있으면 버튼은 이름 뒤에 선다. 자리의 왼쪽 margin 은
    헤더의 gap 을 빼고, 버튼의 왼쪽 margin 이 그 gap 을 버튼 앞에 다시 둔다. */
-.keep-slot:not(.shown) {
+.keep-slot:not(.on) {
   flex: 0 1000 auto;
   min-width: 0;
   justify-content: flex-end;
   margin-left: calc(-1 * var(--space-4));
 }
 
-.keep-slot:not(.shown) .keep {
+.keep-slot:not(.on) .keep {
   flex: none;
   margin-left: var(--space-4);
   background-color: var(--side);
-}
-
-.keep {
   visibility: hidden;
 }
 
-.keep.on,
-.keep.favorites,
 .workspace-head:hover .keep,
 .workspace-head:focus-visible .keep,
 .workspace-head.menu-open .keep {
   visibility: visible;
 }
 
-.keep.on {
+.keep-slot.on .keep {
   color: var(--fg);
-}
-
-.keep.favorites {
-  color: var(--faint);
 }
 
 /* 메뉴 버튼은 헤더를 가리킬 때와 메뉴가 열려 있을 때만 보인다. keep 버튼과 달리 자리를 늘 차지해 이름이 hover 때 밀리지 않는다. */
@@ -792,8 +775,12 @@ const keepTips: Record<KeepState, string> = {
 }
 
 .favorite.on,
-.favorite:hover {
+.favorite:not([aria-disabled='true']):hover {
   color: var(--fg);
+}
+
+.favorite[aria-disabled='true']:hover {
+  background-color: transparent;
 }
 
 .pane-line:has(.favorite):hover .tail {

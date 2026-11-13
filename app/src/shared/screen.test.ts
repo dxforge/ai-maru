@@ -160,13 +160,13 @@ describe('parseScreen', () => {
     expect(parseScreen(s)).toEqual(screen)
   })
 
-  it('cell 이 없는 workspace 는 keep 을 켰거나 즐겨찾기가 있을 때만 읽는다', () => {
+  it('cell 이 없는 workspace 는 keep 을 켰을 때만 읽고, 즐겨찾기만 있는 옛 빌드의 workspace 는 keep 을 켠 것으로 읽는다', () => {
     const at = (w: object): unknown => ({
       ...clone(),
       workspaces: [{ key: 9, id: 'w-9', cells: [], ...w }]
     })
     expect(parseScreen(at({ kept: true }))).not.toBeNull()
-    expect(parseScreen(at({ favorites: ['/a'] }))).not.toBeNull()
+    expect(parseScreen(at({ favorites: ['/a'] }))!.workspaces[0]).toMatchObject({ kept: true })
     expect(parseScreen(at({}))).toBeNull()
   })
 
@@ -358,7 +358,7 @@ describe('joinTables', () => {
         cells: [at(1, '/work/app'), at(3, '/work/lib')]
       },
       { key: 5, id: 'w-0000000b', kept: true, dir: '/work/docs', cells: [] },
-      { key: 6, id: 'w-0000000c', name: '리뷰', favorites: ['/r'], cells: [at(7, '/r')] }
+      { key: 6, id: 'w-0000000c', name: '리뷰', cells: [at(7, '/r')] }
     ],
     selected: 3
   }
@@ -410,7 +410,7 @@ describe('joinTables', () => {
     expect(out.workspaces.map((w) => w.id)).toEqual(['w-0000000b', 'w-0000000c', 'w-0000000a'])
   })
 
-  it('cells 표가 없으면 keep 을 켰거나 즐겨찾기가 있는 workspace 만 cell 없이 이름·dir·즐겨찾기와 함께 돌아온다', () => {
+  it('cells 표가 없으면 keep 을 켠 workspace 만 cell 없이 이름·dir·즐겨찾기와 함께 돌아온다', () => {
     expect(join({ ...tables(), cells: null, panes: null })).toEqual({
       workspaces: [
         {
@@ -422,8 +422,7 @@ describe('joinTables', () => {
           favorites: ['/work/app'],
           cells: []
         },
-        { key: 1, id: 'w-0000000b', kept: true, dir: '/work/docs', cells: [] },
-        { key: 2, id: 'w-0000000c', name: '리뷰', favorites: ['/r'], cells: [] }
+        { key: 1, id: 'w-0000000b', kept: true, dir: '/work/docs', cells: [] }
       ],
       selected: null
     })

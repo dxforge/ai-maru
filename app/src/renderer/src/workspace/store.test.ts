@@ -96,6 +96,7 @@ describe('snapshot·restore', () => {
     ws.rename(ws.list.value[1].key, '리뷰')
     ws.toggleKeep(ws.list.value[0].key)
     const split = ws.list.value[1].cells[0]
+    ws.toggleKeep(ws.list.value[1].key)
     ws.toggleFavorite(split.key, split.panes[0].key)
     ws.open('/d-2')
     ws.toggleKeep(ws.list.value[2].key)
@@ -114,7 +115,7 @@ describe('snapshot·restore', () => {
     expect(to.cells().map((w) => w.fontSize)).toEqual([undefined, 18])
     expect(to.cells().map((w) => w.paneCols)).toEqual([undefined, 110])
     expect(to.list.value.map((w) => w.name)).toEqual(['d-0', '리뷰', 'd-2'])
-    expect(to.list.value.map((w) => w.kept)).toEqual([true, undefined, true])
+    expect(to.list.value.map((w) => w.kept)).toEqual([true, true, true])
     expect(to.list.value.map((w) => w.favorites)).toEqual([undefined, ['/d-1'], undefined])
     expect(to.list.value.map((w) => w.dir)).toEqual(['/d-0', '/d-1', '/d-2'])
     expect(to.list.value[2].cells).toEqual([])
@@ -1695,16 +1696,36 @@ describe('workspace keep', () => {
     expect(before).toMatchObject({ name: 'atlas', dir: '/d-1', kept: true })
   })
 
-  it('cell 이 없어도 즐겨찾기가 있는 workspace 는 keep 을 꺼도 남는다', () => {
+  it('cell 이 없는 workspace 의 keep 을 끄면 즐겨찾기와 함께 닫고, reinstate 하면 keep·즐겨찾기와 함께 돌아온다', () => {
     const ws = opened(2)
-    const [a] = wsKeys(ws)
+    const [a, b] = wsKeys(ws)
     const [x] = keys(ws)
     ws.toggleKeep(a)
     ws.toggleFavorite(x)
     shut(ws, x)
-    expect(ws.toggleKeep(a)).toBeUndefined()
-    expect(ws.list.value[0]).toMatchObject({ key: a, cells: [], favorites: ['/d-0'] })
+    const unkept = ws.toggleKeep(a)!
+    expect(unkept).toMatchObject({ at: 0, favorites: ['/d-0'] })
+    expect(wsKeys(ws)).toEqual([b])
+    ws.reinstate(unkept)
+    expect(wsKeys(ws)).toEqual([a, b])
+    expect(ws.list.value[0]).toMatchObject({ kept: true, cells: [], favorites: ['/d-0'] })
+  })
+
+  it('cell 이 있는 workspace 의 keep 을 끄면 즐겨찾기만 지우고, reinstate 하면 제자리에서 keep·즐겨찾기를 되살린다', () => {
+    const ws = opened(2)
+    const [a, b] = wsKeys(ws)
+    const [x] = keys(ws)
+    ws.toggleKeep(a)
+    ws.toggleFavorite(x)
+    const unkept = ws.toggleKeep(a)!
+    expect(unkept).toMatchObject({ at: -1, favorites: ['/d-0'] })
+    expect(wsKeys(ws)).toEqual([a, b])
     expect(ws.list.value[0]).not.toHaveProperty('kept')
+    expect(ws.list.value[0]).not.toHaveProperty('favorites')
+    ws.reinstate(unkept)
+    expect(wsKeys(ws)).toEqual([a, b])
+    expect(ws.list.value[0]).toMatchObject({ kept: true, favorites: ['/d-0'] })
+    expect(ws.list.value[0].cells.map((c) => c.key)).toEqual([x])
   })
 
   it('reinstate 는 그 사이 목록이 줄었으면 끝에 두고, 이미 목록에 있으면 아무것도 하지 않는다', () => {
@@ -1888,20 +1909,27 @@ describe('즐겨찾기', () => {
   const stars = (ws: Workspaces, i = 0) =>
     ws.list.value[i].cells.map((c) => findFavorite(ws.list.value[i], c.panes[0].cwd) !== undefined)
 
-  it('toggleFavorite 은 포커스된 pane 의 cwd 를 workspace 의 즐겨찾기에 넣고, cell·workspace 를 제자리에 두며 keep 은 켜지 않는다', () => {
+  it('toggleFavorite 은 포커스된 pane 의 cwd 를 workspace 의 즐겨찾기에 넣고, cell·workspace 를 제자리에 둔다', () => {
     const ws = opened(1)
     ws.openCell('/n-1')
     ws.openCell('/n-2')
     ws.open('/other')
     const [w, other] = wsKeys(ws)
     const [a, b, c] = keys(ws)
-    expect(ws.toggleFavorite(c)).toBe(true)
-    expect(ws.toggleFavorite(a)).toBe(true)
+    ws.toggleKeep(w)
+    expect(ws.toggleFavorite(c)).toBe('ok')
+    expect(ws.toggleFavorite(a)).toBe('ok')
     expect(wsKeys(ws)).toEqual([w, other])
     expect(keys(ws).slice(0, 3)).toEqual([a, b, c])
     expect(ws.list.value[0].favorites).toEqual(['/n-2', '/d-0'])
-    expect(ws.list.value[0]).not.toHaveProperty('kept')
     expect(stars(ws)).toEqual([true, false, true])
+  })
+
+  it("keep 을 켜지 않은 workspace 에는 즐겨찾기를 넣지 않고 'not-kept' 다", () => {
+    const ws = opened(1)
+    expect(ws.toggleFavorite(keys(ws)[0])).toBe('not-kept')
+    expect(ws.list.value[0]).not.toHaveProperty('favorites')
+    expect(ws.list.value[0]).not.toHaveProperty('kept')
   })
 
   it('같은 디렉토리의 cell 은 함께 ★ 이고, 하나에서 빼면 함께 빠진다', () => {
@@ -1910,6 +1938,7 @@ describe('즐겨찾기', () => {
     ws.openCell('/p/')
     ws.openCell('/q')
     const [, b, c, d] = keys(ws)
+    ws.toggleKeep(wsKeys(ws)[0])
     ws.toggleFavorite(b)
     ws.toggleFavorite(d)
     expect(stars(ws)).toEqual([false, true, true, true])
@@ -1924,17 +1953,18 @@ describe('즐겨찾기', () => {
     ws.open('/d-0')
     ws.openCell('/p')
     const [a, p] = ws.list.value[0].cells
+    ws.toggleKeep(ws.list.value[0].key)
     ws.toggleFavorite(p.key)
     expect(stars(ws)).toEqual([false, true])
     src.set(ws, a.panes[0].ptyId, { cwd: '/p', cwdReports: 1 })
     expect(stars(ws)).toEqual([true, true])
   })
 
-  it('pane 의 cwd 를 모르면 false 이고 아무것도 바꾸지 않는다', () => {
+  it("pane 의 cwd 를 모르면 'no-dir' 이고 아무것도 바꾸지 않는다", () => {
     const ws = createWorkspaces()
     ws.open()
-    expect(ws.toggleFavorite(ws.cells()[0].key)).toBe(false)
-    expect(ws.list.value[0]).not.toHaveProperty('kept')
+    ws.toggleKeep(ws.list.value[0].key)
+    expect(ws.toggleFavorite(ws.cells()[0].key)).toBe('no-dir')
     expect(ws.list.value[0]).not.toHaveProperty('favorites')
   })
 
@@ -1947,6 +1977,7 @@ describe('즐겨찾기', () => {
     const [first, second] = c.panes
     src.set(ws, second.ptyId, { cwd: '/right', cwdReports: 1 })
     expect(c.focused).toBe(second.key)
+    ws.toggleKeep(ws.list.value[0].key)
     ws.toggleFavorite(c.key)
     expect(ws.list.value[0].favorites).toEqual(['/right'])
     ws.toggleFavorite(c.key, first.key)
@@ -1955,49 +1986,25 @@ describe('즐겨찾기', () => {
     expect(ws.list.value[0].favorites).toEqual(['/d-0'])
   })
 
-  it('즐겨찾기가 있는 workspace 는 keep 을 껐어도 마지막 cell 을 닫으면 빈 채로 남는다', () => {
+  it('removeFavorite 는 같은 경로의 항목을 빼고, 마지막 즐겨찾기를 빼도 cell 이 없는 workspace 를 남긴다', () => {
     const ws = opened(2)
-    const [a, b] = wsKeys(ws)
-    const [x] = keys(ws)
-    ws.toggleFavorite(x)
-    shut(ws, x)
-    expect(wsKeys(ws)).toEqual([a, b])
-    expect(ws.list.value[0]).toMatchObject({ cells: [], dir: '/d-0', favorites: ['/d-0'] })
-    expect(ws.list.value[0]).not.toHaveProperty('kept')
-  })
-
-  it('removeFavorite 는 같은 경로의 항목을 빼고, keep 도 꺼지고 cell 도 없는 workspace 는 닫는다', () => {
-    const ws = opened(2)
-    const [a, b] = wsKeys(ws)
-    const [x, y] = keys(ws)
-    ws.toggleFavorite(x)
-    ws.toggleFavorite(y)
+    const [, b] = wsKeys(ws)
+    const [, y] = keys(ws)
     ws.toggleKeep(b)
-    shut(ws, x)
+    ws.toggleFavorite(y)
     shut(ws, y)
     ws.removeFavorite(b, '/d-1/')
     expect(ws.list.value[1]).toMatchObject({ key: b, kept: true, cells: [] })
     expect(ws.list.value[1]).not.toHaveProperty('favorites')
-    ws.removeFavorite(a, '/d-0')
-    expect(wsKeys(ws)).toEqual([b])
     ws.removeFavorite(999, '/d-0')
-    expect(wsKeys(ws)).toEqual([b])
-  })
-
-  it('workspace 의 keep 을 꺼도 즐겨찾기는 남는다', () => {
-    const ws = opened(1)
-    const [a] = keys(ws)
-    ws.toggleKeep(wsKeys(ws)[0])
-    ws.toggleFavorite(a)
-    ws.toggleKeep(wsKeys(ws)[0])
-    expect(ws.list.value[0]).not.toHaveProperty('kept')
-    expect(ws.list.value[0].favorites).toEqual(['/d-0'])
+    expect(wsKeys(ws)).toHaveLength(2)
   })
 
   it('openIn 은 workspace 끝에 그 디렉토리의 셸 cell 을 열어 선택하고, 즐겨찾기 디렉토리면 ★ 다', () => {
     const ws = opened(2)
     const [w] = wsKeys(ws)
     const [a] = keys(ws)
+    ws.toggleKeep(w)
     ws.toggleFavorite(a)
     ws.select(ws.list.value[1].cells[0].key)
     const key = ws.openIn(w, '/d-0/')!
@@ -2026,7 +2033,7 @@ describe('즐겨찾기', () => {
     const ws = opened(2)
     const [a] = wsKeys(ws)
     const [x] = keys(ws)
-    ws.toggleFavorite(x)
+    ws.toggleKeep(a)
     shut(ws, x)
     const key = ws.openIn(a, '/d-0')
     expect(ws.list.value[0].cells.map((c) => c.key)).toEqual([key])
@@ -2037,6 +2044,7 @@ describe('즐겨찾기', () => {
     ws.openCell('/d-0')
     const [w1, w2] = wsKeys(ws)
     const [a, , y] = keys(ws)
+    ws.toggleKeep(w1)
     ws.toggleFavorite(a)
     ws.moveCell(y, { workspace: w1, index: 1 })
     expect(ws.list.value[0].favorites).toEqual(['/d-0'])
@@ -2046,10 +2054,11 @@ describe('즐겨찾기', () => {
     expect(stars(ws, 1)).toEqual([false, false])
   })
 
-  it("즐겨찾기가 있는 workspace 의 하나뿐인 cell 을 'new' 로 옮기면 새 workspace 를 만들고 원래 workspace 는 빈 채로 남는다", () => {
+  it("keep 을 켠 workspace 의 하나뿐인 cell 을 'new' 로 옮기면 새 workspace 를 만들고 원래 workspace 는 빈 채로 남는다", () => {
     const ws = opened(2)
     const [a, b] = wsKeys(ws)
     const [x] = keys(ws)
+    ws.toggleKeep(a)
     ws.toggleFavorite(x)
     ws.moveCell(x, 'new')
     expect(wsKeys(ws).slice(0, 2)).toEqual([a, b])
@@ -2061,6 +2070,7 @@ describe('즐겨찾기', () => {
   it('즐겨찾기는 저장한 화면을 되살려도 그대로다', () => {
     const ws = opened(1)
     ws.openCell('/n-1')
+    ws.toggleKeep(wsKeys(ws)[0])
     ws.toggleFavorite(keys(ws)[1])
     const to = restarted(ws)
     expect(to.list.value[0].favorites).toEqual(['/n-1'])

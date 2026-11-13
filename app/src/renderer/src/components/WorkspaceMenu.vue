@@ -194,7 +194,7 @@ function openFavorite(dir: string): void {
     <div v-if="!favorites.length" class="hint">Star a pane to add its directory</div>
     <hr />
     <button
-      class="action keep-action"
+      class="action"
       role="menuitemcheckbox"
       :aria-checked="kept"
       @click="act(() => emit('toggleKeep'))"

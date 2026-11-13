@@ -6,6 +6,7 @@ import {
   cellViews,
   expect,
   failingCommandPtyBin,
+  keepWorkspace,
   marked,
   newCell,
   newWorkspace,
@@ -82,6 +83,7 @@ test('즐겨찾기 cell 에서 불러도 그 cell 바로 뒤에 놓는다', asyn
   await newCell(launched, 2)
   await run(page, 'echo two-$((1+1))', 'two-2')
   // 두 cell 은 같은 디렉토리라 하나를 즐겨찾기에 넣으면 둘 다 ★ 가 된다.
+  await keepWorkspace(page, 0)
   await cellItems(page).nth(0).hover()
   await cellFavorite(page, 0).click()
   for (const i of [0, 1])

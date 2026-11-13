@@ -441,11 +441,16 @@ watch(
 )
 
 function toggleFavorite(cell: number, pane?: number): void {
-  if (!workspaces.toggleFavorite(cell, pane)) {
+  const result = workspaces.toggleFavorite(cell, pane)
+  if (result !== 'ok') {
     toasts.put('favorite', {
       level: 'warning',
       title: "Couldn't add to Favorites",
-      lines: ["The pane's directory isn't known yet."]
+      lines: [
+        result === 'not-kept'
+          ? 'Keep Workspace to add favorites.'
+          : "The pane's directory isn't known yet."
+      ]
     })
     return
   }
@@ -456,13 +461,14 @@ function toggleFavorite(cell: number, pane?: number): void {
 const UNDO_TIMEOUT = 8000
 
 function toggleKeep(workspace: number): void {
-  const removed = workspaces.toggleKeep(workspace)
-  if (removed) {
+  const unkept = workspaces.toggleKeep(workspace)
+  if (unkept) {
+    const name = workspaceName(unkept.workspace, home)
     toasts.put('unkeep', {
       level: 'info',
-      title: `Removed '${workspaceName(removed.workspace, home)}'`,
+      title: unkept.at < 0 ? `Removed the favorites of '${name}'` : `Removed '${name}'`,
       lines: [],
-      action: { label: 'Undo', run: () => workspaces.reinstate(removed) },
+      action: { label: 'Undo', run: () => workspaces.reinstate(unkept) },
       timeout: UNDO_TIMEOUT
     })
   }

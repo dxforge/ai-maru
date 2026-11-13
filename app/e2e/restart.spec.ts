@@ -38,6 +38,7 @@ import {
   terminalRows,
   test,
   toast,
+  keepWorkspace,
   toggleView,
   typesInto,
   cellGroups,
@@ -324,7 +325,7 @@ test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살
 
 const dirRows = (page: Launched['page']) => page.locator('.sidebar .dir-row')
 
-test('state.json 의 cells 를 읽지 못하면 keep 을 켰거나 즐겨찾기가 있는 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리고, 살아 있는 pty 는 띄운 순서로 Recovered workspace 에 cell 하나씩으로 열며 알린다', async ({
+test('state.json 의 cells 를 읽지 못하면 keep 을 켠 workspace 만 이름·즐겨찾기와 함께 cell 없이 되살리고, 살아 있는 pty 는 띄운 순서로 Recovered workspace 에 cell 하나씩으로 열며 알린다', async ({
   launch,
   dataDir
 }) => {
@@ -335,6 +336,7 @@ test('state.json 의 cells 를 읽지 못하면 keep 을 켰거나 즐겨찾기�
   await first.page.keyboard.type('atlas')
   await first.page.keyboard.press('Enter')
   await run(first.page, 'cd sub && X=first-$((1+1)) && echo in-$((1+1))', 'in-2')
+  await keepWorkspace(first.page, 0)
   await cellItems(first.page).nth(0).hover()
   await cellFavorite(first.page, 0).click()
   await expect(cellFavorite(first.page, 0)).toHaveAttribute('aria-pressed', 'true')
