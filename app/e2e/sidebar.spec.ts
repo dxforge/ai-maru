@@ -1356,7 +1356,7 @@ async function reopenShell(page: Page, row: Locator): Promise<void> {
   await expect(launcher(page)).toHaveCount(0)
 }
 
-test('keep 을 켠 workspace 는 마지막 cell 을 닫아도 이름과 함께 남아 그 디렉토리의 줄을 보이고, 누르면 뜬 런처에서 고른 셸을 그 디렉토리에 열며, 재시작 뒤에도 남고 keep 을 끄면 닫힌다', async ({
+test('keep 을 켠 workspace 는 마지막 cell 을 닫아도 이름과 함께 남아 그 디렉토리의 줄을 보이고, 누르면 뜬 런처에서 고른 셸을 그 디렉토리에 열며 줄은 cell 위에 남고, 재시작 뒤에도 남고 keep 을 끄면 닫힌다', async ({
   launch,
   dataDir
 }) => {
@@ -1386,7 +1386,9 @@ test('keep 을 켠 workspace 는 마지막 cell 을 닫아도 이름과 함께 �
 
   await reopenShell(page, dirRows(page))
   await expect(cellItems(page)).toHaveCount(2)
-  await expect(dirRows(page)).toHaveCount(0)
+  await expect(dirRows(page)).toHaveCount(1)
+  await expect(dirRows(page)).toContainText('sub')
+  await expect(dirRows(page).locator('.tail')).toHaveCount(0)
   await expect(workspaceNames(page)).toHaveText(['atlas', 'sub'])
   await run(page, 'pwd', `${home}/sub`)
   await page.keyboard.type('exit\n')
@@ -1507,7 +1509,7 @@ test('End everything 으로 끄면 터미널을 끝내고, keep 을 켠 workspac
   await expect(favoriteItems(again.page)).toContainText(['sub'])
 })
 
-test('keep 을 켠 workspace 의 cell 을 즐겨찾기에 넣어도 줄이 옮겨지지 않으며 키는 그 터미널로 간다. 같은 디렉토리의 cell 은 함께 ★ 이고, 닫아도 사이드바에 줄이 남지 않으며, workspace 메뉴에서 고르면 뜬 런처에서 고른 셸을 workspace 끝에 그 디렉토리로 연다. 재시작 뒤에도 남는다', async ({
+test('keep 을 켠 workspace 의 cell 을 즐겨찾기에 넣어도 줄이 옮겨지지 않으며 키는 그 터미널로 간다. 같은 디렉토리의 cell 은 함께 ★ 이고, 닫으면 cell 이 남은 workspace 는 디렉토리 줄 하나에 즐겨찾기 수를 달며, workspace 메뉴에서 고르면 뜬 런처에서 고른 셸을 workspace 끝에 그 디렉토리로 연다. 재시작 뒤에도 남는다', async ({
   launch,
   dataDir
 }) => {
@@ -1539,7 +1541,10 @@ test('keep 을 켠 workspace 의 cell 을 즐겨찾기에 넣어도 줄이 옮�
   await cellItems(page).nth(2).click()
   await page.keyboard.type('exit\n')
   await expect(cellItems(page)).toHaveCount(2)
-  await expect(page.locator('.sidebar .dir-row')).toHaveCount(0)
+  await expect(page.locator('.sidebar .dir-row')).toHaveCount(1)
+  await expect(page.locator('.sidebar .workspace').nth(1).locator('.dir-row .tail')).toHaveText(
+    '+1'
+  )
 
   await openWorkspaceMenu(page, 1)
   await expect(favoriteItems(page)).toHaveCount(1)
@@ -1621,7 +1626,7 @@ test('keep 을 켜지 않은 workspace 에는 별로도 메뉴의 Toggle Favorit
   await expect(favoriteItems(page)).toHaveCount(1)
 })
 
-test('cell 이 없는 workspace 는 디렉토리 줄 아래에 즐겨찾기 줄을 두고, 줄에 올리면 카드에서 그 줄의 구역을 강조하며, 즐겨찾기 줄을 누르면 그 디렉토리에 cell 을 연다', async ({
+test('cell 이 없는 workspace 는 디렉토리 줄 아래에 즐겨찾기 줄을 두고, 줄에 올리면 카드에 그 줄의 구역만 보이며, 즐겨찾기 줄을 누르면 그 디렉토리에 cell 을 열고 cell 위에 디렉토리 줄 하나로 줄어든다', async ({
   launch,
   dataDir
 }) => {
@@ -1647,17 +1652,22 @@ test('cell 이 없는 workspace 는 디렉토리 줄 아래에 즐겨찾기 줄�
   await expect(dirRows(page).nth(1).locator('.state svg[data-icon="folder"]')).toBeVisible()
   const card = sidebarCard(page)
   await hoverCard(page, dirRows(page).nth(1))
-  await expect(card.locator('.section .name')).toHaveText(['sub', 'lib'])
-  await expect(card.locator('.section').nth(1)).toHaveClass(/current/)
-  await expect(card.locator('.section').nth(0)).not.toHaveClass(/current/)
-  await expect(card.locator('.foot .counts')).toHaveText('No open cells')
+  await expect(card.locator('.section .name')).toHaveText(['lib'])
+  await expect(card.locator('.foot')).toHaveCount(0)
   await dirRows(page).nth(0).hover()
-  await expect(card.locator('.section').nth(0)).toHaveClass(/current/)
+  await expect(card.locator('.section .name')).toHaveText(['sub'])
 
   await reopenShell(page, dirRows(page).nth(1))
   await expect(cellItems(page)).toHaveCount(2)
-  await expect(dirRows(page)).toHaveCount(0)
+  await expect(dirRows(page).locator('.title')).toHaveText(['~/sub'])
+  await expect(dirRows(page).locator('.tail')).toHaveText('+1')
   await run(page, 'pwd', `${home}/lib`)
+  const ws = page.locator('.sidebar .workspace').nth(1)
+  expect((await box(ws.locator('.dir-row'))).y).toBeLessThan(
+    (await box(ws.locator('.group').first())).y
+  )
+  await hoverCard(page, dirRows(page))
+  await expect(card.locator('.section .name')).toHaveText(['sub'])
 })
 
 test('workspace 메뉴는 Favorites 맨 위에 지울 수 없는 workspace 디렉토리 줄을 두고, 즐겨찾기 줄의 tooltip 은 그 디렉토리 아래면 상대 경로를, 아니면 홈을 ~ 로 쓴 경로를 단다', async ({

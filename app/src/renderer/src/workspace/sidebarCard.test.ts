@@ -216,17 +216,19 @@ describe('workspaceCard', () => {
 })
 
 describe('dirCard', () => {
-  it('줄마다 이름과 경로를 줄 순서로 쓰고, 띠에 열린 cell 이 없다고 한 번 쓴다', () => {
+  it('올린 줄의 이름과 경로만 쓰고 띠는 없다', () => {
     const app = dirRow('/Users/me/src/app', '/Users/me')
     const lib = dirRow('/Users/me/src/app/lib', '/Users/me')
-    expect(dirCard([app, lib, app])).toEqual({
-      sections: [
-        { key: 'dir:0', title: 'app', path: '~/src/app' },
-        { key: 'dir:1', title: 'lib', path: '~/src/app/lib' },
-        { key: 'dir:2', title: 'app', path: '~/src/app' }
-      ],
-      foot: { counts: 'No open cells' }
+    expect(dirCard([app, lib, app], 'dir:1')).toEqual({
+      sections: [{ key: 'dir:1', title: 'lib', path: '~/src/app/lib' }]
     })
+    expect(dirCard([app, lib, app], 'dir:2')).toEqual({
+      sections: [{ key: 'dir:2', title: 'app', path: '~/src/app' }]
+    })
+  })
+
+  it('없는 줄이면 카드가 없다', () => {
+    expect(dirCard([], 'dir:0')).toBeUndefined()
   })
 })
 

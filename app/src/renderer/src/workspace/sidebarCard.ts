@@ -164,12 +164,11 @@ export function workspaceCard(w: {
   }
 }
 
-/** 닫힌 workspace 카드다. 같은 디렉토리가 두 줄에 있을 수 있으므로 구역 key 는 줄 번호다. */
-export function dirCard(lines: readonly DirRow[]): CardView {
-  return {
-    sections: lines.map((d, i) => ({ key: dirKey(i), title: d.name, path: d.path })),
-    foot: { counts: 'No open cells' }
-  }
+/** 점선 카드에서 마우스를 올린 줄의 디렉토리 하나만 보인다. 같은 디렉토리가 두 줄에 있을 수 있으므로 구역 key 는 줄 번호다. */
+export function dirCard(lines: readonly DirRow[], row: string): CardView | undefined {
+  const i = lines.findIndex((_, j) => dirKey(j) === row)
+  if (i < 0) return undefined
+  return { sections: [{ key: row, title: lines[i].name, path: lines[i].path }] }
 }
 
 export const dirKey = (i: number): string => `dir:${i}`

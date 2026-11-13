@@ -165,7 +165,7 @@ const groups = computed(() => {
       ...workspaceMarks(f, f ? urgent.get(w.key) : undefined, f && unread.has(w.key)),
       root,
       favorites,
-      empty: f ? [] : emptyRows(w.cells.length, root, favorites, home),
+      empty: f ? [] : emptyRows(w.cells.length, !!w.kept, root, favorites, home),
       items: f ? [] : cells(src, w)
     }
   })
@@ -233,7 +233,7 @@ const cardView = computed((): CardView | undefined => {
   }
   const g = groups.value.find((g) => g.w.key === at.workspace)
   if (!g) return undefined
-  if (at.kind === 'dir') return g.empty.length ? dirCard(g.empty) : undefined
+  if (at.kind === 'dir') return dirCard(g.empty, at.row)
   return workspaceCard({
     name: g.name,
     auto: g.auto,
@@ -254,7 +254,7 @@ const cardAnchor = computed(() => {
 
 const cardCurrent = computed(() => {
   const at = hovered.value?.at
-  return at && 'row' in at ? at.row : undefined
+  return at?.kind === 'cell' ? at.row : undefined
 })
 
 const nav = useTemplateRef<HTMLElement>('nav')
@@ -465,6 +465,7 @@ const keepTip = (kept: boolean): string =>
           >
             <span class="state"><LeadIcon :name="d.root ? 'folder-root' : 'folder'" /></span>
             <span class="title">{{ d.label }}</span>
+            <span v-if="d.more" class="tail">+{{ d.more }}</span>
           </button>
         </div>
         <div
