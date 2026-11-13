@@ -5,6 +5,7 @@ import {
   clickMenu,
   expect,
   newWorkspace,
+  openPalette,
   run,
   test,
   workspaceHeads,
@@ -60,6 +61,22 @@ test('⌘P 전환기는 모든 workspace 의 pane 을 지금 pane 을 표시해 
   await expect(workspaceHeads(page).nth(0)).toHaveAttribute('aria-label', 'Collapse alpha')
   await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
   await run(page, 'pwd', `${home}/alpha`)
+})
+
+test('⇧⌘P 팔레트에서 Go to Pane or Favorite… 를 고르면 팔레트 대신 전환기가 뜨고 키가 전환기로 간다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await twoWorkspaces(launch, dataDir)
+  const { page } = launched
+  await openPalette(launched)
+  await page.keyboard.type('go to pane')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.palette:not(.switcher)')).toHaveCount(0)
+  await expect(switcher(page).locator('.query')).toBeFocused()
+  await page.keyboard.type('alpha')
+  await expect(paneItems(page)).toHaveCount(1)
+  await expect(switcher(page).locator('.query')).toBeFocused()
 })
 
 test('⌘P 전환기를 Esc 로 닫으면 열기 전의 pane 으로 키가 간다', async ({ launch, dataDir }) => {
