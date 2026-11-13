@@ -1653,9 +1653,12 @@ test('cell 이 없는 workspace 는 디렉토리 줄 아래에 즐겨찾기 줄�
   const card = sidebarCard(page)
   await hoverCard(page, dirRows(page).nth(1))
   await expect(card.locator('.section .name')).toHaveText(['lib'])
+  await expect(card.locator('.section .path')).toHaveText(['~/lib'])
   await expect(card.locator('.foot')).toHaveCount(0)
+  await expectBeside(card, dirRows(page).nth(1))
   await dirRows(page).nth(0).hover()
   await expect(card.locator('.section .name')).toHaveText(['sub'])
+  await expectBeside(card, dirRows(page).nth(0))
 
   await reopenShell(page, dirRows(page).nth(1))
   await expect(cellItems(page)).toHaveCount(2)
@@ -1899,6 +1902,17 @@ function useTool(dataDir: string): string {
 }
 
 const box = async (el: Locator) => (await el.boundingBox())!
+
+/** 카드가 `row` 와 같은 높이에서 같은 높이로 떠 있다. */
+async function expectBeside(card: Locator, row: Locator): Promise<void> {
+  const r = await box(row)
+  await expect
+    .poll(async () => {
+      const c = await box(card)
+      return [Math.round(c.y - r.y), Math.round(c.height - r.height)]
+    })
+    .toEqual([0, 0])
+}
 
 test('workspace 메뉴에서 즐겨찾기를 고르면 메뉴가 있던 자리에 메뉴의 폭으로 셸이 든 명령 목록이 뜨되 사이드바의 줄을 밀지 않고, Esc 는 아무것도 띄우지 않으며, 고른 명령은 workspace 끝의 cell 로 그 디렉토리에 뜬다', async ({
   launch,

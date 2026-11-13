@@ -248,7 +248,6 @@ const cardAnchor = computed(() => {
   const h = hovered.value
   if (!h) return undefined
   if (h.at.kind === 'cell') return h.el.closest<HTMLElement>('.group') ?? h.el
-  if (h.at.kind === 'dir') return h.el.closest<HTMLElement>('.dir-card') ?? h.el
   return h.el
 })
 

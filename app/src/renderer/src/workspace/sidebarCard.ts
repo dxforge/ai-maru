@@ -50,7 +50,8 @@ export type CardFoot = {
   counts: string
 }
 
-export type CardView = { sections: CardSection[]; foot?: CardFoot }
+/** `line` 이면 구역 하나를 카드를 띄운 줄의 높이에 한 줄로 쓴다. 이름 옆에 경로를 두고 나머지는 쓰지 않는다. */
+export type CardView = { sections: CardSection[]; foot?: CardFoot; line?: boolean }
 
 export const SIDEBAR_CARD_ID = 'sidebar-card'
 
@@ -168,7 +169,7 @@ export function workspaceCard(w: {
 export function dirCard(lines: readonly DirRow[], row: string): CardView | undefined {
   const i = lines.findIndex((_, j) => dirKey(j) === row)
   if (i < 0) return undefined
-  return { sections: [{ key: row, title: lines[i].name, path: lines[i].path }] }
+  return { sections: [{ key: row, title: lines[i].name, path: lines[i].path }], line: true }
 }
 
 export const dirKey = (i: number): string => `dir:${i}`

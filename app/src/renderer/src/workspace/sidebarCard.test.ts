@@ -216,14 +216,16 @@ describe('workspaceCard', () => {
 })
 
 describe('dirCard', () => {
-  it('올린 줄의 이름과 경로만 쓰고 띠는 없다', () => {
+  it('올린 줄의 이름과 경로만 한 줄로 쓰고 띠는 없다', () => {
     const app = dirRow('/Users/me/src/app', '/Users/me')
     const lib = dirRow('/Users/me/src/app/lib', '/Users/me')
     expect(dirCard([app, lib, app], 'dir:1')).toEqual({
-      sections: [{ key: 'dir:1', title: 'lib', path: '~/src/app/lib' }]
+      sections: [{ key: 'dir:1', title: 'lib', path: '~/src/app/lib' }],
+      line: true
     })
     expect(dirCard([app, lib, app], 'dir:2')).toEqual({
-      sections: [{ key: 'dir:2', title: 'app', path: '~/src/app' }]
+      sections: [{ key: 'dir:2', title: 'app', path: '~/src/app' }],
+      line: true
     })
   })
 

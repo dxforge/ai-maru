@@ -8,7 +8,7 @@ import StatusIcon from './StatusIcon.vue'
 import { SIDEBAR_CARD_ID, type CardView } from '../workspace/sidebarCard'
 
 /**
- * 카드의 위 끝을 `anchor` 의 위 끝에 맞추고, `side`(사이드바)의 오른쪽 끝을 `OVERLAP` 만큼 덮게 띄운다. `current` 는
+ * 카드의 위 끝을 `anchor` 의 위 끝에 맞추고(`view.line` 이면 높이도 맞춘다), `side`(사이드바)의 오른쪽 끝을 `OVERLAP` 만큼 덮게 띄운다. `current` 는
  * 강조할 구역의 key 다.
  */
 const {
@@ -43,6 +43,7 @@ function place(): void {
   el.style.left = '0px'
   el.style.top = '0px'
   el.style.maxHeight = ''
+  el.style.height = view.line ? `${anchor.getBoundingClientRect().height}px` : ''
   const size = el.getBoundingClientRect()
   const at = placeBeside(
     { top: anchor.getBoundingClientRect().top, left: side.getBoundingClientRect().right - OVERLAP },
@@ -62,7 +63,14 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div :id="SIDEBAR_CARD_ID" ref="card" popover="manual" role="tooltip" class="sidebar-card">
+    <div
+      :id="SIDEBAR_CARD_ID"
+      ref="card"
+      popover="manual"
+      role="tooltip"
+      class="sidebar-card"
+      :class="{ line: view?.line }"
+    >
       <template v-if="view">
         <section
           v-for="s in view.sections"
@@ -76,8 +84,9 @@ onBeforeUnmount(() => {
               ><LeadIcon v-if="s.icon === 'job'" name="gear" /><PaneIcon v-else :icon="s.icon"
             /></span>
             <span class="name">{{ s.title }}</span>
+            <span v-if="view.line && s.path" class="path">{{ s.path }}</span>
           </div>
-          <div class="body" :class="{ indent: s.icon }">
+          <div v-if="!view.line" class="body" :class="{ indent: s.icon }">
             <div v-if="s.notice" class="notice">{{ s.notice }}</div>
             <div v-if="s.note" class="note">{{ s.note }}</div>
             <div v-if="s.message" class="message">{{ s.message }}</div>
@@ -144,6 +153,28 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-5);
+}
+
+/* 띄운 줄과 같은 높이에 이름과 경로를 한 줄로 두고, 넘치면 경로부터 줄인다. */
+.line .section {
+  justify-content: center;
+  height: 100%;
+  padding-block: 0;
+}
+
+.line .name {
+  flex: none;
+  max-width: 50%;
+  -webkit-line-clamp: 1;
+}
+
+.line .path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .section + .section {
