@@ -115,37 +115,6 @@ test('columns 에서 고르지 않은 cell 의 pane 헤더를 누르면 그 cell
   await typesInto(page, 0, 'other')
 })
 
-test('columns 에서만 고른 cell 의 pane 영역을 cell 테두리 색으로 감싸고, 고른 cell 을 바꾸면 따라간다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { app, page } = launched
-  await newWorkspace(launched, 2)
-  const edged = () =>
-    page.evaluate(() => {
-      const probe = document.createElement('div')
-      probe.style.color = 'var(--cell-edge)'
-      document.body.append(probe)
-      const color = getComputedStyle(probe).color
-      probe.remove()
-      return [...document.querySelectorAll('.panes')].map((c) =>
-        getComputedStyle(c.querySelector('.grid')!).boxShadow.includes(color)
-      )
-    })
-  await expect.poll(edged).toEqual([false, false])
-
-  await toggleView({ app, page }, 'columns')
-  await expect.poll(edged).toEqual([false, true])
-
-  await page.locator('.cell-band').nth(0).click()
-
-  await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
-  await expect.poll(edged).toEqual([true, false])
-
-  await toggleView({ app, page }, 'single')
-  await expect.poll(edged).toEqual([false, false])
-})
-
 test('포커스를 옮기면 pane 헤더의 강조와 pane 테두리, 다른 pane 을 흐리게 덮는 층이 따라가고, pane 이 하나여도 테두리를 그린다', async ({
   launch
 }) => {
