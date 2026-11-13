@@ -22,6 +22,7 @@ export type CommandId =
   | 'focus-pane-up'
   | 'focus-pane-down'
   | 'command-palette'
+  | 'go-to-pane'
   | 'toggle-sidebar'
   | 'toggle-canvas'
   | 'toggle-view-mode'
@@ -56,6 +57,7 @@ export const commands: readonly Command[] = [
   { id: 'toggle-pin-workspace', title: 'Toggle Workspace Pin', menu: 'file' },
   { id: 'toggle-favorite-cell', title: 'Toggle Favorite', menu: 'file' },
   { id: 'command-palette', title: 'Command Palette…', menu: 'view', palette: false },
+  { id: 'go-to-pane', title: 'Go to Pane or Favorite…', menu: 'view' },
   { id: 'next-cell', title: 'Next Cell', menu: 'view' },
   { id: 'previous-cell', title: 'Previous Cell', menu: 'view' },
   { id: 'next-pane', title: 'Next Pane', menu: 'view' },

@@ -48,6 +48,7 @@ export const shortcuts: readonly Shortcut[] = [
   // Finder 가 고른 항목을 사이드바에 넣는 키(Add to Sidebar)와 같다.
   { target: 'command', action: 'toggle-favorite-cell', key: 'T', ctrl: true, meta: true },
   { target: 'command', action: 'command-palette', key: 'P', shift: true, meta: true },
+  { target: 'command', action: 'go-to-pane', key: 'P', meta: true },
   { target: 'command', action: 'next-cell', key: ']', shift: true, meta: true },
   { target: 'command', action: 'previous-cell', key: '[', shift: true, meta: true },
   { target: 'command', action: 'next-pane', key: ']', meta: true },

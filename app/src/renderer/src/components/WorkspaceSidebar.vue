@@ -5,12 +5,13 @@ import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { EllipsisVertical, GitBranch, Star, X } from '@lucide/vue'
+import { EllipsisVertical, Star, X } from '@lucide/vue'
 import { anchorWidth, type Anchor } from '../launcher/anchor'
 import type { TooltipCard } from '../tooltip'
 import FoldChevron from './FoldChevron.vue'
 import LeadIcon from './LeadIcon.vue'
 import PaneIcon from './PaneIcon.vue'
+import PanePlace from './PanePlace.vue'
 import SidebarCard from './SidebarCard.vue'
 import StatusIcon from './StatusIcon.vue'
 import WorkspaceMenu from './WorkspaceMenu.vue'
@@ -497,14 +498,7 @@ const pinTip = (pinned: boolean): string =>
                 ><PaneIcon :icon="r.icon"
               /></span>
               <span class="title">{{ r.text }}</span>
-              <span v-if="r.place" class="tail place"
-                ><span v-if="r.place.name" class="name">{{ r.place.name }}</span
-                ><span v-if="r.place.branch" class="branch"
-                  ><GitBranch class="text-icon" /><span class="branch-name">{{
-                    r.place.branch
-                  }}</span></span
-                ><span v-if="r.place.sub" class="sub">· {{ r.place.sub }}</span></span
-              >
+              <PanePlace v-if="r.place" class="tail" :place="r.place" />
               <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
                 commandTail(r.command, now)
               }}</span>
@@ -818,31 +812,6 @@ button {
   background: var(--hover);
 }
 
-.name,
-.branch-name,
-.sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.name {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-.branch {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  /* 저장소 이름이 길어 줄어들어도 branch 아이콘(11px)은 남긴다. */
-  min-width: 11px;
-}
-
-.sub {
-  flex: none;
-  max-width: 50%;
-}
-
 .row {
   display: flex;
   align-items: center;
@@ -910,14 +879,9 @@ button {
   color: var(--error);
 }
 
-.place {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
+.tail.place {
   flex: 0 1 auto;
-  min-width: 0;
   max-width: 60%;
-  font-size: var(--text-1);
 }
 
 .job-row {

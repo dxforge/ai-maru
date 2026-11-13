@@ -56,18 +56,20 @@ export type RowSource = {
 // pane 줄의 오른쪽 끝에 그 pane 의 위치를 붙인다. agent 아이콘은 쉬는(idle) 동안만 앞 칸의 상태 아이콘 자리에 둔다.
 // agent 아이콘을 오른쪽 끝에 두지 않아야 agent 가 뜨고 끝나도 위치가 움직이지 않기 때문이다. 셸 pane 에서는 명령이 도는 동안과
 // 실패한 명령이 남아 있는 동안만 오른쪽 끝에 위치 대신 돈 시간이나 종료 코드를 쓴다. 명령 pane 은 늘 도는 중이라 같은 규칙을 따르면
-// 위치를 한 번도 보이지 못하므로, 오른쪽 끝에 늘 위치를 쓴다.
+// 위치를 한 번도 보이지 못하므로, 오른쪽 끝에 늘 위치를 쓴다. ⌘P 전환기는 돈 시간이나 종료 코드를 그리지 않으므로,
+// `keepPlace` 를 넘기면 `commandTail` 과 상관없이 위치를 둔다.
 export function paneRow(
   src: RowSource,
   p: DeepReadonly<Pane>,
   focused: boolean,
-  base: DeepReadonly<Pane> | undefined
+  base: DeepReadonly<Pane> | undefined,
+  keepPlace = false
 ): Row {
   const r = src.shown(p.ptyId)
   const s = r?.state
   const cmd = src.command(p.ptyId)
   const tail = !!cmd && !p.command?.length
-  const place = p.cwd && !tail ? sidebarLabel(p, base, src.home) : undefined
+  const place = p.cwd && (keepPlace || !tail) ? sidebarLabel(p, base, src.home) : undefined
   const name = paneName(p, r, src.shell, cmd)
   const notice = src.notification(p.ptyId)
   const tasks = src.tasks(p.ptyId)
@@ -150,7 +152,7 @@ export function favoriteRow(dir: string, base: string | undefined, home?: string
 
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-/** 저장된 `favorites` 배열은 추가한 순서로 두고, 메뉴와 닫힌 workspace 카드에 보일 때만 이름순으로 정렬한다. 저장 형식과 복원을 바꾸지 않기 때문이다. */
+/** 저장된 `favorites` 배열은 추가한 순서로 두고, 화면에 보일 때만 이름순으로 정렬한다. 저장 형식과 복원을 바꾸지 않기 때문이다. */
 export function favoriteRows(
   dirs: readonly string[],
   base: string | undefined,
@@ -180,9 +182,21 @@ export function emptyRows(
   favorites: readonly DirRow[],
   home?: string
 ): DirLine[] {
-  if (cells || !root) return []
+  return cells || !root ? [] : dirLines(root, favorites, home)
+}
+
+/**
+ * workspace 디렉토리(`root`) 줄과 그 아래 즐겨찾기 줄이다. 즐겨찾기의 `label` 은 workspace 메뉴의 상대 경로이고, `path` 는
+ * 홈에서 본 경로다. `path` 는 ⌘P 전환기처럼 이름 옆에 경로를 보이는 자리에 쓴다. 그 자리에 상대 경로를 두면 `docs docs`
+ * 처럼 이름과 겹쳐, 여러 workspace 가 섞인 목록에서 어디인지 알 수 없기 때문이다.
+ */
+export function dirLines(
+  root: DirRow | undefined,
+  favorites: readonly DirRow[],
+  home?: string
+): DirLine[] {
   return [
-    { ...root, label: root.path, root: true },
+    ...(root ? [{ ...root, label: root.path, root: true }] : []),
     ...favorites.map((f) => ({ ...f, path: tildePath(f.dir, home), label: f.path, root: false }))
   ]
 }
