@@ -115,7 +115,7 @@ test('columns 에서 고르지 않은 cell 의 pane 헤더를 누르면 그 cell
   await typesInto(page, 0, 'other')
 })
 
-test('columns 에서만 고른 cell 에 테마의 cell 테두리 색으로 테두리를 그리고, 고른 cell 을 바꾸면 따라간다', async ({
+test('columns 에서만 고른 cell 의 pane 영역에 테마의 cell 테두리 색으로 테두리를 그리고, 고른 cell 을 바꾸면 따라간다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -123,7 +123,9 @@ test('columns 에서만 고른 cell 에 테마의 cell 테두리 색으로 테�
   await newWorkspace(launched, 2)
   const edges = () =>
     page.evaluate(() =>
-      [...document.querySelectorAll('.panes')].map((c) => getComputedStyle(c).boxShadow)
+      [...document.querySelectorAll('.panes')].map(
+        (c) => getComputedStyle(c.querySelector('.grid')!).boxShadow
+      )
     )
   await expect.poll(edges).toEqual(['none', 'none'])
 

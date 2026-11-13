@@ -1347,9 +1347,9 @@ void window.maru.restoreScreen().then((r) => {
   visibility: visible;
 }
 
-/* 고른 cell 의 테두리다. 띠까지 cell 전체를 cell 바깥에서 감싼다. 안쪽에 그리면 입력 pane 의 테두리가 띠 말고는 다
-   덮기 때문이다. single 은 고른 cell 하나만 보이므로 그리지 않는다. */
-.columns .panes.selected {
+/* 고른 cell 의 테두리다. 띠는 테두리 밖에 두고 pane 영역만 그 바깥에서 감싼다. 안쪽에 그리면 입력 pane 의 테두리가
+   다 덮기 때문이다. 띠 쪽은 띠 위에 겹친다. single 은 고른 cell 하나만 보이므로 그리지 않는다. */
+.columns .panes.selected .grid {
   box-shadow: 0 0 0 1px var(--cell-edge);
 }
 
