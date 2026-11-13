@@ -1,6 +1,8 @@
 {
   "hooks": {
     "SessionStart": [{ "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }],
-    "Notification": [{ "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook" }] }]
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "\"$MARU_CLI\" claude hook", "async": true }] }
+    ]
   }
 }

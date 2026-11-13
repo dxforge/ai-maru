@@ -26,10 +26,17 @@ export type PtyState = {
 }
 
 /**
- * 프로그램이 OSC 9 나 OSC 777 로 보낸 데스크톱 알림. maru-pty 가 한 줄로 다듬어 보내고, 둘 다 비지는 않는다. OSC 9 는
- * 제목을 싣지 않아 `title` 이 비어 있다.
+ * 프로그램이 OSC 9 나 OSC 777 로 보낸 데스크톱 알림. maru-pty 가 한 줄로 다듬어 보내고, OSC 로 온 알림은 둘 다 비지는
+ * 않는다. OSC 9 는 제목을 싣지 않아 `title` 이 비어 있다. Claude Code 의 Notification hook 으로 받은 알림도 이 모양이다.
+ * Claude Code 의 Notification hook 으로 받은 알림 가운데 상태 레코드가 같은 내용을 보이는 종류는 `title`·`body` 가 모두 빈
+ * 알림(`isBodyless`)이다. 사이드바와 pane 헤더는 이 알림에 점만 달고, 데스크톱 알림은 본문에 pane 의 상태를
+ * 쓴다(`docs/architecture.md`).
  */
 export type PtyNotification = { title: string; body: string }
+
+export function isBodyless(n: PtyNotification): boolean {
+  return !n.title && !n.body
+}
 
 /**
  * main 이 pty 마다 든 것. `old` 는 상태 구독을 모르는 이전 maru-pty 의 pty 다 — 그 pty 의 상태는 오지 않는다.

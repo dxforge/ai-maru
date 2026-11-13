@@ -1,5 +1,11 @@
 import type { ProgramStatusRecord } from '../shared/program-status'
-import type { PtyCommand, PtyNotification, PtyState, PtyStateEntry } from '../shared/pty-state'
+import {
+  isBodyless,
+  type PtyCommand,
+  type PtyNotification,
+  type PtyState,
+  type PtyStateEntry
+} from '../shared/pty-state'
 import type { StateHandlers } from './pty'
 
 export type PtyStatesDeps = {
@@ -68,7 +74,8 @@ export function createPtyStates(deps: PtyStatesDeps) {
   function notify(id: string, notification: PtyNotification): void {
     const w = watches.get(id)
     if (!w || deps.viewing(id)) return
-    set(id, w, { notification })
+    if (!isBodyless(notification) || !w.notification || isBodyless(w.notification))
+      set(id, w, { notification })
     deps.notified(id, notification)
   }
 

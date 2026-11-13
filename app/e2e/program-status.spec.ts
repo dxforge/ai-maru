@@ -27,7 +27,7 @@ import {
   writeConfig,
   zshHome
 } from './app'
-import { STATE_LABELS } from '../src/renderer/src/icons'
+import { STATE_LABELS } from '../src/shared/program-status'
 import { DEFAULT_NOTIFICATION } from '../src/renderer/src/config/notification'
 
 const SEEN_MS = DEFAULT_NOTIFICATION.seenMs!

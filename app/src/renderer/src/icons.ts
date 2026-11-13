@@ -43,12 +43,3 @@ export function launcherIcon(command: string): 'terminal' | 'running' | AgentLog
   if (argv0 === undefined) return 'running'
   return PROGRAM_ICONS.get(argv0.slice(argv0.lastIndexOf('/') + 1)) ?? 'running'
 }
-
-/** 상태 아이콘의 툴팁·aria-label. 화면에는 글자를 쓰지 않는다. 이름은 OSC 7501 의 상태 그대로다. */
-export const STATE_LABELS: Record<ProgramStatusState, string> = {
-  idle: 'Idle',
-  working: 'Working',
-  done: 'Done',
-  blocked: 'Blocked',
-  error: 'Error'
-}

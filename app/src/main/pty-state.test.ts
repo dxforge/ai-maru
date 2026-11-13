@@ -163,6 +163,28 @@ describe('createPtyStates', () => {
     })
   })
 
+  it('글 없는 알림은 읽지 않은 글 있는 알림을 대신하지 않고 notified 에만 넘긴다', () => {
+    const bodyless = { title: '', body: '' }
+    const t = setup()
+    t.states.watch('p-1')
+    t.last().on.state(state())
+    t.last().on.notification(first)
+    t.states.notify('p-1', bodyless)
+    expect(t.notified).toEqual([
+      ['p-1', first],
+      ['p-1', bodyless]
+    ])
+    expect(t.states.entries()).toEqual({ 'p-1': { state: state(), notification: first } })
+    t.states.notify('p-1', second)
+    expect(t.emitted.at(-1)).toEqual(['p-1', { state: state(), notification: second }])
+    t.states.seen('p-1')
+    t.states.notify('p-1', bodyless)
+    t.states.notify('p-1', bodyless)
+    expect(t.emitted.at(-1)).toEqual(['p-1', { state: state(), notification: bodyless }])
+    t.states.notify('p-1', first)
+    expect(t.emitted.at(-1)).toEqual(['p-1', { state: state(), notification: first }])
+  })
+
   it('seen 은 읽지 않은 알림을 지워 알리고, 알림이 없으면 알리지 않는다', () => {
     const t = setup()
     t.states.watch('p-1')

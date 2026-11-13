@@ -88,6 +88,13 @@ describe('paneRow', () => {
     expect(titleOnly.aria).toBe(`${titleOnly.name}. Notification: Deploy`)
   })
 
+  it('글 없는 알림은 줄 글을 pane 이름으로 두고 점만 달며, 화면 낭독에는 알림이 있다는 것만 붙인다', () => {
+    const r = row({ notice: { title: '', body: '' } })
+    expect(r.notice).toEqual({ title: '', body: '' })
+    expect(r.text).toBe(r.name)
+    expect(r.aria).toBe(`${r.name}. Notification`)
+  })
+
   it('상태가 있으면 화면 낭독은 상태 이름으로, 명령만 있으면 명령의 상태로 시작한다', () => {
     const r = row({ record: record('blocked') })
     expect(r.aria).toBe(`Blocked: ${r.name}`)

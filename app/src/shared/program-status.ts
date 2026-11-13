@@ -15,6 +15,14 @@ export type ProgramStatusRecord = {
   message: string
 }
 
+export const STATE_LABELS: Record<ProgramStatusState, string> = {
+  idle: 'Idle',
+  working: 'Working',
+  done: 'Done',
+  blocked: 'Blocked',
+  error: 'Error'
+}
+
 /** Claude Code 2.1.310 이 OSC 7501 보고에 싣는 `app` 값이다. */
 export const CLAUDE_APP = 'claude-code'
 
@@ -54,6 +62,11 @@ export function shownRecord(
     }
   }
   return shown.app === root.app ? shown : { ...shown, app: root.app }
+}
+
+export function statusText(records: readonly ProgramStatusRecord[]): string | undefined {
+  const r = shownRecord(records)
+  return r && (r.message || STATE_LABELS[r.state])
 }
 
 /**
