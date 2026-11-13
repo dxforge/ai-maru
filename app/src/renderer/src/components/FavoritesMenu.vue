@@ -41,11 +41,14 @@ onMounted(() => {
   const below = b.bottom + GAP
   const top = below + height <= innerHeight - MARGIN ? below : b.top - GAP - height
   at.value = { left: b.left, top: Math.max(MARGIN, top), width: b.width }
+  // 창 드래그 영역은 pointerdown 을 받지 못해, 그대로 두면 사이드바 빈 곳·제목 줄을 눌러도 목록이 닫히지 않는다.
+  document.documentElement.classList.add('window-drag-off')
   document.addEventListener('pointerdown', onPointerDown, true)
   document.addEventListener('keydown', onKeydown, true)
   window.addEventListener('resize', onResize)
 })
 onBeforeUnmount(() => {
+  document.documentElement.classList.remove('window-drag-off')
   document.removeEventListener('pointerdown', onPointerDown, true)
   document.removeEventListener('keydown', onKeydown, true)
   window.removeEventListener('resize', onResize)

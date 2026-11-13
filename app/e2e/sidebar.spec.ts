@@ -1727,6 +1727,20 @@ test('즐겨찾기 목록은 맨 위에 지울 수 없는 workspace 디렉토리
   await run(page, 'pwd', `${home}/sub`)
 })
 
+const outsideSpots = async (page: Page) => {
+  const center = async (el: Locator) => {
+    const b = (await el.boundingBox())!
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+  }
+  const list = (await page.locator('.sidebar .list').boundingBox())!
+  return [
+    { x: list.x + list.width / 2, y: list.y + list.height - 8 },
+    await center(page.locator('.sidebar .titlebar')),
+    await center(page.locator('.canvas .title-row')),
+    await center(page.locator('.panel-bar .titlebar'))
+  ]
+}
+
 test('workspace 메뉴는 바깥 어디를 눌러도 닫히며 누른 자리의 동작도 하고, 열린 동안에는 창 드래그 영역을 꺼서 사이드바 빈 곳·제목 줄을 눌러도 닫힌다', async ({
   launch
 }) => {
@@ -1748,23 +1762,37 @@ test('workspace 메뉴는 바깥 어디를 눌러도 닫히며 누른 자리의 
   await expect(workspaceMenu(page)).toHaveCount(0)
   await run(page, 'echo t-$((1+1))', 't-2')
 
-  const center = async (el: Locator) => {
-    const b = (await el.boundingBox())!
-    return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
-  }
-  const list = (await page.locator('.sidebar .list').boundingBox())!
-  const spots = [
-    { x: list.x + list.width / 2, y: list.y + list.height - 8 },
-    await center(page.locator('.sidebar .titlebar')),
-    await center(page.locator('.canvas .title-row')),
-    await center(page.locator('.panel-bar .titlebar'))
-  ]
-  for (const { x, y } of spots) {
+  for (const { x, y } of await outsideSpots(page)) {
     expect(await appRegionAt(page, x, y)).toBe('drag')
     await openWorkspaceMenu(page, 0)
     expect(await appRegionAt(page, x, y)).toBe('no-drag')
     await page.mouse.click(x, y)
     await expect(workspaceMenu(page)).toHaveCount(0)
+    expect(await appRegionAt(page, x, y)).toBe('drag')
+  }
+})
+
+test('즐겨찾기 목록은 열린 동안 창 드래그 영역을 꺼서 사이드바 빈 곳·제목 줄을 눌러도 닫힌다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'sub')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
+  const { page } = launched
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await keepWorkspace(page, 0)
+  await cellItems(page).nth(0).hover()
+  await cellFavorite(page, 0).click()
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await newWorkspace(launched, 2)
+  await openCanvas(launched)
+
+  for (const { x, y } of await outsideSpots(page)) {
+    expect(await appRegionAt(page, x, y)).toBe('drag')
+    await openFavorites(page, 0)
+    expect(await appRegionAt(page, x, y)).toBe('no-drag')
+    await page.mouse.click(x, y)
+    await expect(favoritesMenu(page)).toHaveCount(0)
     expect(await appRegionAt(page, x, y)).toBe('drag')
   }
 })
