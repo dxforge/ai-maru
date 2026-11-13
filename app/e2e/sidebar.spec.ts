@@ -1514,11 +1514,10 @@ test('End everything 으로 끄면 터미널을 끝내고, keep 을 켠 workspac
   const again = await launch(shell)
   await expect(workspaceNames(again.page)).toHaveCount(2)
   await expect(workspaceNames(again.page).nth(0)).toHaveText('atlas')
-  await expect(dirRows(again.page)).toHaveText(['~/sub'])
+  // workspace 디렉토리 줄 아래에 같은 디렉토리의 즐겨찾기 줄이 붙는다.
+  await expect(dirRows(again.page)).toHaveText(['~/sub', '~/sub'])
   await expect(cellItems(again.page)).toHaveCount(1)
   await run(again.page, 'echo up-$((1+1))', 'up-2')
-  await openFavorites(again.page, 0)
-  await expect(favoriteItems(again.page)).toContainText(['sub'])
 })
 
 test('keep 을 켠 workspace 의 cell 을 즐겨찾기에 넣어도 줄이 옮겨지지 않으며 키는 그 터미널로 간다. 같은 디렉토리의 cell 은 함께 ★ 이고, 닫으면 cell 이 남은 workspace 는 디렉토리 줄 하나에 즐겨찾기 수를 달고, 그 수를 누르면 cell 을 밀지 않고 뜬 목록에서 고르면 뜬 런처에서 고른 셸을 workspace 끝에 그 디렉토리로 연다. 재시작 뒤에도 남는다', async ({
@@ -1638,7 +1637,7 @@ test('keep 을 켜지 않은 workspace 에는 별로도 메뉴의 Toggle Favorit
   await expect(favoriteItems(page)).toHaveCount(1)
 })
 
-test('keep 을 켠 workspace 의 디렉토리 줄은 cell 이 없어도 한 줄에 즐겨찾기 수를 달고, 줄에 올리면 경로를 기본 tooltip 으로 보이며, 수를 눌러 뜬 목록에서 고르면 그 디렉토리에 cell 을 열고 줄은 cell 위에 남는다', async ({
+test('keep 을 켠 workspace 는 cell 이 없으면 디렉토리 줄 아래에 즐겨찾기 줄을 펼치고, 줄에 올리면 경로를 기본 tooltip 으로 보이며, 즐겨찾기 줄을 누르면 그 디렉토리에 cell 을 열고 cell 위에 디렉토리 줄 하나와 즐겨찾기 수로 접힌다', async ({
   launch,
   dataDir
 }) => {
@@ -1659,15 +1658,16 @@ test('keep 을 켠 workspace 의 디렉토리 줄은 cell 이 없어도 한 줄�
   await page.keyboard.type('exit\n')
   await expect(cellItems(page)).toHaveCount(1)
 
-  await expect(dirRows(page)).toHaveText(['~/sub'])
-  await expect(dirRows(page).locator('.state svg[data-icon="folder-root"]')).toBeVisible()
-  await expect(moreButton(page, 1)).toHaveText('+1')
-  await expect(dirRows(page)).toHaveAttribute('data-tooltip', '~/sub')
+  await expect(dirRows(page)).toHaveText(['~/sub', '~/lib'])
+  await expect(dirRows(page).nth(0).locator('.state svg[data-icon="folder-root"]')).toBeVisible()
+  await expect(dirRows(page).nth(1).locator('.state svg[data-icon="folder"]')).toBeVisible()
+  await expect(dirRows(page).nth(0)).toHaveAttribute('data-tooltip', '~/sub')
+  await expect(moreButton(page, 1)).toHaveCount(0)
+  const sidebar = page.locator('.sidebar')
+  await expect(sidebar.getByRole('button', { name: /^Remove .* from Favorites$/ })).toHaveCount(1)
+  await expect(sidebar.getByRole('button', { name: 'Remove lib from Favorites' })).toHaveCount(1)
 
-  await openFavorites(page, 1)
-  await expect(favoriteItems(page)).toHaveText(['lib'])
-  await favoriteItems(page).click()
-  await expect(favoritesMenu(page)).toHaveCount(0)
+  await dirRows(page).nth(1).click()
   await expect(launcher(page)).toBeVisible()
   await page.keyboard.type('shell')
   await page.keyboard.press('Enter')

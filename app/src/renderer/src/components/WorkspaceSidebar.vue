@@ -450,8 +450,31 @@ const keepTip = (kept: boolean): string =>
             <span class="state"><LeadIcon name="folder-root" /></span>
             <span class="title">{{ line.path }}</span>
           </button>
+          <template v-if="!entries.length">
+            <div v-for="f in favorites" :key="f.dir" class="dir-line">
+              <button
+                v-tooltip="f.path"
+                class="row dir-row"
+                :aria-label="`Open ${f.name}`"
+                @mousedown.prevent
+                @click="openRow($event, w.key, f.dir)"
+              >
+                <span class="state"><LeadIcon name="folder" /></span>
+                <span class="title">{{ f.path }}</span>
+              </button>
+              <button
+                v-tooltip="'Remove from Favorites'"
+                class="remove"
+                :aria-label="`Remove ${f.name} from Favorites`"
+                @mousedown.prevent
+                @click="emit('removeFavorite', w.key, f.dir)"
+              >
+                <X class="text-icon" />
+              </button>
+            </div>
+          </template>
           <button
-            v-if="favorites.length"
+            v-else-if="favorites.length"
             v-tooltip="favoritesFor === w.key ? undefined : 'Favorites'"
             class="more"
             :aria-label="`${favorites.length} Favorites`"
@@ -464,7 +487,13 @@ const keepTip = (kept: boolean): string =>
           </button>
         </div>
         <FavoritesMenu
-          v-if="favoritesFor === w.key && line && favorites.length && dirCards.get(w.key)"
+          v-if="
+            favoritesFor === w.key &&
+            line &&
+            entries.length &&
+            favorites.length &&
+            dirCards.get(w.key)
+          "
           :root="line"
           :favorites="favorites"
           :card="dirCards.get(w.key)!"
@@ -720,15 +749,18 @@ const keepTip = (kept: boolean): string =>
   border-radius: var(--radius-2);
 }
 
-.grip + .pane-line > .row,
-.dir-row {
+/* 줄마다 radius 를 주지 않고 카드에서 자른다. 펼친 즐겨찾기 줄이 있으면 첫 줄·끝 줄이 바뀌기 때문이다. */
+.dir-card {
+  overflow: hidden;
+}
+
+.grip + .pane-line > .row {
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
 }
 
 .group > .row:last-child,
-.group > .pane-line:last-child > .row,
-.dir-row {
+.group > .pane-line:last-child > .row {
   border-bottom-left-radius: var(--radius-2);
   border-bottom-right-radius: var(--radius-2);
 }
@@ -777,6 +809,40 @@ const keepTip = (kept: boolean): string =>
 .more[aria-expanded='true'] {
   background: var(--hover);
   color: var(--muted);
+}
+
+.dir-line {
+  position: relative;
+}
+
+/* `.kill` 처럼 키보드로도 닿게 display 대신 opacity 로 숨긴다. */
+.remove {
+  position: absolute;
+  top: 50%;
+  right: var(--space-3);
+  width: 16px;
+  height: 16px;
+  justify-content: center;
+  transform: translateY(-50%);
+  border-radius: var(--radius-1);
+  color: var(--faint);
+  font-size: 12px;
+  opacity: 0;
+}
+
+.dir-line:hover .remove,
+.remove:focus-visible {
+  opacity: 1;
+}
+
+.remove:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.dir-line:hover > .dir-row {
+  background: var(--hover);
+  padding-right: calc(var(--space-3) + 16px + var(--space-2));
 }
 
 .pane-line {

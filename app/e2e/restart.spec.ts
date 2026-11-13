@@ -352,8 +352,8 @@ test('state.json 의 cells 를 읽지 못하면 keep 을 켠 workspace 만 이�
   await expect(toast(page).filter({ hasText: "Couldn't restore the cells" })).toHaveCount(1)
   await expect(toast(page).filter({ hasText: 'Terminals moved to Recovered' })).toHaveCount(1)
   await expect(workspaceNames(page)).toHaveText(['atlas', 'Recovered'])
-  await expect(dirRows(page)).toHaveText(['~/sub'])
-  await expect(page.locator('.sidebar .dir-card .more')).toHaveText('+1')
+  // workspace 디렉토리 줄 아래에 같은 디렉토리의 즐겨찾기 줄이 붙는다.
+  await expect(dirRows(page)).toHaveText(['~/sub', '~/sub'])
   await expect(cellItems(page)).toHaveCount(2)
   await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
   await cellItems(page).nth(0).click()
