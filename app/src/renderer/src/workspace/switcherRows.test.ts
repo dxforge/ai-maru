@@ -184,6 +184,16 @@ describe('filterSwitcher', () => {
     expect(dirsOf('서버')).toEqual(['/opt/srv'])
   })
 
+  it('셸 pane 에서 명령이 도는 동안에도 repo·branch 를 줄에 두고 branch 로 거른다', () => {
+    const running: RowSource = {
+      ...src,
+      command: (pty) => (pty === 'p-100' ? { running: true, text: 'claude' } : undefined)
+    }
+    const r = switcherRows(ws, running, 10)
+    expect(r.panes.find((p) => p.pane === 100)?.place).toEqual({ branch: 'feat/x' })
+    expect(filterSwitcher(r, 'feat/x').panes.map((p) => p.pane)).toEqual([100])
+  })
+
   it('NFD 로 온 한글 경로도 NFC 로 친 입력에 맞춘다', () => {
     const nfd = '/h/문서'.normalize('NFD')
     const r = switcherRows([workspace(5, [cell(50, [pane(500, nfd)])])], src, null)

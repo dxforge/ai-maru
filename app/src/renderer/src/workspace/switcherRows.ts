@@ -45,7 +45,7 @@ export function switcherRows(
     for (const c of w.cells) {
       const current = focusedPane(c)
       for (const p of orderedPanes(c)) {
-        const r = paneRow(src, p, c.key === selected && p === current, base)
+        const r = paneRow(src, p, c.key === selected && p === current, base, true)
         const words = [r.name, r.place?.name, r.place?.branch, r.place?.sub, r.path, name]
         panes.push({
           ...r,
