@@ -139,8 +139,8 @@ function ptyDir(): string {
   return runDir(app.getPath('userData'))
 }
 
-const capturePane = (pty: string): Promise<string> => capturePty(ptyDir(), pty, JOB_REPLY_MS)
-const pastePane = (pty: string, text: string): Promise<'written' | 'exited'> =>
+const capturePtyText = (pty: string): Promise<string> => capturePty(ptyDir(), pty, JOB_REPLY_MS)
+const pastePtyText = (pty: string, text: string): Promise<'written' | 'exited'> =>
   writePtyInput(ptyDir(), pty, text, JOB_REPLY_MS, true)
 
 function coreBin(override: string | undefined, name: string): string {
@@ -580,8 +580,8 @@ const cliHandlers: Handlers = {
       const screen = currentScreen()
       return screen && screenPanes(screen).panes.map((p) => p.ptyId)
     },
-    capture: capturePane,
-    paste: pastePane
+    capture: capturePtyText,
+    paste: pastePtyText
   }),
   ...restartHandlers
 }
@@ -846,8 +846,8 @@ function start(): void {
       await spawned
     },
     waitExit: (id) => waitPtyExit(ptyDir(), id),
-    capture: capturePane,
-    paste: pastePane,
+    capture: capturePtyText,
+    paste: pastePtyText,
     kill: (id) => killPty(ptyDir(), id),
     emit: monitor.emit,
     now: Date.now,
