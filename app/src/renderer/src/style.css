@@ -267,7 +267,6 @@ body,
   list-style: none;
 }
 
-/* 입력줄만 아래로 보낸다. 목록은 위 팔레트와 같이 위에서 아래로 놓인다. */
 .bottom .palette {
   flex-direction: column-reverse;
 }

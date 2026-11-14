@@ -72,10 +72,6 @@ export type SwitcherItem =
   | { kind: 'pane'; key: string; i: number; row: SwitcherPane }
   | { kind: 'dir'; key: string; i: number; row: SwitcherDir }
 
-/**
- * 전환기가 그릴 줄을 위에서부터 둔다. `i` 는 고를 수 있는 줄의 번호로, pane 줄 다음에 디렉토리 줄이 이어진다. 묶음 이름
- * 줄은 그 묶음에 줄이 있을 때만 둔다.
- */
 export function switcherItems({ panes, dirs }: SwitcherRows): SwitcherItem[] {
   const list: SwitcherItem[] = []
   const group = (title: string, rows: SwitcherItem[]): void => {
@@ -100,8 +96,7 @@ export function switcherItems({ panes, dirs }: SwitcherRows): SwitcherItem[] {
 }
 
 /**
- * 처음 고를 줄의 번호. 검색어가 없으면 현재 pane 줄에서 시작해, 사이드바 순서로 놓인 옆 pane 에 ↑·↓ 한두 번으로 간다.
- * 검색어가 있거나 현재 pane 줄이 없으면 첫 줄이다.
+ * 검색어가 없으면 현재 pane 줄을 처음 고른다. 줄이 사이드바 순서로 놓이므로 ↑·↓ 한두 번으로 옆 pane 에 간다.
  */
 export function startIndex({ panes }: SwitcherRows, query: string): number {
   if (query.trim()) return 0

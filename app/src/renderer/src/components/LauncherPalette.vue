@@ -398,7 +398,7 @@ function onKeydown(e: KeyboardEvent): void {
   font-weight: 600;
 }
 
-/* 아래 팔레트는 입력줄을 아래에 두려고 column-reverse 로 그리므로 DOM 순서대로 헤더가 목록 위에 놓인다. 위 팔레트는 입력줄과 목록 사이로 옮긴다. */
+/* 아래 팔레트는 입력줄을 아래에 두려고 column-reverse 로 그리므로 DOM 의 역순으로 헤더가 목록 위에 놓인다. 위 팔레트는 입력줄과 목록 사이로 옮긴다. */
 .top .section {
   order: 1;
   padding: 0 var(--space-5) var(--space-3);

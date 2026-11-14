@@ -51,7 +51,9 @@ export type Command = {
   palette?: false
 }
 
-/** 배열 순서가 팔레트와 메뉴의 순서다. 같은 묶음의 명령은 붙여 둔다. 팔레트와 메뉴가 묶음이 바뀌는 곳에 제목·구분선을 둔다. */
+/**
+ * 배열 순서가 팔레트와 메뉴의 순서다. 팔레트와 메뉴는 묶음이 바뀌는 곳마다 제목·구분선을 두므로 같은 묶음의 명령은 붙여 둔다.
+ */
 export const commands: readonly Command[] = [
   { id: 'new-workspace', title: 'New Workspace', group: 'Workspace', menu: 'file' },
   { id: 'rename-workspace', title: 'Rename Workspace…', group: 'Workspace', menu: 'file' },
@@ -125,7 +127,6 @@ export type PaletteItem<C extends Command = Command> =
   | { kind: 'head'; key: string; title: CommandGroup }
   | { kind: 'command'; key: string; i: number; command: C }
 
-/** 같은 묶음이 이어진 명령끼리 나눈다. */
 function groupRuns<C extends Command>(list: readonly C[]): C[][] {
   const runs: C[][] = []
   list.forEach((c, i) => {
@@ -135,7 +136,6 @@ function groupRuns<C extends Command>(list: readonly C[]): C[][] {
   return runs
 }
 
-/** 팔레트가 그릴 줄이다. `i` 는 고를 수 있는 줄의 번호다. 묶음 제목 줄은 그 묶음에 명령이 남았을 때만 둔다. */
 export function paletteItems<C extends Command>(list: readonly C[]): PaletteItem<C>[] {
   let i = 0
   return groupRuns(list).flatMap((run): PaletteItem<C>[] => [
@@ -144,7 +144,6 @@ export function paletteItems<C extends Command>(list: readonly C[]): PaletteItem
   ])
 }
 
-/** 메뉴 하나에 넣을 명령을 묶음마다 나눈다. 메뉴는 묶음 사이에 구분선을 둔다. */
 export function menuSections(
   menu: Command['menu'],
   can: Parameters<typeof available>[1]

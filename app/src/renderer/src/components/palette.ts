@@ -32,9 +32,7 @@ export function revealSelected(
 }
 
 /**
- * ↑·↓ 로 옮긴 후보 번호. 팔레트가 위든 아래든 후보는 첫 후보부터 위에서 아래로 놓이므로 ↓ 가 다음 후보다. 끝에서 돈다.
- * 아무것도 고르지 않았을 때(`index` 가 음수)는 ↓ 가 첫 후보, ↑ 가 마지막 후보로 간다. 화살표가 아니거나 후보가 없으면
- * undefined 다.
+ * ↑·↓ 로 옮긴 후보 번호를 돌려준다. 팔레트가 위든 아래든 후보가 첫 후보부터 위에서 아래로 놓이므로 ↓ 가 다음 후보다.
  */
 export function arrowIndex(key: string, index: number, n: number): number | undefined {
   if (!n || (key !== 'ArrowDown' && key !== 'ArrowUp')) return undefined
