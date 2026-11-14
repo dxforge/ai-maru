@@ -658,17 +658,9 @@ test('columns 에서 포커스된 cell 이 화면 밖에 있으면 maru cell new
   expect(await inView(page, activePane(page))).toBe(false)
 })
 
-test('columns 에서 포커스된 cell 이 화면 밖에 있어도, 다른 cell 의 오른쪽 끝을 끌고 놓고 두 번 눌러 되돌리는 동안 그 끝은 포인터 자리에 있다', async ({
-  launch
-}) => {
-  const launched = await launch()
-  const { page } = launched
-  await toggleView(launched, 'columns')
-  await page.keyboard.type(openCells(3))
-  await expect(cellViews(page)).toHaveCount(4)
-  await scrollSettled(page)
+async function dragAndRestoreEdge(page: Page, at: number): Promise<void> {
   const area = page.locator('.terminals')
-  const edge = cellViews(page).nth(2).locator('.cell-edge')
+  const edge = cellViews(page).nth(at).locator('.cell-edge')
   const view = (await area.boundingBox())!
   const start = (await edge.boundingBox())!
   await area.evaluate((el, by) => (el.scrollLeft += by), start.x - (view.x + view.width / 2))
@@ -697,6 +689,24 @@ test('columns 에서 포커스된 cell 이 화면 밖에 있어도, 다른 cell 
   expect(await edgeX()).toBeCloseTo(box.x, 0)
   expect(await area.evaluate((el) => el.scrollLeft)).toBe(scroll)
   expect(await inView(page, activePane(page))).toBe(false)
+}
+
+test('columns 에서 포커스된 cell 이 화면 밖에 있어도, 다른 cell 의 오른쪽 끝을 끌고 놓고 두 번 눌러 되돌리는 동안 그 끝은 포인터 자리에 있다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  await page.keyboard.type(openCells(3))
+  await expect(cellViews(page)).toHaveCount(4)
+  await scrollSettled(page)
+  await dragAndRestoreEdge(page, 2)
+
+  // 포커스된 cell 이 끄는 cell 의 오른쪽에 있으면, 포커스된 cell 을 제자리에 두는 것과 끄는 cell 을 제자리에 두는 것의 결과가 달라진다.
+  await cellItems(page).nth(3).click()
+  await expect(cellViews(page).nth(3)).toHaveClass(/selected/)
+  await scrollSettled(page)
+  await dragAndRestoreEdge(page, 1)
 })
 
 test('고전 스크롤바 설정에서도 columns 의 가로 스크롤바는 자리를 차지하지 않고 넘칠 때만 쓸 수 있어, cell 이 넘치기 시작하거나 넘침이 그쳐도 터미널의 줄 수는 그대로다', async ({
