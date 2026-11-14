@@ -1,6 +1,7 @@
 import type { Locator, Page } from '@playwright/test'
 import {
   activePane,
+  cli,
   CLASSIC_SCROLLBARS,
   clickMenu,
   expect,
@@ -468,6 +469,192 @@ test('columns 에서 앞의 cell 이 닫혀도 포커스된 pane 이 화면에 �
   await expect.poll(() => inView(page, activePane(page))).toBe(true)
   await expect(cellGroups(page).first()).toHaveClass(/selected/)
   await run(page, 'echo typed-$((1+1))', 'typed-2')
+})
+
+async function cellXsDuring(
+  page: Page,
+  cell: string,
+  act: () => Promise<unknown>,
+  settleMs = 600
+): Promise<number[]> {
+  await page.evaluate((cell) => {
+    const w = window as unknown as { xs: number[]; xsOn: boolean }
+    w.xs = []
+    w.xsOn = true
+    const area = document.querySelector('.terminals')!
+    const step = (): void => {
+      const el = document.querySelector(`.panes[data-cell="${cell}"]`)
+      if (el) w.xs.push(el.getBoundingClientRect().left - area.getBoundingClientRect().left)
+      if (w.xsOn) requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  }, cell)
+  await act()
+  await page.waitForTimeout(settleMs)
+  return page.evaluate(() => {
+    const w = window as unknown as { xs: number[]; xsOn: boolean }
+    w.xsOn = false
+    return w.xs
+  })
+}
+
+async function scrollSettled(page: Page): Promise<void> {
+  const area = page.locator('.terminals')
+  let last = -1
+  await expect
+    .poll(async () => {
+      const now = await area.evaluate((el) => el.scrollLeft)
+      const same = now === last
+      last = now
+      return same
+    })
+    .toBe(true)
+}
+
+test('columns 에서 maru cell new 로 포커스된 cell 의 왼쪽·오른쪽에 cell 이 생기거나 왼쪽 cell 이 없어져도 포커스된 cell 은 화면에서 움직이지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  const first = await activePane(page).getAttribute('data-pty')
+  await page.keyboard.type(
+    'maru cell new >/dev/null; maru cell new >/dev/null; maru cell new >/dev/null\n'
+  )
+  await expect(cellViews(page)).toHaveCount(4)
+  expect(await overflows(page)).toBe(true)
+  await cellItems(page).nth(2).click()
+  await expect(cellViews(page).nth(2)).toHaveClass(/selected/)
+  await expect.poll(() => inView(page, activePane(page))).toBe(true)
+  await scrollSettled(page)
+  const cell = (await cellViews(page).nth(2).getAttribute('data-cell'))!
+  const area = (await page.locator('.terminals').boundingBox())!
+  const x = (await cellViews(page).nth(2).boundingBox())!.x - area.x
+
+  const left = await cellXsDuring(page, cell, async () => {
+    await page.keyboard.type(
+      `X=$(maru cell new --after ${first} sleep 100 | awk 'NR == 2 { print $1 }')\n`
+    )
+    await expect(cellViews(page)).toHaveCount(5)
+  })
+  expect(new Set(left)).toEqual(new Set([x]))
+  await expect(cellViews(page).nth(3)).toHaveClass(/selected/)
+
+  const right = await cellXsDuring(page, cell, async () => {
+    await page.keyboard.type('maru cell new sleep 100 >/dev/null\n')
+    await expect(cellViews(page)).toHaveCount(6)
+  })
+  expect(new Set(right)).toEqual(new Set([x]))
+
+  const closed = await cellXsDuring(page, cell, async () => {
+    await page.keyboard.type('maru pane close $X\n')
+    await expect(cellViews(page)).toHaveCount(5)
+  })
+  expect(new Set(closed)).toEqual(new Set([x]))
+  await run(page, 'echo still-$((1+1))', 'still-2')
+})
+
+/** `xs` 가 `x` 에 닿은 뒤로는 줄곧 `x` 인지. 닿기 전 프레임은 닫히기 전의 자리다. */
+function stayedAt(xs: number[], x: number): boolean {
+  const at = xs.indexOf(x)
+  return at >= 0 && xs.slice(at).every((v) => v === x)
+}
+
+async function closeFocusedCell(page: Page, count: number): Promise<{ x: number; xs: number[] }> {
+  const area = (await page.locator('.terminals').boundingBox())!
+  const x = (await page.locator('.panes.selected').boundingBox())!.x - area.x
+  const i = await cellViews(page).evaluateAll((els) =>
+    els.findIndex((el) => el.classList.contains('selected'))
+  )
+  const next = (await cellViews(page)
+    .nth(i === count - 1 ? i - 1 : i + 1)
+    .getAttribute('data-cell'))!
+  const xs = await cellXsDuring(page, next, async () => {
+    await page.keyboard.type('exit\n')
+    await expect(cellViews(page)).toHaveCount(count - 1)
+  })
+  await expect(page.locator(`.panes[data-cell="${next}"]`)).toHaveClass(/selected/)
+  return { x, xs }
+}
+
+const openCells = (n: number): string =>
+  Array.from({ length: n }, () => 'maru cell new >/dev/null').join('; ') + '\n'
+
+test('columns 에서 포커스된 cell 이 닫히면 포커스를 받은 이웃 cell 이 그 자리에 온다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  await page.keyboard.type(openCells(5))
+  await expect(cellViews(page)).toHaveCount(6)
+  await cellItems(page).nth(1).click()
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+  await scrollSettled(page)
+  const right = await closeFocusedCell(page, 6)
+  expect(stayedAt(right.xs, right.x)).toBe(true)
+  await run(page, 'echo typed-$((1+1))', 'typed-2')
+
+  // 맨 끝 cell 이 닫히면 왼쪽 이웃이 포커스를 받는다.
+  await cellItems(page).nth(4).click()
+  await expect(cellViews(page).nth(4)).toHaveClass(/selected/)
+  await scrollSettled(page)
+  const left = await closeFocusedCell(page, 5)
+  expect(stayedAt(left.xs, left.x)).toBe(true)
+  await run(page, 'echo typed-$((2+1))', 'typed-3')
+})
+
+test('columns 에서 포커스를 받은 이웃 cell 이 닫힌 cell 보다 넓으면, 그 자리에 두되 포커스된 pane 이 화면에 들게 한다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  await page.keyboard.type(openCells(3))
+  await expect(cellViews(page)).toHaveCount(4)
+  const wide = (await cellViews(page).nth(2).getAttribute('data-cell'))!
+  await page.keyboard.type(`maru pane new --cell ${wide} >/dev/null\n`)
+  await expect(page.locator(`.panes[data-cell="${wide}"] .pane`)).toHaveCount(2)
+  await page.locator(`.panes[data-cell="${wide}"] .pane`).nth(1).click()
+  await expect(page.locator(`.panes[data-cell="${wide}"]`)).toHaveClass(/selected/)
+  await cellItems(page).nth(1).click()
+  await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
+  await page.locator('.terminals').evaluate((el) => (el.scrollLeft = 0))
+  await scrollSettled(page)
+
+  await page.keyboard.type('exit\n')
+  await expect(cellViews(page)).toHaveCount(3)
+  await expect(page.locator(`.panes[data-cell="${wide}"]`)).toHaveClass(/selected/)
+  await expect.poll(() => inView(page, activePane(page))).toBe(true)
+  await run(page, 'echo typed-$((1+1))', 'typed-2')
+})
+
+test('columns 에서 포커스된 cell 이 화면 밖에 있으면 maru cell new 로 cell 이 생겨도 끌어오지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  await page.keyboard.type(openCells(3))
+  await expect(cellViews(page)).toHaveCount(4)
+  await scrollSettled(page)
+  const area = page.locator('.terminals')
+  await area.evaluate((el) => (el.scrollLeft = el.scrollWidth))
+  await scrollSettled(page)
+  await expect.poll(() => inView(page, activePane(page))).toBe(false)
+  const cell = (await cellViews(page).nth(0).getAttribute('data-cell'))!
+  const box = (await area.boundingBox())!
+  const x = (await cellViews(page).nth(0).boundingBox())!.x - box.x
+
+  const pty = (await activePane(page).getAttribute('data-pty'))!
+  // 화면 밖 터미널에 키를 치면 그 입력이 cell 을 끌어오므로, 명령은 앱 밖에서 보낸다.
+  const xs = await cellXsDuring(page, cell, async () => {
+    await cli(dataDir, pty, ['cell', 'new', 'sleep', '100'])
+    await expect(cellViews(page)).toHaveCount(5)
+  })
+  expect(new Set(xs)).toEqual(new Set([x]))
+  expect(await inView(page, activePane(page))).toBe(false)
 })
 
 test('고전 스크롤바 설정에서도 columns 의 가로 스크롤바는 자리를 차지하지 않고 넘칠 때만 쓸 수 있어, cell 이 넘치기 시작하거나 넘침이 그쳐도 터미널의 줄 수는 그대로다', async ({

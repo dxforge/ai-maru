@@ -76,7 +76,15 @@ import {
   type ResizeContext,
   type Target
 } from './workspace/resize'
-import { arrangementKey, easeInOut, smoothReveal } from './workspace/reveal'
+import {
+  arrangementKey,
+  easeInOut,
+  type Scrolling,
+  scrollPlan,
+  shapeOf,
+  shiftScrolling,
+  smoothReveal
+} from './workspace/reveal'
 import { unreadWorkspaces, urgentStates } from './workspace/status'
 import { switcherRows } from './workspace/switcherRows'
 import {
@@ -1001,6 +1009,7 @@ const terminalsArea = useTemplateRef<HTMLElement>('terminalsArea')
 let settled = false
 const SCROLL_MS = 300
 let scrollFrame = 0
+let scrolling: Scrolling | undefined
 
 // cell 이 화면보다 넓을 수 있어, cell 이 아니라 포커스된 pane 이 보이게 한다.
 function revealFocused(smooth: boolean): void {
@@ -1008,6 +1017,7 @@ function revealFocused(smooth: boolean): void {
   const target = focusedTerminal()?.$el as HTMLElement | undefined
   if (viewMode.value !== 'columns' || !area || !target) return
   cancelAnimationFrame(scrollFrame)
+  scrolling = undefined
   const from = area.scrollLeft
   // 멈출 자리는 브라우저가 셈하게 한다. 같은 task 안에서 되돌리므로 그 자리가 그려지지는 않는다.
   target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
@@ -1017,23 +1027,79 @@ function revealFocused(smooth: boolean): void {
   // Chromium 의 smooth `scrollIntoView` 는 새로 부를 때마다 지금 자리에서 다시 가속해, 포커스를 빠르게 이어 옮기면
   // 뒤처진다. 그래서 늘 `SCROLL_MS` 안에 끝나게 직접 움직인다.
   const start = performance.now()
-  let last = from
+  const s = (scrolling = { from, to, last: from })
   const step = (now: number): void => {
     // 사용자가 그사이 스크롤했으면 그 자리를 뺏지 않는다.
-    if (area.scrollLeft !== last) return
+    if (area.scrollLeft !== s.last) return void (scrolling = undefined)
     const t = Math.min((now - start) / SCROLL_MS, 1)
-    area.scrollLeft = from + (to - from) * easeInOut(t)
-    last = area.scrollLeft
+    area.scrollLeft = s.from + (s.to - s.from) * easeInOut(t)
+    s.last = area.scrollLeft
     if (t < 1) scrollFrame = requestAnimationFrame(step)
+    else scrolling = undefined
   }
   scrollFrame = requestAnimationFrame(step)
 }
+
+function cellX(key: number | undefined): number | undefined {
+  const area = terminalsArea.value
+  const el = key === undefined ? undefined : gridEls.get(key)
+  if (!area || !el) return undefined
+  return el.getBoundingClientRect().left - area.getBoundingClientRect().left
+}
+
+// `x` 는 바뀌기 전에 포커스된 cell 이 있던 화면 x 다. 같은 프레임 안에서 맞추므로 옮겨 가는 모습은 그려지지 않는다.
+function holdFocused(x: number, take: boolean): void {
+  const area = terminalsArea.value
+  const now = cellX(workspaces.selectedKey.value ?? undefined)
+  if (!area || now === undefined) return
+  const from = area.scrollLeft
+  area.scrollLeft = from + now - x
+  // 부드러운 스크롤이 도는 중이면 출발점과 도착점을 같은 만큼 옮겨 이어 간다. 멈추면 사용자가 고른 pane 에 닿지 못하기 때문이다.
+  if (scrolling)
+    Object.assign(scrolling, shiftScrolling(scrolling, area.scrollLeft - from, area.scrollLeft))
+  // 새로 포커스를 받은 cell 이 닫힌 cell 보다 넓어 포커스된 pane 이 화면 밖에 남으면 그것만 보이게 한다.
+  if (take) revealFocused(false)
+}
+
+const arrangement = computed(() => arrangementKey(views.value))
+const focusedShape = computed(() => {
+  const v = views.value.find((x) => x.selected)
+  return v && shapeOf(v)
+})
+const scrollSources = [
+  viewMode,
+  () => workspaces.selectedKey.value ?? undefined,
+  () => workspaces.selected()?.focused,
+  focusedShape,
+  arrangement
+] as const
+let beforeX: number | undefined
+// 포커스된 cell 을 화면의 같은 x 에 두려면 배치가 바뀌기 전의 자리가 필요하므로, DOM 이 바뀌기 전에 잰다.
+// 포커스된 cell 이 닫힌 경우에도 그 자리를 쓰므로, 바뀌기 전에 선택돼 있던 cell 을 잰다.
+watch(
+  scrollSources,
+  (_, [, prevCell]) => {
+    beforeX = viewMode.value === 'columns' && settled ? cellX(prevCell) : undefined
+  },
+  { flush: 'pre' }
+)
 // 포커스가 그대로여도 앞의 cell 이 닫히거나 폭이 바뀌면 pane 이 밀려나므로 배치도 지켜본다.
 // 보기를 바꾸면 화면 전체가 한 번에 다시 그려지므로, `viewMode` 가 바뀐 호출은 스크롤도 바로 맞춘다.
-const arrangement = computed(() => arrangementKey(views.value))
 watch(
-  [viewMode, () => workspaces.selected()?.focused, arrangement],
-  ([mode], [prevMode]) => revealFocused(mode === prevMode),
+  scrollSources,
+  ([mode, cell, pane, shape], [prevMode, prevCell, prevPane, prevShape]) => {
+    const x = beforeX
+    beforeX = undefined
+    const plan = scrollPlan({
+      modeChanged: mode !== prevMode,
+      settled,
+      before: { cell: prevCell, pane: prevPane, shape: prevShape },
+      after: { cell, pane, shape },
+      beforeGone: !workspaces.cells().some((c) => c.key === prevCell)
+    })
+    if (plan === 'reveal' || x === undefined) revealFocused(mode === prevMode)
+    else holdFocused(x, plan === 'take')
+  },
   { flush: 'post' }
 )
 
