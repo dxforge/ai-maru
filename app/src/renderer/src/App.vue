@@ -187,6 +187,11 @@ function stepWidth(by: 1 | -1): void {
   workspaces.setPaneCols(c.key, stepPaneColsOverride(c.paneCols, by, config.layout.value))
 }
 
+function resetWidth(): void {
+  const c = workspaces.selected()
+  if (c && viewMode.value === 'columns') workspaces.setPaneCols(c.key, undefined)
+}
+
 function focusedDir(): string | undefined {
   const c = workspaces.selected()
   return c && focusedPane(c).cwd
@@ -1178,6 +1183,7 @@ const handlers: Record<CommandId, () => void> = {
   'reset-font-size': resetFont,
   'widen-cell': () => stepWidth(1),
   'narrow-cell': () => stepWidth(-1),
+  'reset-cell-width': resetWidth,
   'clear-scrollback': () => focusedTerminal()?.clearScrollback(),
   restart: window.maru.restart
 }

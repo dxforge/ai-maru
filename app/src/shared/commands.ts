@@ -36,6 +36,7 @@ export type CommandId =
   | 'reset-font-size'
   | 'widen-cell'
   | 'narrow-cell'
+  | 'reset-cell-width'
   | 'clear-scrollback'
   | 'restart'
 
@@ -84,6 +85,7 @@ export const commands: readonly Command[] = [
   { id: 'reset-font-size', title: 'Reset Font Size', menu: 'view' },
   { id: 'widen-cell', title: 'Widen Cell', menu: 'view' },
   { id: 'narrow-cell', title: 'Narrow Cell', menu: 'view' },
+  { id: 'reset-cell-width', title: 'Reset Cell Width', menu: 'view' },
   { id: 'clear-scrollback', title: 'Clear Scrollback', menu: 'view' },
   { id: 'restart', title: 'Restart', menu: 'app' }
 ]

@@ -127,6 +127,27 @@ test('columns 보기에서 cell 오른쪽 끝을 끌면 마지막 pane 의 열 �
   )
 })
 
+test('columns 보기에서 cell 오른쪽 끝을 끌어 바꾼 열 수는 Reset Cell Width 로 column-cols 에 돌아간다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  const before = await shellSize(page)
+  const cell = await cellSize(page)
+  const edge = (await page.locator('.cell-edge').first().boundingBox())!
+
+  const y = edge.y + edge.height / 2
+  await page.mouse.move(edge.x + edge.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(edge.x + edge.width / 2 + 6 * cell.width, y, { steps: 3 })
+  await page.mouse.up()
+  await expect.poll(async () => (await shellSize(page)).cols).toBe(before.cols + 6)
+
+  await clickMenu(app, 'reset-cell-width')
+  await expect.poll(async () => (await shellSize(page)).cols).toBe(before.cols)
+})
+
 test('columns 보기에서 끝까지 스크롤한 cell 의 경계를 좁히는 동안 경계가 포인터를 따라간다', async ({
   launch
 }) => {

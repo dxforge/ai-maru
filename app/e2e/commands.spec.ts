@@ -73,7 +73,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['toggle-keep-workspace', 'Keep Workspace', 'Alt+Command+P'],
     ['toggle-favorite-cell', 'Toggle Favorite', 'Control+Command+T']
   ])
-  expect(menus.view.slice(0, 25)).toEqual([
+  expect(menus.view.slice(0, 26)).toEqual([
     ['command-palette', 'Command Palette…', 'Shift+Command+P'],
     ['go-to-pane', 'Go to Pane or Favorite…', 'Command+P'],
     ['next-cell', 'Next Cell', 'Shift+Command+]'],
@@ -97,6 +97,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
     ['reset-font-size', 'Reset Font Size', 'Command+0'],
     ['widen-cell', 'Widen Cell', 'Shift+Command+.'],
     ['narrow-cell', 'Narrow Cell', 'Shift+Command+,'],
+    ['reset-cell-width', 'Reset Cell Width', 'Shift+Command+/'],
     ['clear-scrollback', 'Clear Scrollback', 'Command+K'],
     ['-', '', null]
   ])
