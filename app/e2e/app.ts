@@ -28,11 +28,11 @@ import {
   type Page
 } from '@playwright/test'
 import electronPath from 'electron'
-import { encodeFrame, TAG_TEXT } from '../src/main/frame'
+import { encodeFrame } from '../src/main/frame'
 import { appSocketPath, foreground, killPtys, runDir } from '../src/main/pty'
 import { gitEnv } from '../src/main/test-repo-env'
 import type { CanvasMarkdown } from '../src/shared/canvas'
-import { PROTOCOL_VERSION } from '../src/shared/protocol'
+import { PROTOCOL_VERSION, TAG_TEXT } from '../src/shared/protocol'
 import type { PtyOpen } from '../src/shared/pty'
 import { clampSidebarWidth, STATE_VERSIONS } from '../src/shared/screen'
 import { GHOSTTY } from '../src/shared/theme'

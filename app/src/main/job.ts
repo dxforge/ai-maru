@@ -3,9 +3,11 @@ import {
   InvalidParams,
   isCommand,
   requireCommand,
+  REFUSED,
   requireCwd,
   type Handlers
 } from './cli-server'
+import { isObject } from '../shared/object'
 import type { PtyExit } from '../shared/pty'
 import { isPtyId } from '../shared/pty'
 
@@ -139,7 +141,7 @@ export function createJobs(deps: JobDeps) {
       const same =
         name === undefined ? undefined : jobs.find((j) => j.cell === cell && j.name === name)
       if (same && !same.exit) {
-        throw new CliError(-32001, 'job_name_taken', `job ${name} is running in this cell`)
+        throw new CliError(REFUSED, 'job_name_taken', `job ${name} is running in this cell`)
       }
       const job: JobRecord = {
         pty: deps.newId(),
@@ -182,7 +184,7 @@ export function createJobs(deps: JobDeps) {
       const job = find(callerCell(pty), target)
       if (typeof text !== 'string') throw new InvalidParams('params.text must be a string')
       const exited = (): CliError =>
-        new CliError(-32001, 'job_exited', `job ${String(target)} has exited`)
+        new CliError(REFUSED, 'job_exited', `job ${String(target)} has exited`)
       if (job.exit) throw exited()
       if ((await deps.paste(job.pty, text)) === 'exited') throw exited()
       return null
@@ -238,20 +240,18 @@ export function createJobs(deps: JobDeps) {
   }
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v)
 const isCode = (v: unknown): boolean => v === null || Number.isInteger(v)
 
 function isJob(v: unknown): v is JobRecord {
   return (
-    isObj(v) &&
+    isObject(v) &&
     isPtyId(v.pty) &&
     (v.name === undefined || typeof v.name === 'string') &&
     typeof v.cell === 'string' &&
     isPtyId(v.owner) &&
     isCommand(v.command) &&
     (v.started === undefined || Number.isFinite(v.started)) &&
-    (v.exit === undefined || (isObj(v.exit) && isCode(v.exit.code) && isCode(v.exit.signal))) &&
+    (v.exit === undefined || (isObject(v.exit) && isCode(v.exit.code) && isCode(v.exit.signal))) &&
     typeof v.pending === 'boolean'
   )
 }

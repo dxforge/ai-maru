@@ -21,6 +21,7 @@ import {
   type WorkspaceRow
 } from '../shared/screen'
 import { parseWindowTheme, type WindowTheme } from '../shared/theme'
+import { isObject } from '../shared/object'
 import { isPtyId, randomId } from '../shared/pty'
 import { parseJobRecords, type JobRecord } from './job'
 import { writeJsonAtomicSync } from './json-file'
@@ -85,13 +86,12 @@ export function removeOldStateFiles(userData: string): void {
     rmSync(join(userData, name), { force: true })
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v)
-
 function parseSessionsPart(v: unknown): SessionsPart | null {
-  if (!isObj(v) || v.version !== STATE_VERSIONS.sessions || !Array.isArray(v.ptys)) return null
+  if (!isObject(v) || v.version !== STATE_VERSIONS.sessions || !Array.isArray(v.ptys)) return null
   const ptys = v.ptys.map((p) =>
-    isObj(p) && typeof p.pane === 'string' && isPtyId(p.pty) ? { pane: p.pane, pty: p.pty } : null
+    isObject(p) && typeof p.pane === 'string' && isPtyId(p.pty)
+      ? { pane: p.pane, pty: p.pty }
+      : null
   )
   const jobs = parseJobRecords(v.jobs)
   if (!jobs || !ptys.every((p) => p !== null)) return null
@@ -100,7 +100,7 @@ function parseSessionsPart(v: unknown): SessionsPart | null {
 
 function parseViewPart(v: unknown): ViewPart {
   const view: ViewPart = { version: STATE_VERSIONS.view }
-  if (!isObj(v) || v.version !== STATE_VERSIONS.view) return view
+  if (!isObject(v) || v.version !== STATE_VERSIONS.view) return view
   const window = parseWindowState(v.window)
   const theme = parseWindowTheme(v.theme)
   const { selected } = v
@@ -140,7 +140,7 @@ export function readState(path: string): ReadState {
   } catch {
     v = null
   }
-  if (!isObj(v)) return unread('bad')
+  if (!isObject(v)) return unread('bad')
   return {
     workspaces: part(v.workspaces, parseWorkspacesTable),
     cells: part(v.cells, parseCellsTable),
@@ -324,8 +324,7 @@ export type StateStore = {
    * 쓰면, 디스크에 남은 마지막 상태가 그 화면으로 바뀌기 때문이다.
    */
   stop(): void
-  current(): StateFile
-  /** `current()` 와 달리 복사하지 않는다. 받은 쪽은 고치지 않는다. */
+  /** 내부 상태를 복사하지 않고 그대로 돌려준다. 받은 쪽은 이 값을 고치지 않는다. */
   view(): Readonly<ViewPrefs>
   paneCount(): number
 }
@@ -423,10 +422,6 @@ export function createStateStore(o: {
       stop()
     },
     stop,
-    current: () => {
-      applyScreen()
-      return structuredClone(state)
-    },
     view: () => {
       applyScreen()
       return state.view

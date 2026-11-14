@@ -1,4 +1,5 @@
-import { InvalidParams, isObject, type Handlers } from './cli-server'
+import { isObject } from '../shared/object'
+import { InvalidParams, type Handlers } from './cli-server'
 
 // 계약은 core/crates/maru 의 모듈 doc 에 있다. `maru mcp` 가 MCP 메시지를 하나씩 `mcp.message` 로 보낸다.
 

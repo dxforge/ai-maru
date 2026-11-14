@@ -23,18 +23,19 @@ export function commandClass(c: Command | undefined): string {
   return c.running ? 'command-running' : 'command-failed'
 }
 
-// OSC 7501 의 `app` 은 아무 문자열이나 오므로 객체 대신 Map 으로 찾는다. 객체면 `constructor` 같은 키에 prototype 의 값을 돌려준다.
-export const AGENT_ICONS: ReadonlyMap<string, AgentLogo> = new Map([
-  [CLAUDE_APP, 'claude'],
-  ['codex', 'codex'],
-  ['kiro-cli', 'kiro']
-])
+/** `app` 은 OSC 7501 레코드의 `app`, `argv0` 은 launcher 명령의 실행 파일 이름이다. */
+const AGENTS: readonly { app: string; argv0: string; icon: AgentLogo }[] = [
+  { app: CLAUDE_APP, argv0: 'claude', icon: 'claude' },
+  { app: 'codex', argv0: 'codex', icon: 'codex' },
+  { app: 'kiro-cli', argv0: 'kiro-cli', icon: 'kiro' }
+]
 
-const PROGRAM_ICONS: ReadonlyMap<string, AgentLogo> = new Map([
-  ['claude', 'claude'],
-  ['codex', 'codex'],
-  ['kiro-cli', 'kiro']
-])
+// OSC 7501 의 `app` 은 아무 문자열이나 오므로 객체 대신 Map 으로 찾는다. 객체면 `constructor` 같은 키에 prototype 의 값을 돌려준다.
+export const AGENT_ICONS: ReadonlyMap<string, AgentLogo> = new Map(
+  AGENTS.map((a) => [a.app, a.icon])
+)
+
+const PROGRAM_ICONS: ReadonlyMap<string, AgentLogo> = new Map(AGENTS.map((a) => [a.argv0, a.icon]))
 
 /** launcher 의 명령 줄 아이콘이다. 셸은 셸 아이콘, 표에 있는 agent 는 그 로고, 그 밖의 명령은 도는 명령 아이콘이다. */
 export function launcherIcon(command: string): 'terminal' | 'running' | AgentLogo {

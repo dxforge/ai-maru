@@ -7,7 +7,7 @@ use crate::vt::{ProgramStatusKind, ProgramStatusReport, ProgramStatusState};
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-pub const MAX_RECORDS: usize = 256;
+const MAX_RECORDS: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 struct Record {

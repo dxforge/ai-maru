@@ -3,6 +3,8 @@
  * 모듈을 다시 쓰기 위해서다. `dropAt`·`scrollStep` 은 DOM 을 읽지 않으므로 unit 테스트로 잰다.
  */
 
+import { listenWindowPointer } from '../windowPointer'
+
 /** 끄는 것. `index` 는 끌기 전 목록에서의 자리다(cell 은 그 workspace 안, workspace 는 목록 안). */
 export type Dragged =
   | { kind: 'cell'; cell: number; workspace: number; index: number }
@@ -178,15 +180,11 @@ export function trackPointer(e: PointerEvent, threshold: number, start: () => Dr
   }
   const end = (): void => {
     cancelAnimationFrame(raf)
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', up)
-    window.removeEventListener('pointercancel', cancel)
+    off()
     window.removeEventListener('keydown', key, true)
     session = undefined
   }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up)
-  window.addEventListener('pointercancel', cancel)
+  const off = listenWindowPointer(move, up, cancel)
   window.addEventListener('keydown', key, true)
   if (threshold === 0) begin(e)
 }

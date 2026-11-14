@@ -46,7 +46,7 @@ export function attachOverlayScroll(el: HTMLElement, axis: ScrollAxis, children 
   )
 }
 
-export function detachOverlayScroll(el: HTMLElement): void {
+function detachOverlayScroll(el: HTMLElement): void {
   OverlayScrollbars(el)?.destroy()
 }
 

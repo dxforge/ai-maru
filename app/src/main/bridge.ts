@@ -1,6 +1,7 @@
 import type { Socket } from 'node:net'
 import type { MessagePortMain } from 'electron'
-import { encodeFrame, FrameDecoder, TAG_BINARY, TAG_TEXT } from './frame'
+import { TAG_BINARY, TAG_TEXT } from '../shared/protocol'
+import { encodeFrame, FrameDecoder } from './frame'
 
 /**
  * renderer 가 처리했다고 알리지 않은 출력이 `HIGH` 바이트를 넘으면 소켓을 읽지 않고, `LOW` 아래로 내려가면 다시 읽는다.

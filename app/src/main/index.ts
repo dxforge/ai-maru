@@ -30,7 +30,14 @@ import {
   type Dialog,
   type ProgramDeps
 } from './close-confirm'
-import { AfterReply, CliError, listenCli, optionalBoolean, type Handlers } from './cli-server'
+import {
+  AfterReply,
+  CliError,
+  listenCli,
+  optionalBoolean,
+  REFUSED,
+  type Handlers
+} from './cli-server'
 import { configDir, configFile, readConfigFile, watchConfig } from './config-file'
 import { createDesktopNotifications, type DesktopNotice } from './desktop-notification'
 import { gitHead } from './git'
@@ -113,13 +120,14 @@ import {
 import { jobName, type JobView } from '../shared/job'
 import { isPathCandidates } from '../shared/link'
 import { paneRows } from '../shared/pane-list'
-import type { CloseAnswer, PaneReply } from '../shared/pane'
+import type { CloseAnswer, PaneReply, PaneRow } from '../shared/pane'
 import { statusText } from '../shared/program-status'
 import {
   joinTables,
   parseScreen,
   screenPanes,
   type Restore,
+  type ScreenState,
   type ViewPrefs
 } from '../shared/screen'
 import { isPtyId, newPtyId, type PtyOpen } from '../shared/pty'
@@ -130,6 +138,10 @@ const runFile = promisify(execFile)
 function ptyDir(): string {
   return runDir(app.getPath('userData'))
 }
+
+const capturePtyText = (pty: string): Promise<string> => capturePty(ptyDir(), pty, JOB_REPLY_MS)
+const pastePtyText = (pty: string, text: string): Promise<'written' | 'exited'> =>
+  writePtyInput(ptyDir(), pty, text, JOB_REPLY_MS, true)
 
 function coreBin(override: string | undefined, name: string): string {
   return (
@@ -185,12 +197,7 @@ function mainWindow(): BrowserWindow | undefined {
 const ptyCells = createPtyCells()
 
 function ptyLabel(pty: string): string | undefined {
-  const screen = parseScreen(lastScreen)
-  const row =
-    screen &&
-    paneRows(screen.workspaces, ptyStates.state, process.env.SHELL, process.env.HOME).find(
-      (r) => r.pty === pty
-    )
+  const row = currentPaneRows()?.find((r) => r.pty === pty)
   if (row) return row.title
   const job = jobs?.get(pty)
   return job && jobName(job)
@@ -275,6 +282,15 @@ const panes = createPanes(
 const devServer = Boolean(process.env.ELECTRON_RENDERER_URL)
 // renderer 가 보낸 마지막 화면. 자주 오고 읽는 일은 드물므로, 받은 값을 그대로 두었다가 읽을 때 `parseScreen` 으로 검사한다.
 let lastScreen: unknown = null
+
+function currentScreen(): ScreenState | null {
+  return parseScreen(lastScreen)
+}
+
+function currentPaneRows(): PaneRow[] | null {
+  const screen = currentScreen()
+  return screen && paneRows(screen.workspaces, ptyStates.state, process.env.SHELL, process.env.HOME)
+}
 let restarting = false
 let store: StateStore | null = null
 let outcome: Outcome | null = null
@@ -295,7 +311,7 @@ function viewPrefs(): ViewPrefs {
 }
 
 function openPaneCount(): number {
-  const screen = parseScreen(lastScreen)
+  const screen = currentScreen()
   return screen ? screenPanes(screen).panes.length : (store?.paneCount() ?? 0)
 }
 
@@ -427,14 +443,14 @@ const restartHandlers: Handlers = {
     const check = await restartCheck()
     if (!check.ok && check.reason === 'dev_server') {
       throw new CliError(
-        -32001,
+        REFUSED,
         'restart_unavailable',
         'an app started by the dev server cannot restart itself'
       )
     }
     if (!check.ok && !kill) {
       const { code, message } = restartRefusal(check)
-      throw new CliError(-32001, code, message, {
+      throw new CliError(REFUSED, code, message, {
         ptys: check.ptys,
         recovered: check.recovered,
         result: check.result
@@ -478,14 +494,14 @@ async function checkClose(find: () => Promise<Dialog | null>): Promise<CloseAnsw
 
 // 화면에 아직 없는 pane 은 명령 pane 인지 모르므로 foreground 로 가른다.
 async function closePaneCheck(pty: string): Promise<Dialog | null> {
-  const { panes } = screenPanes(parseScreen(lastScreen))
+  const { panes } = screenPanes(currentScreen())
   const pane = panes.find((p) => p.ptyId === pty) ?? { ptyId: pty }
   const program = await runningProgram(pane, programDeps)
   return program && closePaneDialog(program.name)
 }
 
 async function closeWorkspaceCheck(workspace: string): Promise<Dialog | null> {
-  const { panes, cells } = screenPanes(parseScreen(lastScreen), workspace)
+  const { panes, cells } = screenPanes(currentScreen(), workspace)
   const running = {
     panes: await runningPanes(panes, programDeps),
     jobs: jobs?.running(new Set(cells)) ?? 0
@@ -523,7 +539,7 @@ function confirmQuit(): void {
       if (open === 0) {
         quitWith('end')
       } else {
-        const { panes } = screenPanes(parseScreen(lastScreen))
+        const { panes } = screenPanes(currentScreen())
         const running = {
           panes: await runningPanes(panes, programDeps),
           jobs: jobs?.running() ?? 0
@@ -549,11 +565,9 @@ const putDoc = canvasPut(mainWindow, windowReady, cellOf)
 const cliHandlers: Handlers = {
   ping: (_params, pty) => ({ pty }),
   'pane.list': () => {
-    const screen = parseScreen(lastScreen)
-    if (!screen) throw new Error('the window has not reported its layout yet')
-    return {
-      panes: paneRows(screen.workspaces, ptyStates.state, process.env.SHELL, process.env.HOME)
-    }
+    const panes = currentPaneRows()
+    if (!panes) throw new Error('the window has not reported its layout yet')
+    return { panes }
   },
   'canvas.put': putDoc,
   ...mcpHandlers({ put: putDoc, version: app.getVersion() }),
@@ -563,11 +577,11 @@ const cliHandlers: Handlers = {
   ...panes.handlers,
   ...paneIo({
     panes: () => {
-      const screen = parseScreen(lastScreen)
+      const screen = currentScreen()
       return screen && screenPanes(screen).panes.map((p) => p.ptyId)
     },
-    capture: (pty) => capturePty(ptyDir(), pty, JOB_REPLY_MS),
-    paste: (pty, text) => writePtyInput(ptyDir(), pty, text, JOB_REPLY_MS, true)
+    capture: capturePtyText,
+    paste: pastePtyText
   }),
   ...restartHandlers
 }
@@ -832,8 +846,8 @@ function start(): void {
       await spawned
     },
     waitExit: (id) => waitPtyExit(ptyDir(), id),
-    capture: (id) => capturePty(ptyDir(), id, JOB_REPLY_MS),
-    paste: (id, text) => writePtyInput(ptyDir(), id, text, JOB_REPLY_MS, true),
+    capture: capturePtyText,
+    paste: pastePtyText,
     kill: (id) => killPty(ptyDir(), id),
     emit: monitor.emit,
     now: Date.now,

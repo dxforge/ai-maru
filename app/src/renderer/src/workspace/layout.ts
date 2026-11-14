@@ -36,7 +36,7 @@ function withWeight(layout: Layout, weight: number | undefined): Layout {
  * 그대로 둔다.
  * `root` 의 몫은 바깥 줄의 것이라 남긴다.
  */
-export function resetLine(root: Split): Split {
+function resetLine(root: Split): Split {
   const reset = (node: Layout): Layout => {
     const bare = withoutWeight(node)
     if ('split' in bare && bare.split === root.split) {

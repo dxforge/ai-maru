@@ -29,6 +29,7 @@ import CommandPalette from './components/CommandPalette.vue'
 import LauncherPalette, { type Launch, type LaunchWhere } from './components/LauncherPalette.vue'
 import PaneSwitcher from './components/PaneSwitcher.vue'
 import { createChordKeys } from './chord'
+import { listenWindowPointer } from './windowPointer'
 import PaneHeader from './components/PaneHeader.vue'
 import PanelBar, { type Panel } from './components/PanelBar.vue'
 import { FileText } from '@lucide/vue'
@@ -102,15 +103,7 @@ const barPanels = computed((): Panel[] => [
 ])
 
 const ptyStates = createPtyStates()
-const workspaces = createWorkspaces(
-  window.maru.gitHead,
-  ptyStates,
-  undefined,
-  undefined,
-  undefined,
-  undefined,
-  window.maru.home
-)
+const workspaces = createWorkspaces(window.maru.gitHead, ptyStates, { home: window.maru.home })
 syncPtyStates((pty, entry) => {
   ptyStates.apply(pty, entry)
   workspaces.applyState(pty)
@@ -517,11 +510,11 @@ async function openDir(workspace: number, dir: string, anchor?: Anchor): Promise
   return true
 }
 
-const SIDEBAR_WIDTH = 280
-const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
+const DEFAULT_SIDEBAR_WIDTH = 280
+const sidebarWidth = ref(prefs.sidebar?.width ?? DEFAULT_SIDEBAR_WIDTH)
 // 토스트는 사이드바 안쪽 양옆 12px 을 비운다.
 const toastWidth = computed(
-  () => Math.max(sidebarOpen.value ? sidebarWidth.value : 0, SIDEBAR_WIDTH) - 24
+  () => Math.max(sidebarOpen.value ? sidebarWidth.value : 0, DEFAULT_SIDEBAR_WIDTH) - 24
 )
 // 신호등 버튼 묶음 폭에 양옆 12px 씩을 더한 폭이다.
 const RAIL_WIDTH = 85
@@ -536,14 +529,10 @@ function drag(e: PointerEvent, panel: 'side' | 'canvas', move: (m: PointerEvent)
   const open = (): boolean => (panel === 'side' ? sidebarOpen.value : canvas.open.value)
   const step = (m: PointerEvent): void => (open() ? move(m) : end())
   const end = (): void => {
-    window.removeEventListener('pointermove', step)
-    window.removeEventListener('pointerup', end)
-    window.removeEventListener('pointercancel', end)
+    off()
     resizing.value = null
   }
-  window.addEventListener('pointermove', step)
-  window.addEventListener('pointerup', end)
-  window.addEventListener('pointercancel', end)
+  const off = listenWindowPointer(step, end)
 }
 
 function resizeSidebar(e: PointerEvent): void {
@@ -843,9 +832,7 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
     preview.value = { cell: c.key, layout: moveDivider(base, d, delta, ctx), by: 'drag' }
   }
   const end = (u?: PointerEvent): void => {
-    window.removeEventListener('pointermove', step)
-    window.removeEventListener('pointerup', end)
-    window.removeEventListener('pointercancel', end)
+    off()
     scrollHold.value = 0
     commitPreview()
     // `.split-handle` 이 경계 오른쪽 pane 의 왼쪽 여백을 덮는다. 끌지 않고 놓으면 그 여백을 누른 것처럼 밑의 pane 에 포커스를 준다.
@@ -854,9 +841,7 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
       if (pane !== undefined) terminals.get(pane)?.focus()
     }
   }
-  window.addEventListener('pointermove', step)
-  window.addEventListener('pointerup', end)
-  window.addEventListener('pointercancel', end)
+  const off = listenWindowPointer(step, end)
 }
 
 function paneAt(c: Cell, x: number, y: number): number | undefined {

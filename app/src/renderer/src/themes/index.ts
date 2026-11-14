@@ -10,10 +10,6 @@ for (const [path, text] of Object.entries(files)) {
   if (theme) THEMES.set(path.slice(PREFIX.length), theme)
 }
 
-export function themeNames(): string[] {
-  return [...THEMES.keys()]
-}
-
 export function themeNamed(name: string): TerminalTheme | undefined {
   return THEMES.get(name)
 }

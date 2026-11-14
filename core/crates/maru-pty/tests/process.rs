@@ -1,6 +1,6 @@
 use maru_pty::frame::{MAX_FRAME_LEN, TAG_BINARY, TAG_TEXT, decode_header, encode};
 use maru_pty::paths::Paths;
-use maru_pty::record::{self, Record};
+use maru_pty::record::Record;
 use maru_pty::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 use nix::sys::signal::{Signal, kill, killpg};
 use nix::unistd::Pid;
@@ -50,6 +50,10 @@ fn spawn_env(dir: &Path, id: &str, extra: &[&std::ffi::OsStr], env: &[(&str, &Pa
         .stderr(Stdio::piped())
         .spawn()
         .unwrap()
+}
+
+fn read_record(path: &Path) -> Option<Record> {
+    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
 fn tmpdir() -> tempfile::TempDir {
@@ -108,7 +112,7 @@ impl Proc {
     }
 
     fn record(&self) -> Record {
-        record::read(self.record_path()).unwrap()
+        read_record(self.record_path()).unwrap()
     }
 
     fn connect(&self) -> Conn {
@@ -156,7 +160,7 @@ impl Proc {
 
 impl Drop for Proc {
     fn drop(&mut self) {
-        if let Ok(rec) = record::read(self.record_path()) {
+        if let Some(rec) = read_record(self.record_path()) {
             let _ = killpg(Pid::from_raw(rec.shell_pid as i32), Signal::SIGKILL);
         }
         let _ = self.child.kill();
@@ -813,7 +817,7 @@ fn sigterm_right_after_the_record_appears_still_cleans_up() {
         let mut child = spawn(&dir, "pty-test");
         let deadline = Instant::now() + WAIT;
         let rec = loop {
-            if let Ok(rec) = record::read(&paths.record) {
+            if let Some(rec) = read_record(&paths.record) {
                 break rec;
             }
             assert!(Instant::now() < deadline, "레코드가 생기지 않았다");
