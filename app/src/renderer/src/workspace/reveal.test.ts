@@ -89,6 +89,7 @@ describe('scrollPlan', () => {
   const plan = {
     modeChanged: false,
     settled: true,
+    dragging: false,
     before: focus,
     after: focus,
     beforeGone: false
@@ -117,6 +118,10 @@ describe('scrollPlan', () => {
     expect(scrollPlan({ ...plan, modeChanged: true })).toBe('reveal')
     expect(scrollPlan({ ...plan, settled: false })).toBe('reveal')
     expect(scrollPlan({ ...plan, after: {}, beforeGone: true })).toBe('reveal')
+  })
+
+  it('경계를 끄는 중이면 포커스가 그대로여도 포커스된 pane 이 보이게만 스크롤한다', () => {
+    expect(scrollPlan({ ...plan, dragging: true })).toBe('reveal')
   })
 
   it('앞서 포커스된 cell 이 없었으면 새로 포커스된 cell 을 보이게 스크롤한다', () => {

@@ -6,7 +6,7 @@ type View = {
 
 /**
  * cell 과 pane 이 놓인 자리만 떼어 낸 문자열이다. `views` 는 자리와 상관없는 값(포커스 표시 등)이 바뀌어도 다시
- * 계산되므로, `App.vue` 는 이 값이 바뀔 때만 포커스된 pane 이 보이게 스크롤한다.
+ * 계산되므로, `App.vue` 는 포커스와 이 값이 바뀔 때만 columns 보기의 스크롤을 `scrollPlan` 대로 다시 맞춘다.
  */
 export function arrangementKey(views: readonly View[]): string {
   return views.map((v) => `${v.c.key}${shapeOf(v)}`).join()
@@ -24,17 +24,19 @@ export type Focus = { cell?: number; pane?: number; shape?: string }
  *   배치가 바뀌었으면, 다른 cell 이 생겼거나 없어졌거나 폭이 바뀐 것이다.
  * - `take`: 포커스된 cell 이 없어져 다른 cell 이 포커스를 받았다. 그 cell 을 없어진 cell 이 있던 화면 x 에 둔다.
  * - `reveal`: 포커스된 pane 이 보이게 스크롤한다.
- * `beforeGone` 은 바뀌기 전에 포커스된 cell 이 없어졌는지다.
+ * `beforeGone` 은 바뀌기 전에 포커스돼 있던 cell 이 지금은 없는지다. `dragging` 은 경계를 끄는 중인지다. 경계를
+ * 눌러도 포커스는 옮겨 가지 않으므로, 끄는 중에 `hold` 하면 끄는 경계가 포인터를 따라가지 않고 제자리에 남는다.
  */
 export function scrollPlan(o: {
   modeChanged: boolean
   settled: boolean
+  dragging: boolean
   before: Focus
   after: Focus
   beforeGone: boolean
 }): 'hold' | 'take' | 'reveal' {
   const { before, after } = o
-  if (o.modeChanged || !o.settled || after.cell === undefined) return 'reveal'
+  if (o.modeChanged || !o.settled || o.dragging || after.cell === undefined) return 'reveal'
   if (before.cell === after.cell) {
     return before.pane === after.pane && before.shape === after.shape ? 'hold' : 'reveal'
   }

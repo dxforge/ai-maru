@@ -1093,6 +1093,7 @@ watch(
     const plan = scrollPlan({
       modeChanged: mode !== prevMode,
       settled,
+      dragging: preview.value?.by === 'drag',
       before: { cell: prevCell, pane: prevPane, shape: prevShape },
       after: { cell, pane, shape },
       beforeGone: !workspaces.cells().some((c) => c.key === prevCell)
