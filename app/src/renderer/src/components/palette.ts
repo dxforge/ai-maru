@@ -23,9 +23,13 @@ export function revealSelected(
   index: Readonly<Ref<number>>
 ): void {
   const reveal = (): void =>
-    void nextTick(() =>
-      list.value?.querySelector('.selected')?.scrollIntoView({ block: 'nearest' })
-    )
+    void nextTick(() => {
+      const selected = list.value?.querySelector('.selected')
+      // ↓ 로 마지막 줄에서 첫 줄로 돌아왔을 때도 처음 띄운 화면처럼 묶음 제목이 보여야 하므로, 묶음의 첫 줄을 고르면 제목까지 스크롤한다.
+      const head = selected?.previousElementSibling
+      if (head?.classList.contains('head')) head.scrollIntoView({ block: 'nearest' })
+      selected?.scrollIntoView({ block: 'nearest' })
+    })
   // 처음 고른 줄이 첫 줄이 아닐 수 있으므로 띄울 때도 보이게 한다.
   onMounted(reveal)
   watch(index, reveal)

@@ -547,7 +547,7 @@ for (const [position, label] of [
   ['bottom', '아래'],
   ['top', '위']
 ] as const) {
-  test(`팔레트가 ${label}일 때 창이 낮아도 팔레트는 창 안에 남고, 처음에는 목록 맨 위가 보이며, 화살표로 고른 후보가 보이도록 목록이 스크롤된다`, async ({
+  test(`팔레트가 ${label}일 때 창이 낮아도 팔레트는 창 안에 남고, 처음에는 목록 맨 위가 보이며, 화살표로 고른 후보가 보이도록 목록이 스크롤되고, 묶음의 첫 후보를 고르면 그 묶음 제목도 보인다`, async ({
     launch,
     dataDir
   }) => {
@@ -583,6 +583,19 @@ for (const [position, label] of [
     await page.keyboard.press('ArrowDown')
     await expect(first).toHaveClass(/selected/)
     await expect.poll(() => shown(first)).toBe(true)
+    await expect.poll(() => shown(palette(page).locator('.head').first())).toBe(true)
+
+    const pick = async (title: RegExp, key: string) => {
+      const item = items(page).filter({ hasText: title })
+      while (!(await item.evaluate((el) => el.classList.contains('selected'))))
+        await page.keyboard.press(key)
+      await expect.poll(() => shown(item)).toBe(true)
+    }
+    const cell = palette(page).locator('.head', { hasText: /^Cell$/ })
+    await pick(/^Close Pane/, 'ArrowDown')
+    expect(await shown(cell)).toBe(false)
+    await pick(/^New Cell/, 'ArrowUp')
+    await expect.poll(() => shown(cell)).toBe(true)
   })
 }
 

@@ -41,7 +41,7 @@ export type CommandId =
   | 'restart'
 
 export type CommandGroup =
-  'Workspace' | 'Cell' | 'Pane' | 'Pane Size' | 'Launch' | 'Go to' | 'View' | 'Terminal' | 'App'
+  'Workspace' | 'Cell' | 'Pane' | 'Pane Size' | 'Launch' | 'Go to' | 'View' | 'Terminal' | 'AI Maru'
 
 export type Command = {
   id: CommandId
@@ -100,7 +100,7 @@ export const commands: readonly Command[] = [
   { id: 'decrease-font-size', title: 'Decrease Font Size', group: 'Terminal', menu: 'view' },
   { id: 'reset-font-size', title: 'Reset Font Size', group: 'Terminal', menu: 'view' },
   { id: 'clear-scrollback', title: 'Clear Scrollback', group: 'Terminal', menu: 'view' },
-  { id: 'restart', title: 'Restart', group: 'App', menu: 'app' }
+  { id: 'restart', title: 'Restart', group: 'AI Maru', menu: 'app' }
 ]
 
 export function available(c: Command, { canRestart }: { canRestart: boolean }): boolean {

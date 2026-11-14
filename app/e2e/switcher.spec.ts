@@ -6,6 +6,8 @@ import {
   expect,
   newWorkspace,
   openPalette,
+  newCell,
+  resizeBy,
   run,
   test,
   workspaceHeads,
@@ -80,6 +82,32 @@ test('⌘P 전환기는 모든 workspace 의 pane 을 지금 pane 을 표시해 
   await expect(workspaceHeads(page).nth(0)).toHaveAttribute('aria-label', 'Collapse alpha')
   await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
   await run(page, 'pwd', `${home}/alpha`)
+})
+
+test('창이 낮아 지금 pane 줄이 목록 아래로 넘쳐도 ⌘P 전환기는 띄우자마자 그 줄이 보이게 스크롤한다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  for (let n = 2; n <= 8; n++) await newCell(launched, n)
+  await resizeBy(app, 0, -400)
+  await expect.poll(() => page.evaluate(() => innerHeight)).toBeLessThan(400)
+
+  await openSwitcher(launched)
+  const current = switcher(page).locator('.pane-item[aria-current="true"]')
+  await expect(current).toHaveClass(/selected/)
+  await expect(paneItems(page).last()).toHaveAttribute('aria-current', 'true')
+  await expect
+    .poll(() =>
+      switcher(page)
+        .locator('.list')
+        .evaluate((el) => el.scrollTop)
+    )
+    .toBeGreaterThan(0)
+  const list = (await switcher(page).locator('.list').boundingBox())!
+  const box = (await current.boundingBox())!
+  expect(box.y).toBeGreaterThanOrEqual(list.y)
+  expect(box.y + box.height).toBeLessThanOrEqual(list.y + list.height)
 })
 
 test('⇧⌘P 팔레트에서 Go to Pane or Favorite… 를 고르면 팔레트 대신 전환기가 뜨고 키가 전환기로 간다', async ({

@@ -78,7 +78,7 @@ describe('paletteItems', () => {
       '# Go to',
       '# View',
       '# Terminal',
-      '# App'
+      '# AI Maru'
     ])
     expect(items.slice(0, 3)).toEqual(['# Workspace', '0 New Workspace', '1 Rename Workspace…'])
     expect(items.slice(6, 8)).toEqual(['# Cell', '5 New Cell'])
