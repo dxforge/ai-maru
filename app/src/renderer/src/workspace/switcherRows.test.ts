@@ -127,23 +127,22 @@ describe('switcherItems', () => {
     })
   ]
   const rows = switcherRows(ws, src, 10)
-  const shape = (headLast: boolean, r = rows) =>
-    switcherItems(r, headLast).map((it) => (it.kind === 'head' ? it.title : `${it.kind}${it.i}`))
+  const shape = (r = rows) =>
+    switcherItems(r).map((it) => (it.kind === 'head' ? it.title : `${it.kind}${it.i}`))
 
-  it('위 팔레트는 묶음 이름 줄을 묶음 앞에, 아래 팔레트는 묶음 뒤에 둔다', () => {
-    expect(shape(false)).toEqual(['Panes', 'pane0', 'pane1', 'Favorites', 'dir2', 'dir3'])
-    expect(shape(true)).toEqual(['pane0', 'pane1', 'Panes', 'dir2', 'dir3', 'Favorites'])
+  it('묶음 이름 줄을 묶음 앞에 둔다', () => {
+    expect(shape()).toEqual(['Panes', 'pane0', 'pane1', 'Favorites', 'dir2', 'dir3'])
   })
 
   it('줄이 없는 묶음은 묶음 이름 줄도 두지 않고, 번호는 남은 줄부터 센다', () => {
-    expect(shape(false, filterSwitcher(rows, 'docs'))).toEqual(['Favorites', 'dir0'])
-    expect(shape(true, { panes: rows.panes, dirs: [] })).toEqual(['pane0', 'pane1', 'Panes'])
-    expect(shape(false, { panes: [], dirs: [] })).toEqual([])
+    expect(shape(filterSwitcher(rows, 'docs'))).toEqual(['Favorites', 'dir0'])
+    expect(shape({ panes: rows.panes, dirs: [] })).toEqual(['Panes', 'pane0', 'pane1'])
+    expect(shape({ panes: [], dirs: [] })).toEqual([])
   })
 
   it('workspace 디렉토리를 즐겨찾기에도 넣어 같은 디렉토리 줄이 둘이어도 key 가 겹치지 않는다', () => {
     const dup = [workspace(1, [cell(10, [pane(100, '/h/app')])], { favorites: ['/h/app'] })]
-    const keys = switcherItems(switcherRows(dup, src, 10), false).map((it) => it.key)
+    const keys = switcherItems(switcherRows(dup, src, 10)).map((it) => it.key)
     expect(keys.filter((k) => k.startsWith('dir:'))).toHaveLength(2)
     expect(new Set(keys).size).toBe(keys.length)
   })

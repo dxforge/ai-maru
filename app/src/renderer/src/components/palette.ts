@@ -1,5 +1,4 @@
 import { nextTick, onMounted, onUnmounted, watch, type Ref, type ShallowRef } from 'vue'
-import type { Position } from '../config/layout'
 
 /**
  * 키는 입력창만 받으므로 포커스가 입력창을 떠나면 닫는다. 창이 포커스를 잃을 때도 입력창에 blur 가 오는데, 그때는 닫지
@@ -29,16 +28,10 @@ export function revealSelected(
 }
 
 /**
- * ↑·↓ 로 옮긴 후보 번호. 화살표는 화면 방향대로 움직인다. 팔레트가 아래면 후보가 입력줄 위에 첫 후보부터 위로 놓이므로
- * ↓ 가 앞 후보다. 화살표가 아니거나 후보가 없으면 undefined 다.
+ * ↑·↓ 로 옮긴 후보 번호. 팔레트가 위든 아래든 후보는 첫 후보부터 위에서 아래로 놓이므로 ↓ 가 다음 후보다. 끝에서 돈다.
+ * 화살표가 아니거나 후보가 없으면 undefined 다.
  */
-export function arrowIndex(
-  key: string,
-  index: number,
-  n: number,
-  position: Position
-): number | undefined {
+export function arrowIndex(key: string, index: number, n: number): number | undefined {
   if (!n || (key !== 'ArrowDown' && key !== 'ArrowUp')) return undefined
-  const down = position === 'bottom' ? -1 : 1
-  return (index + (key === 'ArrowDown' ? down : -down) + n) % n
+  return (index + (key === 'ArrowDown' ? 1 : -1) + n) % n
 }

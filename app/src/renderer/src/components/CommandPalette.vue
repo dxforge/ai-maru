@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
-import { available, filterCommands, type CommandId } from '../../../shared/commands'
+import { available, filterCommands, paletteItems, type CommandId } from '../../../shared/commands'
 import { commandLabel } from '../../../shared/shortcuts'
 import type { Position } from '../config/layout'
 import { arrowIndex, closeOnFocusLoss, revealSelected } from './palette'
@@ -16,6 +16,7 @@ const matches = computed(() =>
     .filter((c) => available(c, window.maru))
     .map((c) => ({ ...c, keys: commandLabel(c.id) }))
 )
+const items = computed(() => paletteItems(matches.value))
 watch(query, () => (index.value = 0))
 revealSelected(useTemplateRef<HTMLUListElement>('list'), index)
 
@@ -27,7 +28,7 @@ const onBlur = closeOnFocusLoss(input, () => emit('close'))
 function onKeydown(e: KeyboardEvent): void {
   if (e.isComposing) return
   const n = matches.value.length
-  const moved = arrowIndex(e.key, index.value, n, position)
+  const moved = arrowIndex(e.key, index.value, n)
   if (moved !== undefined) index.value = moved
   else if (e.key === 'Enter' && n) emit('run', matches.value[index.value].id)
   // Tab 을 브라우저에 맡기면 포커스가 사이드바의 버튼으로 옮겨 가, 닫으며 돌려준 터미널의 포커스를 빼앗는다.
@@ -50,17 +51,19 @@ function onKeydown(e: KeyboardEvent): void {
         @blur="onBlur"
       />
       <ul ref="list" v-overlay-scroll="'y'" class="list">
-        <li
-          v-for="(c, i) in matches"
-          :key="c.id"
-          class="item"
-          :class="{ selected: i === index }"
-          @mousemove="index = i"
-          @click="emit('run', c.id)"
-        >
-          <span>{{ c.title }}</span>
-          <kbd v-if="c.keys">{{ c.keys }}</kbd>
-        </li>
+        <template v-for="it in items" :key="it.key">
+          <li v-if="it.kind === 'head'" class="head workspace-title">{{ it.title }}</li>
+          <li
+            v-else
+            class="item"
+            :class="{ selected: it.i === index }"
+            @mousemove="index = it.i"
+            @click="emit('run', it.command.id)"
+          >
+            <span>{{ it.command.title }}</span>
+            <kbd v-if="it.command.keys">{{ it.command.keys }}</kbd>
+          </li>
+        </template>
         <li v-if="!matches.length" class="empty">No matching commands</li>
       </ul>
     </div>

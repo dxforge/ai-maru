@@ -40,54 +40,65 @@ export type CommandId =
   | 'clear-scrollback'
   | 'restart'
 
+export type CommandGroup =
+  'Workspace' | 'Cell' | 'Pane' | 'Pane Size' | 'Launch' | 'Go to' | 'View' | 'Terminal' | 'App'
+
 export type Command = {
   id: CommandId
   title: string
+  group: CommandGroup
   menu: 'app' | 'file' | 'view'
   palette?: false
 }
 
+/** 배열 순서가 팔레트와 메뉴의 순서다. 같은 묶음의 명령은 붙여 둔다. 팔레트와 메뉴가 묶음이 바뀌는 곳에 제목·구분선을 둔다. */
 export const commands: readonly Command[] = [
-  { id: 'new-workspace', title: 'New Workspace', menu: 'file' },
-  { id: 'new-cell', title: 'New Cell', menu: 'file' },
-  { id: 'launcher', title: 'Open Launcher', menu: 'file' },
-  { id: 'split-right', title: 'Split Right', menu: 'file' },
-  { id: 'split-down', title: 'Split Down', menu: 'file' },
-  { id: 'launch-cell', title: 'Launch in New Cell…', menu: 'file' },
-  { id: 'launch-workspace', title: 'Launch in New Workspace…', menu: 'file' },
-  { id: 'launch-split-right', title: 'Launch Split Right…', menu: 'file' },
-  { id: 'launch-split-down', title: 'Launch Split Down…', menu: 'file' },
-  { id: 'close-pane', title: 'Close Pane', menu: 'file' },
-  { id: 'close-workspace', title: 'Close Workspace', menu: 'file' },
-  { id: 'rename-workspace', title: 'Rename Workspace…', menu: 'file' },
-  { id: 'toggle-keep-workspace', title: 'Keep Workspace', menu: 'file' },
-  { id: 'toggle-favorite-cell', title: 'Toggle Favorite', menu: 'file' },
-  { id: 'command-palette', title: 'Command Palette…', menu: 'view', palette: false },
-  { id: 'go-to-pane', title: 'Go to Pane or Favorite…', menu: 'view' },
-  { id: 'next-cell', title: 'Next Cell', menu: 'view' },
-  { id: 'previous-cell', title: 'Previous Cell', menu: 'view' },
-  { id: 'next-pane', title: 'Next Pane', menu: 'view' },
-  { id: 'previous-pane', title: 'Previous Pane', menu: 'view' },
-  { id: 'toggle-sidebar', title: 'Toggle Sidebar', menu: 'view' },
-  { id: 'toggle-canvas', title: 'Toggle Canvas', menu: 'view' },
-  { id: 'toggle-view-mode', title: 'Toggle View Mode', menu: 'view' },
-  { id: 'focus-pane-left', title: 'Focus Pane Left', menu: 'view' },
-  { id: 'focus-pane-right', title: 'Focus Pane Right', menu: 'view' },
-  { id: 'focus-pane-up', title: 'Focus Pane Up', menu: 'view' },
-  { id: 'focus-pane-down', title: 'Focus Pane Down', menu: 'view' },
-  { id: 'resize-pane-left', title: 'Resize Pane Left', menu: 'view' },
-  { id: 'resize-pane-right', title: 'Resize Pane Right', menu: 'view' },
-  { id: 'resize-pane-up', title: 'Resize Pane Up', menu: 'view' },
-  { id: 'resize-pane-down', title: 'Resize Pane Down', menu: 'view' },
-  { id: 'equalize-panes', title: 'Equalize Panes', menu: 'view' },
-  { id: 'increase-font-size', title: 'Increase Font Size', menu: 'view' },
-  { id: 'decrease-font-size', title: 'Decrease Font Size', menu: 'view' },
-  { id: 'reset-font-size', title: 'Reset Font Size', menu: 'view' },
-  { id: 'widen-cell', title: 'Widen Cell', menu: 'view' },
-  { id: 'narrow-cell', title: 'Narrow Cell', menu: 'view' },
-  { id: 'reset-cell-width', title: 'Reset Cell Width', menu: 'view' },
-  { id: 'clear-scrollback', title: 'Clear Scrollback', menu: 'view' },
-  { id: 'restart', title: 'Restart', menu: 'app' }
+  { id: 'new-workspace', title: 'New Workspace', group: 'Workspace', menu: 'file' },
+  { id: 'rename-workspace', title: 'Rename Workspace…', group: 'Workspace', menu: 'file' },
+  { id: 'toggle-keep-workspace', title: 'Keep Workspace', group: 'Workspace', menu: 'file' },
+  { id: 'toggle-favorite-cell', title: 'Toggle Favorite', group: 'Workspace', menu: 'file' },
+  { id: 'close-workspace', title: 'Close Workspace', group: 'Workspace', menu: 'file' },
+  { id: 'new-cell', title: 'New Cell', group: 'Cell', menu: 'file' },
+  { id: 'next-cell', title: 'Next Cell', group: 'Cell', menu: 'view' },
+  { id: 'previous-cell', title: 'Previous Cell', group: 'Cell', menu: 'view' },
+  { id: 'widen-cell', title: 'Widen Cell', group: 'Cell', menu: 'view' },
+  { id: 'narrow-cell', title: 'Narrow Cell', group: 'Cell', menu: 'view' },
+  { id: 'reset-cell-width', title: 'Reset Cell Width', group: 'Cell', menu: 'view' },
+  { id: 'split-right', title: 'Split Right', group: 'Pane', menu: 'file' },
+  { id: 'split-down', title: 'Split Down', group: 'Pane', menu: 'file' },
+  { id: 'next-pane', title: 'Next Pane', group: 'Pane', menu: 'view' },
+  { id: 'previous-pane', title: 'Previous Pane', group: 'Pane', menu: 'view' },
+  { id: 'focus-pane-left', title: 'Focus Pane Left', group: 'Pane', menu: 'view' },
+  { id: 'focus-pane-right', title: 'Focus Pane Right', group: 'Pane', menu: 'view' },
+  { id: 'focus-pane-up', title: 'Focus Pane Up', group: 'Pane', menu: 'view' },
+  { id: 'focus-pane-down', title: 'Focus Pane Down', group: 'Pane', menu: 'view' },
+  { id: 'close-pane', title: 'Close Pane', group: 'Pane', menu: 'file' },
+  { id: 'resize-pane-left', title: 'Resize Pane Left', group: 'Pane Size', menu: 'view' },
+  { id: 'resize-pane-right', title: 'Resize Pane Right', group: 'Pane Size', menu: 'view' },
+  { id: 'resize-pane-up', title: 'Resize Pane Up', group: 'Pane Size', menu: 'view' },
+  { id: 'resize-pane-down', title: 'Resize Pane Down', group: 'Pane Size', menu: 'view' },
+  { id: 'equalize-panes', title: 'Equalize Panes', group: 'Pane Size', menu: 'view' },
+  { id: 'launcher', title: 'Open Launcher', group: 'Launch', menu: 'file' },
+  { id: 'launch-workspace', title: 'Launch in New Workspace…', group: 'Launch', menu: 'file' },
+  { id: 'launch-cell', title: 'Launch in New Cell…', group: 'Launch', menu: 'file' },
+  { id: 'launch-split-right', title: 'Launch Split Right…', group: 'Launch', menu: 'file' },
+  { id: 'launch-split-down', title: 'Launch Split Down…', group: 'Launch', menu: 'file' },
+  {
+    id: 'command-palette',
+    title: 'Command Palette…',
+    group: 'Go to',
+    menu: 'view',
+    palette: false
+  },
+  { id: 'go-to-pane', title: 'Go to Pane or Favorite…', group: 'Go to', menu: 'view' },
+  { id: 'toggle-sidebar', title: 'Toggle Sidebar', group: 'View', menu: 'view' },
+  { id: 'toggle-canvas', title: 'Toggle Canvas', group: 'View', menu: 'view' },
+  { id: 'toggle-view-mode', title: 'Toggle View Mode', group: 'View', menu: 'view' },
+  { id: 'increase-font-size', title: 'Increase Font Size', group: 'Terminal', menu: 'view' },
+  { id: 'decrease-font-size', title: 'Decrease Font Size', group: 'Terminal', menu: 'view' },
+  { id: 'reset-font-size', title: 'Reset Font Size', group: 'Terminal', menu: 'view' },
+  { id: 'clear-scrollback', title: 'Clear Scrollback', group: 'Terminal', menu: 'view' },
+  { id: 'restart', title: 'Restart', group: 'App', menu: 'app' }
 ]
 
 export function available(c: Command, { canRestart }: { canRestart: boolean }): boolean {
@@ -108,4 +119,35 @@ export function foldCase(s: string): string {
 
 export function filterCommands(query: string): Command[] {
   return commands.filter((c) => c.palette !== false && matchesWords(c.title, query))
+}
+
+export type PaletteItem<C extends Command = Command> =
+  | { kind: 'head'; key: string; title: CommandGroup }
+  | { kind: 'command'; key: string; i: number; command: C }
+
+/** 팔레트가 그릴 줄이다. `i` 는 고를 수 있는 줄의 번호다. 묶음 제목 줄은 그 묶음에 명령이 남았을 때만 둔다. */
+export function paletteItems<C extends Command>(list: readonly C[]): PaletteItem<C>[] {
+  const items: PaletteItem<C>[] = []
+  list.forEach((command, i) => {
+    if (command.group !== list[i - 1]?.group)
+      items.push({ kind: 'head', key: `head:${command.group}`, title: command.group })
+    items.push({ kind: 'command', key: command.id, i, command })
+  })
+  return items
+}
+
+/** 메뉴 하나에 넣을 명령을 묶음마다 나눈다. 메뉴는 묶음 사이에 구분선을 둔다. */
+export function menuSections(
+  menu: Command['menu'],
+  can: Parameters<typeof available>[1]
+): Command[][] {
+  const sections: Command[][] = []
+  let last: CommandGroup | undefined
+  for (const c of commands) {
+    if (c.menu !== menu || !available(c, can)) continue
+    if (c.group !== last) sections.push([])
+    sections[sections.length - 1].push(c)
+    last = c.group
+  }
+  return sections
 }

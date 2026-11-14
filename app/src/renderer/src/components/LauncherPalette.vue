@@ -273,10 +273,9 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.isComposing) return
   const row = chosen.value ? undefined : rows.value[index.value]
   const n = count.value
-  const moved = arrowIndex(e.key, index.value, n, side.value)
-  // 아무것도 고르지 않았을 때는 화면에서 입력줄 쪽 끝이 출발점이라, 다음 후보 쪽 화살표는 첫 후보로 간다.
-  if (moved !== undefined && index.value < 0)
-    index.value = (e.key === 'ArrowDown') === (side.value === 'top') ? 0 : n - 1
+  const moved = arrowIndex(e.key, index.value, n)
+  // 아무것도 고르지 않았을 때는 ↓ 가 첫 후보, ↑ 가 마지막 후보로 간다.
+  if (moved !== undefined && index.value < 0) index.value = e.key === 'ArrowDown' ? 0 : n - 1
   else if (moved !== undefined) index.value = moved
   else if (e.key === 'Enter') void enter(e.metaKey)
   // ⌘⌫ 는 입력창에서 커서 앞을 줄 처음까지 지우는 키라, 최근 목록의 행 지우기는 ⇧⌘⌫ 에 둔다.
@@ -401,7 +400,7 @@ function onKeydown(e: KeyboardEvent): void {
   font-weight: 600;
 }
 
-/* 아래 팔레트는 column-reverse 라 DOM 순서대로 헤더가 목록 위에 놓인다. 위 팔레트는 입력줄과 목록 사이로 옮긴다. */
+/* 아래 팔레트는 입력줄을 아래에 두려고 column-reverse 로 그리므로 DOM 순서대로 헤더가 목록 위에 놓인다. 위 팔레트는 입력줄과 목록 사이로 옮긴다. */
 .top .section {
   order: 1;
   padding: 0 var(--space-5) var(--space-3);

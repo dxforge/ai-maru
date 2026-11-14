@@ -39,7 +39,7 @@ function pick(i: number): void {
 
 function onKeydown(e: KeyboardEvent): void {
   if (e.isComposing) return
-  const moved = arrowIndex(e.key, index.value, count.value, position)
+  const moved = arrowIndex(e.key, index.value, count.value)
   if (moved !== undefined) index.value = moved
   else if (e.key === 'Enter') pick(index.value)
   // Tab 을 브라우저에 맡기면 포커스가 사이드바의 버튼으로 옮겨 가, 닫으며 돌려준 터미널의 포커스를 빼앗는다.
@@ -48,7 +48,7 @@ function onKeydown(e: KeyboardEvent): void {
   e.preventDefault()
 }
 
-const items = computed(() => switcherItems(matches.value, position === 'bottom'))
+const items = computed(() => switcherItems(matches.value))
 </script>
 
 <template>
@@ -163,10 +163,5 @@ const items = computed(() => switcherItems(matches.value, position === 'bottom')
 .current-label {
   margin-right: var(--space-4);
   color: var(--accent);
-}
-
-.head {
-  padding: var(--space-3) var(--space-5) var(--space-2);
-  color: var(--muted);
 }
 </style>

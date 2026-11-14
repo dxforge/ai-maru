@@ -449,7 +449,7 @@ test('명령 단계는 명령 뒤에 shell 을 붙여 보이고, 마지막으로
   await toCommands(page, dir)
   await expect(labels(page)).toHaveText([a, b, 'shell'])
   await expect(selected(page)).toHaveText(a)
-  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('ArrowDown')
   await expect(selected(page)).toHaveText(b)
   await page.keyboard.press('Enter')
   await activeTerminal(page)
@@ -618,7 +618,7 @@ test('layout.palette = "top" 이면 런처도 창 위에 뜬다', async ({ launc
   expect(box.y).toBeLessThan(height / 2)
 })
 
-test('런처가 아래일 때 ArrowUp 으로 다음 행을 고르고, 한글을 조합하는 중의 Enter 는 띄우지 않는다', async ({
+test('런처가 아래일 때도 행은 위에서 아래로 놓이고 ArrowDown 으로 다음 행을 고르며, 한글을 조합하는 중의 Enter 는 띄우지 않는다', async ({
   launch,
   dataDir
 }) => {
@@ -631,7 +631,13 @@ test('런처가 아래일 때 ArrowUp 으로 다음 행을 고르고, 한글을 
   await openLauncher(launched)
   await expect(labels(page)).toHaveText([first, second])
   await expect(items(page).nth(0)).toHaveClass(/selected/)
-  await page.keyboard.press('ArrowUp')
+  const [y0, y1] = await items(page).evaluateAll((els) =>
+    els.map((el) => el.getBoundingClientRect().y)
+  )
+  expect(y0).toBeLessThan(y1)
+  const sectionY = (await section(page).boundingBox())!.y
+  expect(sectionY).toBeLessThan(y0)
+  await page.keyboard.press('ArrowDown')
   await expect(items(page).nth(1)).toHaveClass(/selected/)
 
   await query(page).dispatchEvent('keydown', { key: 'Enter', isComposing: true })

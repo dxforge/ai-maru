@@ -267,9 +267,8 @@ body,
   list-style: none;
 }
 
-.bottom .palette,
-.bottom .palette .list {
-  display: flex;
+/* 입력줄만 아래로 보낸다. 목록은 위 팔레트와 같이 위에서 아래로 놓인다. */
+.bottom .palette {
   flex-direction: column-reverse;
 }
 
@@ -299,6 +298,11 @@ body,
 }
 
 .palette .empty {
+  color: var(--muted);
+}
+
+.palette .head {
+  padding: var(--space-3) var(--space-5) var(--space-2);
   color: var(--muted);
 }
 

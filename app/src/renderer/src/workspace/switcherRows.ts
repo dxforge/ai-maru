@@ -73,16 +73,14 @@ export type SwitcherItem =
   | { kind: 'dir'; key: string; i: number; row: SwitcherDir }
 
 /**
- * 전환기가 그릴 줄을 DOM 순서로 둔다. `i` 는 고를 수 있는 줄의 번호로, pane 줄 다음에 디렉토리 줄이 이어진다. 묶음 이름
- * 줄은 그 묶음에 줄이 있을 때만 둔다. 아래 팔레트는 목록을 column-reverse 로 그리므로, `headLast` 면 묶음 이름 줄을 DOM
- * 에서 묶음 뒤에 두어 화면에서 묶음 위에 오게 한다.
+ * 전환기가 그릴 줄을 위에서부터 둔다. `i` 는 고를 수 있는 줄의 번호로, pane 줄 다음에 디렉토리 줄이 이어진다. 묶음 이름
+ * 줄은 그 묶음에 줄이 있을 때만 둔다.
  */
-export function switcherItems({ panes, dirs }: SwitcherRows, headLast: boolean): SwitcherItem[] {
+export function switcherItems({ panes, dirs }: SwitcherRows): SwitcherItem[] {
   const list: SwitcherItem[] = []
   const group = (title: string, rows: SwitcherItem[]): void => {
     if (!rows.length) return
-    const head: SwitcherItem = { kind: 'head', key: `head:${title}`, title }
-    list.push(...(headLast ? [...rows, head] : [head, ...rows]))
+    list.push({ kind: 'head', key: `head:${title}`, title }, ...rows)
   }
   group(
     'Panes',
