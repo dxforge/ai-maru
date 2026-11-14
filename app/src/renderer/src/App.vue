@@ -103,15 +103,7 @@ const barPanels = computed((): Panel[] => [
 ])
 
 const ptyStates = createPtyStates()
-const workspaces = createWorkspaces(
-  window.maru.gitHead,
-  ptyStates,
-  undefined,
-  undefined,
-  undefined,
-  undefined,
-  window.maru.home
-)
+const workspaces = createWorkspaces(window.maru.gitHead, ptyStates, { home: window.maru.home })
 syncPtyStates((pty, entry) => {
   ptyStates.apply(pty, entry)
   workspaces.applyState(pty)
@@ -518,11 +510,11 @@ async function openDir(workspace: number, dir: string, anchor?: Anchor): Promise
   return true
 }
 
-const SIDEBAR_WIDTH = 280
-const sidebarWidth = ref(prefs.sidebar?.width ?? SIDEBAR_WIDTH)
+const DEFAULT_SIDEBAR_WIDTH = 280
+const sidebarWidth = ref(prefs.sidebar?.width ?? DEFAULT_SIDEBAR_WIDTH)
 // 토스트는 사이드바 안쪽 양옆 12px 을 비운다.
 const toastWidth = computed(
-  () => Math.max(sidebarOpen.value ? sidebarWidth.value : 0, SIDEBAR_WIDTH) - 24
+  () => Math.max(sidebarOpen.value ? sidebarWidth.value : 0, DEFAULT_SIDEBAR_WIDTH) - 24
 )
 // 신호등 버튼 묶음 폭에 양옆 12px 씩을 더한 폭이다.
 const RAIL_WIDTH = 85

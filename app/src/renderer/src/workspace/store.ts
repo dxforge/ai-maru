@@ -129,11 +129,19 @@ export type PaneSource = {
 export function createWorkspaces(
   readGit: (cwd: string) => Promise<GitHead | null> = async () => null,
   source: PaneSource = { get: () => undefined, rootState: () => undefined, isOld: () => false },
-  ptyId: () => string = newPtyId,
-  cellId: () => string = () => randomId('c'),
-  workspaceId: () => string = () => randomId('w'),
-  paneId: () => string = () => randomId('n'),
-  home?: string
+  {
+    ptyId = newPtyId,
+    cellId = () => randomId('c'),
+    workspaceId = () => randomId('w'),
+    paneId = () => randomId('n'),
+    home
+  }: {
+    ptyId?: () => string
+    cellId?: () => string
+    workspaceId?: () => string
+    paneId?: () => string
+    home?: string
+  } = {}
 ) {
   const list = ref<Workspace[]>([])
   const selectedKey = ref<number | null>(null)

@@ -276,7 +276,7 @@ describe('snapshot·restore', () => {
 describe('workspaces', () => {
   it('pane 을 만들 때마다 그 pty 의 id 를 새로 정한다', () => {
     let n = 0
-    const ws = createWorkspaces(undefined, undefined, () => `p-${++n}`)
+    const ws = createWorkspaces(undefined, undefined, { ptyId: () => `p-${++n}` })
     ws.open()
     ws.split('right')
     ws.splitFrom(selected(ws).panes[0].key, 'down', {})
@@ -299,13 +299,10 @@ describe('workspaces', () => {
   it('cell·workspace 를 열 때마다 id 를 새로 정하고, 나눈 pane 은 cell 의 id 를 바꾸지 않는다', () => {
     let c = 0
     let w = 0
-    const ws = createWorkspaces(
-      undefined,
-      undefined,
-      undefined,
-      () => `c-${++c}`,
-      () => `w-${++w}`
-    )
+    const ws = createWorkspaces(undefined, undefined, {
+      cellId: () => `c-${++c}`,
+      workspaceId: () => `w-${++w}`
+    })
     ws.open()
     ws.split('right')
     ws.openCell()
@@ -1582,15 +1579,7 @@ describe('workspace keep', () => {
   })
 
   it('셸이 디렉토리를 알리기 전에 켠 keep 은 이름도 처음 알린 디렉토리로 굳힌다', () => {
-    const ws = createWorkspaces(
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      '/h'
-    )
+    const ws = createWorkspaces(undefined, undefined, { home: '/h' })
     ws.open()
     const p = selected(ws).panes[0]
     ws.toggleKeep(wsKeys(ws)[0])
@@ -1878,7 +1867,7 @@ describe('workspace dir', () => {
     const saved = from.snapshot()
     saved.workspaces[0].dir = '/h'
     const src = source()
-    const to = createWorkspaces(undefined, src, undefined, undefined, undefined, undefined, '/h')
+    const to = createWorkspaces(undefined, src, { home: '/h' })
     to.restore(...full(saved))
     expect(to.list.value[0].dir).toBe('/h')
     src.set(to, selected(to).panes[0].ptyId, { cwd: '/h/proj', cwdReports: 1 })
@@ -1887,7 +1876,7 @@ describe('workspace dir', () => {
 
   it('cell 을 다 닫은 keep 을 켠 workspace 는 다시 열어 다른 디렉토리로 가도 dir 이 그대로다', () => {
     const src = source()
-    const ws = createWorkspaces(undefined, src, undefined, undefined, undefined, undefined, '/h')
+    const ws = createWorkspaces(undefined, src, { home: '/h' })
     ws.open()
     const p = selected(ws).panes[0]
     ws.setSpawnedDir(p.key, '/h')
