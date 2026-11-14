@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
 import type { Position } from '../config/layout'
-import { filterSwitcher, switcherItems, type SwitcherRows } from '../workspace/switcherRows'
+import {
+  filterSwitcher,
+  startIndex,
+  switcherItems,
+  type SwitcherRows
+} from '../workspace/switcherRows'
 import LeadIcon from './LeadIcon.vue'
 import PaneIcon from './PaneIcon.vue'
 import PanePlace from './PanePlace.vue'
@@ -16,10 +21,10 @@ const emit = defineEmits<{
 
 const input = useTemplateRef<HTMLInputElement>('input')
 const query = ref('')
-const index = ref(0)
 const matches = computed(() => filterSwitcher(rows, query.value))
+const index = ref(startIndex(matches.value, query.value))
 const count = computed(() => matches.value.panes.length + matches.value.dirs.length)
-watch(query, () => (index.value = 0))
+watch(query, (q) => (index.value = startIndex(matches.value, q)))
 // 떠 있는 동안 pane 이 닫혀 줄이 줄면 선택이 목록 밖에 남으므로 마지막 줄로 당긴다.
 watch(count, (n) => (index.value = Math.min(index.value, Math.max(n - 1, 0))))
 revealSelected(useTemplateRef<HTMLUListElement>('list'), index)

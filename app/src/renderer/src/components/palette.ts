@@ -22,9 +22,13 @@ export function revealSelected(
   list: Readonly<ShallowRef<HTMLElement | null>>,
   index: Readonly<Ref<number>>
 ): void {
-  watch(index, () =>
-    nextTick(() => list.value?.querySelector('.selected')?.scrollIntoView({ block: 'nearest' }))
-  )
+  const reveal = (): void =>
+    void nextTick(() =>
+      list.value?.querySelector('.selected')?.scrollIntoView({ block: 'nearest' })
+    )
+  // 처음 고른 줄이 첫 줄이 아닐 수 있으므로 띄울 때도 보이게 한다.
+  onMounted(reveal)
+  watch(index, reveal)
 }
 
 /**

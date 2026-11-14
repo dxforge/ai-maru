@@ -37,7 +37,7 @@ async function twoWorkspaces(
   return { ...launched, home }
 }
 
-test('⌘P 전환기는 모든 workspace 의 pane 을 지금 pane 을 표시해 묶음 제목 아래에 위에서 아래로 보이고, 접은 workspace 의 pane 을 Enter 로 고르면 그 workspace 를 펴고 그 터미널로 키가 간다', async ({
+test('⌘P 전환기는 모든 workspace 의 pane 을 지금 pane 을 표시해 묶음 제목 아래에 위에서 아래로 보이며 지금 pane 줄을 먼저 고르고, 검색어를 치면 첫 결과를 고르며, 접은 workspace 의 pane 을 Enter 로 고르면 그 workspace 를 펴고 그 터미널로 키가 간다', async ({
   launch,
   dataDir
 }) => {
@@ -51,7 +51,7 @@ test('⌘P 전환기는 모든 workspace 의 pane 을 지금 pane 을 표시해 
   await expect(paneItems(page).locator('.place')).toHaveText(['alpha', 'beta'])
   await expect(paneItems(page).nth(1)).toHaveAttribute('aria-current', 'true')
   await expect(paneItems(page).nth(0)).not.toHaveAttribute('aria-current')
-  await expect(paneItems(page).nth(0)).toHaveClass(/selected/)
+  await expect(paneItems(page).nth(1)).toHaveClass(/selected/)
   await expect(dirItems(page).locator('.title')).toHaveText(['alpha', 'beta'])
   const rows = await switcher(page)
     .locator('.list > li')
@@ -68,6 +68,7 @@ test('⌘P 전환기는 모든 workspace 의 pane 을 지금 pane 을 표시해 
 
   await page.keyboard.type('alpha')
   await expect(paneItems(page)).toHaveCount(1)
+  await expect(paneItems(page).nth(0)).toHaveClass(/selected/)
   await page.keyboard.press('Enter')
   await expect(switcher(page)).toHaveCount(0)
   await expect(workspaceHeads(page).nth(0)).toHaveAttribute('aria-label', 'Collapse alpha')

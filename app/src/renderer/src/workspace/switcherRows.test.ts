@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { RowSource } from './sidebarRows'
 import type { Cell, Pane, Workspace } from './store'
-import { filterSwitcher, switcherItems, switcherRows } from './switcherRows'
+import { filterSwitcher, startIndex, switcherItems, switcherRows } from './switcherRows'
 
 const src: RowSource = {
   shown: () => undefined,
@@ -198,5 +198,30 @@ describe('filterSwitcher', () => {
     const r = switcherRows([workspace(5, [cell(50, [pane(500, nfd)])])], src, null)
     expect(filterSwitcher(r, '문서').panes.map((p) => p.pane)).toEqual([500])
     expect(filterSwitcher(r, '문서').dirs.map((d) => d.dir)).toEqual([nfd])
+  })
+})
+
+describe('startIndex', () => {
+  const ws = [
+    workspace(1, [
+      cell(10, [pane(100, '/h/app')]),
+      cell(11, [pane(110, '/h/notes'), pane(111, '/h/web')], 111)
+    ])
+  ]
+
+  it('검색어가 없으면 현재 pane 줄을 고른다', () => {
+    const rows = switcherRows(ws, src, 11)
+    expect(rows.panes[startIndex(rows, '')].pane).toBe(111)
+    expect(startIndex(rows, '  ')).toBe(startIndex(rows, ''))
+  })
+
+  it('검색어가 있으면 첫 줄을 고른다', () => {
+    const rows = switcherRows(ws, src, 11)
+    expect(startIndex(filterSwitcher(rows, 'h'), 'h')).toBe(0)
+  })
+
+  it('현재 pane 줄이 없으면 첫 줄을 고른다', () => {
+    expect(startIndex(switcherRows(ws, src, null), '')).toBe(0)
+    expect(startIndex({ panes: [], dirs: [] }, '')).toBe(0)
   })
 })

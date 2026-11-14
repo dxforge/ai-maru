@@ -99,6 +99,18 @@ export function switcherItems({ panes, dirs }: SwitcherRows): SwitcherItem[] {
   return list
 }
 
+/**
+ * 처음 고를 줄의 번호. 검색어가 없으면 현재 pane 줄에서 시작해, 사이드바 순서로 놓인 옆 pane 에 ↑·↓ 한두 번으로 간다.
+ * 검색어가 있거나 현재 pane 줄이 없으면 첫 줄이다.
+ */
+export function startIndex({ panes }: SwitcherRows, query: string): number {
+  if (query.trim()) return 0
+  return Math.max(
+    panes.findIndex((r) => r.focused),
+    0
+  )
+}
+
 export function filterSwitcher({ panes, dirs }: SwitcherRows, query: string): SwitcherRows {
   return {
     panes: panes.filter((r) => matchesWords(r.search, query)),
