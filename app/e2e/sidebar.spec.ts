@@ -2067,7 +2067,7 @@ test('사이드바를 접으면 cell 이 없는 workspace 의 디렉토리 줄�
   launch,
   dataDir
 }) => {
-  // 런처를 창 위에 띄우는 설정이어야 뒤집힌 런처의 화살표 방향이 설정과 갈린다.
+  // 런처를 창 위에 띄우는 설정이어야 위로 뒤집힌 런처가 설정과 다른 쪽에 입력창을 둔다.
   writeConfig(dataDir, '[layout]\npalette = "top"\n')
   const home = zshHome(dataDir, 'sub')
   const launched = await launch({ SHELL: '/bin/zsh', HOME: home })
@@ -2117,11 +2117,13 @@ test('사이드바를 접으면 cell 이 없는 workspace 의 디렉토리 줄�
   expect(flipped.width).toBeCloseTo(scrolled.width, 0)
   expect(flipped.y + flipped.height).toBeLessThanOrEqual(scrolled.y)
   expect(flipped.y + flipped.height).toBeGreaterThan(scrolled.y - 4)
-  // 뒤집힌 런처는 입력창이 줄 쪽인 아래에 오고, 화살표도 설정한 위가 아니라 이 방향을 따라 위쪽이 다음 후보다.
+  // 뒤집힌 런처는 입력창이 줄 쪽인 아래에 오지만, 목록은 위에서 아래로 놓이고 ↓ 가 다음 후보다.
   const input = await box(launcher(page).locator('.query'))
   expect(input.y).toBeGreaterThan((await box(launcher(page).locator('.list'))).y)
+  const paths = launcher(page).locator('.item .path')
+  expect((await box(paths.nth(0))).y).toBeLessThan((await box(paths.nth(1))).y)
   await expect(launcher(page).locator('.item.selected .path')).toHaveText('claude')
-  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('ArrowDown')
   await expect(launcher(page).locator('.item.selected .path')).toHaveText('codex')
 })
 

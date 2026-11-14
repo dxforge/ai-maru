@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
-import { available, commands, type CommandId } from '../shared/commands'
+import { available, menuSections, type CommandId } from '../shared/commands'
 import { commandKeys, menuKeys, toAccelerator, type MenuRole } from '../shared/shortcuts'
 
 const separator: MenuItemConstructorOptions = { type: 'separator' }
@@ -23,9 +23,9 @@ export function installCommandMenu(
   can: Parameters<typeof available>[1]
 ): void {
   const commandItems = (menu: 'app' | 'file' | 'view'): MenuItemConstructorOptions[] =>
-    commands
-      .filter((c) => c.menu === menu && available(c, can))
-      .map((c) => {
+    menuSections(menu, can).flatMap((section, i) => [
+      ...(i ? [separator] : []),
+      ...section.map((c): MenuItemConstructorOptions => {
         const keys = commandKeys(c.id)
         return {
           id: c.id,
@@ -34,6 +34,7 @@ export function installCommandMenu(
           click: () => run(c.id)
         }
       })
+    ])
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {

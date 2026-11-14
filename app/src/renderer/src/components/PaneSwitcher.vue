@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
 import type { Position } from '../config/layout'
-import { filterSwitcher, switcherItems, type SwitcherRows } from '../workspace/switcherRows'
+import {
+  filterSwitcher,
+  startIndex,
+  switcherItems,
+  type SwitcherRows
+} from '../workspace/switcherRows'
 import LeadIcon from './LeadIcon.vue'
 import PaneIcon from './PaneIcon.vue'
 import PanePlace from './PanePlace.vue'
@@ -16,10 +21,10 @@ const emit = defineEmits<{
 
 const input = useTemplateRef<HTMLInputElement>('input')
 const query = ref('')
-const index = ref(0)
 const matches = computed(() => filterSwitcher(rows, query.value))
+const index = ref(startIndex(matches.value, query.value))
 const count = computed(() => matches.value.panes.length + matches.value.dirs.length)
-watch(query, () => (index.value = 0))
+watch(query, (q) => (index.value = startIndex(matches.value, q)))
 // 떠 있는 동안 pane 이 닫혀 줄이 줄면 선택이 목록 밖에 남으므로 마지막 줄로 당긴다.
 watch(count, (n) => (index.value = Math.min(index.value, Math.max(n - 1, 0))))
 revealSelected(useTemplateRef<HTMLUListElement>('list'), index)
@@ -39,7 +44,7 @@ function pick(i: number): void {
 
 function onKeydown(e: KeyboardEvent): void {
   if (e.isComposing) return
-  const moved = arrowIndex(e.key, index.value, count.value, position)
+  const moved = arrowIndex(e.key, index.value, count.value)
   if (moved !== undefined) index.value = moved
   else if (e.key === 'Enter') pick(index.value)
   // Tab 을 브라우저에 맡기면 포커스가 사이드바의 버튼으로 옮겨 가, 닫으며 돌려준 터미널의 포커스를 빼앗는다.
@@ -48,7 +53,7 @@ function onKeydown(e: KeyboardEvent): void {
   e.preventDefault()
 }
 
-const items = computed(() => switcherItems(matches.value, position === 'bottom'))
+const items = computed(() => switcherItems(matches.value))
 </script>
 
 <template>
@@ -163,10 +168,5 @@ const items = computed(() => switcherItems(matches.value, position === 'bottom')
 .current-label {
   margin-right: var(--space-4);
   color: var(--accent);
-}
-
-.head {
-  padding: var(--space-3) var(--space-5) var(--space-2);
-  color: var(--muted);
 }
 </style>

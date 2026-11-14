@@ -267,9 +267,7 @@ body,
   list-style: none;
 }
 
-.bottom .palette,
-.bottom .palette .list {
-  display: flex;
+.bottom .palette {
   flex-direction: column-reverse;
 }
 
@@ -299,6 +297,11 @@ body,
 }
 
 .palette .empty {
+  color: var(--muted);
+}
+
+.palette .head {
+  padding: var(--space-3) var(--space-5) var(--space-2);
   color: var(--muted);
 }
 

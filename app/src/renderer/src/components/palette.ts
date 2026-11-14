@@ -1,5 +1,4 @@
 import { nextTick, onMounted, onUnmounted, watch, type Ref, type ShallowRef } from 'vue'
-import type { Position } from '../config/layout'
 
 /**
  * 키는 입력창만 받으므로 포커스가 입력창을 떠나면 닫는다. 창이 포커스를 잃을 때도 입력창에 blur 가 오는데, 그때는 닫지
@@ -23,22 +22,24 @@ export function revealSelected(
   list: Readonly<ShallowRef<HTMLElement | null>>,
   index: Readonly<Ref<number>>
 ): void {
-  watch(index, () =>
-    nextTick(() => list.value?.querySelector('.selected')?.scrollIntoView({ block: 'nearest' }))
-  )
+  const reveal = (): void =>
+    void nextTick(() => {
+      const selected = list.value?.querySelector('.selected')
+      // ↓ 로 마지막 줄에서 첫 줄로 돌아왔을 때도 처음 띄운 화면처럼 묶음 제목이 보여야 하므로, 묶음의 첫 줄을 고르면 제목까지 스크롤한다.
+      const head = selected?.previousElementSibling
+      if (head?.classList.contains('head')) head.scrollIntoView({ block: 'nearest' })
+      selected?.scrollIntoView({ block: 'nearest' })
+    })
+  // 처음 고른 줄이 첫 줄이 아닐 수 있으므로 띄울 때도 보이게 한다.
+  onMounted(reveal)
+  watch(index, reveal)
 }
 
 /**
- * ↑·↓ 로 옮긴 후보 번호. 화살표는 화면 방향대로 움직인다. 팔레트가 아래면 후보가 입력줄 위에 첫 후보부터 위로 놓이므로
- * ↓ 가 앞 후보다. 화살표가 아니거나 후보가 없으면 undefined 다.
+ * ↑·↓ 로 옮긴 후보 번호를 돌려준다. 팔레트가 위든 아래든 후보가 첫 후보부터 위에서 아래로 놓이므로 ↓ 가 다음 후보다.
  */
-export function arrowIndex(
-  key: string,
-  index: number,
-  n: number,
-  position: Position
-): number | undefined {
+export function arrowIndex(key: string, index: number, n: number): number | undefined {
   if (!n || (key !== 'ArrowDown' && key !== 'ArrowUp')) return undefined
-  const down = position === 'bottom' ? -1 : 1
-  return (index + (key === 'ArrowDown' ? down : -down) + n) % n
+  if (index < 0) return key === 'ArrowDown' ? 0 : n - 1
+  return (index + (key === 'ArrowDown' ? 1 : -1) + n) % n
 }

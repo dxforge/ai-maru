@@ -38,7 +38,7 @@ async function armKitty(page: Page, flags: number, read: string): Promise<void> 
   await expect(screen(page)).toShow(`armed-${flags}-2`)
 }
 
-test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W 는 Close Window 가 아니며, 새로 고침과 창 zoom 은 메뉴에 없다', async ({
+test('명령은 File·View 메뉴 맨 위에 단축키와 함께 팔레트의 묶음 순서로 있고 묶음 사이에 구분선이 있으며, ⌘W 는 Close Window 가 아니며, 새로 고침과 창 zoom 은 메뉴에 없다', async ({
   launch
 }) => {
   const { app } = await launch()
@@ -59,45 +59,53 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 있고, ⌘W �
   })
   expect(menus.file).toEqual([
     ['new-workspace', 'New Workspace', 'Command+N'],
-    ['new-cell', 'New Cell', 'Command+T'],
-    ['launcher', 'Open Launcher', 'Command+O'],
-    ['split-right', 'Split Right', 'Command+D'],
-    ['split-down', 'Split Down', 'Shift+Command+D'],
-    ['launch-cell', 'Launch in New Cell…', null],
-    ['launch-workspace', 'Launch in New Workspace…', null],
-    ['launch-split-right', 'Launch Split Right…', null],
-    ['launch-split-down', 'Launch Split Down…', null],
-    ['close-pane', 'Close Pane', 'Command+W'],
-    ['close-workspace', 'Close Workspace', 'Shift+Command+W'],
     ['rename-workspace', 'Rename Workspace…', 'Shift+Command+R'],
     ['toggle-keep-workspace', 'Keep Workspace', 'Alt+Command+P'],
-    ['toggle-favorite-cell', 'Toggle Favorite', 'Control+Command+T']
+    ['toggle-favorite-cell', 'Toggle Favorite', 'Control+Command+T'],
+    ['close-workspace', 'Close Workspace', 'Shift+Command+W'],
+    ['-', '', null],
+    ['new-cell', 'New Cell', 'Command+T'],
+    ['-', '', null],
+    ['split-right', 'Split Right', 'Command+D'],
+    ['split-down', 'Split Down', 'Shift+Command+D'],
+    ['close-pane', 'Close Pane', 'Command+W'],
+    ['-', '', null],
+    ['launcher', 'Open Launcher', 'Command+O'],
+    ['launch-workspace', 'Launch in New Workspace…', null],
+    ['launch-cell', 'Launch in New Cell…', null],
+    ['launch-split-right', 'Launch Split Right…', null],
+    ['launch-split-down', 'Launch Split Down…', null]
   ])
-  expect(menus.view.slice(0, 26)).toEqual([
-    ['command-palette', 'Command Palette…', 'Shift+Command+P'],
-    ['go-to-pane', 'Go to Pane or Favorite…', 'Command+P'],
+  expect(menus.view.slice(0, 31)).toEqual([
     ['next-cell', 'Next Cell', 'Shift+Command+]'],
     ['previous-cell', 'Previous Cell', 'Shift+Command+['],
+    ['widen-cell', 'Widen Cell', 'Shift+Command+.'],
+    ['narrow-cell', 'Narrow Cell', 'Shift+Command+,'],
+    ['reset-cell-width', 'Reset Cell Width', 'Shift+Command+/'],
+    ['-', '', null],
     ['next-pane', 'Next Pane', 'Command+]'],
     ['previous-pane', 'Previous Pane', 'Command+['],
-    ['toggle-sidebar', 'Toggle Sidebar', 'Command+B'],
-    ['toggle-canvas', 'Toggle Canvas', 'Alt+Command+B'],
-    ['toggle-view-mode', 'Toggle View Mode', 'Command+\\'],
     ['focus-pane-left', 'Focus Pane Left', 'Alt+Command+Left'],
     ['focus-pane-right', 'Focus Pane Right', 'Alt+Command+Right'],
     ['focus-pane-up', 'Focus Pane Up', 'Alt+Command+Up'],
     ['focus-pane-down', 'Focus Pane Down', 'Alt+Command+Down'],
+    ['-', '', null],
     ['resize-pane-left', 'Resize Pane Left', 'Control+Command+Left'],
     ['resize-pane-right', 'Resize Pane Right', 'Control+Command+Right'],
     ['resize-pane-up', 'Resize Pane Up', 'Control+Command+Up'],
     ['resize-pane-down', 'Resize Pane Down', 'Control+Command+Down'],
     ['equalize-panes', 'Equalize Panes', 'Control+Command+='],
+    ['-', '', null],
+    ['command-palette', 'Command Palette…', 'Shift+Command+P'],
+    ['go-to-pane', 'Go to Pane or Favorite…', 'Command+P'],
+    ['-', '', null],
+    ['toggle-sidebar', 'Toggle Sidebar', 'Command+B'],
+    ['toggle-canvas', 'Toggle Canvas', 'Alt+Command+B'],
+    ['toggle-view-mode', 'Toggle View Mode', 'Command+\\'],
+    ['-', '', null],
     ['increase-font-size', 'Increase Font Size', 'Command+Plus'],
     ['decrease-font-size', 'Decrease Font Size', 'Command+-'],
     ['reset-font-size', 'Reset Font Size', 'Command+0'],
-    ['widen-cell', 'Widen Cell', 'Shift+Command+.'],
-    ['narrow-cell', 'Narrow Cell', 'Shift+Command+,'],
-    ['reset-cell-width', 'Reset Cell Width', 'Shift+Command+/'],
     ['clear-scrollback', 'Clear Scrollback', 'Command+K'],
     ['-', '', null]
   ])
@@ -418,7 +426,7 @@ test('팔레트에서 Enter 로 New Workspace 를 실행하면 팔레트가 닫�
   await typesIntoTerminal(page, 'new')
 })
 
-test('팔레트가 아래일 때 ↑·↓ 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 뒤 키는 터미널로 간다', async ({
+test('팔레트가 아래일 때도 목록은 묶음 제목 아래에 위에서 아래로 놓이고, ↓·↑ 로 고른 Toggle Canvas 는 Canvas 를 열고 닫으며, 실행 뒤 키는 터미널로 간다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -434,8 +442,15 @@ test('팔레트가 아래일 때 ↑·↓ 로 고른 Toggle Canvas 는 Canvas �
     'Toggle Canvas⌥⌘B',
     'Toggle View Mode⌘\\'
   ])
+  const heads = palette(page).locator('.head')
+  await expect(heads).toHaveText(['Workspace', 'View'])
+  const ys = await palette(page)
+    .locator('.head, .item')
+    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().y))
+  expect(ys).toEqual([...ys].sort((a, b) => a - b))
+  expect(ys).toHaveLength(6)
   for (const i of [1, 2, 3, 0, 1, 2]) {
-    await page.keyboard.press('ArrowUp')
+    await page.keyboard.press('ArrowDown')
     await expect(items(page).nth(i)).toHaveClass(/selected/)
   }
   await page.keyboard.press('Enter')
@@ -446,7 +461,7 @@ test('팔레트가 아래일 때 ↑·↓ 로 고른 Toggle Canvas 는 Canvas �
   await openPalette(launched)
   await page.keyboard.type('toggle')
   for (const i of [3, 2]) {
-    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('ArrowUp')
     await expect(items(page).nth(i)).toHaveClass(/selected/)
   }
   await page.keyboard.press('Enter')
@@ -486,7 +501,7 @@ async function shrinkList(page: Page) {
   await expect(palette(page)).toContainText('No matching commands')
 }
 
-test('팔레트는 기본으로 창 아래쪽에 pane 헤더를 가리지 않게 뜨고, 입력줄이 맨 아래, 첫 후보와 빈 줄은 그 바로 위에 놓인다', async ({
+test('팔레트는 기본으로 창 아래쪽에 pane 헤더를 가리지 않게 뜨고, 입력줄이 맨 아래, 목록과 빈 줄은 그 위에 놓인다', async ({
   launch
 }) => {
   const launched = await launch()
@@ -528,11 +543,11 @@ test('layout.palette = "top" 이면 팔레트는 창 위쪽에 뜨고 입력줄�
   expect(fixedEdge(below, belowShrunk), JSON.stringify({ below, belowShrunk })).toBe('bottom')
 })
 
-for (const [position, label, toLast] of [
-  ['bottom', '아래', 'ArrowDown'],
-  ['top', '위', 'ArrowUp']
+for (const [position, label] of [
+  ['bottom', '아래'],
+  ['top', '위']
 ] as const) {
-  test(`팔레트가 ${label}일 때 창이 낮아도 팔레트는 창 안에 남고, 화살표로 고른 후보가 보이도록 목록이 스크롤된다`, async ({
+  test(`팔레트가 ${label}일 때 창이 낮아도 팔레트는 창 안에 남고, 처음에는 목록 맨 위가 보이며, 화살표로 고른 후보가 보이도록 목록이 스크롤되고, 묶음의 첫 후보를 고르면 그 묶음 제목도 보인다`, async ({
     launch,
     dataDir
   }) => {
@@ -545,17 +560,42 @@ for (const [position, label, toLast] of [
     const inside = await paletteLayout(page)
     expect(inside.top).toBeGreaterThanOrEqual(0)
     expect(inside.bottom).toBeGreaterThanOrEqual(0)
+    const list = (await palette(page).locator('.list').boundingBox())!
+    const shown = async (el: ReturnType<typeof items>) => {
+      const box = (await el.boundingBox())!
+      return box.y >= list.y && box.y + box.height <= list.y + list.height
+    }
+    const first = items(page).first()
+    await expect(first).toHaveClass(/selected/)
+    await expect.poll(() => shown(palette(page).locator('.head').first())).toBe(true)
+    expect(await shown(first)).toBe(true)
+    expect(
+      await palette(page)
+        .locator('.list')
+        .evaluate((el) => el.scrollTop)
+    ).toBe(0)
+    expect(await shown(items(page).last())).toBe(false)
 
-    await page.keyboard.press(toLast)
+    await page.keyboard.press('ArrowUp')
     const last = items(page).last()
     await expect(last).toHaveClass(/selected/)
-    const list = (await palette(page).locator('.list').boundingBox())!
-    await expect
-      .poll(async () => {
-        const box = (await last.boundingBox())!
-        return box.y >= list.y && box.y + box.height <= list.y + list.height
-      })
-      .toBe(true)
+    await expect.poll(() => shown(last)).toBe(true)
+    await page.keyboard.press('ArrowDown')
+    await expect(first).toHaveClass(/selected/)
+    await expect.poll(() => shown(first)).toBe(true)
+    await expect.poll(() => shown(palette(page).locator('.head').first())).toBe(true)
+
+    const pick = async (title: RegExp, key: string) => {
+      const item = items(page).filter({ hasText: title })
+      while (!(await item.evaluate((el) => el.classList.contains('selected'))))
+        await page.keyboard.press(key)
+      await expect.poll(() => shown(item)).toBe(true)
+    }
+    const cell = palette(page).locator('.head', { hasText: /^Cell$/ })
+    await pick(/^Close Pane/, 'ArrowDown')
+    expect(await shown(cell)).toBe(false)
+    await pick(/^New Cell/, 'ArrowUp')
+    await expect.poll(() => shown(cell)).toBe(true)
   })
 }
 
