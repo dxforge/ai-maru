@@ -81,6 +81,7 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'reset-font-size', key: '0', shift: true, meta: true },
   { target: 'command', action: 'widen-cell', key: '.', shift: true, meta: true },
   { target: 'command', action: 'narrow-cell', key: ',', shift: true, meta: true },
+  { target: 'command', action: 'reset-cell-width', key: '/', shift: true, meta: true },
   { target: 'command', action: 'clear-scrollback', key: 'K', meta: true },
   // `chords` 의 앞 키. 메뉴 항목에는 키를 하나만 걸 수 있어 창이 keydown 으로 받는다.
   { target: 'chord', key: 'J', meta: true },
@@ -175,6 +176,7 @@ const CODES: Record<string, string> = {
   '\\': 'Backslash',
   '.': 'Period',
   ',': 'Comma',
+  '/': 'Slash',
   Left: 'ArrowLeft',
   Right: 'ArrowRight',
   Up: 'ArrowUp',

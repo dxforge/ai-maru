@@ -34,6 +34,28 @@ test('columns 에서 Widen Cell 은 pane 을 80→100 열로 넓히고, Narrow C
   expect(await cellWidth(page)).toBe(start)
 })
 
+test('Reset Cell Width 는 넓힌 cell 을 column-cols 로 되돌리고 폭을 저장하지 않으며, single 에서는 아무것도 하지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  await clickMenu(app, 'widen-cell')
+  await clickMenu(app, 'widen-cell')
+  await expectCols(page, 120)
+
+  await toggleView(launched, 'single')
+  await clickMenu(app, 'reset-cell-width')
+  await toggleView(launched, 'columns')
+  await expectCols(page, 120)
+
+  await clickMenu(app, 'reset-cell-width')
+  await expectCols(page, 80)
+  await restartWith(app)
+  expect(readState(dataDir).cells.rows.map((c: object) => 'paneCols' in c)).toEqual([false])
+})
+
 test('layout.column-step 만큼 넓히고 좁히며, 고친 간격은 바로 쓴다', async ({
   launch,
   dataDir

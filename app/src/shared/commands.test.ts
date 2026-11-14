@@ -42,6 +42,7 @@ describe('filterCommands', () => {
       'Reset Font Size',
       'Widen Cell',
       'Narrow Cell',
+      'Reset Cell Width',
       'Clear Scrollback',
       'Restart'
     ]

@@ -61,11 +61,13 @@ describe('commandKeys', () => {
     expect(toAccelerator(commandKeys('new-cell')!)).toBe('Command+T')
   })
 
-  it('cell 폭은 ⇧⌘. 와 ⇧⌘, 다', () => {
+  it('cell 폭은 ⇧⌘. 와 ⇧⌘, 로 바꾸고 ⇧⌘/ 로 되돌린다', () => {
     expect(toAccelerator(commandKeys('widen-cell')!)).toBe('Shift+Command+.')
     expect(toAccelerator(commandKeys('narrow-cell')!)).toBe('Shift+Command+,')
+    expect(toAccelerator(commandKeys('reset-cell-width')!)).toBe('Shift+Command+/')
     expect(formatKeys(commandKeys('widen-cell')!)).toBe('⇧⌘.')
     expect(formatKeys(commandKeys('narrow-cell')!)).toBe('⇧⌘,')
+    expect(formatKeys(commandKeys('reset-cell-width')!)).toBe('⇧⌘/')
   })
 
   it('pane 크기 조정은 ⌃⌘방향키, 균등분할은 ⌃⌘= 다', () => {
