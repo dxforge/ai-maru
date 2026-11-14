@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commands, filterCommands, menuSections, paletteItems } from './commands'
+import { commands, filterCommands, menuSections, paletteItems, type Command } from './commands'
 
 const titles = (query: string): string[] => filterCommands(query).map((c) => c.title)
 const shape = (query: string): string[] =>
@@ -102,7 +102,7 @@ describe('paletteItems', () => {
 })
 
 describe('menuSections', () => {
-  const ids = (menu: 'app' | 'file' | 'view', canRestart = true) =>
+  const ids = (menu: Command['menu'], canRestart = true) =>
     menuSections(menu, { canRestart }).map((s) => s.map((c) => c.id))
 
   it('메뉴마다 그 메뉴의 명령을 팔레트와 같은 순서로 묶음마다 나눈다', () => {

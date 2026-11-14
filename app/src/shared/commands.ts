@@ -125,15 +125,23 @@ export type PaletteItem<C extends Command = Command> =
   | { kind: 'head'; key: string; title: CommandGroup }
   | { kind: 'command'; key: string; i: number; command: C }
 
+/** 같은 묶음이 이어진 명령끼리 나눈다. */
+function groupRuns<C extends Command>(list: readonly C[]): C[][] {
+  const runs: C[][] = []
+  list.forEach((c, i) => {
+    if (c.group !== list[i - 1]?.group) runs.push([])
+    runs[runs.length - 1].push(c)
+  })
+  return runs
+}
+
 /** 팔레트가 그릴 줄이다. `i` 는 고를 수 있는 줄의 번호다. 묶음 제목 줄은 그 묶음에 명령이 남았을 때만 둔다. */
 export function paletteItems<C extends Command>(list: readonly C[]): PaletteItem<C>[] {
-  const items: PaletteItem<C>[] = []
-  list.forEach((command, i) => {
-    if (command.group !== list[i - 1]?.group)
-      items.push({ kind: 'head', key: `head:${command.group}`, title: command.group })
-    items.push({ kind: 'command', key: command.id, i, command })
-  })
-  return items
+  let i = 0
+  return groupRuns(list).flatMap((run): PaletteItem<C>[] => [
+    { kind: 'head', key: `head:${run[0].group}`, title: run[0].group },
+    ...run.map((command) => ({ kind: 'command' as const, key: command.id, i: i++, command }))
+  ])
 }
 
 /** 메뉴 하나에 넣을 명령을 묶음마다 나눈다. 메뉴는 묶음 사이에 구분선을 둔다. */
@@ -141,13 +149,5 @@ export function menuSections(
   menu: Command['menu'],
   can: Parameters<typeof available>[1]
 ): Command[][] {
-  const sections: Command[][] = []
-  let last: CommandGroup | undefined
-  for (const c of commands) {
-    if (c.menu !== menu || !available(c, can)) continue
-    if (c.group !== last) sections.push([])
-    sections[sections.length - 1].push(c)
-    last = c.group
-  }
-  return sections
+  return groupRuns(commands.filter((c) => c.menu === menu && available(c, can)))
 }

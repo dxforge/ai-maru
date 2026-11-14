@@ -274,9 +274,7 @@ function onKeydown(e: KeyboardEvent): void {
   const row = chosen.value ? undefined : rows.value[index.value]
   const n = count.value
   const moved = arrowIndex(e.key, index.value, n)
-  // 아무것도 고르지 않았을 때는 ↓ 가 첫 후보, ↑ 가 마지막 후보로 간다.
-  if (moved !== undefined && index.value < 0) index.value = e.key === 'ArrowDown' ? 0 : n - 1
-  else if (moved !== undefined) index.value = moved
+  if (moved !== undefined) index.value = moved
   else if (e.key === 'Enter') void enter(e.metaKey)
   // ⌘⌫ 는 입력창에서 커서 앞을 줄 처음까지 지우는 키라, 최근 목록의 행 지우기는 ⇧⌘⌫ 에 둔다.
   else if (e.key === 'Backspace' && e.metaKey && e.shiftKey && row && !pathMode.value)
