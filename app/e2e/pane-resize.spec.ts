@@ -6,6 +6,7 @@ import {
   expect,
   paneBox,
   panes,
+  resizeBy,
   restartWith,
   run,
   screen,
@@ -197,4 +198,50 @@ test('경계를 끄는 중에 ⌃⌘방향키로 바꾼 크기는 이어지는 �
   await page.keyboard.up('Control')
 
   await expect.poll(async () => (await shellSize(page)).cols).toBe(before.cols + 8)
+})
+
+async function scrollSettled(page: Page): Promise<void> {
+  const area = page.locator('.terminals')
+  let last = -1
+  await expect
+    .poll(async () => {
+      const now = await area.evaluate((el) => el.scrollLeft)
+      const same = now === last
+      last = now
+      return same
+    })
+    .toBe(true)
+}
+
+test('columns 보기에서 포커스된 cell 왼쪽 cell 의 경계·오른쪽 끝을 끄는 동안 경계가 포인터를 따라간다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  await clickMenu(app, 'new-cell')
+  await expect(cellViews(page)).toHaveCount(2)
+  await split(app, page, 'split-right', 2)
+  await clickMenu(app, 'new-cell')
+  await expect(cellViews(page)).toHaveCount(3)
+  await expect(cellViews(page).nth(2)).toHaveClass(/selected/)
+  const cell = await cellSize(page)
+  const left = cellViews(page).nth(1)
+  // 왼쪽 cell 의 pane 사이 경계와 포커스된 cell 이 함께 보이게 창을 넓힌다.
+  await resizeBy(app, 800, 0)
+  await scrollSettled(page)
+
+  for (const grip of [left.locator('.split-handle.right'), left.locator('.cell-edge')]) {
+    const box = (await grip.boundingBox())!
+    const y = box.y + box.height / 2
+    await page.mouse.move(box.x + box.width / 2, y)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 - 5 * cell.width, y, { steps: 5 })
+    await expect
+      .poll(async () => (await grip.boundingBox())!.x)
+      .toBeCloseTo(box.x - 5 * cell.width, 0)
+    await page.mouse.up()
+    await scrollSettled(page)
+    await expect(cellViews(page).nth(2)).toHaveClass(/selected/)
+  }
 })

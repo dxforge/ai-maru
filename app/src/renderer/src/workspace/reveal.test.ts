@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { arrangementKey, easeInOut, smoothReveal } from './reveal'
+import {
+  arrangementKey,
+  easeInOut,
+  scrollPlan,
+  shapeOf,
+  shiftScrolling,
+  smoothReveal
+} from './reveal'
 
 const style = (left: number) => ({ left: `${left}px`, top: '0px', width: '100px', height: '50px' })
 
@@ -43,6 +50,16 @@ describe('smoothReveal', () => {
   })
 })
 
+describe('shiftScrolling', () => {
+  it('출발점과 도착점을 같은 만큼 옮기고, 옮긴 뒤의 자리를 마지막 자리로 둔다', () => {
+    expect(shiftScrolling({ from: 100, to: 400, last: 250 }, 660, 910)).toEqual({
+      from: 760,
+      to: 1060,
+      last: 910
+    })
+  })
+})
+
 describe('easeInOut', () => {
   it('0 에서 시작해 가운데를 지나 1 에서 끝나고, 처음과 끝이 느리다', () => {
     expect(easeInOut(0)).toBe(0)
@@ -55,5 +72,64 @@ describe('easeInOut', () => {
   it('줄지 않고 늘기만 한다', () => {
     const values = Array.from({ length: 21 }, (_, i) => easeInOut(i / 20))
     expect(values).toEqual([...values].sort((a, b) => a - b))
+  })
+})
+
+describe('shapeOf', () => {
+  it('cell 폭이나 그 안의 pane 자리가 바뀌면 바뀌고, 다른 값만 바뀌면 그대로다', () => {
+    const [base] = views({ extra: { selected: false } })
+    expect(shapeOf(views({ width: '820px' })[0])).not.toBe(shapeOf(base))
+    expect(shapeOf(views({ left: 8 })[0])).not.toBe(shapeOf(base))
+    expect(shapeOf(views({ extra: { selected: true } })[0])).toBe(shapeOf(base))
+  })
+})
+
+describe('scrollPlan', () => {
+  const focus = { cell: 1, pane: 10, shape: 'a' }
+  const plan = {
+    modeChanged: false,
+    settled: true,
+    before: focus,
+    after: focus,
+    beforeGone: false
+  }
+
+  it('포커스와 그 cell 의 모양이 그대로면 포커스된 cell 을 제자리에 둔다', () => {
+    expect(scrollPlan(plan)).toBe('hold')
+  })
+
+  it('포커스된 cell 이 닫혀 다른 cell 이 포커스를 받으면 그 cell 을 닫힌 자리에 둔다', () => {
+    expect(
+      scrollPlan({ ...plan, after: { cell: 2, pane: 20, shape: 'b' }, beforeGone: true })
+    ).toBe('take')
+  })
+
+  it('포커스를 다른 cell 로 옮기면 포커스된 pane 이 보이게 스크롤한다', () => {
+    expect(scrollPlan({ ...plan, after: { cell: 2, pane: 20, shape: 'b' } })).toBe('reveal')
+  })
+
+  it('같은 cell 에서 포커스된 pane 이 바뀌거나 그 cell 의 모양이 바뀌면 보이게 스크롤한다', () => {
+    expect(scrollPlan({ ...plan, after: { ...focus, pane: 11 } })).toBe('reveal')
+    expect(scrollPlan({ ...plan, after: { ...focus, shape: 'c' } })).toBe('reveal')
+  })
+
+  it('보기를 바꿨거나, 앱이 뜬 뒤 자리를 잡기 전이거나, 포커스된 cell 이 없으면 보이게 스크롤한다', () => {
+    expect(scrollPlan({ ...plan, modeChanged: true })).toBe('reveal')
+    expect(scrollPlan({ ...plan, settled: false })).toBe('reveal')
+    expect(scrollPlan({ ...plan, after: {}, beforeGone: true })).toBe('reveal')
+  })
+
+  it('경계를 누른 cell 이 있으면 포커스나 그 cell 의 모양이 바뀌어도 그 cell 을 제자리에 둔다', () => {
+    expect(scrollPlan({ ...plan, grip: 2 })).toBe('grip')
+    expect(scrollPlan({ ...plan, grip: 1, after: { ...focus, shape: 'c' } })).toBe('grip')
+  })
+
+  it('경계를 누른 cell 이 있어도 보기를 바꿨거나 자리를 잡기 전이면 보이게 스크롤한다', () => {
+    expect(scrollPlan({ ...plan, grip: 2, modeChanged: true })).toBe('reveal')
+    expect(scrollPlan({ ...plan, grip: 2, settled: false })).toBe('reveal')
+  })
+
+  it('앞서 포커스된 cell 이 없었으면 새로 포커스된 cell 을 보이게 스크롤한다', () => {
+    expect(scrollPlan({ ...plan, before: {}, after: focus })).toBe('reveal')
   })
 })
