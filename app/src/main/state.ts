@@ -324,8 +324,7 @@ export type StateStore = {
    * 쓰면, 디스크에 남은 마지막 상태가 그 화면으로 바뀌기 때문이다.
    */
   stop(): void
-  current(): StateFile
-  /** `current()` 와 달리 복사하지 않는다. 받은 쪽은 고치지 않는다. */
+  /** 내부 상태를 복사하지 않고 그대로 돌려준다. 받은 쪽은 이 값을 고치지 않는다. */
   view(): Readonly<ViewPrefs>
   paneCount(): number
 }
@@ -423,10 +422,6 @@ export function createStateStore(o: {
       stop()
     },
     stop,
-    current: () => {
-      applyScreen()
-      return structuredClone(state)
-    },
     view: () => {
       applyScreen()
       return state.view

@@ -537,16 +537,17 @@ describe('createStateStore', () => {
   it('화면에 canvas 폭이 없거나 선택한 cell 이 없으면 view 에서 지운다', () => {
     const s = store()
     s.setScreen(screen)
-    expect(s.current().view.canvas).toBeUndefined()
+    expect(s.view().canvas).toBeUndefined()
     s.setScreen({ ...screen, canvas: { width: 500 }, selected: null })
-    expect(s.current().view.canvas).toEqual({ width: 500 })
-    expect(s.current().view).not.toHaveProperty('selected')
+    expect(s.view().canvas).toEqual({ width: 500 })
+    expect(s.view()).not.toHaveProperty('selected')
   })
 
   it('틀린 화면은 버리고 앞의 표를 둔다', () => {
     const s = store(full)
     s.setScreen({ workspaces: 'x' })
-    expect(s.current()).toEqual(full)
+    s.finish('keep')
+    expect(saved()).toEqual(full)
   })
 
   it('paneCount 는 다음에 뜰 화면의 pane 수라, panes 표가 없어도 cell 마다 하나를 센다', () => {
@@ -560,7 +561,7 @@ describe('createStateStore', () => {
     const window = { ...view.window, x: 50 }
     s.setWindow(window)
     s.setTheme({ background: '#ffffff', mode: 'light' })
-    expect(s.current().view).toMatchObject({ window, theme: { background: '#ffffff' } })
+    expect(s.view()).toMatchObject({ window, theme: { background: '#ffffff' } })
   })
 
   const kept = { ...workspaces, rows: workspaces.rows.filter((w) => w.kept) }
@@ -636,7 +637,8 @@ describe('createStateStore', () => {
     }
     const s = store(full)
     s.setScreen({ ...screen, workspaces: [w] })
-    expect(s.current()).toMatchObject({
+    s.finish('keep')
+    expect(saved()).toMatchObject({
       workspaces: {
         rows: [{ id: 'w-00000001', name: 'atlas', kept: true, dir: '/tmp', favorites: ['/tmp'] }]
       },
@@ -646,10 +648,14 @@ describe('createStateStore', () => {
   })
 
   it('discard 는 판정이 버린 표를 비운다', () => {
+    vi.useFakeTimers()
     const s = store(full)
+    s.enable()
     s.discard('layout')
-    expect(s.current()).toEqual({ ...full, sessions: null })
+    vi.advanceTimersByTime(MS)
+    expect(saved()).toEqual({ ...full, sessions: null })
     s.discard('end')
-    expect(s.current()).toEqual({ ...none, workspaces: kept, view })
+    vi.advanceTimersByTime(MS)
+    expect(saved()).toEqual({ ...none, workspaces: kept, view })
   })
 })

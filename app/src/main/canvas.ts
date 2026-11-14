@@ -29,7 +29,7 @@ export const CODE_MAX_BYTES = 5 * 1024 * 1024
 const BINARY_PROBE_BYTES = 8000
 
 /** UTF-8 로 디코드하지 못하면 null 이다. 깨진 글자를 Canvas 에 보이지 않기 위해서다. */
-export function codeText(bytes: Uint8Array): string | null {
+function codeText(bytes: Uint8Array): string | null {
   if (bytes.subarray(0, BINARY_PROBE_BYTES).includes(0)) return null
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)

@@ -20,8 +20,3 @@ pub fn write(path: &Path, rec: &Record) -> Result<()> {
     std::fs::rename(&tmp, path)
         .with_context(|| format!("cannot rename {} to {}", tmp.display(), path.display()))
 }
-
-pub fn read(path: &Path) -> Result<Record> {
-    let body = std::fs::read(path).with_context(|| format!("cannot read {}", path.display()))?;
-    Ok(serde_json::from_slice(&body)?)
-}

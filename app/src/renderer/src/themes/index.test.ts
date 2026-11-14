@@ -10,18 +10,21 @@ import {
   PANE_LINE_CONTRAST,
   uiColors
 } from '../../../shared/theme'
-import { activeTheme, DEFAULT_THEME, sameThemeChoice, themeNamed, themeNames, windowTheme } from '.'
+import { activeTheme, DEFAULT_THEME, sameThemeChoice, themeNamed, windowTheme } from '.'
 
 const MIN_CONTRAST = 3
 
+// Vite 의 `import.meta.glob` 은 `.DS_Store` 같은 점 파일을 빼므로 여기서도 뺀다.
+const themeNames = (): string[] =>
+  readdirSync(fileURLToPath(new URL('./ghostty', import.meta.url))).filter(
+    (f) => !f.startsWith('.')
+  )
+
 describe('themeNamed', () => {
   it('ghostty/ 의 파일을 하나도 빠뜨리지 않고 읽는다', () => {
-    // Vite 의 `import.meta.glob` 은 `.DS_Store` 같은 점 파일을 빼므로 여기서도 뺀다.
-    const files = readdirSync(fileURLToPath(new URL('./ghostty', import.meta.url)))
-      .filter((f) => !f.startsWith('.'))
-      .sort()
+    const files = themeNames()
     expect(files.length).toBeGreaterThan(800)
-    expect(themeNames().sort()).toEqual(files)
+    expect(files.filter((f) => !themeNamed(f))).toEqual([])
   })
 
   it('이름은 Ghostty 와 같다 — 대소문자·공백까지', () => {
