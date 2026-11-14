@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   initialPlacement,
   parseWindowState,
+  presentWindow,
+  showsInactive,
   restoreWindowState,
   trackWindowState,
   windowBounds,
@@ -33,8 +35,13 @@ function fakeWindow(
     isMinimized: () => s.minimized,
     maximize: () => void calls.push('maximize'),
     setFullScreen: (on: boolean) => void calls.push(`fullscreen:${on}`),
+    showInactive: () => void calls.push('showInactive'),
     on: (event: string, fn: () => void) => {
       events.on(event, fn)
+      return win
+    },
+    once: (event: string, fn: () => void) => {
+      events.once(event, fn)
       return win
     }
   }
@@ -221,5 +228,49 @@ describe('trackWindowState', () => {
     Object.assign(win.s, { fullScreen: false, maximized: true })
     win.emit('leave-full-screen')
     expect(saved()).toEqual({ ...NORMAL, ...placed, isMaximized: true })
+  })
+})
+
+describe('presentWindow', () => {
+  const MAXIMIZED: WindowState = { ...NORMAL, isMaximized: true, isFullScreen: true }
+  type Presented = Parameters<typeof presentWindow>[0]
+
+  function present(state: WindowState | null, inactive: boolean) {
+    const win = fakeWindow()
+    presentWindow(win as unknown as Presented, state, inactive, () => win.calls.push('restored'))
+    return win
+  }
+
+  it('inactive 가 아니면 상태를 바로 되살리고 showInactive 를 부르지 않는다', () => {
+    expect(present(MAXIMIZED, false).calls).toEqual(['maximize', 'fullscreen:true', 'restored'])
+  })
+
+  it('inactive 면 ready-to-show 까지 아무것도 하지 않고, 그때 상태를 되살린 뒤 showInactive 로 띄운다', () => {
+    const win = present(MAXIMIZED, true)
+    expect(win.calls).toEqual([])
+    win.emit('ready-to-show')
+    expect(win.calls).toEqual(['maximize', 'fullscreen:true', 'restored', 'showInactive'])
+  })
+
+  it('inactive 이고 되살릴 상태가 없으면 ready-to-show 에서 한 번만 띄운다', () => {
+    const win = present(null, true)
+    win.emit('ready-to-show')
+    win.emit('ready-to-show')
+    expect(win.calls).toEqual(['restored', 'showInactive'])
+  })
+})
+
+describe('showsInactive', () => {
+  it('MARU_SHOW_INACTIVE 가 있으면 true', () => {
+    expect(showsInactive({ MARU_SHOW_INACTIVE: '1' })).toBe(true)
+  })
+
+  it('MARU_SHOW_INACTIVE 가 없거나 비었으면 false', () => {
+    expect(showsInactive({})).toBe(false)
+    expect(showsInactive({ MARU_SHOW_INACTIVE: '' })).toBe(false)
+  })
+
+  it('e2e 의 MARU_UNOBTRUSIVE 가 같이 있으면 창을 띄우지 않는 쪽이 이겨 false', () => {
+    expect(showsInactive({ MARU_UNOBTRUSIVE: '1', MARU_SHOW_INACTIVE: '1' })).toBe(false)
   })
 })
