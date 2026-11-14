@@ -1,7 +1,3 @@
-import { TAG_BINARY, TAG_TEXT } from '../shared/protocol'
-
-export { TAG_BINARY, TAG_TEXT }
-
 const HEADER_LEN = 5
 const MAX_FRAME_LEN = 16 * 1024 * 1024
 

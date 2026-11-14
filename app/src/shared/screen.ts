@@ -1,5 +1,6 @@
 import versions from '../../resources/state-versions.json'
 import type { GitHead } from './git'
+import { isObject } from './object'
 import { PANE_MAX_COLS, PANE_MIN, panes as leaves, type Layout } from './layout'
 import { isPtyId, randomId } from './pty'
 
@@ -133,7 +134,6 @@ export type ViewPrefs = {
 
 type Obj = Record<string, unknown>
 
-const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isKey = (v: unknown): v is number => Number.isInteger(v)
 const optString = (v: unknown): v is string | undefined => v === undefined || typeof v === 'string'
 const isStrings = (v: unknown): v is string[] =>
@@ -169,7 +169,7 @@ const sizeOf = (v: Obj): { weight?: number; cols?: number } =>
   })
 
 function parseLayout<P>(v: unknown, isLeaf: (x: unknown) => x is P): Layout<P> | null {
-  if (!isObj(v)) return null
+  if (!isObject(v)) return null
   const { weight, cols } = sizeOf(v)
   const size = compact({ weight })
   if ('pane' in v) return isLeaf(v.pane) ? compact({ pane: v.pane, cols, weight }) : null
@@ -183,7 +183,7 @@ const isString = (v: unknown): v is string => typeof v === 'string'
 
 function parseGit(v: unknown): GitHead | null {
   if (
-    !isObj(v) ||
+    !isObject(v) ||
     typeof v.repo !== 'string' ||
     !optString(v.branch) ||
     !optString(v.common) ||
@@ -194,7 +194,8 @@ function parseGit(v: unknown): GitHead | null {
 }
 
 function parsePaneFields(v: unknown): Omit<LayoutPane, 'key'> | null {
-  if (!isObj(v) || typeof v.id !== 'string' || !optString(v.cwd) || !optString(v.title)) return null
+  if (!isObject(v) || typeof v.id !== 'string' || !optString(v.cwd) || !optString(v.title))
+    return null
   const { command } = v
   if (command !== undefined && !isStrings(command)) return null
   const git = v.git === undefined ? undefined : parseGit(v.git)
@@ -219,7 +220,7 @@ function parseCellFields(v: Obj): Pick<CellOf<never>, 'fontSize' | 'paneCols'> |
 }
 
 function parseScreenCell(v: unknown): ScreenCell | null {
-  if (!isObj(v) || !isKey(v.key) || typeof v.id !== 'string' || !isKey(v.focused)) return null
+  if (!isObject(v) || !isKey(v.key) || typeof v.id !== 'string' || !isKey(v.focused)) return null
   const fields = parseCellFields(v)
   const panes = parseList(v.panes, parseScreenPane)
   const layout = parseLayout(v.layout, isKey)
@@ -228,7 +229,7 @@ function parseScreenCell(v: unknown): ScreenCell | null {
 }
 
 function parseWorkspaceRow(w: unknown): WorkspaceRow | null {
-  if (!isObj(w) || typeof w.id !== 'string') return null
+  if (!isObject(w) || typeof w.id !== 'string') return null
   const { name: given, dir, favorites } = w
   // 이 필드의 옛 이름이 `pinned` 다. 형식 버전을 올리지 않고 이름만 바꿔, 옛 빌드가 쓴 줄도 읽는다.
   const kept = 'kept' in w ? w.kept : w.pinned
@@ -248,7 +249,7 @@ function parseWorkspaceRow(w: unknown): WorkspaceRow | null {
 }
 
 function parseCellRow(v: unknown): CellRow | null {
-  if (!isObj(v) || typeof v.id !== 'string' || typeof v.workspace !== 'string') return null
+  if (!isObject(v) || typeof v.id !== 'string' || typeof v.workspace !== 'string') return null
   if (typeof v.focused !== 'string') return null
   const fields = parseCellFields(v)
   const layout = parseLayout(v.layout, isString)
@@ -263,7 +264,7 @@ function parsePaneRow(v: unknown): PaneRow | null {
 }
 
 export function parseScreen(v: unknown): ScreenState | null {
-  if (!isObj(v)) return null
+  if (!isObject(v)) return null
   const { selected, sidebar } = v
   const workspaces = parseList(
     v.workspaces,
@@ -280,7 +281,7 @@ export function parseScreen(v: unknown): ScreenState | null {
   const prefs = parseViewPrefs(v)
   if (!prefs.viewMode || !prefs.sidebar) return null
   if (v.canvas !== undefined && !prefs.canvas) return null
-  if (!isObj(sidebar) || !isStrings(sidebar.folded)) return null
+  if (!isObject(sidebar) || !isStrings(sidebar.folded)) return null
   return compact<ScreenState>({
     workspaces,
     selected,
@@ -296,7 +297,7 @@ function parseTable<R>(
   version: number,
   parseRow: (x: unknown) => R | null
 ): Table<R> | null {
-  if (!isObj(v) || v.version !== version) return null
+  if (!isObject(v) || v.version !== version) return null
   const rows = parseList(v.rows, parseRow, true)
   return rows && { version, rows }
 }
@@ -468,14 +469,14 @@ export function clampCanvasWidth(width: number): number {
  * 같이 바꾸고 `view` 의 버전을 올린다.
  */
 export function parseViewPrefs(v: unknown): ViewPrefs {
-  if (!isObj(v)) return {}
+  if (!isObject(v)) return {}
   const { viewMode, sidebar, canvas, folded } = v
   const prefs: ViewPrefs = {}
   if (viewMode === 'single' || viewMode === 'columns') prefs.viewMode = viewMode
-  if (isObj(sidebar) && typeof sidebar.open === 'boolean' && typeof sidebar.width === 'number')
+  if (isObject(sidebar) && typeof sidebar.open === 'boolean' && typeof sidebar.width === 'number')
     prefs.sidebar = { open: sidebar.open, width: clampSidebarWidth(sidebar.width) }
   if (isStrings(folded)) prefs.folded = [...folded]
-  if (isObj(canvas) && typeof canvas.width === 'number')
+  if (isObject(canvas) && typeof canvas.width === 'number')
     prefs.canvas = { width: clampCanvasWidth(canvas.width) }
   return prefs
 }

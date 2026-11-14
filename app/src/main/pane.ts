@@ -5,6 +5,7 @@ import {
   InvalidParams,
   optionalBoolean,
   requireCommand,
+  REFUSED,
   requireCwd,
   type Handlers
 } from './cli-server'
@@ -72,7 +73,7 @@ export function createPanes(
     if (reply && 'error' in reply) {
       if (reply.error === 'no_pane' || reply.error === 'no_cell' || reply.error === 'bad_place')
         throw new InvalidParams(reply.message)
-      if (reply.error === 'no_space') throw new CliError(-32001, 'no_space', reply.message)
+      if (reply.error === 'no_space') throw new CliError(REFUSED, 'no_space', reply.message)
       throw new Error(reply.message)
     }
     return reply

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { encodeFrame, FrameDecoder, TAG_BINARY, TAG_TEXT } from './frame'
+import { TAG_BINARY, TAG_TEXT } from '../shared/protocol'
+import { encodeFrame, FrameDecoder } from './frame'
 
 describe('FrameDecoder', () => {
   it('헤더 중간에서 잘려 온 프레임을 이어 붙인다', () => {

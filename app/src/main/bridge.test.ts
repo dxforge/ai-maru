@@ -3,7 +3,8 @@ import type { Socket } from 'node:net'
 import type { MessagePortMain } from 'electron'
 import { describe, expect, it } from 'vitest'
 import { bridge, HIGH, LOW } from './bridge'
-import { encodeFrame, TAG_BINARY, TAG_TEXT } from './frame'
+import { TAG_BINARY, TAG_TEXT } from '../shared/protocol'
+import { encodeFrame } from './frame'
 
 function fakeSocket() {
   const sock = Object.assign(new EventEmitter(), {

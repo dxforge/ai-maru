@@ -1,6 +1,7 @@
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { createServer, type Socket } from 'node:net'
 import { dirname, isAbsolute, join } from 'node:path'
+import { isObject } from '../shared/object'
 
 // 계약은 core/crates/maru 의 모듈 doc 에 있다.
 export const CLI_PROTOCOL_VERSION = 1
@@ -43,6 +44,8 @@ export function optionalString(v: unknown, name: string): string | undefined {
   return v
 }
 
+export const REFUSED = -32001
+
 /** handler 가 앱이 정한 이유로 거절할 때 던진다. `data` 의 필드는 `error.data` 에 `code` 와 함께 들어간다. */
 export class CliError extends Error {
   constructor(
@@ -80,10 +83,6 @@ type Reply = { id: Id; result?: unknown; error?: object }
 
 function failure(id: Id, code: number, reason: string, message: string, data?: object): Reply {
   return { id, error: { code, message, data: { code: reason, ...data } } }
-}
-
-export function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
 function isId(v: unknown): v is Id {

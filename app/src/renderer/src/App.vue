@@ -29,6 +29,7 @@ import CommandPalette from './components/CommandPalette.vue'
 import LauncherPalette, { type Launch, type LaunchWhere } from './components/LauncherPalette.vue'
 import PaneSwitcher from './components/PaneSwitcher.vue'
 import { createChordKeys } from './chord'
+import { listenWindowPointer } from './windowPointer'
 import PaneHeader from './components/PaneHeader.vue'
 import PanelBar, { type Panel } from './components/PanelBar.vue'
 import { FileText } from '@lucide/vue'
@@ -536,14 +537,10 @@ function drag(e: PointerEvent, panel: 'side' | 'canvas', move: (m: PointerEvent)
   const open = (): boolean => (panel === 'side' ? sidebarOpen.value : canvas.open.value)
   const step = (m: PointerEvent): void => (open() ? move(m) : end())
   const end = (): void => {
-    window.removeEventListener('pointermove', step)
-    window.removeEventListener('pointerup', end)
-    window.removeEventListener('pointercancel', end)
+    off()
     resizing.value = null
   }
-  window.addEventListener('pointermove', step)
-  window.addEventListener('pointerup', end)
-  window.addEventListener('pointercancel', end)
+  const off = listenWindowPointer(step, end)
 }
 
 function resizeSidebar(e: PointerEvent): void {
@@ -843,9 +840,7 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
     preview.value = { cell: c.key, layout: moveDivider(base, d, delta, ctx), by: 'drag' }
   }
   const end = (u?: PointerEvent): void => {
-    window.removeEventListener('pointermove', step)
-    window.removeEventListener('pointerup', end)
-    window.removeEventListener('pointercancel', end)
+    off()
     scrollHold.value = 0
     commitPreview()
     // `.split-handle` 이 경계 오른쪽 pane 의 왼쪽 여백을 덮는다. 끌지 않고 놓으면 그 여백을 누른 것처럼 밑의 pane 에 포커스를 준다.
@@ -854,9 +849,7 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
       if (pane !== undefined) terminals.get(pane)?.focus()
     }
   }
-  window.addEventListener('pointermove', step)
-  window.addEventListener('pointerup', end)
-  window.addEventListener('pointercancel', end)
+  const off = listenWindowPointer(step, end)
 }
 
 function paneAt(c: Cell, x: number, y: number): number | undefined {

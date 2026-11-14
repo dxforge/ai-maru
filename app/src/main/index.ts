@@ -30,7 +30,14 @@ import {
   type Dialog,
   type ProgramDeps
 } from './close-confirm'
-import { AfterReply, CliError, listenCli, optionalBoolean, type Handlers } from './cli-server'
+import {
+  AfterReply,
+  CliError,
+  listenCli,
+  optionalBoolean,
+  REFUSED,
+  type Handlers
+} from './cli-server'
 import { configDir, configFile, readConfigFile, watchConfig } from './config-file'
 import { createDesktopNotifications, type DesktopNotice } from './desktop-notification'
 import { gitHead } from './git'
@@ -130,6 +137,10 @@ const runFile = promisify(execFile)
 function ptyDir(): string {
   return runDir(app.getPath('userData'))
 }
+
+const capturePane = (pty: string): Promise<string> => capturePty(ptyDir(), pty, JOB_REPLY_MS)
+const pastePane = (pty: string, text: string): Promise<'written' | 'exited'> =>
+  writePtyInput(ptyDir(), pty, text, JOB_REPLY_MS, true)
 
 function coreBin(override: string | undefined, name: string): string {
   return (
@@ -427,14 +438,14 @@ const restartHandlers: Handlers = {
     const check = await restartCheck()
     if (!check.ok && check.reason === 'dev_server') {
       throw new CliError(
-        -32001,
+        REFUSED,
         'restart_unavailable',
         'an app started by the dev server cannot restart itself'
       )
     }
     if (!check.ok && !kill) {
       const { code, message } = restartRefusal(check)
-      throw new CliError(-32001, code, message, {
+      throw new CliError(REFUSED, code, message, {
         ptys: check.ptys,
         recovered: check.recovered,
         result: check.result
@@ -566,8 +577,8 @@ const cliHandlers: Handlers = {
       const screen = parseScreen(lastScreen)
       return screen && screenPanes(screen).panes.map((p) => p.ptyId)
     },
-    capture: (pty) => capturePty(ptyDir(), pty, JOB_REPLY_MS),
-    paste: (pty, text) => writePtyInput(ptyDir(), pty, text, JOB_REPLY_MS, true)
+    capture: capturePane,
+    paste: pastePane
   }),
   ...restartHandlers
 }
@@ -832,8 +843,8 @@ function start(): void {
       await spawned
     },
     waitExit: (id) => waitPtyExit(ptyDir(), id),
-    capture: (id) => capturePty(ptyDir(), id, JOB_REPLY_MS),
-    paste: (id, text) => writePtyInput(ptyDir(), id, text, JOB_REPLY_MS, true),
+    capture: capturePane,
+    paste: pastePane,
     kill: (id) => killPty(ptyDir(), id),
     emit: monitor.emit,
     now: Date.now,
