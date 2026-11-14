@@ -23,20 +23,22 @@ export type Focus = { cell?: number; pane?: number; shape?: string }
  * - `hold`: 포커스된 cell 을 바뀌기 전과 같은 화면 x 에 둔다. 포커스된 cell·pane 과 그 cell 의 `shape` 가 그대로인데
  *   배치가 바뀌었으면, 다른 cell 이 생겼거나 없어졌거나 폭이 바뀐 것이다.
  * - `take`: 포커스된 cell 이 없어져 다른 cell 이 포커스를 받았다. 그 cell 을 없어진 cell 이 있던 화면 x 에 둔다.
+ * - `grip`: 사용자가 경계를 끌거나 두 번 눌러 크기를 바꾸는 cell(`grip`)을 바뀌기 전과 같은 화면 x 에 둔다. 경계를
+ *   눌러도 포커스는 옮겨 가지 않으므로, 포커스된 cell 을 기준으로 맞추면 누른 경계가 포인터에서 떨어진다.
  * - `reveal`: 포커스된 pane 이 보이게 스크롤한다.
- * `beforeGone` 은 바뀌기 전에 포커스돼 있던 cell 이 지금은 없는지다. `dragging` 은 경계를 끄는 중인지다. 경계를
- * 눌러도 포커스는 옮겨 가지 않으므로, 끄는 중에 `hold` 하면 끄는 경계가 포인터를 따라가지 않고 제자리에 남는다.
  */
 export function scrollPlan(o: {
   modeChanged: boolean
   settled: boolean
-  dragging: boolean
+  grip?: number
   before: Focus
   after: Focus
   beforeGone: boolean
-}): 'hold' | 'take' | 'reveal' {
+}): 'hold' | 'take' | 'grip' | 'reveal' {
   const { before, after } = o
-  if (o.modeChanged || !o.settled || o.dragging || after.cell === undefined) return 'reveal'
+  if (o.modeChanged || !o.settled) return 'reveal'
+  if (o.grip !== undefined) return 'grip'
+  if (after.cell === undefined) return 'reveal'
   if (before.cell === after.cell) {
     return before.pane === after.pane && before.shape === after.shape ? 'hold' : 'reveal'
   }

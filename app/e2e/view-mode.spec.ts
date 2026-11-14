@@ -3,6 +3,7 @@ import {
   activePane,
   cli,
   CLASSIC_SCROLLBARS,
+  cellSize,
   clickMenu,
   expect,
   expectCols,
@@ -654,6 +655,47 @@ test('columns 에서 포커스된 cell 이 화면 밖에 있으면 maru cell new
     await expect(cellViews(page)).toHaveCount(5)
   })
   expect(new Set(xs)).toEqual(new Set([x]))
+  expect(await inView(page, activePane(page))).toBe(false)
+})
+
+test('columns 에서 포커스된 cell 이 화면 밖에 있어도, 다른 cell 의 오른쪽 끝을 끌고 놓고 두 번 눌러 되돌리는 동안 그 끝은 포인터 자리에 있다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { page } = launched
+  await toggleView(launched, 'columns')
+  await page.keyboard.type(openCells(3))
+  await expect(cellViews(page)).toHaveCount(4)
+  await scrollSettled(page)
+  const area = page.locator('.terminals')
+  const edge = cellViews(page).nth(2).locator('.cell-edge')
+  const view = (await area.boundingBox())!
+  const start = (await edge.boundingBox())!
+  await area.evaluate((el, by) => (el.scrollLeft += by), start.x - (view.x + view.width / 2))
+  await scrollSettled(page)
+  await expect.poll(() => inView(page, activePane(page))).toBe(false)
+  const scroll = await area.evaluate((el) => el.scrollLeft)
+  const cell = await cellSize(page)
+  const box = (await edge.boundingBox())!
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  const edgeX = async (): Promise<number> => (await edge.boundingBox())!.x
+
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 5 * cell.width, y, { steps: 5 })
+  await expect.poll(edgeX).toBeCloseTo(box.x + 5 * cell.width, 0)
+  await scrollSettled(page)
+  expect(await edgeX()).toBeCloseTo(box.x + 5 * cell.width, 0)
+  await page.mouse.up()
+  await scrollSettled(page)
+  expect(await edgeX()).toBeCloseTo(box.x + 5 * cell.width, 0)
+
+  await page.mouse.dblclick(x + 5 * cell.width, y)
+  await expect.poll(edgeX).toBeCloseTo(box.x, 0)
+  await scrollSettled(page)
+  expect(await edgeX()).toBeCloseTo(box.x, 0)
+  expect(await area.evaluate((el) => el.scrollLeft)).toBe(scroll)
   expect(await inView(page, activePane(page))).toBe(false)
 })
 

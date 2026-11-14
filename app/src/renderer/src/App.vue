@@ -888,10 +888,13 @@ function handleStyle(d: Divider): Record<string, string> {
 
 function equalizeAt(c: Cell, d: Target): void {
   commitPreview()
+  equalizing = c.key
   workspaces.resize(
     c.key,
     equalizeLine(c.layout, d, widthsOf(columnColsOf(c)), cellOf(fontOf(c)).width)
   )
+  // 크기가 그대로면 배치가 바뀌지 않아 아래 watch 가 돌지 않으므로, 그 watch 가 돌 차례가 지난 뒤에 지운다.
+  void nextTick(() => (equalizing = undefined))
 }
 
 function equalizeSelected(): void {
@@ -1047,10 +1050,10 @@ function cellX(key: number | undefined): number | undefined {
   return el.getBoundingClientRect().left - area.getBoundingClientRect().left
 }
 
-// `x` 는 바뀌기 전에 포커스된 cell 이 있던 화면 x 다. 같은 프레임 안에서 맞추므로 옮겨 가는 모습은 그려지지 않는다.
-function holdFocused(x: number, take: boolean): void {
+// `x` 는 바뀌기 전에 `key` 의 cell 이 있던 화면 x 다. 같은 프레임 안에서 맞추므로 옮겨 가는 모습은 그려지지 않는다.
+function holdCell(key: number | undefined, x: number, take: boolean): void {
   const area = terminalsArea.value
-  const now = cellX(workspaces.selectedKey.value ?? undefined)
+  const now = cellX(key)
   if (!area || now === undefined) return
   const from = area.scrollLeft
   area.scrollLeft = from + now - x
@@ -1073,13 +1076,17 @@ const scrollSources = [
   focusedShape,
   arrangement
 ] as const
+// 경계를 두 번 눌러 크기를 되돌리는 cell 이다. 끄는 cell 은 `preview` 가 알려 준다.
+let equalizing: number | undefined
+const grip = (): number | undefined =>
+  preview.value?.by === 'drag' ? preview.value.cell : equalizing
 let beforeX: number | undefined
-// 포커스된 cell 을 화면의 같은 x 에 두려면 배치가 바뀌기 전의 자리가 필요하므로, DOM 이 바뀌기 전에 잰다.
+// cell 을 화면의 같은 x 에 두려면 배치가 바뀌기 전의 자리가 필요하므로, DOM 이 바뀌기 전에 잰다.
 // 포커스된 cell 이 닫힌 경우에도 그 자리를 쓰므로, 바뀌기 전에 선택돼 있던 cell 을 잰다.
 watch(
   scrollSources,
   (_, [, prevCell]) => {
-    beforeX = viewMode.value === 'columns' && settled ? cellX(prevCell) : undefined
+    beforeX = viewMode.value === 'columns' && settled ? cellX(grip() ?? prevCell) : undefined
   },
   { flush: 'pre' }
 )
@@ -1093,13 +1100,13 @@ watch(
     const plan = scrollPlan({
       modeChanged: mode !== prevMode,
       settled,
-      dragging: preview.value?.by === 'drag',
+      grip: grip(),
       before: { cell: prevCell, pane: prevPane, shape: prevShape },
       after: { cell, pane, shape },
       beforeGone: !workspaces.cells().some((c) => c.key === prevCell)
     })
     if (plan === 'reveal' || x === undefined) revealFocused(mode === prevMode)
-    else holdFocused(x, plan === 'take')
+    else holdCell(plan === 'grip' ? grip() : cell, x, plan === 'take')
   },
   { flush: 'post' }
 )
