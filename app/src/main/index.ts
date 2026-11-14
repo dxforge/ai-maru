@@ -112,7 +112,8 @@ import {
 } from './takeover'
 import {
   initialPlacement,
-  restoreWindowState,
+  presentWindow,
+  showsInactive,
   trackWindowState,
   windowBounds,
   type WindowState
@@ -587,6 +588,8 @@ const cliHandlers: Handlers = {
 }
 
 const unobtrusive = Boolean(process.env.MARU_UNOBTRUSIVE)
+// 다른 작업이 띄운 dev 앱이 사용자가 보던 앱 앞으로 나오지 않게 한다.
+const showInactive = showsInactive(process.env)
 
 function openExternal(url: string): void {
   if (/^(https?|mailto):/i.test(url)) void shell.openExternal(url)
@@ -605,7 +608,7 @@ function createWindow(state: WindowState | null): void {
     // 때문이다(`composition.spec.ts` 의 webgl DPR 1 케이스는 외장 HiDPI 모니터에서 실패한다). Electron 의 기본 배치가 어느
     // 모니터에 창을 놓는지는 확인하지 않았다.
     ...initialPlacement(restored, unobtrusive, screen.getPrimaryDisplay().workArea),
-    show: !unobtrusive,
+    show: !unobtrusive && !showInactive,
     focusable: !unobtrusive,
     backgroundColor: (theme ?? DEFAULT_WINDOW_THEME).background,
     titleBarStyle: 'hiddenInset',
@@ -642,8 +645,9 @@ function createWindow(state: WindowState | null): void {
     confirmQuit()
   })
   win.on('closed', () => void (viewedPty = null))
-  restoreWindowState(win, state)
-  savedWindow = trackWindowState(win, (s) => store?.setWindow(s))
+  presentWindow(win, state, showInactive, () => {
+    savedWindow = trackWindowState(win, (s) => store?.setWindow(s))
+  })
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {

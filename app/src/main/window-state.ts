@@ -67,6 +67,33 @@ export function restoreWindowState(win: StatefulWindow, state: WindowState | nul
   if (state?.isFullScreen) win.setFullScreen(true)
 }
 
+/**
+ * macOS 에서는 창을 만든 직후 `showInactive()`·`maximize()` 를 부르면 앱이 맨 앞으로 나온다. `ready-to-show` 에서 부르면
+ * 나오지 않는다(Electron 45.2.2 에서 잼. 창을 만든 직후에는 `showInactive()` 4번 중 4번, `maximize()` 3번 중 3번 앞으로
+ * 나왔고, `ready-to-show` 에서는 한 번도 나오지 않았다). 그래서 `inactive` 면 최대화·전체 화면 복원도 `ready-to-show` 까지
+ * 미룬다. 복원 전에 끝나면 저장된 상태를 복원 전 상태로 덮어쓰지 않도록, 상태 추적은 `restored` 에서 붙인다.
+ */
+export function presentWindow(
+  win: StatefulWindow & Pick<BrowserWindow, 'once' | 'showInactive'>,
+  state: WindowState | null,
+  inactive: boolean,
+  restored: () => void
+): void {
+  const restore = (): void => {
+    restoreWindowState(win, state)
+    restored()
+  }
+  if (!inactive) return restore()
+  win.once('ready-to-show', () => {
+    restore()
+    win.showInactive()
+  })
+}
+
+export function showsInactive(env: NodeJS.ProcessEnv): boolean {
+  return !env.MARU_UNOBTRUSIVE && Boolean(env.MARU_SHOW_INACTIVE)
+}
+
 function currentState(win: StatefulWindow): WindowState {
   return {
     ...win.getNormalBounds(),
