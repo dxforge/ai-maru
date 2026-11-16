@@ -42,6 +42,10 @@ export function isCellId(v: unknown): v is string {
   return isRandomId('c', v)
 }
 
+export function isPaneId(v: unknown): v is string {
+  return isRandomId('n', v)
+}
+
 /**
  * pane 을 만들 때 그 pty 의 id 를 정한다. 셸은 뜨자마자 `maru` 로 자기 pane 을 가리킬 수 있다. pty 가 뜬
  * 뒤에 renderer 가 id 를 받으면 그 사이에 온 요청이 pane 을 찾지 못하기 때문이다.

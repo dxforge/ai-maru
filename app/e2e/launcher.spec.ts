@@ -3,9 +3,11 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import {
   activeHeader,
+  activePane,
   activeTerminal,
   cellGroups,
   cellItems,
+  cli,
   clickMenu,
   dialogCalls,
   DOM_RENDERER,
@@ -243,6 +245,60 @@ test('명령이 0 이 아닌 코드로 끝나면 pane 이 화면을 남긴 채 �
   await clickMenu(app, 'close-pane')
   await expect(cellItems(page)).toHaveCount(1)
   expect(await dialogCalls(app)).toEqual([])
+})
+
+test('끝난 채 남은 pane 의 pty 는 maru pty list 의 EXIT 에 종료 코드가 찍히고, maru pty send 는 끝났다며 실패하고, maru pty kill 은 그 pane 을 닫는다. 도는 keep pane 도 maru pty kill 이 묻지 않고 닫고, 끝난 keep pane 은 maru pane close 로도 닫는다', async ({
+  launch,
+  dataDir
+}) => {
+  useTool(dataDir)
+  const dir = project(dataDir, 'proj-a')
+  const launched = await launch(DOM_RENDERER)
+  const { app, page } = launched
+  await stubDialog(app, 1)
+  await expect(activePane(page)).toHaveAttribute('data-pty', /^p-/)
+  const first = (await activePane(page).getAttribute('data-pty'))!
+  await launchAt(launched, dir)
+  await expect(rows(page)).toContainText('A-ran-in-')
+  const kept = (await activePane(page).getAttribute('data-pty'))!
+  await page.keyboard.type('3\n')
+  await expect(rows(page)).toContainText('[exited with code 3]')
+
+  const exitOf = async (): Promise<string | undefined> =>
+    (await cli(dataDir, first, ['pty', 'list']))
+      .split('\n')
+      .find((l) => l.startsWith(`${kept}\t`))
+      ?.split('\t')[5]
+  await expect.poll(exitOf).toBe('3')
+  const sent = await cli(dataDir, first, ['pty', 'send', kept, 'x']).then(
+    () => '',
+    (e: { stderr: string }) => e.stderr
+  )
+  expect(sent).toContain(`pty ${kept} has exited`)
+  await cli(dataDir, first, ['pty', 'kill', kept])
+  await expect(cellItems(page)).toHaveCount(1)
+
+  // 도는 keep pane 도 `pty kill` 은 묻지 않고 닫는다.
+  await launchAt(launched, dir)
+  await expect(rows(page)).toContainText('A-ran-in-')
+  const running = (await activePane(page).getAttribute('data-pty'))!
+  await cli(dataDir, first, ['pty', 'kill', running])
+  await expect(cellItems(page)).toHaveCount(1)
+  expect(await dialogCalls(app)).toEqual([])
+
+  // 끝난 채 남은 keep pane 은 `pane close` 로도 닫는다.
+  await launchAt(launched, dir)
+  await expect(rows(page)).toContainText('A-ran-in-')
+  const ended = (await activePane(page).getAttribute('data-pty'))!
+  await page.keyboard.type('3\n')
+  await expect(rows(page)).toContainText('[exited with code 3]')
+  const pane = (await cli(dataDir, first, ['pane', 'list']))
+    .split('\n')
+    .map((l) => l.split('\t'))
+    .find((c) => c[1] === ended)?.[0]
+  expect(pane).toMatch(/^n-[0-9a-f]{8}$/)
+  await cli(dataDir, first, ['pane', 'close', pane!])
+  await expect(cellItems(page)).toHaveCount(1)
 })
 
 test('런처로 띄운 claude 가 working 을 알린 뒤 SIGKILL 로 끝나면 Working 이 사라지고 끝난 시그널을 보인다', async ({

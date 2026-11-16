@@ -9,7 +9,7 @@ export type PtyCommand = {
 }
 
 /**
- * maru-pty 가 `subscribe` 로 보내는 pane 상태. 각 값의 뜻은 maru-pty 의 모듈 doc(`core/crates/maru-pty/src/lib.rs`)이
+ * maru-pty 가 `subscribe` 로 보내는 pty 상태. 각 값의 뜻은 maru-pty 의 모듈 doc(`core/crates/maru-pty/src/lib.rs`)이
  * 정한다. 값이 없으면 null 이다 — 지운 것과 받지 못한 것을 가르지 않는다. `command` 만은 null 이 "신호를 받은 적 없음" 이다.
  */
 export type PtyState = {

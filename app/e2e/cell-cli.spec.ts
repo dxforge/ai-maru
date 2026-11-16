@@ -32,7 +32,7 @@ async function expectOrder(page: Page, marks: (string | null)[]): Promise<void> 
   }
 }
 
-test('maru cell new 는 부른 cell 뒤에 cell 을 더해 명령을 띄우고 머리 줄과 함께 pty id 와 cell id 를 찍으며, 선택과 포커스는 부른 쪽에 남는다', async ({
+test('maru cell new 는 부른 cell 뒤에 cell 을 더해 명령을 띄우고 머리 줄과 함께 pane id·pty id·cell id 를 찍으며, 선택과 포커스는 부른 쪽에 남는다', async ({
   launch
 }) => {
   const { page } = await launch()
@@ -41,16 +41,16 @@ test('maru cell new 는 부른 cell 뒤에 cell 을 더해 명령을 띄우고 �
   )
   await expect(cellItems(page)).toHaveCount(2)
   await expect(workspaceNames(page)).toHaveCount(1)
-  const got = /got=\[PTY\|CELL\/(p-[0-9a-f]{8})\|(c-[0-9a-f]{8})\/\]/
+  const got = /got=\[PANE\|PTY\|CELL\/(n-[0-9a-f]{8})\|(p-[0-9a-f]{8})\|(c-[0-9a-f]{8})\/\]/
   await expect(screen(page)).toShow(got)
-  const [, pty, cell] = (await screenText(screen(page))).match(got)!
+  const [, pane, pty, cell] = (await screenText(screen(page))).match(got)!
   await expect(screen(page, cellViews(page).nth(1).locator('.pane'))).toShow(`me=[${pty}]`)
   await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
   await expect(cellViews(page).nth(1)).not.toHaveClass(/selected/)
   await run(
     page,
-    `clear; maru pane list | awk -F'\\t' '$1 == "${pty}" { print "listed=[" $5 "]" }'`,
-    `listed=[${cell}]`
+    `clear; maru pane list | awk -F'\\t' '$2 == "${pty}" { print "listed=[" $1 "|" $6 "]" }'`,
+    `listed=[${pane}|${cell}]`
   )
 })
 
@@ -116,7 +116,7 @@ test('--after 는 가리킨 pane 의 cell 바로 뒤에 놓는다', async ({ lau
   await cellItems(page).nth(0).click()
   await expect(cellViews(page).nth(0)).toHaveClass(/selected/)
 
-  await page.keyboard.type(`A=$(maru cell new ${marked('a')} | awk 'NR == 2 { print $1 }')\n`)
+  await page.keyboard.type(`A=$(maru cell new ${marked('a')} | awk 'NR == 2 { print $2 }')\n`)
   await expectOrder(page, [null, 'a', null])
   await page.keyboard.type(`maru cell new --after $A ${marked('b')} >/dev/null\n`)
   await expectOrder(page, [null, 'a', 'b', null])

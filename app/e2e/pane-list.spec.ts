@@ -36,9 +36,11 @@ async function paneList(page: Page, out: string): Promise<string[][]> {
   return lines.slice(0, -1).map((l) => l.split('\t'))
 }
 
-const HEADER = ['PTY', 'STATE', 'APP', 'WORKSPACE', 'CELL', 'TITLE', 'DIR', 'MESSAGE']
+const HEADER = ['PANE', 'PTY', 'STATE', 'APP', 'WORKSPACE', 'CELL', 'TITLE', 'DIR', 'MESSAGE']
 
 const CELL_ID = expect.stringMatching(/^c-[0-9a-f]{8}$/)
+
+const PANE_ID = expect.stringMatching(/^n-[0-9a-f]{8}$/)
 
 const sidebarTitles = (page: Page) => page.locator('.sidebar .pane-row .title').allInnerTexts()
 
@@ -49,7 +51,7 @@ test('홈 디렉토리 workspace 의 WORKSPACE 는 사이드바처럼 ~ 다', as
   await ptyIdOf(page, `cd ~; printf '\\e]7;file://%s\\a' "$PWD"; `)
   await expect(workspaceNames(page).nth(0)).toHaveText('~')
   const [, cols] = await paneList(page, join(dataDir, 'panes.out'))
-  expect(cols[3]).toBe('~')
+  expect(cols[4]).toBe('~')
 })
 
 test('workspace 이름을 바꾸면 WORKSPACE 는 바꾼 이름이다', async ({ launch, dataDir }) => {
@@ -63,7 +65,7 @@ test('workspace 이름을 바꾸면 WORKSPACE 는 바꾼 이름이다', async ({
   await page.keyboard.press('Enter')
   await expect(workspaceNames(page).nth(0)).toHaveText('renamed')
   const [, cols] = await paneList(page, join(dataDir, 'panes.out'))
-  expect(cols[3]).toBe('renamed')
+  expect(cols[4]).toBe('renamed')
 })
 
 test('maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순서대로, 사이드바의 이름과 함께 TSV 로 찍는다', async ({
@@ -96,6 +98,7 @@ test('maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순
   expect(table).toEqual([
     HEADER,
     [
+      PANE_ID,
       first,
       'blocked(permission)',
       'claude-code',
@@ -105,10 +108,11 @@ test('maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순
       dir('proj-a'),
       'Bash: git push -u origin x'
     ],
-    [plain, '', '', 'proj-a', CELL_ID, expect.any(String), expect.any(String), ''],
-    [second, 'working', 'cargo', 'proj-b', CELL_ID, 'cargo', dir('proj-b'), 'reading']
+    [PANE_ID, plain, '', '', 'proj-a', CELL_ID, expect.any(String), expect.any(String), ''],
+    [PANE_ID, second, 'working', 'cargo', 'proj-b', CELL_ID, 'cargo', dir('proj-b'), 'reading']
   ])
-  expect(table.slice(1).map((r) => r[5])).toEqual(await sidebarTitles(page))
-  expect(table[2][4]).toBe(table[1][4])
-  expect(table[3][4]).not.toBe(table[1][4])
+  expect(table.slice(1).map((r) => r[6])).toEqual(await sidebarTitles(page))
+  expect(new Set(table.slice(1).map((r) => r[0])).size).toBe(3)
+  expect(table[2][5]).toBe(table[1][5])
+  expect(table[3][5]).not.toBe(table[1][5])
 })

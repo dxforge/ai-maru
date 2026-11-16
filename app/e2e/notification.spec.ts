@@ -225,7 +225,7 @@ test('job 의 pty 로 pane:select 가 오면 그 job 이 든 cell 을 고른다'
   await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
 
   await app.evaluate(({ BrowserWindow }, pty) => {
-    BrowserWindow.getAllWindows()[0].webContents.send('pane:select', pty)
+    BrowserWindow.getAllWindows()[0].webContents.send('pane:select', { pty })
   }, job)
   await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)
 })
@@ -243,7 +243,7 @@ test('데스크톱 알림을 누른 것처럼 pane:select 가 오면 그 pane �
   await expect(head).toHaveAttribute('aria-expanded', 'false')
 
   await app.evaluate(({ BrowserWindow }, pty) => {
-    BrowserWindow.getAllWindows()[0].webContents.send('pane:select', pty)
+    BrowserWindow.getAllWindows()[0].webContents.send('pane:select', { pty })
   }, first)
   await expect(head).toHaveAttribute('aria-expanded', 'true')
   await expect(cellGroups(page).nth(0)).toHaveClass(/selected/)

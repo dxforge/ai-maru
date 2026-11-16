@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PaneReply } from '../shared/pane'
 import { CliError, InvalidParams } from './cli-server'
-import { createPanes, paneIo, type PaneChannel } from './pane'
+import { createPanes, type PaneChannel } from './pane'
 import { createWindowReady } from './window-ready'
 
 const A = 'p-0000000a'
 const B = 'p-0000000b'
+const NA = 'n-0000000a'
+const NB = 'n-0000000b'
+const NC = 'n-0000000c'
 
 function setup({ window = true, ready = true } = {}) {
   const sent: { channel: PaneChannel; id: number; arg: unknown }[] = []
@@ -18,6 +21,7 @@ function setup({ window = true, ready = true } = {}) {
       return true
     },
     (pty) => cells.get(pty),
+    (pty) => (pty === A ? NA : undefined),
     windowReady,
     1000
   )
@@ -29,7 +33,7 @@ function setup({ window = true, ready = true } = {}) {
 afterEach(() => vi.useRealTimers())
 
 describe('pane.new', () => {
-  it('부른 pty 와 함께 창에 넘기고, 창이 알려 준 새 pty 를 돌려준다', async () => {
+  it('부른 pty 와 함께 창에 넘기고, 창이 알려 준 새 pane 과 pty 를 돌려준다', async () => {
     const { handlers, sent, answer } = setup()
     const done = handlers['pane.new']({ cwd: '/a b', direction: 'down', command: ['x', ''] }, A)
     expect(sent).toEqual([
@@ -39,15 +43,15 @@ describe('pane.new', () => {
         arg: { pty: A, cwd: '/a b', direction: 'down', full: false, command: ['x', ''] }
       }
     ])
-    answer({ pty: B })
-    await expect(done).resolves.toEqual({ pty: B })
+    answer({ pane: NB, pty: B })
+    await expect(done).resolves.toEqual({ pane: NB, pty: B })
   })
 
   it('명령이 없으면 창에도 넘기지 않는다', async () => {
     const { handlers, sent, answer } = setup()
     const done = handlers['pane.new']({ cwd: '/', direction: 'right' }, A) as Promise<unknown>
     expect(sent[0].arg).toEqual({ pty: A, cwd: '/', direction: 'right', full: false })
-    answer({ pty: B })
+    answer({ pane: NB, pty: B })
     await done
   })
 
@@ -58,7 +62,7 @@ describe('pane.new', () => {
         { cwd: '/', direction: 'down', ...params },
         A
       ) as Promise<unknown>
-      answer({ pty: B })
+      answer({ pane: NB, pty: B })
       await done
     }
     expect(sent.map((s) => (s.arg as { full: boolean }).full)).toEqual([true, false])
@@ -77,18 +81,31 @@ describe('pane.new', () => {
       full: false,
       cell: 'c-0000000b'
     })
-    answer({ pty: B })
-    await expect(done).resolves.toEqual({ pty: B })
+    answer({ pane: NB, pty: B })
+    await expect(done).resolves.toEqual({ pane: NB, pty: B })
   })
 
   it.each([[{}], [{ full: false }]])(
-    'pane 으로 가리킨 pty 를 부른 pty 대신 나눌 pane 으로 넘긴다 %j',
+    'pane 으로 가리킨 pane 을 부른 pty 대신 나눌 pane 으로 넘긴다 %j',
     async (extra) => {
       const { handlers, sent, answer } = setup()
-      const done = handlers['pane.new']({ cwd: '/', direction: 'down', pane: B, ...extra }, A)
-      expect(sent[0].arg).toEqual({ pty: B, cwd: '/', direction: 'down', full: false })
-      answer({ pty: 'p-0000000c' })
-      await expect(done).resolves.toEqual({ pty: 'p-0000000c' })
+      const done = handlers['pane.new']({ cwd: '/', direction: 'down', pane: NB, ...extra }, A)
+      expect(sent[0].arg).toEqual({ pane: NB, cwd: '/', direction: 'down', full: false })
+      answer({ pane: NC, pty: 'p-0000000c' })
+      await expect(done).resolves.toEqual({ pane: NC, pty: 'p-0000000c' })
+    }
+  )
+
+  it.each([
+    [A, `${A} is a pty, not a pane; its pane is ${NA}`],
+    [B, `${B} is a pty, not a pane; see the PANE column of \`maru pane list\``]
+  ])(
+    'pane 에 pty id %s 를 주면 창에 넘기지 않고 그 pane 을 오류에 적는다',
+    async (pty, message) => {
+      const { handlers, sent } = setup()
+      const done = handlers['pane.new']({ cwd: '/', direction: 'right', pane: pty }, A)
+      await expect(done).rejects.toThrow(new InvalidParams(message))
+      expect(sent).toEqual([])
     }
   )
 
@@ -111,8 +128,8 @@ describe('pane.new', () => {
     [{ cwd: '/', direction: 'right', pane: 'c-0000000b' }],
     [{ cwd: '/', direction: 'right', pane: '' }],
     [{ cwd: '/', direction: 'right', pane: null }],
-    [{ cwd: '/', direction: 'right', pane: B, full: true }],
-    [{ cwd: '/', direction: 'right', pane: B, cell: 'c-0000000b' }],
+    [{ cwd: '/', direction: 'right', pane: NB, full: true }],
+    [{ cwd: '/', direction: 'right', pane: NB, cell: 'c-0000000b' }],
     [{ direction: 'right' }],
     [{ cwd: '/', direction: 'left' }],
     [{ cwd: '/', direction: 'right', command: [] }],
@@ -167,7 +184,7 @@ describe('pane.new', () => {
       ['pane:new', 0],
       ['pane:cancel', 0]
     ])
-    expect(() => reply(0, { pty: B })).not.toThrow()
+    expect(() => reply(0, { pane: NB, pty: B })).not.toThrow()
   })
 
   it('창이 실패로 답하면 취소를 보내지 않는다', async () => {
@@ -183,16 +200,16 @@ describe('창이 준비되기 전', () => {
   it('요청을 쌓아 두었다가 준비되면 온 순서대로 넘긴다', async () => {
     const { handlers, sent, ready, reply } = setup({ ready: false })
     const first = handlers['pane.new']({ cwd: '/', direction: 'right' }, A)
-    const second = handlers['pane.close']({ target: B }, A)
+    const second = handlers['pane.close']({ target: NB }, A)
     expect(sent).toEqual([])
     ready()
     expect(sent.map(({ channel, id }) => [channel, id])).toEqual([
       ['pane:new', 0],
       ['pane:close', 1]
     ])
-    reply(0, { pty: B })
+    reply(0, { pane: NB, pty: B })
     reply(1, null)
-    await expect(first).resolves.toEqual({ pty: B })
+    await expect(first).resolves.toEqual({ pane: NB, pty: B })
     await expect(second).resolves.toBeNull()
   })
 
@@ -202,7 +219,7 @@ describe('창이 준비되기 전', () => {
     cells.set(B, 'c-0000000b')
     ready()
     expect(sent[0].arg).toEqual({ cell: 'c-0000000b', cwd: '/' })
-    answer({ pty: A, cell: 'c-0000000c' })
+    answer({ pane: NA, pty: A, cell: 'c-0000000c' })
     await done
   })
 
@@ -235,11 +252,12 @@ describe('창이 준비되기 전', () => {
         return true
       },
       () => undefined,
+      () => undefined,
       windowReady,
       1000
     )
-    const first = panes.handlers['pane.close']({ target: B }, A)
-    const second = panes.handlers['pane.close']({ target: B }, A)
+    const first = panes.handlers['pane.close']({ target: NB }, A)
+    const second = panes.handlers['pane.close']({ target: NB }, A)
     windowReady.ready()
     await expect(first).rejects.toThrow('boom')
     expect(sent).toEqual([1])
@@ -250,7 +268,7 @@ describe('창이 준비되기 전', () => {
   it('새 문서로 바뀌면 다시 준비될 때까지 쌓는다', async () => {
     const { handlers, sent, ready, unready, reply } = setup()
     unready()
-    const done = handlers['pane.close']({ target: B }, A)
+    const done = handlers['pane.close']({ target: NB }, A)
     expect(sent).toEqual([])
     ready()
     ready()
@@ -261,7 +279,7 @@ describe('창이 준비되기 전', () => {
 })
 
 describe('cell.new', () => {
-  it('부른 pty 의 cell 과 함께 창에 넘기고, 창이 알려 준 새 pty 와 cell 을 돌려준다', async () => {
+  it('부른 pty 의 cell 과 함께 창에 넘기고, 창이 알려 준 새 pane·pty·cell 을 돌려준다', async () => {
     const { handlers, sent, answer } = setup()
     const done = handlers['cell.new']({ cwd: '/a b', command: ['x', ''] }, A)
     expect(sent).toEqual([
@@ -271,22 +289,22 @@ describe('cell.new', () => {
         arg: { cell: 'c-0000000a', cwd: '/a b', command: ['x', ''] }
       }
     ])
-    answer({ pty: B, cell: 'c-0000000c' })
-    await expect(done).resolves.toEqual({ pty: B, cell: 'c-0000000c' })
+    answer({ pane: NB, pty: B, cell: 'c-0000000c' })
+    await expect(done).resolves.toEqual({ pane: NB, pty: B, cell: 'c-0000000c' })
   })
 
   it('명령이 없거나 부른 pty 의 cell 을 모르면 창에도 넘기지 않는다', async () => {
     const { handlers, sent, answer } = setup()
     const done = handlers['cell.new']({ cwd: '/' }, B) as Promise<unknown>
     expect(sent[0].arg).toEqual({ cwd: '/' })
-    answer({ pty: A, cell: 'c-0000000c' })
+    answer({ pane: NA, pty: A, cell: 'c-0000000c' })
     await done
   })
 
   it('창이 cell 없이 답하면 실패한다', async () => {
     const { handlers, answer } = setup()
     const done = handlers['cell.new']({ cwd: '/' }, A)
-    answer({ pty: B })
+    answer({ pane: NB, pty: B })
     await expect(done).rejects.toThrow('without a cell')
   })
 
@@ -321,7 +339,7 @@ describe('cell.new', () => {
       cwd: '/',
       place: { cell: 'c-0000000b', before }
     })
-    answer({ pty: 'p-0000000c', cell: 'c-0000000c' })
+    answer({ pane: NC, pty: 'p-0000000c', cell: 'c-0000000c' })
     await done
   })
 
@@ -331,7 +349,7 @@ describe('cell.new', () => {
     cells.set(B, 'c-0000000b')
     ready()
     expect(sent[0].arg).toMatchObject({ place: { cell: 'c-0000000b', before: true } })
-    answer({ pty: 'p-0000000c', cell: 'c-0000000c' })
+    answer({ pane: NC, pty: 'p-0000000c', cell: 'c-0000000c' })
     await done
   })
 
@@ -363,90 +381,43 @@ describe('cell.new', () => {
 })
 
 describe('pane.close', () => {
-  it('target 을 창에 넘기고, 없는 pane 이면 invalid_params', async () => {
+  it('target 을 pane 으로 창에 넘기고, 없는 pane 이면 invalid_params', async () => {
     const { handlers, sent, answer } = setup()
-    const done = handlers['pane.close']({ target: B }, A)
-    expect(sent[0]).toEqual({ channel: 'pane:close', id: 0, arg: B })
+    const done = handlers['pane.close']({ target: NB }, A)
+    expect(sent[0]).toEqual({ channel: 'pane:close', id: 0, arg: { pane: NB } })
     answer(null)
     await expect(done).resolves.toBeNull()
-    const missing = handlers['pane.close']({ target: B }, A)
-    answer({ error: 'no_pane', message: 'no pane for p-0000000b' })
-    await expect(missing).rejects.toBeInstanceOf(InvalidParams)
+    const missing = handlers['pane.close']({ target: NB }, A)
+    answer({ error: 'no_pane', message: `no pane ${NB}` })
+    await expect(missing).rejects.toThrow(new InvalidParams(`no pane ${NB}`))
   })
 
-  it('pty id 가 아닌 target 은 창에 넘기지 않는다', async () => {
-    const { handlers, sent } = setup()
-    await expect(handlers['pane.close']({ target: '../x' }, A)).rejects.toBeInstanceOf(
-      InvalidParams
+  it.each([['../x'], [A], ['c-0000000a']])(
+    'pane id 가 아닌 target %s 는 창에 넘기지 않는다',
+    async (target) => {
+      const { handlers, sent } = setup()
+      await expect(handlers['pane.close']({ target }, A)).rejects.toBeInstanceOf(InvalidParams)
+      expect(sent).toEqual([])
+    }
+  )
+
+  it('pty id 를 주면 그 pane 을 오류에 적는다', async () => {
+    const { handlers } = setup()
+    await expect(handlers['pane.close']({ target: A }, B)).rejects.toThrow(
+      `${A} is a pty, not a pane; its pane is ${NA}`
     )
-    expect(sent).toEqual([])
   })
 })
 
-describe('pane.read·pane.send', () => {
-  function io(panes: string[] | null = [A], capture = async (pty: string) => `screen of ${pty}`) {
-    const pasted: [string, string][] = []
-    let exited = false
-    const handlers = paneIo({
-      panes: () => panes,
-      capture,
-      paste: async (pty, text) => {
-        pasted.push([pty, text])
-        return exited ? 'exited' : 'written'
-      }
-    })
-    return { handlers, pasted, exit: () => (exited = true) }
-  }
-
-  it('창의 pane 이면 화면을 읽고 글자를 그대로 넘긴다', async () => {
-    const { handlers, pasted } = io()
-    await expect(handlers['pane.read']({ target: A }, B)).resolves.toEqual({
-      text: `screen of ${A}`
-    })
-    await expect(handlers['pane.send']({ target: A, text: 'ls\r' }, B)).resolves.toBeNull()
-    expect(pasted).toEqual([[A, 'ls\r']])
-  })
-
-  it('창에 없는 pty(job 의 pty 포함)는 no pane 으로 거절한다', async () => {
-    const { handlers, pasted } = io()
-    for (const method of ['pane.read', 'pane.send']) {
-      const done = handlers[method]({ target: B, text: 'x' }, A) as Promise<unknown>
-      await expect(done).rejects.toThrow(new InvalidParams(`no pane for pty ${B}`))
-    }
-    expect(pasted).toEqual([])
-  })
-
-  it('pty id 꼴이 아니거나 글자가 비면 params 오류다', async () => {
-    const { handlers } = io()
-    for (const [method, params] of [
-      ['pane.read', { target: 'x' }],
-      ['pane.send', { target: 'x', text: 'a' }],
-      ['pane.send', { target: A, text: '' }],
-      ['pane.send', { target: A }]
-    ] as const) {
-      const done = handlers[method](params, A) as Promise<unknown>
-      await expect(done).rejects.toBeInstanceOf(InvalidParams)
-    }
-  })
-
-  it('창이 화면을 알리기 전이면 실패한다', async () => {
-    const { handlers } = io(null)
-    const done = handlers['pane.read']({ target: A }, A) as Promise<unknown>
-    await expect(done).rejects.toThrow('the window has not reported its layout yet')
-  })
-
-  it('셸이 끝난 pty 면 실패한다', async () => {
-    const { handlers, exit } = io()
-    exit()
-    const done = handlers['pane.send']({ target: A, text: 'x' }, A) as Promise<unknown>
-    await expect(done).rejects.toThrow(`pty ${A} has exited`)
-  })
-
-  it('pty 가 화면을 돌려주지 못하면 그 오류로 실패한다', async () => {
-    const { handlers } = io([A], async (pty) => {
-      throw new Error(`cannot read pty ${pty}: not_running`)
-    })
-    const done = handlers['pane.read']({ target: A }, A) as Promise<unknown>
-    await expect(done).rejects.toThrow(`cannot read pty ${A}: not_running`)
+describe('closePty', () => {
+  it('pty 로 창에 넘기고, 창이 그 pty 의 pane 을 못 찾으면 invalid_params', async () => {
+    const { closePty, sent, answer } = setup()
+    const done = closePty(B)
+    expect(sent[0]).toEqual({ channel: 'pane:close', id: 0, arg: { pty: B } })
+    answer(null)
+    await expect(done).resolves.toBeUndefined()
+    const missing = closePty(B)
+    answer({ error: 'no_pane', message: `no pane for pty ${B}` })
+    await expect(missing).rejects.toThrow(new InvalidParams(`no pty ${B}`))
   })
 })

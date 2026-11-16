@@ -2051,7 +2051,7 @@ fn a_prompt_without_an_end_stops_the_command_with_no_exit_code() {
 }
 
 #[test]
-fn a_command_pane_runs_its_command_from_the_start_and_ignores_osc_133() {
+fn a_command_pty_runs_its_command_from_the_start_and_ignores_osc_133() {
     let script = format!("{}; {}; sleep 30", osc133("D;1"), osc133("A"));
     let args = ["--", "/bin/sh", "-c", &script];
     let args: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_ref()).collect();
@@ -2076,7 +2076,7 @@ fn a_command_pane_runs_its_command_from_the_start_and_ignores_osc_133() {
 }
 
 #[test]
-fn a_kept_command_pane_reports_the_exit_code_once_its_command_ends() {
+fn a_kept_command_pty_reports_the_exit_code_once_its_command_ends() {
     let p = start_keep("read x; exit 3");
     let (mut s, first) = p.subscribe();
     assert_eq!(first["command"]["running"], true, "{first}");

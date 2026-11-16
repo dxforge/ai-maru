@@ -53,13 +53,13 @@ export function screen(page: Page, pane?: number | Locator): Screen {
   return { page, pane: typeof pane === 'number' ? panes(page).nth(pane) : pane }
 }
 
-/** `maru pane read` 로 읽은 pane 의 스크롤백과 화면의 글자다. 폭이 모자라 다음 행으로 접힌 줄은 한 줄로 이어 돌려준다. */
+/** `maru pty read` 로 읽은 pane 의 스크롤백과 화면의 글자다. 폭이 모자라 다음 행으로 접힌 줄은 한 줄로 이어 돌려준다. */
 export async function screenText({ page, pane }: Screen): Promise<string> {
   const socket = appSockets.get(page)
   if (!socket) throw new Error('the page was not opened by launch')
   const pty = await pane.getAttribute('data-pty', { timeout: 1000 })
   if (!pty) throw new Error('the pane has no pty yet')
-  const { stdout } = await promisify(execFile)(CLI_BIN, ['pane', 'read', pty], {
+  const { stdout } = await promisify(execFile)(CLI_BIN, ['pty', 'read', pty], {
     env: { ...process.env, MARU_SOCKET: socket, MARU_PTY_ID: pty }
   })
   return stdout
@@ -78,7 +78,7 @@ const shows = (text: string, expected: string | RegExp): boolean =>
 
 export const expect = baseExpect.extend({
   /**
-   * `screenText` 가 던져도 기한까지 다시 읽는다. 막 띄운 앱은 main 이 아직 pty 를 잡지 않아 `maru pane read` 가 실패할 수
+   * `screenText` 가 던져도 기한까지 다시 읽는다. 막 띄운 앱은 main 이 아직 pty 를 잡지 않아 `maru pty read` 가 실패할 수
    * 있는데, `expect.poll` 은 callback 이 던지면 다시 시도하지 않기 때문이다.
    */
   async toShow(received: Screen, expected: string | RegExp, options?: { timeout?: number }) {

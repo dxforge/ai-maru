@@ -440,6 +440,24 @@ test('End everything 으로 끈 뒤에도 접어 둔 keep 을 켠 workspace 는 
   await expect(workspaceHeads(page).nth(1)).toHaveAttribute('aria-expanded', 'true')
 })
 
+test('재시작 뒤에도 maru pane list 의 pane id 와 pty id 가 같다', async ({ launch, dataDir }) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await shellUp(page, 0)
+  const list = async (p: Launched['page'], out: string): Promise<string[]> => {
+    await run(p, `maru pane list | cut -f1,2 >${out}; echo listed-$?`, 'listed-0')
+    return readFileSync(out, 'utf8').trim().split('\n').slice(1)
+  }
+  const before = await list(page, join(dataDir, 'before.out'))
+  expect(before).toHaveLength(2)
+  expect(before.every((l) => /^n-[0-9a-f]{8}\tp-[0-9a-f]{8}$/.test(l))).toBe(true)
+  await restartWith(app)
+  const { page: again } = await launch()
+  await expect(panes(again)).toHaveCount(2)
+  await shellUp(again, 0)
+  expect(await list(again, join(dataDir, 'after.out'))).toEqual(before)
+})
+
 test('재시작 뒤 maru pane new 가 되살린 pane 을 나눈다', async ({ launch }) => {
   const { app, page: first } = await launch()
   await shellUp(first, 0)
@@ -549,7 +567,7 @@ test('재시작 전에 maru cell new 가 찍은 cell id 로 재시작 뒤에도 
   const saved = join(dataDir, 'cell-id')
   await run(
     page,
-    `maru cell new bash -c 'read x' | awk 'NR == 2 { print $2 }' > '${saved}'; echo saved-$((1+1))`,
+    `maru cell new bash -c 'read x' | awk 'NR == 2 { print $3 }' > '${saved}'; echo saved-$((1+1))`,
     'saved-2'
   )
   await expect(cellItems(page)).toHaveCount(2)

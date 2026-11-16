@@ -978,6 +978,17 @@ describe('panes', () => {
     expect(ws.paneByPty('p-00000000')).toBeUndefined()
   })
 
+  it('main 이 가리킨 pane 을 pane id 로도 pty id 로도 어느 cell 에서든 찾고, 가리킨 것을 서로 바꿔 보지 않는다', () => {
+    const ws = opened(2)
+    const hidden = ws.cells()[0].panes[0]
+    expect(ws.paneOf({ pane: hidden.id })?.key).toBe(hidden.key)
+    expect(ws.paneOf({ pty: hidden.ptyId })?.key).toBe(hidden.key)
+    expect(ws.paneOf({ pane: hidden.ptyId })).toBeUndefined()
+    expect(ws.paneOf({ pty: hidden.id })).toBeUndefined()
+    expect(ws.paneOf({ pane: 'n-00000000' })).toBeUndefined()
+    expect(ws.paneOf({ pty: 'p-00000000' })).toBeUndefined()
+  })
+
   it('cell id 로 어느 workspace 의 cell 이든 찾는다', () => {
     const ws = opened(2)
     const [hidden, shown] = ws.cells()

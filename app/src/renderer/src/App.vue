@@ -15,7 +15,7 @@ import { available, commands, type CommandId } from '../../shared/commands'
 import { PANE_MAX_COLS, PANE_MIN } from '../../shared/layout'
 import { cellLabel, windowTitle, workspaceName } from '../../shared/names'
 import type { JobView } from '../../shared/job'
-import type { PaneReply } from '../../shared/pane'
+import type { PaneReply, PaneTarget } from '../../shared/pane'
 import type { ProgramStatusRecord } from '../../shared/program-status'
 import { clampCanvasWidth, clampSidebarWidth, type ScreenState } from '../../shared/screen'
 import { chords, commandKeys, matchesKeys, secondaryCommand } from '../../shared/shortcuts'
@@ -222,8 +222,8 @@ const seenTracker = createSeenTracker({
   setTimeout: (fn, ms) => setTimeout(fn, ms),
   clearTimeout: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
   delay: () => config.notification.value.seenMs,
-  viewed: window.maru.paneViewed,
-  seen: window.maru.paneSeen
+  viewed: window.maru.ptyViewed,
+  seen: window.maru.ptySeen
 })
 
 function viewedPty(): string | null {
@@ -281,7 +281,7 @@ async function closePane(): Promise<void> {
       const c = workspaces.selected()
       if (!c) break
       const p = focusedPane(c)
-      const { close, asked } = await window.maru.confirmClosePane(p.ptyId)
+      const { close, asked } = await window.maru.confirmClosePane({ pane: p.id, pty: p.ptyId })
       if (close) removePane(p.key)
       if (asked || pendingCloses === 0) break
       pendingCloses--
@@ -336,7 +336,8 @@ function removePane(pane: number, message = 'the pane was closed before its pty 
 }
 
 function onSpawned(pane: number, pty: string, dir: string | undefined): void {
-  answerPaneRequest(pane, { pty })
+  const id = workspaces.pane(pane)?.id
+  if (id) answerPaneRequest(pane, { pane: id, pty })
   if (dir !== undefined) workspaces.setSpawnedDir(pane, dir)
 }
 
@@ -363,17 +364,18 @@ function linkFailed(reason: string): void {
   toasts.put('link', { level: 'warning', title: "Couldn't open the link", lines: [reason] })
 }
 
-const noPane = (pty: string): PaneReply => ({
+const noPane = (target: PaneTarget): PaneReply => ({
   error: 'no_pane',
-  message: `no pane for pty ${pty}`
+  message: 'pane' in target ? `no pane ${target.pane}` : `no pane for pty ${target.pty}`
 })
 
 // `cell` 로 가리키면 그 cell 의 아무 pane 에서 cell 전체를 나눈다. `full` 은 나눌 pane 의 cell 만 보기 때문이다.
-window.maru.onPaneNew((id, { pty, cwd, direction, command, full, cell }) => {
+window.maru.onPaneNew((id, req) => {
+  const { cwd, direction, command, full, cell } = req
   let from: number | undefined
   if (cell === undefined) {
-    from = workspaces.paneByPty(pty)?.key
-    if (from === undefined) return window.maru.paneReply(id, noPane(pty))
+    from = workspaces.paneOf(req)?.key
+    if (from === undefined) return window.maru.paneReply(id, noPane(req))
   } else {
     from = workspaces.cellById(cell)?.focused
     if (from === undefined) {
@@ -410,9 +412,9 @@ window.maru.onPaneCancel((id) => {
   }
 })
 
-window.maru.onPaneClose((id, pty) => {
-  const pane = workspaces.paneByPty(pty)
-  if (!pane) return window.maru.paneReply(id, noPane(pty))
+window.maru.onPaneClose((id, target) => {
+  const pane = workspaces.paneOf(target)
+  if (!pane) return window.maru.paneReply(id, noPane(target))
   // 자기 pane 을 닫는 CLI 는 pty 와 함께 끝나므로 끄기 전에 답한다.
   window.maru.paneReply(id, null)
   removePane(pane.key)
@@ -967,7 +969,7 @@ function reveal(workspace: number, cell: number, pane?: number): void {
 }
 
 // 데스크톱 알림을 누르면 그 pane 을 선택한다. job 은 pane 이 없으므로 job 이 든 cell 을 선택한다.
-window.maru.onPaneSelect((pty) => {
+window.maru.onPaneSelect(({ pty }) => {
   const at = workspaces.locate(pty, jobs.value.find((j) => j.pty === pty)?.cell)
   if (at) reveal(at.workspace, at.cell, at.pane)
 })
