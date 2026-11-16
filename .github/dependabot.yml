@@ -17,7 +17,7 @@ updates:
       # 먼저 맞는 group 에 들어가므로 minor-and-patch 보다 앞에 둔다.
       xterm:
         patterns: ["@xterm/*"]
-      # Electron 45.2.3·45.3.0 에서 `@xterm/addon-webgl` 이 글자를 기본 글꼴로 그렸으므로, electron 새 버전은 따로 PR 을 받아 e2e 로 확인한다.
+      # Electron 45.2.3~45.3.1 에서 `@xterm/addon-webgl` 이 글자를 기본 글꼴로 그렸으므로(45.3.2 에서 고쳐졌다), electron 새 버전은 따로 PR 을 받아 e2e 로 확인한다.
       # electron 이 minor-and-patch PR 에 섞이면, 그 PR 을 받지 않는 동안 함께 묶인 다른 패키지 업데이트도 받지 못한다.
       electron:
         patterns: ["electron"]
