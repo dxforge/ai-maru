@@ -1,5 +1,5 @@
-import type { CellNewRequest, PaneNewRequest, PaneReply } from '../shared/pane'
-import { isCellId, isPtyId } from '../shared/pty'
+import type { CellNewRequest, PaneNewRequest, PaneReply, PaneTarget } from '../shared/pane'
+import { isCellId, isPaneId, isPtyId } from '../shared/pty'
 import {
   CliError,
   InvalidParams,
@@ -18,16 +18,19 @@ const optionalCommand = (v: unknown): string[] | undefined =>
 
 /**
  * pane 은 renderer 가 들고 있다. `createPanes` 는 pane 요청을 창에 넘기고 `reply` 로 받은 답을 돌려준다.
- * `cellOf` 는 pty(pane 이나 job)의 cell id 를 돌려준다.
+ * `cellOf` 는 pty(pane 이나 job)의 cell id 를 돌려준다. `paneOfPty` 는 화면 snapshot 에서 pty 를 보이는 pane id 를
+ * 찾는다. pane id 를 받는 인자에 pty id 가 오면 오류 메시지에 그 pane id 를 적는 데만 쓴다.
  */
 export function createPanes(
   send: (channel: PaneChannel, id: number, arg: unknown) => boolean,
   cellOf: (pty: string) => string | undefined,
+  paneOfPty: (pty: string) => string | undefined,
   windowReady: WindowReady,
   // pane 의 pty 띄우기에는 시간 제한이 없다. `replyMs` 안에 pty 가 뜨지 않으면 요청이 시간 초과로 실패하고 창이 그 pane 을 닫는다.
   replyMs = WINDOW_WAIT_MS
 ): {
   handlers: Handlers
+  closePty: (pty: string) => Promise<void>
   reply: (id: number, reply: PaneReply) => void
 } {
   let nextId = 0
@@ -79,10 +82,23 @@ export function createPanes(
     return reply
   }
 
-  async function askPty(channel: PaneChannel, arg: () => unknown): Promise<{ pty: string }> {
+  async function askPane(
+    channel: PaneChannel,
+    arg: () => unknown
+  ): Promise<{ pane: string; pty: string; cell?: string }> {
     const reply = await ask(channel, arg)
     if (!reply || !('pty' in reply)) throw new Error('the window answered without a pty')
-    return { pty: reply.pty }
+    return reply
+  }
+
+  function requirePane(v: unknown, name: string): string {
+    if (isPaneId(v)) return v
+    if (isPtyId(v)) {
+      const pane = paneOfPty(v)
+      const hint = pane ? `its pane is ${pane}` : 'see the PANE column of `maru pane list`'
+      throw new InvalidParams(`${v} is a pty, not a pane; ${hint}`)
+    }
+    throw new InvalidParams(`params.${name} must be a pane id, e.g. n-1a2b3c4d`)
   }
 
   const handlers: Handlers = {
@@ -98,27 +114,25 @@ export function createPanes(
       if (cell !== undefined && !isCellId(cell)) {
         throw new InvalidParams('params.cell must be a cell id, e.g. c-1a2b3c4d')
       }
-      if (pane !== undefined) {
-        if (!isPtyId(pane)) throw new InvalidParams('params.pane must be a pty id, e.g. p-1a2b3c4d')
-        if (full || cell !== undefined) {
-          throw new InvalidParams(
-            'params.pane cannot be used when params.full is true or params.cell is given'
-          )
-        }
+      const split = pane === undefined ? undefined : requirePane(pane, 'pane')
+      if (split !== undefined && (full || cell !== undefined)) {
+        throw new InvalidParams(
+          'params.pane cannot be used when params.full is true or params.cell is given'
+        )
       }
       const req: PaneNewRequest = {
-        pty: pane ?? pty,
+        ...(split !== undefined ? { pane: split } : { pty }),
         cwd,
         direction,
         full,
         ...(command && { command }),
         ...(cell !== undefined && { cell })
       }
-      return askPty('pane:new', () => req)
+      return askPane('pane:new', () => req)
     },
     'pane.close': async ({ target }) => {
-      if (!isPtyId(target)) throw new InvalidParams('params.target must be a pty id')
-      await ask('pane:close', () => target)
+      const pane = requirePane(target, 'target')
+      await ask('pane:close', (): PaneTarget => ({ pane }))
       return null
     },
     'cell.new': async (params, pty) => {
@@ -137,48 +151,27 @@ export function createPanes(
         if (!cell) throw new InvalidParams(`no cell for pty ${by}`)
         return { cell, before: key === 'before' }
       }
-      const reply = await ask('cell:new', (): CellNewRequest => {
+      const reply = await askPane('cell:new', (): CellNewRequest => {
         const cell = cellOf(pty)
         const place = target === undefined ? undefined : placeOf(target)
         return { cwd, ...(cell && { cell }), ...(command && { command }), ...(place && { place }) }
       })
-      if (!reply || !('pty' in reply)) throw new Error('the window answered without a pty')
       if (!reply.cell) throw new Error('the window answered without a cell')
-      return { pty: reply.pty, cell: reply.cell }
+      return { pane: reply.pane, pty: reply.pty, cell: reply.cell }
     }
   }
 
   return {
     handlers,
-    reply: (id, reply) => pending.get(id)?.(reply)
-  }
-}
-
-/**
- * `pane.read`·`pane.send` 는 이 창의 pane 의 pty 만 읽고 쓴다. `panes` 는 창이 마지막으로 알린 pane 들의 pty id 이고, 창이
- * 아직 알리지 않았으면 null 이다. job 의 pty 는 여기 없으므로 거절된다.
- */
-export function paneIo(deps: {
-  panes: () => readonly string[] | null
-  capture: (pty: string) => Promise<string>
-  paste: (pty: string, text: string) => Promise<'written' | 'exited'>
-}): Handlers {
-  function paneOf(target: unknown): string {
-    if (!isPtyId(target)) throw new InvalidParams('params.target must be a pty id')
-    const panes = deps.panes()
-    if (!panes) throw new Error('the window has not reported its layout yet')
-    if (!panes.includes(target)) throw new InvalidParams(`no pane for pty ${target}`)
-    return target
-  }
-  return {
-    'pane.read': async ({ target }) => ({ text: await deps.capture(paneOf(target)) }),
-    'pane.send': async ({ target, text }) => {
-      if (typeof text !== 'string' || text === '') {
-        throw new InvalidParams('params.text must be a non-empty string')
+    closePty: async (pty) => {
+      try {
+        await ask('pane:close', (): PaneTarget => ({ pty }))
+      } catch (err) {
+        // 창이 그 pty 의 pane 을 못 찾았으면 `pty.kill` 의 다른 갈래처럼 그런 pty 가 없다고 답한다.
+        if (err instanceof InvalidParams) throw new InvalidParams(`no pty ${pty}`)
+        throw err
       }
-      const pty = paneOf(target)
-      if ((await deps.paste(pty, text)) === 'exited') throw new Error(`pty ${pty} has exited`)
-      return null
-    }
+    },
+    reply: (id, reply) => pending.get(id)?.(reply)
   }
 }

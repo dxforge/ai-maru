@@ -78,6 +78,7 @@ describe('paneRows', () => {
     ])
     expect(paneRows(workspaces, (pty) => states.get(pty), SHELL)).toEqual([
       {
+        pane: 'n-3',
         pty: 'p-a',
         state: 'working',
         kind: null,
@@ -89,6 +90,7 @@ describe('paneRows', () => {
         message: 'reading'
       },
       {
+        pane: 'n-4',
         pty: 'p-shell',
         state: '',
         kind: null,
@@ -100,6 +102,7 @@ describe('paneRows', () => {
         message: ''
       },
       {
+        pane: 'n-6',
         pty: 'p-other',
         state: 'working',
         kind: null,
@@ -111,6 +114,7 @@ describe('paneRows', () => {
         message: ''
       },
       {
+        pane: 'n-7',
         pty: 'p-b',
         state: 'blocked',
         kind: 'permission',
@@ -122,6 +126,7 @@ describe('paneRows', () => {
         message: 'Bash'
       },
       {
+        pane: 'n-10',
         pty: 'p-c',
         state: 'idle',
         kind: null,

@@ -455,6 +455,15 @@ export function screenPanes(
   return { panes: cells.flatMap((c) => c.panes), cells: cells.map((c) => c.id) }
 }
 
+/** `pane` id 의 pane 이 지금도 `pty` 를 보이면 그 pane 이다. 화면에 없거나 그 사이 pty 가 바뀌었으면 undefined 다. */
+export function paneShowing(
+  screen: ScreenState | null,
+  pane: string,
+  pty: string
+): ScreenPane | undefined {
+  return screenPanes(screen).panes.find((p) => p.id === pane && p.ptyId === pty)
+}
+
 export function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, width))
 }

@@ -45,7 +45,7 @@ test('앱 소켓을 열지 못해도 터미널은 뜨고, maru 는 앱에 닿지
   dataDir
 }) => {
   mkdirSync(appSocketPath(ptyDir(dataDir)), { recursive: true })
-  // 앱 소켓이 없으면 `maru pane read` 도 앱에 닿지 않으므로 DOM renderer 가 그린 행에서 읽는다.
+  // 앱 소켓이 없으면 `maru pty read` 도 앱에 닿지 않으므로 DOM renderer 가 그린 행에서 읽는다.
   const { page } = await launch(DOM_RENDERER)
   await page.keyboard.type('maru ping; echo code-$?\n')
   await expect(rows(page)).toContainText('cannot reach the app')

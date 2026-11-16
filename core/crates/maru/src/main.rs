@@ -47,12 +47,14 @@
 //! | `inbox.push` | `to`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
 //! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 pty id>,"text":<본문>}…]}` |
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
-//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `pane`(pty id, 선택), `full`(bool, 선택), `cell`(cell id, 선택) | `{"pty":<새 pty id>}` |
-//! | `pane.close` | `target`(pty id) | `null` |
-//! | `pane.list` | 없음 | `{"panes":[{"pty","state","kind","app","workspace","cell","title","dir","message"}…]}` |
-//! | `pane.read` | `target`(pty id) | `{"text":<글자>}` |
-//! | `pane.send` | `target`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
-//! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택), `after`·`before`(pty id, 선택, 둘 중 하나만) | `{"pty":<새 pty id>,"cell":<새 cell id>}` |
+//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `pane`(pane id, 선택), `full`(bool, 선택), `cell`(cell id, 선택) | `{"pane":<새 pane id>,"pty":<새 pty id>}` |
+//! | `pane.close` | `target`(pane id) | `null` |
+//! | `pane.list` | 없음 | `{"panes":[{"pane","pty","state","kind","app","workspace","cell","title","dir","message"}…]}` |
+//! | `pty.list` | 없음 | `{"ptys":[{"pty","kind","workspace","cell","state","state_kind","exit","name","dir"}…]}` |
+//! | `pty.read` | `target`(pty id) | `{"text":<글자>}` |
+//! | `pty.send` | `target`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
+//! | `pty.kill` | `target`(pty id) | `null` |
+//! | `cell.new` | `cwd`(절대경로 문자열), `command`(문자열 배열, 비어 있지 않음, 선택), `after`·`before`(pty id, 선택, 둘 중 하나만) | `{"pane":<새 pane id>,"pty":<새 pty id>,"cell":<새 cell id>}` |
 //! | `job.new` | `command`(문자열 배열, 비어 있지 않음), `cwd`(절대경로 문자열), `name`(문자열, 선택) | `{"pty":<job 의 pty id>}` |
 //! | `job.list` | 없음 | `{"jobs":[{"pty","name"(이름이 있을 때),"command","state":"running"·"exited","code","signal"}…]}` |
 //! | `job.read` | `target`(job 이름이나 pty id) | `{"text":<글자>}` |
@@ -65,13 +67,24 @@
 //! `claude.notification` 은 앱 claude plugin 의 Notification hook 이 받은 claude 의 알림이다. `type` 은 hook 입력의
 //! `notification_type` 이다.
 //!
+//! pty 는 `maru-pty` 프로세스 하나가 드는 터미널 본체이고, id 는 `p-` 와 hex 8자리다. pane 은 pty 하나를 보이는
+//! 화면의 자리이고, id 는 `n-` 와 hex 8자리다. pane id 는 `app.restart` 뒤에도 같지만, pane 이 보이는 pty 는 바뀔
+//! 수 있다. job 은 pane 없는 pty 다. 요청의 `pty` 는 부른 터미널의 pty id 다.
+//!
 //! `pane.list` 는 창의 모든 workspace·cell 의 pane 을 화면 순서(workspace → cell → pane)로 돌려준다.
-//! job 은 들지 않는다. `state`·`kind`·`message` 는 사이드바가 보이는 program_status 레코드(루트와 하위
+//! job 은 들지 않는다. `pane` 은 pane id, `pty` 는 그 pane 이 보이는 pty 의 id 다. `state`·`kind`·`message` 는 사이드바가 보이는 program_status 레코드(루트와 하위
 //! 가운데 앱이 고른 것)의 값이다. `state` 는 레코드의 상태(`idle`·`working`·`done`·`blocked`·`error`)다.
 //! `kind` 는 `permission`·`question`·`auth` 나 null 이다. `app` 은 루트 레코드의 `app` 이다. 보일 레코드가
 //! 없는 pane 은 `state`·`app`·`message` 가 빈 문자열이고 `kind` 는 null 이다. `workspace`·`title` 은
 //! 사이드바가 보이는 이름이다. `cell` 은 pane 이 든 cell 의 id(`c-` 와 hex 8자리)다.
 //! `dir` 는 pane 의 cwd 절대경로이고, 모르면 시작 디렉토리, 그것도 없으면 빈 문자열이다.
+//!
+//! `pty.list` 는 창의 pty 를 모두 돌려준다. pane 의 pty 를 `pane.list` 와 같은 순서로 싣고, 그 뒤에 job 을 띄운
+//! 순서로 싣는다. `kind` 는 `pane`·`job` 이다. `workspace`·`cell` 은 그 pane 이나 job 이 든 workspace 의 이름과
+//! cell 의 id 이고, 모르면 빈 문자열이다. `state`·`state_kind` 는 `pane.list` 의 `state`·`kind` 와 같다. `exit` 는
+//! 셸이 돌고 있거나 모르면 null 이고, 끝났으면 `{"code","signal"}` 이다 — 끝난 job 과 셸이 끝난 뒤 남은 pane
+//! 이 그렇다. `name` 은 pane 이면 `pane.list` 의 `title`, job 이면 job 의 이름이고, 없으면 빈 문자열이다. `dir` 는
+//! pane 이면 `pane.list` 의 `dir`, job 이면 셸이 알린 cwd 절대경로이고, 모르면 빈 문자열이다.
 //!
 //! cell id 는 cell 이 닫힐 때까지 바뀌지 않는다. cell 을 다른 workspace 로 옮겨도, `app.restart` 뒤에도
 //! 같다.
@@ -86,9 +99,10 @@
 //! 지운다. 보관은 앱 메모리에만 한다.
 //!
 //! `pane.new` 는 `pty` 의 pane 을 `direction` 쪽으로 나누고, 새 pane 에서 `cwd` 를 시작 디렉토리로
-//! pty 를 띄운다. `pane` 이 있으면 `pty` 의 pane 대신 `pane` 이 가리키는 pty 의 pane 을 나눈다. 창
-//! 안의 어느 workspace 의 pane 이든 되고, 부른 pty 가 job 이어도 된다. `pane` 이 `p-` 와 hex 8자리가
-//! 아니거나, `cell` 이나 true 인 `full` 과 함께 오면 `invalid_params` 다. `full` 이 true 면 `pty` 의
+//! pty 를 띄운다. 답의 `pane` 은 새 pane 의 id, `pty` 는 새 pty 의 id 다. `pane` 이 있으면 `pty` 의 pane
+//! 대신 그 id 의 pane 을 나눈다. 창 안의 어느 workspace 의 pane 이든 되고, 부른 pty 가 job 이어도 된다.
+//! `pane` 이 pane id 가 아니거나, `cell` 이나 true 인 `full` 과 함께 오면 `invalid_params` 다. pty id 를
+//! 주면, 앱이 아는 화면에 그 pty 를 보이는 pane 이 있을 때 그 pane 의 id 를 오류 메시지에 적는다. `full` 이 true 면 `pty` 의
 //! pane 이 든 cell 전체를 나눠 새 pane 을 `direction` 쪽 끝에 붙인다. `cell` 이 있으면 `pty` 의
 //! pane 대신 그 id 의 cell 전체를 `full` 처럼 나눈다. 창 안의 어느 workspace 의 cell 이든 되고, 부른
 //! pty 가 job 이어도 된다. `cell` 이 `c-` 와 hex 8자리가 아니거나 그 cell 이 창에 없으면
@@ -99,21 +113,24 @@
 //! -32001 `no_space` 로 답하고 pane 을 열지 않는다. pty 를 띄우지 못하면 나눈 pane 을 닫고
 //! `internal_error` 로 답한다.
 //!
-//! `pane.close` 는 `target` pty 의 pane 을 닫고 그 pty 를 끈다. `target` 의 pane 이 창에 없으면
-//! `invalid_params` 다. 앱은 pane 을 찾은 뒤 답하고 pty 를 끄므로, 자기 pane 을 닫은 CLI 는 답을 받기
-//! 전에 끝날 수 있다.
+//! `pane.close` 는 `target` pane 을 닫고 그 pty 를 끈다. 셸이 끝난 뒤 남은 pane 도 닫는다. `target` 이
+//! pane id 가 아니거나 그 pane 이 창에 없으면 `invalid_params` 다. pty id 를 주면 `pane.new` 처럼 그 pane 의
+//! id 를 오류 메시지에 적는다. 앱은 pane 을 찾은 뒤 답하고 pty 를 끄므로, 자기 pane 을 닫은 CLI 는 답을
+//! 받기 전에 끝날 수 있다.
 //!
-//! `pane.read` 는 `target` pty 의 pane 을 읽고 `pane.send` 는 그 pane 에 입력을 쓴다. 창의 어느 workspace·cell 의 pane
-//! 이든 되고, 부른 pty 의 pane 도 된다. `target` 의 pane 이 `pane.list` 에 없으면(job 의 pty 포함) `invalid_params` 다.
+//! `pty.read`·`pty.send`·`pty.kill` 의 `target` 은 `pty.list` 에 나오는 pty 의 id 다. 창의 어느 workspace·cell 의
+//! pane 의 pty 든, job 의 pty 든 되고, 부른 pty 도 된다. `pty.list` 에 없는 pty 면 `invalid_params` 다.
 //!
-//! - `pane.read` 는 `job.read` 처럼 스크롤백과 화면을 스타일 없는 글자로 돌려준다. 화면 폭에서 접힌 줄은 잇는다.
-//! - `pane.send` 는 `text` 를 pane 에 입력한다. `text` 는 maru-pty `input` 에 `paste` 를 켜고 보내므로, 본문을
+//! - `pty.read` 는 `job.read` 처럼 스크롤백과 화면을 스타일 없는 글자로 돌려준다. 화면 폭에서 접힌 줄은 잇는다.
+//! - `pty.send` 는 `text` 를 pty 에 입력한다. `text` 는 maru-pty `input` 에 `paste` 를 켜고 보내므로, 본문을
 //!   bracketed paste 로 감쌀지는 그 규칙(`core/crates/maru-pty/src/lib.rs`)을 따른다. 셸이 끝났으면
 //!   `internal_error` 다. 8초 안에 다 쓰지 못할 때는 `job.send` 와 같다.
+//! - `pty.kill` 은 묻지 않고 pty 를 끈다. job 의 pty 면 `job.kill` 과 같고, pane 의 pty 면 `pane.close` 처럼
+//!   그 pty 를 보이는 pane 을 닫는다. 답하는 때도 `pane.close` 와 같다.
 //!
 //! `cell.new` 는 pane 하나인 cell 을 만들어 `pty` 의 cell 바로 뒤에 넣고, 그 pane 에서 `pane.new` 처럼
-//! pty 를 띄운다. 답의 `cell` 은 새 cell 의 id 다. `cell` 이 없는 답(이전 앱)이면 `maru cell new` 는 CELL 을
-//! 비워 찍는다. `pty` 가 job 이면 그 job 의 cell 이다(`job.*` 와 같다). 한 cell 에서 여러 번 부르면
+//! pty 를 띄운다. 답의 `pane`·`cell` 은 새 pane 과 새 cell 의 id 다. `pane`·`cell` 이 없는 답(이전 앱)이면
+//! `maru cell new` 는 그 열을 비워 찍는다. `pty` 가 job 이면 그 job 의 cell 이다(`job.*` 와 같다). 한 cell 에서 여러 번 부르면
 //! 나중에 연 cell 이 앞에 놓인다. `after`·`before` 가 있으면 그 pty(pane 이나 job)의 cell 바로 뒤나
 //! 바로 앞에 넣는다. 둘이 함께 오거나, pty id 가 아니거나, 그 pty 의 cell 이 없거나, 그 cell 이
 //! `pty` 의 cell 과 다른 workspace 에 있으면 `invalid_params` 다.
@@ -136,7 +153,7 @@
 //!   있으면 null 이다.
 //! - `target` 이 `p-` 와 hex 8자리면 pty id 로, 아니면 이름으로 찾는다. 없으면 `invalid_params` 다.
 //! - `job.read` 는 스크롤백과 화면을 스타일 없는 글자로 돌려준다. 화면 폭에서 접힌 줄은 잇는다.
-//! - `job.send` 는 `pane.send` 처럼 `text` 를 maru-pty `input` 에 `paste` 를 켜고 보낸다(Enter 는 CLI 가
+//! - `job.send` 는 `pty.send` 처럼 `text` 를 maru-pty `input` 에 `paste` 를 켜고 보낸다(Enter 는 CLI 가
 //!   `text` 끝에 `\r` 로 붙인다). 끝난 job 이면 -32001
 //!   `job_exited` 다. 프로그램이 입력을 읽지 않아 8초 안에 다 쓰지 못하면 `internal_error` 로 답하지만,
 //!   입력은 pty 에 남아 프로그램이 읽을 때 들어간다. 줄 단위로 읽는 프로그램에는 PTY 의 줄 버퍼
@@ -264,7 +281,19 @@ enum Command {
         #[command(subcommand)]
         command: InboxCommand,
     },
-    /// Open panes next to this terminal, and list, read, type into and close panes in this window.
+    /// Work with ptys. A pty is an AI Maru terminal, shown in a pane or, as a job, not shown.
+    ///
+    /// A pty's id, e.g. p-1a2b3c4d, is MARU_PTY_ID inside it. The PTY column of
+    /// `maru pane list` shows the pty of each pane, and `maru pty list` lists every pty in
+    /// this window.
+    Pty {
+        #[command(subcommand)]
+        command: PtyCommand,
+    },
+    /// Open panes next to this terminal, and list and close panes in this window.
+    ///
+    /// A pane is a place on the screen that shows one pty. Its id, e.g. n-1a2b3c4d, is in the
+    /// PANE column of `maru pane list`.
     Pane {
         #[command(subcommand)]
         command: PaneCommand,
@@ -340,14 +369,69 @@ enum InboxCommand {
 }
 
 #[derive(Subcommand)]
+enum PtyCommand {
+    /// List the ptys in this window: the ptys of panes in screen order, then jobs in the order
+    /// they started.
+    ///
+    /// Prints tab-separated columns with a header: PTY, KIND, WORKSPACE, CELL, STATE, EXIT,
+    /// NAME, DIR. KIND is pane for a pty shown in a pane and job for a job. WORKSPACE is the
+    /// name shown in the sidebar and CELL the id of the cell the pane or job belongs to. STATE
+    /// is the program status, as in `maru pane list`. EXIT is empty while the pty runs, and
+    /// once it has exited is the exit code, or e.g. `signal 15`. NAME is the pane's title or
+    /// the job's name. DIR is the pty's directory. Control characters in a value, such as tabs
+    /// and newlines, become spaces, and an unknown value is an empty column.
+    List,
+    /// Print the scrollback and screen of a pty as text. Lines wrapped at the screen width are
+    /// joined.
+    Read {
+        /// Pty id from `maru pty list`, e.g. p-1a2b3c4d.
+        pty: String,
+    },
+    /// Type TEXT into a pty. Enter is not pressed; end TEXT with a carriage return to press
+    /// it. `maru job send` presses Enter.
+    ///
+    /// Reads TEXT, or stdin when TEXT is omitted or `-`. Backslash escapes in TEXT are not
+    /// interpreted; put control characters in with the shell's `$'...'` quoting, as in the
+    /// examples below.
+    ///
+    /// If TEXT ends with a carriage return, it is set aside and the rest is the body. When the
+    /// pty's program has turned on bracketed paste, as Claude Code and zsh do, and the body
+    /// has a newline or is 32 bytes or longer, the body is typed as a paste: it is wrapped in
+    /// paste markers so the program takes it as one paste, and the carriage return follows
+    /// after the markers to press Enter. Otherwise TEXT is typed unchanged as keys. A short
+    /// TEXT such as 2, y, $':wq\r' or $'\t' therefore works as keys in a menu or an editor. A
+    /// program that has not turned on bracketed paste gets TEXT unchanged, and may not take a
+    /// long line as one input.
+    #[command(after_long_help = "Examples:
+  maru pty send p-1a2b3c4d \"$text\"$'\\r'     type a line of text and press Enter
+  maru pty send p-1a2b3c4d 2                press 2, e.g. to select option 2 in a menu
+  maru pty send p-1a2b3c4d $'ls\\r'          run ls in a shell
+  maru pty send p-1a2b3c4d $'\\x03'          press Ctrl+C")]
+    Send {
+        /// Pty id from `maru pty list`, e.g. p-1a2b3c4d.
+        pty: String,
+        /// Text to type. It may start with `-`.
+        #[arg(allow_hyphen_values = true)]
+        text: Option<String>,
+    },
+    /// End a pty without asking. A pane's pty closes its pane, as `maru pane close` does; a
+    /// job's pty ends the job, as `maru job kill` does.
+    Kill {
+        /// Pty id from `maru pty list`, e.g. p-1a2b3c4d.
+        pty: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum PaneCommand {
     /// Split this terminal's pane and run COMMAND in the new pane, or a shell when COMMAND
     /// is omitted. The pane closes when COMMAND exits. Focus stays where it is.
     ///
-    /// Prints the new pane's pty id; `maru inbox push` sends messages to it and
-    /// `maru pane close` closes it. `--pane` splits another pane instead, and `--cell` opens
-    /// the pane in another cell. Options go before COMMAND; everything from COMMAND on is
-    /// passed to COMMAND. Use `sh -c '...'` for a pipeline.
+    /// Prints tab-separated columns with a header: PANE, the new pane's id, and PTY, its pty
+    /// id. `maru pane close` closes the pane, and `maru inbox push` and `maru pty send` take
+    /// the pty. `--split` splits another pane instead, and `--cell` opens the pane in another
+    /// cell. Options go before COMMAND; everything from COMMAND on is passed to COMMAND. Use
+    /// `sh -c '...'` for a pipeline.
     New {
         /// Directory to start in. Defaults to the current directory.
         #[arg(long)]
@@ -355,11 +439,11 @@ enum PaneCommand {
         /// Split below instead of to the right.
         #[arg(long)]
         down: bool,
-        /// Split the pane of the pty with this id instead of this terminal's pane, e.g.
-        /// p-1a2b3c4d. Any pane in this window works. The PTY column of `maru pane list`
-        /// shows the pty id of each pane.
-        #[arg(long, value_name = "PTY", conflicts_with_all = ["full", "cell"])]
-        pane: Option<String>,
+        /// Split the pane with this id instead of this terminal's pane, e.g. n-1a2b3c4d. Any
+        /// pane in this window works. The PANE column of `maru pane list` shows the id of each
+        /// pane.
+        #[arg(long, value_name = "PANE", conflicts_with_all = ["full", "cell"])]
+        split: Option<String>,
         /// Split the whole cell instead of this pane, adding the new pane at its right
         /// end (bottom end with --down).
         #[arg(long)]
@@ -374,56 +458,26 @@ enum PaneCommand {
         #[arg(trailing_var_arg = true)]
         command: Vec<String>,
     },
-    /// Close the pane of a pty, any pane in this window.
+    /// Close a pane, any pane in this window, and end its pty. A pane left showing a pty that
+    /// has exited closes too.
     Close {
-        /// Pty id of the pane to close, e.g. p-1a2b3c4d.
-        pty: String,
+        /// Id of the pane to close, e.g. n-1a2b3c4d.
+        pane: String,
     },
     /// List the panes in every workspace and cell, in screen order.
     ///
-    /// Prints tab-separated columns with a header: PTY, STATE, APP, WORKSPACE, CELL, TITLE,
-    /// DIR, MESSAGE. PTY is the pane's pty id, which `maru pane new --pane` takes. STATE, APP
-    /// and MESSAGE come from the program status the pane's program reported, and are empty
-    /// when it reported none. STATE is idle, working, done, blocked or error; a blocked state
-    /// with a reason reads e.g. blocked(permission). APP is the program, e.g. claude-code.
-    /// WORKSPACE and TITLE are the names shown in the sidebar. CELL is the id of the pane's
-    /// cell, e.g. c-1a2b3c4d, which `maru pane new --cell` takes. DIR is the pane's
-    /// directory. Control characters in a value, such as tabs and newlines, become spaces,
-    /// and an unknown value is an empty column.
+    /// Prints tab-separated columns with a header: PANE, PTY, STATE, APP, WORKSPACE, CELL,
+    /// TITLE, DIR, MESSAGE. PANE is the pane's id, which `maru pane new --split` and
+    /// `maru pane close` take; it stays the same when the app restarts. PTY is the id of the
+    /// pty the pane shows, which `maru pty` takes. STATE, APP and MESSAGE come from the
+    /// program status the pane's program reported, and are empty when it reported none. STATE
+    /// is idle, working, done, blocked or error; a blocked state with a reason reads e.g.
+    /// blocked(permission). APP is the program, e.g. claude-code. WORKSPACE and TITLE are the
+    /// names shown in the sidebar. CELL is the id of the pane's cell, e.g. c-1a2b3c4d, which
+    /// `maru pane new --cell` takes. DIR is the pane's directory. Control characters in a
+    /// value, such as tabs and newlines, become spaces, and an unknown value is an empty
+    /// column.
     List,
-    /// Print the scrollback and screen of a pane, any pane in this window, as text. Lines
-    /// wrapped at the screen width are joined.
-    Read {
-        /// Pty id of the pane, e.g. p-1a2b3c4d.
-        pty: String,
-    },
-    /// Type TEXT into a pane, any pane in this window. Enter is not pressed; end TEXT with a
-    /// carriage return to press it.
-    ///
-    /// Reads TEXT, or stdin when TEXT is omitted or `-`. Backslash escapes in TEXT are not
-    /// interpreted; put control characters in with the shell's `$'...'` quoting, as in the
-    /// examples below.
-    ///
-    /// If TEXT ends with a carriage return, it is set aside and the rest is the body. When the
-    /// pane's program has turned on bracketed paste, as Claude Code and zsh do, and the body
-    /// has a newline or is 32 bytes or longer, the body is typed as a paste: it is wrapped in
-    /// paste markers so the program takes it as one paste, and the carriage return follows
-    /// after the markers to press Enter. Otherwise TEXT is typed unchanged as keys. A short
-    /// TEXT such as 2, y, $':wq\r' or $'\t' therefore works as keys in a menu or an editor. A
-    /// program that has not turned on bracketed paste gets TEXT unchanged, and may not take a
-    /// long line as one input.
-    #[command(after_long_help = "Examples:
-  maru pane send p-1a2b3c4d \"$text\"$'\\r'     type a line of text and press Enter
-  maru pane send p-1a2b3c4d 2                press 2, e.g. to select option 2 in a menu
-  maru pane send p-1a2b3c4d $'ls\\r'          run ls in a shell
-  maru pane send p-1a2b3c4d $'\\x03'          press Ctrl+C")]
-    Send {
-        /// Pty id of the pane, e.g. p-1a2b3c4d.
-        pty: String,
-        /// Text to type. It may start with `-`.
-        #[arg(allow_hyphen_values = true)]
-        text: Option<String>,
-    },
 }
 
 #[derive(Subcommand)]
@@ -432,9 +486,9 @@ enum CellCommand {
     /// COMMAND is omitted. The cell closes when COMMAND exits. Focus and the selected cell stay
     /// where they are.
     ///
-    /// Prints tab-separated columns with a header: PTY, the new pane's pty id, and CELL, the
-    /// new cell's id. `maru inbox push` sends messages to the pty and `maru pane close` closes
-    /// its pane; `maru pane new --cell` opens more panes in the cell. `--after` or `--before`
+    /// Prints tab-separated columns with a header: PANE, the new pane's id, PTY, its pty id,
+    /// and CELL, the new cell's id. `maru pane close` closes the pane, `maru inbox push` sends
+    /// messages to the pty and `maru pane new --cell` opens more panes in the cell. `--after` or `--before`
     /// places the cell next to another cell in this terminal's workspace instead. Options go
     /// before COMMAND; everything from COMMAND on is passed to COMMAND. Use `sh -c '...'` for a
     /// pipeline.
@@ -485,7 +539,8 @@ enum JobCommand {
     ///
     /// Reads TEXT, or stdin when TEXT is omitted or `-`. When the job's program has turned on
     /// bracketed paste and TEXT has a newline or is 32 bytes or longer, TEXT is pasted, as with
-    /// `maru pane send`. Enter is pressed after the paste unless --no-enter is given. A program
+    /// `maru pty send`. Enter is pressed after the paste unless --no-enter is given, while
+    /// `maru pty send` does not press it. A program
     /// that reads line by line does not get a line longer than the terminal's line buffer (1024
     /// bytes on macOS).
     Send {
@@ -639,30 +694,36 @@ fn run(command: Command) -> Result<()> {
             InboxCommand::Push { pty, message } => inbox_push(pty, message)?,
             InboxCommand::Read => inbox_read()?,
         },
+        Command::Pty { command } => match command {
+            PtyCommand::List => pty_list()?,
+            PtyCommand::Read { pty } => print_read("pty.read", pty)?,
+            PtyCommand::Send { pty, text } => send_text(
+                "pty.send",
+                pty,
+                text,
+                false,
+                "give TEXT or pipe the input into stdin, e.g. `maru pty send p-1a2b3c4d $'ls\\r'`",
+            )?,
+            PtyCommand::Kill { pty } => {
+                call(&target()?, "pty.kill", target_params(pty))?;
+            }
+        },
         Command::Pane { command } => match command {
             PaneCommand::New {
                 cwd,
                 down,
-                pane,
+                split,
                 full,
                 cell,
                 command,
             } => {
-                let pty = pane_new(cwd, down, pane, full, cell, command)?;
-                writeln!(std::io::stdout(), "{pty}")?;
+                let (pane, pty) = pane_new(cwd, down, split, full, cell, command)?;
+                write!(std::io::stdout(), "PANE\tPTY\n{pane}\t{pty}\n")?;
             }
-            PaneCommand::Close { pty } => {
-                call(&target()?, "pane.close", target_params(pty))?;
+            PaneCommand::Close { pane } => {
+                call(&target()?, "pane.close", target_params(pane))?;
             }
             PaneCommand::List => pane_list()?,
-            PaneCommand::Read { pty } => print_read("pane.read", pty)?,
-            PaneCommand::Send { pty, text } => send_text(
-                "pane.send",
-                pty,
-                text,
-                false,
-                "give TEXT or pipe the input into stdin, e.g. `maru pane send p-1a2b3c4d $'ls\\r'`",
-            )?,
         },
         Command::Cell {
             command:
@@ -673,8 +734,11 @@ fn run(command: Command) -> Result<()> {
                     command,
                 },
         } => {
-            let (pty, cell) = cell_new(cwd, after, before, command)?;
-            write!(std::io::stdout(), "PTY\tCELL\n{pty}\t{cell}\n")?;
+            let (pane, pty, cell) = cell_new(cwd, after, before, command)?;
+            write!(
+                std::io::stdout(),
+                "PANE\tPTY\tCELL\n{pane}\t{pty}\t{cell}\n"
+            )?;
         }
         Command::Job { command } => match command {
             JobCommand::New { name, cwd, command } => {
@@ -1417,7 +1481,7 @@ fn pane_new(
     full: bool,
     cell: Option<String>,
     command: Vec<String>,
-) -> Result<String> {
+) -> Result<(String, String)> {
     let target = target()?;
     let mut params = Map::new();
     params.insert("cwd".into(), start_dir(cwd)?.into());
@@ -1437,7 +1501,10 @@ fn pane_new(
     if !command.is_empty() {
         params.insert("command".into(), command.into());
     }
-    field(&call(&target, "pane.new", params)?, "pty")
+    let result = call(&target, "pane.new", params)?;
+    // `pane` 을 답에 싣기 전의 앱도 pane 을 이미 열고 pty 를 띄운 뒤 답하므로, `cell_new` 처럼 실패로 끝내지 않고 PANE 을 비운다.
+    let pane = result["pane"].as_str().unwrap_or_default().to_owned();
+    Ok((pane, field(&result, "pty")?))
 }
 
 fn cell_new(
@@ -1445,7 +1512,7 @@ fn cell_new(
     after: Option<String>,
     before: Option<String>,
     command: Vec<String>,
-) -> Result<(String, String)> {
+) -> Result<(String, String, String)> {
     let target = target()?;
     let mut params = Map::new();
     params.insert("cwd".into(), start_dir(cwd)?.into());
@@ -1459,9 +1526,9 @@ fn cell_new(
         params.insert("command".into(), command.into());
     }
     let result = call(&target, "cell.new", params)?;
-    // `cell` 을 답에 싣기 전의 앱도 cell 을 이미 열고 pty 를 띄운 뒤 답하므로, 실패로 끝내지 않고 CELL 을 비운다.
-    let cell = result["cell"].as_str().unwrap_or_default().to_owned();
-    Ok((field(&result, "pty")?, cell))
+    // `pane`·`cell` 을 답에 싣기 전의 앱도 cell 을 이미 열고 pty 를 띄운 뒤 답하므로, 실패로 끝내지 않고 그 열을 비운다.
+    let text = |key: &str| result[key].as_str().unwrap_or_default().to_owned();
+    Ok((text("pane"), field(&result, "pty")?, text("cell")))
 }
 
 fn job_new(name: Option<String>, cwd: Option<PathBuf>, command: Vec<String>) -> Result<String> {
@@ -1608,7 +1675,22 @@ fn pane_list() -> Result<()> {
     let Some(rows) = list_rows("pane.list", "panes", |p| pane_row(p, home.as_deref()))? else {
         return Ok(());
     };
-    let mut text = String::from("PTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE\n");
+    print_tsv(
+        "PANE\tPTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE",
+        rows,
+    )
+}
+
+fn pty_list() -> Result<()> {
+    let home = env_var("HOME");
+    let Some(rows) = list_rows("pty.list", "ptys", |p| pty_row(p, home.as_deref()))? else {
+        return Ok(());
+    };
+    print_tsv("PTY\tKIND\tWORKSPACE\tCELL\tSTATE\tEXIT\tNAME\tDIR", rows)
+}
+
+fn print_tsv<const N: usize>(header: &str, rows: Vec<[String; N]>) -> Result<()> {
+    let mut text = format!("{header}\n");
     for row in rows {
         text.push_str(&row.join("\t"));
         text.push('\n');
@@ -1620,15 +1702,45 @@ fn pane_list() -> Result<()> {
     }
 }
 
-fn pane_row(pane: &Value, home: Option<&str>) -> Result<[String; 8]> {
-    let fail = || anyhow!("the app answered with a pane it cannot print: {pane}");
-    let text = |key: &str| pane[key].as_str().ok_or_else(fail);
-    let state = match (text("state")?, &pane["kind"]) {
-        ("blocked", Value::String(kind)) => format!("blocked({kind})"),
-        (state, Value::Null | Value::String(_)) => state.to_owned(),
-        _ => return Err(fail()),
+fn program_state(state: &str, kind: &Value) -> Option<String> {
+    match (state, kind) {
+        ("blocked", Value::String(kind)) => Some(format!("blocked({kind})")),
+        (state, Value::Null | Value::String(_)) => Some(state.to_owned()),
+        _ => None,
+    }
+}
+
+fn pty_row(pty: &Value, home: Option<&str>) -> Result<[String; 8]> {
+    let fail = || anyhow!("the app answered with a pty it cannot print: {pty}");
+    let text = |key: &str| pty[key].as_str().ok_or_else(fail);
+    let state = program_state(text("state")?, &pty["state_kind"]).ok_or_else(fail)?;
+    let exit = match &pty["exit"] {
+        Value::Null => String::new(),
+        exit => match (exit["code"].as_i64(), exit["signal"].as_i64()) {
+            (_, Some(signal)) => format!("signal {signal}"),
+            (Some(code), None) => code.to_string(),
+            (None, None) => return Err(fail()),
+        },
     };
     let row = [
+        text("pty")?.to_owned(),
+        text("kind")?.to_owned(),
+        text("workspace")?.to_owned(),
+        text("cell")?.to_owned(),
+        state,
+        exit,
+        text("name")?.to_owned(),
+        tilde(text("dir")?, home),
+    ];
+    Ok(row.map(|v| tsv_field(&v)))
+}
+
+fn pane_row(pane: &Value, home: Option<&str>) -> Result<[String; 9]> {
+    let fail = || anyhow!("the app answered with a pane it cannot print: {pane}");
+    let text = |key: &str| pane[key].as_str().ok_or_else(fail);
+    let state = program_state(text("state")?, &pane["kind"]).ok_or_else(fail)?;
+    let row = [
+        text("pane")?.to_owned(),
         text("pty")?.to_owned(),
         state,
         text("app")?.to_owned(),

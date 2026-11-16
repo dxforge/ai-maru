@@ -23,6 +23,7 @@ export function paneRows(
         const s = state(p.ptyId)
         const r = s && shownRecord(s.records)
         rows.push({
+          pane: p.id,
           pty: p.ptyId,
           state: r?.state ?? '',
           kind: r?.kind ?? null,

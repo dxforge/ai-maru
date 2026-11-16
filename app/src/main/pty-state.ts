@@ -51,7 +51,7 @@ export function createPtyStates(deps: PtyStatesDeps) {
         // 다시 띄우면 끄기 전에 done 이 된 레코드가 첫 상태로 온다.
         if (!before || !current() || !deps.viewing(id)) return
         // `state` 는 보고 있는 동안에도 상태가 바뀔 때마다 온다. 보기 전부터 done 이던 레코드까지 넘기면 머문 시간을 재지 않고
-        // 지우게 되므로, 그런 레코드는 `pane:seen` 으로만 지운다.
+        // 지우게 되므로, 그런 레코드는 `pty:seen` 으로만 지운다.
         const done = state.records.filter(
           (r) => r.state === 'done' && !before.some((b) => b.id === r.id && b.state === 'done')
         )

@@ -100,10 +100,10 @@ test('LaunchServices 에 없는 첫 인스턴스는 두 번째 실행에 넘겨 
   const relaunched = await handOverToSecond(app, dataDir, defer)
   await expect
     .poll(async () => (await cli(dataDir, pty, ['pane', 'list']).catch(() => '')).split('\n'))
-    .toContainEqual(expect.stringMatching(new RegExp(`^${pty}\\t`)))
+    .toContainEqual(expect.stringMatching(new RegExp(`^n-[0-9a-f]{8}\\t${pty}\\t`)))
   expect((await readRecord(ptyDir(dataDir), pty))!.shell_pid).toBe(shell)
   expect(processExists(shell)).toBe(true)
-  expect(await cli(dataDir, pty, ['pane', 'read', pty])).toContain('before-2')
+  expect(await cli(dataDir, pty, ['pty', 'read', pty])).toContain('before-2')
   await quitApp(relaunched, dataDir)
   await expect.poll(() => processExists(shell)).toBe(false)
 })
@@ -125,7 +125,7 @@ test('넘겨받을 때 설치본의 cells 형식이 다르면 묻지 않고 pty 
   expect(sockets(dataDir)).toHaveLength(1)
   await expect
     .poll(async () => (await cli(dataDir, pty, ['pane', 'list']).catch(() => '')).split('\n'))
-    .toContainEqual(expect.stringMatching(new RegExp(`^${pty}\\t`)))
+    .toContainEqual(expect.stringMatching(new RegExp(`^n-[0-9a-f]{8}\\t${pty}\\t`)))
   await quitApp(relaunched, dataDir)
 })
 

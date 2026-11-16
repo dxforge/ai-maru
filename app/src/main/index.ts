@@ -46,7 +46,9 @@ import { mcpHandlers } from './mcp'
 import { installCommandMenu } from './menu'
 import { createMonitor } from './monitor'
 import { isDevReload } from './navigation'
-import { createPanes, paneIo } from './pane'
+import { createPanes } from './pane'
+import { ptyCli } from './pty-cli'
+import { isObject } from '../shared/object'
 import { createWindowReady } from './window-ready'
 import { createJobs, JOB_REPLY_MS } from './job'
 import { removeTmpFiles } from './json-file'
@@ -75,6 +77,7 @@ import {
   JOB_SPAWN_TIMEOUT_MS,
   QUIT_TIMEOUT_MS,
   processExists,
+  ptyExit,
   readRecord,
   runDir,
   ptyLive,
@@ -126,12 +129,13 @@ import { statusText } from '../shared/program-status'
 import {
   joinTables,
   parseScreen,
+  paneShowing,
   screenPanes,
   type Restore,
   type ScreenState,
   type ViewPrefs
 } from '../shared/screen'
-import { isPtyId, newPtyId, type PtyOpen } from '../shared/pty'
+import { isPaneId, isPtyId, newPtyId, type PtyOpen } from '../shared/pty'
 import { GHOSTTY, isLight, parseWindowTheme, type WindowTheme } from '../shared/theme'
 
 const runFile = promisify(execFile)
@@ -242,11 +246,11 @@ const desktopNotifications = createDesktopNotifications({
     const win = mainWindow()
     if (!win || win.isDestroyed()) return
     bringToFront(win)
-    win.webContents.send('pane:select', pty)
+    win.webContents.send('pane:select', { pty })
   }
 })
 
-// renderer 가 `pane:viewed` 로 알린, 입력 focus 를 가진 pane 의 pty. renderer 를 다시 읽으면 renderer 가 다시 알리기 전까지 보고 있는 pty 가 없는 것으로 친다.
+// renderer 가 `pty:viewed` 로 알린, 입력 focus 를 가진 pane 의 pty. renderer 를 다시 읽으면 renderer 가 다시 알리기 전까지 보고 있는 pty 가 없는 것으로 친다.
 let viewedPty: string | null = null
 
 // main 은 renderer 가 붙어 있든 아니든 pty 마다 상태 구독을 열어 마지막 상태를 든다(docs/architecture.md 의 "pty 상태는 main 이 구독해 든다").
@@ -277,6 +281,7 @@ const panes = createPanes(
     return true
   },
   cellOf,
+  (pty) => screenPanes(currentScreen()).panes.find((p) => p.ptyId === pty)?.id,
   windowReady
 )
 
@@ -494,9 +499,8 @@ async function checkClose(find: () => Promise<Dialog | null>): Promise<CloseAnsw
 }
 
 // 화면에 아직 없는 pane 은 명령 pane 인지 모르므로 foreground 로 가른다.
-async function closePaneCheck(pty: string): Promise<Dialog | null> {
-  const { panes } = screenPanes(currentScreen())
-  const pane = panes.find((p) => p.ptyId === pty) ?? { ptyId: pty }
+async function closePaneCheck(paneId: string, pty: string): Promise<Dialog | null> {
+  const pane = paneShowing(currentScreen(), paneId, pty) ?? { ptyId: pty }
   const program = await runningProgram(pane, programDeps)
   return program && closePaneDialog(program.name)
 }
@@ -576,14 +580,6 @@ const cliHandlers: Handlers = {
   ...claudeNotificationHandlers(ptyStates.notify),
   ...inbox,
   ...panes.handlers,
-  ...paneIo({
-    panes: () => {
-      const screen = currentScreen()
-      return screen && screenPanes(screen).panes.map((p) => p.ptyId)
-    },
-    capture: capturePtyText,
-    paste: pastePtyText
-  }),
   ...restartHandlers
 }
 
@@ -804,9 +800,10 @@ function start(): void {
     store?.setScreen(screen)
   })
   const refused: CloseAnswer = { close: false, asked: false }
-  ipcMain.handle('pane:confirm-close', (_event, pty: unknown) =>
-    isPtyId(pty) ? checkClose(() => closePaneCheck(pty)) : refused
-  )
+  ipcMain.handle('pane:confirm-close', (_event, target: unknown) => {
+    const { pane, pty } = isObject(target) ? target : {}
+    return isPaneId(pane) && isPtyId(pty) ? checkClose(() => closePaneCheck(pane, pty)) : refused
+  })
   ipcMain.handle('workspace:confirm-close', (_event, workspace: unknown) =>
     typeof workspace === 'string' ? checkClose(() => closeWorkspaceCheck(workspace)) : refused
   )
@@ -901,7 +898,23 @@ function start(): void {
   })
   void jobsRestored.then(() => store?.enable())
   // 터미널은 CLI 없이도 쓸 수 있어야 한다. env 는 그대로 넣어 CLI 가 앱에 닿지 않는다고 말하게 한다.
-  const cliServer = listenCli(cli.socket, { ...cliHandlers, ...jobTable.handlers }).catch((err) => {
+  const ptyHandlers = ptyCli({
+    screen: currentScreen,
+    jobs: jobTable.list,
+    state: ptyStates.state,
+    exit: (pty) => ptyExit(ptyDir(), pty),
+    capture: capturePtyText,
+    paste: pastePtyText,
+    killJob: jobTable.kill,
+    closePty: panes.closePty,
+    shell: process.env.SHELL,
+    home: process.env.HOME
+  })
+  const cliServer = listenCli(cli.socket, {
+    ...cliHandlers,
+    ...jobTable.handlers,
+    ...ptyHandlers
+  }).catch((err) => {
     console.error(`maru: cannot listen on ${cli.socket}:`, err)
     return null
   })
@@ -913,12 +926,12 @@ function start(): void {
     typeof cwd === 'string' ? gitHead(cwd) : null
   )
   ipcMain.handle('pty:states', () => ptyStates.entries())
-  ipcMain.on('pane:seen', (_event, pty: unknown) => {
+  ipcMain.on('pty:seen', (_event, pty: unknown) => {
     if (!isPtyId(pty)) return
     ptyStates.seen(pty)
     void seen(pty)
   })
-  ipcMain.on('pane:viewed', (_event, pty: unknown) => {
+  ipcMain.on('pty:viewed', (_event, pty: unknown) => {
     viewedPty = isPtyId(pty) ? pty : null
   })
   const linkOpener: LinkOpener = {

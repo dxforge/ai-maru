@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   joinTables,
+  paneShowing,
   parseCellsTable,
   parsePanesTable,
   parseScreen,
@@ -521,6 +522,17 @@ describe('screenPanes', () => {
     expect(screenPanes(two, 'w-00000002')).toEqual({ panes: [], cells: [] })
     expect(screenPanes(two, 'w-00000001').panes[1].command).toEqual(['sh', '-c', 'true'])
     expect(screenPanes(null)).toEqual({ panes: [], cells: [] })
+  })
+})
+
+describe('paneShowing', () => {
+  it('pane id 와 pty id 가 함께 맞는 pane 만 찾는다', () => {
+    const s = clone() as unknown as ScreenState
+    const [a, b] = screenPanes(s).panes
+    expect(paneShowing(s, a.id, a.ptyId)).toBe(a)
+    expect(paneShowing(s, a.id, b.ptyId)).toBeUndefined()
+    expect(paneShowing(s, 'n-00000000', a.ptyId)).toBeUndefined()
+    expect(paneShowing(null, a.id, a.ptyId)).toBeUndefined()
   })
 })
 

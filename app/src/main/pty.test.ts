@@ -23,6 +23,7 @@ import {
   readRecord,
   runDir,
   ptyEnv,
+  ptyExit,
   shellEnv,
   socketPath,
   spawnPty,
@@ -599,6 +600,37 @@ describe('subscribeState', () => {
       expect(mine.got.closed).toBe(0)
     } finally {
       s.close()
+    }
+  })
+})
+
+describe('ptyExit', () => {
+  it('끝난 셸의 종료 상태를 돌려주고, 돌고 있으면 null 이다', async () => {
+    const exited = await framePty((_req, sock) =>
+      send(sock, { type: 'status', exit: { code: 3, signal: null } })
+    )
+    const running = await framePty((_req, sock) => send(sock, { type: 'status', exit: null }))
+    try {
+      expect(await ptyExit(exited.dir, exited.id, 1000)).toEqual({ code: 3, signal: null })
+      expect(exited.requests[0]).toMatchObject({ type: 'status' })
+      expect(exited.requests[0]).not.toHaveProperty('wait')
+      expect(await ptyExit(running.dir, running.id, 1000)).toBeNull()
+    } finally {
+      exited.close()
+      running.close()
+    }
+  })
+
+  it('pty 가 없거나 시간 안에 답하지 않으면 실패하지 않고 null 이다', async () => {
+    const mute = await framePty(() => {})
+    try {
+      expect(await ptyExit(mkdtempSync(join(tmpdir(), 'maru-ask-')), 'p-0000000a', 1000)).toBeNull()
+      const started = Date.now()
+      expect(await ptyExit(mute.dir, mute.id, 50)).toBeNull()
+      expect(mute.requests).toHaveLength(1)
+      expect(Date.now() - started).toBeLessThan(1000)
+    } finally {
+      mute.close()
     }
   })
 })

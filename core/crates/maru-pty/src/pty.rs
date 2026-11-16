@@ -2,7 +2,7 @@ use crate::master::{self, Master};
 use crate::paste::paste_bytes;
 use crate::procinfo;
 use crate::program_status::Records;
-use crate::state::{PaneState, notification_message, same_dir_as};
+use crate::state::{PtyState, notification_message, same_dir_as};
 use crate::vt::{VtEvents, VtFormat, VtTerminal};
 use anyhow::Result;
 use nix::sys::signal::{Signal, killpg};
@@ -186,7 +186,7 @@ struct Screen {
     /// `app` 이 붙은 루트 레코드를 받은 때의 foreground 리더. 리더가 이 pid 에서 바뀌면 레코드를 전부 지운다(`lib.rs` 의
     /// `records` 계약).
     status_owner: Option<i32>,
-    pane: PaneState,
+    state: PtyState,
     outputs: Vec<Weak<Output>>,
     /// 출력이 시퀀스 중간일 때 받은 스크롤백 지우기. 출력이 시퀀스를 끝내면 지운다.
     pending_clear: bool,
@@ -235,12 +235,12 @@ impl Screen {
             }
         }
         for event in &events.cwd {
-            changed |= self.pane.apply(event);
+            changed |= self.state.apply(event);
         }
         if !events.commands.is_empty() {
             let now = epoch_millis();
             for event in &events.commands {
-                changed |= self.pane.apply_command(event, now);
+                changed |= self.state.apply_command(event, now);
             }
         }
         if self.status.is_empty() {
@@ -250,15 +250,15 @@ impl Screen {
     }
 
     fn forget_records(&mut self) -> bool {
-        let had = !self.status.is_empty() || self.pane.foreground_cwd.is_some();
+        let had = !self.status.is_empty() || self.state.foreground_cwd.is_some();
         self.status.clear();
         self.status_owner = None;
-        self.pane.foreground_cwd = None;
+        self.state.foreground_cwd = None;
         had
     }
 
     fn state_message(&self) -> Arc<str> {
-        self.pane.message(self.vt.title(), &self.status).into()
+        self.state.message(self.vt.title(), &self.status).into()
     }
 
     /// 상태가 지난번 보낸 것과 다르면 모든 구독자에게 보낸다. ghostty 는 같은 제목에도 콜백을 부르므로 견준다.
@@ -277,7 +277,7 @@ impl Screen {
 }
 
 /// foreground 감시 스레드를 레코드가 생겼을 때와, 레코드가 있는 동안 셸이 OSC 7 을 보고했을 때 깨운다. 레코드가 없는
-/// pane 마다 1초에 한 번씩 깨어나지 않게 하려는 것이다.
+/// pty 마다 1초에 한 번씩 깨어나지 않게 하려는 것이다.
 #[derive(Default)]
 struct Wake {
     flag: Mutex<bool>,
@@ -321,10 +321,10 @@ impl Pty {
             rows,
             status: Records::default(),
             status_owner: None,
-            pane: if command.is_empty() {
-                PaneState::default()
+            state: if command.is_empty() {
+                PtyState::default()
             } else {
-                PaneState::for_command(command, epoch_millis())
+                PtyState::for_command(command, epoch_millis())
             },
             outputs: Vec::new(),
             pending_clear: false,
@@ -438,7 +438,7 @@ impl Pty {
             exited.store(true, Ordering::Relaxed);
             let _ = drained_rx.recv_timeout(DRAIN_AFTER_EXIT);
             let mut screen = screen_e.lock().unwrap();
-            let mut changed = screen.pane.command_exited(exit.code, exit.signal);
+            let mut changed = screen.state.command_exited(exit.code, exit.signal);
             // 셸이 끝나면 리더를 더 잴 수 없다. 셸이 exec 한 명령(런처의 claude)이 보낸 레코드도 지워지게, 기억한
             // 리더가 있으면 그 프로그램도 끝난 것으로 본다.
             if screen.status_owner.is_some() {
@@ -674,7 +674,7 @@ fn watch_foreground(pty: Weak<Pty>, wake: Arc<Wake>) {
                     break;
                 }
                 // 셸 없이 띄운 명령은 OSC 7 이 없다. 그때는 시작 디렉토리의 경로(심볼릭 링크일 수 있다)를 지킨다.
-                let keep = screen.pane.cwd.clone().or_else(|| pty.start_cwd.clone());
+                let keep = screen.state.cwd.clone().or_else(|| pty.start_cwd.clone());
                 (keep, screen.status_owner)
             };
             // 락을 놓고 잰다 — proc 읽기가 느려도 출력 반영을 막지 않게.
@@ -696,8 +696,8 @@ fn watch_foreground(pty: Weak<Pty>, wake: Arc<Wake>) {
                 let cwd = same_dir_as(&cwd, keep.as_deref());
                 let mut screen = pty.screen.lock().unwrap();
                 // 재는 동안 레코드가 비었으면 읽기 스레드가 지운 값을 되살리지 않는다.
-                if !screen.status.is_empty() && screen.pane.foreground_cwd.as_ref() != Some(&cwd) {
-                    screen.pane.foreground_cwd = Some(cwd);
+                if !screen.status.is_empty() && screen.state.foreground_cwd.as_ref() != Some(&cwd) {
+                    screen.state.foreground_cwd = Some(cwd);
                     screen.publish_state();
                 }
             }

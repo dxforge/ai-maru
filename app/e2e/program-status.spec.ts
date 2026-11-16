@@ -408,6 +408,6 @@ test('idle 로 바꿀 때 루트와 하위의 done 은 idle 이 되고 blocked·
   const row = readFileSync(out, 'utf8')
     .split('\n')
     .map((l) => l.split('\t'))
-    .find((cols) => cols[0] === left)!
-  expect([row[1], row[2], row[7]]).toEqual(['idle', 'claude-code', 'finished'])
+    .find((cols) => cols[1] === left)!
+  expect([row[2], row[3], row[8]]).toEqual(['idle', 'claude-code', 'finished'])
 })

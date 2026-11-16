@@ -1,4 +1,4 @@
-//! pane 상태(셸 cwd·제목·foreground cwd·명령·OSC 7501 레코드)와 프로그램이 보낸 알림, 그것을 받는 `subscribe` 연결.
+//! pty 상태(셸 cwd·제목·foreground cwd·명령·OSC 7501 레코드)와 프로그램이 보낸 알림, 그것을 받는 `subscribe` 연결.
 //! 메시지 모양은 모듈 doc(`lib.rs`)의 `subscribe` 에 있다.
 
 use crate::frame::{TAG_TEXT, write_frame};
@@ -23,7 +23,7 @@ pub struct CommandState {
 
 /// 상태 가운데 VT 와 레코드 밖에서 드는 것. 제목은 VT 가, 레코드는 `Records` 가 든다.
 #[derive(Debug, Default)]
-pub struct PaneState {
+pub struct PtyState {
     /// 받아들인 마지막 OSC 7 의 경로. ghostty 는 버린 보고로도 pwd 를 덮으므로 따로 든다.
     pub cwd: Option<String>,
     /// 받아들인 OSC 7 보고 수. 같은 경로를 다시 보고해도 는다.
@@ -31,14 +31,14 @@ pub struct PaneState {
     pub foreground_cwd: Option<String>,
     /// OSC 133 을 받은 적이 없는 셸이면 None 이다.
     pub command: Option<CommandState>,
-    /// true 면 명령 pane 이다. 명령이 스스로 찍은 OSC 133 이 띄울 때 채운 상태를 덮지 않게 한다.
+    /// true 면 명령 pty 이다. 명령이 스스로 찍은 OSC 133 이 띄울 때 채운 상태를 덮지 않게 한다.
     command_fixed: bool,
 }
 
-impl PaneState {
-    /// 명령을 주어 띄운 pane 의 상태를 만든다. 명령이 끝날 때까지 도는 중이다(`command_exited`).
+impl PtyState {
+    /// 명령을 주어 띄운 pty 의 상태를 만든다. 명령이 끝날 때까지 도는 중이다(`command_exited`).
     pub fn for_command(argv: &[String], started_at: u64) -> Self {
-        PaneState {
+        PtyState {
             command: Some(CommandState {
                 running: true,
                 text: command_text(argv.join(" ").as_bytes()),
@@ -50,7 +50,7 @@ impl PaneState {
         }
     }
 
-    /// 명령 pane 의 셸이 끝나면 안 도는 중으로 바꾸고 종료 코드를 넣는다. 시그널로 끝났으면 셸의 `$?` 처럼 128+번호를
+    /// 명령 pty 의 셸이 끝나면 안 도는 중으로 바꾸고 종료 코드를 넣는다. 시그널로 끝났으면 셸의 `$?` 처럼 128+번호를
     /// 넣는다. 상태가 바뀌었으면 true 다.
     pub fn command_exited(&mut self, code: Option<i32>, signal: Option<i32>) -> bool {
         let fixed = self.command_fixed;
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn a_rejected_report_keeps_the_last_path_and_is_not_counted() {
-        let mut s = PaneState::default();
+        let mut s = PtyState::default();
         assert!(s.apply(&report("file:///a")));
         assert!(s.apply(&report("file:///a")), "같은 경로도 보고 수가 는다");
         assert_eq!((s.cwd.as_deref(), s.cwd_reports), (Some("/a"), 2));
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn an_empty_report_and_a_reset_clear_the_path() {
-        let mut s = PaneState::default();
+        let mut s = PtyState::default();
         s.apply(&report("file:///a"));
         s.apply(&report(""));
         assert_eq!((s.cwd.as_deref(), s.cwd_reports), (None, 2));
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn the_message_carries_every_field_with_nulls() {
-        let s = PaneState::default();
+        let s = PtyState::default();
         let m: serde_json::Value =
             serde_json::from_str(&s.message(None, &Records::default())).unwrap();
         assert_eq!(
@@ -248,7 +248,7 @@ mod tests {
         );
     }
 
-    fn command(s: &PaneState) -> (bool, Option<&str>, Option<i32>, Option<u64>) {
+    fn command(s: &PtyState) -> (bool, Option<&str>, Option<i32>, Option<u64>) {
         let c = s.command.as_ref().expect("command");
         (c.running, c.text.as_deref(), c.exit_code, c.started_at)
     }
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn a_prompt_turns_an_unknown_shell_into_an_idle_one() {
-        let mut s = PaneState::default();
+        let mut s = PtyState::default();
         assert!(s.apply_command(&CommandEvent::PromptStart, 5));
         assert_eq!(command(&s), (false, None, None, None));
         assert!(
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn a_command_runs_from_start_and_keeps_its_text_after_it_ends() {
-        let mut s = PaneState::default();
+        let mut s = PtyState::default();
         s.apply_command(&CommandEvent::PromptStart, 1);
         assert!(s.apply_command(&start("cargo test"), 10));
         assert_eq!(command(&s), (true, Some("cargo test"), None, Some(10)));
@@ -295,19 +295,19 @@ mod tests {
     }
 
     #[test]
-    fn a_command_pane_spaces_newlines_and_drops_other_control_characters_from_its_argv() {
-        let s = PaneState::for_command(
+    fn a_command_pty_spaces_newlines_and_drops_other_control_characters_from_its_argv() {
+        let s = PtyState::for_command(
             &["sh".into(), "-c".into(), "echo a\n\x1b[1msleep 9".into()],
             1,
         );
         assert_eq!(command(&s).1, Some("sh -c echo a [1msleep 9"));
-        let s = PaneState::for_command(&["\x07".into()], 1);
+        let s = PtyState::for_command(&["\x07".into()], 1);
         assert_eq!(command(&s), (true, None, None, Some(1)));
     }
 
     #[test]
     fn a_second_start_without_an_end_restarts_the_command() {
-        let mut s = PaneState::default();
+        let mut s = PtyState::default();
         s.apply_command(&start("a"), 2);
         assert!(s.apply_command(&start("b"), 5));
         assert_eq!(command(&s), (true, Some("b"), None, Some(5)));
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn an_end_without_a_running_command_is_dropped() {
-        let mut s = PaneState::default();
+        let mut s = PtyState::default();
         assert!(!s.apply_command(&CommandEvent::End(Some(1)), 1));
         assert!(s.command.is_none());
         s.apply_command(&start("a"), 2);
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn a_prompt_without_an_end_stops_the_command_with_no_exit_code() {
-        let mut s = PaneState::default();
+        let mut s = PtyState::default();
         s.apply_command(&start("vim"), 2);
         assert!(s.apply_command(&CommandEvent::PromptStart, 3));
         assert_eq!(command(&s), (false, Some("vim"), None, Some(2)));
@@ -334,15 +334,15 @@ mod tests {
 
     #[test]
     fn an_end_without_an_exit_code_stops_the_command_with_none() {
-        let mut s = PaneState::default();
+        let mut s = PtyState::default();
         s.apply_command(&start("a"), 2);
         assert!(s.apply_command(&CommandEvent::End(None), 3));
         assert_eq!(command(&s), (false, Some("a"), None, Some(2)));
     }
 
     #[test]
-    fn a_command_pane_runs_from_spawn_and_ignores_osc_133() {
-        let mut s = PaneState::for_command(&["npm".into(), "run".into(), "dev".into()], 7);
+    fn a_command_pty_runs_from_spawn_and_ignores_osc_133() {
+        let mut s = PtyState::for_command(&["npm".into(), "run".into(), "dev".into()], 7);
         for e in [
             CommandEvent::PromptStart,
             CommandEvent::End(Some(1)),
@@ -362,8 +362,8 @@ mod tests {
     }
 
     #[test]
-    fn a_command_pane_stops_with_the_exit_code_once_and_a_shell_pane_ignores_it() {
-        let mut s = PaneState::for_command(&["npm".into()], 7);
+    fn a_command_pty_stops_with_the_exit_code_once_and_a_shell_pty_ignores_it() {
+        let mut s = PtyState::for_command(&["npm".into()], 7);
         assert!(s.command_exited(Some(3), None));
         assert_eq!(command(&s), (false, Some("npm"), Some(3), Some(7)));
         assert!(
@@ -372,11 +372,11 @@ mod tests {
         );
         assert_eq!(command(&s).2, Some(3));
 
-        let mut signaled = PaneState::for_command(&["npm".into()], 7);
+        let mut signaled = PtyState::for_command(&["npm".into()], 7);
         assert!(signaled.command_exited(None, Some(9)));
         assert_eq!(command(&signaled).2, Some(137));
 
-        let mut shell = PaneState::default();
+        let mut shell = PtyState::default();
         shell.apply_command(&start("vim"), 2);
         assert!(!shell.command_exited(Some(0), None));
         assert_eq!(command(&shell), (true, Some("vim"), None, Some(2)));

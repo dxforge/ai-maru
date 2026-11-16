@@ -1115,11 +1115,15 @@ fn maru_in(dir: &Path, sock: &Path, args: &[&str]) -> Output {
     wait_within(child)
 }
 
+fn opened_pane() -> Value {
+    json!({ "pane": "n-0000000b", "pty": "p-0000000c" })
+}
+
 #[test]
-fn pane_new_sends_where_it_was_called_and_the_command_then_prints_the_pty() {
+fn pane_new_sends_where_it_was_called_and_the_command_then_prints_the_pane_and_the_pty() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, opened_pane()));
     let out = maru_in(
         tmp.path(),
         &sock,
@@ -1127,7 +1131,7 @@ fn pane_new_sends_where_it_was_called_and_the_command_then_prints_the_pty() {
     );
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "p-0000000c\n");
+    assert_eq!(stdout(&out), "PANE\tPTY\nn-0000000b\tp-0000000c\n");
     assert_eq!(req["method"], "pane.new");
     assert_eq!(req["params"]["pty"], PTY);
     let cwd = std::fs::canonicalize(tmp.path()).unwrap();
@@ -1230,21 +1234,26 @@ fn pane_and_cell_new_fail_on_an_answer_without_a_pty() {
 }
 
 #[test]
-fn cell_new_prints_an_empty_cell_when_the_app_answers_without_one() {
-    let tmp = tmpdir();
-    let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
-    let out = maru_in(tmp.path(), &sock, &["cell", "new"]);
-    server.join().unwrap();
-    assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "PTY\tCELL\np-0000000c\t\n");
+fn pane_and_cell_new_print_empty_columns_when_the_app_answers_with_only_the_pty() {
+    for (new, want) in [
+        (["pane", "new"], "PANE\tPTY\n\tp-0000000c\n"),
+        (["cell", "new"], "PANE\tPTY\tCELL\n\tp-0000000c\t\n"),
+    ] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+        let out = maru_in(tmp.path(), &sock, &new);
+        server.join().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(stdout(&out), want);
+    }
 }
 
 #[test]
 fn pane_new_sends_the_cell_to_open_the_pane_in_and_leaves_a_later_cell_to_the_command() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, opened_pane()));
     let out = maru_in(
         tmp.path(),
         &sock,
@@ -1261,7 +1270,7 @@ fn pane_new_sends_the_cell_to_open_the_pane_in_and_leaves_a_later_cell_to_the_co
     );
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "p-0000000c\n");
+    assert_eq!(stdout(&out), "PANE\tPTY\nn-0000000b\tp-0000000c\n");
     assert_eq!(req["params"]["cell"], "c-0000000d");
     assert_eq!(req["params"]["direction"], "down");
     assert!(req["params"].get("full").is_none(), "{req}");
@@ -1285,42 +1294,42 @@ fn pane_new_with_the_cell_and_full_sends_both() {
 }
 
 #[test]
-fn pane_new_sends_the_pane_to_split_and_leaves_a_later_pane_to_the_command() {
+fn pane_new_sends_the_pane_to_split_and_leaves_a_later_split_to_the_command() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let server = serve_once(&sock, |req| result(req, opened_pane()));
     let out = maru_in(
         tmp.path(),
         &sock,
         &[
             "pane",
             "new",
-            "--pane",
-            "p-0000000d",
+            "--split",
+            "n-0000000d",
             "--down",
             "x",
-            "--pane",
+            "--split",
             "y",
         ],
     );
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "p-0000000c\n");
-    assert_eq!(req["params"]["pane"], "p-0000000d");
+    assert_eq!(stdout(&out), "PANE\tPTY\nn-0000000b\tp-0000000c\n");
+    assert_eq!(req["params"]["pane"], "n-0000000d");
     assert_eq!(req["params"]["pty"], PTY);
     assert_eq!(req["params"]["direction"], "down");
     assert!(req["params"].get("full").is_none(), "{req}");
     assert!(req["params"].get("cell").is_none(), "{req}");
-    assert_eq!(req["params"]["command"], json!(["x", "--pane", "y"]));
+    assert_eq!(req["params"]["command"], json!(["x", "--split", "y"]));
 }
 
 #[test]
-fn pane_new_refuses_the_pane_with_full_or_the_cell_without_calling_the_app() {
+fn pane_new_refuses_split_with_full_or_the_cell_without_calling_the_app() {
     let tmp = tmpdir();
     // 아무도 듣지 않는 소켓이라, 앱에 닿으려 했다면 다른 오류가 난다.
     let sock = sock_in(&tmp);
     for other in [&["--full"][..], &["--cell", "c-0000000d"][..]] {
-        let args = [&["pane", "new", "--pane", "p-0000000d"][..], other].concat();
+        let args = [&["pane", "new", "--split", "n-0000000d"][..], other].concat();
         assert_fails_with(&maru_in(tmp.path(), &sock, &args), "cannot be used with");
     }
 }
@@ -1379,11 +1388,11 @@ fn app_restart_shows_the_apps_reason() {
 }
 
 fn opened_cell() -> Value {
-    json!({ "pty": "p-0000000c", "cell": "c-0000000d" })
+    json!({ "pane": "n-0000000b", "pty": "p-0000000c", "cell": "c-0000000d" })
 }
 
 #[test]
-fn cell_new_sends_where_it_was_called_and_the_command_then_prints_the_pty_and_the_cell() {
+fn cell_new_sends_where_it_was_called_and_the_command_then_prints_the_pane_the_pty_and_the_cell() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     let server = serve_once(&sock, |req| result(req, opened_cell()));
@@ -1394,7 +1403,10 @@ fn cell_new_sends_where_it_was_called_and_the_command_then_prints_the_pty_and_th
     );
     let req = server.join().unwrap();
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "PTY\tCELL\np-0000000c\tc-0000000d\n");
+    assert_eq!(
+        stdout(&out),
+        "PANE\tPTY\tCELL\nn-0000000b\tp-0000000c\tc-0000000d\n"
+    );
     assert_eq!(req["method"], "cell.new");
     assert_eq!(req["params"]["pty"], PTY);
     let cwd = std::fs::canonicalize(tmp.path()).unwrap();
@@ -1486,60 +1498,88 @@ fn workspace_new_is_gone() {
 }
 
 #[test]
-fn pane_close_sends_the_target_and_prints_nothing() {
-    let tmp = tmpdir();
-    let sock = sock_in(&tmp);
-    let server = serve_once(&sock, |req| result(req, Value::Null));
-    let out = maru(Some(&sock), &["pane", "close", "p-0000000c"]);
-    let req = server.join().unwrap();
-    assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(stdout(&out), "");
-    assert_eq!(req["method"], "pane.close");
-    assert_eq!(req["params"]["target"], "p-0000000c");
+fn pane_close_and_pty_kill_send_the_target_and_print_nothing() {
+    for (args, method, target) in [
+        (["pane", "close", "n-0000000b"], "pane.close", "n-0000000b"),
+        (["pty", "kill", "p-0000000c"], "pty.kill", "p-0000000c"),
+    ] {
+        let tmp = tmpdir();
+        let sock = sock_in(&tmp);
+        let server = serve_once(&sock, |req| result(req, Value::Null));
+        let out = maru(Some(&sock), &args);
+        let req = server.join().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(stdout(&out), "");
+        assert_eq!(req["method"], method);
+        assert_eq!(req["params"]["target"], target);
+    }
 }
 
 #[test]
-fn pane_read_prints_the_text_with_one_trailing_newline() {
+fn pty_read_prints_the_text_with_one_trailing_newline() {
     for (text, want) in [("a\nb", "a\nb\n"), ("a\n", "a\n"), ("", "")] {
         let tmp = tmpdir();
         let sock = sock_in(&tmp);
         let server = serve_once(&sock, move |req| result(req, json!({ "text": text })));
-        let out = maru(Some(&sock), &["pane", "read", "p-0000000c"]);
+        let out = maru(Some(&sock), &["pty", "read", "p-0000000c"]);
         let req = server.join().unwrap();
         assert!(out.status.success(), "{}", stderr(&out));
-        assert_eq!(req["method"], "pane.read");
+        assert_eq!(req["method"], "pty.read");
         assert_eq!(req["params"]["target"], "p-0000000c");
         assert_eq!(stdout(&out), want, "{text:?}");
     }
 }
 
-fn pane_sent(args: &[&str], input: &[u8]) -> Value {
-    let req = sent_request(&[&["pane", "send", "p-0000000c"], args].concat(), input);
-    assert_eq!(req["method"], "pane.send");
+fn pty_sent(args: &[&str], input: &[u8]) -> Value {
+    let req = sent_request(&[&["pty", "send", "p-0000000c"], args].concat(), input);
+    assert_eq!(req["method"], "pty.send");
     assert_eq!(req["params"]["target"], "p-0000000c");
     req["params"]["text"].clone()
 }
 
 #[test]
-fn pane_send_sends_the_text_as_it_is_without_enter() {
-    assert_eq!(pane_sent(&["ls"], b""), "ls");
-    assert_eq!(pane_sent(&["ls\r"], b""), "ls\r");
-    assert_eq!(pane_sent(&["\\e"], b""), "\\e");
-    assert_eq!(pane_sent(&["\x1b"], b""), "\x1b");
-    assert_eq!(pane_sent(&["-x"], b""), "-x");
-    assert_eq!(pane_sent(&[], b"hi\n\n"), "hi\n\n");
-    assert_eq!(pane_sent(&["-"], b"hi\r"), "hi\r");
+fn pty_send_sends_the_text_as_it_is_without_enter() {
+    assert_eq!(pty_sent(&["ls"], b""), "ls");
+    assert_eq!(pty_sent(&["ls\r"], b""), "ls\r");
+    assert_eq!(pty_sent(&["\\e"], b""), "\\e");
+    assert_eq!(pty_sent(&["\x1b"], b""), "\x1b");
+    assert_eq!(pty_sent(&["-x"], b""), "-x");
+    assert_eq!(pty_sent(&[], b"hi\n\n"), "hi\n\n");
+    assert_eq!(pty_sent(&["-"], b"hi\r"), "hi\r");
 }
 
 #[test]
-fn pane_send_with_nothing_to_send_fails_before_asking_the_app() {
+fn pty_send_with_nothing_to_send_fails_before_asking_the_app() {
     let tmp = tmpdir();
     // 아무도 듣지 않는 소켓이라, 앱에 닿으려 했다면 다른 오류가 난다.
     let sock = sock_in(&tmp);
-    let out = maru(Some(&sock), &["pane", "send", "p-0000000c", ""]);
+    let out = maru(Some(&sock), &["pty", "send", "p-0000000c", ""]);
     assert_fails_with(&out, "nothing to send");
-    let out = maru_input(Some(&sock), &["pane", "send", "p-0000000c"], b"");
+    let out = maru_input(Some(&sock), &["pty", "send", "p-0000000c"], b"");
     assert_fails_with(&out, "nothing to send");
+}
+
+#[test]
+fn pane_read_and_send_and_the_pane_option_are_gone() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    // 아무도 듣지 않는 소켓이라, 앱에 닿으려 했다면 다른 오류가 난다.
+    for (args, why) in [
+        (
+            &["pane", "read", "p-0000000c"][..],
+            "unrecognized subcommand",
+        ),
+        (
+            &["pane", "send", "p-0000000c", "x"][..],
+            "unrecognized subcommand",
+        ),
+        (
+            &["pane", "new", "--pane", "p-0000000c"][..],
+            "unexpected argument",
+        ),
+    ] {
+        assert_fails_with(&maru_in(tmp.path(), &sock, args), why);
+    }
 }
 
 #[test]
@@ -1651,7 +1691,7 @@ fn job_list_fails_on_a_job_it_cannot_print() {
     assert_eq!(stdout(&out), "");
 }
 
-const PANE_LIST_HEADER: &str = "PTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE\n";
+const PANE_LIST_HEADER: &str = "PANE\tPTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE\n";
 
 fn pane_list_with_home(home: &str, panes: Value) -> Output {
     let tmp = tmpdir();
@@ -1673,20 +1713,20 @@ fn pane_list_prints_tab_separated_columns_with_a_header() {
     let out = pane_list_with_home(
         "/h/me/",
         json!([
-            { "pty": "p-99ae10da", "state": "idle", "kind": null, "app": "claude-code",
+            { "pane": "n-00000000", "pty": "p-99ae10da", "state": "idle", "kind": null, "app": "claude-code",
               "workspace": "ai-maru", "cell": "c-1a2b3c4d", "title": "Claude",
               "dir": "/h/me/src/ai-maru", "message": "" },
-            { "pty": "p-4c3d8f86", "state": "blocked", "kind": "permission", "app": "claude-code",
+            { "pane": "n-00000001", "pty": "p-4c3d8f86", "state": "blocked", "kind": "permission", "app": "claude-code",
               "workspace": "ai-maru", "cell": "c-5e6f7a8b", "title": "Fix the build",
               "dir": "/h/me", "message": "Bash:\tgit push\nline two\r" },
-            { "pty": "p-0000000a", "state": "", "kind": null, "app": "", "workspace": "ai-maru",
+            { "pane": "n-00000002", "pty": "p-0000000a", "state": "", "kind": null, "app": "", "workspace": "ai-maru",
               "cell": "c-5e6f7a8b", "title": "zsh", "dir": "/h/me/src", "message": "" },
-            { "pty": "p-00000001", "state": "working", "kind": null, "app": "cargo",
+            { "pane": "n-00000003", "pty": "p-00000001", "state": "working", "kind": null, "app": "cargo",
               "workspace": "w\tx", "cell": "c\nd", "title": "t\te", "dir": "/h/meme/x",
               "message": "m" },
-            { "pty": "p-00000002", "state": "blocked", "kind": null, "app": "", "workspace": "",
+            { "pane": "n-00000004", "pty": "p-00000002", "state": "blocked", "kind": null, "app": "", "workspace": "",
               "cell": "", "title": "", "dir": "", "message": "" },
-            { "pty": "p-00000003", "state": "done", "kind": "question", "app": "codex",
+            { "pane": "n-00000005", "pty": "p-00000003", "state": "done", "kind": "question", "app": "codex",
               "workspace": "w", "cell": "c", "title": "x", "dir": "/d",
               "message": "a\r\nb\u{1b}[31mred" },
         ]),
@@ -1696,12 +1736,12 @@ fn pane_list_prints_tab_separated_columns_with_a_header() {
         stdout(&out),
         format!(
             "{PANE_LIST_HEADER}\
-             p-99ae10da\tidle\tclaude-code\tai-maru\tc-1a2b3c4d\tClaude\t~/src/ai-maru\t\n\
-             p-4c3d8f86\tblocked(permission)\tclaude-code\tai-maru\tc-5e6f7a8b\tFix the build\t~\tBash: git push line two \n\
-             p-0000000a\t\t\tai-maru\tc-5e6f7a8b\tzsh\t~/src\t\n\
-             p-00000001\tworking\tcargo\tw x\tc d\tt e\t/h/meme/x\tm\n\
-             p-00000002\tblocked\t\t\t\t\t\t\n\
-             p-00000003\tdone\tcodex\tw\tc\tx\t/d\ta b [31mred\n"
+             n-00000000\tp-99ae10da\tidle\tclaude-code\tai-maru\tc-1a2b3c4d\tClaude\t~/src/ai-maru\t\n\
+             n-00000001\tp-4c3d8f86\tblocked(permission)\tclaude-code\tai-maru\tc-5e6f7a8b\tFix the build\t~\tBash: git push line two \n\
+             n-00000002\tp-0000000a\t\t\tai-maru\tc-5e6f7a8b\tzsh\t~/src\t\n\
+             n-00000003\tp-00000001\tworking\tcargo\tw x\tc d\tt e\t/h/meme/x\tm\n\
+             n-00000004\tp-00000002\tblocked\t\t\t\t\t\t\n\
+             n-00000005\tp-00000003\tdone\tcodex\tw\tc\tx\t/d\ta b [31mred\n"
         )
     );
     assert_eq!(stderr(&out), "");
@@ -1720,7 +1760,7 @@ fn pane_list_succeeds_when_the_reader_closes_early() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     // pipe buffer 를 넘겨야 쓰는 도중에 상대가 닫힌다.
-    let pane = json!({ "pty": "p-1", "state": "idle", "kind": null, "app": "claude-code",
+    let pane = json!({ "pane": "n-1", "pty": "p-1", "state": "idle", "kind": null, "app": "claude-code",
                        "workspace": "w", "cell": "c", "title": "t", "dir": "/d",
                        "message": "x".repeat(200) });
     let panes = vec![pane; 5000];
@@ -1740,15 +1780,88 @@ fn pane_list_succeeds_when_the_reader_closes_early() {
 #[test]
 fn pane_list_fails_on_a_pane_it_cannot_print() {
     for pane in [
-        json!({ "pty": "p-1", "state": "idle", "kind": null }),
-        json!({ "pty": "p-1", "state": "idle", "kind": 1, "app": "", "workspace": "", "cell": "",
+        json!({ "pane": "n-1", "pty": "p-1", "state": "idle", "kind": null }),
+        json!({ "pane": "n-1", "pty": "p-1", "state": "idle", "kind": 1, "app": "", "workspace": "",
+                "cell": "", "title": "", "dir": "", "message": "" }),
+        json!({ "pane": "n-1", "pty": "p-1", "state": "", "kind": null, "workspace": "", "cell": "",
                 "title": "", "dir": "", "message": "" }),
-        json!({ "pty": "p-1", "state": "", "kind": null, "workspace": "", "cell": "",
-                "title": "", "dir": "", "message": "" }),
-        json!({ "pty": "p-1", "state": "", "kind": null, "app": "", "workspace": "",
+        json!({ "pane": "n-1", "pty": "p-1", "state": "", "kind": null, "app": "", "workspace": "",
                 "cell": "", "title": 1, "dir": "", "message": "" }),
+        json!({ "pty": "p-1", "state": "", "kind": null, "app": "", "workspace": "",
+                "cell": "", "title": "", "dir": "", "message": "" }),
     ] {
         let out = pane_list_with_home("/h/me", json!([pane]));
+        assert_fails_with(&out, "cannot print");
+        assert_eq!(stdout(&out), "");
+    }
+}
+
+fn pty_list_with_home(home: &str, ptys: Value) -> Output {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, move |req| result(req, json!({ "ptys": ptys })));
+    let out = maru_cmd(Some(&sock), &["pty", "list"])
+        .env("HOME", home)
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
+    let out = wait_within(out);
+    let req = server.join().unwrap();
+    assert_eq!(req["method"], "pty.list");
+    out
+}
+
+#[test]
+fn pty_list_prints_tab_separated_columns_with_the_exit() {
+    let out = pty_list_with_home(
+        "/h/me",
+        json!([
+            { "pty": "p-99ae10da", "kind": "pane", "workspace": "ai-maru", "cell": "c-1a2b3c4d",
+              "state": "blocked", "state_kind": "permission", "exit": null, "name": "Claude",
+              "dir": "/h/me/src" },
+            { "pty": "p-0000000a", "kind": "pane", "workspace": "ai-maru", "cell": "c-1a2b3c4d",
+              "state": "", "state_kind": null, "exit": { "code": 0, "signal": null },
+              "name": "zsh", "dir": "/h/me" },
+            { "pty": "p-0000000b", "kind": "job", "workspace": "w\tx", "cell": "c-5e6f7a8b",
+              "state": "working", "state_kind": null, "exit": { "code": null, "signal": 15 },
+              "name": "dev", "dir": "" },
+            { "pty": "p-0000000c", "kind": "job", "workspace": "", "cell": "",
+              "state": "", "state_kind": null, "exit": { "code": 2, "signal": null },
+              "name": "", "dir": "/d" },
+        ]),
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(
+        stdout(&out),
+        "PTY\tKIND\tWORKSPACE\tCELL\tSTATE\tEXIT\tNAME\tDIR\n\
+         p-99ae10da\tpane\tai-maru\tc-1a2b3c4d\tblocked(permission)\t\tClaude\t~/src\n\
+         p-0000000a\tpane\tai-maru\tc-1a2b3c4d\t\t0\tzsh\t~\n\
+         p-0000000b\tjob\tw x\tc-5e6f7a8b\tworking\tsignal 15\tdev\t\n\
+         p-0000000c\tjob\t\t\t\t2\t\t/d\n"
+    );
+    assert_eq!(stderr(&out), "");
+}
+
+#[test]
+fn pty_list_without_ptys_writes_nothing_to_stdout() {
+    let out = pty_list_with_home("/h/me", json!([]));
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "");
+    assert_eq!(stderr(&out), "no ptys\n");
+}
+
+#[test]
+fn pty_list_fails_on_a_pty_it_cannot_print() {
+    let row = |exit: Value| {
+        json!({ "pty": "p-1", "kind": "job", "workspace": "", "cell": "", "state": "",
+                "state_kind": null, "exit": exit, "name": "", "dir": "" })
+    };
+    for pty in [
+        json!({ "pty": "p-1", "kind": "job" }),
+        row(json!({ "code": null, "signal": null })),
+        row(json!("exited")),
+    ] {
+        let out = pty_list_with_home("/h/me", json!([pty]));
         assert_fails_with(&out, "cannot print");
         assert_eq!(stdout(&out), "");
     }

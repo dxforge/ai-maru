@@ -260,6 +260,26 @@ export function waitPtyExit(
   return { exit, cancel }
 }
 
+/** `wait` 없는 `status` 요청은 maru-pty 가 바로 답한다. `pty.list` 가 pane 의 pty 마다 물으므로, 멈춘 pty 하나가 목록을 오래 잡지 않게 짧게 둔다. */
+const STATUS_REPLY_MS = 2_000
+
+/**
+ * 기다리지 않고 묻는 셸의 종료 상태다. 셸이 돌고 있거나 `timeoutMs` 안에 pty 에 닿지 못하면 null 이다 — 막 열려 아직 뜨지
+ * 않은 pty 도 null 이다.
+ */
+export async function ptyExit(
+  dir: string,
+  id: string,
+  timeoutMs = STATUS_REPLY_MS
+): Promise<PtyExit | null> {
+  try {
+    const r = await askWithin(dir, id, { type: 'status' }, timeoutMs)
+    return r.type === 'status' && r.exit ? (r.exit as PtyExit) : null
+  } catch {
+    return null
+  }
+}
+
 function cannotRead(id: string, r: Reply): Error {
   return new Error(`cannot read pty ${id}: ${String(r.message ?? r.code)}`)
 }

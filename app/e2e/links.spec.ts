@@ -42,7 +42,7 @@ const paths = (app: ElectronApplication) => app.evaluate(() => (globalThis as Op
 async function pointAt(page: Page, text: string): Promise<{ x: number; y: number }> {
   const screen = (await page.locator('.terminal-view.active .xterm-screen').boundingBox())!
   const cell = await cellSize(page)
-  // `run` 은 `maru pane read` 로 읽은 글자를 보고 끝나므로, 그때 xterm 은 그 행을 아직 그리지 않았을 수 있다.
+  // `run` 은 `maru pty read` 로 읽은 글자를 보고 끝나므로, 그때 xterm 은 그 행을 아직 그리지 않았을 수 있다.
   let lines: string[] = []
   await expect
     .poll(async () => {

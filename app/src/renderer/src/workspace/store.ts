@@ -2,6 +2,7 @@ import { readonly, ref } from 'vue'
 import { sameGitHead, type GitHead } from '../../../shared/git'
 import { samePath } from '../../../shared/launcher'
 import { autoWorkspaceName, focusedPane, gitRootOf, savedKeptName } from '../../../shared/names'
+import type { PaneTarget } from '../../../shared/pane'
 import type { ProgramStatusState } from '../../../shared/program-status'
 import type { PtyState } from '../../../shared/pty-state'
 import {
@@ -445,6 +446,13 @@ export function createWorkspaces(
     return undefined
   }
 
+  /** main 이 가리킨 pane 이다. `{pane}` 이면 그 id 의 pane, `{pty}` 면 그 pty 를 보이는 pane 이다. */
+  function paneOf(target: PaneTarget): Pane | undefined {
+    if ('pty' in target) return paneByPty(target.pty)
+    for (const c of cells()) for (const p of c.panes) if (p.id === target.pane) return p
+    return undefined
+  }
+
   /**
    * pty `pty` 가 있는 자리. pane 의 pty 가 아니면 `jobCell`(그 pty 로 도는 job 이 든 cell 의 id)의 cell 이고, 이때
    * `pane` 은 없다.
@@ -674,6 +682,7 @@ export function createWorkspaces(
     pane,
     cellById,
     paneByPty,
+    paneOf,
     locate,
     closePane,
     focusPane,

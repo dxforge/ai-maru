@@ -117,7 +117,7 @@ test('셸이 알린 명령이 도는 pane 은 프로세스 이름 대신 친 명
 test('maru pane close 는 프로그램이 돌아도 묻지 않는다', async ({ launch }) => {
   const { app, page } = await launch()
   await stubDialog(app, 1)
-  await page.keyboard.type(`ID=$(maru pane new bash -c 'read x')\n`)
+  await page.keyboard.type(`ID=$(maru pane new bash -c 'read x' | awk 'NR == 2 { print $1 }')\n`)
   await expect(panes(page)).toHaveCount(2)
   await run(page, 'maru pane close "$ID"; echo closed-$?', 'closed-0')
   await expect(panes(page)).toHaveCount(1)
