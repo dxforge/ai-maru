@@ -142,8 +142,8 @@ onBeforeUnmount(reset)
   position: relative;
 }
 
-/* 블록보다 작은 다이어그램은 가운데에 두고, 크면 블록 안에서 스크롤한다. flex 의 auto margin 은 넘칠 때 0 이 되어 왼쪽·위
-   끝까지 스크롤할 수 있다. */
+/* 블록보다 작은 다이어그램은 가로·세로 가운데에 두고, 크면 블록 안에서 스크롤한다. flex 의 auto margin 은 넘칠 때 0 이
+   되어 왼쪽·위 끝까지 스크롤할 수 있다. */
 .markdown :deep(.diagram-view) {
   display: flex;
   overflow: auto;
@@ -159,7 +159,7 @@ onBeforeUnmount(reset)
 
 .markdown :deep(.diagram-view svg) {
   flex: none;
-  margin: 0 auto;
+  margin: auto;
 }
 
 .markdown :deep(.diagram-zoom) {

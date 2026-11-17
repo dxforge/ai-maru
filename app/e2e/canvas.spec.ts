@@ -529,6 +529,76 @@ test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에�
   expect(await scroll()).toEqual([left! + 40, top! + 20])
 })
 
+test('확대·축소 버튼은 블록에 보이는 영역의 가운데를 중심으로 하고, 블록보다 작아진 다이어그램은 블록 가운데에 둔다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const nodes = Array.from({ length: 30 }, (_, i) => `N${i}[Node ${i}]`).join(' --> ')
+  const text = [
+    mermaid(
+      'flowchart TD\n  A[Start] --> B{Ok?}\n  B -->|yes| C[Done]\n  B -->|no| D[Retry] --> A'
+    ),
+    mermaid(`flowchart LR\n  ${nodes}`)
+  ].join('\n\n')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text })
+  await expect(diagrams(page)).toHaveCount(2)
+  const boxes = markdown(page).locator('.diagram')
+  // 블록에 보이는 영역의 가운데가 다이어그램의 어디(가로·세로 비율)에 있는지와, 블록 안의 다이어그램 위치.
+  const state = (i: number) =>
+    boxes.nth(i).evaluate((box) => {
+      const view = box.querySelector<HTMLElement>('.diagram-view')!
+      const v = view.getBoundingClientRect()
+      const s = view.querySelector('svg')!.getBoundingClientRect()
+      return {
+        center: [
+          (v.left + view.clientWidth / 2 - s.left) / s.width,
+          (v.top + view.clientHeight / 2 - s.top) / s.height
+        ],
+        margin: [
+          s.left - v.left,
+          view.clientWidth - (s.right - v.left),
+          s.top - v.top,
+          view.clientHeight - (s.bottom - v.top)
+        ]
+      }
+    })
+  const press = async (i: number, name: string) => {
+    await boxes.nth(i).hover()
+    await boxes.nth(i).getByRole('button', { name }).click()
+  }
+  const expectCenter = async (i: number, at: number[]) => {
+    const [x, y] = (await state(i)).center
+    expect(x).toBeCloseTo(at[0]!, 2)
+    expect(y).toBeCloseTo(at[1]!, 2)
+  }
+
+  // 블록보다 작아진 다이어그램은 가로·세로 가운데에 두고, 다시 키워도 가운데를 중심으로 커진다.
+  for (const name of ['Zoom out', 'Zoom out', 'Zoom in', 'Zoom in', 'Zoom in']) {
+    await press(0, name)
+    await expectCenter(0, [0.5, 0.5])
+  }
+  await press(0, 'Zoom out')
+  await press(0, 'Zoom out')
+  const [left, right, top, bottom] = (await state(0)).margin
+  expect(left).toBeGreaterThan(0)
+  expect(top).toBeGreaterThan(0)
+  expect(left).toBeCloseTo(right!, 0)
+  expect(top).toBeCloseTo(bottom!, 0)
+
+  // 넓은 다이어그램을 가운데쯤으로 스크롤해 두면, 그때 보이는 영역의 가운데를 중심으로 확대·축소한다.
+  await boxes
+    .nth(1)
+    .locator('.diagram-view')
+    .evaluate((v) => {
+      v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2
+    })
+  const before = (await state(1)).center
+  for (const name of ['Zoom in', 'Zoom in', 'Zoom out', 'Zoom out', 'Zoom out']) {
+    await press(1, name)
+    await expectCenter(1, before)
+  }
+})
+
 test('접었다 펴거나 모두 펼쳐도 마크다운을 다시 렌더하지 않고, 같은 id 로 다시 온 문서는 새로 렌더해 앞 문서의 묶음을 남기지 않는다', async ({
   launch
 }) => {
