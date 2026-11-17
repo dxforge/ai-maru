@@ -208,7 +208,8 @@ export function createWorkspaces(
 
   function open(startDir?: string, extra: PaneCommand = {}): void {
     const c = createCell({ startDir, ...extra })
-    list.value.push(createWorkspace(c))
+    const at = list.value.findIndex((w) => w.cells.some((x) => x.key === selectedKey.value))
+    list.value.splice(at < 0 ? list.value.length : at + 1, 0, createWorkspace(c))
     selectedKey.value = c.key
   }
 

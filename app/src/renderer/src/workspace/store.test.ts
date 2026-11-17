@@ -61,6 +61,7 @@ function opened(n: number) {
 const keys = (ws: Workspaces) => ws.cells().map((c) => c.key)
 const firstPanes = (ws: Workspaces) => ws.cells().map((c) => c.panes[0])
 const wsKeys = (ws: Workspaces) => ws.list.value.map((w) => w.key)
+const dirs = (ws: Workspaces) => ws.list.value.map((w) => w.cells[0].panes[0].startDir)
 const selected = (ws: Workspaces) => ws.selected()!
 /** cell 의 pane 을 모두 닫아 cell 을 닫는다. */
 function shut(ws: Workspaces, key: number) {
@@ -323,13 +324,28 @@ describe('workspaces', () => {
     expect(x).not.toBe(y)
   })
 
-  it('open 은 새 workspace 를 끝에 만들어 그 cell 을 선택한다', () => {
-    const ws = opened(1)
+  it('open 은 선택한 cell 의 workspace 바로 뒤에 새 workspace 를 만들어 그 cell 을 선택한다', () => {
+    const ws = opened(3)
+    ws.select(ws.list.value[0].cells[0].key)
     ws.openCell()
     ws.open('/n')
-    expect(ws.list.value.map((w) => w.cells.length)).toEqual([2, 1])
-    expect(selected(ws).panes[0].startDir).toBe('/n')
+    expect(dirs(ws)).toEqual(['/d-0', '/n', '/d-1', '/d-2'])
+    expect(ws.list.value[0].cells).toHaveLength(2)
     expect(ws.workspaceOf(selected(ws).key)?.key).toBe(wsKeys(ws)[1])
+  })
+
+  it('open 은 마지막 workspace 가 선택돼 있으면 끝에 만든다', () => {
+    const ws = opened(2)
+    ws.open('/n')
+    expect(dirs(ws)).toEqual(['/d-0', '/d-1', '/n'])
+  })
+
+  it('open 은 선택한 cell 이 없으면 끝에 만든다', () => {
+    const ws = opened(2)
+    ws.select(-1)
+    ws.open('/n')
+    expect(dirs(ws)).toEqual(['/d-0', '/d-1', '/n'])
+    expect(ws.workspaceOf(selected(ws).key)?.key).toBe(wsKeys(ws)[2])
   })
 
   it('openCell 은 선택한 cell 바로 뒤에 cell 을 더해 선택하고, 선택이 없으면 새 workspace 다', () => {
@@ -1386,10 +1402,11 @@ describe('moveCell·moveWorkspace', () => {
     expect(ws.list.value.map((w) => w.id)).toEqual([ids[0], ids[2]])
   })
 
-  it("'new' 는 그 cell 하나로 된 workspace 를 목록 끝에 새 id 로 만든다", () => {
+  it("'new' 는 선택한 cell 이 앞 workspace 에 있어도 그 cell 하나로 된 workspace 를 목록 끝에 새 id 로 만든다", () => {
     const ws = arranged()
     const [[a, b], [c], [d, e]] = shape(ws)
     const ids = ws.list.value.map((w) => w.id)
+    ws.select(b)
     ws.moveCell(a, 'new')
     expect(shape(ws)).toEqual([[b], [c], [d, e], [a]])
     expect(ws.list.value.slice(0, 3).map((w) => w.id)).toEqual(ids)

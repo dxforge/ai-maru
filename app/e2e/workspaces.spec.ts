@@ -75,6 +75,22 @@ test('사이드바에서 누른 cell 로 전환하고, 보이지 않던 동안�
   await run(page, 'echo "x=$X"', 'x=b-4')
 })
 
+test('⌘N 은 선택한 cell 의 workspace 바로 뒤에 새 workspace 를 연다', async ({ launch }) => {
+  const launched = await launch()
+  const { page } = launched
+  await page.keyboard.type('X=a-$((1+1))\n')
+  await newWorkspace(launched, 2)
+  await page.keyboard.type('X=b-$((2+2))\n')
+  await cellItems(page).first().click()
+
+  await newWorkspace(launched, 3)
+
+  await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
+  await run(page, 'echo "x=$X" new-$((3+3))', 'x= new-6')
+  await cellItems(page).nth(2).click()
+  await run(page, 'echo "x=$X"', 'x=b-4')
+})
+
 test('셸이 끝나면 그 cell 을 닫고, 바로 위 cell 을 선택한다', async ({ launch, dataDir }) => {
   const launched = await launch()
   const { page } = launched
