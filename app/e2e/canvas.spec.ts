@@ -455,6 +455,25 @@ test('mermaid 블록은 라벨과 함께 다이어그램으로 그리고, 틀린
   expect(csp).toEqual([])
 })
 
+test('다이어그램 라벨의 HTML 이 popover 를 띄우지 못한다', async ({ launch }) => {
+  const { app, page } = await launch()
+  const labels = [
+    '<button popovertarget=p class=icon-button style=color:red>open</button><div id=p popover>fake</div>',
+    '<button commandfor=q command=show-popover>command</button><div id=q popover>fake</div>',
+    '<button commandfor=d command=show-modal>modal</button><dialog id=d>fake</dialog>'
+  ]
+  await putCanvas(app, {
+    id: 'a',
+    kind: 'markdown',
+    text: mermaid(`flowchart LR\n${labels.map((l, i) => `  N${i}["${l}"]`).join('\n')}`)
+  })
+  const button = (text: string) => diagrams(page).locator('button', { hasText: text })
+  await expect(button('open')).toHaveClass('icon-button')
+  for (const text of ['open', 'command', 'modal']) await button(text).click()
+  await expect(page.locator(':popover-open, dialog[open]')).toHaveCount(0)
+  await expect(diagrams(page).locator('[popover], [popovertarget], dialog')).toHaveCount(0)
+})
+
 test('앱 테마의 밝기가 바뀌면 떠 있는 다이어그램을 그 밝기의 mermaid 테마로 다시 그린다', async ({
   launch,
   dataDir

@@ -154,6 +154,22 @@ describe('drawDiagrams', () => {
     expect(el.querySelector('.diagram')).toBeNull()
     expect(el.querySelector('pre')!.hidden).toBe(false)
   })
+
+  it('SVG 안의 popover 속성과 dialog 는 지우고, class·style·id 는 남긴다', async () => {
+    const el = doc(block('graph A'))
+    const label =
+      '<button popovertarget=p popovertargetaction=show class=icon-button style=color:red>open</button>' +
+      '<div id=p popover>fake</div><dialog open>modal</dialog>'
+    const svg = `<svg width="200" height="100"><foreignObject><div>${label}</div></foreignObject></svg>`
+    await drawDiagrams(el, new Map(), false, async () => async () => svg)
+    const view = el.querySelector('.diagram svg')!
+    expect(
+      view.querySelector('[popover], [popovertarget], [popovertargetaction], dialog')
+    ).toBeNull()
+    const button = view.querySelector('button')!
+    expect([button.className, button.getAttribute('style')]).toEqual(['icon-button', 'color:red'])
+    expect(view.querySelector('#p')!.textContent).toBe('fake')
+  })
 })
 
 describe('다이어그램 확대·축소', () => {

@@ -85,6 +85,7 @@ function diagramBox(svg: string, scale: number): HTMLElement {
   const view = document.createElement('div')
   view.className = 'diagram-view'
   view.innerHTML = svg
+  dropTopLayer(view)
   out.append(view)
   const graphic = view.querySelector('svg')
   const size = graphic && naturalSize(graphic)
@@ -150,6 +151,16 @@ function diagramBox(svg: string, scale: number): HTMLElement {
   dragToScroll(view)
   apply()
   return out
+}
+
+// mermaid 의 strict 필터는 라벨 HTML 의 이 속성들과 `dialog` 를 남긴다. 이 속성이 여는 popover 와 `dialog` 는 다이어그램
+// 블록 밖, 앱 창 맨 위(top layer)에 뜨므로 지운다. `class`·`style`·`id` 는 다이어그램 모양에 쓰이므로 둔다.
+const TOP_LAYER_ATTRS = ['popover', 'popovertarget', 'popovertargetaction']
+
+function dropTopLayer(root: Element): void {
+  for (const d of root.querySelectorAll('dialog')) d.remove()
+  for (const el of root.querySelectorAll(TOP_LAYER_ATTRS.map((a) => `[${a}]`).join(',')))
+    for (const a of TOP_LAYER_ATTRS) el.removeAttribute(a)
 }
 
 /**
