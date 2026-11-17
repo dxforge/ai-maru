@@ -61,7 +61,6 @@ function opened(n: number) {
 const keys = (ws: Workspaces) => ws.cells().map((c) => c.key)
 const firstPanes = (ws: Workspaces) => ws.cells().map((c) => c.panes[0])
 const wsKeys = (ws: Workspaces) => ws.list.value.map((w) => w.key)
-/** workspace 마다 첫 pane 의 시작 디렉토리 */
 const dirs = (ws: Workspaces) => ws.list.value.map((w) => w.cells[0].panes[0].startDir)
 const selected = (ws: Workspaces) => ws.selected()!
 /** cell 의 pane 을 모두 닫아 cell 을 닫는다. */
@@ -1403,10 +1402,11 @@ describe('moveCell·moveWorkspace', () => {
     expect(ws.list.value.map((w) => w.id)).toEqual([ids[0], ids[2]])
   })
 
-  it("'new' 는 그 cell 하나로 된 workspace 를 목록 끝에 새 id 로 만든다", () => {
+  it("'new' 는 선택한 cell 이 앞 workspace 에 있어도 그 cell 하나로 된 workspace 를 목록 끝에 새 id 로 만든다", () => {
     const ws = arranged()
     const [[a, b], [c], [d, e]] = shape(ws)
     const ids = ws.list.value.map((w) => w.id)
+    ws.select(b)
     ws.moveCell(a, 'new')
     expect(shape(ws)).toEqual([[b], [c], [d, e], [a]])
     expect(ws.list.value.slice(0, 3).map((w) => w.id)).toEqual(ids)
