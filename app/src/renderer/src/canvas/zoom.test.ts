@@ -17,7 +17,7 @@ describe('stepZoom', () => {
   })
 
   it('끝 단계에서 끝 단계까지 한 단계씩 모두 지난다', () => {
-    const up = [ZOOM_STEPS[0] as number]
+    const up = [ZOOM_STEPS[0]!]
     while (up.length < 30 && stepZoom(up.at(-1)!, 1) !== up.at(-1)) up.push(stepZoom(up.at(-1)!, 1))
     expect(up).toEqual([...ZOOM_STEPS])
   })

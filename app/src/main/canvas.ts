@@ -58,8 +58,8 @@ export async function canvasDocFor(path: string, line?: number): Promise<CanvasD
   return { id: path, kind: 'code', name: basename(path), text, ...(line ? { line } : {}) }
 }
 
-// mermaid 파일은 그 원문 하나만 든 mermaid 코드 블록으로 연다. 펜스는 원문에 있는 가장 긴 backtick 줄보다 길게 써서
-// 원문 안에서 블록이 닫히지 않게 한다.
+// mermaid 파일은 그 원문 하나만 든 mermaid 코드 블록으로 연다. 펜스는 원문에서 가장 길게 이어진 backtick 보다 한 개
+// 길게(최소 3개) 써서, 원문 안에서 블록이 닫히지 않게 한다.
 function mermaidDoc(source: string): string {
   const longest = (source.match(/`+/g) ?? []).reduce((n, run) => Math.max(n, run.length), 0)
   const fence = '`'.repeat(Math.max(3, longest + 1))

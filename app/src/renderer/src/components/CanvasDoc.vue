@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
 import { drawDiagrams, hasDiagram } from '../canvas/diagrams'
 import { fillBody } from '../canvas/fill'
 import { loadMermaid } from '../canvas/mermaid'
 import { bodyOf, codeBodyOf, type CanvasEntry } from '../canvas/store'
+import { prefersDark } from '../colorScheme'
 import { HoverScrollbars } from '../overlayScroll'
 import CodeView from './CodeView.vue'
 
@@ -37,28 +38,22 @@ watch(
   { flush: 'post' }
 )
 
-// mermaid 는 앱 색이 아니라 내장 테마를 쓰고, 그 가운데 배경 밝기에 맞는 것을 고른다. 밝기는 `CodeView` 처럼
-// `prefers-color-scheme` 으로 본다. 밝기가 바뀌면 떠 있는 다이어그램을 그 밝기로 다시 그린다.
-const darkScheme = matchMedia('(prefers-color-scheme: dark)')
-const dark = ref(darkScheme.matches)
-const schemeChanged = (e: MediaQueryListEvent): void => {
-  dark.value = e.matches
-}
-darkScheme.addEventListener('change', schemeChanged)
-onBeforeUnmount(() => darkScheme.removeEventListener('change', schemeChanged))
 function draw(): void {
   if (root.value && body.value)
-    void drawDiagrams(root.value, body.value.diagrams, dark.value, loadMermaid)
+    void drawDiagrams(root.value, body.value.diagrams, prefersDark.value, loadMermaid)
 }
-watch(dark, draw)
+// 다이어그램을 그린 적 없는 본문은 다시 그릴 것이 없다. `drawDiagrams` 는 블록을 찾으면 바로 캐시를 채운다.
+watch(prefersDark, () => {
+  if (body.value?.diagrams.size) draw()
+})
 
 const scrollbars = new HoverScrollbars()
 const classic = scrollbars.classic
 function hover(e: PointerEvent): void {
+  if (!classic) return
   const target = e.target as Element
   const pre = target.closest<HTMLElement>('pre')
   if (pre) scrollbars.attach(pre)
-  // 확대한 다이어그램은 블록 안에서 가로·세로로 스크롤한다.
   const view = target.closest<HTMLElement>('.diagram-view')
   if (view) scrollbars.attach(view, 'both')
 }
@@ -194,8 +189,7 @@ onBeforeUnmount(reset)
   background: var(--hover);
 }
 
-/* 배율을 적은 가운데 버튼은 글자 폭만큼 넓힌다. */
-.markdown :deep(.diagram-zoom .icon-button:nth-child(2)) {
+.markdown :deep(.diagram-zoom-reset) {
   width: auto;
   min-width: 36px;
   padding: 0 var(--space-2);

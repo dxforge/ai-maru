@@ -403,10 +403,13 @@ for (const [setting, args] of [
 }
 
 const mermaid = (source: string) => '```mermaid\n' + source + '\n```'
+const WIDE = mermaid(
+  `flowchart LR\n  ${Array.from({ length: 30 }, (_, i) => `N${i}[Node ${i}]`).join(' --> ')}`
+)
 const diagrams = (page: Page) => markdown(page).locator('.diagram svg')
-// mermaid 는 그릴 때마다 SVG 에 새 id 를 붙이므로, id 가 같으면 다시 그리지 않은 것이다.
+// `loadMermaid` 가 그릴 때마다 SVG 에 새 id(`maru-mermaid-N`)를 붙이므로, id 가 같으면 다시 그리지 않은 것이다.
 const diagramIds = (page: Page) => diagrams(page).evaluateAll((svgs) => svgs.map((s) => s.id))
-// mermaid 내장 테마 `default`·`dark` 의 노드 채움색
+// mermaid 내장 테마 `default` 의 노드 채움색이다.
 const LIGHT_NODE = 'rgb(236, 236, 255)'
 const nodeFill = (page: Page) =>
   diagrams(page)
@@ -472,8 +475,7 @@ test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에�
   launch
 }) => {
   const { app, page } = await launch()
-  const nodes = Array.from({ length: 30 }, (_, i) => `N${i}[Node ${i}]`).join(' --> ')
-  await putCanvas(app, { id: 'a', kind: 'markdown', text: mermaid(`flowchart LR\n  ${nodes}`) })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: WIDE })
   await expect(diagrams(page)).toHaveCount(1)
   const svg = diagrams(page).first()
   const view = markdown(page).locator('.diagram-view')
@@ -485,7 +487,6 @@ test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에�
   expect(await view.evaluate((v) => v.scrollWidth > v.clientWidth)).toBe(true)
   const viewHeight = async () => (await view.boundingBox())!.height
   expect(await viewHeight()).toBeCloseTo(height, 0)
-  // 화면 좌표의 점이 다이어그램의 어디(가로·세로 비율)에 있는지.
   const pointAt = async (x: number, y: number) => {
     const r = await rect()
     return [(x - r.x) / r.width, (y - r.y) / r.height]
@@ -519,7 +520,6 @@ test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에�
   expect(px).toBeCloseTo(under[0]!, 2)
   expect(py).toBeCloseTo(under[1]!, 2)
 
-  // 확대해 넘친 다이어그램은 끌어서 옮긴다.
   const scroll = () => view.evaluate((v) => [v.scrollLeft, v.scrollTop])
   const [left, top] = await scroll()
   await expect(view).toHaveClass(/pannable/)
@@ -533,17 +533,15 @@ test('확대·축소 버튼은 블록에 보이는 영역의 가운데를 중심
   launch
 }) => {
   const { app, page } = await launch()
-  const nodes = Array.from({ length: 30 }, (_, i) => `N${i}[Node ${i}]`).join(' --> ')
   const text = [
     mermaid(
       'flowchart TD\n  A[Start] --> B{Ok?}\n  B -->|yes| C[Done]\n  B -->|no| D[Retry] --> A'
     ),
-    mermaid(`flowchart LR\n  ${nodes}`)
+    WIDE
   ].join('\n\n')
   await putCanvas(app, { id: 'a', kind: 'markdown', text })
   await expect(diagrams(page)).toHaveCount(2)
   const boxes = markdown(page).locator('.diagram')
-  // 블록에 보이는 영역의 가운데가 다이어그램의 어디(가로·세로 비율)에 있는지와, 블록 안의 다이어그램 위치.
   const state = (i: number) =>
     boxes.nth(i).evaluate((box) => {
       const view = box.querySelector<HTMLElement>('.diagram-view')!
@@ -572,7 +570,6 @@ test('확대·축소 버튼은 블록에 보이는 영역의 가운데를 중심
     expect(y).toBeCloseTo(at[1]!, 2)
   }
 
-  // 블록보다 작아진 다이어그램은 가로·세로 가운데에 두고, 다시 키워도 가운데를 중심으로 커진다.
   for (const name of ['Zoom out', 'Zoom out', 'Zoom in', 'Zoom in', 'Zoom in']) {
     await press(0, name)
     await expectCenter(0, [0.5, 0.5])
@@ -585,7 +582,6 @@ test('확대·축소 버튼은 블록에 보이는 영역의 가운데를 중심
   expect(left).toBeCloseTo(right!, 0)
   expect(top).toBeCloseTo(bottom!, 0)
 
-  // 넓은 다이어그램을 가운데쯤으로 스크롤해 두면, 그때 보이는 영역의 가운데를 중심으로 확대·축소한다.
   await boxes
     .nth(1)
     .locator('.diagram-view')
@@ -961,6 +957,29 @@ test('고전 스크롤바 설정에서 코드 블록은 포인터가 들어온 �
   await pres.first().hover()
   await expect(pres.first()).toHaveAttribute('data-overlayscrollbars')
   expect(await barHeight(0)).toBe(0)
+})
+
+test('고전 스크롤바 설정에서 다이어그램 블록의 스크롤바 손잡이를 끌면 끈 쪽으로 스크롤하고, 다이어그램을 끄는 동작으로 받지 않는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: WIDE })
+  await expect(diagrams(page)).toHaveCount(1)
+  const view = markdown(page).locator('.diagram-view')
+  await diagrams(page).first().hover()
+  await expect(view).toHaveAttribute('data-overlayscrollbars')
+  await expect(view).toHaveClass(/pannable/)
+
+  const handle = view.locator('> .os-scrollbar-horizontal .os-scrollbar-handle')
+  const box = (await handle.boundingBox())!
+  const left = () => view.evaluate((v) => v.scrollLeft)
+  expect(await left()).toBe(0)
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 4 })
+  expect(await view.evaluate((v) => v.classList.contains('dragging'))).toBe(false)
+  await page.mouse.up()
+  expect(await left()).toBeGreaterThan(60)
 })
 
 test('overlay 스크롤바 설정에서는 Canvas 가 시스템 스크롤바를 그대로 쓴다', async ({ launch }) => {

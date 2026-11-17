@@ -19,10 +19,7 @@ export function attachOverlayScroll(el: HTMLElement, axis: ScrollAxis, children 
   OverlayScrollbars(
     { target: el, elements: { viewport: el }, cancel: { nativeScrollbarsOverlaid: true } },
     {
-      overflow: {
-        x: axis === 'y' ? 'hidden' : 'scroll',
-        y: axis === 'x' ? 'hidden' : 'scroll'
-      },
+      overflow: overflowOf(axis),
       scrollbars: {
         theme: 'os-theme-maru',
         autoHide: 'scroll',
@@ -47,6 +44,14 @@ export function attachOverlayScroll(el: HTMLElement, axis: ScrollAxis, children 
       }
     }
   )
+}
+
+/** `axis` 쪽만 스크롤하고 다른 쪽은 넘쳐도 잘라 낸다. `both` 면 두 쪽 모두 스크롤한다. */
+export function overflowOf(axis: Exclude<ScrollAxis, null>): {
+  x: 'scroll' | 'hidden'
+  y: 'scroll' | 'hidden'
+} {
+  return { x: axis === 'y' ? 'hidden' : 'scroll', y: axis === 'x' ? 'hidden' : 'scroll' }
 }
 
 function detachOverlayScroll(el: HTMLElement): void {
