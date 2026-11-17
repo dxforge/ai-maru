@@ -55,8 +55,8 @@ watch(dark, draw)
 const scrollbars = new HoverScrollbars()
 const classic = scrollbars.classic
 function hover(e: PointerEvent): void {
-  const pre = (e.target as Element).closest('pre')
-  if (pre) scrollbars.attach(pre)
+  const block = (e.target as Element).closest<HTMLElement>('pre, .diagram-view')
+  if (block) scrollbars.attach(block)
 }
 onBeforeUnmount(reset)
 </script>
@@ -102,7 +102,8 @@ onBeforeUnmount(reset)
 }
 
 /* 고전 스크롤바 설정에서 스크롤바를 씌우기 전의 블록이 시스템 스크롤바로 높이를 바꾸지 않게 한다. */
-.markdown.classic :deep(pre) {
+.markdown.classic :deep(pre),
+.markdown.classic :deep(.diagram-view) {
   scrollbar-width: none;
 }
 
@@ -134,7 +135,58 @@ onBeforeUnmount(reset)
 }
 
 .markdown :deep(.diagram) {
-  text-align: center;
+  position: relative;
+}
+
+/* 작은 다이어그램은 가운데에 두고, 블록보다 넓으면 가로로 스크롤한다. flex 의 auto margin 은 넘칠 때 0 이 되어 왼쪽 끝까지
+   스크롤할 수 있다. */
+.markdown :deep(.diagram-view) {
+  display: flex;
+  overflow-x: auto;
+}
+
+.markdown :deep(.diagram-view svg) {
+  flex: none;
+  margin: 0 auto;
+}
+
+.markdown :deep(.diagram-zoom) {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  font-size: var(--text-1);
+  color: var(--fg);
+  visibility: hidden;
+}
+
+.markdown :deep(.diagram:hover .diagram-zoom) {
+  visibility: visible;
+}
+
+.markdown :deep(.diagram-zoom button) {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* 위의 `background: none` 이 `.icon-button:hover` 보다 앞서므로 hover 색을 다시 둔다. */
+.markdown :deep(.diagram-zoom button:hover) {
+  background: var(--hover);
+}
+
+/* 배율을 적은 가운데 버튼은 글자 폭만큼 넓힌다. */
+.markdown :deep(.diagram-zoom .icon-button:nth-child(2)) {
+  width: auto;
+  min-width: 36px;
+  padding: 0 var(--space-2);
 }
 
 .markdown :deep(.diagram-error) {

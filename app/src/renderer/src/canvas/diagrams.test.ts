@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { drawDiagrams, errorLine, hasDiagram, type DiagramCache } from './diagrams'
+import { drawDiagrams, errorLine, hasDiagram, naturalSize, type DiagramCache } from './diagrams'
 import { prepareMarkdown, renderPart } from './markdown'
 
 const doc = (text: string): HTMLElement => {
@@ -16,7 +16,7 @@ function renderer() {
   const render = vi.fn(async (source: string, dark: boolean) => {
     if (source.startsWith('bad'))
       throw new Error(`Parse error on line 1:\n${source}\n^\nExpecting 'X'`)
-    return `<svg data-source="${source.trim()}" data-dark="${dark}"></svg>`
+    return `<svg data-source="${source.trim()}" data-dark="${dark}" width="200" height="100"></svg>`
   })
   const load = vi.fn(async () => render)
   return { render, load }
@@ -145,6 +145,96 @@ describe('drawDiagrams', () => {
     await drawing
     expect(el.querySelector('.diagram')).toBeNull()
     expect(el.querySelector('pre')!.hidden).toBe(false)
+  })
+})
+
+describe('다이어그램 확대·축소', () => {
+  const drawn = async (text = block('graph A')) => {
+    const el = doc(text)
+    const cache: DiagramCache = new Map()
+    const { load } = renderer()
+    await drawDiagrams(el, cache, false, load)
+    const box = el.querySelector<HTMLElement>('.diagram')!
+    const svg = box.querySelector<SVGElement>('svg')!
+    const [out, reset, into] = [...box.querySelectorAll<HTMLButtonElement>('.diagram-zoom button')]
+    const size = () => [svg.style.width, svg.style.height, reset!.textContent]
+    return { el, cache, load, box, svg, out: out!, reset: reset!, into: into!, size }
+  }
+  const wheel = (target: Element, init: WheelEventInit) => {
+    const e = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init })
+    target.dispatchEvent(e)
+    return e
+  }
+
+  it('mermaid 가 정한 크기로 넣고, 축소·배율·확대 버튼을 둔다', async () => {
+    const { svg, out, reset, into, size } = await drawn()
+    expect(size()).toEqual(['200px', '100px', '100%'])
+    expect(svg.style.maxWidth).toBe('none')
+    expect([out, reset, into].map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Zoom out',
+      'Reset zoom',
+      'Zoom in'
+    ])
+  })
+
+  it('버튼으로 한 단계씩 확대·축소하고, 배율 버튼은 100% 로 되돌린다', async () => {
+    const { out, reset, into, size } = await drawn()
+    into.click()
+    into.click()
+    expect(size()).toEqual(['250px', '125px', '125%'])
+    reset.click()
+    expect(size()).toEqual(['200px', '100px', '100%'])
+    out.click()
+    expect(size()).toEqual(['180px', '90px', '90%'])
+  })
+
+  it('⌘ 나 ctrl(트랙패드 핀치)을 누른 휠만 확대·축소하고 페이지 스크롤을 막는다', async () => {
+    const { svg, size } = await drawn()
+    const plain = wheel(svg, { deltaY: -100 * Math.log(2) })
+    expect(plain.defaultPrevented).toBe(false)
+    expect(size()).toEqual(['200px', '100px', '100%'])
+    const meta = wheel(svg, { deltaY: -100 * Math.log(2), metaKey: true })
+    expect(meta.defaultPrevented).toBe(true)
+    expect(size()).toEqual(['400px', '200px', '200%'])
+    wheel(svg, { deltaY: -100 * Math.log(0.5), ctrlKey: true })
+    expect(size()).toEqual(['200px', '100px', '100%'])
+  })
+
+  it('밝기가 바뀌어 다시 그린 다이어그램은 앞 배율을 잇는다', async () => {
+    const { el, cache, load, into } = await drawn()
+    into.click()
+    await drawDiagrams(el, cache, true, load)
+    const svg = el.querySelector<SVGElement>('.diagram svg')!
+    expect(svg.getAttribute('data-dark')).toBe('true')
+    expect(svg.style.width).toBe('220px')
+    expect(el.querySelector('.diagram-zoom button:nth-child(2)')!.textContent).toBe('110%')
+  })
+
+  it('크기를 알 수 없는 SVG 는 그대로 넣고 버튼을 두지 않는다', async () => {
+    const el = doc(block('graph A'))
+    await drawDiagrams(el, new Map(), false, async () => async () => '<svg width="100%"></svg>')
+    expect(el.querySelector('.diagram svg')!.getAttribute('style')).toBeNull()
+    expect(el.querySelector('.diagram-zoom')).toBeNull()
+  })
+})
+
+describe('naturalSize', () => {
+  const svg = (attrs: string) => {
+    const host = document.createElement('div')
+    host.innerHTML = `<svg ${attrs}></svg>`
+    return host.firstElementChild!
+  }
+  it('수로 적힌 width·height 를 먼저 쓰고, 없으면 viewBox 의 크기를 쓴다', () => {
+    expect(naturalSize(svg('width="120.5" height="40" viewBox="0 0 10 10"'))).toEqual({
+      width: 120.5,
+      height: 40
+    })
+    expect(naturalSize(svg('width="100%" viewBox="-8 -8 300,90"'))).toEqual({
+      width: 300,
+      height: 90
+    })
+    expect(naturalSize(svg('width="100%"'))).toBeNull()
+    expect(naturalSize(svg('viewBox="0 0 0 10"'))).toBeNull()
   })
 })
 

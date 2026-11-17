@@ -1,3 +1,5 @@
+import { stepZoom, wheelZoom, zoomLabel } from './zoom'
+
 /** mermaid 가 그린 SVG, 또는 그리지 못한 까닭 한 줄. */
 export type Diagram = { svg: string } | { error: string }
 
@@ -52,11 +54,11 @@ export function drawDiagrams(
       const d = await diagram
       // 그리는 동안 밝기가 다시 바뀌었거나 본문이 떨어져 나갔으면 넣지 않는다.
       if (drawn.get(pre) !== claim || !el.isConnected) return
-      const out = document.createElement('div')
+      let out: HTMLElement
       if ('svg' in d) {
-        out.className = 'diagram'
-        out.innerHTML = d.svg
+        out = diagramBox(d.svg, (claim.out && zooms.get(claim.out)) ?? 1)
       } else {
+        out = document.createElement('div')
         out.className = 'diagram-error'
         out.textContent = d.error
       }
@@ -66,6 +68,88 @@ export function drawDiagrams(
       claim.out = out
     })
   ).then(() => undefined)
+}
+
+// 다이어그램(`.diagram`)마다 지금 배율. 밝기가 바뀌어 다시 그린 다이어그램이 앞 배율을 잇는 데 쓴다.
+const zooms = new WeakMap<Element, number>()
+
+/**
+ * SVG 를 mermaid 가 정한 크기로 담는 블록을 만든다. 블록보다 넓으면 블록 안에서 가로로 스크롤한다. 블록 위에 포인터를
+ * 올리면 오른쪽 위에 확대·축소 버튼이 보이고, 블록 위의 ⌘+휠·트랙패드 핀치도 확대·축소한다. 크기를 알 수 없는
+ * SVG 는 그대로 넣고 버튼을 두지 않는다.
+ */
+function diagramBox(svg: string, scale: number): HTMLElement {
+  const out = document.createElement('div')
+  out.className = 'diagram'
+  const view = document.createElement('div')
+  view.className = 'diagram-view'
+  view.innerHTML = svg
+  out.append(view)
+  const graphic = view.querySelector('svg')
+  const size = graphic && naturalSize(graphic)
+  if (!graphic || !size) return out
+
+  const bar = document.createElement('div')
+  bar.className = 'diagram-zoom'
+  // Canvas 의 다른 버튼처럼 눌러도 터미널 등 포커스를 가진 요소를 blur 하지 않는다.
+  bar.addEventListener('mousedown', (e) => e.preventDefault())
+  const button = (text: string, label: string, next: () => number): HTMLButtonElement => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = 'icon-button'
+    b.textContent = text
+    b.setAttribute('aria-label', label)
+    b.addEventListener('click', () => zoomTo(next()))
+    bar.append(b)
+    return b
+  }
+  button('−', 'Zoom out', () => stepZoom(scale, -1))
+  const reset = button('', 'Reset zoom', () => 1)
+  button('+', 'Zoom in', () => stepZoom(scale, 1))
+  out.append(bar)
+
+  const apply = (): void => {
+    graphic.style.width = `${size.width * scale}px`
+    graphic.style.height = `${size.height * scale}px`
+    graphic.style.maxWidth = 'none'
+    reset.textContent = zoomLabel(scale)
+    zooms.set(out, scale)
+  }
+  // `x`(화면 좌표)에 있던 다이어그램의 점이 배율을 바꾼 뒤에도 `x` 에 남도록 가로 스크롤을 옮긴다. 버튼은 블록 가운데를 쓴다.
+  const zoomTo = (next: number, x?: number): void => {
+    const before = graphic.getBoundingClientRect()
+    const box = view.getBoundingClientRect()
+    const at = x ?? box.left + box.width / 2
+    const ratio = next / scale
+    scale = next
+    apply()
+    const after = graphic.getBoundingClientRect()
+    view.scrollLeft += after.left + (at - before.left) * ratio - at
+  }
+  out.addEventListener(
+    'wheel',
+    (e) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      zoomTo(wheelZoom(scale, e.deltaY), e.clientX)
+    },
+    { passive: false }
+  )
+  apply()
+  return out
+}
+
+/** SVG 의 `width`·`height` 속성이 수이면 그것을, 아니면 `viewBox` 의 크기를 쓴다. 둘 다 없으면 `null`. */
+export function naturalSize(svg: Element): { width: number; height: number } | null {
+  const width = Number(svg.getAttribute('width'))
+  const height = Number(svg.getAttribute('height'))
+  if (width > 0 && height > 0) return { width, height }
+  const box = (svg.getAttribute('viewBox') ?? '')
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number)
+  if (box.length === 4 && box[2]! > 0 && box[3]! > 0) return { width: box[2]!, height: box[3]! }
+  return null
 }
 
 /**

@@ -467,6 +467,36 @@ test('앱 테마의 밝기가 바뀌면 떠 있는 다이어그램을 그 밝기
   await expect.poll(() => nodeFill(page)).toBe(dark)
 })
 
+test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에서 가로로 스크롤하며, 포인터를 올리면 보이는 버튼과 ⌘+휠로 확대한다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const nodes = Array.from({ length: 30 }, (_, i) => `N${i}[Node ${i}]`).join(' --> ')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: mermaid(`flowchart LR\n  ${nodes}`) })
+  await expect(diagrams(page)).toHaveCount(1)
+  const svg = diagrams(page).first()
+  const view = markdown(page).locator('.diagram-view')
+  const width = async () => (await svg.boundingBox())!.width
+  const natural = Number(await svg.getAttribute('width'))
+  expect(natural).toBeGreaterThan(0)
+  expect(await width()).toBeCloseTo(natural, 0)
+  expect(await view.evaluate((v) => v.scrollWidth > v.clientWidth)).toBe(true)
+
+  const bar = markdown(page).locator('.diagram-zoom')
+  await expect(bar).toBeHidden()
+  await svg.hover()
+  await expect(bar).toBeVisible()
+  await bar.getByRole('button', { name: 'Zoom in' }).click()
+  await expect(bar.getByRole('button', { name: 'Reset zoom' })).toHaveText('110%')
+  expect(await width()).toBeCloseTo(natural * 1.1, 0)
+
+  await page.keyboard.down('Meta')
+  await page.mouse.wheel(0, -100 * Math.log(2))
+  await page.keyboard.up('Meta')
+  await expect(bar.getByRole('button', { name: 'Reset zoom' })).toHaveText('220%')
+  expect(await width()).toBeCloseTo(natural * 2.2, 0)
+})
+
 test('접었다 펴거나 모두 펼쳐도 마크다운을 다시 렌더하지 않고, 같은 id 로 다시 온 문서는 새로 렌더해 앞 문서의 묶음을 남기지 않는다', async ({
   launch
 }) => {
