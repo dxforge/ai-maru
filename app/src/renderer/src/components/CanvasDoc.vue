@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { drawDiagrams, hasDiagram } from '../canvas/diagrams'
 import { fillBody } from '../canvas/fill'
+import { loadMermaid } from '../canvas/mermaid'
 import { bodyOf, codeBodyOf, type CanvasEntry } from '../canvas/store'
 import { HoverScrollbars } from '../overlayScroll'
 import CodeView from './CodeView.vue'
@@ -26,10 +28,29 @@ watch(
   root,
   (el) => {
     reset()
-    if (el && body.value) stop = fillBody(el, body.value)
+    if (!el || !body.value) return
+    if (hasDiagram(first.value)) draw()
+    stop = fillBody(el, body.value, (html) => {
+      if (hasDiagram(html)) draw()
+    })
   },
   { flush: 'post' }
 )
+
+// mermaid 는 앱 색이 아니라 내장 테마를 쓰고, 그 가운데 배경 밝기에 맞는 것을 고른다. 밝기는 `CodeView` 처럼
+// `prefers-color-scheme` 으로 본다. 밝기가 바뀌면 떠 있는 다이어그램을 그 밝기로 다시 그린다.
+const darkScheme = matchMedia('(prefers-color-scheme: dark)')
+const dark = ref(darkScheme.matches)
+const schemeChanged = (e: MediaQueryListEvent): void => {
+  dark.value = e.matches
+}
+darkScheme.addEventListener('change', schemeChanged)
+onBeforeUnmount(() => darkScheme.removeEventListener('change', schemeChanged))
+function draw(): void {
+  if (root.value && body.value)
+    void drawDiagrams(root.value, body.value.diagrams, dark.value, loadMermaid)
+}
+watch(dark, draw)
 
 const scrollbars = new HoverScrollbars()
 const classic = scrollbars.classic
@@ -110,6 +131,15 @@ onBeforeUnmount(reset)
 .markdown :deep(td) {
   padding: var(--space-2) var(--space-4);
   border: 1px solid var(--line);
+}
+
+.markdown :deep(.diagram) {
+  text-align: center;
+}
+
+.markdown :deep(.diagram-error) {
+  color: var(--error);
+  font-size: var(--text-1);
 }
 
 .markdown :deep(hr) {

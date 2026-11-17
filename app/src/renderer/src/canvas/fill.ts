@@ -13,14 +13,23 @@ function nextTask(): Promise<void> {
   })
 }
 
-/** 첫 묶음이 이미 든 `el` 에 `body` 의 나머지 묶음을 task 마다 하나씩 붙인다. 돌려준 함수를 부르면 더 붙이지 않는다. */
-export function fillBody(el: Element, body: Pick<MarkdownBody, 'length' | 'html'>): () => void {
+/**
+ * 첫 묶음이 이미 든 `el` 에 `body` 의 나머지 묶음을 task 마다 하나씩 붙인다. 묶음을 붙일 때마다 그 HTML 로 `added` 를
+ * 부른다. 돌려준 함수를 부르면 더 붙이지 않는다.
+ */
+export function fillBody(
+  el: Element,
+  body: Pick<MarkdownBody, 'length' | 'html'>,
+  added?: (html: string) => void
+): () => void {
   let stopped = false
   void (async () => {
     for (let i = 1; i < body.length; i++) {
       await nextTask()
       if (stopped) return
-      el.insertAdjacentHTML('beforeend', body.html(i))
+      const html = body.html(i)
+      el.insertAdjacentHTML('beforeend', html)
+      added?.(html)
     }
   })()
   return () => {

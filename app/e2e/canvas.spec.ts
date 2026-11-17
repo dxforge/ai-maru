@@ -29,6 +29,7 @@ import {
   test,
   watchTerminalWidths,
   workspaceNames,
+  writeConfig,
   zshHome
 } from './app'
 
@@ -399,6 +400,72 @@ for (const [setting, args] of [
     expect(await live()).toBe(0)
   })
 }
+
+const mermaid = (source: string) => '```mermaid\n' + source + '\n```'
+const diagrams = (page: Page) => markdown(page).locator('.diagram svg')
+// mermaid 는 그릴 때마다 SVG 에 새 id 를 붙이므로, id 가 같으면 다시 그리지 않은 것이다.
+const diagramIds = (page: Page) => diagrams(page).evaluateAll((svgs) => svgs.map((s) => s.id))
+// mermaid 내장 테마 `default`·`dark` 의 노드 채움색
+const LIGHT_NODE = 'rgb(236, 236, 255)'
+const nodeFill = (page: Page) =>
+  diagrams(page)
+    .first()
+    .locator('.node rect')
+    .first()
+    .evaluate((el) => getComputedStyle(el).fill)
+
+test('mermaid 블록은 라벨과 함께 다이어그램으로 그리고, 틀린 블록은 코드와 오류 한 줄로 보이며, 접었다 펴도 다시 그리지 않는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const csp: string[] = []
+  page.on('console', (m) => {
+    if (m.text().includes('Content Security Policy')) csp.push(m.text())
+  })
+  // 끝의 다이어그램은 첫 묶음 뒤에 붙는 묶음에 든다.
+  const text = [
+    mermaid('flowchart LR\n  A[Start] --> B{Check}\n  B -->|yes| C[Done]'),
+    mermaid('notadiagram'),
+    mixedDoc(300_000),
+    mermaid('sequenceDiagram\n  Alice->>Bob: Hello')
+  ].join('\n\n')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text, title: 'A' })
+  await expect(diagrams(page)).toHaveCount(2)
+  for (const label of ['Start', 'Check', 'Done', 'Hello'])
+    await expect(diagrams(page).getByText(label, { exact: true })).toBeVisible()
+  const pres = markdown(page).locator('pre:has(> code.language-mermaid)')
+  await expect(pres.nth(0)).toBeHidden()
+  await expect(pres.nth(1)).toBeVisible()
+  await expect(pres.nth(1).locator('+ .diagram-error')).toHaveText(
+    /^No diagram type detected .*notadiagram$/
+  )
+  await expect(pres.nth(2)).toBeHidden()
+
+  const ids = await diagramIds(page)
+  await titles(page).filter({ hasText: 'A' }).click()
+  await expect(markdown(page)).toHaveCount(0)
+  await titles(page).filter({ hasText: 'A' }).click()
+  await expect(diagrams(page)).toHaveCount(2)
+  expect(await diagramIds(page)).toEqual(ids)
+  await expect(markdown(page).locator('.diagram-error')).toHaveCount(1)
+  expect(csp).toEqual([])
+})
+
+test('앱 테마의 밝기가 바뀌면 떠 있는 다이어그램을 그 밝기의 mermaid 테마로 다시 그린다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: mermaid('flowchart LR\n  A --> B') })
+  await expect(diagrams(page)).toHaveCount(1)
+  const dark = await nodeFill(page)
+  expect(dark).not.toBe(LIGHT_NODE)
+  writeConfig(dataDir, '[terminal]\ntheme = "Catppuccin Latte"\n')
+  await expect.poll(() => nodeFill(page)).toBe(LIGHT_NODE)
+  await expect(diagrams(page)).toHaveCount(1)
+  writeConfig(dataDir, '[terminal]\ntheme = "Catppuccin Mocha"\n')
+  await expect.poll(() => nodeFill(page)).toBe(dark)
+})
 
 test('접었다 펴거나 모두 펼쳐도 마크다운을 다시 렌더하지 않고, 같은 id 로 다시 온 문서는 새로 렌더해 앞 문서의 묶음을 남기지 않는다', async ({
   launch

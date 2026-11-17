@@ -1,6 +1,7 @@
 import DOMPurify from 'dompurify'
 import { decodeHTML, escapeText } from 'entities'
 import { Marked, Renderer, type Token, type Tokens } from 'marked'
+import type { DiagramCache } from './diagrams'
 
 // 문서 안의 이미지는 띄우지 않고 대체 텍스트만 남긴다 — 원격 주소는 CSP 가 막아 깨진 그림이 되고,
 // 상대 경로는 기준이 될 디렉토리를 받지 않는다.
@@ -169,6 +170,8 @@ export function renderPart(part: Part): string {
 export class MarkdownBody {
   static #count = 0
   readonly id = ++MarkdownBody.#count
+  /** 이 본문의 mermaid 블록을 그린 결과(`drawDiagrams`). */
+  readonly diagrams: DiagramCache = new Map()
   #parts: (Part | string)[]
 
   constructor(parts: Part[]) {

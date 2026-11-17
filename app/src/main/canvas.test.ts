@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
+import { Marked } from 'marked'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import {
   canvasDocFor,
@@ -97,6 +98,21 @@ describe('canvasDocFor', () => {
     expect(await canvasDocFor(file('c.dat', [...Array(8000).fill(0x41), 0]))).toMatchObject({
       kind: 'code'
     })
+  })
+
+  it('`.mmd`·`.mermaid` 파일은 그 원문만 든 mermaid 블록 하나짜리 마크다운이다 — 줄은 받지 않는다', async () => {
+    const source = 'graph TD\n  A["a ```` b"] --> B\n'
+    for (const name of ['flow.mmd', 'Flow.MERMAID']) {
+      const doc = await canvasDocFor(file(name, [...Buffer.from(source)]), 3)
+      expect(doc).toMatchObject({ kind: 'markdown', title: name, id: join(dir, name) })
+      expect(doc).not.toHaveProperty('line')
+      const tokens = new Marked().lexer(doc!.kind === 'markdown' ? doc!.text : '')
+      expect(tokens.filter((t) => t.type !== 'space')).toMatchObject([
+        { type: 'code', lang: 'mermaid', text: source.trimEnd() }
+      ])
+    }
+    const bare = await canvasDocFor(file('bare.mmd', [...Buffer.from('graph LR')]))
+    expect(bare).toMatchObject({ text: '```mermaid\ngraph LR\n```\n' })
   })
 
   it('UTF-8 로 읽히지 않으면 코드 문서가 아니다', async () => {
