@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
+import { drawDiagrams, hasDiagram } from '../canvas/diagrams'
 import { fillBody } from '../canvas/fill'
+import { loadMermaid } from '../canvas/mermaid'
 import { bodyOf, codeBodyOf, type CanvasEntry } from '../canvas/store'
+import { prefersDark } from '../colorScheme'
 import { HoverScrollbars } from '../overlayScroll'
 import CodeView from './CodeView.vue'
 
@@ -26,16 +29,33 @@ watch(
   root,
   (el) => {
     reset()
-    if (el && body.value) stop = fillBody(el, body.value)
+    if (!el || !body.value) return
+    if (hasDiagram(first.value)) draw()
+    stop = fillBody(el, body.value, (html) => {
+      if (hasDiagram(html)) draw()
+    })
   },
   { flush: 'post' }
 )
 
+function draw(): void {
+  if (root.value && body.value)
+    void drawDiagrams(root.value, body.value.diagrams, prefersDark.value, loadMermaid)
+}
+// 다이어그램을 그린 적 없는 본문은 다시 그릴 것이 없다. `drawDiagrams` 는 블록을 찾으면 바로 캐시를 채운다.
+watch(prefersDark, () => {
+  if (body.value?.diagrams.size) draw()
+})
+
 const scrollbars = new HoverScrollbars()
 const classic = scrollbars.classic
 function hover(e: PointerEvent): void {
-  const pre = (e.target as Element).closest('pre')
+  if (!classic) return
+  const target = e.target as Element
+  const pre = target.closest<HTMLElement>('pre')
   if (pre) scrollbars.attach(pre)
+  const view = target.closest<HTMLElement>('.diagram-view')
+  if (view) scrollbars.attach(view, 'both')
 }
 onBeforeUnmount(reset)
 </script>
@@ -81,7 +101,8 @@ onBeforeUnmount(reset)
 }
 
 /* 고전 스크롤바 설정에서 스크롤바를 씌우기 전의 블록이 시스템 스크롤바로 높이를 바꾸지 않게 한다. */
-.markdown.classic :deep(pre) {
+.markdown.classic :deep(pre),
+.markdown.classic :deep(.diagram-view) {
   scrollbar-width: none;
 }
 
@@ -110,6 +131,73 @@ onBeforeUnmount(reset)
 .markdown :deep(td) {
   padding: var(--space-2) var(--space-4);
   border: 1px solid var(--line);
+}
+
+.markdown :deep(.diagram) {
+  position: relative;
+}
+
+/* 블록보다 작은 다이어그램은 가로·세로 가운데에 두고, 크면 블록 안에서 스크롤한다. flex 의 auto margin 은 넘칠 때 0 이
+   되어 왼쪽·위 끝까지 스크롤할 수 있다. */
+.markdown :deep(.diagram-view) {
+  display: flex;
+  overflow: auto;
+}
+
+.markdown :deep(.diagram-view.pannable) {
+  cursor: grab;
+}
+
+.markdown :deep(.diagram-view.dragging) {
+  cursor: grabbing;
+}
+
+.markdown :deep(.diagram-view svg) {
+  flex: none;
+  margin: auto;
+}
+
+.markdown :deep(.diagram-zoom) {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  font-size: var(--text-1);
+  color: var(--fg);
+  visibility: hidden;
+}
+
+.markdown :deep(.diagram:hover .diagram-zoom) {
+  visibility: visible;
+}
+
+.markdown :deep(.diagram-zoom button) {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* 위의 `background: none` 이 `.icon-button:hover` 보다 앞서므로 hover 색을 다시 둔다. */
+.markdown :deep(.diagram-zoom button:hover) {
+  background: var(--hover);
+}
+
+.markdown :deep(.diagram-zoom-reset) {
+  width: auto;
+  min-width: 36px;
+  padding: 0 var(--space-2);
+}
+
+.markdown :deep(.diagram-error) {
+  color: var(--error);
+  font-size: var(--text-1);
 }
 
 .markdown :deep(hr) {

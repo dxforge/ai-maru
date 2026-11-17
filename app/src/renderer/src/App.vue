@@ -29,6 +29,7 @@ import CommandPalette from './components/CommandPalette.vue'
 import LauncherPalette, { type Launch, type LaunchWhere } from './components/LauncherPalette.vue'
 import PaneSwitcher from './components/PaneSwitcher.vue'
 import { createChordKeys } from './chord'
+import { prefersDark } from './colorScheme'
 import { listenWindowPointer } from './windowPointer'
 import PaneHeader from './components/PaneHeader.vue'
 import PanelBar, { type Panel } from './components/PanelBar.vue'
@@ -154,10 +155,6 @@ const config = createConfig(window.maru.config, (r) => {
 window.maru.onConfig(config.apply)
 const headerBottom = computed(() => config.layout.value.header === 'bottom')
 
-// `prefers-color-scheme` 은 `nativeTheme.themeSource` 가 `system` 일 때만 OS 모드를 따른다(`shared/theme.ts` 의 `WindowTheme`).
-const darkScheme = matchMedia('(prefers-color-scheme: dark)')
-const prefersDark = ref(darkScheme.matches)
-darkScheme.addEventListener('change', (e) => (prefersDark.value = e.matches))
 const theme = computed(() => activeTheme(config.theme.value, prefersDark.value))
 const terminalTheme = computed(() => xtermTheme(theme.value))
 watchEffect(() => {

@@ -42,8 +42,13 @@ function codeText(bytes: Uint8Array): string | null {
  * Canvas 가 그릴 수 있는 파일이면 그 문서. id 는 경로라, 같은 cell 에서 같은 파일을 다시 열면 그 문서를 바꾼다.
  */
 export async function canvasDocFor(path: string, line?: number): Promise<CanvasDoc | null> {
-  if (extname(path).toLowerCase() === '.md') {
+  const ext = extname(path).toLowerCase()
+  if (ext === '.md') {
     return { id: path, kind: 'markdown', text: await readFile(path, 'utf8'), title: basename(path) }
+  }
+  if (ext === '.mmd' || ext === '.mermaid') {
+    const text = mermaidDoc(await readFile(path, 'utf8'))
+    return { id: path, kind: 'markdown', text, title: basename(path) }
   }
   const mime = imageType(path)
   if (mime) return imageFile(path, mime)
@@ -51,6 +56,15 @@ export async function canvasDocFor(path: string, line?: number): Promise<CanvasD
   const text = codeText(await readFile(path))
   if (text === null) return null
   return { id: path, kind: 'code', name: basename(path), text, ...(line ? { line } : {}) }
+}
+
+// mermaid 파일은 그 원문 하나만 든 mermaid 코드 블록으로 연다. 펜스는 원문에서 가장 길게 이어진 backtick 보다 한 개
+// 길게(최소 3개) 써서, 원문 안에서 블록이 닫히지 않게 한다.
+function mermaidDoc(source: string): string {
+  const longest = (source.match(/`+/g) ?? []).reduce((n, run) => Math.max(n, run.length), 0)
+  const fence = '`'.repeat(Math.max(3, longest + 1))
+  const body = source.endsWith('\n') ? source : `${source}\n`
+  return `${fence}mermaid\n${body}${fence}\n`
 }
 
 /** Electron `clipboard.read()` 의 항목 가운데 쓰는 것. */

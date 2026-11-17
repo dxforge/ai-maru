@@ -31,6 +31,17 @@ describe('fillBody', () => {
     expect(b.html).toHaveBeenCalledTimes(1)
   })
 
+  it('묶음을 붙일 때마다 붙인 HTML 로 알린다. 알릴 때는 그 묶음이 이미 들어 있다', async () => {
+    const el = document.createElement('div')
+    const added: [string, number][] = []
+    fillBody(el, body(3), (html) => added.push([html, el.childElementCount]))
+    await vi.waitFor(() => expect(added).toHaveLength(2))
+    expect(added).toEqual([
+      ['<p>1</p>', 1],
+      ['<p>2</p>', 2]
+    ])
+  })
+
   it('묶음이 하나뿐이면 붙이지 않는다', async () => {
     const el = document.createElement('div')
     const b = body(1)

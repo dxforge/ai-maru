@@ -157,6 +157,19 @@ test('글자로 찍힌 .md 경로는 Canvas 로 간다', async ({ launch, dataDi
   await expect(page.locator('.canvas .markdown h1')).toHaveText('From link')
 })
 
+test('글자로 찍힌 .mmd 경로는 Canvas 에 다이어그램만 그린다', async ({ launch, dataDir }) => {
+  const { page } = await launch(DOM_RENDERER)
+  writeFileSync(join(dataDir, 'flow.mmd'), 'flowchart LR\n  A[From link] --> B[Drawn]\n')
+  await run(page, `cd '${dataDir}'; echo "$PWD/flow.mmd:2"; echo done-$((1+1))`, 'done-2')
+
+  await metaClick(page, 'flow.mmd:2')
+  await expect(canvasTitles(page)).toHaveText(['flow.mmd'])
+  const doc = page.locator('.canvas .markdown')
+  await expect(doc.locator('.diagram svg').getByText('From link')).toBeVisible()
+  await expect(doc.locator('pre')).toBeHidden()
+  await expect(page.locator('.canvas .code')).toHaveCount(0)
+})
+
 test('줄 끝에서 끊겨 다음 줄에 이어 찍힌 경로는 어느 줄을 ⌘+클릭해도 이어 붙인 경로를 연다', async ({
   launch,
   dataDir

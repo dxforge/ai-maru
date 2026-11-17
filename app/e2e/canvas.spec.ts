@@ -29,8 +29,10 @@ import {
   test,
   watchTerminalWidths,
   workspaceNames,
+  writeConfig,
   zshHome
 } from './app'
+import { WHEEL_SPAN } from '../src/renderer/src/canvas/zoom'
 
 const svg = (width: number) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="20"><rect width="100%" height="100%" fill="red"/></svg>`
@@ -400,6 +402,218 @@ for (const [setting, args] of [
   })
 }
 
+const mermaid = (source: string) => '```mermaid\n' + source + '\n```'
+const WIDE = mermaid(
+  `flowchart LR\n  ${Array.from({ length: 30 }, (_, i) => `N${i}[Node ${i}]`).join(' --> ')}`
+)
+const diagrams = (page: Page) => markdown(page).locator('.diagram svg')
+// `loadMermaid` 가 그릴 때마다 SVG 에 새 id(`maru-mermaid-N`)를 붙이므로, id 가 같으면 다시 그리지 않은 것이다.
+const diagramIds = (page: Page) => diagrams(page).evaluateAll((svgs) => svgs.map((s) => s.id))
+// mermaid 내장 테마 `default` 의 노드 채움색이다.
+const LIGHT_NODE = 'rgb(236, 236, 255)'
+const nodeFill = (page: Page) =>
+  diagrams(page)
+    .first()
+    .locator('.node rect')
+    .first()
+    .evaluate((el) => getComputedStyle(el).fill)
+
+test('mermaid 블록은 라벨과 함께 다이어그램으로 그리고, 틀린 블록은 코드와 오류 한 줄로 보이며, 접었다 펴도 다시 그리지 않는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const csp: string[] = []
+  page.on('console', (m) => {
+    if (m.text().includes('Content Security Policy')) csp.push(m.text())
+  })
+  // 끝의 다이어그램은 첫 묶음 뒤에 붙는 묶음에 든다.
+  const text = [
+    mermaid('flowchart LR\n  A[Start] --> B{Check}\n  B -->|yes| C[Done]'),
+    mermaid('notadiagram'),
+    mixedDoc(300_000),
+    mermaid('sequenceDiagram\n  Alice->>Bob: Hello')
+  ].join('\n\n')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text, title: 'A' })
+  await expect(diagrams(page)).toHaveCount(2)
+  for (const label of ['Start', 'Check', 'Done', 'Hello'])
+    await expect(diagrams(page).getByText(label, { exact: true })).toBeVisible()
+  const pres = markdown(page).locator('pre:has(> code.language-mermaid)')
+  await expect(pres.nth(0)).toBeHidden()
+  await expect(pres.nth(1)).toBeVisible()
+  await expect(pres.nth(1).locator('+ .diagram-error')).toHaveText(
+    /^No diagram type detected .*notadiagram$/
+  )
+  await expect(pres.nth(2)).toBeHidden()
+
+  const ids = await diagramIds(page)
+  await titles(page).filter({ hasText: 'A' }).click()
+  await expect(markdown(page)).toHaveCount(0)
+  await titles(page).filter({ hasText: 'A' }).click()
+  await expect(diagrams(page)).toHaveCount(2)
+  expect(await diagramIds(page)).toEqual(ids)
+  await expect(markdown(page).locator('.diagram-error')).toHaveCount(1)
+  expect(csp).toEqual([])
+})
+
+test('다이어그램 라벨의 HTML 이 popover 를 띄우지 못한다', async ({ launch }) => {
+  const { app, page } = await launch()
+  const labels = [
+    '<button popovertarget=p class=icon-button style=color:red>open</button><div id=p popover>fake</div>',
+    '<button commandfor=q command=show-popover>command</button><div id=q popover>fake</div>',
+    '<button commandfor=d command=show-modal>modal</button><dialog id=d>fake</dialog>'
+  ]
+  await putCanvas(app, {
+    id: 'a',
+    kind: 'markdown',
+    text: mermaid(`flowchart LR\n${labels.map((l, i) => `  N${i}["${l}"]`).join('\n')}`)
+  })
+  const button = (text: string) => diagrams(page).locator('button', { hasText: text })
+  await expect(button('open')).toHaveClass('icon-button')
+  for (const text of ['open', 'command', 'modal']) await button(text).click()
+  await expect(page.locator(':popover-open, dialog[open]')).toHaveCount(0)
+  await expect(diagrams(page).locator('[popover], [popovertarget], dialog')).toHaveCount(0)
+})
+
+test('앱 테마의 밝기가 바뀌면 떠 있는 다이어그램을 그 밝기의 mermaid 테마로 다시 그린다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: mermaid('flowchart LR\n  A --> B') })
+  await expect(diagrams(page)).toHaveCount(1)
+  const dark = await nodeFill(page)
+  expect(dark).not.toBe(LIGHT_NODE)
+  writeConfig(dataDir, '[terminal]\ntheme = "Catppuccin Latte"\n')
+  await expect.poll(() => nodeFill(page)).toBe(LIGHT_NODE)
+  await expect(diagrams(page)).toHaveCount(1)
+  writeConfig(dataDir, '[terminal]\ntheme = "Catppuccin Mocha"\n')
+  await expect.poll(() => nodeFill(page)).toBe(dark)
+})
+
+test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에서 가로로 스크롤하며, 포인터를 올리면 보이는 버튼과 ⌘+휠로 블록 높이를 바꾸지 않고 확대한다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: WIDE })
+  await expect(diagrams(page)).toHaveCount(1)
+  const svg = diagrams(page).first()
+  const view = markdown(page).locator('.diagram-view')
+  const rect = async () => (await svg.boundingBox())!
+  const natural = Number(await svg.getAttribute('width'))
+  const height = Number(await svg.getAttribute('height'))
+  expect(natural).toBeGreaterThan(0)
+  expect((await rect()).width).toBeCloseTo(natural, 0)
+  expect(await view.evaluate((v) => v.scrollWidth > v.clientWidth)).toBe(true)
+  const viewHeight = async () => (await view.boundingBox())!.height
+  expect(await viewHeight()).toBeCloseTo(height, 0)
+  const pointAt = async (x: number, y: number) => {
+    const r = await rect()
+    return [(x - r.x) / r.width, (y - r.y) / r.height]
+  }
+  const box = (await view.boundingBox())!
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+
+  const bar = markdown(page).locator('.diagram-zoom')
+  await expect(bar).toBeHidden()
+  await svg.hover()
+  await expect(bar).toBeVisible()
+  const centered = await pointAt(center.x, center.y)
+  await bar.getByRole('button', { name: 'Zoom in' }).click()
+  await expect(bar.getByRole('button', { name: 'Reset zoom' })).toHaveText('110%')
+  expect((await rect()).width).toBeCloseTo(natural * 1.1, 0)
+  expect(await viewHeight()).toBeCloseTo(height, 0)
+  const [cx, cy] = await pointAt(center.x, center.y)
+  expect(cx).toBeCloseTo(centered[0]!, 2)
+  expect(cy).toBeCloseTo(centered[1]!, 2)
+
+  const pointer = { x: box.x + box.width / 4, y: box.y + box.height / 4 }
+  await page.mouse.move(pointer.x, pointer.y)
+  const under = await pointAt(pointer.x, pointer.y)
+  await page.keyboard.down('Meta')
+  await page.mouse.wheel(0, -WHEEL_SPAN * Math.log(2))
+  await page.keyboard.up('Meta')
+  await expect(bar.getByRole('button', { name: 'Reset zoom' })).toHaveText('220%')
+  expect((await rect()).width).toBeCloseTo(natural * 2.2, 0)
+  expect(await viewHeight()).toBeCloseTo(height, 0)
+  const [px, py] = await pointAt(pointer.x, pointer.y)
+  expect(px).toBeCloseTo(under[0]!, 2)
+  expect(py).toBeCloseTo(under[1]!, 2)
+
+  const scroll = () => view.evaluate((v) => [v.scrollLeft, v.scrollTop])
+  const [left, top] = await scroll()
+  await expect(view).toHaveClass(/pannable/)
+  await page.mouse.down()
+  await page.mouse.move(pointer.x - 40, pointer.y - 20, { steps: 4 })
+  await page.mouse.up()
+  expect(await scroll()).toEqual([left! + 40, top! + 20])
+})
+
+test('확대·축소 버튼은 블록에 보이는 영역의 가운데를 중심으로 하고, 블록보다 작아진 다이어그램은 블록 가운데에 둔다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const text = [
+    mermaid(
+      'flowchart TD\n  A[Start] --> B{Ok?}\n  B -->|yes| C[Done]\n  B -->|no| D[Retry] --> A'
+    ),
+    WIDE
+  ].join('\n\n')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text })
+  await expect(diagrams(page)).toHaveCount(2)
+  const boxes = markdown(page).locator('.diagram')
+  const state = (i: number) =>
+    boxes.nth(i).evaluate((box) => {
+      const view = box.querySelector<HTMLElement>('.diagram-view')!
+      const v = view.getBoundingClientRect()
+      const s = view.querySelector('svg')!.getBoundingClientRect()
+      return {
+        center: [
+          (v.left + view.clientWidth / 2 - s.left) / s.width,
+          (v.top + view.clientHeight / 2 - s.top) / s.height
+        ],
+        margin: [
+          s.left - v.left,
+          view.clientWidth - (s.right - v.left),
+          s.top - v.top,
+          view.clientHeight - (s.bottom - v.top)
+        ]
+      }
+    })
+  const press = async (i: number, name: string) => {
+    await boxes.nth(i).hover()
+    await boxes.nth(i).getByRole('button', { name }).click()
+  }
+  const expectCenter = async (i: number, at: number[]) => {
+    const [x, y] = (await state(i)).center
+    expect(x).toBeCloseTo(at[0]!, 2)
+    expect(y).toBeCloseTo(at[1]!, 2)
+  }
+
+  for (const name of ['Zoom out', 'Zoom out', 'Zoom in', 'Zoom in', 'Zoom in']) {
+    await press(0, name)
+    await expectCenter(0, [0.5, 0.5])
+  }
+  await press(0, 'Zoom out')
+  await press(0, 'Zoom out')
+  const [left, right, top, bottom] = (await state(0)).margin
+  expect(left).toBeGreaterThan(0)
+  expect(top).toBeGreaterThan(0)
+  expect(left).toBeCloseTo(right!, 0)
+  expect(top).toBeCloseTo(bottom!, 0)
+
+  await boxes
+    .nth(1)
+    .locator('.diagram-view')
+    .evaluate((v) => {
+      v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2
+    })
+  const before = (await state(1)).center
+  for (const name of ['Zoom in', 'Zoom in', 'Zoom out', 'Zoom out', 'Zoom out']) {
+    await press(1, name)
+    await expectCenter(1, before)
+  }
+})
+
 test('접었다 펴거나 모두 펼쳐도 마크다운을 다시 렌더하지 않고, 같은 id 로 다시 온 문서는 새로 렌더해 앞 문서의 묶음을 남기지 않는다', async ({
   launch
 }) => {
@@ -762,6 +976,29 @@ test('고전 스크롤바 설정에서 코드 블록은 포인터가 들어온 �
   await pres.first().hover()
   await expect(pres.first()).toHaveAttribute('data-overlayscrollbars')
   expect(await barHeight(0)).toBe(0)
+})
+
+test('고전 스크롤바 설정에서 다이어그램 블록의 스크롤바 손잡이를 끌면 끈 쪽으로 스크롤하고, 다이어그램을 끄는 동작으로 받지 않는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: WIDE })
+  await expect(diagrams(page)).toHaveCount(1)
+  const view = markdown(page).locator('.diagram-view')
+  await diagrams(page).first().hover()
+  await expect(view).toHaveAttribute('data-overlayscrollbars')
+  await expect(view).toHaveClass(/pannable/)
+
+  const handle = view.locator('> .os-scrollbar-horizontal .os-scrollbar-handle')
+  const box = (await handle.boundingBox())!
+  const left = () => view.evaluate((v) => v.scrollLeft)
+  expect(await left()).toBe(0)
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 4 })
+  expect(await view.evaluate((v) => v.classList.contains('dragging'))).toBe(false)
+  await page.mouse.up()
+  expect(await left()).toBeGreaterThan(60)
 })
 
 test('overlay 스크롤바 설정에서는 Canvas 가 시스템 스크롤바를 그대로 쓴다', async ({ launch }) => {
