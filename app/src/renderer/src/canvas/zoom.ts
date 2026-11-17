@@ -31,11 +31,21 @@ export function stepZoom(scale: number, direction: 1 | -1): number {
 }
 
 /**
- * ⌘+휠·트랙패드 핀치의 wheel 한 번 뒤의 배율. Chromium 은 핀치를 `ctrlKey` 가 켜진 wheel 로 보내며 배율 `s` 를
- * `deltaY = -100·ln(s)` 로 적으므로, 그 역인 `exp(-deltaY / 100)` 를 곱하면 핀치한 만큼 커진다.
+ * ⌘+휠에서 배율이 e 배가 되는 `deltaY` 의 합. 트랙패드를 두 손가락으로 한 번 쓸면 `deltaY` 가 수백 쌓이므로, 500 이면
+ * 300 을 쓸었을 때 1.8 배쯤 된다.
  */
-export function wheelZoom(scale: number, deltaY: number): number {
-  return Math.min(MAX, Math.max(MIN, scale * Math.exp(-deltaY / 100)))
+export const WHEEL_SPAN = 500
+
+/**
+ * 트랙패드 핀치에서 배율이 e 배가 되는 `deltaY` 의 합. Chromium 은 핀치를 `ctrlKey` 가 켜진 wheel 로 보내며 배율 `s` 를
+ * `deltaY = -100·ln(s)` 로 적으므로, 100 이면 손가락을 벌린 만큼 커진다. 200 이면 그 제곱근만큼 커진다(손가락으로
+ * 2 배 벌리면 1.4 배).
+ */
+export const PINCH_SPAN = 200
+
+/** wheel 한 번 뒤의 배율. 단계를 건너뛰지 않고 `deltaY` 에 비례해 `exp(-deltaY / span)` 배 한다. */
+export function wheelZoom(scale: number, deltaY: number, span: number): number {
+  return Math.min(MAX, Math.max(MIN, scale * Math.exp(-deltaY / span)))
 }
 
 /** 버튼에 보일 배율. */

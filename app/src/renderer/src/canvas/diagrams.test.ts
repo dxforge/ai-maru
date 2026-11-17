@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { drawDiagrams, errorLine, hasDiagram, naturalSize, type DiagramCache } from './diagrams'
 import { prepareMarkdown, renderPart } from './markdown'
+import { PINCH_SPAN, WHEEL_SPAN } from './zoom'
 
 const doc = (text: string): HTMLElement => {
   const el = document.createElement('div')
@@ -188,16 +189,33 @@ describe('다이어그램 확대·축소', () => {
     expect(size()).toEqual(['180px', '90px', '90%'])
   })
 
-  it('⌘ 나 ctrl(트랙패드 핀치)을 누른 휠만 확대·축소하고 페이지 스크롤을 막는다', async () => {
+  it('⌘ 나 ctrl(트랙패드 핀치)을 누른 휠만 deltaY 에 비례해 확대·축소하고 페이지 스크롤을 막는다', async () => {
     const { svg, size } = await drawn()
-    const plain = wheel(svg, { deltaY: -100 * Math.log(2) })
+    const plain = wheel(svg, { deltaY: -WHEEL_SPAN * Math.log(2) })
     expect(plain.defaultPrevented).toBe(false)
     expect(size()).toEqual(['200px', '100px', '100%'])
-    const meta = wheel(svg, { deltaY: -100 * Math.log(2), metaKey: true })
+    const meta = wheel(svg, { deltaY: -WHEEL_SPAN * Math.log(2), metaKey: true })
     expect(meta.defaultPrevented).toBe(true)
     expect(size()).toEqual(['400px', '200px', '200%'])
-    wheel(svg, { deltaY: -100 * Math.log(0.5), ctrlKey: true })
+    wheel(svg, { deltaY: -PINCH_SPAN * Math.log(0.5), ctrlKey: true })
     expect(size()).toEqual(['200px', '100px', '100%'])
+    // 한 단계(110%)보다 작게 움직인 이벤트는 단계로 올리지 않고 그만큼만 키운다.
+    wheel(svg, { deltaY: -WHEEL_SPAN * Math.log(1.02), metaKey: true })
+    expect(size()).toEqual(['204px', '102px', '102%'])
+  })
+
+  it('확대·축소해도 블록 높이는 100% 일 때의 다이어그램 높이 그대로다', async () => {
+    const { box, into, out, size } = await drawn()
+    const view = box.querySelector<HTMLElement>('.diagram-view')!
+    expect(view.style.height).toBe('100px')
+    into.click()
+    into.click()
+    expect(size()[1]).toBe('125px')
+    expect(view.style.height).toBe('100px')
+    out.click()
+    out.click()
+    out.click()
+    expect(view.style.height).toBe('100px')
   })
 
   it('밝기가 바뀌어 다시 그린 다이어그램은 앞 배율을 잇는다', async () => {

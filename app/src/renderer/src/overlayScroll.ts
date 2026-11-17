@@ -4,8 +4,8 @@ import type { Directive } from 'vue'
 
 OverlayScrollbars.plugin(ClickScrollPlugin)
 
-/** 스크롤할 축. null 이면 스크롤바를 씌우지 않는다. */
-export type ScrollAxis = 'x' | 'y' | null
+/** 스크롤할 축. `both` 는 가로·세로 모두, null 이면 스크롤바를 씌우지 않는다. */
+export type ScrollAxis = 'x' | 'y' | 'both' | null
 
 /**
  * `el` 에 내용 위에 겹쳐 그리는 스크롤바를 씌운다. 시스템 스크롤바가 이미 overlay 면 씌우지 않고 시스템 것을 쓴다.
@@ -19,7 +19,10 @@ export function attachOverlayScroll(el: HTMLElement, axis: ScrollAxis, children 
   OverlayScrollbars(
     { target: el, elements: { viewport: el }, cancel: { nativeScrollbarsOverlaid: true } },
     {
-      overflow: { x: axis === 'x' ? 'scroll' : 'hidden', y: axis === 'y' ? 'scroll' : 'hidden' },
+      overflow: {
+        x: axis === 'y' ? 'hidden' : 'scroll',
+        y: axis === 'x' ? 'hidden' : 'scroll'
+      },
       scrollbars: {
         theme: 'os-theme-maru',
         autoHide: 'scroll',
@@ -51,7 +54,7 @@ function detachOverlayScroll(el: HTMLElement): void {
 }
 
 /**
- * 포인터가 처음 들어온 요소에만 가로 스크롤바를 씌운다. 큰 문서의 블록을 한꺼번에 씌우면 창이 오래 멈추기 때문이다. 이
+ * 포인터가 처음 들어온 요소에만 스크롤바를 씌운다(기본은 가로). 큰 문서의 블록을 한꺼번에 씌우면 창이 오래 멈추기 때문이다. 이
  * 스크롤바는 hover·스크롤 때만 보이고, 블록을 스크롤하려면 포인터가 먼저 그 위에 있어야 하므로 한꺼번에 씌울 때와 쓰는 법은
  * 같다.
  *
@@ -63,10 +66,10 @@ export class HoverScrollbars {
   readonly classic = !OverlayScrollbars.env().scrollbarsOverlaid.x
   #attached: HTMLElement[] = []
 
-  attach(el: HTMLElement): void {
+  attach(el: HTMLElement, axis: ScrollAxis = 'x'): void {
     if (!this.classic || this.#attached.includes(el)) return
     this.#attached.push(el)
-    attachOverlayScroll(el, 'x')
+    attachOverlayScroll(el, axis)
   }
 
   release(): void {

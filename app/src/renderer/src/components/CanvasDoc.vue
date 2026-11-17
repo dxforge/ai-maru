@@ -55,8 +55,12 @@ watch(dark, draw)
 const scrollbars = new HoverScrollbars()
 const classic = scrollbars.classic
 function hover(e: PointerEvent): void {
-  const block = (e.target as Element).closest<HTMLElement>('pre, .diagram-view')
-  if (block) scrollbars.attach(block)
+  const target = e.target as Element
+  const pre = target.closest<HTMLElement>('pre')
+  if (pre) scrollbars.attach(pre)
+  // 확대한 다이어그램은 블록 안에서 가로·세로로 스크롤한다.
+  const view = target.closest<HTMLElement>('.diagram-view')
+  if (view) scrollbars.attach(view, 'both')
 }
 onBeforeUnmount(reset)
 </script>
@@ -138,11 +142,19 @@ onBeforeUnmount(reset)
   position: relative;
 }
 
-/* 작은 다이어그램은 가운데에 두고, 블록보다 넓으면 가로로 스크롤한다. flex 의 auto margin 은 넘칠 때 0 이 되어 왼쪽 끝까지
-   스크롤할 수 있다. */
+/* 블록보다 작은 다이어그램은 가운데에 두고, 크면 블록 안에서 스크롤한다. flex 의 auto margin 은 넘칠 때 0 이 되어 왼쪽·위
+   끝까지 스크롤할 수 있다. */
 .markdown :deep(.diagram-view) {
   display: flex;
-  overflow-x: auto;
+  overflow: auto;
+}
+
+.markdown :deep(.diagram-view.pannable) {
+  cursor: grab;
+}
+
+.markdown :deep(.diagram-view.dragging) {
+  cursor: grabbing;
 }
 
 .markdown :deep(.diagram-view svg) {

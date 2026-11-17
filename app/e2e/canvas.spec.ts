@@ -32,6 +32,7 @@ import {
   writeConfig,
   zshHome
 } from './app'
+import { WHEEL_SPAN } from '../src/renderer/src/canvas/zoom'
 
 const svg = (width: number) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="20"><rect width="100%" height="100%" fill="red"/></svg>`
@@ -467,7 +468,7 @@ test('앱 테마의 밝기가 바뀌면 떠 있는 다이어그램을 그 밝기
   await expect.poll(() => nodeFill(page)).toBe(dark)
 })
 
-test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에서 가로로 스크롤하며, 포인터를 올리면 보이는 버튼과 ⌘+휠로 확대한다', async ({
+test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에서 가로로 스크롤하며, 포인터를 올리면 보이는 버튼과 ⌘+휠로 블록 높이를 바꾸지 않고 확대한다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -476,25 +477,56 @@ test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에�
   await expect(diagrams(page)).toHaveCount(1)
   const svg = diagrams(page).first()
   const view = markdown(page).locator('.diagram-view')
-  const width = async () => (await svg.boundingBox())!.width
+  const rect = async () => (await svg.boundingBox())!
   const natural = Number(await svg.getAttribute('width'))
+  const height = Number(await svg.getAttribute('height'))
   expect(natural).toBeGreaterThan(0)
-  expect(await width()).toBeCloseTo(natural, 0)
+  expect((await rect()).width).toBeCloseTo(natural, 0)
   expect(await view.evaluate((v) => v.scrollWidth > v.clientWidth)).toBe(true)
+  const viewHeight = async () => (await view.boundingBox())!.height
+  expect(await viewHeight()).toBeCloseTo(height, 0)
+  // 화면 좌표의 점이 다이어그램의 어디(가로·세로 비율)에 있는지.
+  const pointAt = async (x: number, y: number) => {
+    const r = await rect()
+    return [(x - r.x) / r.width, (y - r.y) / r.height]
+  }
+  const box = (await view.boundingBox())!
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 
   const bar = markdown(page).locator('.diagram-zoom')
   await expect(bar).toBeHidden()
   await svg.hover()
   await expect(bar).toBeVisible()
+  const centered = await pointAt(center.x, center.y)
   await bar.getByRole('button', { name: 'Zoom in' }).click()
   await expect(bar.getByRole('button', { name: 'Reset zoom' })).toHaveText('110%')
-  expect(await width()).toBeCloseTo(natural * 1.1, 0)
+  expect((await rect()).width).toBeCloseTo(natural * 1.1, 0)
+  expect(await viewHeight()).toBeCloseTo(height, 0)
+  const [cx, cy] = await pointAt(center.x, center.y)
+  expect(cx).toBeCloseTo(centered[0]!, 2)
+  expect(cy).toBeCloseTo(centered[1]!, 2)
 
+  const pointer = { x: box.x + box.width / 4, y: box.y + box.height / 4 }
+  await page.mouse.move(pointer.x, pointer.y)
+  const under = await pointAt(pointer.x, pointer.y)
   await page.keyboard.down('Meta')
-  await page.mouse.wheel(0, -100 * Math.log(2))
+  await page.mouse.wheel(0, -WHEEL_SPAN * Math.log(2))
   await page.keyboard.up('Meta')
   await expect(bar.getByRole('button', { name: 'Reset zoom' })).toHaveText('220%')
-  expect(await width()).toBeCloseTo(natural * 2.2, 0)
+  expect((await rect()).width).toBeCloseTo(natural * 2.2, 0)
+  expect(await viewHeight()).toBeCloseTo(height, 0)
+  const [px, py] = await pointAt(pointer.x, pointer.y)
+  expect(px).toBeCloseTo(under[0]!, 2)
+  expect(py).toBeCloseTo(under[1]!, 2)
+
+  // 확대해 넘친 다이어그램은 끌어서 옮긴다.
+  const scroll = () => view.evaluate((v) => [v.scrollLeft, v.scrollTop])
+  const [left, top] = await scroll()
+  await expect(view).toHaveClass(/pannable/)
+  await page.mouse.down()
+  await page.mouse.move(pointer.x - 40, pointer.y - 20, { steps: 4 })
+  await page.mouse.up()
+  expect(await scroll()).toEqual([left! + 40, top! + 20])
 })
 
 test('접었다 펴거나 모두 펼쳐도 마크다운을 다시 렌더하지 않고, 같은 id 로 다시 온 문서는 새로 렌더해 앞 문서의 묶음을 남기지 않는다', async ({

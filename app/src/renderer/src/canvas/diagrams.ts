@@ -1,4 +1,4 @@
-import { stepZoom, wheelZoom, zoomLabel } from './zoom'
+import { PINCH_SPAN, stepZoom, WHEEL_SPAN, wheelZoom, zoomLabel } from './zoom'
 
 /** mermaid 가 그린 SVG, 또는 그리지 못한 까닭 한 줄. */
 export type Diagram = { svg: string } | { error: string }
@@ -74,8 +74,9 @@ export function drawDiagrams(
 const zooms = new WeakMap<Element, number>()
 
 /**
- * SVG 를 mermaid 가 정한 크기로 담는 블록을 만든다. 블록보다 넓으면 블록 안에서 가로로 스크롤한다. 블록 위에 포인터를
- * 올리면 오른쪽 위에 확대·축소 버튼이 보이고, 블록 위의 ⌘+휠·트랙패드 핀치도 확대·축소한다. 크기를 알 수 없는
+ * SVG 를 mermaid 가 정한 크기로 담는 블록을 만든다. 블록의 높이는 100% 일 때의 다이어그램 높이로 고정해, 확대·축소해도
+ * 아래 글이 밀리지 않는다. 블록보다 큰 다이어그램은 블록 안에서 가로·세로로 스크롤하거나 끌어서 옮긴다. 블록 위에
+ * 포인터를 올리면 오른쪽 위에 확대·축소 버튼이 보이고, 블록 위의 ⌘+휠·트랙패드 핀치도 확대·축소한다. 크기를 알 수 없는
  * SVG 는 그대로 넣고 버튼을 두지 않는다.
  */
 function diagramBox(svg: string, scale: number): HTMLElement {
@@ -88,6 +89,7 @@ function diagramBox(svg: string, scale: number): HTMLElement {
   const graphic = view.querySelector('svg')
   const size = graphic && naturalSize(graphic)
   if (!graphic || !size) return out
+  view.style.height = `${size.height}px`
 
   const bar = document.createElement('div')
   bar.className = 'diagram-zoom'
@@ -115,28 +117,70 @@ function diagramBox(svg: string, scale: number): HTMLElement {
     reset.textContent = zoomLabel(scale)
     zooms.set(out, scale)
   }
-  // `x`(화면 좌표)에 있던 다이어그램의 점이 배율을 바꾼 뒤에도 `x` 에 남도록 가로 스크롤을 옮긴다. 버튼은 블록 가운데를 쓴다.
-  const zoomTo = (next: number, x?: number): void => {
+  // 화면 좌표 `at` 에 있던 다이어그램의 점이 배율을 바꾼 뒤에도 그 자리에 남도록 스크롤을 옮긴다. 버튼은 블록 가운데를 쓴다.
+  const zoomTo = (next: number, at?: { x: number; y: number }): void => {
     const before = graphic.getBoundingClientRect()
     const box = view.getBoundingClientRect()
-    const at = x ?? box.left + box.width / 2
+    const x = at?.x ?? box.left + box.width / 2
+    const y = at?.y ?? box.top + box.height / 2
     const ratio = next / scale
     scale = next
     apply()
     const after = graphic.getBoundingClientRect()
-    view.scrollLeft += after.left + (at - before.left) * ratio - at
+    view.scrollLeft += after.left + (x - before.left) * ratio - x
+    view.scrollTop += after.top + (y - before.top) * ratio - y
+    markPannable(view)
   }
   out.addEventListener(
     'wheel',
     (e) => {
       if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
-      zoomTo(wheelZoom(scale, e.deltaY), e.clientX)
+      // 핀치는 `ctrlKey` 만 켜진 wheel 로 온다.
+      const span = e.metaKey ? WHEEL_SPAN : PINCH_SPAN
+      zoomTo(wheelZoom(scale, e.deltaY, span), { x: e.clientX, y: e.clientY })
     },
     { passive: false }
   )
+  dragToScroll(view)
   apply()
   return out
+}
+
+/**
+ * 다이어그램이 블록보다 클 때 끌어서 블록 안을 스크롤한다. 끄는 동안 글자를 선택하거나 포커스를 옮기지 않는다. 끌 수 있는
+ * 동안은 `pannable` 을 붙여 포인터 모양으로 알린다. 넘치는지는 포인터가 들어올 때와 배율을 바꾼 뒤(`markPannable`)에 잰다.
+ */
+function dragToScroll(view: HTMLElement): void {
+  view.addEventListener('pointerenter', () => markPannable(view))
+  view.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !markPannable(view)) return
+    e.preventDefault()
+    view.setPointerCapture(e.pointerId)
+    view.classList.add('dragging')
+    let { clientX: x, clientY: y } = e
+    const move = (m: PointerEvent): void => {
+      view.scrollLeft -= m.clientX - x
+      view.scrollTop -= m.clientY - y
+      x = m.clientX
+      y = m.clientY
+    }
+    const end = (): void => {
+      view.classList.remove('dragging')
+      view.removeEventListener('pointermove', move)
+      view.removeEventListener('pointerup', end)
+      view.removeEventListener('pointercancel', end)
+    }
+    view.addEventListener('pointermove', move)
+    view.addEventListener('pointerup', end)
+    view.addEventListener('pointercancel', end)
+  })
+}
+
+function markPannable(view: HTMLElement): boolean {
+  const overflows = view.scrollWidth > view.clientWidth || view.scrollHeight > view.clientHeight
+  view.classList.toggle('pannable', overflows)
+  return overflows
 }
 
 /** SVG 의 `width`·`height` 속성이 수이면 그것을, 아니면 `viewBox` 의 크기를 쓴다. 둘 다 없으면 `null`. */
