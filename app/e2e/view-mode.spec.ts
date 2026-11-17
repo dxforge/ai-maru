@@ -293,7 +293,8 @@ test('columns 에서 넘치면 가로로 스크롤하고, 포커스가 간 pane 
   await expect.poll(() => inView(page, cellViews(page).nth(0))).toBe(true)
 
   await newWorkspace(launched, 4)
-  await expect.poll(() => inView(page, cellViews(page).nth(3))).toBe(true)
+  await expect(cellGroups(page).nth(1)).toHaveClass(/selected/)
+  await expect.poll(() => inView(page, cellViews(page).nth(1))).toBe(true)
 
   await cellItems(page).first().click()
   await split(app, page, 'split-right', 2)

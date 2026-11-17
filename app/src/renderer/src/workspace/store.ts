@@ -206,9 +206,12 @@ export function createWorkspaces(
     return { key: nextKey++, id: workspaceId(), cells: [cell] }
   }
 
+  /** 새 workspace 를 선택한 cell 의 workspace 바로 뒤에 만들어 그 cell 을 선택한다. 선택이 없으면 끝에 만든다. */
   function open(startDir?: string, extra: PaneCommand = {}): void {
     const c = createCell({ startDir, ...extra })
-    list.value.push(createWorkspace(c))
+    const from = selected()
+    const at = from ? list.value.indexOf(workspaceOf(from.key)!) + 1 : list.value.length
+    list.value.splice(at, 0, createWorkspace(c))
     selectedKey.value = c.key
   }
 
