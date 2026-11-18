@@ -9,7 +9,7 @@ const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05
 export const CANVAS_PUT_TOOL = {
   name: 'canvas_put',
   description:
-    'Show a document in the AI Maru Canvas panel next to this terminal. Pass markdown in `text`, or a file path in `file`: markdown, a Mermaid diagram (.mmd, .mermaid), an image, or any other UTF-8 text file up to 5 MiB as code, highlighted when its language is known. Reuse the same `id` to replace a document you put before; a file without `id` uses its absolute path as the id, so putting it again replaces it. The reply is the document id.',
+    'Show a document in the AI Maru Canvas panel next to this terminal. Pass markdown in `text`, or a file path in `file`: markdown (.md, .markdown), a Mermaid diagram (.mmd, .mermaid), an image, or any other UTF-8 text file up to 5 MiB as code, highlighted when its language is known. Reuse the same `id` to replace a document you put before; a file without `id` uses its absolute path as the id, so putting it again replaces it. The reply is the document id.',
   inputSchema: {
     type: 'object',
     properties: {

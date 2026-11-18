@@ -123,6 +123,23 @@ describe('canvasDocFor', () => {
     expect(await canvasDocFor(file('latin1.txt', [0x63, 0x61, 0x66, 0xe9]))).toBeNull()
   })
 
+  it('`.markdown` 은 `.md` 처럼 파일 이름 제목의 마크다운이고, `.mdx` 는 코드 문서다', async () => {
+    for (const name of ['note.markdown', 'Note.MARKDOWN']) {
+      const path = file(name, [...Buffer.from('\uFEFF# 제목\n')])
+      expect(await canvasDocFor(path, 3)).toEqual({
+        id: path,
+        kind: 'markdown',
+        text: '# 제목\n',
+        title: name,
+        path
+      })
+    }
+    expect(await canvasDocFor(file('page.mdx', [...Buffer.from('# a\n')]))).toMatchObject({
+      kind: 'code',
+      name: 'page.mdx'
+    })
+  })
+
   it('`.md`·`.mmd` 는 앞의 BOM 하나를 지우고 경로를 `path` 로 든다', async () => {
     const md = file('bom.md', [...Buffer.from('\uFEFF\uFEFF# 제목\n')])
     expect(await canvasDocFor(md)).toEqual({
@@ -370,6 +387,12 @@ describe('canvasPut', () => {
       expect(sent).toEqual([{ id: path, kind: 'markdown', text: '# 제목\n', path, pty: 'p-1' }])
     })
 
+    it('`.markdown` 도 `.md` 처럼 제목을 넣지 않고 BOM 을 지운 마크다운이다', async () => {
+      const path = file('note.markdown', [...Buffer.from('\uFEFF# 제목\n')])
+      const { sent } = await put({ path })
+      expect(sent).toEqual([{ id: path, kind: 'markdown', text: '# 제목\n', path, pty: 'p-1' }])
+    })
+
     it('`.mmd` 는 다이어그램만 든 마크다운이다', async () => {
       const path = file('flow.mmd', [...Buffer.from('graph LR\n')])
       const { sent } = await put({ path })
@@ -380,6 +403,7 @@ describe('canvasPut', () => {
 
     it('그릴 수 없거나 읽을 수 없으면 그 이유로 InvalidParams 이고 아무것도 보내지 않는다', async () => {
       const empty = file('blank.md', [...Buffer.from(' \n\uFEFF')])
+      const emptyLong = file('blank.markdown', [...Buffer.from('\uFEFF\n')])
       const binary = file('blob.bin', [0x41, 0])
       const missing = join(dir, 'missing.ts')
       const folder = join(dir, 'folder.ts')
@@ -391,6 +415,7 @@ describe('canvasPut', () => {
       chmodSync(locked, 0)
       for (const [path, message] of [
         [empty, `${empty} is empty`],
+        [emptyLong, `${emptyLong} is empty`],
         [binary, `${binary} is not a UTF-8 text file`],
         [missing, `cannot read ${missing}`],
         [folder, `${folder} is not a file`],

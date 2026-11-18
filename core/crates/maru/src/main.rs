@@ -89,11 +89,11 @@
 //! cell id 는 cell 이 닫힐 때까지 바뀌지 않는다. cell 을 다른 workspace 로 옮겨도, `app.restart` 뒤에도
 //! 같다.
 //!
-//! `canvas.put` 은 문서를 창의 Canvas 패널에 보인다. `text` 는 마크다운이다. `path` 는 앱이 읽는 파일로, 터미널의
-//! 경로 링크를 열 때와 같이 확장자로 마크다운(`.md`)·다이어그램(`.mmd`·`.mermaid`)·이미지·코드 뷰(그 밖의 텍스트
-//! 파일) 가운데 하나로 보인다. 앱은 `path` 의 `.`·`..` 를 정리하고 심링크는 풀지 않는다. `path` 의 파일이 없거나
-//! 일반 파일이 아니거나, 공백뿐인 `.md` 이거나, 코드 뷰로 보일 수 없으면(5 MiB 를 넘거나 텍스트가 아니면) 앱은 그 이유를
-//! 담아 `invalid_params` 로 답한다.
+//! `canvas.put` 은 문서를 창의 Canvas 패널에 보인다. `text` 는 마크다운이다. `path` 는 앱이 읽을 파일의
+//! 절대경로다. 앱은 터미널의 경로 링크를 열 때와 같이 확장자를 보고 그 파일을 마크다운(`.md`·`.markdown`)·
+//! 다이어그램(`.mmd`·`.mermaid`)·이미지·코드 뷰(그 밖의 텍스트 파일) 가운데 하나로 보인다. 앱은 `path` 의 `.`·`..` 를
+//! 정리하고 심링크는 풀지 않는다. `path` 의 파일이 없거나 일반 파일이 아니거나, 공백뿐인 마크다운 파일이거나, 코드 뷰로
+//! 보일 수 없으면(5 MiB 를 넘거나 UTF-8 텍스트 파일이 아니면) 앱은 그 이유를 담아 `invalid_params` 로 답한다.
 //! `text`·`path` 가 함께 오거나 둘 다 없어도 `invalid_params` 다. 보낸 pty 의 cell 이 같은 `id` 로 보낸 문서가
 //! 있으면 그 문서를 바꾼다. `id` 가 없으면 `path` 로 온 문서는 정리한 경로가 id 이고, `text` 로 온 문서는 앱이 새
 //! id 를 만든다. 다른 cell 이 보낸 같은 `id` 의 문서는 바꾸지 않는다. id 는 형식 없는 문자열이다. `title` 이 없으면
@@ -648,10 +648,10 @@ enum CanvasCommand {
     /// Show a file or markdown in the Canvas panel. With --id, replaces this cell's document
     /// with that id if there is one.
     ///
-    /// FILE is shown by its extension, as when a path in the terminal is opened: markdown,
-    /// a Mermaid diagram (.mmd, .mermaid), an image, or any other UTF-8 text file up to 5 MiB
-    /// as code, highlighted when its language is known. Without --id, the file's absolute path
-    /// is its id, so putting it again replaces that document. Reads
+    /// FILE is shown by its extension, as when a path in the terminal is opened: markdown
+    /// (.md, .markdown), a Mermaid diagram (.mmd, .mermaid), an image, or any other UTF-8 text
+    /// file up to 5 MiB as code, highlighted when its language is known. Without --id, the
+    /// file's absolute path is its id, so putting it again replaces that document. Reads
     /// markdown from stdin when FILE is omitted or `-`. Prints the document's id; pass it back
     /// with --id to replace that document.
     Put {

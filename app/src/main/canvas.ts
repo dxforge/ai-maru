@@ -19,6 +19,8 @@ const IMAGE_TYPES: Record<string, string> = {
 
 const imageType = (path: string): string | undefined => IMAGE_TYPES[extname(path).toLowerCase()]
 
+const MARKDOWN_EXTS = new Set(['.md', '.markdown'])
+
 /** 이미지 파일을 부른 때의 내용으로 읽는다. id 는 경로라, 같은 cell 에서 같은 파일을 다시 넣으면 그 문서를 바꾼다. */
 async function imageFile(path: string, mime: string): Promise<CanvasImage> {
   const bytes = await readFile(path)
@@ -48,7 +50,7 @@ const withoutBom = (text: string): string => text.replace(/^\uFEFF/, '')
  */
 export async function fileDoc(path: string, line?: number): Promise<CanvasDoc | string> {
   const ext = extname(path).toLowerCase()
-  if (ext === '.md') {
+  if (MARKDOWN_EXTS.has(ext)) {
     const text = withoutBom(await readFile(path, 'utf8'))
     return { id: path, kind: 'markdown', text, path }
   }
@@ -218,7 +220,7 @@ async function putFileDoc(path: string): Promise<CanvasDoc> {
   if (!info.isFile()) throw new InvalidParams(`${path} is not a file`)
   const doc = await fileDoc(path).catch(() => `cannot read ${path}`)
   if (typeof doc === 'string') throw new InvalidParams(doc)
-  // `.mmd` 는 늘 펜스가 들어 비지 않으므로 이 검사는 `.md` 만 거른다.
+  // `.mmd`·`.mermaid` 는 `mermaidDoc` 이 펜스로 감싸 비지 않으므로, 이 검사는 `.md`·`.markdown` 만 거른다.
   if (doc.kind === 'markdown' && !/\S/.test(doc.text)) throw new InvalidParams(`${path} is empty`)
   return doc
 }
