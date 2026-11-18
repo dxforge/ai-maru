@@ -587,7 +587,7 @@ test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에�
   expect(await scroll()).toEqual([left! + 40, top! + 20])
 })
 
-test('카드보다 큰 이미지는 카드 너비에 맞춰 보이고, 버튼으로 블록 높이를 바꾸지 않고 확대해 끌어서 옮기며, 배율 버튼은 맞춘 크기로 되돌린다', async ({
+test('카드보다 큰 이미지는 카드 너비에 맞춰 보이고, 버튼으로 블록 높이를 바꾸지 않고 확대해 끌어서 옮기며, 배율 버튼은 100% 로 갔다가 다시 누르면 맞춘 크기로 돌아간다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -632,6 +632,10 @@ test('카드보다 큰 이미지는 카드 너비에 맞춰 보이고, 버튼으
   expect(await scroll()).toEqual([left! + 40, top! + 10])
 
   await img.hover()
+  await reset.click()
+  await expect(reset).toHaveText('100%')
+  expect(await width()).toBeCloseTo(2000, 0)
+  expect(await viewHeight()).toBeCloseTo(fitHeight, 0)
   await reset.click()
   expect(await width()).toBeCloseTo(fit, 0)
   expect(await viewHeight()).toBeCloseTo(fitHeight, 0)

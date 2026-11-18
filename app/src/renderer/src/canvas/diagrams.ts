@@ -90,7 +90,7 @@ function diagramBox(svg: string, scale: number): HTMLElement {
   if (!graphic || !size) return out
   attachZoom(out, view, graphic, size, {
     scale,
-    home: 1,
+    reset: () => 1,
     changed: (s) => zooms.set(out, s ?? 1)
   })
   return out

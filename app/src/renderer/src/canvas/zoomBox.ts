@@ -7,8 +7,8 @@ export type Scale = number | null
 export type ZoomOptions = {
   /** 처음 배율. */
   scale: Scale
-  /** 배율 버튼이 되돌리는 배율. */
-  home: Scale
+  /** 배율 버튼을 누르면 갈 배율. 지금 배율을 받는다. */
+  reset: (now: number) => Scale
   /** 배율을 바꿀 때마다 새 배율로 부른다. */
   changed?: (scale: Scale) => void
 }
@@ -16,15 +16,15 @@ export type ZoomOptions = {
 /**
  * `out` 블록에 확대·축소 버튼과 ⌘+휠·핀치 확대·축소를 붙인다. `view` 는 `content` 를 담고 넘치면 스크롤하는 요소다.
  * `size` 는 100% 일 때 `content` 의 크기고, 배율 표시는 이 크기에 대한 비율이다. 맞춤이 아닌 배율에서는 `view` 의 높이를
- * 고정하므로 확대·축소해도 아래 글이 밀리지 않는다. 고정하는 높이는 `home` 이 맞춤이면 맞춤에서 벗어나기 직전 높이,
- * 아니면 100% 일 때 높이다.
+ * 고정하므로 확대·축소해도 아래 글이 밀리지 않는다. 고정하는 높이는 맞춤에서 벗어났으면 벗어나기 직전 높이,
+ * 맞춤이 아닌 배율에서 시작했으면 100% 일 때 높이다.
  */
 export function attachZoom(
   out: HTMLElement,
   view: HTMLElement,
   content: HTMLElement | SVGElement,
   size: { width: number; height: number },
-  { scale, home, changed }: ZoomOptions
+  { scale, reset: resetTo, changed }: ZoomOptions
 ): void {
   const bar = document.createElement('div')
   bar.className = 'zoom-bar'
@@ -46,7 +46,7 @@ export function attachZoom(
     return b
   }
   button('−', 'Zoom out', () => stepZoom(current(), -1))
-  const reset = button('', 'Reset zoom', () => home, 'icon-button zoom-reset')
+  const reset = button('', 'Reset zoom', () => resetTo(current()), 'icon-button zoom-reset')
   button('+', 'Zoom in', () => stepZoom(current(), 1))
   out.append(bar)
 
@@ -59,7 +59,7 @@ export function attachZoom(
       for (const p of ['width', 'height', 'maxWidth'] as const) content.style[p] = ''
       view.style.height = ''
     } else {
-      height ??= home === null ? view.clientHeight : size.height
+      height ??= size.height
       content.style.width = `${size.width * scale}px`
       content.style.height = `${size.height * scale}px`
       content.style.maxWidth = 'none'
@@ -75,6 +75,7 @@ export function attachZoom(
     const x = at?.x ?? box.left + box.width / 2
     const y = at?.y ?? box.top + box.height / 2
     const from = current()
+    if (scale === null && next !== null) height = view.clientHeight
     scale = next
     apply()
     const by = anchorScroll(before, content.getBoundingClientRect(), { x, y }, current() / from)
@@ -101,15 +102,19 @@ export function attachZoom(
 }
 
 /**
- * 다 읽은 이미지 문서의 `img` 에 확대·축소를 붙인다. 카드 너비에 맞춘 크기에서 시작하고, 배율 버튼도 그 크기로 되돌린다.
- * `img` 는 `.zoom-view` 안에, `.zoom-view` 는 블록 안에 있다. 배율 표시의 기준은 `naturalWidth` 다. 크기를 적지 않은
- * SVG 는 Chromium 이 정한 기본 크기(viewBox 만 있으면 너비 300)가 기준이 된다. 크기가 0 인 그림에는 붙이지 않는다.
+ * 다 읽은 이미지 문서의 `img` 에 확대·축소를 붙인다. 카드 너비에 맞춘 크기에서 시작한다. 배율 버튼은 100% 로 가고,
+ * 이미 100% 로 보이면 맞춤으로 돌아간다. `img` 는 `.zoom-view` 안에, `.zoom-view` 는 블록 안에 있다. 배율 표시의 기준은
+ * `naturalWidth` 다. 크기를 적지 않은 SVG 는 Chromium 이 정한 기본 크기(viewBox 만 있으면 너비 300)가 기준이 된다.
+ * 크기가 0 인 그림에는 붙이지 않는다.
  */
 export function zoomImage(img: HTMLImageElement): void {
   const view = img.parentElement!
   if (!img.naturalWidth || !img.naturalHeight) return
   const size = { width: img.naturalWidth, height: img.naturalHeight }
-  attachZoom(view.parentElement!, view, img, size, { scale: null, home: null })
+  attachZoom(view.parentElement!, view, img, size, {
+    scale: null,
+    reset: (now) => (zoomLabel(now) === zoomLabel(1) ? null : 1)
+  })
 }
 
 /**

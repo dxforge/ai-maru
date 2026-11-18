@@ -49,21 +49,27 @@ describe('이미지 확대·축소', () => {
     out.click()
     expect(state()).toEqual(['333.333px', '200px', '258px', '33%'])
     reset.click()
+    reset.click()
     out.click()
     expect(state()).toEqual(['333.333px', '200px', '258px', '33%'])
   })
 
-  it('배율 버튼은 맞춤으로 되돌려 크기와 블록 높이를 CSS 에 맡긴다', () => {
+  it('배율 버튼은 100% 로 가고, 100% 에서 누르면 맞춤으로 돌아가 크기와 블록 높이를 CSS 에 맡긴다', () => {
     const { img, into, reset, state } = image({ width: 1000, height: 600 })
-    into.click()
+    reset.click()
+    expect(state()).toEqual(['1000px', '600px', '258px', '100%'])
     reset.click()
     expect(state()).toEqual(['', '', '', '43%'])
     expect(img.style.maxWidth).toBe('')
+    into.click()
+    reset.click()
+    expect(state()).toEqual(['1000px', '600px', '258px', '100%'])
   })
 
   it('맞춤으로 돌아간 뒤 다시 확대하면 그때의 블록 높이로 고정한다', () => {
     const { layout, into, reset, view } = image({ width: 1000, height: 600 })
     into.click()
+    reset.click()
     reset.click()
     layout.height = 180
     into.click()
@@ -90,11 +96,17 @@ describe('이미지 확대·축소', () => {
     expect(state()[3]).toBe('60%')
   })
 
-  it('카드보다 작은 이미지는 맞춤이 100% 다', () => {
-    const { into, state } = image({ width: 200, height: 100 }, { width: 200, height: 100 })
+  it('카드보다 작은 이미지는 맞춤이 100% 라, 맞춤에서 배율 버튼을 눌러도 그대로다', () => {
+    const { into, reset, state } = image({ width: 200, height: 100 }, { width: 200, height: 100 })
     expect(state()[3]).toBe('100%')
+    reset.click()
+    expect(state()).toEqual(['', '', '', '100%'])
     into.click()
     expect(state()).toEqual(['220px', '110px', '100px', '110%'])
+    reset.click()
+    expect(state()).toEqual(['200px', '100px', '100px', '100%'])
+    reset.click()
+    expect(state()).toEqual(['', '', '', '100%'])
   })
 
   it('크기가 0 인 그림에는 버튼을 두지 않는다', () => {
