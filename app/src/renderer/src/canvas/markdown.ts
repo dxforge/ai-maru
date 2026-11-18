@@ -173,7 +173,6 @@ export class MarkdownBody {
   readonly id = ++MarkdownBody.#count
   /** 이 본문의 mermaid 블록을 그린 결과(`drawDiagrams`). */
   readonly diagrams: DiagramCache = new Map()
-  /** 이 본문의 코드 블록을 강조한 결과(`highlightBlocks`). */
   readonly highlights: HighlightCache = new Map()
   #parts: (Part | string)[]
 

@@ -12,7 +12,6 @@ const doc = (text: string): HTMLElement => {
 }
 const fence = (lang: string, code: string): string => '```' + lang + '\n' + code + '\n```'
 
-// 언어 이름을 span 에 적어, 어느 블록을 어느 언어로 강조했는지 보이게 한다. `plain` 은 모르는 언어다.
 function highlighter() {
   return vi.fn(async (code: string, lang: string) =>
     lang === 'plain' ? null : `<span data-lang="${lang}">${code}</span>`
@@ -32,6 +31,12 @@ describe('hasCodeBlock', () => {
     expect(hasCodeBlock(html(fence('mermaid', 'flowchart LR')))).toBe(false)
     expect(hasCodeBlock(html(fence('', 'plain')))).toBe(false)
     expect(hasCodeBlock(html('inline `code` only'))).toBe(false)
+  })
+
+  it('마크다운에 직접 쓴 `<code>` 는 `class` 앞에 다른 속성이 있어도 찾는다', () => {
+    const raw = html('<pre><code title="x" class="language-ts">let a = 1</code></pre>')
+    expect(raw).toContain('title="x"')
+    expect(hasCodeBlock(raw)).toBe(true)
   })
 })
 
@@ -76,6 +81,33 @@ describe('highlightBlocks', () => {
     await highlightBlocks(el, cache, run)
     expect(run.mock.calls.map(([, lang]) => lang)).toEqual(['js', 'ts'])
     expect(langs(el)).toEqual(['js', 'ts'])
+  })
+
+  it('다이어그램 라벨 안의 코드 블록은 맡기지 않아, 다이어그램이 먼저 붙은 렌더에서도 블록 순서가 같다', async () => {
+    const cache: HighlightCache = new Map()
+    const run = highlighter()
+    const text = [fence('mermaid', 'flowchart LR'), fence('ts', 'a'), fence('rust', 'b')].join(
+      '\n\n'
+    )
+    await highlightBlocks(doc(text), cache, run)
+    const again = doc(text)
+    const diagram = document.createElement('div')
+    diagram.className = 'diagram'
+    diagram.innerHTML = '<pre><code class="language-js">label</code></pre>'
+    again.querySelector('pre')!.replaceWith(diagram)
+    await highlightBlocks(again, cache, run)
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(langs(again)).toEqual([null, 'ts', 'rust'])
+  })
+
+  it('마크다운에 직접 쓴 `<code>` 안에 링크 같은 태그가 있으면 그대로 둔다', async () => {
+    const el = doc(
+      '<pre><code class="language-ts">let <a href="https://example.com">a</a> = 1</code></pre>'
+    )
+    const run = highlighter()
+    await highlightBlocks(el, new Map(), run)
+    expect(run).not.toHaveBeenCalled()
+    expect(el.querySelector('code a')!.textContent).toBe('a')
   })
 
   it('같은 본문을 새 요소에 다시 그리면 받아 둔 강조를 쓰고 다시 맡기지 않는다', async () => {

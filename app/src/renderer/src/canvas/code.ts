@@ -75,8 +75,8 @@ export function warmHighlighter(): void {
 }
 
 /**
- * 이보다 긴 파일은 강조 없이 둔다. 강조한 HTML 을 붙이고 다음 프레임까지 TypeScript 250KB 는 0.14초, 500KB 는 0.30초가 걸려,
- * 0.2초 안에 드는 쪽을 골랐다.
+ * 이보다 긴 코드(파일, 마크다운의 코드 블록)는 강조 없이 둔다. 강조한 HTML 을 붙이고 다음 프레임까지 TypeScript
+ * 250KB 는 0.14초, 500KB 는 0.30초가 걸려, 0.2초 안에 드는 쪽을 골랐다.
  */
 export const HIGHLIGHT_MAX_CHARS = 250 * 1024
 

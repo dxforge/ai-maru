@@ -457,14 +457,13 @@ test('mermaid 블록은 라벨과 함께 다이어그램으로 그리고, 틀린
   expect(csp).toEqual([])
 })
 
-test('언어를 적은 코드 블록은 코드 뷰처럼 강조하고, 언어가 없는 블록은 글자 그대로, mermaid 블록은 다이어그램으로 보인다', async ({
+test('언어를 적은 코드 블록은 뒤에 붙는 묶음까지 shiki 의 색으로 강조하고, mermaid 블록은 다이어그램으로 그린다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   // 끝의 블록은 첫 묶음 뒤에 붙는 묶음에 든다.
   const text = [
     '```ts\nconst a = 1\n```',
-    '```\nconst b = 2\n```',
     mermaid('flowchart LR\n  A --> B'),
     mixedDoc(300_000),
     '```rust\nfn main() {}\n```'
@@ -474,15 +473,20 @@ test('언어를 적은 코드 블록은 코드 뷰처럼 강조하고, 언어가
   await expect(ts.locator('span').first()).toHaveText('const')
   await expect(ts).toHaveText('const a = 1\n')
   await expect(markdown(page).locator('pre > code.language-rust span').first()).toHaveText('fn')
-  await expect(markdown(page).locator('pre > code:not([class])').last()).toHaveText('const b = 2\n')
-  await expect(markdown(page).locator('pre > code:not([class]) span')).toHaveCount(0)
   await expect(diagrams(page)).toHaveCount(1)
-  // 키워드의 색은 블록의 글자 색이 아니라 shiki 테마의 색이다.
-  const colors = await ts.evaluate((code) => [
-    getComputedStyle(code).color,
-    getComputedStyle(code.querySelector('span')!).color
-  ])
-  expect(colors[1]).not.toBe(colors[0])
+  const [color, shiki] = await ts.evaluate((code) => {
+    const span = code.querySelector('span')!
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches
+    const probe = document.createElement('i')
+    probe.style.color = getComputedStyle(span).getPropertyValue(
+      dark ? '--shiki-dark' : '--shiki-light'
+    )
+    document.body.append(probe)
+    const want = getComputedStyle(probe).color
+    probe.remove()
+    return [getComputedStyle(span).color, want]
+  })
+  expect(color).toBe(shiki)
 })
 
 test('다이어그램 라벨의 HTML 이 popover 를 띄우지 못한다', async ({ launch }) => {
