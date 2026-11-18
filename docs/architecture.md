@@ -122,7 +122,7 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 
 ## MCP 도구는 `maru mcp` 가 앱에 중계한다
 
-앱이 claude 에 싣는 plugin(`app/resources/claude-plugin`)의 `.mcp.json` 이 `maru mcp` 를 MCP 서버로 띄운다. `maru mcp` 는 MCP 메시지를 줄 프로토콜의 `mcp.message` 로 하나씩 앱에 보내고, 도구는 앱의 main(`app/src/main/mcp.ts`)이 처리한다. `canvas_put` 은 `maru canvas put` 과 같은 `canvasPut` 으로 간다. MCP 메시지를 처리하는 쪽을 나중에 앱 밖의 프로세스로 옮겨도 `maru mcp`·plugin 설정·도구 이름이 그대로이도록, `maru mcp` 는 메시지를 해석하지 않는다. 예외는 `canvas_put` 의 `file` 을 읽는 것뿐이다 — 상대 경로의 기준인 claude 의 cwd 를 `maru mcp` 가 알기 때문이다. 앱은 MCP 세션의 상태를 두지 않는다. 그래서 앱이 다시 떠도 claude 는 `initialize` 를 다시 보내지 않고 같은 `maru mcp` 로 도구를 부른다. MCP 의 HTTP 전송을 쓰지 않은 것은 앱에 HTTP 서버와 MCP SDK 를 들이지 않기 위해서다.
+앱이 claude 에 싣는 plugin(`app/resources/claude-plugin`)의 `.mcp.json` 이 `maru mcp` 를 MCP 서버로 띄운다. `maru mcp` 는 MCP 메시지를 줄 프로토콜의 `mcp.message` 로 하나씩 앱에 보내고, 도구는 앱의 main(`app/src/main/mcp.ts`)이 처리한다. `canvas_put` 은 `maru canvas put` 과 같은 `canvasPut` 으로 간다. MCP 메시지를 처리하는 쪽을 나중에 앱 밖의 프로세스로 옮겨도 `maru mcp`·plugin 설정·도구 이름이 그대로이도록, `maru mcp` 는 메시지를 해석하지 않는다. 예외는 `canvas_put` 의 `file` 을 절대경로로 바꿔 `path` 로 보내는 것뿐이다 — 상대 경로의 기준인 claude 의 cwd 를 `maru mcp` 가 알기 때문이다. 파일은 앱이 읽고, 터미널의 경로 링크와 같은 규칙으로 문서 종류를 고른다. 앱은 MCP 세션의 상태를 두지 않는다. 그래서 앱이 다시 떠도 claude 는 `initialize` 를 다시 보내지 않고 같은 `maru mcp` 로 도구를 부른다. MCP 의 HTTP 전송을 쓰지 않은 것은 앱에 HTTP 서버와 MCP SDK 를 들이지 않기 위해서다.
 
 ## 런처로 띄운 pane 은 명령이 실패하면 남는다
 

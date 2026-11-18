@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
-import { basename, extname } from 'node:path'
+import { basename, extname, isAbsolute, resolve } from 'node:path'
 import type { BrowserWindow } from 'electron'
-import type { CanvasDoc, CanvasImage, CanvasMarkdown, CanvasOwner } from '../shared/canvas'
+import type { CanvasDoc, CanvasImage, CanvasOwner } from '../shared/canvas'
 import { InvalidParams } from './cli-server'
 import { WINDOW_WAIT_MS, type WindowReady } from './window-ready'
 
@@ -21,7 +21,8 @@ const imageType = (path: string): string | undefined => IMAGE_TYPES[extname(path
 
 /** 이미지 파일을 부른 때의 내용으로 읽는다. id 는 경로라, 같은 cell 에서 같은 파일을 다시 넣으면 그 문서를 바꾼다. */
 async function imageFile(path: string, mime: string): Promise<CanvasImage> {
-  return { id: path, kind: 'image', name: basename(path), mime, bytes: await readFile(path) }
+  const bytes = await readFile(path)
+  return { id: path, kind: 'image', name: basename(path), mime, bytes, path }
 }
 
 export const CODE_MAX_BYTES = 5 * 1024 * 1024
@@ -38,24 +39,36 @@ function codeText(bytes: Uint8Array): string | null {
   }
 }
 
+// marked 는 BOM 뒤의 `#` 을 제목으로 읽지 않는다.
+const withoutBom = (text: string): string => text.replace(/^\uFEFF/, '')
+
 /**
- * Canvas 가 그릴 수 있는 파일이면 그 문서. id 는 경로라, 같은 cell 에서 같은 파일을 다시 열면 그 문서를 바꾼다.
+ * Canvas 가 그릴 수 있는 파일이면 그 문서, 아니면 그 이유. 문서의 id 와 `path` 는 받은 경로라, 같은 cell 에서 같은 파일을
+ * 다시 열면 그 문서를 바꾼다.
  */
-export async function canvasDocFor(path: string, line?: number): Promise<CanvasDoc | null> {
+export async function fileDoc(path: string, line?: number): Promise<CanvasDoc | string> {
   const ext = extname(path).toLowerCase()
   if (ext === '.md') {
-    return { id: path, kind: 'markdown', text: await readFile(path, 'utf8'), title: basename(path) }
+    const text = withoutBom(await readFile(path, 'utf8'))
+    return { id: path, kind: 'markdown', text, title: basename(path), path }
   }
   if (ext === '.mmd' || ext === '.mermaid') {
-    const text = mermaidDoc(await readFile(path, 'utf8'))
-    return { id: path, kind: 'markdown', text, title: basename(path) }
+    const text = mermaidDoc(withoutBom(await readFile(path, 'utf8')))
+    return { id: path, kind: 'markdown', text, title: basename(path), path }
   }
   const mime = imageType(path)
   if (mime) return imageFile(path, mime)
-  if ((await stat(path)).size > CODE_MAX_BYTES) return null
+  if ((await stat(path)).size > CODE_MAX_BYTES) return `${path} is larger than 5 MiB`
   const text = codeText(await readFile(path))
-  if (text === null) return null
-  return { id: path, kind: 'code', name: basename(path), text, ...(line ? { line } : {}) }
+  if (text === null) return `${path} is not a text file`
+  const name = basename(path)
+  return { id: path, kind: 'code', name, text, path, ...(line ? { line } : {}) }
+}
+
+/** `fileDoc` 과 같고, 그릴 수 없으면 null 이다. 링크는 그런 파일을 다른 앱으로 연다. */
+export async function canvasDocFor(path: string, line?: number): Promise<CanvasDoc | null> {
+  const doc = await fileDoc(path, line)
+  return typeof doc === 'string' ? null : doc
 }
 
 // mermaid 파일은 그 원문 하나만 든 mermaid 코드 블록으로 연다. 펜스는 원문에서 가장 길게 이어진 backtick 보다 한 개
@@ -164,21 +177,45 @@ export function canvasPut(
   cellOf: CellOf
 ) {
   return async (params: Record<string, unknown>, pty: string): Promise<{ id: string }> => {
-    const { text, id, title } = params
-    if (typeof text !== 'string') throw new InvalidParams('params.text must be a string')
+    const { text, path, id, title } = params
+    if ((text === undefined) === (path === undefined)) {
+      throw new InvalidParams('params must have exactly one of text and path')
+    }
+    if (text !== undefined && typeof text !== 'string') {
+      throw new InvalidParams('params.text must be a string')
+    }
+    if (path !== undefined && (typeof path !== 'string' || !isAbsolute(path))) {
+      throw new InvalidParams('params.path must be an absolute path')
+    }
     if (id !== undefined && (typeof id !== 'string' || id === '')) {
       throw new InvalidParams('params.id must be a non-empty string')
     }
     if (title !== undefined && typeof title !== 'string') {
       throw new InvalidParams('params.title must be a string')
     }
-    const doc: CanvasMarkdown = {
-      id: id ?? randomUUID(),
-      kind: 'markdown',
-      text,
-      ...(title === undefined ? {} : { title })
-    }
+    const titled = title === undefined ? {} : { title }
+    const doc: CanvasDoc =
+      typeof path === 'string'
+        ? { ...(await putFileDoc(resolve(path))), ...(id === undefined ? {} : { id }), ...titled }
+        : { id: id ?? randomUUID(), kind: 'markdown', text: text as string, ...titled }
     await putCanvas(window, windowReady, doc, ownerOf(pty, cellOf))
     return { id: doc.id }
   }
+}
+
+/**
+ * `canvas.put` 이 `path` 로 넣는 문서. 링크와 같은 `fileDoc` 으로 만들고, 그릴 수 없으면 InvalidParams 로 그 이유를 알린다.
+ * 목록 제목은 `--title` 이 정하므로 `fileDoc` 이 넣은 파일 이름은 뺀다.
+ */
+async function putFileDoc(path: string): Promise<CanvasDoc> {
+  const info = await stat(path).catch(() => null)
+  if (!info) throw new InvalidParams(`cannot read ${path}`)
+  if (!info.isFile()) throw new InvalidParams(`${path} is not a file`)
+  const doc = await fileDoc(path).catch(() => `cannot read ${path}`)
+  if (typeof doc === 'string') throw new InvalidParams(doc)
+  if (extname(path).toLowerCase() === '.md' && doc.kind === 'markdown' && !/\S/.test(doc.text)) {
+    throw new InvalidParams(`${path} is empty`)
+  }
+  delete doc.title
+  return doc
 }

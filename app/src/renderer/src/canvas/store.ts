@@ -300,12 +300,13 @@ function toEntry(item: CanvasItem, at: number): CanvasEntry {
     return entry
   }
   if (item.kind === 'code') {
-    const entry: CanvasEntry = { id: item.id, kind: 'code', title: item.name, at, ...owner }
+    const title = item.title || item.name
+    const entry: CanvasEntry = { id: item.id, kind: 'code', title, at, ...owner }
     codeBodies.set(entry, new CodeBody(item.text, item.name, item.line))
     return entry
   }
   const url = URL.createObjectURL(new Blob([item.bytes as BlobPart], { type: item.mime }))
-  return { id: item.id, kind: 'image', title: item.name, at, url, ...owner }
+  return { id: item.id, kind: 'image', title: item.title || item.name, at, url, ...owner }
 }
 
 export function clockTime(at: number): string {

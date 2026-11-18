@@ -830,6 +830,13 @@ describe('문서 제목', () => {
     expect(titleOf(image('i', 'shot.png'))).toBe('shot.png')
   })
 
+  it('이미지·코드 문서도 title 이 있으면 그것이다', async () => {
+    expect(titleOf({ ...image('i', 'shot.png'), title: '화면' })).toBe('화면')
+    const c = createCanvas()
+    c.put({ id: '/r/a.ts', kind: 'code', name: 'a.ts', text: 'a', title: '코드' })
+    await vi.waitFor(() => expect(docOf(c, '/r/a.ts')?.title).toBe('코드'))
+  })
+
   it('lexing 하지 못한 문서도 버리지 않고 Markdown 이라는 제목으로 넣는다', () => {
     const lexer = vi.spyOn(Marked.prototype, 'lexer').mockImplementation(() => {
       throw new RangeError('Maximum call stack size exceeded')

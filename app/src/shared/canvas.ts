@@ -1,7 +1,12 @@
-export type CanvasMarkdown = { id: string; kind: 'markdown'; text: string; title?: string }
+/**
+ * 세 문서가 함께 갖는 필드. `title` 은 Canvas 목록에 보이는 제목으로, 없으면 마크다운은 첫 제목, 코드·이미지는 `name` 이
+ * 보인다. `path` 는 문서를 읽은 파일의 절대경로로, 파일에서 오지 않은 문서(stdin·클립보드에서 붙인 이미지)에는 없다.
+ */
+type CanvasDocBase = { id: string; title?: string; path?: string }
 
-export type CanvasImage = {
-  id: string
+export type CanvasMarkdown = CanvasDocBase & { kind: 'markdown'; text: string }
+
+export type CanvasImage = CanvasDocBase & {
   kind: 'image'
   name: string
   mime: string
@@ -9,7 +14,7 @@ export type CanvasImage = {
 }
 
 /** 읽기 전용 코드 뷰. `line` 이 있으면 그 줄(1부터)로 스크롤해 강조한다. `name` 은 파일 이름으로, 강조할 언어를 고를 때도 쓴다. */
-export type CanvasCode = { id: string; kind: 'code'; name: string; text: string; line?: number }
+export type CanvasCode = CanvasDocBase & { kind: 'code'; name: string; text: string; line?: number }
 
 export type CanvasDoc = CanvasMarkdown | CanvasImage | CanvasCode
 

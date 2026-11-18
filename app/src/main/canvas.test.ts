@@ -6,6 +6,7 @@ import { Marked } from 'marked'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import {
   canvasDocFor,
+  fileDoc,
   canvasPaste,
   CODE_MAX_BYTES,
   canvasPut,
@@ -64,7 +65,8 @@ describe('canvasDocFor', () => {
       kind: 'image',
       name: 'Shot.PNG',
       mime: 'image/png',
-      bytes: Buffer.from([1, 2, 3])
+      bytes: Buffer.from([1, 2, 3]),
+      path
     })
   })
 
@@ -84,7 +86,8 @@ describe('canvasDocFor', () => {
       id: path,
       kind: 'code',
       name: 'notes.txt',
-      text: 'a\r\n한글\n'
+      text: 'a\r\n한글\n',
+      path
     })
     expect(await canvasDocFor(path, 3)).toMatchObject({ kind: 'code', line: 3 })
     expect(await canvasDocFor(path, 0)).not.toHaveProperty('line')
@@ -119,6 +122,22 @@ describe('canvasDocFor', () => {
     expect(await canvasDocFor(file('latin1.txt', [0x63, 0x61, 0x66, 0xe9]))).toBeNull()
   })
 
+  it('`.md`·`.mmd` 는 앞의 BOM 하나를 지우고 경로를 `path` 로 든다', async () => {
+    const md = file('bom.md', [...Buffer.from('\uFEFF\uFEFF# 제목\n')])
+    expect(await canvasDocFor(md)).toEqual({
+      id: md,
+      kind: 'markdown',
+      text: '\uFEFF# 제목\n',
+      title: 'bom.md',
+      path: md
+    })
+    const mmd = file('bom.mmd', [...Buffer.from('\uFEFFgraph LR\n')])
+    expect(await canvasDocFor(mmd)).toMatchObject({
+      text: '```mermaid\ngraph LR\n```\n',
+      path: mmd
+    })
+  })
+
   it('5 MiB 를 넘으면 코드 문서가 아니고, 꼭 5 MiB 면 코드 문서다', async () => {
     const path = join(dir, 'big.log')
     writeFileSync(path, Buffer.alloc(CODE_MAX_BYTES, 0x61))
@@ -126,6 +145,18 @@ describe('canvasDocFor', () => {
     expect(await canvasDocFor(path)).toMatchObject({ kind: 'code' })
     writeFileSync(path, Buffer.alloc(CODE_MAX_BYTES + 1, 0x61))
     expect(await canvasDocFor(path)).toBeNull()
+  })
+})
+
+describe('fileDoc', () => {
+  it('그릴 수 없는 파일이면 그 이유를 돌려준다', async () => {
+    const big = join(dir, 'huge.log')
+    writeFileSync(big, Buffer.alloc(CODE_MAX_BYTES + 1, 0x61))
+    expect(await fileDoc(big)).toBe(`${big} is larger than 5 MiB`)
+    const nul = file('nul.dat', [0x41, 0])
+    expect(await fileDoc(nul)).toBe(`${nul} is not a text file`)
+    const latin1 = file('latin1.c', [0xe9])
+    expect(await fileDoc(latin1)).toBe(`${latin1} is not a text file`)
   })
 })
 
@@ -292,6 +323,85 @@ describe('canvasPut', () => {
     expect(sent).toEqual([])
   })
 
+  it.each([
+    [{ text: 'x', path: '/a.md' }, 'params must have exactly one of text and path'],
+    [{ path: 'a.md' }, 'params.path must be an absolute path'],
+    [{ path: 3 }, 'params.path must be an absolute path'],
+    [{ path: '' }, 'params.path must be an absolute path']
+  ])('params %j 는 InvalidParams(%s)다', async (params, message) => {
+    const { win, sent } = fakeWindow()
+    const err = await canvasPut(
+      () => win,
+      readyWindow(),
+      noCell
+    )(params, 'p-1').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(InvalidParams)
+    expect((err as Error).message).toBe(message)
+    expect(sent).toEqual([])
+  })
+
+  describe('path', () => {
+    const put = async (params: Record<string, unknown>) => {
+      const { win, sent } = fakeWindow()
+      const res = await canvasPut(() => win, readyWindow(), noCell)(params, 'p-1')
+      return { res, sent: sent.map(([, doc]) => doc) }
+    }
+
+    it('코드 파일은 코드 문서다 — id 와 path 는 정리한 경로이고 제목·줄은 없다', async () => {
+      const path = file('repro.cjs', [...Buffer.from('const a = 1\n')])
+      const { res, sent } = await put({ path: join(dir, '.', 'x', '..', 'repro.cjs') })
+      expect(res).toEqual({ id: path })
+      expect(sent).toEqual([
+        { id: path, kind: 'code', name: 'repro.cjs', text: 'const a = 1\n', path, pty: 'p-1' }
+      ])
+    })
+
+    it('id·title 을 주면 그것을 쓰고 path 는 파일 경로다', async () => {
+      const path = file('shot.png', [1])
+      const { res, sent } = await put({ path, id: 'shot', title: '화면' })
+      expect(res).toEqual({ id: 'shot' })
+      expect(sent).toMatchObject([{ id: 'shot', kind: 'image', title: '화면', path }])
+    })
+
+    it('`.md` 는 파일 이름을 제목으로 넣지 않고 BOM 을 지운 마크다운이다', async () => {
+      const path = file('note.md', [...Buffer.from('\uFEFF# 제목\n')])
+      const { sent } = await put({ path })
+      expect(sent).toEqual([{ id: path, kind: 'markdown', text: '# 제목\n', path, pty: 'p-1' }])
+    })
+
+    it('`.mmd` 는 다이어그램만 든 마크다운이다', async () => {
+      const path = file('flow.mmd', [...Buffer.from('graph LR\n')])
+      const { sent } = await put({ path })
+      expect(sent).toEqual([
+        { id: path, kind: 'markdown', text: '```mermaid\ngraph LR\n```\n', path, pty: 'p-1' }
+      ])
+    })
+
+    it('그릴 수 없거나 읽을 수 없으면 그 이유로 InvalidParams 이고 아무것도 보내지 않는다', async () => {
+      const empty = file('blank.md', [...Buffer.from(' \n\uFEFF')])
+      const binary = file('blob.bin', [0x41, 0])
+      const missing = join(dir, 'missing.ts')
+      const folder = join(dir, 'folder.ts')
+      mkdirSync(folder, { recursive: true })
+      for (const [path, message] of [
+        [empty, `${empty} is empty`],
+        [binary, `${binary} is not a text file`],
+        [missing, `cannot read ${missing}`],
+        [folder, `${folder} is not a file`]
+      ]) {
+        const { win, sent } = fakeWindow()
+        const err = await canvasPut(
+          () => win,
+          readyWindow(),
+          noCell
+        )({ path }, 'p-1').catch((e: unknown) => e)
+        expect(err, path).toBeInstanceOf(InvalidParams)
+        expect((err as Error).message).toBe(message)
+        expect(sent).toEqual([])
+      }
+    })
+  })
+
   it('창이 없거나 파괴됐으면 InvalidParams 가 아닌 오류로 던진다', async () => {
     const gone = fakeWindow(true)
     for (const window of [() => undefined, () => gone.win]) {
@@ -378,6 +488,7 @@ describe('canvasPaste', () => {
           name: 'a.png',
           mime: 'image/png',
           bytes: Buffer.from([1]),
+          path: a,
           pty: 'p-1',
           cell: 'c-1'
         }
@@ -390,6 +501,7 @@ describe('canvasPaste', () => {
           name: 'b.JPG',
           mime: 'image/jpeg',
           bytes: Buffer.from([2]),
+          path: b,
           pty: 'p-1',
           cell: 'c-1'
         }

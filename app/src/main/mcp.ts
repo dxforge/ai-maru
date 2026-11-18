@@ -9,7 +9,7 @@ const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05
 export const CANVAS_PUT_TOOL = {
   name: 'canvas_put',
   description:
-    'Show a markdown document in the AI Maru Canvas panel next to this terminal. Pass markdown in `text`, or the path of a markdown file in `file`. Reuse the same `id` to replace a document you put before; the reply is the document id.',
+    'Show a document in the AI Maru Canvas panel next to this terminal. Pass markdown in `text`, or a file in `file`: markdown, a Mermaid diagram (.mmd, .mermaid), an image, or any other text file as highlighted code. Reuse the same `id` to replace a document you put before; a file without `id` uses its absolute path as the id, so putting it again replaces it. The reply is the document id.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -17,7 +17,7 @@ export const CANVAS_PUT_TOOL = {
       file: {
         type: 'string',
         description:
-          'Path of a markdown file to show. A relative path is read from the directory this session started in, not from a directory changed to later, so prefer an absolute path.'
+          'Path of a file to show. The extension picks how it is shown, as when a path in the terminal is opened. A relative path is read from the directory this session started in, not from a directory changed to later, so prefer an absolute path.'
       },
       id: {
         type: 'string',
@@ -26,7 +26,8 @@ export const CANVAS_PUT_TOOL = {
       },
       title: {
         type: 'string',
-        description: 'Title shown in the Canvas list. Defaults to the first heading.'
+        description:
+          'Title shown in the Canvas list. Defaults to the first markdown heading, or the file name for images and code.'
       }
     }
   }
@@ -60,13 +61,15 @@ async function callTool(params: Message, put: Deps['put']): Promise<object> {
     throw new RpcError(-32602, `unknown tool: ${String(params.name)}`)
   }
   const args = isObject(params.arguments) ? params.arguments : {}
-  const { text, file, id, title } = args
-  // `file` 은 `maru mcp` 가 읽어 `text` 로 바꾸므로, 여기까지 온 `file` 은 `text` 와 같이 왔거나 문자열이 아니다.
-  if (file !== undefined) return toolError('give exactly one of text or file')
-  if (text === undefined) return toolError('give text or file')
+  const { text, file, path, id, title } = args
+  // `maru mcp` 는 `file` 을 절대경로로 바꿔 `path` 로 보내므로, 여기까지 온 `file` 은 `text` 와 같이 왔거나 문자열이 아니다.
+  if (file !== undefined || (text !== undefined && path !== undefined)) {
+    return toolError('give exactly one of text or file')
+  }
+  if (text === undefined && path === undefined) return toolError('give text or file')
   if (typeof text === 'string' && !/\S/.test(text)) return toolError('text is empty')
   try {
-    const doc = await put({ text, id, title })
+    const doc = await put({ text, path, id, title })
     return { content: [{ type: 'text', text: doc.id }] }
   } catch (err) {
     if (err instanceof InvalidParams) return toolError(err.message.replace(/^params\./, ''))

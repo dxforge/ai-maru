@@ -200,22 +200,35 @@ fn relays_each_message_as_an_mcp_message_request_and_writes_the_reply() {
 }
 
 #[test]
-fn reads_a_relative_file_into_text() {
+fn sends_a_relative_file_as_its_absolute_path_without_reading_it() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    std::fs::write(tmp.path().join("note.md"), "\u{feff}# Note\n").unwrap();
+    // 앱이 읽으므로 마크다운이 아니어도, 16 MiB 를 넘어도 그대로 경로만 보낸다.
+    std::fs::write(
+        tmp.path().join("shot.png"),
+        vec![0xff; 16 * 1024 * 1024 + 1],
+    )
+    .unwrap();
+    std::fs::create_dir(tmp.path().join("sub")).unwrap();
     let app = serve(&sock, 1, echo());
     let mut mcp = Mcp::spawn(Some(&sock), tmp.path());
-    mcp.send(&canvas_put(2, json!({ "file": "note.md", "id": "n" })));
+    mcp.send(&canvas_put(
+        2,
+        json!({ "file": "sub/../shot.png", "id": "n" }),
+    ));
 
     let (status, out) = mcp.close();
     let reqs = app.join().unwrap();
 
     assert!(status.success());
     assert_eq!(out.len(), 1);
+    // `..` 는 앱이 정리한다. `maru mcp` 는 cwd 를 앞에 붙이기만 한다.
+    let path = std::fs::canonicalize(tmp.path())
+        .unwrap()
+        .join("sub/../shot.png");
     assert_eq!(
         reqs[0]["params"]["message"]["params"]["arguments"],
-        json!({ "text": "# Note\n", "id": "n" })
+        json!({ "path": path.to_str().unwrap(), "id": "n" })
     );
 }
 
@@ -238,12 +251,11 @@ fn sends_text_and_file_together_unchanged_for_the_app_to_refuse() {
 fn a_file_it_cannot_read_is_a_tool_error_and_is_not_sent() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    std::fs::write(tmp.path().join("blank.md"), " \n").unwrap();
-    std::fs::write(tmp.path().join("latin1.md"), b"caf\xe9").unwrap();
+    std::fs::create_dir(tmp.path().join("dir.md")).unwrap();
     // 앱은 연결을 하나만 받는다. 읽지 못한 `canvas_put` 은 보내지 않고 뒤의 `ping` 만 보내기 때문이다.
     let app = serve(&sock, 1, echo());
     let mut mcp = Mcp::spawn(Some(&sock), tmp.path());
-    for (id, file) in [(1, "missing.md"), (2, "blank.md"), (3, "latin1.md")] {
+    for (id, file) in [(1, "missing.md"), (2, "dir.md")] {
         mcp.send(&canvas_put(id, json!({ "file": file })));
     }
     // 알림으로 부른 `canvas_put` 은 파일을 읽지 못해도 답이 없다. 실패를 알릴 곳이 없기 때문이다.
@@ -252,24 +264,23 @@ fn a_file_it_cannot_read_is_a_tool_error_and_is_not_sent() {
         "method": "tools/call",
         "params": { "name": "canvas_put", "arguments": { "file": "missing.md" } },
     }));
-    mcp.send(&request(4, "ping", json!({})));
+    mcp.send(&request(3, "ping", json!({})));
 
     let (status, out) = mcp.close();
     let reqs = app.join().unwrap();
 
     assert!(status.success());
-    assert_eq!(out.len(), 4, "{out:?}");
+    assert_eq!(out.len(), 3, "{out:?}");
     assert!(
-        tool_error_text(&out[0]).contains("missing.md"),
+        tool_error_text(&out[0]).contains("cannot read missing.md"),
         "{}",
         out[0]
     );
     assert!(
-        tool_error_text(&out[1]).contains("blank.md is empty"),
+        tool_error_text(&out[1]).contains("dir.md is not a file"),
         "{}",
         out[1]
     );
-    assert!(tool_error_text(&out[2]).contains("not UTF-8"), "{}", out[2]);
     for (i, reply) in out.iter().enumerate() {
         assert_eq!(reply["id"], i as i64 + 1);
     }
