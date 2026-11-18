@@ -75,7 +75,7 @@ const zooms = new WeakMap<Element, number>()
 
 /**
  * SVG 를 mermaid 가 정한 크기로 담고 확대·축소(`attachZoom`)를 붙인 블록을 만든다. 블록 높이는 100% 일 때의 다이어그램
- * 높이로 고정한다. 크기를 알 수 없는 SVG 는 버튼 없이 그대로 넣는다.
+ * 높이로 고정한다.
  */
 function diagramBox(svg: string, scale: number): HTMLElement {
   const out = document.createElement('div')

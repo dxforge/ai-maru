@@ -20,7 +20,7 @@ const root = useTemplateRef<HTMLElement>('root')
 const body = computed(() => bodyOf(doc))
 const first = computed(() => body.value?.html(0) ?? '')
 const code = computed(() => codeBodyOf(doc))
-// 요소가 바뀌거나 사라지면(같은 id 로 이미지가 오면 이 컴포넌트는 남고 요소만 사라진다) 앞 요소에 붙이던 것을 멈춘다.
+// 요소가 바뀌거나 사라지면(같은 id 로 이미지가 오면 이 컴포넌트는 남고 요소가 이미지 요소로 바뀐다) 앞 요소에 붙이던 것을 멈춘다.
 let stop: (() => void) | undefined
 let blocks: BlockHighlighter | undefined
 function reset(): void {
@@ -82,10 +82,13 @@ onBeforeUnmount(reset)
   />
   <!-- eslint-enable vue/no-v-html -->
   <CodeView v-else-if="code" :key="code.id" :body="code" />
-  <!-- 같은 id 로 다른 이미지가 오면 `doc.url` 을 key 로 새 요소에 그린다. 앞 이미지에 붙인 확대·축소를 남기지 않기 위해서다. -->
+  <!-- 같은 id 로 다른 이미지가 오면 `doc.url` 을 key 로 새 요소에 그린다. 앞 이미지에 붙인 확대·축소를 남기지 않기 위해서다.
+       이미지 요소에도 `ref="root"` 를 다는 것은, `root` 가 바뀌면 `watch(root)` 의 `reset()` 이 앞 이미지에 씌운 스크롤바를
+       해제하기 때문이다. -->
   <div
     v-else-if="doc.kind === 'image'"
     :key="doc.url"
+    ref="root"
     class="image-doc zoomable"
     :class="{ classic }"
     @pointerover="hover"

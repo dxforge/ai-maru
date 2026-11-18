@@ -117,7 +117,9 @@ test('새 문서는 펼친 채 맨 위에 쌓이고, 제목 줄과 모두 접기
   await expect(titles(page)).toHaveText(['A'])
 })
 
-test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 새 그림으로 바뀐다', async ({ launch }) => {
+test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 앞 그림의 확대·축소 없이 새 그림으로 바뀐다', async ({
+  launch
+}) => {
   const { app, page } = await launch()
   const image = page.locator('.canvas .image')
   const naturalWidth = () => image.evaluate((img: HTMLImageElement) => img.naturalWidth)
@@ -131,6 +133,12 @@ test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 새 그�
   })
   await expect(titles(page)).toHaveText(['shot.svg'])
   await expect.poll(naturalWidth).toBe(40)
+  const bar = page.locator('.canvas .zoom-bar')
+  await image.hover()
+  await bar.getByRole('button', { name: 'Zoom in' }).click()
+  await expect(bar.getByRole('button', { name: 'Reset zoom' })).toHaveText('110%')
+  // 커서가 패널 안에 있으면 새로 온 문서를 끼우지 않고 쌓아 두므로 밖으로 뺀다.
+  await leavePanel(page)
 
   await putCanvas(app, {
     id: 'i',
@@ -141,6 +149,11 @@ test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 새 그�
   })
   await expect.poll(naturalWidth).toBe(60)
   await expect(titles(page)).toHaveCount(1)
+  await expect(bar).toHaveCount(1)
+  await image.hover()
+  await expect(bar.getByRole('button', { name: 'Reset zoom' })).toHaveText('100%')
+  await expect(image).not.toHaveAttribute('style', /width/)
+  await expect(page.locator('.canvas .zoom-view')).not.toHaveAttribute('style', /height/)
 })
 
 test('닫으면 셸이 보는 폭이 넓어지고, panel bar 의 Canvas 아이콘을 누르거나 문서가 오면 다시 열린다', async ({
@@ -1094,6 +1107,35 @@ test('고전 스크롤바 설정에서 다이어그램 블록의 스크롤바 �
   expect(await view.evaluate((v) => v.classList.contains('dragging'))).toBe(false)
   await page.mouse.up()
   expect(await left()).toBeGreaterThan(60)
+})
+
+test('고전 스크롤바 설정에서 이미지 블록도 포인터가 들어오면 스크롤바를 씌우고, 같은 id 로 바뀐 이미지에도 씌운다', async ({
+  launch
+}) => {
+  const { app, page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  const view = page.locator('.canvas .image-doc .zoom-view')
+  const put = (width: number) =>
+    putCanvas(app, {
+      id: 'i',
+      kind: 'image',
+      name: 'shot.svg',
+      mime: 'image/svg+xml',
+      svg: svg(width)
+    })
+
+  await put(2000)
+  await expect(view).toHaveCount(1)
+  await view.hover()
+  await expect(view).toHaveAttribute('data-overlayscrollbars')
+
+  await leavePanel(page)
+  await put(3000)
+  await expect
+    .poll(() => view.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBe(3000)
+  await expect(view).not.toHaveAttribute('data-overlayscrollbars')
+  await view.hover()
+  await expect(view).toHaveAttribute('data-overlayscrollbars')
 })
 
 test('overlay 스크롤바 설정에서는 Canvas 가 시스템 스크롤바를 그대로 쓴다', async ({ launch }) => {
