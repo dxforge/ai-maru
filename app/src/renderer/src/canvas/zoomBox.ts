@@ -5,17 +5,15 @@ import { PINCH_SPAN, stepZoom, WHEEL_SPAN, wheelZoom, zoomLabel } from './zoom'
 export type Scale = number | null
 
 export type ZoomOptions = {
-  /** 처음 배율. */
   scale: Scale
   /** 배율 버튼을 누르면 갈 배율. 지금 배율을 받는다. */
   reset: (now: number) => Scale
-  /** 배율을 바꿀 때마다 새 배율로 부른다. */
   changed?: (scale: Scale) => void
 }
 
 /**
  * `out` 블록에 확대·축소 버튼과 ⌘+휠·핀치 확대·축소를 붙인다. `view` 는 `content` 를 담고 넘치면 스크롤하는 요소다.
- * `size` 는 100% 일 때 `content` 의 크기고, 배율 표시는 이 크기에 대한 비율이다. 맞춤이 아닌 배율에서는 `view` 의 높이를
+ * `size` 는 100% 일 때 `content` 의 크기다. 배율 표시는 이 크기에 대한 비율이다. 맞춤이 아닌 배율에서는 `view` 의 높이를
  * 고정하므로 확대·축소해도 아래 글이 밀리지 않는다. 고정하는 높이는 맞춤에서 벗어났으면 벗어나기 직전 높이,
  * 맞춤이 아닌 배율에서 시작했으면 100% 일 때 높이다.
  */
@@ -50,7 +48,6 @@ export function attachZoom(
   button('+', 'Zoom in', () => stepZoom(current(), 1))
   out.append(bar)
 
-  // 맞춤에서는 그려진 너비로 배율을 잰다. 카드 너비가 바뀌면 배율도 바뀌므로 표시는 포인터가 들어올 때 다시 쓴다.
   const current = (): number => scale ?? content.getBoundingClientRect().width / size.width
   let height: number | undefined
   const apply = (): void => {
@@ -75,6 +72,8 @@ export function attachZoom(
     const x = at?.x ?? box.left + box.width / 2
     const y = at?.y ?? box.top + box.height / 2
     const from = current()
+    // 범위 끝에 막혀 배율이 그대로면 맞춤을 떠나지 않는다.
+    if (scale === null && next === from) return
     if (scale === null && next !== null) height = view.clientHeight
     scale = next
     apply()
@@ -83,6 +82,7 @@ export function attachZoom(
     view.scrollTop += by.y
     markPannable(view)
   }
+  // 카드 너비가 바뀌면 맞춤의 배율도 바뀌므로, 포인터가 블록에 들어올 때 배율 표시를 다시 쓴다.
   out.addEventListener('pointerenter', () => {
     if (scale === null) reset.textContent = zoomLabel(current())
   })
@@ -102,10 +102,8 @@ export function attachZoom(
 }
 
 /**
- * 다 읽은 이미지 문서의 `img` 에 확대·축소를 붙인다. 카드 너비에 맞춘 크기에서 시작한다. 배율 버튼은 100% 로 가고,
- * 이미 100% 로 보이면 맞춤으로 돌아간다. `img` 는 `.zoom-view` 안에, `.zoom-view` 는 블록 안에 있다. 배율 표시의 기준은
- * `naturalWidth` 다. 크기를 적지 않은 SVG 는 Chromium 이 정한 기본 크기(viewBox 만 있으면 너비 300)가 기준이 된다.
- * 크기가 0 인 그림에는 붙이지 않는다.
+ * 로드가 끝난 이미지 문서의 `img` 에 확대·축소를 붙인다. 카드 너비에 맞춘 크기에서 시작한다. 배율 버튼은 100% 로
+ * 가고, 이미 100% 로 보이면 맞춤으로 돌아간다. `img` 는 `.zoom-view` 안에, `.zoom-view` 는 블록 안에 있다.
  */
 export function zoomImage(img: HTMLImageElement): void {
   const view = img.parentElement!
@@ -144,7 +142,7 @@ function dragToScroll(view: HTMLElement): void {
       }
     )
   })
-  // 끄는 동안 `img` 를 끌어 놓기로 집어 들지 않는다.
+  // 끄는 동안 브라우저가 `img` 의 기본 drag and drop 을 시작하지 않게 한다.
   view.addEventListener('dragstart', (e) => {
     if (view.classList.contains('dragging')) e.preventDefault()
   })

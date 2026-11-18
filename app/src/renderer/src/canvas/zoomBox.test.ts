@@ -109,6 +109,32 @@ describe('이미지 확대·축소', () => {
     expect(state()).toEqual(['', '', '', '100%'])
   })
 
+  it('맞춘 배율이 가장 작은 단계보다 작으면, 축소는 맞춤에 머물고 확대는 가장 작은 단계로 간다', () => {
+    const { img, out, into, state } = image({ width: 3440, height: 2064 })
+    expect(state()).toEqual(['', '', '', '13%'])
+    out.click()
+    const e = new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      metaKey: true,
+      deltaY: 100
+    })
+    img.dispatchEvent(e)
+    expect(e.defaultPrevented).toBe(true)
+    expect(state()).toEqual(['', '', '', '13%'])
+    into.click()
+    expect(state()).toEqual(['860px', '516px', '258px', '25%'])
+  })
+
+  it('맞춘 배율이 가장 큰 단계보다 크면, 확대는 맞춤에 머물고 축소는 가장 큰 단계로 간다', () => {
+    const { out, into, state } = image({ width: 60, height: 150 }, { width: 430, height: 1075 })
+    expect(state()).toEqual(['', '', '', '717%'])
+    into.click()
+    expect(state()).toEqual(['', '', '', '717%'])
+    out.click()
+    expect(state()).toEqual(['300px', '750px', '1075px', '500%'])
+  })
+
   it('크기가 0 인 그림에는 버튼을 두지 않는다', () => {
     const { buttons, img } = image({ width: 0, height: 0 })
     expect(buttons).toEqual([])
