@@ -379,6 +379,35 @@ fn canvas_put_passes_id_and_title() {
 }
 
 #[test]
+fn canvas_put_passes_id_and_title_with_a_file() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let note = tmp.path().join("note.md");
+    std::fs::write(&note, "# from file\n").unwrap();
+    let server = serve_once(&sock, |req| {
+        result(req, json!({ "id": req["params"]["id"] }))
+    });
+
+    let args = [
+        "canvas",
+        "put",
+        "--id",
+        "plan",
+        "--title",
+        "Plan",
+        note.to_str().unwrap(),
+    ];
+    let out = maru_input(Some(&sock), &args, b"");
+    let req = server.join().unwrap();
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "plan\n");
+    assert_eq!(req["params"]["path"], note.to_str().unwrap());
+    assert_eq!(req["params"]["id"], "plan");
+    assert_eq!(req["params"]["title"], "Plan");
+}
+
+#[test]
 fn canvas_put_sends_a_file_as_its_absolute_path_and_ignores_stdin() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
@@ -399,11 +428,12 @@ fn canvas_put_sends_a_file_as_its_absolute_path_and_ignores_stdin() {
 fn canvas_put_joins_a_relative_file_to_the_cwd_without_reading_it_or_resolving_links() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    // 앱이 읽으므로 UTF-8 이 아니어도 그대로 경로만 보낸다. 읽었다면 이 바이트에서 실패한다.
+    // `maru` 는 파일을 읽지 않고 경로만 보내므로, 내용이 UTF-8 이 아니어도 된다. `maru` 가 파일을 읽었다면 UTF-8 이
+    // 아닌 이 바이트에서 실패한다.
     std::fs::write(tmp.path().join("shot.png"), [0xff]).unwrap();
     std::fs::create_dir(tmp.path().join("sub")).unwrap();
     std::os::unix::fs::symlink(tmp.path().join("shot.png"), tmp.path().join("link.png")).unwrap();
-    // 프로세스의 cwd 는 `/tmp` 가 풀린 `/private/tmp` 아래다. 터미널 링크도 그 cwd 를 기준으로 연다.
+    // 프로세스의 cwd 는 `/tmp` 가 풀린 `/private/tmp` 아래다.
     let cwd = std::fs::canonicalize(tmp.path()).unwrap();
     for (file, sent) in [
         ("sub/../shot.png", cwd.join("sub/../shot.png")),
@@ -480,10 +510,18 @@ fn canvas_put_rejects_bad_input_without_reaching_the_app() {
 }
 
 #[test]
-fn canvas_put_rejects_missing_files_and_directories_without_reaching_the_app() {
+fn canvas_put_rejects_missing_files_and_non_regular_files_without_reaching_the_app() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
     let missing = tmp.path().join("missing.md");
+    let fifo = tmp.path().join("fifo.md");
+    assert!(
+        Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
     let cases = [
         (
             missing.clone(),
@@ -493,6 +531,7 @@ fn canvas_put_rejects_missing_files_and_directories_without_reaching_the_app() {
             tmp.path().to_path_buf(),
             format!("{} is not a file", tmp.path().display()),
         ),
+        (fifo.clone(), format!("{} is not a file", fifo.display())),
     ];
     for (path, expected) in cases {
         let args = ["canvas", "put", path.to_str().unwrap()];

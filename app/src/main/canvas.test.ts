@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
@@ -154,9 +155,9 @@ describe('fileDoc', () => {
     writeFileSync(big, Buffer.alloc(CODE_MAX_BYTES + 1, 0x61))
     expect(await fileDoc(big)).toBe(`${big} is larger than 5 MiB`)
     const nul = file('nul.dat', [0x41, 0])
-    expect(await fileDoc(nul)).toBe(`${nul} is not a text file`)
+    expect(await fileDoc(nul)).toBe(`${nul} is not a UTF-8 text file`)
     const latin1 = file('latin1.c', [0xe9])
-    expect(await fileDoc(latin1)).toBe(`${latin1} is not a text file`)
+    expect(await fileDoc(latin1)).toBe(`${latin1} is not a UTF-8 text file`)
   })
 })
 
@@ -383,11 +384,18 @@ describe('canvasPut', () => {
       const missing = join(dir, 'missing.ts')
       const folder = join(dir, 'folder.ts')
       mkdirSync(folder, { recursive: true })
+      // 일반 파일인지 먼저 보지 않으면 FIFO 를 읽다가 put 이 끝나지 않는다.
+      const fifo = join(dir, 'fifo.ts')
+      execFileSync('mkfifo', [fifo])
+      const locked = file('locked.ts', [0x61])
+      chmodSync(locked, 0)
       for (const [path, message] of [
         [empty, `${empty} is empty`],
-        [binary, `${binary} is not a text file`],
+        [binary, `${binary} is not a UTF-8 text file`],
         [missing, `cannot read ${missing}`],
-        [folder, `${folder} is not a file`]
+        [folder, `${folder} is not a file`],
+        [fifo, `${fifo} is not a file`],
+        [locked, `cannot read ${locked}`]
       ]) {
         const { win, sent } = fakeWindow()
         const err = await canvasPut(

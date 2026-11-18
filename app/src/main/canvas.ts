@@ -60,14 +60,14 @@ export async function fileDoc(path: string, line?: number): Promise<CanvasDoc | 
   if (mime) return imageFile(path, mime)
   if ((await stat(path)).size > CODE_MAX_BYTES) return `${path} is larger than 5 MiB`
   const text = codeText(await readFile(path))
-  if (text === null) return `${path} is not a text file`
+  if (text === null) return `${path} is not a UTF-8 text file`
   const name = basename(path)
   return { id: path, kind: 'code', name, text, path, ...(line ? { line } : {}) }
 }
 
 /**
- * 링크로 여는 문서. `fileDoc` 에 마크다운이면 파일 이름 제목을 붙이고, 그릴 수 없으면 null 이다. 링크로 연 마크다운은
- * 첫 제목보다 파일 이름을 보이고, 그릴 수 없는 파일은 다른 앱으로 열기 때문이다.
+ * 링크로 여는 문서다. `fileDoc` 이 만든 문서가 마크다운이면 파일 이름을 제목으로 붙이고, 그릴 수 없는 파일이면 null 을
+ * 돌려준다. 링크로 연 마크다운은 첫 제목보다 파일 이름을 보이고, 그릴 수 없는 파일은 링크가 다른 앱으로 열기 때문이다.
  */
 export async function canvasDocFor(path: string, line?: number): Promise<CanvasDoc | null> {
   const doc = await fileDoc(path, line)
@@ -208,8 +208,9 @@ export function canvasPut(
 }
 
 /**
- * `canvas.put` 이 `path` 로 넣는 문서. 링크와 같은 `fileDoc` 으로 만들고, 그릴 수 없으면 InvalidParams 로 그 이유를 알린다.
- * 제목은 붙이지 않는다 — `--title` 이 없으면 renderer 가 마크다운의 첫 제목, 없으면 `path` 의 파일 이름을 보인다.
+ * `canvas.put` 이 `path` 로 넣는 문서다. 링크와 같은 `fileDoc` 으로 만들고, 그릴 수 없으면 `InvalidParams` 로 그 이유를
+ * 알린다. 제목은 붙이지 않는다 — `title` 이 없으면 renderer 가 마크다운의 첫 제목을 보이고, 첫 제목이 없으면 `path` 의
+ * 파일 이름을 보인다.
  */
 async function putFileDoc(path: string): Promise<CanvasDoc> {
   const info = await stat(path).catch(() => null)

@@ -91,8 +91,9 @@
 //!
 //! `canvas.put` 은 문서를 창의 Canvas 패널에 보인다. `text` 는 마크다운이다. `path` 는 앱이 읽는 파일로, 터미널의
 //! 경로 링크를 열 때와 같이 확장자로 마크다운(`.md`)·다이어그램(`.mmd`·`.mermaid`)·이미지·코드 뷰(그 밖의 텍스트
-//! 파일) 가운데 하나로 보인다. 앱은 `path` 의 `.`·`..` 를 정리하고 심링크는 풀지 않는다. `path` 가 없거나 디렉토리이거나,
-//! 공백뿐인 `.md` 이거나, 코드 뷰로 보일 수 없으면(5 MiB 를 넘거나 텍스트가 아니면) 그 이유로 `invalid_params` 다.
+//! 파일) 가운데 하나로 보인다. 앱은 `path` 의 `.`·`..` 를 정리하고 심링크는 풀지 않는다. `path` 의 파일이 없거나
+//! 일반 파일이 아니거나, 공백뿐인 `.md` 이거나, 코드 뷰로 보일 수 없으면(5 MiB 를 넘거나 텍스트가 아니면) 앱은 그 이유를
+//! 담아 `invalid_params` 로 답한다.
 //! `text`·`path` 가 함께 오거나 둘 다 없어도 `invalid_params` 다. 보낸 pty 의 cell 이 같은 `id` 로 보낸 문서가
 //! 있으면 그 문서를 바꾼다. `id` 가 없으면 `path` 로 온 문서는 정리한 경로가 id 이고, `text` 로 온 문서는 앱이 새
 //! id 를 만든다. 다른 cell 이 보낸 같은 `id` 의 문서는 바꾸지 않는다. id 는 형식 없는 문자열이다. `title` 이 없으면
@@ -648,8 +649,9 @@ enum CanvasCommand {
     /// with that id if there is one.
     ///
     /// FILE is shown by its extension, as when a path in the terminal is opened: markdown,
-    /// a Mermaid diagram (.mmd, .mermaid), an image, or any other text file as highlighted
-    /// code. Without --id its absolute path is the id, so putting it again replaces it. Reads
+    /// a Mermaid diagram (.mmd, .mermaid), an image, or any other UTF-8 text file up to 5 MiB
+    /// as code, highlighted when its language is known. Without --id, the file's absolute path
+    /// is its id, so putting it again replaces that document. Reads
     /// markdown from stdin when FILE is omitted or `-`. Prints the document's id; pass it back
     /// with --id to replace that document.
     Put {
@@ -1265,7 +1267,7 @@ fn mcp_reply(target: &Target, line: &[u8]) -> Option<Value> {
     }
 }
 
-/// `canvas_put` 의 `file` 을 `maru canvas put FILE` 처럼 절대경로로 바꿔 `path` 로 보낸다. `text` 와 같이 왔으면 그대로 두어,
+/// `canvas_put` 의 `file` 을 `maru canvas put FILE` 처럼 절대경로로 바꿔 `path` 에 넣는다. `text` 와 같이 왔으면 그대로 두어,
 /// 인자 규칙을 검사하는 앱이 거절하게 한다.
 fn read_file_argument(msg: &mut Value, tool_call: bool) -> Result<()> {
     if !tool_call || msg.pointer("/params/name").and_then(Value::as_str) != Some("canvas_put") {
@@ -1412,7 +1414,7 @@ fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) 
 }
 
 /// Canvas 에 보일 파일의 절대경로. `maru canvas put FILE` 과 MCP 도구 `canvas_put` 의 `file` 이 함께 쓴다. 파일은 앱이
-/// 읽으므로 여기서는 있는지만 본다. 심링크는 풀지 않는다 — 터미널 링크로 연 같은 파일과 id 가 같아야 하기 때문이다.
+/// 읽으므로, 여기서는 파일이 있는지, 일반 파일인지, 경로가 UTF-8 인지만 본다. 심링크는 풀지 않는다 — 터미널 링크로 연 같은 파일과 id 가 같아야 하기 때문이다.
 fn file_path(path: &Path) -> Result<String> {
     let source = path.display().to_string();
     let meta = std::fs::metadata(path).with_context(|| format!("cannot read {source}"))?;

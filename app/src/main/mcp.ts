@@ -9,7 +9,7 @@ const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05
 export const CANVAS_PUT_TOOL = {
   name: 'canvas_put',
   description:
-    'Show a document in the AI Maru Canvas panel next to this terminal. Pass markdown in `text`, or a file in `file`: markdown, a Mermaid diagram (.mmd, .mermaid), an image, or any other text file as highlighted code. Reuse the same `id` to replace a document you put before; a file without `id` uses its absolute path as the id, so putting it again replaces it. The reply is the document id.',
+    'Show a document in the AI Maru Canvas panel next to this terminal. Pass markdown in `text`, or a file path in `file`: markdown, a Mermaid diagram (.mmd, .mermaid), an image, or any other UTF-8 text file up to 5 MiB as code, highlighted when its language is known. Reuse the same `id` to replace a document you put before; a file without `id` uses its absolute path as the id, so putting it again replaces it. The reply is the document id.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -17,7 +17,7 @@ export const CANVAS_PUT_TOOL = {
       file: {
         type: 'string',
         description:
-          'Path of a file to show. The extension picks how it is shown, as when a path in the terminal is opened. A relative path is read from the directory this session started in, not from a directory changed to later, so prefer an absolute path.'
+          'Path of a file to show. The extension picks how it is shown, as when a path in the terminal is opened. A relative path is resolved against the directory this session started in, and later directory changes do not affect it, so prefer an absolute path.'
       },
       id: {
         type: 'string',
@@ -27,7 +27,7 @@ export const CANVAS_PUT_TOOL = {
       title: {
         type: 'string',
         description:
-          'Title shown in the Canvas list. Defaults to the first markdown heading, or else the file name.'
+          'Title shown in the Canvas list. Defaults to the first markdown heading, then the file name, then "Markdown".'
       }
     }
   }
