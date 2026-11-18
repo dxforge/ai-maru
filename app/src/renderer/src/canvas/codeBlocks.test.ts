@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HIGHLIGHT_MAX_CHARS } from './code'
 import { hasCodeBlock, highlightBlocks, type HighlightCache } from './codeBlocks'
 import { prepareMarkdown, renderPart } from './markdown'
 
@@ -88,13 +87,5 @@ describe('highlightBlocks', () => {
     await highlightBlocks(again, cache, run)
     expect(run).toHaveBeenCalledTimes(2)
     expect(langs(again)).toEqual(['js', 'rust'])
-  })
-
-  it('기준보다 긴 블록은 맡기지 않고 그대로 둔다', async () => {
-    const el = doc(fence('ts', 'x'.repeat(HIGHLIGHT_MAX_CHARS + 1)))
-    const run = highlighter()
-    await highlightBlocks(el, new Map(), run)
-    expect(run).not.toHaveBeenCalled()
-    expect(langs(el)).toEqual([null])
   })
 })

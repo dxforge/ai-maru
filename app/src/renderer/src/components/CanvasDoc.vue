@@ -38,9 +38,9 @@ watch(
 )
 
 function added(html: string): void {
+  if (!root.value || !body.value) return
   if (hasDiagram(html)) draw()
-  if (hasCodeBlock(html) && root.value && body.value)
-    void highlightBlocks(root.value, body.value.highlights)
+  if (hasCodeBlock(html)) void highlightBlocks(root.value, body.value.highlights)
 }
 
 function draw(): void {

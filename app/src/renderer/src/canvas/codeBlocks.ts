@@ -1,4 +1,4 @@
-import { HIGHLIGHT_MAX_CHARS, highlight } from './code'
+import { highlight } from './code'
 
 /** 코드와 fence 에 적은 언어 이름으로 강조한 HTML 을 낸다. 모르는 언어면 null 이다. */
 export type Highlight = (code: string, lang: string) => Promise<string | null>
@@ -17,28 +17,27 @@ export function hasCodeBlock(html: string): boolean {
   return BLOCK.test(html)
 }
 
-// 강조를 맡긴 블록. 묶음을 붙일 때마다 다시 불러도 같은 블록을 두 번 맡기지 않는다.
-const requested = new WeakSet<Element>()
+// 본문 요소마다 강조를 맡긴 블록 수. 묶음은 본문 끝에만 붙으므로, 다시 부르면 그 뒤의 블록만 맡긴다.
+const requested = new WeakMap<Element, number>()
 
 /**
  * `el` 안의 코드 블록을 fence 에 적은 언어로 강조한다. 강조를 받기 전에는 글자만 보이고, 받으면 블록 안을 색 입힌 글자로
- * 바꾼다. 언어를 모르거나 `HIGHLIGHT_MAX_CHARS` 보다 긴 블록은 그대로 둔다.
+ * 바꾼다. 강조하지 않는 블록(`highlight`)은 그대로 둔다. 묶음을 붙일 때마다 다시 불러도 된다.
  */
 export async function highlightBlocks(
   el: Element,
   cache: HighlightCache,
   run: Highlight = highlight
 ): Promise<void> {
-  const blocks = [...el.querySelectorAll(BLOCKS)]
+  const blocks = el.querySelectorAll(BLOCKS)
+  const from = requested.get(el) ?? 0
+  requested.set(el, blocks.length)
   await Promise.all(
-    blocks.map(async (code, i) => {
-      if (requested.has(code)) return
-      requested.add(code)
+    [...blocks].slice(from).map(async (code, j) => {
+      const i = from + j
       let html = cache.get(i)
       if (!html) {
-        const text = code.textContent ?? ''
-        const lang = code.className.slice('language-'.length)
-        html = text.length > HIGHLIGHT_MAX_CHARS ? Promise.resolve(null) : run(text, lang)
+        html = run(code.textContent ?? '', code.className.slice('language-'.length))
         cache.set(i, html)
       }
       const h = await html
