@@ -59,7 +59,10 @@ const getHighlighter = (): Promise<HighlighterCore> =>
     engine: createJavaScriptRegexEngine()
   }))
 
-/** `name` 의 언어로 강조한 HTML. 모르는 언어면 null 이다. `code` 는 `prepareCode` 를 거친 글자다. */
+/**
+ * `name` 의 언어로 강조한 HTML. 모르는 언어면 null 이다. `code` 는 코드 뷰가 `prepareCode` 를 거쳐 보낸 글자이거나
+ * 마크다운 코드 블록의 글자다.
+ */
 export async function highlightCode(code: string, name: string): Promise<string | null> {
   const lang = languageFor(name)
   if (!lang) return null

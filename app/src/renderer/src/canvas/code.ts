@@ -49,9 +49,9 @@ export class CodeBody {
   html: string | null | undefined
 
   highlighted(): Promise<string | null> {
-    return (this.#highlighted ??= (
-      this.code.length > HIGHLIGHT_MAX_CHARS ? Promise.resolve(null) : highlight(this)
-    ).then((html) => (this.html = html)))
+    return (this.#highlighted ??= highlight(this.code, this.name).then(
+      (html) => (this.html = html)
+    ))
   }
 
   ready(ms: number): Promise<void> {
@@ -75,8 +75,8 @@ export function warmHighlighter(): void {
 }
 
 /**
- * 이보다 긴 파일은 강조 없이 둔다. 강조한 HTML 을 붙이고 다음 프레임까지 TypeScript 250KB 는 0.14초, 500KB 는 0.30초가 걸려,
- * 0.2초 안에 드는 쪽을 골랐다.
+ * 이보다 긴 코드(파일, 마크다운의 코드 블록)는 강조 없이 둔다. 강조한 HTML 을 붙이고 다음 프레임까지 TypeScript
+ * 250KB 는 0.14초, 500KB 는 0.30초가 걸려, 0.2초 안에 드는 쪽을 골랐다.
  */
 export const HIGHLIGHT_MAX_CHARS = 250 * 1024
 
@@ -100,13 +100,17 @@ function highlighter(): Worker {
   return (worker = w)
 }
 
-function highlight(body: CodeBody): Promise<string | null> {
+let requests = 0
+
+/**
+ * worker 에서 `name`(파일 이름이나 언어 이름)의 언어로 강조한 HTML 을 받는다. 모르는 언어거나 `HIGHLIGHT_MAX_CHARS`
+ * 보다 길면 null 이다.
+ */
+export function highlight(code: string, name: string): Promise<string | null> {
+  if (code.length > HIGHLIGHT_MAX_CHARS) return Promise.resolve(null)
+  const id = ++requests
   return new Promise((resolve) => {
-    waiting.set(body.id, resolve)
-    highlighter().postMessage({
-      id: body.id,
-      code: body.code,
-      name: body.name
-    } satisfies HighlightRequest)
+    waiting.set(id, resolve)
+    highlighter().postMessage({ id, code, name } satisfies HighlightRequest)
   })
 }

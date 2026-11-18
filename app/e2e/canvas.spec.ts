@@ -457,6 +457,42 @@ test('mermaid 블록은 라벨과 함께 다이어그램으로 그리고, 틀린
   expect(csp).toEqual([])
 })
 
+test('언어를 적은 코드 블록은 화면에 들어올 때 shiki 의 색으로 강조하고, mermaid 블록은 다이어그램으로 그린다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  // 끝의 블록은 첫 묶음 뒤에 붙는 묶음에 든다.
+  const text = [
+    '```ts\nconst a = 1\n```',
+    mermaid('flowchart LR\n  A --> B'),
+    mixedDoc(300_000),
+    '```rust\nfn main() {}\n```'
+  ].join('\n\n')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text })
+  const ts = markdown(page).locator('pre > code.language-ts').first()
+  await expect(ts.locator('span').first()).toHaveText('const')
+  await expect(ts).toHaveText('const a = 1\n')
+  const rust = markdown(page).locator('pre > code.language-rust')
+  await expect(rust).toHaveText('fn main() {}\n')
+  await expect(rust.locator('span')).toHaveCount(0)
+  await rust.scrollIntoViewIfNeeded()
+  await expect(rust.locator('span').first()).toHaveText('fn')
+  await expect(diagrams(page)).toHaveCount(1)
+  const [color, shiki] = await ts.evaluate((code) => {
+    const span = code.querySelector('span')!
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches
+    const probe = document.createElement('i')
+    probe.style.color = getComputedStyle(span).getPropertyValue(
+      dark ? '--shiki-dark' : '--shiki-light'
+    )
+    document.body.append(probe)
+    const want = getComputedStyle(probe).color
+    probe.remove()
+    return [getComputedStyle(span).color, want]
+  })
+  expect(color).toBe(shiki)
+})
+
 test('다이어그램 라벨의 HTML 이 popover 를 띄우지 못한다', async ({ launch }) => {
   const { app, page } = await launch()
   const labels = [

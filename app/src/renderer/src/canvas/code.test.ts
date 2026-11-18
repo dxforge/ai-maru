@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampLine, CodeBody, HIGHLIGHT_MAX_CHARS, prepareCode } from './code'
+import { clampLine, CodeBody, highlight, HIGHLIGHT_MAX_CHARS, prepareCode } from './code'
 
 describe('prepareCode', () => {
   it('CRLF 를 LF 로 바꾸고, 끝의 줄바꿈 하나는 줄로 세지 않는다', () => {
@@ -40,5 +40,11 @@ describe('CodeBody.highlighted', () => {
     expect(body.html).toBeUndefined()
     expect(await body.highlighted()).toBeNull()
     expect(body.html).toBeNull()
+  })
+})
+
+describe('highlight', () => {
+  it('기준보다 긴 글자는 worker 에 보내지 않고 null 이다 — 마크다운의 코드 블록도 이 한도를 따른다', async () => {
+    expect(await highlight('x'.repeat(HIGHLIGHT_MAX_CHARS + 1), 'ts')).toBeNull()
   })
 })
