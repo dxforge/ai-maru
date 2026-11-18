@@ -123,8 +123,16 @@ describe('tools/call canvas_put', () => {
     })
   })
 
+  it('maru mcp 가 file 을 바꾼 path 를 canvas.put 처리로 넘긴다', async () => {
+    const { send, calls } = hub(async () => ({ id: '/r/a.ts' }))
+    const res = await send(call({ path: '/r/a.ts', title: 'T' }))
+    expect(calls).toEqual([{ path: '/r/a.ts', title: 'T' }])
+    expect(res).toMatchObject({ message: { result: { content: [{ text: '/r/a.ts' }] } } })
+  })
+
   it.each([
     [{ text: 'x', file: 'a.md' }, 'give exactly one of text or file'],
+    [{ text: 'x', path: '/a.md' }, 'give exactly one of text or file'],
     [{ file: 3 }, 'give exactly one of text or file'],
     [{}, 'give text or file'],
     [undefined, 'give text or file'],
@@ -139,7 +147,9 @@ describe('tools/call canvas_put', () => {
   it.each([
     [{ text: 1 }, 'text must be a string'],
     [{ text: 'x', id: '' }, 'id must be a non-empty string'],
-    [{ text: 'x', title: 2 }, 'title must be a string']
+    [{ text: 'x', title: 2 }, 'title must be a string'],
+    [{ path: 'rel.ts' }, 'path must be an absolute path'],
+    [{ path: '/no/such/file.ts' }, 'cannot read /no/such/file.ts']
   ])(
     'canvasPut 이 arguments %j 를 거절하면 그 이유를 params. 없이 isError 결과로 돌려준다',
     async (args, reason) => {

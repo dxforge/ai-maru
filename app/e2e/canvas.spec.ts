@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
   activePane,
@@ -1086,6 +1088,27 @@ test('maru mcp 에 canvas_put 을 부르면 패널에 렌더되고 문서 id 를
   await expect(markdown(page).locator('h1')).toHaveText('From MCP')
   await expect(screen(page)).toShow('"text":"mcp-doc"')
   await expect(screen(page)).toShow('code-0')
+})
+
+test('maru canvas put 과 maru mcp 의 file 로 넣은 코드 파일은 강조한 코드 뷰로 보이고, 같은 파일을 다시 넣으면 그 문서가 바뀐다', async ({
+  launch,
+  dataDir
+}) => {
+  const { page } = await launch()
+  writeFileSync(join(dataDir, 'repro.cjs'), 'const a = 1\n')
+  await run(page, `cd '${dataDir}'; maru canvas put ./repro.cjs; echo code-$?`, 'code-0')
+  await expect(titles(page)).toHaveText(['repro.cjs'])
+  await expect(page.locator('.canvas .code .text span').first()).toHaveText('const')
+
+  writeFileSync(join(dataDir, 'repro.cjs'), 'let b = 2\n')
+  const put = mcpLine({
+    id: 1,
+    method: 'tools/call',
+    params: { name: 'canvas_put', arguments: { file: 'repro.cjs', title: 'Repro' } }
+  })
+  await run(page, `printf '%s\\n' ${put} | maru mcp; echo code-$((1+2))`, 'code-3')
+  await expect(titles(page)).toHaveText(['Repro'])
+  await expect(page.locator('.canvas .code .text span').first()).toHaveText('let')
 })
 
 const viewButton = (page: Page) => page.locator('.canvas .views .view')

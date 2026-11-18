@@ -90,7 +90,7 @@ describe('openLink', () => {
     writeFileSync(path, '# hi')
     const { o, docs, paths, senders } = opener()
     expect(await openLink(path, 'p-3', o)).toEqual({ ok: true })
-    expect(docs).toEqual([{ id: path, kind: 'markdown', text: '# hi', title: 'note.md' }])
+    expect(docs).toEqual([{ id: path, kind: 'markdown', text: '# hi', title: 'note.md', path }])
     expect(senders).toEqual(['p-3'])
     expect(paths).toEqual([])
   })
@@ -101,7 +101,14 @@ describe('openLink', () => {
     const { o, docs } = opener()
     expect(await openLink(`file://${path}`, 'p-1', o)).toEqual({ ok: true })
     expect(docs).toEqual([
-      { id: path, kind: 'image', name: 'shot.PNG', mime: 'image/png', bytes: Buffer.from('x') }
+      {
+        id: path,
+        kind: 'image',
+        name: 'shot.PNG',
+        mime: 'image/png',
+        bytes: Buffer.from('x'),
+        path
+      }
     ])
   })
 
@@ -112,8 +119,8 @@ describe('openLink', () => {
     expect(await openLink(`${path}:12:3`, 'p-1', o)).toEqual({ ok: true })
     expect(await openLink(path, 'p-1', o)).toEqual({ ok: true })
     expect(docs).toEqual([
-      { id: path, kind: 'code', name: 'main.ts', text: 'const a = 1\n', line: 12 },
-      { id: path, kind: 'code', name: 'main.ts', text: 'const a = 1\n' }
+      { id: path, kind: 'code', name: 'main.ts', text: 'const a = 1\n', path, line: 12 },
+      { id: path, kind: 'code', name: 'main.ts', text: 'const a = 1\n', path }
     ])
     expect(paths).toEqual([])
   })

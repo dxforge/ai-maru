@@ -43,7 +43,7 @@
 //! | 메서드 | `params`(공통 외) | `result` |
 //! |---|---|---|
 //! | `ping` | 없음 | `{"pty":<받은 pty id>}` |
-//! | `canvas.put` | `text`(문자열), `id`(빈 문자열이 아닌 문자열, 선택), `title`(문자열, 선택) | `{"id":<문서 id>}` |
+//! | `canvas.put` | `text`(문자열)·`path`(절대경로 문자열) 가운데 하나, `id`(빈 문자열이 아닌 문자열, 선택), `title`(문자열, 선택) | `{"id":<문서 id>}` |
 //! | `inbox.push` | `to`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
 //! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 pty id>,"text":<본문>}…]}` |
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
@@ -89,9 +89,15 @@
 //! cell id 는 cell 이 닫힐 때까지 바뀌지 않는다. cell 을 다른 workspace 로 옮겨도, `app.restart` 뒤에도
 //! 같다.
 //!
-//! `canvas.put` 은 마크다운을 창의 Canvas 패널에 보인다. 보낸 pty 의 cell 이 같은 `id` 로 보낸 문서가 있으면
-//! 그 문서를 바꾸고, `id` 가 없으면 앱이 새 id 를 만든다. 다른 cell 이 보낸 같은 `id` 의 문서는 바꾸지 않는다.
-//! id 는 형식 없는 문자열이다.
+//! `canvas.put` 은 문서를 창의 Canvas 패널에 보인다. `text` 는 마크다운이다. `path` 는 앱이 읽을 파일의
+//! 절대경로다. 앱은 터미널의 경로 링크를 열 때와 같이 확장자를 보고 그 파일을 마크다운(`.md`·`.markdown`)·
+//! 다이어그램(`.mmd`·`.mermaid`)·이미지·코드 뷰(그 밖의 텍스트 파일) 가운데 하나로 보인다. 앱은 `path` 의 `.`·`..` 를
+//! 정리하고 심링크는 풀지 않는다. `path` 의 파일이 없거나 일반 파일이 아니거나, 공백뿐인 마크다운 파일이거나, 코드 뷰로
+//! 보일 수 없으면(5 MiB 를 넘거나 UTF-8 텍스트 파일이 아니면) 앱은 그 이유를 담아 `invalid_params` 로 답한다.
+//! `text`·`path` 가 함께 오거나 둘 다 없어도 `invalid_params` 다. 보낸 pty 의 cell 이 같은 `id` 로 보낸 문서가
+//! 있으면 그 문서를 바꾼다. `id` 가 없으면 `path` 로 온 문서는 정리한 경로가 id 이고, `text` 로 온 문서는 앱이 새
+//! id 를 만든다. 다른 cell 이 보낸 같은 `id` 의 문서는 바꾸지 않는다. id 는 형식 없는 문자열이다. `title` 이 없으면
+//! 목록 제목은 마크다운의 첫 제목, 첫 제목이 없는 마크다운 파일·다이어그램과 이미지·코드는 파일 이름이다.
 //!
 //! `inbox.push` 는 `to` pty 에 메시지를 보낸다. `to` 가 `p-` 와 hex 8자리가 아니거나 그 pty 가 끝났으면
 //! `invalid_params` 다. `to` 를 구독하는 연결이 있으면 알림을 보내고, 본문이 알림에 다 실렸으면 읽은
@@ -193,9 +199,9 @@
 //! 앱 claude plugin 의 `.mcp.json` 이 `maru mcp` 를 MCP 서버로 띄운다. `maru mcp` 는 stdin 의 한 줄(MCP 의 stdio
 //! 전송에서 메시지 하나)마다 연결 하나를 열어 `mcp.message` 로 앱에 보내고, `result.message` 를 stdout 에 한 줄로
 //! 쓴다. `result` 가 `null` 이면 쓰지 않는다. stdin 이 닫히면 끝난다. 도구는 앱이 처리하고 `maru mcp` 는 메시지를
-//! 해석하지 않고 옮긴다. 예외는 하나다 — `canvas_put` 의 `file` 은 `maru mcp` 가 자기 cwd 기준으로 읽어
-//! `text` 로 바꿔 보낸다. 읽기 규칙은 `maru canvas put FILE` 과 같고, 읽지 못하면 앱에 보내지 않고 도구 실행
-//! 오류(`isError`)로 답한다. `text` 와 함께 온 `file` 은 읽지 않고 그대로 보낸다.
+//! 해석하지 않고 옮긴다. 예외는 하나다 — `canvas_put` 의 `file` 은 `maru mcp` 가 `maru canvas put FILE` 처럼 자기
+//! cwd 기준 절대경로로 바꿔 `path` 로 보낸다. 파일이 없거나 일반 파일이 아니면 앱에 보내지 않고 도구 실행
+//! 오류(`isError`)로 답한다. `text` 와 함께 온 `file` 은 바꾸지 않고 그대로 보낸다.
 //!
 //! 안쪽 메시지의 실패는 앱이 `result.message` 안의 JSON-RPC `error`(도구 인자가 틀린 것은 `isError` 결과)로
 //! 돌려준다. 바깥 `error` 는 줄 프로토콜 자체의 실패에만 쓴다. 앱은 MCP 세션의 상태를 두지 않는다.
@@ -639,19 +645,23 @@ enum StatusKind {
 
 #[derive(Subcommand)]
 enum CanvasCommand {
-    /// Show markdown in the Canvas panel. With --id, replaces this cell's document with that
-    /// id if there is one.
+    /// Show a file or markdown in the Canvas panel. With --id, replaces this cell's document
+    /// with that id if there is one.
     ///
-    /// Reads FILE, or stdin when FILE is omitted or `-`. Prints the document's id; pass it
-    /// back with --id to replace that document.
+    /// FILE is shown by its extension, as when a path in the terminal is opened: markdown
+    /// (.md, .markdown), a Mermaid diagram (.mmd, .mermaid), an image, or any other UTF-8 text
+    /// file up to 5 MiB as code, highlighted when its language is known. Without --id, the
+    /// file's absolute path is its id, so putting it again replaces that document. Reads
+    /// markdown from stdin when FILE is omitted or `-`. Prints the document's id; pass it back
+    /// with --id to replace that document.
     Put {
         /// Replace this cell's document with this id, or add one under this id.
         #[arg(long)]
         id: Option<String>,
-        /// Title in the panel's list, shown instead of the first heading.
+        /// Title in the panel's list, shown instead of the first heading or the file name.
         #[arg(long)]
         title: Option<String>,
-        /// Markdown file to show.
+        /// File to show.
         file: Option<PathBuf>,
     },
 }
@@ -1257,7 +1267,8 @@ fn mcp_reply(target: &Target, line: &[u8]) -> Option<Value> {
     }
 }
 
-/// `canvas_put` 의 `file` 을 읽어 `text` 로 바꾼다. `text` 와 같이 왔으면 그대로 두어, 인자 규칙을 검사하는 앱이 거절하게 한다.
+/// `canvas_put` 의 `file` 을 `maru canvas put FILE` 처럼 절대경로로 바꿔 `path` 에 넣는다. `text` 와 같이 왔으면 그대로 두어,
+/// 인자 규칙을 검사하는 앱이 거절하게 한다.
 fn read_file_argument(msg: &mut Value, tool_call: bool) -> Result<()> {
     if !tool_call || msg.pointer("/params/name").and_then(Value::as_str) != Some("canvas_put") {
         return Ok(());
@@ -1274,9 +1285,9 @@ fn read_file_argument(msg: &mut Value, tool_call: bool) -> Result<()> {
     if args.contains_key("text") {
         return Ok(());
     }
-    let text = read_markdown(Path::new(file))?;
+    let path = file_path(Path::new(file))?;
     args.remove("file");
-    args.insert("text".into(), text.into());
+    args.insert("path".into(), path.into());
     Ok(())
 }
 
@@ -1380,15 +1391,15 @@ fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) 
     }
     // 앱 터미널 밖이면 끝나지 않는 입력을 읽기 전에 실패해야 한다.
     let target = target()?;
-    let text = match file.filter(|f| f.as_os_str() != "-") {
-        Some(path) => read_markdown(&path)?,
-        None => markdown(
-            "stdin",
-            read_stdin("give a FILE or pipe markdown into stdin, e.g. `maru canvas put note.md`")?,
-        )?,
-    };
     let mut params = Map::new();
-    params.insert("text".into(), text.into());
+    let (key, value) = match file.filter(|f| f.as_os_str() != "-") {
+        Some(path) => ("path", file_path(&path)?),
+        None => {
+            let hint = "give a FILE or pipe markdown into stdin, e.g. `maru canvas put note.md`";
+            ("text", markdown(read_stdin(hint)?)?)
+        }
+    };
+    params.insert(key.into(), value.into());
     if let Some(id) = id {
         params.insert("id".into(), id.into());
     }
@@ -1402,34 +1413,30 @@ fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) 
     }
 }
 
-/// Canvas 에 보일 마크다운 파일을 읽는다. `maru canvas put FILE` 과 MCP 도구 `canvas_put` 의 `file` 이 함께 쓴다.
-fn read_markdown(path: &Path) -> Result<String> {
+/// Canvas 에 보일 파일의 절대경로. `maru canvas put FILE` 과 MCP 도구 `canvas_put` 의 `file` 이 함께 쓴다. 파일은 앱이
+/// 읽으므로, 여기서는 파일이 있는지, 일반 파일인지, 경로가 UTF-8 인지만 본다. 심링크는 풀지 않는다 — 터미널 링크로 연 같은 파일과 id 가 같아야 하기 때문이다.
+fn file_path(path: &Path) -> Result<String> {
     let source = path.display().to_string();
-    let input = File::open(path).with_context(|| format!("cannot read {source}"))?;
-    markdown(&source, read_text(&source, input)?)
+    let meta = std::fs::metadata(path).with_context(|| format!("cannot read {source}"))?;
+    if !meta.is_file() {
+        bail!("{source} is not a file");
+    }
+    let absolute = std::path::absolute(path).with_context(|| format!("cannot read {source}"))?;
+    match absolute.into_os_string().into_string() {
+        Ok(path) => Ok(path),
+        Err(_) => bail!("{source} is not a UTF-8 path"),
+    }
 }
 
-fn markdown(source: &str, mut text: String) -> Result<String> {
+fn markdown(mut text: String) -> Result<String> {
     // marked 는 BOM 뒤의 `#` 을 제목으로 읽지 않는다.
     if text.starts_with('\u{feff}') {
         text.drain(..'\u{feff}'.len_utf8());
     }
     if text.trim().is_empty() {
-        bail!("{source} is empty");
+        bail!("stdin is empty");
     }
     Ok(text)
-}
-
-fn read_text(source: &str, input: impl Read) -> Result<String> {
-    let mut bytes = Vec::new();
-    input
-        .take(MAX_LINE + 1)
-        .read_to_end(&mut bytes)
-        .with_context(|| format!("cannot read {source}"))?;
-    if bytes.len() as u64 > MAX_LINE {
-        bail!("{source} is larger than the 16 MiB the app accepts");
-    }
-    String::from_utf8(bytes).map_err(|_| anyhow!("{source} is not UTF-8"))
 }
 
 fn read_stdin(hint: &str) -> Result<String> {
@@ -1437,7 +1444,15 @@ fn read_stdin(hint: &str) -> Result<String> {
     if stdin.is_terminal() {
         bail!("{hint}");
     }
-    read_text("stdin", stdin)
+    let mut bytes = Vec::new();
+    stdin
+        .take(MAX_LINE + 1)
+        .read_to_end(&mut bytes)
+        .context("cannot read stdin")?;
+    if bytes.len() as u64 > MAX_LINE {
+        bail!("stdin is larger than the 16 MiB the app accepts");
+    }
+    String::from_utf8(bytes).map_err(|_| anyhow!("stdin is not UTF-8"))
 }
 
 fn inbox_push(to: String, message: Option<String>) -> Result<()> {
