@@ -457,7 +457,7 @@ test('mermaid 블록은 라벨과 함께 다이어그램으로 그리고, 틀린
   expect(csp).toEqual([])
 })
 
-test('언어를 적은 코드 블록은 뒤에 붙는 묶음까지 shiki 의 색으로 강조하고, mermaid 블록은 다이어그램으로 그린다', async ({
+test('언어를 적은 코드 블록은 화면에 들어올 때 shiki 의 색으로 강조하고, mermaid 블록은 다이어그램으로 그린다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -472,7 +472,11 @@ test('언어를 적은 코드 블록은 뒤에 붙는 묶음까지 shiki 의 색
   const ts = markdown(page).locator('pre > code.language-ts').first()
   await expect(ts.locator('span').first()).toHaveText('const')
   await expect(ts).toHaveText('const a = 1\n')
-  await expect(markdown(page).locator('pre > code.language-rust span').first()).toHaveText('fn')
+  const rust = markdown(page).locator('pre > code.language-rust')
+  await expect(rust).toHaveText('fn main() {}\n')
+  await expect(rust.locator('span')).toHaveCount(0)
+  await rust.scrollIntoViewIfNeeded()
+  await expect(rust.locator('span').first()).toHaveText('fn')
   await expect(diagrams(page)).toHaveCount(1)
   const [color, shiki] = await ts.evaluate((code) => {
     const span = code.querySelector('span')!

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
-import { hasCodeBlock, highlightBlocks } from '../canvas/codeBlocks'
+import { BlockHighlighter, hasCodeBlock } from '../canvas/codeBlocks'
 import { drawDiagrams, hasDiagram } from '../canvas/diagrams'
 import { fillBody } from '../canvas/fill'
 import { loadMermaid } from '../canvas/mermaid'
@@ -21,9 +21,12 @@ const first = computed(() => body.value?.html(0) ?? '')
 const code = computed(() => codeBodyOf(doc))
 // 요소가 바뀌거나 사라지면(같은 id 로 이미지가 오면 이 컴포넌트는 남고 요소만 사라진다) 앞 요소에 붙이던 것을 멈춘다.
 let stop: (() => void) | undefined
+let blocks: BlockHighlighter | undefined
 function reset(): void {
   stop?.()
   stop = undefined
+  blocks?.stop()
+  blocks = undefined
   scrollbars.release()
 }
 watch(
@@ -31,6 +34,7 @@ watch(
   (el) => {
     reset()
     if (!el || !body.value) return
+    blocks = new BlockHighlighter(el, body.value.highlights)
     added(first.value)
     stop = fillBody(el, body.value, added)
   },
@@ -38,9 +42,8 @@ watch(
 )
 
 function added(html: string): void {
-  if (!root.value || !body.value) return
   if (hasDiagram(html)) draw()
-  if (hasCodeBlock(html)) void highlightBlocks(root.value, body.value.highlights)
+  if (hasCodeBlock(html)) blocks?.scan()
 }
 
 function draw(): void {
@@ -122,7 +125,7 @@ onBeforeUnmount(reset)
 }
 
 /* 강조한 코드 블록의 색은 `CodeView` 의 `.text` 처럼 `prefers-color-scheme` 으로 고른다. sanitize 가 `span` 을 남기지
-   않으므로, 코드 블록 안의 `span` 은 `highlightBlocks` 가 넣은 것뿐이다. */
+   않으므로, 코드 블록 안의 `span` 은 `BlockHighlighter` 가 넣은 것뿐이다. */
 .markdown :deep(pre code span) {
   color: var(--shiki-light);
 }
