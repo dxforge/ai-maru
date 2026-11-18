@@ -826,6 +826,12 @@ describe('문서 제목', () => {
     expect(titleOf(md('a', '본문만'))).toBe('Markdown')
   })
 
+  it('heading 이 없어도 파일에서 온 마크다운이면 파일 이름이다', () => {
+    const flow = { ...md('/r/flow.mmd', '```mermaid\nflowchart LR\n```\n'), path: '/r/flow.mmd' }
+    expect(titleOf(flow)).toBe('flow.mmd')
+    expect(titleOf({ ...md('/r/a.md', '# 제목'), path: '/r/a.md' })).toBe('제목')
+  })
+
   it('이미지는 파일 이름이다', () => {
     expect(titleOf(image('i', 'shot.png'))).toBe('shot.png')
   })

@@ -27,7 +27,7 @@ export const CANVAS_PUT_TOOL = {
       title: {
         type: 'string',
         description:
-          'Title shown in the Canvas list. Defaults to the first markdown heading, or the file name for images and code.'
+          'Title shown in the Canvas list. Defaults to the first markdown heading, or else the file name.'
       }
     }
   }

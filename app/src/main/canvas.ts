@@ -205,7 +205,8 @@ export function canvasPut(
 
 /**
  * `canvas.put` 이 `path` 로 넣는 문서. 링크와 같은 `fileDoc` 으로 만들고, 그릴 수 없으면 InvalidParams 로 그 이유를 알린다.
- * 목록 제목은 `--title` 이 정하므로 `fileDoc` 이 넣은 파일 이름은 뺀다.
+ * `fileDoc` 이 넣은 파일 이름 제목은 뺀다. `--title` 이 없으면 마크다운은 첫 제목이 먼저이고, 첫 제목이 없을 때만
+ * renderer 가 `path` 의 파일 이름을 보이기 때문이다.
  */
 async function putFileDoc(path: string): Promise<CanvasDoc> {
   const info = await stat(path).catch(() => null)

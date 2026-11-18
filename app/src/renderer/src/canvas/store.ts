@@ -286,6 +286,8 @@ export function codeBodyOf(entry: CanvasEntry): CodeBody | undefined {
   return codeBodies.get(toRaw(entry))
 }
 
+const fileName = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
+
 function toEntry(item: CanvasItem, at: number): CanvasEntry {
   const owner: CanvasOwner & { key: string } = {
     key: docKey(item.id, item.cell),
@@ -294,7 +296,7 @@ function toEntry(item: CanvasItem, at: number): CanvasEntry {
   }
   if (item.kind === 'markdown') {
     const { heading, parts } = prepareMarkdown(item.text)
-    const title = item.title || heading || 'Markdown'
+    const title = item.title || heading || (item.path && fileName(item.path)) || 'Markdown'
     const entry: CanvasEntry = { id: item.id, kind: 'markdown', title, at, ...owner }
     bodies.set(entry, new MarkdownBody(parts))
     return entry
