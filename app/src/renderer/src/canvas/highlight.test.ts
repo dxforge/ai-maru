@@ -10,6 +10,15 @@ describe('languageFor', () => {
     expect(languageFor('a.zsh')).toBe('shellscript')
   })
 
+  it('마크다운 코드 블록의 언어 이름도 id·alias 로 찾는다', () => {
+    expect(languageFor('js')).toBe('javascript')
+    expect(languageFor('ts')).toBe('typescript')
+    expect(languageFor('rust')).toBe('rust')
+    expect(languageFor('Python')).toBe('python')
+    expect(languageFor('c++')).toBe('cpp')
+    expect(languageFor('nolang')).toBeNull()
+  })
+
   it('shiki 에 없는 C·C++ 헤더 확장자도 고른다', () => {
     expect(languageFor('a.h')).toBe('c')
     expect(languageFor('a.hpp')).toBe('cpp')

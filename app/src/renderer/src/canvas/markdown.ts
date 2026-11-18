@@ -1,6 +1,7 @@
 import DOMPurify from 'dompurify'
 import { decodeHTML, escapeText } from 'entities'
 import { Marked, Renderer, type Token, type Tokens } from 'marked'
+import type { HighlightCache } from './codeBlocks'
 import type { DiagramCache } from './diagrams'
 
 // 문서 안의 이미지는 띄우지 않고 대체 텍스트만 남긴다 — 원격 주소는 CSP 가 막아 깨진 그림이 되고,
@@ -172,6 +173,8 @@ export class MarkdownBody {
   readonly id = ++MarkdownBody.#count
   /** 이 본문의 mermaid 블록을 그린 결과(`drawDiagrams`). */
   readonly diagrams: DiagramCache = new Map()
+  /** 이 본문의 코드 블록을 강조한 결과(`highlightBlocks`). */
+  readonly highlights: HighlightCache = new Map()
   #parts: (Part | string)[]
 
   constructor(parts: Part[]) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
+import { hasCodeBlock, highlightBlocks } from '../canvas/codeBlocks'
 import { drawDiagrams, hasDiagram } from '../canvas/diagrams'
 import { fillBody } from '../canvas/fill'
 import { loadMermaid } from '../canvas/mermaid'
@@ -30,13 +31,17 @@ watch(
   (el) => {
     reset()
     if (!el || !body.value) return
-    if (hasDiagram(first.value)) draw()
-    stop = fillBody(el, body.value, (html) => {
-      if (hasDiagram(html)) draw()
-    })
+    added(first.value)
+    stop = fillBody(el, body.value, added)
   },
   { flush: 'post' }
 )
+
+function added(html: string): void {
+  if (hasDiagram(html)) draw()
+  if (hasCodeBlock(html) && root.value && body.value)
+    void highlightBlocks(root.value, body.value.highlights)
+}
 
 function draw(): void {
   if (root.value && body.value)
@@ -114,6 +119,18 @@ onBeforeUnmount(reset)
 .markdown :deep(pre code) {
   padding: 0;
   background: none;
+}
+
+/* 강조한 코드 블록의 색은 `CodeView` 의 `.text` 처럼 `prefers-color-scheme` 으로 고른다. sanitize 가 `span` 을 남기지
+   않으므로, 코드 블록 안의 `span` 은 `highlightBlocks` 가 넣은 것뿐이다. */
+.markdown :deep(pre code span) {
+  color: var(--shiki-light);
+}
+
+@media (prefers-color-scheme: dark) {
+  .markdown :deep(pre code span) {
+    color: var(--shiki-dark);
+  }
 }
 
 .markdown :deep(blockquote) {

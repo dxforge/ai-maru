@@ -50,7 +50,9 @@ export class CodeBody {
 
   highlighted(): Promise<string | null> {
     return (this.#highlighted ??= (
-      this.code.length > HIGHLIGHT_MAX_CHARS ? Promise.resolve(null) : highlight(this)
+      this.code.length > HIGHLIGHT_MAX_CHARS
+        ? Promise.resolve(null)
+        : highlight(this.code, this.name)
     ).then((html) => (this.html = html)))
   }
 
@@ -100,13 +102,13 @@ function highlighter(): Worker {
   return (worker = w)
 }
 
-function highlight(body: CodeBody): Promise<string | null> {
+let requests = 0
+
+/** worker 에서 `name`(파일 이름이나 언어 이름)의 언어로 강조한 HTML 을 받는다. 모르는 언어면 null 이다. */
+export function highlight(code: string, name: string): Promise<string | null> {
+  const id = ++requests
   return new Promise((resolve) => {
-    waiting.set(body.id, resolve)
-    highlighter().postMessage({
-      id: body.id,
-      code: body.code,
-      name: body.name
-    } satisfies HighlightRequest)
+    waiting.set(id, resolve)
+    highlighter().postMessage({ id, code, name } satisfies HighlightRequest)
   })
 }
