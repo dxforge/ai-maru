@@ -50,11 +50,11 @@ export async function fileDoc(path: string, line?: number): Promise<CanvasDoc | 
   const ext = extname(path).toLowerCase()
   if (ext === '.md') {
     const text = withoutBom(await readFile(path, 'utf8'))
-    return { id: path, kind: 'markdown', text, title: basename(path), path }
+    return { id: path, kind: 'markdown', text, path }
   }
   if (ext === '.mmd' || ext === '.mermaid') {
     const text = mermaidDoc(withoutBom(await readFile(path, 'utf8')))
-    return { id: path, kind: 'markdown', text, title: basename(path), path }
+    return { id: path, kind: 'markdown', text, path }
   }
   const mime = imageType(path)
   if (mime) return imageFile(path, mime)
@@ -65,10 +65,14 @@ export async function fileDoc(path: string, line?: number): Promise<CanvasDoc | 
   return { id: path, kind: 'code', name, text, path, ...(line ? { line } : {}) }
 }
 
-/** `fileDoc` 과 같고, 그릴 수 없으면 null 이다. 링크는 그런 파일을 다른 앱으로 연다. */
+/**
+ * 링크로 여는 문서. `fileDoc` 에 마크다운이면 파일 이름 제목을 붙이고, 그릴 수 없으면 null 이다. 링크로 연 마크다운은
+ * 첫 제목보다 파일 이름을 보이고, 그릴 수 없는 파일은 다른 앱으로 열기 때문이다.
+ */
 export async function canvasDocFor(path: string, line?: number): Promise<CanvasDoc | null> {
   const doc = await fileDoc(path, line)
-  return typeof doc === 'string' ? null : doc
+  if (typeof doc === 'string') return null
+  return doc.kind === 'markdown' ? { ...doc, title: basename(path) } : doc
 }
 
 // mermaid 파일은 그 원문 하나만 든 mermaid 코드 블록으로 연다. 펜스는 원문에서 가장 길게 이어진 backtick 보다 한 개
@@ -205,8 +209,7 @@ export function canvasPut(
 
 /**
  * `canvas.put` 이 `path` 로 넣는 문서. 링크와 같은 `fileDoc` 으로 만들고, 그릴 수 없으면 InvalidParams 로 그 이유를 알린다.
- * `fileDoc` 이 넣은 파일 이름 제목은 뺀다. `--title` 이 없으면 마크다운은 첫 제목이 먼저이고, 첫 제목이 없을 때만
- * renderer 가 `path` 의 파일 이름을 보이기 때문이다.
+ * 제목은 붙이지 않는다 — `--title` 이 없으면 renderer 가 마크다운의 첫 제목, 없으면 `path` 의 파일 이름을 보인다.
  */
 async function putFileDoc(path: string): Promise<CanvasDoc> {
   const info = await stat(path).catch(() => null)
@@ -214,9 +217,7 @@ async function putFileDoc(path: string): Promise<CanvasDoc> {
   if (!info.isFile()) throw new InvalidParams(`${path} is not a file`)
   const doc = await fileDoc(path).catch(() => `cannot read ${path}`)
   if (typeof doc === 'string') throw new InvalidParams(doc)
-  if (extname(path).toLowerCase() === '.md' && doc.kind === 'markdown' && !/\S/.test(doc.text)) {
-    throw new InvalidParams(`${path} is empty`)
-  }
-  delete doc.title
+  // `.mmd` 는 늘 펜스가 들어 비지 않으므로 이 검사는 `.md` 만 거른다.
+  if (doc.kind === 'markdown' && !/\S/.test(doc.text)) throw new InvalidParams(`${path} is empty`)
   return doc
 }

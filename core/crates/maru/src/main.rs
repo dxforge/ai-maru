@@ -1390,19 +1390,14 @@ fn canvas_put(id: Option<String>, title: Option<String>, file: Option<PathBuf>) 
     // 앱 터미널 밖이면 끝나지 않는 입력을 읽기 전에 실패해야 한다.
     let target = target()?;
     let mut params = Map::new();
-    match file.filter(|f| f.as_os_str() != "-") {
-        Some(path) => params.insert("path".into(), file_path(&path)?.into()),
-        None => params.insert(
-            "text".into(),
-            markdown(
-                "stdin",
-                read_stdin(
-                    "give a FILE or pipe markdown into stdin, e.g. `maru canvas put note.md`",
-                )?,
-            )?
-            .into(),
-        ),
+    let (key, value) = match file.filter(|f| f.as_os_str() != "-") {
+        Some(path) => ("path", file_path(&path)?),
+        None => {
+            let hint = "give a FILE or pipe markdown into stdin, e.g. `maru canvas put note.md`";
+            ("text", markdown(read_stdin(hint)?)?)
+        }
     };
+    params.insert(key.into(), value.into());
     if let Some(id) = id {
         params.insert("id".into(), id.into());
     }
@@ -1431,27 +1426,15 @@ fn file_path(path: &Path) -> Result<String> {
     }
 }
 
-fn markdown(source: &str, mut text: String) -> Result<String> {
+fn markdown(mut text: String) -> Result<String> {
     // marked 는 BOM 뒤의 `#` 을 제목으로 읽지 않는다.
     if text.starts_with('\u{feff}') {
         text.drain(..'\u{feff}'.len_utf8());
     }
     if text.trim().is_empty() {
-        bail!("{source} is empty");
+        bail!("stdin is empty");
     }
     Ok(text)
-}
-
-fn read_text(source: &str, input: impl Read) -> Result<String> {
-    let mut bytes = Vec::new();
-    input
-        .take(MAX_LINE + 1)
-        .read_to_end(&mut bytes)
-        .with_context(|| format!("cannot read {source}"))?;
-    if bytes.len() as u64 > MAX_LINE {
-        bail!("{source} is larger than the 16 MiB the app accepts");
-    }
-    String::from_utf8(bytes).map_err(|_| anyhow!("{source} is not UTF-8"))
 }
 
 fn read_stdin(hint: &str) -> Result<String> {
@@ -1459,7 +1442,15 @@ fn read_stdin(hint: &str) -> Result<String> {
     if stdin.is_terminal() {
         bail!("{hint}");
     }
-    read_text("stdin", stdin)
+    let mut bytes = Vec::new();
+    stdin
+        .take(MAX_LINE + 1)
+        .read_to_end(&mut bytes)
+        .context("cannot read stdin")?;
+    if bytes.len() as u64 > MAX_LINE {
+        bail!("stdin is larger than the 16 MiB the app accepts");
+    }
+    String::from_utf8(bytes).map_err(|_| anyhow!("stdin is not UTF-8"))
 }
 
 fn inbox_push(to: String, message: Option<String>) -> Result<()> {

@@ -399,12 +399,8 @@ fn canvas_put_sends_a_file_as_its_absolute_path_and_ignores_stdin() {
 fn canvas_put_joins_a_relative_file_to_the_cwd_without_reading_it_or_resolving_links() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    // 앱이 읽으므로 마크다운이 아니어도, 16 MiB 를 넘어도 그대로 경로만 보낸다.
-    std::fs::write(
-        tmp.path().join("shot.png"),
-        vec![0xff; 16 * 1024 * 1024 + 1],
-    )
-    .unwrap();
+    // 앱이 읽으므로 UTF-8 이 아니어도 그대로 경로만 보낸다. 읽었다면 이 바이트에서 실패한다.
+    std::fs::write(tmp.path().join("shot.png"), [0xff]).unwrap();
     std::fs::create_dir(tmp.path().join("sub")).unwrap();
     std::os::unix::fs::symlink(tmp.path().join("shot.png"), tmp.path().join("link.png")).unwrap();
     // 프로세스의 cwd 는 `/tmp` 가 풀린 `/private/tmp` 아래다. 터미널 링크도 그 cwd 를 기준으로 연다.

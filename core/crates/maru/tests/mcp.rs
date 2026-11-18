@@ -203,12 +203,8 @@ fn relays_each_message_as_an_mcp_message_request_and_writes_the_reply() {
 fn sends_a_relative_file_as_its_absolute_path_without_reading_it() {
     let tmp = tmpdir();
     let sock = sock_in(&tmp);
-    // 앱이 읽으므로 마크다운이 아니어도, 16 MiB 를 넘어도 그대로 경로만 보낸다.
-    std::fs::write(
-        tmp.path().join("shot.png"),
-        vec![0xff; 16 * 1024 * 1024 + 1],
-    )
-    .unwrap();
+    // 앱이 읽으므로 UTF-8 이 아니어도 그대로 경로만 보낸다. 읽었다면 이 바이트에서 실패한다.
+    std::fs::write(tmp.path().join("shot.png"), [0xff]).unwrap();
     std::fs::create_dir(tmp.path().join("sub")).unwrap();
     let app = serve(&sock, 1, echo());
     let mut mcp = Mcp::spawn(Some(&sock), tmp.path());
