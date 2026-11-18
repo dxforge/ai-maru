@@ -21,6 +21,7 @@ import {
   openCanvas,
   OVERLAY_SCROLLBARS,
   putCanvas,
+  settled,
   resizeBy,
   rows,
   run,
@@ -116,7 +117,9 @@ test('새 문서는 펼친 채 맨 위에 쌓이고, 제목 줄과 모두 접기
   await expect(titles(page)).toHaveText(['A'])
 })
 
-test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 새 그림으로 바뀐다', async ({ launch }) => {
+test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 앞 그림의 확대·축소 없이 새 그림으로 바뀐다', async ({
+  launch
+}) => {
   const { app, page } = await launch()
   const image = page.locator('.canvas .image')
   const naturalWidth = () => image.evaluate((img: HTMLImageElement) => img.naturalWidth)
@@ -130,6 +133,12 @@ test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 새 그�
   })
   await expect(titles(page)).toHaveText(['shot.svg'])
   await expect.poll(naturalWidth).toBe(40)
+  const bar = page.locator('.canvas .zoom-bar')
+  await image.hover()
+  await bar.getByRole('button', { name: 'Zoom in' }).click()
+  await expect(bar.getByRole('button', { name: 'Reset zoom' })).toHaveText('110%')
+  // 커서가 패널 안에 있으면 새로 온 문서를 끼우지 않고 쌓아 두므로 밖으로 뺀다.
+  await leavePanel(page)
 
   await putCanvas(app, {
     id: 'i',
@@ -140,6 +149,11 @@ test('이미지를 넣으면 띄우고, 같은 id 로 다시 넣으면 새 그�
   })
   await expect.poll(naturalWidth).toBe(60)
   await expect(titles(page)).toHaveCount(1)
+  await expect(bar).toHaveCount(1)
+  await image.hover()
+  await expect(bar.getByRole('button', { name: 'Reset zoom' })).toHaveText('100%')
+  await expect(image).not.toHaveAttribute('style', /width/)
+  await expect(page.locator('.canvas .zoom-view')).not.toHaveAttribute('style', /height/)
 })
 
 test('닫으면 셸이 보는 폭이 넓어지고, panel bar 의 Canvas 아이콘을 누르거나 문서가 오면 다시 열린다', async ({
@@ -535,7 +549,7 @@ test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에�
   await putCanvas(app, { id: 'a', kind: 'markdown', text: WIDE })
   await expect(diagrams(page)).toHaveCount(1)
   const svg = diagrams(page).first()
-  const view = markdown(page).locator('.diagram-view')
+  const view = markdown(page).locator('.zoom-view')
   const rect = async () => (await svg.boundingBox())!
   const natural = Number(await svg.getAttribute('width'))
   const height = Number(await svg.getAttribute('height'))
@@ -551,7 +565,7 @@ test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에�
   const box = (await view.boundingBox())!
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 
-  const bar = markdown(page).locator('.diagram-zoom')
+  const bar = markdown(page).locator('.zoom-bar')
   await expect(bar).toBeHidden()
   await svg.hover()
   await expect(bar).toBeVisible()
@@ -586,6 +600,62 @@ test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에�
   expect(await scroll()).toEqual([left! + 40, top! + 20])
 })
 
+test('카드보다 큰 이미지는 카드 너비에 맞춰 보이고, 버튼으로 블록 높이를 바꾸지 않고 확대해 끌어서 옮기며, 배율 버튼은 100% 로 갔다가 다시 누르면 맞춘 크기로 돌아간다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, {
+    id: 'i',
+    kind: 'image',
+    name: 'wide.svg',
+    mime: 'image/svg+xml',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="600"><rect width="100%" height="100%" fill="red"/></svg>'
+  })
+  const img = page.locator('.canvas .image')
+  const view = page.locator('.canvas .image-doc .zoom-view')
+  const bar = page.locator('.canvas .image-doc .zoom-bar')
+  const reset = bar.getByRole('button', { name: 'Reset zoom' })
+  const width = async () => (await img.boundingBox())!.width
+  const viewHeight = async () => (await view.boundingBox())!.height
+  await expect(bar).toHaveCount(1)
+  const fit = await settled(width)
+  expect(fit).toBeLessThan(2000)
+  expect(fit).toBeCloseTo((await view.boundingBox())!.width, 0)
+  const fitHeight = await viewHeight()
+  expect(fitHeight).toBeCloseTo(fit * 0.3, 0)
+
+  await expect(bar).toBeHidden()
+  await img.hover()
+  await expect(bar).toBeVisible()
+  await expect(reset).toHaveText(`${Math.round((fit / 2000) * 100)}%`)
+  await bar.getByRole('button', { name: 'Zoom in' }).click()
+  const zoomed = await width()
+  expect(zoomed).toBeGreaterThan(fit)
+  await expect(reset).toHaveText(`${Math.round((zoomed / 2000) * 100)}%`)
+  expect(await viewHeight()).toBeCloseTo(fitHeight, 0)
+  await expect(view).toHaveClass(/pannable/)
+
+  const box = (await view.boundingBox())!
+  const scroll = () => view.evaluate((v) => [v.scrollLeft, v.scrollTop])
+  const [left, top] = await scroll()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 - 40, box.y + box.height / 2 - 10, { steps: 4 })
+  await page.mouse.up()
+  expect(await scroll()).toEqual([left! + 40, top! + 10])
+
+  await img.hover()
+  await reset.click()
+  await expect(reset).toHaveText('100%')
+  expect(await width()).toBeCloseTo(2000, 0)
+  expect(await viewHeight()).toBeCloseTo(fitHeight, 0)
+  await reset.click()
+  expect(await width()).toBeCloseTo(fit, 0)
+  expect(await viewHeight()).toBeCloseTo(fitHeight, 0)
+  await expect(view).not.toHaveAttribute('style', /height/)
+  await expect(reset).toHaveText(`${Math.round((fit / 2000) * 100)}%`)
+})
+
 test('확대·축소 버튼은 블록에 보이는 영역의 가운데를 중심으로 하고, 블록보다 작아진 다이어그램은 블록 가운데에 둔다', async ({
   launch
 }) => {
@@ -601,7 +671,7 @@ test('확대·축소 버튼은 블록에 보이는 영역의 가운데를 중심
   const boxes = markdown(page).locator('.diagram')
   const state = (i: number) =>
     boxes.nth(i).evaluate((box) => {
-      const view = box.querySelector<HTMLElement>('.diagram-view')!
+      const view = box.querySelector<HTMLElement>('.zoom-view')!
       const v = view.getBoundingClientRect()
       const s = view.querySelector('svg')!.getBoundingClientRect()
       return {
@@ -641,7 +711,7 @@ test('확대·축소 버튼은 블록에 보이는 영역의 가운데를 중심
 
   await boxes
     .nth(1)
-    .locator('.diagram-view')
+    .locator('.zoom-view')
     .evaluate((v) => {
       v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2
     })
@@ -1022,7 +1092,7 @@ test('고전 스크롤바 설정에서 다이어그램 블록의 스크롤바 �
   const { app, page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
   await putCanvas(app, { id: 'a', kind: 'markdown', text: WIDE })
   await expect(diagrams(page)).toHaveCount(1)
-  const view = markdown(page).locator('.diagram-view')
+  const view = markdown(page).locator('.zoom-view')
   await diagrams(page).first().hover()
   await expect(view).toHaveAttribute('data-overlayscrollbars')
   await expect(view).toHaveClass(/pannable/)
@@ -1037,6 +1107,35 @@ test('고전 스크롤바 설정에서 다이어그램 블록의 스크롤바 �
   expect(await view.evaluate((v) => v.classList.contains('dragging'))).toBe(false)
   await page.mouse.up()
   expect(await left()).toBeGreaterThan(60)
+})
+
+test('고전 스크롤바 설정에서 이미지 블록도 포인터가 들어오면 스크롤바를 씌우고, 같은 id 로 바뀐 이미지에도 씌운다', async ({
+  launch
+}) => {
+  const { app, page } = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  const view = page.locator('.canvas .image-doc .zoom-view')
+  const put = (width: number) =>
+    putCanvas(app, {
+      id: 'i',
+      kind: 'image',
+      name: 'shot.svg',
+      mime: 'image/svg+xml',
+      svg: svg(width)
+    })
+
+  await put(2000)
+  await expect(view).toHaveCount(1)
+  await view.hover()
+  await expect(view).toHaveAttribute('data-overlayscrollbars')
+
+  await leavePanel(page)
+  await put(3000)
+  await expect
+    .poll(() => view.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBe(3000)
+  await expect(view).not.toHaveAttribute('data-overlayscrollbars')
+  await view.hover()
+  await expect(view).toHaveAttribute('data-overlayscrollbars')
 })
 
 test('overlay 스크롤바 설정에서는 Canvas 가 시스템 스크롤바를 그대로 쓴다', async ({ launch }) => {

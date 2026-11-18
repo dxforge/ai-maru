@@ -10,6 +10,13 @@ describe('stepZoom', () => {
     expect(stepZoom(0.25, -1)).toBe(0.25)
   })
 
+  it('범위 밖의 배율에서는 범위 쪽 끝 단계로 가고, 범위 밖으로는 더 가지 않는다', () => {
+    expect(stepZoom(0.12, 1)).toBe(0.25)
+    expect(stepZoom(0.12, -1)).toBe(0.12)
+    expect(stepZoom(7, -1)).toBe(5)
+    expect(stepZoom(7, 1)).toBe(7)
+  })
+
   it('단계 사이의 배율에서는 그 방향의 가장 가까운 단계로 간다', () => {
     expect(stepZoom(1.05, 1)).toBe(1.1)
     expect(stepZoom(1.05, -1)).toBe(1)
@@ -40,6 +47,14 @@ describe('wheelZoom', () => {
   it('단계의 끝을 넘지 않는다', () => {
     expect(wheelZoom(4, -1000, 100)).toBe(5)
     expect(wheelZoom(0.3, 1000, 100)).toBe(0.25)
+  })
+
+  it('범위 밖의 배율에서는 범위 쪽으로만 움직인다', () => {
+    expect(wheelZoom(0.12, 100, 100)).toBe(0.12)
+    expect(wheelZoom(0.12, -100, 100)).toBeCloseTo(0.12 * Math.E)
+    expect(wheelZoom(0.12, -1000, 100)).toBe(5)
+    expect(wheelZoom(7, -100, 100)).toBe(7)
+    expect(wheelZoom(7, 100, 100)).toBeCloseTo(7 / Math.E)
   })
 })
 

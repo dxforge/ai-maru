@@ -1,4 +1,7 @@
-/** 버튼으로 오가는 배율이다. Chromium 의 페이지 확대 단계와 같다. 끝 값이 확대·축소의 한계다. */
+/**
+ * 버튼으로 오가는 배율이다. Chromium 의 페이지 확대 단계와 같다. 끝 값이 확대·축소의 한계다. 이 범위 밖의 배율(카드에
+ * 맞춘 이미지)에서는 범위 쪽으로만 움직인다.
+ */
 export const ZOOM_STEPS: readonly number[] = [
   0.25,
   1 / 3,
@@ -26,8 +29,8 @@ const EPSILON = 1e-6
 
 /** `scale` 에서 한 단계 크거나(`1`) 작은(`-1`) 배율. 단계 사이의 배율이면 그 방향의 가장 가까운 단계로 간다. */
 export function stepZoom(scale: number, direction: 1 | -1): number {
-  if (direction > 0) return ZOOM_STEPS.find((s) => s > scale + EPSILON) ?? MAX
-  return ZOOM_STEPS.findLast((s) => s < scale - EPSILON) ?? MIN
+  if (direction > 0) return ZOOM_STEPS.find((s) => s > scale + EPSILON) ?? Math.max(scale, MAX)
+  return ZOOM_STEPS.findLast((s) => s < scale - EPSILON) ?? Math.min(scale, MIN)
 }
 
 /**
@@ -44,7 +47,8 @@ export const WHEEL_SPAN = 500
 export const PINCH_SPAN = 200
 
 export function wheelZoom(scale: number, deltaY: number, span: number): number {
-  return Math.min(MAX, Math.max(MIN, scale * Math.exp(-deltaY / span)))
+  const next = scale * Math.exp(-deltaY / span)
+  return Math.min(Math.max(MAX, scale), Math.max(Math.min(MIN, scale), next))
 }
 
 export function zoomLabel(scale: number): string {

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
 import { BlockHighlighter, hasCodeBlock } from '../canvas/codeBlocks'
 import { drawDiagrams, hasDiagram } from '../canvas/diagrams'
 import { fillBody } from '../canvas/fill'
+import { zoomImage } from '../canvas/zoomBox'
 import { loadMermaid } from '../canvas/mermaid'
 import { bodyOf, codeBodyOf, type CanvasEntry } from '../canvas/store'
 import { prefersDark } from '../colorScheme'
@@ -19,7 +20,7 @@ const root = useTemplateRef<HTMLElement>('root')
 const body = computed(() => bodyOf(doc))
 const first = computed(() => body.value?.html(0) ?? '')
 const code = computed(() => codeBodyOf(doc))
-// 요소가 바뀌거나 사라지면(같은 id 로 이미지가 오면 이 컴포넌트는 남고 요소만 사라진다) 앞 요소에 붙이던 것을 멈춘다.
+// 요소가 바뀌거나 사라지면(같은 id 로 이미지가 오면 이 컴포넌트는 남고 요소가 이미지 요소로 바뀐다) 앞 요소에 붙이던 것을 멈춘다.
 let stop: (() => void) | undefined
 let blocks: BlockHighlighter | undefined
 function reset(): void {
@@ -62,7 +63,7 @@ function hover(e: PointerEvent): void {
   const target = e.target as Element
   const pre = target.closest<HTMLElement>('pre')
   if (pre) scrollbars.attach(pre)
-  const view = target.closest<HTMLElement>('.diagram-view')
+  const view = target.closest<HTMLElement>('.zoom-view')
   if (view) scrollbars.attach(view, 'both')
 }
 onBeforeUnmount(reset)
@@ -74,14 +75,35 @@ onBeforeUnmount(reset)
     v-if="doc.kind === 'markdown'"
     :key="body?.id"
     ref="root"
-    class="markdown"
+    class="markdown zoomable"
     :class="{ classic }"
     @pointerover="hover"
     v-html="first"
   />
   <!-- eslint-enable vue/no-v-html -->
   <CodeView v-else-if="code" :key="code.id" :body="code" />
-  <img v-else-if="doc.kind === 'image'" class="image" :src="doc.url" :alt="doc.title" />
+  <!-- 같은 id 로 다른 이미지가 오면 `doc.url` 을 key 로 새 요소에 그린다. 앞 이미지에 붙인 확대·축소를 남기지 않기 위해서다.
+       이미지 요소에도 `ref="root"` 를 다는 것은, `root` 가 바뀌면 `watch(root)` 의 `reset()` 이 앞 이미지에 씌운 스크롤바를
+       해제하기 때문이다. -->
+  <div
+    v-else-if="doc.kind === 'image'"
+    :key="doc.url"
+    ref="root"
+    class="image-doc zoomable"
+    :class="{ classic }"
+    @pointerover="hover"
+  >
+    <div class="zoom">
+      <div class="zoom-view">
+        <img
+          class="image"
+          :src="doc.url"
+          :alt="doc.title"
+          @load="zoomImage($event.target as HTMLImageElement)"
+        />
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -110,7 +132,7 @@ onBeforeUnmount(reset)
 
 /* 고전 스크롤바 설정에서 스크롤바를 씌우기 전의 블록이 시스템 스크롤바로 높이를 바꾸지 않게 한다. */
 .markdown.classic :deep(pre),
-.markdown.classic :deep(.diagram-view) {
+.zoomable.classic :deep(.zoom-view) {
   scrollbar-width: none;
 }
 
@@ -153,31 +175,31 @@ onBeforeUnmount(reset)
   border: 1px solid var(--line);
 }
 
-.markdown :deep(.diagram) {
+.zoomable :deep(.zoom) {
   position: relative;
 }
 
-/* 블록보다 작은 다이어그램은 가로·세로 가운데에 두고, 크면 블록 안에서 스크롤한다. flex 의 auto margin 은 넘칠 때 0 이
+/* 블록보다 작은 그림(다이어그램·이미지)은 가로·세로 가운데에 두고, 크면 블록 안에서 스크롤한다. flex 의 auto margin 은 넘칠 때 0 이
    되어 왼쪽·위 끝까지 스크롤할 수 있다. */
-.markdown :deep(.diagram-view) {
+.zoomable :deep(.zoom-view) {
   display: flex;
   overflow: auto;
 }
 
-.markdown :deep(.diagram-view.pannable) {
+.zoomable :deep(.zoom-view.pannable) {
   cursor: grab;
 }
 
-.markdown :deep(.diagram-view.dragging) {
+.zoomable :deep(.zoom-view.dragging) {
   cursor: grabbing;
 }
 
-.markdown :deep(.diagram-view svg) {
+.zoomable :deep(.zoom-view > *) {
   flex: none;
   margin: auto;
 }
 
-.markdown :deep(.diagram-zoom) {
+.zoomable :deep(.zoom-bar) {
   position: absolute;
   top: var(--space-2);
   right: var(--space-2);
@@ -192,11 +214,11 @@ onBeforeUnmount(reset)
   visibility: hidden;
 }
 
-.markdown :deep(.diagram:hover .diagram-zoom) {
+.zoomable :deep(.zoom:hover .zoom-bar) {
   visibility: visible;
 }
 
-.markdown :deep(.diagram-zoom button) {
+.zoomable :deep(.zoom-bar button) {
   font: inherit;
   color: inherit;
   background: none;
@@ -205,11 +227,11 @@ onBeforeUnmount(reset)
 }
 
 /* 위의 `background: none` 이 `.icon-button:hover` 보다 앞서므로 hover 색을 다시 둔다. */
-.markdown :deep(.diagram-zoom button:hover) {
+.zoomable :deep(.zoom-bar button:hover) {
   background: var(--hover);
 }
 
-.markdown :deep(.diagram-zoom-reset) {
+.zoomable :deep(.zoom-reset) {
   width: auto;
   min-width: 36px;
   padding: 0 var(--space-2);

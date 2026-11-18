@@ -1,13 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  anchorScroll,
-  drawDiagrams,
-  errorLine,
-  hasDiagram,
-  naturalSize,
-  type DiagramCache
-} from './diagrams'
+import { drawDiagrams, errorLine, hasDiagram, naturalSize, type DiagramCache } from './diagrams'
 import { prepareMarkdown, renderPart } from './markdown'
 import { PINCH_SPAN, WHEEL_SPAN } from './zoom'
 
@@ -53,7 +46,7 @@ describe('drawDiagrams', () => {
     ])
     const pres = [...el.querySelectorAll('pre')]
     expect(pres.map((p) => p.hidden)).toEqual([true, false, true])
-    expect(pres[0]!.nextElementSibling!.className).toBe('diagram')
+    expect(pres[0]!.nextElementSibling!.classList.contains('diagram')).toBe(true)
     expect(pres[1]!.nextElementSibling!.tagName).toBe('PRE')
     expect(render).toHaveBeenCalledTimes(2)
   })
@@ -180,7 +173,7 @@ describe('다이어그램 확대·축소', () => {
     await drawDiagrams(el, cache, false, load)
     const box = el.querySelector<HTMLElement>('.diagram')!
     const svg = box.querySelector<SVGElement>('svg')!
-    const [out, reset, into] = [...box.querySelectorAll<HTMLButtonElement>('.diagram-zoom button')]
+    const [out, reset, into] = [...box.querySelectorAll<HTMLButtonElement>('.zoom-bar button')]
     const size = () => [svg.style.width, svg.style.height, reset!.textContent]
     return { el, cache, load, box, svg, out: out!, reset: reset!, into: into!, size }
   }
@@ -229,7 +222,7 @@ describe('다이어그램 확대·축소', () => {
 
   it('확대·축소해도 블록 높이는 100% 일 때의 다이어그램 높이 그대로다', async () => {
     const { box, into, out, size } = await drawn()
-    const view = box.querySelector<HTMLElement>('.diagram-view')!
+    const view = box.querySelector<HTMLElement>('.zoom-view')!
     expect(view.style.height).toBe('100px')
     into.click()
     into.click()
@@ -248,14 +241,14 @@ describe('다이어그램 확대·축소', () => {
     const svg = el.querySelector<SVGElement>('.diagram svg')!
     expect(svg.getAttribute('data-dark')).toBe('true')
     expect(svg.style.width).toBe('220px')
-    expect(el.querySelector('.diagram-zoom-reset')!.textContent).toBe('110%')
+    expect(el.querySelector('.zoom-reset')!.textContent).toBe('110%')
   })
 
   describe('끌어서 스크롤', () => {
     // jsdom 은 레이아웃이 없어 넘치는지를 크기로 정해 준다.
     const pannable = async (overflows: boolean) => {
       const { box } = await drawn()
-      const view = box.querySelector<HTMLElement>('.diagram-view')!
+      const view = box.querySelector<HTMLElement>('.zoom-view')!
       Object.defineProperties(view, {
         scrollWidth: { value: overflows ? 400 : 200 },
         clientWidth: { value: 200 },
@@ -305,7 +298,7 @@ describe('다이어그램 확대·축소', () => {
     const el = doc(block('graph A'))
     await drawDiagrams(el, new Map(), false, async () => async () => '<svg width="100%"></svg>')
     expect(el.querySelector('.diagram svg')!.getAttribute('style')).toBeNull()
-    expect(el.querySelector('.diagram-zoom')).toBeNull()
+    expect(el.querySelector('.zoom-bar')).toBeNull()
   })
 })
 
@@ -363,18 +356,5 @@ describe('errorLine', () => {
     ).toBe('Parsing failed: unexpected character: ->x<- at offset: 12, skipped 1 characters.')
     expect(errorLine('plain')).toBe('plain')
     expect(errorLine(new Error(''))).toBe('Unable to render the diagram')
-  })
-})
-
-describe('anchorScroll', () => {
-  it('배율을 바꾼 뒤에도 at 에 있던 다이어그램의 점이 at 에 오도록 옮길 양을 낸다', () => {
-    // 다이어그램이 (100, 50) 에 있고 (150, 70) 을 기준으로 두 배 했더니, 레이아웃이 다이어그램을 (90, 40) 으로 옮겼다.
-    const by = anchorScroll({ left: 100, top: 50 }, { left: 90, top: 40 }, { x: 150, y: 70 }, 2)
-    // 그 점은 다이어그램 안 (50, 20) 이었고 두 배 뒤에는 (100, 40), 화면으로 (190, 80) 이다.
-    expect(by).toEqual({ x: 40, y: 10 })
-    expect(anchorScroll({ left: 0, top: 0 }, { left: 0, top: 0 }, { x: 30, y: 30 }, 1)).toEqual({
-      x: 0,
-      y: 0
-    })
   })
 })

@@ -1,5 +1,4 @@
-import { listenWindowPointer } from '../windowPointer'
-import { PINCH_SPAN, stepZoom, WHEEL_SPAN, wheelZoom, zoomLabel } from './zoom'
+import { attachZoom } from './zoomBox'
 
 export type Diagram = { svg: string } | { error: string }
 
@@ -75,81 +74,25 @@ export async function drawDiagrams(
 const zooms = new WeakMap<Element, number>()
 
 /**
- * SVG 를 mermaid 가 정한 크기로 담고, 확대·축소 버튼과 ⌘+휠·핀치 확대·축소를 붙인 블록을 만든다. 블록 높이는 100% 일
- * 때의 다이어그램 높이로 고정하므로, 확대·축소해도 아래 글이 밀리지 않는다. 크기를 알 수 없는 SVG 는 버튼 없이 그대로
- * 넣는다.
+ * SVG 를 mermaid 가 정한 크기로 담고 확대·축소(`attachZoom`)를 붙인 블록을 만든다. 블록 높이는 100% 일 때의 다이어그램
+ * 높이로 고정한다.
  */
 function diagramBox(svg: string, scale: number): HTMLElement {
   const out = document.createElement('div')
-  out.className = 'diagram'
+  out.className = 'diagram zoom'
   const view = document.createElement('div')
-  view.className = 'diagram-view'
+  view.className = 'zoom-view'
   view.innerHTML = svg
   dropTopLayer(view)
   out.append(view)
   const graphic = view.querySelector('svg')
   const size = graphic && naturalSize(graphic)
   if (!graphic || !size) return out
-  view.style.height = `${size.height}px`
-  graphic.style.maxWidth = 'none'
-
-  const bar = document.createElement('div')
-  bar.className = 'diagram-zoom'
-  // Canvas 의 다른 버튼처럼 눌러도 터미널 등 포커스를 가진 요소를 blur 하지 않는다.
-  bar.addEventListener('mousedown', (e) => e.preventDefault())
-  const button = (
-    text: string,
-    label: string,
-    next: () => number,
-    className = 'icon-button'
-  ): HTMLButtonElement => {
-    const b = document.createElement('button')
-    b.type = 'button'
-    b.className = className
-    b.textContent = text
-    b.setAttribute('aria-label', label)
-    b.addEventListener('click', () => zoomTo(next()))
-    bar.append(b)
-    return b
-  }
-  button('−', 'Zoom out', () => stepZoom(scale, -1))
-  const reset = button('', 'Reset zoom', () => 1, 'icon-button diagram-zoom-reset')
-  button('+', 'Zoom in', () => stepZoom(scale, 1))
-  out.append(bar)
-
-  const apply = (): void => {
-    graphic.style.width = `${size.width * scale}px`
-    graphic.style.height = `${size.height * scale}px`
-    reset.textContent = zoomLabel(scale)
-    zooms.set(out, scale)
-  }
-  // `at` 에 있던 다이어그램의 점을 그 자리에 둔다. 버튼은 블록에 보이는 영역의 가운데를 쓴다.
-  const zoomTo = (next: number, at?: { x: number; y: number }): void => {
-    const before = graphic.getBoundingClientRect()
-    const box = view.getBoundingClientRect()
-    const x = at?.x ?? box.left + box.width / 2
-    const y = at?.y ?? box.top + box.height / 2
-    const ratio = next / scale
-    scale = next
-    apply()
-    const by = anchorScroll(before, graphic.getBoundingClientRect(), { x, y }, ratio)
-    view.scrollLeft += by.x
-    view.scrollTop += by.y
-    markPannable(view)
-  }
-  out.addEventListener(
-    'wheel',
-    (e) => {
-      if (!e.ctrlKey && !e.metaKey) return
-      e.preventDefault()
-      // 핀치는 `ctrlKey` 만 켜진 wheel 로 온다.
-      const span = e.metaKey ? WHEEL_SPAN : PINCH_SPAN
-      zoomTo(wheelZoom(scale, e.deltaY, span), { x: e.clientX, y: e.clientY })
-    },
-    { passive: false }
-  )
-  dragToScroll(view)
-  apply()
+  attachZoom(out, view, graphic, size, {
+    scale,
+    reset: () => 1,
+    changed: (s) => zooms.set(out, s ?? 1)
+  })
   return out
 }
 
@@ -161,57 +104,6 @@ function dropTopLayer(root: Element): void {
   for (const d of root.querySelectorAll('dialog')) d.remove()
   for (const el of root.querySelectorAll(TOP_LAYER_ATTRS.map((a) => `[${a}]`).join(',')))
     for (const a of TOP_LAYER_ATTRS) el.removeAttribute(a)
-}
-
-/**
- * 다이어그램이 블록보다 클 때 끌어서 블록 안을 스크롤한다. 끄는 동안 글자를 선택하거나 포커스를 옮기지 않는다. 끌 수 있는
- * 동안은 `pannable` 을 붙여 포인터 모양으로 알린다. 넘치는지는 포인터가 들어올 때와 배율을 바꾼 뒤(`markPannable`)에 잰다.
- */
-function dragToScroll(view: HTMLElement): void {
-  view.addEventListener('pointerenter', () => markPannable(view))
-  view.addEventListener('pointerdown', (e) => {
-    // 고전 스크롤바 설정에서 블록에 씌운 스크롤바(`.os-scrollbar`)를 누르면 다이어그램을 끌지 않고 스크롤바가 받게 둔다.
-    if (e.button !== 0 || (e.target as Element).closest('.os-scrollbar') || !markPannable(view))
-      return
-    e.preventDefault()
-    view.setPointerCapture(e.pointerId)
-    view.classList.add('dragging')
-    let { clientX: x, clientY: y } = e
-    const off = listenWindowPointer(
-      (m) => {
-        view.scrollLeft -= m.clientX - x
-        view.scrollTop -= m.clientY - y
-        x = m.clientX
-        y = m.clientY
-      },
-      () => {
-        view.classList.remove('dragging')
-        off()
-      }
-    )
-  })
-}
-
-/**
- * 배율을 `ratio` 배 바꿔 다이어그램의 화면 위치가 `before` 에서 `after` 로 옮겨졌을 때, 화면 좌표 `at` 에 있던 다이어그램의
- * 점을 다시 그 자리에 두려면 스크롤을 얼마나 옮겨야 하는지.
- */
-export function anchorScroll(
-  before: { left: number; top: number },
-  after: { left: number; top: number },
-  at: { x: number; y: number },
-  ratio: number
-): { x: number; y: number } {
-  return {
-    x: after.left + (at.x - before.left) * ratio - at.x,
-    y: after.top + (at.y - before.top) * ratio - at.y
-  }
-}
-
-function markPannable(view: HTMLElement): boolean {
-  const overflows = view.scrollWidth > view.clientWidth || view.scrollHeight > view.clientHeight
-  view.classList.toggle('pannable', overflows)
-  return overflows
 }
 
 export function naturalSize(svg: Element): { width: number; height: number } | null {
