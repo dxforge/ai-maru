@@ -10,7 +10,7 @@ export type PaneTarget = { pane: string } | { pty: string }
 /**
  * `pane.new` 가 renderer 에 넘기는 요청. 나눌 pane 은 `--split` 으로 가리켰으면 `pane`, 아니면 부른 pty 의
  * pane(`pty`)이다. `full` 이면 그 pane 이 아니라 pane 이 든 cell 전체를 나눈다. `cell` 이 있으면 `pane`·`pty` 를 보지
- * 않고 그 id 의 cell 전체를 나눈다.
+ * 않고 그 id 의 cell 전체를 나눈다. `hidden` 이면 새 pane 을 숨긴 채 띄운다.
  */
 export type PaneNewRequest = PaneTarget & {
   cwd: string
@@ -18,6 +18,7 @@ export type PaneNewRequest = PaneTarget & {
   command?: string[]
   full: boolean
   cell?: string
+  hidden?: boolean
 }
 
 /**
@@ -45,6 +46,7 @@ export type PaneRow = {
   title: string
   dir: string
   message: string
+  hidden: boolean
 }
 
 /**

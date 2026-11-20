@@ -2117,3 +2117,165 @@ describe('즐겨찾기', () => {
     expect(stars(to)).toEqual([false, true])
   })
 })
+
+describe('숨긴 pane', () => {
+  /** pane 1·2·3 을 오른쪽으로 나눈 cell 하나와, pane 하나인 cell 둘. 첫 cell 을 고르고 3 에 포커스한다. */
+  function three() {
+    const ws = opened(3)
+    ws.select(keys(ws)[0])
+    ws.split('right')
+    ws.split('right')
+    const c = ws.cells()[0]
+    const [a, b, d] = c.panes.map((p) => p.key)
+    return { ws, c, a, b, d }
+  }
+
+  it('숨겨도 분할 트리와 pty 는 그대로고, 보이는 트리에서만 빠진다', () => {
+    const { ws, c, a, b, d } = three()
+    const layout = c.layout
+    const pty = c.panes[1].ptyId
+    ws.hidePane(b)
+    expect(c.layout).toEqual(layout)
+    expect(c.panes[1]).toMatchObject({ key: b, ptyId: pty, hidden: true })
+    expect(ws.visibleOf(c)).toEqual({ split: 'right', first: { pane: a }, second: { pane: d } })
+  })
+
+  it('포커스한 pane 을 숨기면 닫을 때처럼 보이는 이웃으로 포커스를 옮긴다', () => {
+    const { ws, c, a, b, d } = three()
+    ws.focusPane(b)
+    ws.hidePane(b)
+    expect(c.focused).toBe(d)
+    ws.hidePane(d)
+    expect(c.focused).toBe(a)
+  })
+
+  it('마지막 보이는 pane 을 숨기면 cell 이 숨겨지고, 고른 cell 이면 다음 보이는 cell 을 고른다', () => {
+    const { ws, c, a, b, d } = three()
+    const [, second, third] = keys(ws)
+    for (const p of [a, b, d]) ws.hidePane(p)
+    expect(ws.isHidden(c)).toBe(true)
+    expect(ws.visibleOf(c)).toBeNull()
+    expect(c.focused).toBe(d)
+    expect(ws.selectedKey.value).toBe(second)
+    ws.hidePane(ws.cells()[1].panes[0].key)
+    expect(ws.selectedKey.value).toBe(third)
+    ws.hidePane(ws.cells()[2].panes[0].key)
+    expect(ws.selectedKey.value).toBeNull()
+  })
+
+  it('뒤에 보이는 cell 이 없으면 앞의 보이는 cell 을 고른다', () => {
+    const ws = opened(3)
+    ws.hidePane(ws.cells()[1].panes[0].key)
+    ws.select(keys(ws)[2])
+    ws.hidePane(ws.cells()[2].panes[0].key)
+    expect(ws.selectedKey.value).toBe(keys(ws)[0])
+  })
+
+  it('꺼내면 원래 자리로 돌아오고 포커스와 선택을 받는다', () => {
+    const { ws, c, b } = three()
+    const layout = c.layout
+    ws.hidePane(b)
+    ws.select(keys(ws)[1])
+    ws.showPane(b)
+    expect(c.panes[1]).not.toHaveProperty('hidden')
+    expect(ws.visibleOf(c)).toEqual(layout)
+    expect(c.focused).toBe(b)
+    expect(ws.selectedKey.value).toBe(c.key)
+  })
+
+  it('stepPane·moveFocus 는 숨긴 pane 을 건너뛰고, step 은 숨긴 cell 을 건너뛴다', () => {
+    const { ws, c, a, b, d } = three()
+    ws.hidePane(b)
+    ws.focusPane(a)
+    ws.stepPane(1)
+    expect(c.focused).toBe(d)
+    ws.moveFocus('left')
+    expect(c.focused).toBe(a)
+    ws.hidePane(ws.cells()[1].panes[0].key)
+    expect(ws.step(1)).toBe(keys(ws)[2])
+    expect(ws.step(-1)).toBe(keys(ws)[2])
+    ws.select(keys(ws)[2])
+    ws.select(ws.stepPane(1)!)
+    expect(ws.selectedKey.value).toBe(c.key)
+    expect(c.focused).toBe(a)
+    ws.select(ws.stepPane(-1)!)
+    ws.select(ws.stepPane(-1)!)
+    expect(c.focused).toBe(d)
+  })
+
+  it('모든 cell 이 숨겨지면 step·stepPane 은 아무것도 주지 않는다', () => {
+    const ws = opened(2)
+    for (const c of ws.cells()) ws.hidePane(c.panes[0].key)
+    expect(ws.step(1)).toBeUndefined()
+    expect(ws.stepPane(1)).toBeUndefined()
+  })
+
+  it('보이는 트리로 크기를 바꾸면 전체 트리에 되쓴다', () => {
+    const { ws, c, a, b, d } = three()
+    ws.hidePane(b)
+    ws.resize(c.key, {
+      split: 'right',
+      first: { pane: a, weight: 3 },
+      second: { pane: d, weight: 1 }
+    })
+    ws.showPane(b)
+    expect(c.layout).toEqual({
+      split: 'right',
+      first: { pane: a, weight: 3 },
+      second: { split: 'right', first: { pane: b, weight: 2 }, second: { pane: d, weight: 1 } }
+    })
+  })
+
+  it('보이는 트리와도 전체 트리와도 모양이 다른 크기는 버린다', () => {
+    const { ws, c, a, b } = three()
+    ws.hidePane(b)
+    const layout = c.layout
+    ws.resize(c.key, { split: 'right', first: { pane: a }, second: { pane: b } })
+    expect(c.layout).toEqual(layout)
+  })
+
+  it('보이는 pane 을 모두 닫으면 cell 은 닫히지 않고 숨겨지며, 다음 보이는 cell 을 고른다', () => {
+    const { ws, c, a, b, d } = three()
+    ws.hidePane(b)
+    ws.closePane(d)
+    expect(c.focused).toBe(a)
+    ws.closePane(a)
+    expect(ws.cells()).toContain(c)
+    expect(ws.isHidden(c)).toBe(true)
+    expect(c.focused).toBe(b)
+    expect(ws.selectedKey.value).toBe(keys(ws)[1])
+  })
+
+  it('숨긴 pane 이 닫혀도 보이는 pane 의 포커스와 선택은 그대로다', () => {
+    const { ws, c, b, d } = three()
+    ws.hidePane(b)
+    ws.closePane(b)
+    expect(c.focused).toBe(d)
+    expect(ws.selectedKey.value).toBe(c.key)
+    expect(ws.visibleOf(c)).toEqual(c.layout)
+  })
+
+  it('숨긴 채 나눈 pane 은 그 자리를 받되 포커스·선택을 바꾸지 않는다', () => {
+    const { ws, c, a, d } = three()
+    const pane = ws.splitFrom(a, 'down', {}, false, true)
+    expect(ws.pane(pane)!.hidden).toBe(true)
+    expect(c.focused).toBe(d)
+    ws.showPane(pane)
+    expect(ws.visibleOf(c)).toMatchObject({ first: { split: 'down', second: { pane } } })
+  })
+
+  it('다시 띄워도 숨김이 남는다(pty 에 다시 붙든 새 셸을 띄우든)', () => {
+    const { ws, b } = three()
+    ws.hidePane(b)
+    expect(restarted(ws).pane(b)!.hidden).toBe(true)
+    const fresh = createWorkspaces()
+    fresh.restore(ws.snapshot(), null)
+    expect(fresh.pane(b)!.hidden).toBe(true)
+    const screen = {
+      sidebar: { open: true, width: 280, folded: [] },
+      viewMode: 'single',
+      ...ws.snapshot()
+    }
+    expect(parseScreen(screen)!.workspaces[0].cells[0].panes[1].hidden).toBe(true)
+  })
+})

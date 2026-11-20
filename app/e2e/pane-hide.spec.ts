@@ -1,0 +1,74 @@
+import {
+  activePane,
+  cellGroups,
+  clickMenu,
+  cli,
+  expect,
+  focusPane,
+  paneBox,
+  panes,
+  restartWith,
+  screen,
+  split,
+  test,
+  typesInto
+} from './app'
+
+test('Hide Pane 으로 숨긴 pane 은 화면에서 빠져도 pty 가 돌고, 사이드바 줄을 누르면 그 자리에 다시 보이며 포커스된다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-right', 3)
+  await focusPane(app, page, 'focus-pane-left', 1)
+  await typesInto(page, 1, 'middle')
+  const middle = (await panes(page).nth(1).getAttribute('data-pty'))!
+  const before = await paneBox(page, 1)
+
+  await clickMenu(app, 'hide-pane')
+  await expect(panes(page).nth(1)).toHaveClass(/hidden/)
+  await expect(panes(page).nth(1)).toBeHidden()
+  const [left, right] = [await paneBox(page, 0), await paneBox(page, 2)]
+  expect(right.x).toBeLessThan(left.x + left.width + 20)
+  await expect(activePane(page)).toHaveCount(1)
+  await expect(panes(page).nth(1).locator('.terminal-view')).not.toHaveClass(/active/)
+  await page.keyboard.type('echo typed-$((2+3))\n')
+  await expect(screen(page, activePane(page))).toShow('typed-5')
+
+  await cli(dataDir, middle, ['pty', 'send', middle, 'echo while-hidden-$((1+1))\r'])
+  const listed = await cli(dataDir, middle, ['pane', 'list'])
+  expect(
+    listed
+      .split('\n')
+      .find((l) => l.includes(middle))!
+      .split('\t')
+      .at(-1)
+  ).toBe('hidden')
+
+  await cellGroups(page).nth(0).locator('.pane-row').nth(1).click()
+  await expect(panes(page).nth(1)).not.toHaveClass(/hidden/)
+  await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
+  await expect(screen(page, 1)).toShow('while-hidden-2')
+  expect(await paneBox(page, 1)).toEqual(before)
+})
+
+test('숨긴 채 재시작해도 숨긴 채 뜨고, 꺼내면 같은 pty 다', async ({ launch }) => {
+  const first = await launch()
+  const { app, page } = first
+  await split(app, page, 'split-right', 2)
+  await typesInto(page, 1, 'kept')
+  const pty = await panes(page).nth(1).getAttribute('data-pty')
+  await panes(page).nth(1).locator('.pane-header').hover()
+  await panes(page).nth(1).locator('.hide-button').click()
+  await expect(panes(page).nth(1)).toHaveClass(/hidden/)
+
+  await restartWith(app)
+  const { page: again } = await launch()
+  await expect(panes(again)).toHaveCount(2)
+  await expect(panes(again).nth(1)).toHaveClass(/hidden/)
+  await cellGroups(again).nth(0).locator('.pane-row').nth(1).click()
+  await expect(panes(again).nth(1)).not.toHaveClass(/hidden/)
+  await expect(panes(again).nth(1)).toHaveAttribute('data-pty', pty!)
+  await expect(screen(again, 1)).toShow('kept-2')
+})

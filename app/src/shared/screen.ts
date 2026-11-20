@@ -22,7 +22,8 @@ export const STATE_VERSIONS: {
  * `id` 는 pane 을 만들 때 정하고 실행이 바뀌어도 그대로다. `key` 는 화면 안의 번호로, 뜰 때마다 새로 매긴다.
  * `cwd`·`title`·`git` 은 저장할 때 화면에 보이던 값이다. main 은 `maru pane list` 의 이름을 이 값으로 짓고, 다시 뜬
  * 앱은 pty 의 상태가 오기 전까지 이 값을 보인다. `keep` 은 런처로 띄운 pane 에 붙는다. 앱은 그 pane 의 pty 를
- * `--keep` 으로 띄우고, 명령이 실패하면(`failedExit`) pane 을 남긴다.
+ * `--keep` 으로 띄우고, 명령이 실패하면(`failedExit`) pane 을 남긴다. `hidden` 은 화면에서만 숨긴 pane 이다. 표 버전을
+ * 올리지 않고 더한 필드라, `true` 가 아닌 값은 없는 것으로 읽는다.
  */
 export type LayoutPane = {
   key: number
@@ -32,6 +33,7 @@ export type LayoutPane = {
   cwd?: string
   title?: string
   git?: GitHead
+  hidden?: true
 }
 
 export type ScreenPane = LayoutPane & { ptyId: string }
@@ -204,7 +206,8 @@ function parsePaneFields(v: unknown): Omit<LayoutPane, 'key'> | null {
   if (git === null) return null
   if (v.keep !== undefined && v.keep !== true) return null
   const keep = v.keep === true || undefined
-  return compact({ id: v.id, command, keep, cwd: v.cwd, title: v.title, git })
+  const hidden = v.hidden === true || undefined
+  return compact({ id: v.id, command, keep, cwd: v.cwd, title: v.title, git, hidden })
 }
 
 function parseScreenPane(v: unknown): ScreenPane | null {
