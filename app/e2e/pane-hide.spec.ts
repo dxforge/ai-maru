@@ -14,7 +14,7 @@ import {
   typesInto
 } from './app'
 
-test('Hide Pane 으로 숨긴 pane 은 화면에서 빠져도 pty 가 돌고, 사이드바 줄을 누르면 그 자리에 다시 보이며 포커스된다', async ({
+test('Hide Pane 으로 숨긴 pane 은 화면에서 빠져도 pty 가 돌고 사이드바 줄에 숨김 표시가 붙으며, 그 줄을 누르면 그 자리에 다시 보이며 포커스된다', async ({
   launch,
   dataDir
 }) => {
@@ -46,8 +46,14 @@ test('Hide Pane 으로 숨긴 pane 은 화면에서 빠져도 pty 가 돌고, �
       .at(-1)
   ).toBe('hidden')
 
-  await cellGroups(page).nth(0).locator('.pane-row').nth(1).click()
+  const rows = cellGroups(page).nth(0).locator('.pane-row')
+  await expect(rows.nth(1).locator('.hidden-mark')).toHaveCount(1)
+  await expect(rows.locator('.hidden-mark')).toHaveCount(1)
+  await expect(rows.nth(1)).toHaveAttribute('aria-label', /\. Hidden$/)
+
+  await rows.nth(1).click()
   await expect(panes(page).nth(1)).not.toHaveClass(/hidden/)
+  await expect(rows.locator('.hidden-mark')).toHaveCount(0)
   await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
   await expect(screen(page, 1)).toShow('while-hidden-2')
   expect(await paneBox(page, 1)).toEqual(before)
