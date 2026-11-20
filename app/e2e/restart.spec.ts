@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { killPty, killPtys } from '../src/main/pty'
 import { MIN_PROTOCOL_VERSION, PROTOCOL_VERSION } from '../src/shared/protocol'
@@ -279,6 +279,42 @@ test('앱이 강제로 끝나도 다음 실행은 살아 있는 셸에 다시 �
   const { page } = await launch()
   await run(page, 'echo "x=$X"', 'x=crash-42')
   await expect(toast(page)).toHaveCount(0)
+})
+
+/** `etime` 만큼 전에 지금 사용자의 loginwindow 가 뜬 것처럼 `ps -A -o uid=,etime=,comm=` 에 답한다. */
+function loginwindowPs(dataDir: string, name: string, etime: string): string {
+  const bin = join(dataDir, name)
+  writeFileSync(
+    bin,
+    `#!/bin/sh\necho "$(id -u) ${etime} /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow"\n`
+  )
+  chmodSync(bin, 0o755)
+  return bin
+}
+
+test('다시 붙은 pty 가 지금 로그인 세션보다 먼저 떴으면 다시 뜬 앱이 한 번 알리고, 로그인 세션 안에서 뜬 pty 면 알리지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const killed = async (l: Launched): Promise<void> => {
+    const closed = new Promise<void>((resolve) => l.app.once('close', () => resolve()))
+    l.app.process().kill('SIGKILL')
+    await closed
+  }
+  const first = await launch()
+  await run(first.page, 'X=login-$((40+2)); echo set-$((1+1))', 'set-2')
+  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(1)
+  await killed(first)
+
+  const same = await launch({ MARU_PS_BIN: loginwindowPs(dataDir, 'ps-old', '01-00:00:00') })
+  await run(same.page, 'echo "x=$X"', 'x=login-42')
+  await expect(toast(same.page)).toHaveCount(0)
+  await killed(same)
+
+  const { page } = await launch({ MARU_PS_BIN: loginwindowPs(dataDir, 'ps-new', '00:00') })
+  await run(page, 'echo "y=$X"', 'y=login-42')
+  await expect(toast(page)).toHaveCount(1)
+  await expect(toast(page)).toContainText('Terminals from a previous login')
 })
 
 test('앱이 강제로 끝나 sessions 에 없는 pty 가 남으면 다음 실행은 그 pty 를 Recovered workspace 에 열고 알린다', async ({

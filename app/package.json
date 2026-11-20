@@ -43,6 +43,7 @@
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.12.1",
+    "fast-check": "^4.10.3",
     "jsdom": "^31.0.1",
     "marked": "^18.2.0",
     "mermaid": "^12.3.0",

@@ -25,6 +25,7 @@ import { isObject } from '../shared/object'
 import { isPtyId, randomId } from '../shared/pty'
 import { parseJobRecords, type JobRecord } from './job'
 import { writeJsonAtomicSync } from './json-file'
+import { fromEarlierLogin } from './login-session'
 import { attachable } from './pty-protocol'
 import type { PtyRecord } from './pty'
 import { parseWindowState, type WindowState } from './window-state'
@@ -279,20 +280,23 @@ export function recoverPtys(
  * `cells`·`panes`·`sessions` 가운데 하나를 비웠으면 전체 복원이 아니고 `restorePlan` 의 `notice` 도 비어 있으므로
  * Recovered 를 알리지 않는다. 사용자가 대화창에서 이미 보았기 때문이다. 전체 복원에서 Recovered 가 생기면 사용자가
  * 모르는 사이에 pty 가 남은 것이라 알린다. 앱이 강제로 끝났거나 pty host 를 기다리다 시간을 넘긴 때가 그렇다.
+ * 남길 pty 가운데 `loginStarted`(지금 GUI 로그인 세션이 시작된 시각)보다 먼저 뜬 것이 있으면 `login` 도 알린다.
  */
 export function startRestore(
   read: Omit<ReadState, 'view'>,
   layout: SavedLayout | null,
   sessions: SessionsPart | null,
   live: Pick<PtyRecord, 'id' | 'protocol_version' | 'created_at_ms'>[],
+  loginStarted: number | null = null,
   newId: (prefix: string) => string = randomId
 ): ReturnType<typeof recoverPtys> & RestorePlan {
   const protocols = new Map(live.map((r) => [r.id, r.protocol_version ?? null]))
   const p = restorePlan(read, (pty) => protocols.get(pty))
   const full = p.mode === 'full' && sessions ? fullRestore(layout, sessions) : null
   const r = recoverPtys(layout, full ?? { attach: {}, keep: [] }, live, newId)
-  const notice: RestoreNotice[] =
-    r.recovered && (p.mode === 'full' || p.notice.length) ? [...p.notice, 'recovered'] : p.notice
+  const notice: RestoreNotice[] = [...p.notice]
+  if (r.recovered && (p.mode === 'full' || p.notice.length)) notice.push('recovered')
+  if (fromEarlierLogin(live, r.keep, loginStarted)) notice.push('login')
   return { ...r, mode: p.mode, notice }
 }
 

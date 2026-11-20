@@ -499,6 +499,65 @@ describe('startRestore', () => {
     expect(recoveredPtys(r)).toEqual(['p-000000ff'])
     expect(r.notice).toEqual([])
   })
+
+  // `live` 는 i 번째 pty 의 created_at_ms 를 i 로 준다. pane pty 둘, job pty 하나 순서다.
+  it('다시 붙을 pane pty 가 지금 로그인보다 먼저 떴으면 login 을 알린다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const r = startRestore(read(), layout, sessions, live(sessionPtys(sessions)), 1)
+    expect(r.notice).toEqual(['login'])
+  })
+
+  it('job pty 만 지금 로그인보다 먼저 떴어도 login 을 알린다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const ids = sessionPtys(sessions)
+    const recs = live(ids).map((rec) => ({ ...rec, created_at_ms: rec.id === job.pty ? 0 : 10 }))
+    const r = startRestore(read(), layout, sessions, recs, 5)
+    expect(r.notice).toEqual(['login'])
+  })
+
+  it('Recovered 에 연 pty 가 지금 로그인보다 먼저 떴으면 recovered 와 함께 login 을 알린다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const recs = [
+      ...live(sessionPtys(sessions)).map((rec) => ({ ...rec, created_at_ms: 10 })),
+      { id: 'p-000000ff', protocol_version: PROTOCOL_VERSION, created_at_ms: 0 }
+    ]
+    const r = startRestore(read(), layout, sessions, recs, 5)
+    expect(r.notice).toEqual(['recovered', 'login'])
+  })
+
+  it('고른 재시작으로 Recovered 에 연 pty 라도 지금 로그인보다 먼저 떴으면 login 은 알린다', () => {
+    const r = startRestore(
+      read({ cells: { kind: 'absent' }, panes: { kind: 'absent' }, sessions: { kind: 'absent' } }),
+      null,
+      null,
+      live(['p-000000ff']),
+      1
+    )
+    expect(r.notice).toEqual(['login'])
+  })
+
+  it('남길 pty 가 모두 지금 로그인 뒤에 떴으면 login 을 알리지 않는다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const r = startRestore(read(), layout, sessions, live(sessionPtys(sessions)), 0)
+    expect(r.notice).toEqual([])
+  })
+
+  it('끄는 pty 가 지금 로그인보다 먼저 떴으면 login 을 알리지 않는다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const recs = [
+      ...live(sessionPtys(sessions)).map((rec) => ({ ...rec, created_at_ms: 10 })),
+      { id: 'p-000000ee', protocol_version: MIN_PROTOCOL_VERSION - 1, created_at_ms: 0 }
+    ]
+    const r = startRestore(read(), layout, sessions, recs, 5)
+    expect(r.keep).not.toContain('p-000000ee')
+    expect(r.notice).toEqual([])
+  })
+
+  it('지금 로그인 시각을 모르면 login 을 알리지 않는다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const r = startRestore(read(), layout, sessions, live(sessionPtys(sessions)), null)
+    expect(r.notice).toEqual([])
+  })
 })
 
 describe('createStateStore', () => {
