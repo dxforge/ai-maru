@@ -14,7 +14,9 @@ export function etimeSeconds(etime: string): number | null {
 
 /**
  * 로그아웃하면 loginwindow 가 새로 떠 로그인 화면을 띄우고, 앱을 다시 띄워도 loginwindow 는 그대로다. 그래서 이 시각을
- * 지금 GUI 로그인 세션이 시작된 시각으로 쓴다. 다시 로그인한 시각보다 앞서지만, 그 사이에는 pty 가 뜨지 않는다.
+ * 지금 GUI 로그인 세션이 시작된 시각으로 쓴다. 이 시각은 다시 로그인한 시각보다 앞선다. 로그인 화면에 있는 동안에는 앱이
+ * 새로 뜨지 않으므로 그 차이는 판정에 영향이 없다. 로그아웃 뒤에도 창 없이 살아남은 옛 앱이 띄운 pty 는 이 시각 뒤에
+ * 떴더라도, `startRestore` 가 그 앱이 뜬 시각으로 판정한다.
  */
 export function loginStartedMs(ps: string, uid: number, nowMs: number): number | null {
   let started: number | null = null

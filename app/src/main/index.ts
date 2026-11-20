@@ -739,7 +739,13 @@ function start(): void {
   const initial = initialState(read)
   const { sessions } = initial
   const layout = joinTables(initial, read.view.selected)
-  store = createStateStore({ path: stateFile(userData), debounceMs: STATE_DEBOUNCE_MS, initial })
+  store = createStateStore({
+    path: stateFile(userData),
+    debounceMs: STATE_DEBOUNCE_MS,
+    initial,
+    // Node 의 `timeOrigin` 은 이 프로세스가 뜬 시각이다.
+    appStarted: performance.timeOrigin
+  })
   applyTheme(read.view.theme ?? DEFAULT_WINDOW_THEME)
   ipcMain.on('theme:apply', (_event, t: unknown) => {
     const parsed = parseWindowTheme(t)
