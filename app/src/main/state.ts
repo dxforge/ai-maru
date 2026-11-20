@@ -48,10 +48,16 @@ export type StateFile = Tables & {
 /** 끌 때나 재시작할 때 비울 수 있는 표다. */
 export type TableName = 'workspaces' | 'cells' | 'panes' | 'sessions'
 
+/**
+ * `started` 는 pty id 마다 그 pty 를 띄운 앱의 main 프로세스가 뜬 시각(epoch ms)이다. 그 앱이 끝난 뒤에 뜬 앱은 적힌
+ * 값을 그대로 이어 적는다. `startRestore` 는 이 값으로 pty 를 띄운 앱이 어느 로그인 세션에서 떴는지 판정한다. 값이 없는
+ * pty 는 pty 가 뜬 시각으로 판정한다.
+ */
 export type SessionsPart = {
   version: number
   ptys: PanePty[]
   jobs: JobRecord[]
+  started?: Record<string, number>
 }
 
 /**
@@ -95,7 +101,33 @@ function parseSessionsPart(v: unknown): SessionsPart | null {
   )
   const jobs = parseJobRecords(v.jobs)
   if (!jobs || !ptys.every((p) => p !== null)) return null
-  return { version: STATE_VERSIONS.sessions, ptys: ptys as PanePty[], jobs }
+  const started = parseStarted(v.started)
+  return {
+    version: STATE_VERSIONS.sessions,
+    ptys: ptys as PanePty[],
+    jobs,
+    ...(started && { started })
+  }
+}
+
+/** 판정에만 쓰는 값이라 틀린 항목은 그 항목만 버린다. */
+function parseStarted(v: unknown): Record<string, number> | undefined {
+  if (!isObject(v)) return undefined
+  const entries = Object.entries(v).filter(
+    (e): e is [string, number] => isPtyId(e[0]) && typeof e[1] === 'number' && Number.isFinite(e[1])
+  )
+  return entries.length ? Object.fromEntries(entries) : undefined
+}
+
+/**
+ * `started` 가 없는 pty 는 이 앱이 띄운 것으로 본다. Recovered 에 연 pty 처럼 이 앱보다 먼저 뜬 pty 에 이 앱의 시각이
+ * 적혀도 판정은 달라지지 않는다. `startRestore` 가 pty 가 뜬 시각과 이 값 가운데 이른 것을 쓰기 때문이다.
+ */
+function stampStarted(s: SessionsPart, appStarted: number): SessionsPart {
+  const started = Object.fromEntries(
+    sessionPtys(s).map((id) => [id, s.started?.[id] ?? appStarted])
+  )
+  return { ...s, started }
 }
 
 function parseViewPart(v: unknown): ViewPart {
@@ -279,20 +311,29 @@ export function recoverPtys(
  * `cells`·`panes`·`sessions` 가운데 하나를 비웠으면 전체 복원이 아니고 `restorePlan` 의 `notice` 도 비어 있으므로
  * Recovered 를 알리지 않는다. 사용자가 대화창에서 이미 보았기 때문이다. 전체 복원에서 Recovered 가 생기면 사용자가
  * 모르는 사이에 pty 가 남은 것이라 알린다. 앱이 강제로 끝났거나 pty host 를 기다리다 시간을 넘긴 때가 그렇다.
+ * `loginStarted` 는 지금 GUI 로그인 세션이 시작된 시각(epoch ms)이고, 모르면 null 이다. 그보다 먼저 뜬 앱이 띄운 pty 의
+ * 셸은 끝난 로그인 세션의 bootstrap port 를 물려받아 키체인·네트워크·클립보드를 쓰지 못하므로, 남길 pty 가운데 그런 것이
+ * 있으면 `login` 을 알린다. pty 가 뜬 시각과 `sessions.started` 가운데 이른 것을 `loginStarted` 와 비교한다. 로그아웃 뒤
+ * 창 없이 살아남은 앱이 띄운 pty 는 로그아웃 뒤에 떴어도 그 앱의 bootstrap port 를 물려받기 때문이다.
  */
 export function startRestore(
   read: Omit<ReadState, 'view'>,
   layout: SavedLayout | null,
   sessions: SessionsPart | null,
   live: Pick<PtyRecord, 'id' | 'protocol_version' | 'created_at_ms'>[],
+  loginStarted: number | null = null,
   newId: (prefix: string) => string = randomId
 ): ReturnType<typeof recoverPtys> & RestorePlan {
   const protocols = new Map(live.map((r) => [r.id, r.protocol_version ?? null]))
   const p = restorePlan(read, (pty) => protocols.get(pty))
   const full = p.mode === 'full' && sessions ? fullRestore(layout, sessions) : null
   const r = recoverPtys(layout, full ?? { attach: {}, keep: [] }, live, newId)
-  const notice: RestoreNotice[] =
-    r.recovered && (p.mode === 'full' || p.notice.length) ? [...p.notice, 'recovered'] : p.notice
+  const notice: RestoreNotice[] = [...p.notice]
+  if (r.recovered && (p.mode === 'full' || p.notice.length)) notice.push('recovered')
+  const started = (x: (typeof live)[number]): number =>
+    Math.min(x.created_at_ms, sessions?.started?.[x.id] ?? Infinity)
+  if (loginStarted !== null && live.some((x) => r.keep.includes(x.id) && started(x) < loginStarted))
+    notice.push('login')
   return { ...r, mode: p.mode, notice }
 }
 
@@ -346,6 +387,8 @@ export function createStateStore(o: {
   path: string
   debounceMs: number
   initial: StateFile
+  /** 이 앱의 main 프로세스가 뜬 시각(epoch ms)이다. 값이 있으면 state 파일을 쓸 때마다 `stampStarted` 로 `sessions.started` 를 적는다. */
+  appStarted?: number
   onError?: (err: unknown) => void
 }): StateStore {
   let state: StateFile = structuredClone(o.initial)
@@ -377,7 +420,7 @@ export function createStateStore(o: {
     timer = undefined
     applyScreen()
     try {
-      writeJsonAtomicSync(o.path, state)
+      writeJsonAtomicSync(o.path, stamped(state))
     } catch (err) {
       ;(o.onError ?? ((e) => console.error(`maru: cannot save ${o.path}:`, e)))(err)
     }
@@ -387,6 +430,10 @@ export function createStateStore(o: {
   }
   const sessions = (): SessionsPart =>
     state.sessions ?? { version: STATE_VERSIONS.sessions, ptys: [], jobs: [] }
+  const stamped = (s: StateFile): StateFile =>
+    o.appStarted === undefined || !s.sessions
+      ? s
+      : { ...s, sessions: stampStarted(s.sessions, o.appStarted) }
   const update = (apply: () => void): void => {
     if (finished) return
     apply()
@@ -417,7 +464,7 @@ export function createStateStore(o: {
       applyScreen()
       const next = dropped(state, outcome)
       for (const name of options?.drop ?? []) next[name] = null
-      writeJsonAtomicSync(o.path, next)
+      writeJsonAtomicSync(o.path, stamped(next))
       state = next
       stop()
     },

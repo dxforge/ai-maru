@@ -161,6 +161,16 @@ describe('readState', () => {
     expect(readState(path).sessions).toEqual({ kind: 'bad' })
   })
 
+  it('sessions 의 started 는 틀린 항목만 버린다', () => {
+    write({
+      ...full,
+      sessions: { ...sessions, started: { 'p-0000000a': 5, '../x': 6, 'p-0000000b': 'x' } }
+    })
+    expect(readState(path).sessions).toEqual(ok({ ...sessions, started: { 'p-0000000a': 5 } }))
+    write({ ...full, sessions: { ...sessions, started: 'x' } })
+    expect(readState(path).sessions).toEqual(ok(sessions))
+  })
+
   it('view 는 틀린 필드만 버린다', () => {
     write({
       ...full,
@@ -499,6 +509,87 @@ describe('startRestore', () => {
     expect(recoveredPtys(r)).toEqual(['p-000000ff'])
     expect(r.notice).toEqual([])
   })
+
+  it('다시 붙을 pane pty 가 지금 로그인보다 먼저 떴으면 login 을 알린다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const r = startRestore(read(), layout, sessions, live(sessionPtys(sessions)), 1)
+    expect(r.notice).toEqual(['login'])
+  })
+
+  it('job pty 만 지금 로그인보다 먼저 떴어도 login 을 알린다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const ids = sessionPtys(sessions)
+    const recs = live(ids).map((rec) => ({ ...rec, created_at_ms: rec.id === job.pty ? 0 : 10 }))
+    const r = startRestore(read(), layout, sessions, recs, 5)
+    expect(r.notice).toEqual(['login'])
+  })
+
+  it('Recovered 에 연 pty 가 지금 로그인보다 먼저 떴으면 recovered 와 함께 login 을 알린다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const recs = [
+      ...live(sessionPtys(sessions)).map((rec) => ({ ...rec, created_at_ms: 10 })),
+      { id: 'p-000000ff', protocol_version: PROTOCOL_VERSION, created_at_ms: 0 }
+    ]
+    const r = startRestore(read(), layout, sessions, recs, 5)
+    expect(r.notice).toEqual(['recovered', 'login'])
+  })
+
+  it('고른 재시작으로 Recovered 에 연 pty 라도 지금 로그인보다 먼저 떴으면 login 은 알린다', () => {
+    const r = startRestore(
+      read({ cells: { kind: 'absent' }, panes: { kind: 'absent' }, sessions: { kind: 'absent' } }),
+      null,
+      null,
+      live(['p-000000ff']),
+      1
+    )
+    expect(r.notice).toEqual(['login'])
+  })
+
+  it('지금 로그인 뒤에 뜬 pty 라도 띄운 앱이 그 전에 떴으면 login 을 알린다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const recs = live(sessionPtys(sessions)).map((rec) => ({ ...rec, created_at_ms: 10 }))
+    const started = { 'p-0000000a': 10, 'p-0000000b': 10, [job.pty]: 3 }
+    const r = startRestore(read(), layout, { ...sessions, started }, recs, 5)
+    expect(r.notice).toEqual(['login'])
+  })
+
+  it('띄운 앱이 지금 로그인 뒤에 떴고 pty 도 그 뒤에 떴으면 login 을 알리지 않는다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const recs = live(sessionPtys(sessions)).map((rec) => ({ ...rec, created_at_ms: 10 }))
+    const started = Object.fromEntries(sessionPtys(sessions).map((id) => [id, 6]))
+    const r = startRestore(read(), layout, { ...sessions, started }, recs, 5)
+    expect(r.notice).toEqual([])
+  })
+
+  it('pty 가 지금 로그인 전에 떴으면 started 가 그 뒤라도 login 을 알린다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const started = Object.fromEntries(sessionPtys(sessions).map((id) => [id, 6]))
+    const r = startRestore(read(), layout, { ...sessions, started }, live(sessionPtys(sessions)), 1)
+    expect(r.notice).toEqual(['login'])
+  })
+
+  it('남길 pty 가 모두 지금 로그인 뒤에 떴으면 login 을 알리지 않는다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const r = startRestore(read(), layout, sessions, live(sessionPtys(sessions)), 0)
+    expect(r.notice).toEqual([])
+  })
+
+  it('끄는 pty 가 지금 로그인보다 먼저 떴으면 login 을 알리지 않는다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const recs = [
+      ...live(sessionPtys(sessions)).map((rec) => ({ ...rec, created_at_ms: 10 })),
+      { id: 'p-000000ee', protocol_version: MIN_PROTOCOL_VERSION - 1, created_at_ms: 0 }
+    ]
+    const r = startRestore(read(), layout, sessions, recs, 5)
+    expect(r.keep).not.toContain('p-000000ee')
+    expect(r.notice).toEqual([])
+  })
+
+  it('지금 로그인 시각을 모르면 login 을 알리지 않는다', () => {
+    const layout = joinTables({ workspaces, cells, panes })
+    const r = startRestore(read(), layout, sessions, live(sessionPtys(sessions)), null)
+    expect(r.notice).toEqual([])
+  })
 })
 
 describe('createStateStore', () => {
@@ -589,6 +680,21 @@ describe('createStateStore', () => {
     s.setJobs([])
     vi.advanceTimersByTime(MS)
     expect(saved()).toEqual({ ...full, sessions: null })
+  })
+
+  it('appStarted 가 있으면 sessions 의 pty 마다 started 를 적되, 이미 적힌 값은 두고 빠진 pty 는 지운다', () => {
+    vi.useFakeTimers()
+    const initial = {
+      ...full,
+      sessions: { ...sessions, started: { 'p-0000000a': 1, 'p-000000ff': 2 } }
+    }
+    const s = createStateStore({ path, debounceMs: MS, initial, appStarted: 7 })
+    s.enable()
+    s.setJobs([job])
+    vi.advanceTimersByTime(MS)
+    expect(saved().sessions?.started).toEqual({ 'p-0000000a': 1, 'p-0000000b': 7, [job.pty]: 7 })
+    s.finish('keep')
+    expect(saved().sessions?.started).toEqual({ 'p-0000000a': 1, 'p-0000000b': 7, [job.pty]: 7 })
   })
 
   it('쓰지 못하면 finish 가 던지고, 끝내지 않은 채로 둔다', () => {

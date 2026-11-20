@@ -30,6 +30,14 @@ export function restoreToast(notice: RestoreNotice): Toast {
         "Running terminals that couldn't be matched to restored panes were opened in the Recovered workspace."
       ]
     }
+  if (notice === 'login')
+    return {
+      level: 'warning',
+      title: 'Terminals from a previous login',
+      lines: [
+        "Terminals started before you last logged in can't use the keychain, network or clipboard. Open new terminals instead."
+      ]
+    }
   return {
     level: 'warning',
     title: "Couldn't reattach to the terminals",

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { killPty, killPtys } from '../src/main/pty'
 import { MIN_PROTOCOL_VERSION, PROTOCOL_VERSION } from '../src/shared/protocol'
@@ -52,6 +52,12 @@ import {
   zshHome,
   type Launched
 } from './app'
+
+async function killApp(l: Launched): Promise<void> {
+  const closed = new Promise<void>((resolve) => l.app.once('close', () => resolve()))
+  l.app.process().kill('SIGKILL')
+  await closed
+}
 
 async function shellUp(page: Launched['page'], i: number): Promise<void> {
   await panes(page).nth(i).locator('.xterm-screen').click()
@@ -272,13 +278,71 @@ test('앱이 강제로 끝나도 다음 실행은 살아 있는 셸에 다시 �
   const first = await launch()
   await run(first.page, 'X=crash-$((40+2)); echo set-$((1+1))', 'set-2')
   await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(1)
-  const closed = new Promise<void>((resolve) => first.app.once('close', () => resolve()))
-  first.app.process().kill('SIGKILL')
-  await closed
+  await killApp(first)
 
   const { page } = await launch()
   await run(page, 'echo "x=$X"', 'x=crash-42')
   await expect(toast(page)).toHaveCount(0)
+})
+
+/** 가짜 `ps` 를 만든다. 그 `ps` 는 `at`(epoch 초)이 없으면 loginwindow 가 방금 뜬 것으로, 있으면 `at` 에 뜬 것으로 답한다. */
+function loginwindowPs(dataDir: string, at?: number): string {
+  const etime =
+    at === undefined
+      ? '00:00'
+      : `$(e=$(($(date +%s) - ${at})); printf %02d:%02d $((e / 60)) $((e % 60)))`
+  const bin = join(dataDir, 'ps')
+  writeFileSync(
+    bin,
+    `#!/bin/sh\n[ "$*" = "-A -o uid=,etime=,comm=" ] && echo "$(id -u) ${etime} /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow"\n`
+  )
+  chmodSync(bin, 0o755)
+  return bin
+}
+
+test('다시 붙은 pty 가 지금 로그인 세션보다 먼저 떴으면 다시 뜬 앱이 한 번 알린다', async ({
+  launch,
+  dataDir
+}) => {
+  const first = await launch()
+  await run(first.page, 'X=login-$((40+2)); echo set-$((1+1))', 'set-2')
+  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(1)
+  await killApp(first)
+
+  const { page } = await launch({ MARU_PS_BIN: loginwindowPs(dataDir) })
+  await run(page, 'echo "x=$X"', 'x=login-42')
+  await expect(toast(page)).toHaveCount(1)
+  await expect(toast(page)).toContainText('Terminals from a previous login')
+})
+
+test('지금 로그인 세션 뒤에 뜬 pty 라도 그 전에 뜬 앱이 띄웠으면 다시 뜬 앱이 알린다', async ({
+  launch,
+  dataDir
+}) => {
+  const ptyIds = (): string[] => readState(dataDir).sessions.ptys.map((p: { pty: string }) => p.pty)
+  const first = await launch()
+  await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(1)
+  const [old] = ptyIds()
+  const started: number = readState(dataDir).sessions.started[old]
+  // loginwindow 가 이 앱보다 늦게, 뒤에 띄울 pty 보다 이르게 뜬 것으로 만든다. 로그아웃 뒤에 창 없이 살아남은 앱이 그 상태다.
+  // ps 의 경과 시간이 1초 단위라 앱이 읽는 loginwindow 시각은 `login` 초보다 1초 안쪽으로 늦을 수 있다. 그래서 뒤에 띄울
+  // pty 는 `login` 에서 1초 넘게 지나 띄운다.
+  const login = Math.floor(started / 1000) + 1
+  await expect.poll(() => Date.now(), { timeout: 10_000 }).toBeGreaterThan((login + 2) * 1000)
+  await split(first.app, first.page, 'split-right', 2)
+  await run(first.page, 'X=later-$((40+2)); echo set-$((1+1))', 'set-2')
+  await expect.poll(() => ptyIds().length).toBe(2)
+  const later = ptyIds().find((id) => id !== old)!
+  const record = JSON.parse(readFileSync(join(ptyDir(dataDir), `${later}.json`), 'utf8'))
+  expect(record.created_at_ms).toBeGreaterThan((login + 1) * 1000)
+  expect(readState(dataDir).sessions.started[later]).toBe(started)
+  await killApp(first)
+  await killPty(ptyDir(dataDir), old)
+
+  const { page } = await launch({ MARU_PS_BIN: loginwindowPs(dataDir, login) })
+  await run(page, 'echo "x=$X"', 'x=later-42')
+  await expect(toast(page)).toHaveCount(1)
+  await expect(toast(page)).toContainText('Terminals from a previous login')
 })
 
 test('앱이 강제로 끝나 sessions 에 없는 pty 가 남으면 다음 실행은 그 pty 를 Recovered workspace 에 열고 알린다', async ({
@@ -288,9 +352,7 @@ test('앱이 강제로 끝나 sessions 에 없는 pty 가 남으면 다음 실�
   const first = await launch()
   await run(first.page, 'echo left-$((1+1))', 'left-2')
   await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(1)
-  const closed = new Promise<void>((resolve) => first.app.once('close', () => resolve()))
-  first.app.process().kill('SIGKILL')
-  await closed
+  await killApp(first)
   // 앱이 pty 를 띄운 뒤 sessions 를 쓰기 전에 끝난 것과 같은 상태를 만든다.
   const saved = readState(dataDir)
   writeFileSync(
@@ -311,9 +373,7 @@ test('앱과 pty 가 함께 끝났으면 다음 실행은 레이아웃을 되살
   await split(first.app, first.page, 'split-right', 2)
   await shellUp(first.page, 1)
   await expect.poll(() => readState(dataDir).sessions?.ptys?.length).toBe(2)
-  const closed = new Promise<void>((resolve) => first.app.once('close', () => resolve()))
-  first.app.process().kill('SIGKILL')
-  await closed
+  await killApp(first)
   await killPtys(ptyDir(dataDir))
 
   const { page } = await launch(DOM_RENDERER)

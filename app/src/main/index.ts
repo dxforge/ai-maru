@@ -89,6 +89,7 @@ import {
   writePtyInput,
   type CliAccess
 } from './pty'
+import { readLoginStartedMs } from './login-session'
 import type { HostEvent, KillRequest, OpenRequest, QuitRequest } from './pty-host'
 import { createPtyCells } from './pty-cells'
 import { createPtyStates } from './pty-state'
@@ -738,14 +739,26 @@ function start(): void {
   const initial = initialState(read)
   const { sessions } = initial
   const layout = joinTables(initial, read.view.selected)
-  store = createStateStore({ path: stateFile(userData), debounceMs: STATE_DEBOUNCE_MS, initial })
+  store = createStateStore({
+    path: stateFile(userData),
+    debounceMs: STATE_DEBOUNCE_MS,
+    initial,
+    // Node 의 `timeOrigin` 은 이 프로세스가 뜬 시각이다.
+    appStarted: performance.timeOrigin
+  })
   applyTheme(read.view.theme ?? DEFAULT_WINDOW_THEME)
   ipcMain.on('theme:apply', (_event, t: unknown) => {
     const parsed = parseWindowTheme(t)
     if (parsed) applyTheme(parsed)
   })
   const plan = (async () => {
-    const p = startRestore(read, layout, sessions, await liveRecords(ptyDir()))
+    const [live, loginStarted] = await Promise.all([
+      liveRecords(ptyDir()),
+      process.platform === 'darwin'
+        ? readLoginStartedMs(process.env.MARU_PS_BIN ?? '/bin/ps', process.getuid!())
+        : null
+    ])
+    const p = startRestore(read, layout, sessions, live, loginStarted)
     // `cells` 를 읽지 못한 `empty` 는 `initialState` 가 이미 비웠다.
     if (p.mode === 'layout') store?.discard('layout')
     return p
