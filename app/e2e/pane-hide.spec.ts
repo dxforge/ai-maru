@@ -11,6 +11,7 @@ import {
   screen,
   split,
   test,
+  toggleView,
   typesInto
 } from './app'
 
@@ -77,4 +78,39 @@ test('숨긴 채 재시작해도 숨긴 채 뜨고, 꺼내면 같은 pty 다', a
   await expect(panes(again).nth(1)).not.toHaveClass(/hidden/)
   await expect(panes(again).nth(1)).toHaveAttribute('data-pty', pty!)
   await expect(screen(again, 1)).toShow('kept-2')
+})
+
+test('columns 보기에서 가운데 pane 을 숨겨도 이미 보이는 오른쪽 pane 으로 포커스가 가므로 가로 스크롤은 움직이지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await toggleView(launched, 'columns')
+  await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-right', 3)
+  await focusPane(app, page, 'focus-pane-left', 1)
+  // 포커스를 따라가는 스크롤이 멈춘 뒤에 숨긴다.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const area = document.querySelector('.terminals')!
+        const before = area.scrollLeft
+        await new Promise((r) => setTimeout(r, 50))
+        return area.scrollLeft === before
+      })
+    )
+    .toBe(true)
+  const scrolls = await page.evaluate(async () => {
+    const area = document.querySelector('.terminals')!
+    const out = [area.scrollLeft]
+    ;(document.querySelectorAll('.pane .hide-button')[1] as HTMLElement).click()
+    const end = performance.now() + 600
+    while (performance.now() < end) {
+      await new Promise((r) => requestAnimationFrame(r))
+      out.push(area.scrollLeft)
+    }
+    return out
+  })
+  expect(scrolls[0]).toBeGreaterThan(0)
+  expect(new Set(scrolls).size).toBe(1)
 })
