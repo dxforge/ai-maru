@@ -1,3 +1,7 @@
+/**
+ * 숨긴 pane 은 분할 트리에 남는다. 화면·이동·크기 조절은 숨긴 잎을 접은 트리(`visibleLayout`)로 하고, 거기서 바꾼 크기는
+ * `mergeVisible` 이 원래 트리에 되쓴다. 꺼내면 원래 자리와 크기로 돌아오게 하기 위해서다.
+ */
 import {
   line,
   panes,
@@ -9,11 +13,8 @@ import {
 } from './layout'
 
 /**
- * 숨긴 pane 은 분할 트리에 남는다. 화면·이동·크기 조절은 숨긴 잎을 접은 트리(`visibleLayout`)로 하고, 거기서 바꾼 크기는
- * `mergeVisible` 이 원래 트리에 되쓴다. 꺼내면 원래 자리와 크기로 돌아오게 하기 위해서다.
- *
- * 줄의 항목인 나눔에서 한쪽이 모두 숨겨지면 남은 쪽이 그 항목의 몫(`weight`)을 잇는다. 남은 쪽이 바깥 줄과 같은 방향으로
- * 나뉘었으면 그 항목들이 바깥 줄에 들어가므로, 몫의 합이 사라진 항목의 몫이 되게 맞춘다.
+ * 줄의 항목인 split 에서 한쪽이 모두 숨겨지면 남은 쪽이 그 항목의 `weight` 를 잇는다. 남은 쪽이 바깥 줄과 같은 방향으로
+ * 나뉘었으면 그 항목들이 바깥 줄에 들어가므로, 그 `weight` 의 합이 사라진 항목의 `weight` 와 같도록 맞춘다.
  */
 export function visibleLayout(layout: Layout, hidden: ReadonlySet<number>): Layout | null {
   return hidden.size ? visible(layout, hidden) : layout
@@ -38,7 +39,6 @@ function total(layout: Layout): number {
   return line(layout, layout.split).reduce((sum, item) => sum + (item.weight ?? 1), 0)
 }
 
-// 줄 `root` 의 항목마다 `f` 를 부른다. `i` 는 줄 안의 순서다.
 function mapLine(root: Split, f: (item: Layout, i: number) => Layout): Layout {
   let i = 0
   const go = (node: Layout): Layout =>
@@ -53,10 +53,10 @@ function scaleLine(root: Split, by: number): Layout {
 }
 
 /**
- * `shown` 은 `visibleLayout(full, hidden)` 과 모양이 같은 트리로, 그 크기를 바꾼 것이다. 보이는 pane 의 열 수와 보이는
- * 항목의 몫을 `full` 에 되쓴다. 줄에서 보이는 항목의 몫이 바뀌면 숨긴 항목의 몫도 같은 비율로 맞추고, 보이는 항목의
- * 몫이 모두 지워졌으면(같게 나누기) 숨긴 항목의 몫도 지운다. 좌우 줄에서 보이는 pane 의 열 수가 모두 지워졌으면 숨긴
- * pane 의 열 수도 지운다.
+ * `shown` 은 `visibleLayout(full, hidden)` 과 모양이 같은 트리로, 그 크기를 바꾼 것이다. 보이는 pane 의 `cols` 와 보이는
+ * 항목의 `weight` 를 `full` 에 되쓴다. 줄에서 보이는 항목의 `weight` 가 바뀌면 숨긴 항목의 `weight` 도 같은 비율로 맞춘다.
+ * 보이는 항목의 `weight` 가 모두 지워졌으면(같게 나누기) 숨긴 항목의 `weight` 도 지운다. 좌우 줄에서 보이는 pane 의
+ * `cols` 가 모두 지워졌으면 숨긴 pane 의 `cols` 도 지운다.
  */
 export function mergeVisible(full: Layout, hidden: ReadonlySet<number>, shown: Layout): Layout {
   if (!hidden.size) return shown
@@ -124,7 +124,7 @@ function merge(
     return { ...node, [side]: merge(rest, hidden, shown, node.split) }
   }
   if ('split' in restShown && restShown.split === outer && 'split' in shown) {
-    // 같게 나눈 줄이면 이 항목이 바깥 줄에서 들어간 항목 수만큼의 몫을 가져야 투영이 같게 나뉜다.
+    // 같게 나눈 줄이면 이 항목이 바깥 줄에 넣은 항목 수만큼의 `weight` 를 가져야 투영이 같게 나뉜다.
     const items = line(shown, outer)
     const cleared = items.every((item) => item.weight === undefined)
     const sum = cleared ? items.length : total(shown)
@@ -143,7 +143,7 @@ function merge(
   }
 }
 
-// 줄여 넣었다가 되돌린 몫은 소수 오차가 남는다. 원래 값과 같으면 원래 값(없음 포함)을 둔다.
+// 줄여 넣었다가 되돌린 `weight` 는 소수 오차가 남는다. 원래 값과 같으면 원래 값(없음 포함)을 둔다.
 function keepEqual(old: Layout, next: Layout): Layout {
   if (!('split' in old) || !('split' in next)) return next
   const items = line(old, old.split)

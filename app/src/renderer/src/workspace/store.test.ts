@@ -2119,7 +2119,6 @@ describe('즐겨찾기', () => {
 })
 
 describe('숨긴 pane', () => {
-  /** pane 1·2·3 을 오른쪽으로 나눈 cell 하나와, pane 하나인 cell 둘. 첫 cell 을 고르고 3 에 포커스한다. */
   function three() {
     const ws = opened(3)
     ws.select(keys(ws)[0])
@@ -2169,6 +2168,29 @@ describe('숨긴 pane', () => {
     ws.select(keys(ws)[2])
     ws.hidePane(ws.cells()[2].panes[0].key)
     expect(ws.selectedKey.value).toBe(keys(ws)[0])
+  })
+
+  it('고른 cell 을 닫으면 숨긴 이웃 cell 을 건너뛰고 다음 보이는 cell 을 고른다', () => {
+    const ws = opened(3)
+    const [first, , third] = keys(ws)
+    ws.hidePane(ws.cells()[1].panes[0].key)
+    ws.select(first)
+    ws.closePane(ws.cells()[0].panes[0].key)
+    expect(ws.selectedKey.value).toBe(third)
+    ws.closePane(ws.cells()[1].panes[0].key)
+    expect(ws.selectedKey.value).toBeNull()
+  })
+
+  it('숨긴 cell 에 보이는 pane 을 나눠 넣으면 그 pane 으로 포커스가 간다', () => {
+    const ws = opened(2)
+    const c = ws.cells()[0]
+    const hidden = c.panes[0].key
+    ws.hidePane(hidden)
+    const pane = ws.splitFrom(hidden, 'right', {}, true)
+    expect(c.focused).toBe(pane)
+    expect(ws.isHidden(c)).toBe(false)
+    ws.splitFrom(pane, 'right', {}, false, true)
+    expect(c.focused).toBe(pane)
   })
 
   it('꺼내면 원래 자리로 돌아오고 포커스와 선택을 받는다', () => {

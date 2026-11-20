@@ -367,23 +367,26 @@ export function createWorkspaces(
     return key
   }
 
-  /** 선택한 cell 이 숨겨졌으면 cell 을 닫을 때처럼 뒤의 보이는 cell 을, 없으면 앞의 것을 고른다. */
-  function leaveHidden(c: Cell): void {
-    if (selectedKey.value !== c.key || !isHidden(c)) return
-    const all = cells()
-    const i = all.indexOf(c)
-    const next =
-      all.slice(i + 1).find((x) => !isHidden(x)) ??
+  // cell 을 닫을 때처럼 `i` 번째부터 뒤로, 없으면 앞으로 가며 보이는 cell 을 찾는다.
+  function visibleNear(all: Cell[], i: number): Cell | undefined {
+    return (
+      all.slice(i).find((x) => !isHidden(x)) ??
       all
         .slice(0, i)
         .reverse()
         .find((x) => !isHidden(x))
-    selectedKey.value = next?.key ?? null
+    )
+  }
+
+  function leaveHidden(c: Cell): void {
+    if (selectedKey.value !== c.key || !isHidden(c)) return
+    const all = cells()
+    selectedKey.value = visibleNear(all, all.indexOf(c))?.key ?? null
   }
 
   /**
-   * 포커스한 pane 을 숨기면 그 pane 을 닫을 때처럼 보이는 이웃으로 포커스를 옮긴다. 마지막 보이는 pane 이면 포커스는 두어
-   * 숨긴 cell 을 고를 때 그 pane 을 꺼낸다.
+   * 포커스한 pane 을 숨기면 그 pane 을 닫을 때처럼 보이는 이웃으로 포커스를 옮긴다. 마지막 보이는 pane 이면 `focused` 를
+   * 그대로 둔다. 숨긴 cell 을 고르면 `focused` 의 pane 을 꺼내기 때문이다(`App.vue` 의 `selectCell`).
    */
   function hidePane(key: number): void {
     const c = owner(key)
@@ -398,7 +401,6 @@ export function createWorkspaces(
     leaveHidden(c)
   }
 
-  /** 숨긴 pane 을 꺼내 포커스하고 그 cell 을 고른다. 숨기지 않은 pane 이면 포커스만 한다. */
   function showPane(key: number): void {
     const c = owner(key)
     const p = c?.panes.find((x) => x.key === key)
@@ -417,8 +419,7 @@ export function createWorkspaces(
       w.cells.findIndex((c) => c.key === key)
     )
     if (selectedKey.value !== key) return
-    const rest = cells()
-    selectedKey.value = (rest[i] ?? rest[i - 1])?.key ?? null
+    selectedKey.value = visibleNear(cells(), i)?.key ?? null
   }
 
   /**
@@ -485,6 +486,7 @@ export function createWorkspaces(
     hidden = false
   ): number {
     const c = owner(from)!
+    const cellHidden = isHidden(c)
     const p = newPane(init)
     if (hidden) p.hidden = true
     c.panes.push(p)
@@ -492,6 +494,8 @@ export function createWorkspaces(
     c.layout = full
       ? splitRoot(c.layout, pane, direction)
       : splitPane(c.layout, from, pane, direction)
+    // 숨긴 cell 에 보이는 pane 을 넣으면 포커스가 숨긴 pane 에 남는다.
+    if (cellHidden && !hidden) c.focused = pane
     return pane
   }
 

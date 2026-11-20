@@ -460,7 +460,7 @@ enum PaneCommand {
         /// `maru pane list` shows the cell of each pane.
         #[arg(long, value_name = "CELL")]
         cell: Option<String>,
-        /// Open the pane hidden. Its pty runs, and clicking its row in the sidebar shows it.
+        /// Open the pane without showing it. Its pty runs, and clicking its row in the sidebar shows it.
         #[arg(long)]
         hidden: bool,
         /// Command and its arguments.
@@ -483,8 +483,8 @@ enum PaneCommand {
     /// is idle, working, done, blocked or error; a blocked state with a reason reads e.g.
     /// blocked(permission). APP is the program, e.g. claude-code. WORKSPACE and TITLE are the
     /// names shown in the sidebar. CELL is the id of the pane's cell, e.g. c-1a2b3c4d, which
-    /// `maru pane new --cell` takes. DIR is the pane's directory. HIDDEN is `hidden` for a
-    /// pane hidden from the screen and empty otherwise. Control characters in a
+    /// `maru pane new --cell` takes. DIR is the pane's directory. HIDDEN is `hidden` when
+    /// the pane is not shown on screen and empty otherwise. Control characters in a
     /// value, such as tabs and newlines, become spaces, and an unknown value is an empty
     /// column.
     List,

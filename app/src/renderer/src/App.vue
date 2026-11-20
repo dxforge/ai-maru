@@ -776,7 +776,6 @@ function splitSelected(direction: SplitDirection, init?: PaneInit): void {
 type Preview = { cell: number; layout: Layout; by: 'drag' | 'key' }
 const preview = shallowRef<Preview | null>(null)
 
-/** 숨긴 pane 을 접은 layout 에 preview 를 씌운 것. cell 이 숨겨졌으면 null 이다. */
 function shownLayout(c: Cell, visible = workspaces.visibleOf(c)): Layout | null {
   const p = preview.value
   return p && visible && p.cell === c.key && sameShape(p.layout, visible) ? p.layout : visible
@@ -945,8 +944,8 @@ const views = computed(() =>
     const boxes =
       shown && (selected || viewMode.value === 'columns') ? boxesOf(c, shown) : undefined
     const lines = shown && boxes ? dividers(shown, boxes, widthsOf(cols)) : []
-    // 숨긴 pane 은 숨기기 직전 크기로 pty 를 둔다. 처음부터 숨긴 pane 은 그 pane 만 꺼냈다고 친 배치의 크기를 받아야
-    // pty 가 시작한다.
+    // 숨기기 전 크기가 없는 pane(숨긴 채 떴거나 앱을 다시 띄운 pane)은 그 pane 만 꺼냈다고 친 배치의 크기를 받는다.
+    // 크기를 받아야 pty 가 시작하기 때문이다.
     const hiddenPlace = (key: number) => {
       const alone = visibleLayout(c.layout, new Set([...hidden].filter((k) => k !== key)))!
       const at = place(alone).get(key)!

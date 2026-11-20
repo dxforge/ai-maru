@@ -106,3 +106,18 @@ test('columns 보기에서 가운데 pane 을 숨겨도 이미 보이는 오른�
   expect(scrolls[0]).toBeGreaterThan(0)
   expect(new Set(scrolls).size).toBe(1)
 })
+
+test('maru pane new --hidden 으로 띄운 pane 은 숨긴 채 pty 가 돌고, 사이드바 줄을 누르면 나온다', async ({
+  launch
+}) => {
+  const { page } = await launch()
+  await page.keyboard.type(`maru pane new --hidden bash -c 'echo started-$((3+4)); read x'\n`)
+  await expect(panes(page)).toHaveCount(2)
+  await expect(panes(page).nth(1)).toHaveClass(/hidden/)
+  await expect(panes(page).nth(0).locator('.terminal-view')).toHaveClass(/active/)
+  const rows = cellGroups(page).nth(0).locator('.pane-row')
+  await expect(rows.nth(1).locator('.hidden-mark')).toHaveCount(1)
+  await rows.nth(1).click()
+  await expect(panes(page).nth(1)).not.toHaveClass(/hidden/)
+  await expect(screen(page, 1)).toShow('started-7')
+})
