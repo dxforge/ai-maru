@@ -9,6 +9,7 @@ import {
   panes,
   restartWith,
   screen,
+  settled,
   split,
   test,
   toggleView,
@@ -90,16 +91,7 @@ test('columns 보기에서 가운데 pane 을 숨겨도 이미 보이는 오른�
   await split(app, page, 'split-right', 3)
   await focusPane(app, page, 'focus-pane-left', 1)
   // 포커스를 따라가는 스크롤이 멈춘 뒤에 숨긴다.
-  await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const area = document.querySelector('.terminals')!
-        const before = area.scrollLeft
-        await new Promise((r) => setTimeout(r, 50))
-        return area.scrollLeft === before
-      })
-    )
-    .toBe(true)
+  await settled(() => page.evaluate(() => document.querySelector('.terminals')!.scrollLeft))
   const scrolls = await page.evaluate(async () => {
     const area = document.querySelector('.terminals')!
     const out = [area.scrollLeft]

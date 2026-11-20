@@ -1,4 +1,12 @@
-import { line, panes, type Layout, type Split, type SplitDirection } from './layout'
+import {
+  line,
+  panes,
+  withWeight,
+  withoutCols,
+  type Layout,
+  type Split,
+  type SplitDirection
+} from './layout'
 
 /**
  * 숨긴 pane 은 분할 트리에 남는다. 화면·이동·크기 조절은 숨긴 잎을 접은 트리(`visibleLayout`)로 하고, 거기서 바꾼 크기는
@@ -30,28 +38,18 @@ function total(layout: Layout): number {
   return line(layout, layout.split).reduce((sum, item) => sum + (item.weight ?? 1), 0)
 }
 
-function withWeight(layout: Layout, weight: number | undefined): Layout {
-  const copy = { ...layout }
-  if (weight === undefined) delete copy.weight
-  else copy.weight = weight
-  return copy
-}
-
-function withCols(layout: Layout, cols: number | undefined): Layout {
-  const copy = { ...layout }
-  if ('pane' in copy) {
-    if (cols === undefined) delete copy.cols
-    else copy.cols = cols
-  }
-  return copy
+// 줄 `root` 의 항목마다 `f` 를 부른다. `i` 는 줄 안의 순서다.
+function mapLine(root: Split, f: (item: Layout, i: number) => Layout): Layout {
+  let i = 0
+  const go = (node: Layout): Layout =>
+    'split' in node && node.split === root.split
+      ? { ...node, first: go(node.first), second: go(node.second) }
+      : f(node, i++)
+  return go(root)
 }
 
 function scaleLine(root: Split, by: number): Layout {
-  const scale = (node: Layout): Layout =>
-    'split' in node && node.split === root.split
-      ? { ...node, first: scale(node.first), second: scale(node.second) }
-      : withWeight(node, (node.weight ?? 1) * by)
-  return scale(root)
+  return mapLine(root, (item) => withWeight(item, (item.weight ?? 1) * by))
 }
 
 /**
@@ -84,7 +82,7 @@ function clearHiddenCols(old: Layout, next: Layout, hidden: ReadonlySet<number>)
   const clear = (n: Layout): Layout =>
     'pane' in n
       ? hidden.has(n.pane)
-        ? withCols(n, undefined)
+        ? withoutCols(n)
         : n
       : { ...n, first: clear(n.first), second: clear(n.second) }
   const walk = (n: Layout, outer?: SplitDirection): Layout => {
@@ -106,8 +104,10 @@ function merge(
   shown: Layout,
   outer?: SplitDirection
 ): Layout {
-  if ('pane' in node)
-    return withWeight(withCols(node, 'pane' in shown ? shown.cols : undefined), shown.weight)
+  if ('pane' in node) {
+    const cols = 'pane' in shown ? shown.cols : undefined
+    return withWeight(cols === undefined ? withoutCols(node) : { ...node, cols }, shown.weight)
+  }
   const first = visible(node.first, hidden, node.split)
   const second = visible(node.second, hidden, node.split)
   if (first && second && 'split' in shown) {
@@ -147,23 +147,14 @@ function merge(
 function keepEqual(old: Layout, next: Layout): Layout {
   if (!('split' in old) || !('split' in next)) return next
   const items = line(old, old.split)
-  let i = 0
-  const fix = (node: Layout): Layout => {
-    if ('split' in node && node.split === next.split) {
-      return { ...node, first: fix(node.first), second: fix(node.second) }
-    }
-    const was = items[i++].weight
-    return Math.abs((node.weight ?? 1) - (was ?? 1)) < 1e-9 ? withWeight(node, was) : node
-  }
-  return fix(next)
+  return mapLine(next, (item, i) => {
+    const was = items[i].weight
+    return Math.abs((item.weight ?? 1) - (was ?? 1)) < 1e-9 ? withWeight(item, was) : item
+  })
 }
 
 function clearLine(root: Split): Layout {
-  const clear = (node: Layout): Layout =>
-    'split' in node && node.split === root.split
-      ? { ...node, first: clear(node.first), second: clear(node.second) }
-      : withWeight(node, undefined)
-  return clear(root)
+  return mapLine(root, (item) => withWeight(item, undefined))
 }
 
 function rescaleHidden(old: Layout, next: Layout, hidden: ReadonlySet<number>): Layout {
@@ -190,14 +181,7 @@ function rescaleLine(old: Split, next: Split, hidden: ReadonlySet<number>): Layo
   const cleared = shownItems.every((item) => item.weight === undefined)
   const sum = (items: Layout[]): number => items.reduce((s, item) => s + (item.weight ?? 1), 0)
   const ratio = sum(shownItems) / sum(before.filter((_, i) => shownAt[i]))
-  let i = 0
-  const fix = (node: Layout): Layout => {
-    if ('split' in node && node.split === next.split) {
-      return { ...node, first: fix(node.first), second: fix(node.second) }
-    }
-    const at = i++
-    if (shownAt[at]) return node
-    return withWeight(node, cleared ? undefined : (before[at].weight ?? 1) * ratio)
-  }
-  return fix(next)
+  return mapLine(next, (item, i) =>
+    shownAt[i] ? item : withWeight(item, cleared ? undefined : (before[i].weight ?? 1) * ratio)
+  )
 }

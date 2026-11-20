@@ -548,8 +548,9 @@ export function createWorkspaces(
   function moveFocus(direction: FocusDirection, widths: Widths = 'even'): void {
     const c = selected()
     const shown = c && visibleOf(c)
-    const to = shown ? neighbor(shown, c!.focused, direction, widths) : undefined
-    if (to !== undefined) c!.focused = to
+    if (!c || !shown) return
+    const to = neighbor(shown, c.focused, direction, widths)
+    if (to !== undefined) c.focused = to
   }
 
   function pane(key: number): Pane | undefined {

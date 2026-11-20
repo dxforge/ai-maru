@@ -393,7 +393,8 @@ window.maru.onPaneNew((id, req) => {
     }
   }
   const whole = full || cell !== undefined
-  if (!roomFor(from, direction, whole, hidden)) {
+  // 숨긴 채 뜨는 pane 은 자리를 차지하지 않는다.
+  if (!hidden && !roomFor(from, direction, whole)) {
     return window.maru.paneReply(id, { error: 'no_space', message: 'no space for a new pane' })
   }
   const pane = workspaces.splitFrom(from, direction, { startDir: cwd, command }, whole, hidden)
@@ -733,12 +734,7 @@ function moveFocus(direction: FocusDirection): void {
   if (c) workspaces.moveFocus(direction, widthsOf(columnColsOf(c)))
 }
 
-function roomFor(
-  from: number,
-  direction: SplitDirection,
-  full: boolean,
-  newHidden = false
-): boolean {
+function roomFor(from: number, direction: SplitDirection, full: boolean): boolean {
   const c = workspaces.owner(from)
   if (!c) return true
   const cell = cellOf(fontOf(c))
@@ -750,7 +746,7 @@ function roomFor(
       cols: columnColsOf(c),
       hidden: workspaces.hiddenOf(c)
     },
-    { from, direction, full, newHidden }
+    { from, direction, full }
   )
 }
 
@@ -781,9 +777,8 @@ type Preview = { cell: number; layout: Layout; by: 'drag' | 'key' }
 const preview = shallowRef<Preview | null>(null)
 
 /** 숨긴 pane 을 접은 layout 에 preview 를 씌운 것. cell 이 숨겨졌으면 null 이다. */
-function shownLayout(c: Cell): Layout | null {
+function shownLayout(c: Cell, visible = workspaces.visibleOf(c)): Layout | null {
   const p = preview.value
-  const visible = workspaces.visibleOf(c)
   return p && visible && p.cell === c.key && sameShape(p.layout, visible) ? p.layout : visible
 }
 
@@ -922,8 +917,9 @@ function resizeSelected(dir: FocusDirection, commit: boolean): void {
   if (!c) return
   if (preview.value && (preview.value.cell !== c.key || preview.value.by !== 'key')) commitPreview()
   const base = shownLayout(c)
-  const ctx = base && resizeContext(c, base)
-  if (!base || !ctx) return
+  if (!base) return
+  const ctx = resizeContext(c, base)
+  if (!ctx) return
   preview.value = { cell: c.key, layout: keyResize(base, c.focused, dir, ctx), by: 'key' }
   if (commit) commitPreview()
 }
@@ -939,9 +935,9 @@ const views = computed(() =>
     const measured = gridSizes.get(c.key)
     const cols = columnColsOf(c)
     const hidden = workspaces.hiddenOf(c)
-    const shown = shownLayout(c)
     const visible = workspaces.visibleOf(c)
-    const width = shown && columnsWidthOf(shown, cols, cell)
+    const shown = shownLayout(c, visible)
+    const width = shown ? columnsWidthOf(shown, cols, cell) : undefined
     const place = (l: Layout) =>
       placements(l, measured && areaOf(l, cols, cell, measured), cell, cols)
     const places = shown ? place(shown) : (new Map() as ReturnType<typeof placements>)
@@ -963,7 +959,7 @@ const views = computed(() =>
       hidden: !shown,
       font,
       vars: gridVars(cell, font),
-      width: width === undefined || width === null ? undefined : `${width}px`,
+      width: width === undefined ? undefined : `${width}px`,
       handles: lines.filter((d) => d.kind === 'line'),
       edge: lines.find((d) => d.kind === 'edge'),
       panes: c.panes.map((p) => {
@@ -1006,8 +1002,7 @@ function focusPane(cell: number, pane: number): void {
 }
 
 function selectPane(cell: number, pane: number): void {
-  if (workspaces.pane(pane)?.hidden) workspaces.showPane(pane)
-  workspaces.focusPane(pane)
+  workspaces.showPane(pane)
   selectCell(cell)
 }
 
