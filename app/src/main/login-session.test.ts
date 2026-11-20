@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
-import { etimeSeconds, fromEarlierLogin, loginStartedMs, readLoginStartedMs } from './login-session'
+import { etimeSeconds, loginStartedMs, readLoginStartedMs } from './login-session'
 
 const LOGINWINDOW = '/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow'
 const NOW = 1_800_000_000_000
@@ -104,27 +104,11 @@ describe('readLoginStartedMs', () => {
     ).toBeNull()
   })
 
+  it('ps 가 제한 시간 안에 끝나지 않으면 null 이다', async () => {
+    expect(await readLoginStartedMs(fakePs('exec sleep 10'), 502)).toBeNull()
+  })
+
   it('ps 가 없으면 null 이다', async () => {
     expect(await readLoginStartedMs('/nonexistent/ps', 502)).toBeNull()
-  })
-})
-
-describe('fromEarlierLogin', () => {
-  const rec = (id: string, created_at_ms: number) => ({ id, created_at_ms })
-
-  it('남길 pty 가운데 로그인보다 먼저 뜬 것이 있으면 true 다', () => {
-    expect(fromEarlierLogin([rec('p-1', 50), rec('p-2', 200)], ['p-1', 'p-2'], 100)).toBe(true)
-  })
-
-  it('남길 pty 가 모두 로그인 뒤에 떴으면 false 다', () => {
-    expect(fromEarlierLogin([rec('p-1', 100), rec('p-2', 200)], ['p-1', 'p-2'], 100)).toBe(false)
-  })
-
-  it('먼저 뜬 pty 가 남길 것이 아니면 보지 않는다', () => {
-    expect(fromEarlierLogin([rec('p-1', 50), rec('p-2', 200)], ['p-2'], 100)).toBe(false)
-  })
-
-  it('로그인 시각을 모르면 판정하지 않는다', () => {
-    expect(fromEarlierLogin([rec('p-1', 50)], ['p-1'], null)).toBe(false)
   })
 })

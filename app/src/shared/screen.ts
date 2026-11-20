@@ -107,8 +107,8 @@ export type SavedLayout = { workspaces: SavedWorkspace[]; selected: number | nul
 /**
  * 다시 뜬 앱이 toast 로 알릴 것이다. `workspaces`·`cells`·`panes`·`sessions` 는 사용자가 고르지 않았는데 잃은 표다.
  * `protocol` 은 pty 프로토콜이 달라 `sessions` 를 버린 것이다. `recovered` 는 표를 잃어 붙을 pane 이 없던 pty 를
- * `Recovered` workspace 에 연 것이다. `login` 은 다시 붙거나 Recovered 에 연 pty 가운데 지금 GUI 로그인 세션보다 먼저
- * 뜬 것이 있는 것이다.
+ * `Recovered` workspace 에 연 것이다. `login` 은 다시 붙거나 `Recovered` workspace 에 연 pty 가운데 지금 GUI 로그인
+ * 세션이 시작되기 전에 뜬 pty 가 있다는 뜻이다.
  */
 export type RestoreNotice =
   'workspaces' | 'cells' | 'panes' | 'sessions' | 'protocol' | 'recovered' | 'login'

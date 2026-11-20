@@ -500,7 +500,6 @@ describe('startRestore', () => {
     expect(r.notice).toEqual([])
   })
 
-  // `live` 는 i 번째 pty 의 created_at_ms 를 i 로 준다. pane pty 둘, job pty 하나 순서다.
   it('다시 붙을 pane pty 가 지금 로그인보다 먼저 떴으면 login 을 알린다', () => {
     const layout = joinTables({ workspaces, cells, panes })
     const r = startRestore(read(), layout, sessions, live(sessionPtys(sessions)), 1)
