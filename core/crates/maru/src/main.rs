@@ -47,9 +47,9 @@
 //! | `inbox.push` | `to`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
 //! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 pty id>,"text":<본문>}…]}` |
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
-//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `pane`(pane id, 선택), `full`(bool, 선택), `cell`(cell id, 선택) | `{"pane":<새 pane id>,"pty":<새 pty id>}` |
+//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `pane`(pane id, 선택), `full`(bool, 선택), `cell`(cell id, 선택), `hidden`(bool, 선택) | `{"pane":<새 pane id>,"pty":<새 pty id>}` |
 //! | `pane.close` | `target`(pane id) | `null` |
-//! | `pane.list` | 없음 | `{"panes":[{"pane","pty","state","kind","app","workspace","cell","title","dir","message"}…]}` |
+//! | `pane.list` | 없음 | `{"panes":[{"pane","pty","state","kind","app","workspace","cell","title","dir","message","hidden"}…]}` |
 //! | `pty.list` | 없음 | `{"ptys":[{"pty","kind","workspace","cell","state","state_kind","exit","name","dir"}…]}` |
 //! | `pty.read` | `target`(pty id) | `{"text":<글자>}` |
 //! | `pty.send` | `target`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
@@ -460,6 +460,9 @@ enum PaneCommand {
         /// `maru pane list` shows the cell of each pane.
         #[arg(long, value_name = "CELL")]
         cell: Option<String>,
+        /// Open the pane without showing it. Its pty runs, and clicking its row in the sidebar shows it.
+        #[arg(long)]
+        hidden: bool,
         /// Command and its arguments.
         #[arg(trailing_var_arg = true)]
         command: Vec<String>,
@@ -473,14 +476,15 @@ enum PaneCommand {
     /// List the panes in every workspace and cell, in screen order.
     ///
     /// Prints tab-separated columns with a header: PANE, PTY, STATE, APP, WORKSPACE, CELL,
-    /// TITLE, DIR, MESSAGE. PANE is the pane's id, which `maru pane new --split` and
+    /// TITLE, DIR, MESSAGE, HIDDEN. PANE is the pane's id, which `maru pane new --split` and
     /// `maru pane close` take; it stays the same when the app restarts. PTY is the id of the
     /// pty the pane shows, which `maru pty` takes. STATE, APP and MESSAGE come from the
     /// program status the pane's program reported, and are empty when it reported none. STATE
     /// is idle, working, done, blocked or error; a blocked state with a reason reads e.g.
     /// blocked(permission). APP is the program, e.g. claude-code. WORKSPACE and TITLE are the
     /// names shown in the sidebar. CELL is the id of the pane's cell, e.g. c-1a2b3c4d, which
-    /// `maru pane new --cell` takes. DIR is the pane's directory. Control characters in a
+    /// `maru pane new --cell` takes. DIR is the pane's directory. HIDDEN is `hidden` when
+    /// the pane is not shown on screen and empty otherwise. Control characters in a
     /// value, such as tabs and newlines, become spaces, and an unknown value is an empty
     /// column.
     List,
@@ -725,9 +729,10 @@ fn run(command: Command) -> Result<()> {
                 split,
                 full,
                 cell,
+                hidden,
                 command,
             } => {
-                let (pane, pty) = pane_new(cwd, down, split, full, cell, command)?;
+                let (pane, pty) = pane_new(cwd, down, split, full, cell, hidden, command)?;
                 write!(std::io::stdout(), "PANE\tPTY\n{pane}\t{pty}\n")?;
             }
             PaneCommand::Close { pane } => {
@@ -1495,6 +1500,7 @@ fn pane_new(
     pane: Option<String>,
     full: bool,
     cell: Option<String>,
+    hidden: bool,
     command: Vec<String>,
 ) -> Result<(String, String)> {
     let target = target()?;
@@ -1512,6 +1518,9 @@ fn pane_new(
     }
     if let Some(cell) = cell {
         params.insert("cell".into(), cell.into());
+    }
+    if hidden {
+        params.insert("hidden".into(), true.into());
     }
     if !command.is_empty() {
         params.insert("command".into(), command.into());
@@ -1691,7 +1700,7 @@ fn pane_list() -> Result<()> {
         return Ok(());
     };
     print_tsv(
-        "PANE\tPTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE",
+        "PANE\tPTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE\tHIDDEN",
         rows,
     )
 }
@@ -1750,7 +1759,7 @@ fn pty_row(pty: &Value, home: Option<&str>) -> Result<[String; 8]> {
     Ok(row.map(|v| tsv_field(&v)))
 }
 
-fn pane_row(pane: &Value, home: Option<&str>) -> Result<[String; 9]> {
+fn pane_row(pane: &Value, home: Option<&str>) -> Result<[String; 10]> {
     let fail = || anyhow!("the app answered with a pane it cannot print: {pane}");
     let text = |key: &str| pane[key].as_str().ok_or_else(fail);
     let state = program_state(text("state")?, &pane["kind"]).ok_or_else(fail)?;
@@ -1764,6 +1773,13 @@ fn pane_row(pane: &Value, home: Option<&str>) -> Result<[String; 9]> {
         text("title")?.to_owned(),
         tilde(text("dir")?, home),
         text("message")?.to_owned(),
+        // 숨김을 모르는 앱은 `hidden` 을 싣지 않는다.
+        match &pane["hidden"] {
+            Value::Bool(true) => "hidden",
+            Value::Bool(false) | Value::Null => "",
+            _ => return Err(fail()),
+        }
+        .to_owned(),
     ];
     Ok(row.map(|v| tsv_field(&v)))
 }

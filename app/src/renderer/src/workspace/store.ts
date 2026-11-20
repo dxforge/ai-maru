@@ -15,6 +15,7 @@ import {
 } from '../../../shared/screen'
 import { newPtyId, randomId } from '../../../shared/pty'
 import { paneCwd, paneTitle } from './display'
+import { mergeVisible, visibleLayout } from './hidden'
 import {
   clearCols,
   neighbor,
@@ -36,7 +37,7 @@ import {
  * 런처로 띄운 pane 에 붙는다. 그 pane 은 명령이 실패해도 닫히지 않고 남는다(`ScreenPane`). `cwd`·`title` 은 화면에 보일
  * 값으로 `paneCwd`·`paneTitle` 이 고르고, `restoredTitle` 은 그 재료다. `cwd` 는 만들 때부터 채워 `startDir` 가 있으면 비지
  * 않는다. `attach` 는 재시작으로 되살린 pane 이 떠 있는 pty 에 붙어야 할 때 true 다. `gitRoot` 는 `git` 을 읽은 cwd 에서
- * 구한 작업 트리 최상위 경로이고, 구하지 못했으면 없다.
+ * 구한 작업 트리 최상위 경로이고, 구하지 못했으면 없다. `hidden` 이면 pty 를 연 채 화면에서만 뺀다(`hidden.ts`).
  */
 export type Pane = {
   key: number
@@ -51,6 +52,7 @@ export type Pane = {
   gitRoot?: string
   attach?: boolean
   restoredTitle?: string
+  hidden?: true
 }
 
 /**
@@ -328,29 +330,84 @@ export function createWorkspaces(
     selectedKey.value = insertCell(w, at, { startDir, ...extra }).key
   }
 
+  const hiddenOf = (c: Cell): Set<number> =>
+    new Set(c.panes.filter((p) => p.hidden).map((p) => p.key))
+
+  /** 숨긴 pane 을 접은 분할 트리. 보이는 pane 이 없으면(cell 숨김) null 이다. */
+  const visibleOf = (c: Cell): Layout | null => visibleLayout(c.layout, hiddenOf(c))
+
+  const isHidden = (c: Cell): boolean => c.panes.every((p) => p.hidden)
+
   function step(by: 1 | -1): number | undefined {
     const all = cells()
     const n = all.length
-    if (!n) return undefined
     const i = all.findIndex((c) => c.key === selectedKey.value)
-    return all[(i + by + n) % n].key
+    for (let k = 1; k <= n; k++) {
+      const c = all[(((i + by * k) % n) + n) % n]
+      if (!isHidden(c)) return c.key
+    }
+    return undefined
   }
 
   function stepPane(by: 1 | -1): number | undefined {
     const c = selected()
-    if (c) {
-      const order = panes(c.layout)
-      const to = order[order.indexOf(c.focused) + by]
+    const shown = c && visibleOf(c)
+    if (shown) {
+      const order = panes(shown)
+      const to = order[order.indexOf(c!.focused) + by]
       if (to !== undefined) {
-        c.focused = to
-        return c.key
+        c!.focused = to
+        return c!.key
       }
     }
     const key = step(by)
     if (key === undefined) return undefined
     const next = cell(key)!
-    next.focused = panes(next.layout).at(by === 1 ? 0 : -1)!
+    next.focused = panes(visibleOf(next)!).at(by === 1 ? 0 : -1)!
     return key
+  }
+
+  // cell 을 닫을 때처럼 `i` 번째부터 뒤로, 없으면 앞으로 가며 보이는 cell 을 찾는다.
+  function visibleNear(all: Cell[], i: number): Cell | undefined {
+    return (
+      all.slice(i).find((x) => !isHidden(x)) ??
+      all
+        .slice(0, i)
+        .reverse()
+        .find((x) => !isHidden(x))
+    )
+  }
+
+  function leaveHidden(c: Cell): void {
+    if (selectedKey.value !== c.key || !isHidden(c)) return
+    const all = cells()
+    selectedKey.value = visibleNear(all, all.indexOf(c))?.key ?? null
+  }
+
+  /**
+   * 포커스한 pane 을 숨기면 그 pane 을 닫을 때처럼 보이는 이웃으로 포커스를 옮긴다. 마지막 보이는 pane 이면 `focused` 를
+   * 그대로 둔다. 숨긴 cell 을 고르면 `focused` 의 pane 을 꺼내기 때문이다(`App.vue` 의 `selectCell`).
+   */
+  function hidePane(key: number): void {
+    const c = owner(key)
+    const p = c?.panes.find((x) => x.key === key)
+    if (!c || !p || p.hidden) return
+    const shown = visibleOf(c)
+    p.hidden = true
+    if (c.focused === key && shown) {
+      const next = removePane(shown, key)?.next
+      if (next !== undefined) c.focused = next
+    }
+    leaveHidden(c)
+  }
+
+  function showPane(key: number): void {
+    const c = owner(key)
+    const p = c?.panes.find((x) => x.key === key)
+    if (!c || !p) return
+    delete p.hidden
+    c.focused = key
+    selectedKey.value = c.key
   }
 
   function close(key: number): void {
@@ -362,8 +419,7 @@ export function createWorkspaces(
       w.cells.findIndex((c) => c.key === key)
     )
     if (selectedKey.value !== key) return
-    const rest = cells()
-    selectedKey.value = (rest[i] ?? rest[i - 1])?.key ?? null
+    selectedKey.value = visibleNear(cells(), i)?.key ?? null
   }
 
   /**
@@ -426,15 +482,20 @@ export function createWorkspaces(
     from: number,
     direction: SplitDirection,
     init: PaneInit,
-    full = false
+    full = false,
+    hidden = false
   ): number {
     const c = owner(from)!
+    const cellHidden = isHidden(c)
     const p = newPane(init)
+    if (hidden) p.hidden = true
     c.panes.push(p)
     const pane = p.key
     c.layout = full
       ? splitRoot(c.layout, pane, direction)
       : splitPane(c.layout, from, pane, direction)
+    // 숨긴 cell 에 보이는 pane 을 넣으면 포커스가 숨긴 pane 에 남는다.
+    if (cellHidden && !hidden) c.focused = pane
     return pane
   }
 
@@ -476,9 +537,11 @@ export function createWorkspaces(
     if (c.panes.length === 1) return close(c.key)
     const removed = removePane(c.layout, pane)
     if (!removed) return
+    const shown = visibleOf(c)
     c.panes = c.panes.filter((p) => p.key !== pane)
     c.layout = removed.layout
-    if (c.focused === pane) c.focused = removed.next
+    if (c.focused === pane) c.focused = (shown && removePane(shown, pane)?.next) ?? removed.next
+    leaveHidden(c)
   }
 
   function focusPane(pane: number): void {
@@ -488,8 +551,10 @@ export function createWorkspaces(
 
   function moveFocus(direction: FocusDirection, widths: Widths = 'even'): void {
     const c = selected()
-    const to = c && neighbor(c.layout, c.focused, direction, widths)
-    if (to !== undefined) c!.focused = to
+    const shown = c && visibleOf(c)
+    if (!c || !shown) return
+    const to = neighbor(shown, c.focused, direction, widths)
+    if (to !== undefined) c.focused = to
   }
 
   function pane(key: number): Pane | undefined {
@@ -620,10 +685,18 @@ export function createWorkspaces(
     c.layout = clearCols(c.layout)
   }
 
-  /** 크기만 바꾼 `layout` 으로 갈아 끼운다. pane 구조가 다르면 그동안 split·닫기가 있었던 것이라 버린다. */
+  /**
+   * 크기만 바꾼 `layout` 으로 갈아 끼운다. `layout` 은 전체 트리이거나 숨긴 pane 을 접은 트리(`visibleOf`)다. pane 구조가
+   * 둘 다와 다르면 그동안 split·닫기·숨기기가 있었던 것이라 버린다.
+   */
   function resize(key: number, layout: Layout): void {
     const c = cell(key)
-    if (c && sameShape(c.layout, layout)) c.layout = layout
+    if (!c) return
+    if (sameShape(c.layout, layout)) c.layout = layout
+    else {
+      const shown = visibleOf(c)
+      if (shown && sameShape(shown, layout)) c.layout = mergeVisible(c.layout, hiddenOf(c), layout)
+    }
   }
 
   // IPC 로 보내므로 JSON 으로 reactive proxy 를 벗긴다. `git` 은 main 이 `maru pane list` 의 이름을 짓는 데 쓴다.
@@ -642,6 +715,7 @@ export function createWorkspaces(
       if (pty) return { ...p, ptyId: pty, startDir: p.cwd, attach: true, restoredTitle: p.title }
       const fresh: Pane = { key: p.key, id: p.id, ptyId: ptyId(), startDir: p.cwd }
       if (p.git) fresh.git = p.git
+      if (p.hidden) fresh.hidden = true
       return fresh
     }
     list.value = layout.workspaces.map((w) => {
@@ -680,6 +754,11 @@ export function createWorkspaces(
     discard,
     split,
     splitFrom,
+    hidePane,
+    showPane,
+    isHidden,
+    visibleOf,
+    hiddenOf,
     pane,
     cellById,
     paneByPty,

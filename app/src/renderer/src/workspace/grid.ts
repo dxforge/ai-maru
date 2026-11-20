@@ -1,5 +1,6 @@
 import { PANE_MIN, type SplitDirection } from '../../../shared/layout'
 import { columnWidth, paneCells } from './columns'
+import { visibleLayout } from './hidden'
 import { EPSILON, line, splitPane, splitRoot, weight, type Layout, type Widths } from './layout'
 
 export type Size = { width: number; height: number }
@@ -168,19 +169,28 @@ export function areaOf(layout: Layout, cols: ColumnCols, cell: Size, measured: S
 
 /**
  * cell 의 pane `from` 을, `full` 이면 cell 전체를 `direction` 으로 나눌 자리가 있는지. `cell` 은 글자 칸 크기이고
- * `measured` 는 잰 pane 영역이다. 아직 재지 않았으면 나눌 수 있다.
+ * `measured` 는 잰 pane 영역이다. 아직 재지 않았으면 나눌 수 있다. `hidden` 은 숨긴 pane 으로, 자리를 차지하지 않는다.
  */
 export function roomForSplit(
   {
     layout,
     cell,
     measured,
-    cols
-  }: { layout: Layout; cell: Size; measured: Size | undefined; cols: ColumnCols },
+    cols,
+    hidden = new Set()
+  }: {
+    layout: Layout
+    cell: Size
+    measured: Size | undefined
+    cols: ColumnCols
+    hidden?: ReadonlySet<number>
+  },
   { from, direction, full }: { from: number; direction: SplitDirection; full: boolean }
 ): boolean {
   if (!measured) return true
-  const next = full ? splitRoot(layout, -1, direction) : splitPane(layout, from, -1, direction)
+  const split = full ? splitRoot(layout, -1, direction) : splitPane(layout, from, -1, direction)
+  const [before, next] = [visibleLayout(layout, hidden), visibleLayout(split, hidden)]
+  if (!before || !next) return true
   const area = (l: Layout): Size => areaOf(l, cols, cell, measured)
-  return canSplit(layout, area(layout), next, area(next), paneMin(cell))
+  return canSplit(before, area(before), next, area(next), paneMin(cell))
 }

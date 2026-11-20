@@ -117,7 +117,25 @@ describe('pane.new', () => {
     await expect(done).rejects.toThrow('no cell c-0000000b')
   })
 
+  it('hidden 이 true 일 때만 창에 넘긴다', async () => {
+    const { handlers, sent, answer } = setup()
+    for (const params of [{ hidden: true }, { hidden: false }, {}]) {
+      const done = handlers['pane.new'](
+        { cwd: '/', direction: 'down', ...params },
+        A
+      ) as Promise<unknown>
+      answer({ pane: NB, pty: B })
+      await done
+    }
+    expect(sent.map((s) => (s.arg as { hidden?: boolean }).hidden)).toEqual([
+      true,
+      undefined,
+      undefined
+    ])
+  })
+
   it.each([
+    [{ cwd: '/', direction: 'right', hidden: 'yes' }],
     [{ cwd: 'rel', direction: 'right' }],
     [{ cwd: '/', direction: 'right', cell: 'ai-maru main' }],
     [{ cwd: '/', direction: 'right', cell: A }],

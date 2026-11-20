@@ -505,4 +505,16 @@ describe('roomForSplit', () => {
   it('pane 영역을 아직 재지 않았으면 나눈다', () => {
     expect(room(twoRight, 2, 'right', undefined)).toBe(true)
   })
+
+  it('숨긴 pane 은 자리를 차지하지 않는다', () => {
+    const area = { width: 66 * 8 - 1, height: 700 }
+    const hiddenRoom = (hidden: number[]) =>
+      roomForSplit(
+        { layout: twoRight, cell, measured: area, cols: undefined, hidden: new Set(hidden) },
+        { from: 2, direction: 'right', full: false }
+      )
+    expect(hiddenRoom([])).toBe(false)
+    expect(hiddenRoom([1])).toBe(true)
+    expect(hiddenRoom([1, 2])).toBe(true)
+  })
 })

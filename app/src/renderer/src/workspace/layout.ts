@@ -27,7 +27,7 @@ export function withoutCols(layout: Layout): Layout {
   return copy
 }
 
-function withWeight(layout: Layout, weight: number | undefined): Layout {
+export function withWeight(layout: Layout, weight: number | undefined): Layout {
   return weight === undefined ? withoutWeight(layout) : { ...layout, weight }
 }
 

@@ -1232,8 +1232,21 @@ fn pane_new_without_a_command_sends_none() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(req["params"].get("command").is_none(), "{req}");
     assert!(req["params"].get("full").is_none(), "{req}");
+    assert!(req["params"].get("hidden").is_none(), "{req}");
     assert!(req["params"].get("cell").is_none(), "{req}");
     assert!(req["params"].get("pane").is_none(), "{req}");
+}
+
+#[test]
+fn pane_new_hidden_asks_to_open_the_pane_hidden() {
+    let tmp = tmpdir();
+    let sock = sock_in(&tmp);
+    let server = serve_once(&sock, |req| result(req, json!({ "pty": "p-0000000c" })));
+    let out = maru_in(tmp.path(), &sock, &["pane", "new", "--hidden", "x"]);
+    let req = server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(req["params"]["hidden"], true);
+    assert_eq!(req["params"]["command"], json!(["x"]));
 }
 
 #[test]
@@ -1742,7 +1755,8 @@ fn job_list_fails_on_a_job_it_cannot_print() {
     assert_eq!(stdout(&out), "");
 }
 
-const PANE_LIST_HEADER: &str = "PANE\tPTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE\n";
+const PANE_LIST_HEADER: &str =
+    "PANE\tPTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE\tHIDDEN\n";
 
 fn pane_list_with_home(home: &str, panes: Value) -> Output {
     let tmp = tmpdir();
@@ -1779,7 +1793,9 @@ fn pane_list_prints_tab_separated_columns_with_a_header() {
               "cell": "", "title": "", "dir": "", "message": "" },
             { "pane": "n-00000005", "pty": "p-00000003", "state": "done", "kind": "question", "app": "codex",
               "workspace": "w", "cell": "c", "title": "x", "dir": "/d",
-              "message": "a\r\nb\u{1b}[31mred" },
+              "message": "a\r\nb\u{1b}[31mred", "hidden": false },
+            { "pane": "n-00000006", "pty": "p-00000004", "state": "", "kind": null, "app": "", "workspace": "w",
+              "cell": "c", "title": "x", "dir": "/d", "message": "", "hidden": true },
         ]),
     );
     assert!(out.status.success(), "{}", stderr(&out));
@@ -1787,12 +1803,13 @@ fn pane_list_prints_tab_separated_columns_with_a_header() {
         stdout(&out),
         format!(
             "{PANE_LIST_HEADER}\
-             n-00000000\tp-99ae10da\tidle\tclaude-code\tai-maru\tc-1a2b3c4d\tClaude\t~/src/ai-maru\t\n\
-             n-00000001\tp-4c3d8f86\tblocked(permission)\tclaude-code\tai-maru\tc-5e6f7a8b\tFix the build\t~\tBash: git push line two \n\
-             n-00000002\tp-0000000a\t\t\tai-maru\tc-5e6f7a8b\tzsh\t~/src\t\n\
-             n-00000003\tp-00000001\tworking\tcargo\tw x\tc d\tt e\t/h/meme/x\tm\n\
-             n-00000004\tp-00000002\tblocked\t\t\t\t\t\t\n\
-             n-00000005\tp-00000003\tdone\tcodex\tw\tc\tx\t/d\ta b [31mred\n"
+             n-00000000\tp-99ae10da\tidle\tclaude-code\tai-maru\tc-1a2b3c4d\tClaude\t~/src/ai-maru\t\t\n\
+             n-00000001\tp-4c3d8f86\tblocked(permission)\tclaude-code\tai-maru\tc-5e6f7a8b\tFix the build\t~\tBash: git push line two \t\n\
+             n-00000002\tp-0000000a\t\t\tai-maru\tc-5e6f7a8b\tzsh\t~/src\t\t\n\
+             n-00000003\tp-00000001\tworking\tcargo\tw x\tc d\tt e\t/h/meme/x\tm\t\n\
+             n-00000004\tp-00000002\tblocked\t\t\t\t\t\t\t\n\
+             n-00000005\tp-00000003\tdone\tcodex\tw\tc\tx\t/d\ta b [31mred\t\n\
+             n-00000006\tp-00000004\t\t\tw\tc\tx\t/d\t\thidden\n"
         )
     );
     assert_eq!(stderr(&out), "");
@@ -1840,6 +1857,8 @@ fn pane_list_fails_on_a_pane_it_cannot_print() {
                 "cell": "", "title": 1, "dir": "", "message": "" }),
         json!({ "pty": "p-1", "state": "", "kind": null, "app": "", "workspace": "",
                 "cell": "", "title": "", "dir": "", "message": "" }),
+        json!({ "pane": "n-1", "pty": "p-1", "state": "", "kind": null, "app": "", "workspace": "",
+                "cell": "", "title": "", "dir": "", "message": "", "hidden": "yes" }),
     ] {
         let out = pane_list_with_home("/h/me", json!([pane]));
         assert_fails_with(&out, "cannot print");

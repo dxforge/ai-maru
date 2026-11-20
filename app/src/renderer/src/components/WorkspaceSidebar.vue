@@ -5,7 +5,7 @@ import { autoWorkspaceName, labelBase } from '../../../shared/names'
 import type { CommandView } from '../../../shared/pane-name'
 import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/program-status'
 import type { PtyNotification } from '../../../shared/pty-state'
-import { Bookmark, EllipsisVertical, Star, X } from '@lucide/vue'
+import { Bookmark, EllipsisVertical, EyeOff, Star, X } from '@lucide/vue'
 import { anchorWidth, type Anchor } from '../launcher/anchor'
 import type { TooltipCard } from '../tooltip'
 import FoldChevron from './FoldChevron.vue'
@@ -133,6 +133,7 @@ function cellGroup(
     selected,
     rows: orderedPanes(c).map((p) => ({
       ...paneRow(src, p, selected && p === current, base),
+      hidden: !!p.hidden,
       favorite: findFavorite(w, p.cwd) !== undefined
     }))
   }
@@ -521,7 +522,7 @@ const keepTip = (kept: boolean): string =>
               v-tooltip="cellTip(item.c.key, `pane:${r.pane}`)"
               class="row pane-row"
               :class="[r.tone, { shell: !r.state, focused: r.focused }]"
-              :aria-label="r.aria"
+              :aria-label="r.hidden ? `${r.aria}. Hidden` : r.aria"
               @mousedown.prevent
               @click="emit('focus', item.c.key, r.pane)"
             >
@@ -533,6 +534,9 @@ const keepTip = (kept: boolean): string =>
               <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
                 commandTail(r.command, now)
               }}</span>
+              <span v-if="r.hidden" class="hidden-mark" aria-hidden="true"
+                ><EyeOff class="text-icon"
+              /></span>
             </button>
             <button
               v-if="r.path"
@@ -958,6 +962,18 @@ button {
   max-width: 60%;
 }
 
+.hidden-mark {
+  display: flex;
+  flex: none;
+  margin-left: var(--space-2);
+  color: var(--muted);
+}
+
+.hidden-mark svg {
+  width: 12px;
+  height: 12px;
+}
+
 .job-row {
   -webkit-app-region: no-drag;
   position: relative;
@@ -1012,6 +1028,7 @@ button {
 }
 
 .collapsed .tail,
+.collapsed .hidden-mark,
 .collapsed .chevron {
   display: none;
 }

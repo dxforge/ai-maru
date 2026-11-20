@@ -48,6 +48,7 @@ import { restoreToast } from './toast/restore'
 import { createToasts } from './toast/store'
 import { fitCols, paneColsOf, stepPaneColsOverride, TERMINAL_PADDING } from './workspace/columns'
 import { tildePath } from './workspace/cwd'
+import { visibleLayout } from './workspace/hidden'
 import {
   areaOf,
   columnsWidthOf,
@@ -247,6 +248,8 @@ async function focusSelected(): Promise<void> {
 // 선택이 그대로인 클릭에서는 TerminalView 의 active watch 와 아래의 스크롤 watch 가 돌지 않아,
 // 여기서 포커스를 주고 스크롤로 밀려난 pane 을 다시 보인다.
 function selectCell(key: number): void {
+  const c = workspaces.cells().find((x) => x.key === key)
+  if (c && workspaces.isHidden(c)) workspaces.showPane(c.focused)
   workspaces.select(key)
   void focusSelected().then(() => revealFocused(true))
 }
@@ -329,7 +332,17 @@ function removePane(pane: number, message = 'the pane was closed before its pty 
   answerPaneRequest(pane, { error: 'open_failed', message })
   const pty = workspaces.pane(pane)?.ptyId
   if (pty) ptyStates.remove(pty)
+  heldSizes.delete(pane)
   workspaces.closePane(pane)
+}
+
+// 숨긴 터미널에 포커스가 남으면 키 입력이 그리로 가므로, 다음 pane 이 없어도 포커스를 뺀다.
+function hidePane(key: number | undefined = workspaces.selected()?.focused): void {
+  if (key === undefined) return
+  const el = terminals.get(key)?.$el as HTMLElement | undefined
+  if (el?.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+  workspaces.hidePane(key)
+  void focusSelected()
 }
 
 function onSpawned(pane: number, pty: string, dir: string | undefined): void {
@@ -368,7 +381,7 @@ const noPane = (target: PaneTarget): PaneReply => ({
 
 // `cell` 로 가리키면 그 cell 의 아무 pane 에서 cell 전체를 나눈다. `full` 은 나눌 pane 의 cell 만 보기 때문이다.
 window.maru.onPaneNew((id, req) => {
-  const { cwd, direction, command, full, cell } = req
+  const { cwd, direction, command, full, cell, hidden } = req
   let from: number | undefined
   if (cell === undefined) {
     from = workspaces.paneOf(req)?.key
@@ -380,10 +393,11 @@ window.maru.onPaneNew((id, req) => {
     }
   }
   const whole = full || cell !== undefined
-  if (!roomFor(from, direction, whole)) {
+  // 숨긴 채 뜨는 pane 은 자리를 차지하지 않는다.
+  if (!hidden && !roomFor(from, direction, whole)) {
     return window.maru.paneReply(id, { error: 'no_space', message: 'no space for a new pane' })
   }
-  const pane = workspaces.splitFrom(from, direction, { startDir: cwd, command }, whole)
+  const pane = workspaces.splitFrom(from, direction, { startDir: cwd, command }, whole, hidden)
   paneRequests.set(pane, { id })
 })
 
@@ -725,7 +739,13 @@ function roomFor(from: number, direction: SplitDirection, full: boolean): boolea
   if (!c) return true
   const cell = cellOf(fontOf(c))
   return roomForSplit(
-    { layout: c.layout, cell, measured: gridSizes.get(c.key), cols: columnColsOf(c) },
+    {
+      layout: c.layout,
+      cell,
+      measured: gridSizes.get(c.key),
+      cols: columnColsOf(c),
+      hidden: workspaces.hiddenOf(c)
+    },
     { from, direction, full }
   )
 }
@@ -756,9 +776,9 @@ function splitSelected(direction: SplitDirection, init?: PaneInit): void {
 type Preview = { cell: number; layout: Layout; by: 'drag' | 'key' }
 const preview = shallowRef<Preview | null>(null)
 
-function shownLayout(c: Cell): Layout {
+function shownLayout(c: Cell, visible = workspaces.visibleOf(c)): Layout | null {
   const p = preview.value
-  return p && p.cell === c.key && sameShape(p.layout, c.layout) ? p.layout : c.layout
+  return p && visible && p.cell === c.key && sameShape(p.layout, visible) ? p.layout : visible
 }
 
 function boxesOf(c: Cell, layout: Layout): Map<number, Box> | undefined {
@@ -801,7 +821,7 @@ function commitPreview(): void {
   if (!p) return
   preview.value = null
   const c = workspaces.cells().find((x) => x.key === p.cell)
-  if (c && p.layout !== c.layout) workspaces.resize(c.key, p.layout)
+  if (c && p.layout !== workspaces.visibleOf(c)) workspaces.resize(c.key, p.layout)
 }
 
 // columns 보기에서 끝까지 스크롤한 채 pane 을 좁히면 내용 폭이 줄어 브라우저가 스크롤을 당긴다. 그만큼 cell 이 포인터
@@ -811,7 +831,8 @@ const scrollHold = ref(0)
 function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
   if (e.button !== 0) return
   commitPreview()
-  const base = c.layout
+  const base = workspaces.visibleOf(c)
+  if (!base) return
   const ctx = resizeContext(c, base)
   if (!ctx) return
   const axis = d.split === 'right' ? 'clientX' : 'clientY'
@@ -828,7 +849,8 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
     // 끄는 중에 ⌃⌘방향키로 바꾼 크기를 덮지 않도록 끌기를 그친다.
     if (preview.value?.cell !== c.key || preview.value.by !== 'drag') return end()
     // 끄는 동안 pane 이 닫히거나 나뉘면 끌던 경계가 없어진 것이라 버린다.
-    if (!sameShape(c.layout, base)) {
+    const now = workspaces.visibleOf(c)
+    if (!now || !sameShape(now, base)) {
       preview.value = null
       return end()
     }
@@ -872,10 +894,12 @@ function handleStyle(d: Divider): Record<string, string> {
 
 function equalizeAt(c: Cell, d: Target): void {
   commitPreview()
+  const visible = workspaces.visibleOf(c)
+  if (!visible) return
   equalizing = c.key
   workspaces.resize(
     c.key,
-    equalizeLine(c.layout, d, widthsOf(columnColsOf(c)), cellOf(fontOf(c)).width)
+    equalizeLine(visible, d, widthsOf(columnColsOf(c)), cellOf(fontOf(c)).width)
   )
   // 크기가 그대로면 배치가 바뀌지 않아 아래 watch 가 돌지 않으므로, 그 watch 가 돌 차례가 지난 뒤에 지운다.
   void nextTick(() => (equalizing = undefined))
@@ -892,11 +916,15 @@ function resizeSelected(dir: FocusDirection, commit: boolean): void {
   if (!c) return
   if (preview.value && (preview.value.cell !== c.key || preview.value.by !== 'key')) commitPreview()
   const base = shownLayout(c)
+  if (!base) return
   const ctx = resizeContext(c, base)
   if (!ctx) return
   preview.value = { cell: c.key, layout: keyResize(base, c.focused, dir, ctx), by: 'key' }
   if (commit) commitPreview()
 }
+
+// pane 이 보이는 동안 받은 터미널 크기. 숨긴 동안 이 크기를 그대로 주어 pty 가 크기 변경을 받지 않게 한다.
+const heldSizes = new Map<number, TerminalSize>()
 
 const views = computed(() =>
   workspaces.cells().map((c) => {
@@ -905,29 +933,47 @@ const views = computed(() =>
     const cell = cellOf(font)
     const measured = gridSizes.get(c.key)
     const cols = columnColsOf(c)
-    const shown = shownLayout(c)
-    const width = columnsWidthOf(shown, cols, cell)
+    const hidden = workspaces.hiddenOf(c)
+    const visible = workspaces.visibleOf(c)
+    const shown = shownLayout(c, visible)
+    const width = shown ? columnsWidthOf(shown, cols, cell) : undefined
     const place = (l: Layout) =>
       placements(l, measured && areaOf(l, cols, cell, measured), cell, cols)
-    const places = place(shown)
-    const saved = shown === c.layout ? places : place(c.layout)
-    const boxes = selected || viewMode.value === 'columns' ? boxesOf(c, shown) : undefined
-    const lines = boxes ? dividers(shown, boxes, widthsOf(cols)) : []
+    const places = shown ? place(shown) : (new Map() as ReturnType<typeof placements>)
+    const saved = !visible || shown === visible ? places : place(visible)
+    const boxes =
+      shown && (selected || viewMode.value === 'columns') ? boxesOf(c, shown) : undefined
+    const lines = shown && boxes ? dividers(shown, boxes, widthsOf(cols)) : []
+    // 숨기기 전 크기가 없는 pane(숨긴 채 떴거나 앱을 다시 띄운 pane)은 그 pane 만 꺼냈다고 친 배치의 크기를 받는다.
+    // 크기를 받아야 pty 가 시작하기 때문이다.
+    const hiddenPlace = (key: number) => {
+      const alone = visibleLayout(c.layout, new Set([...hidden].filter((k) => k !== key)))!
+      const at = place(alone).get(key)!
+      const held = heldSizes.get(key)
+      return held ? { ...at, size: held } : at
+    }
     return {
       c,
       selected,
+      hidden: !shown,
       font,
       vars: gridVars(cell, font),
       width: width === undefined ? undefined : `${width}px`,
       handles: lines.filter((d) => d.kind === 'line'),
       edge: lines.find((d) => d.kind === 'edge'),
       panes: c.panes.map((p) => {
+        if (hidden.has(p.key)) {
+          const { size, ...rest } = hiddenPlace(p.key)
+          return { p, active: false, hidden: true, ...rest, size, badge: undefined }
+        }
         const { size: next, ...rest } = places.get(p.key)!
         const size = saved.get(p.key)!.size
+        if (size) heldSizes.set(p.key, size)
         const changed = next && size && (next.cols !== size.cols || next.rows !== size.rows)
         return {
           p,
           active: selected && p.key === c.focused,
+          hidden: false,
           ...rest,
           size,
           badge: changed ? `${next.cols}×${next.rows}` : undefined
@@ -955,7 +1001,7 @@ function focusPane(cell: number, pane: number): void {
 }
 
 function selectPane(cell: number, pane: number): void {
-  workspaces.focusPane(pane)
+  workspaces.showPane(pane)
   selectCell(cell)
 }
 
@@ -1197,6 +1243,7 @@ const handlers: Record<CommandId, () => void> = {
   'launch-split-right': () => openLaunch('split-right'),
   'launch-split-down': () => openLaunch('split-down'),
   'close-pane': () => void closePane(),
+  'hide-pane': () => hidePane(),
   'close-workspace': () => void closeWorkspace(),
   'rename-workspace': () => {
     const w = selectedWorkspace()
@@ -1407,20 +1454,31 @@ void window.maru.restoreScreen().then((r) => {
       @wheel.capture="keepHorizontalScroll"
     >
       <div
-        v-for="{ c, selected, width, font, vars, panes, handles, edge } in views"
+        v-for="{
+          c,
+          selected,
+          hidden: cellHidden,
+          width,
+          font,
+          vars,
+          panes,
+          handles,
+          edge
+        } in views"
         :key="c.key"
         class="panes"
         :data-cell="c.id"
-        :class="{ selected }"
+        :class="{ selected: selected && !cellHidden, 'hidden-cell': cellHidden }"
         :style="{ width, ...vars }"
       >
         <div class="cell-band" @mousedown.prevent="selectCell(c.key)" />
         <div :ref="(el) => observeGrid(c.key, el)" class="grid">
           <div
-            v-for="{ p, active, style, size, at, badge } in panes"
+            v-for="{ p, active, hidden, style, size, at, badge } in panes"
             :key="p.key"
             class="pane"
             :class="{
+              hidden,
               focused: active,
               'at-left': at.left,
               'at-top': at.top,
@@ -1440,6 +1498,7 @@ void window.maru.restoreScreen().then((r) => {
               :now="ptyStates.command(p.ptyId)?.running ? now : 0"
               :shell="shell"
               @mousedown.prevent="terminals.get(p.key)?.focus()"
+              @hide="hidePane(p.key)"
             />
             <div class="body" @mousedown="(e) => focusFromBody(e, p.key)">
               <TerminalView
@@ -1453,7 +1512,7 @@ void window.maru.restoreScreen().then((r) => {
                 :keep="p.keep"
                 :retryable="!paneRequests.has(p.key)"
                 :active="active"
-                :shown="selected || viewMode === 'columns'"
+                :shown="!hidden && !cellHidden && (selected || viewMode === 'columns')"
                 :font="font"
                 :theme="terminalTheme"
                 :cols="size?.cols"
@@ -1683,6 +1742,16 @@ void window.maru.restoreScreen().then((r) => {
    그 위에 놓인 pane 이 덮어 보이지 않기 때문이다. 띠 쪽 테두리는 띠 1px 위에 겹친다. single 은 고른 cell 하나만 보이므로 그리지 않는다. */
 .columns .panes.selected .grid {
   box-shadow: 0 0 0 1px var(--cell-edge);
+}
+
+.panes.hidden-cell {
+  position: absolute;
+  visibility: hidden;
+}
+
+.pane.hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .pane {

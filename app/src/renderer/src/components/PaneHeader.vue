@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { EyeOff } from '@lucide/vue'
 import { computed } from 'vue'
 import { dirName } from '../../../shared/names'
 import { paneName, type CommandView } from '../../../shared/pane-name'
@@ -31,6 +32,8 @@ const {
   shell?: string
 }>()
 
+const emit = defineEmits<{ hide: [] }>()
+
 const state = computed(() => status?.state)
 const agent = computed(() => status && AGENT_ICONS.get(status.app))
 const icon = computed(() =>
@@ -53,6 +56,15 @@ const notice = computed(() => notification && notificationText(notification))
     <span v-if="tail" class="command-tail">{{ tail }}</span>
     <AgentLogo v-if="agent" class="claude-icon" :agent="agent" />
     <span v-if="pane.cwd" class="cwd">{{ dirName(pane.cwd) }}</span>
+    <span
+      v-tooltip="'Hide Pane'"
+      role="button"
+      class="hide-button icon-button"
+      aria-label="Hide Pane"
+      @mousedown.stop.prevent
+      @click.stop="emit('hide')"
+      ><EyeOff class="text-icon"
+    /></span>
   </div>
 </template>
 
@@ -85,6 +97,15 @@ const notice = computed(() => notification && notificationText(notification))
 .command-tail,
 .notification {
   color: var(--faint);
+}
+
+.hide-button {
+  flex: none;
+  visibility: hidden;
+}
+
+.pane-header:hover .hide-button {
+  visibility: visible;
 }
 
 .command-failed .command-tail {

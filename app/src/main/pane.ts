@@ -110,6 +110,7 @@ export function createPanes(
       }
       const command = optionalCommand(params.command)
       const full = optionalBoolean(params.full, 'full')
+      const hidden = optionalBoolean(params.hidden, 'hidden')
       const { cell, pane } = params
       if (cell !== undefined && !isCellId(cell)) {
         throw new InvalidParams('params.cell must be a cell id, e.g. c-1a2b3c4d')
@@ -126,7 +127,8 @@ export function createPanes(
         direction,
         full,
         ...(command && { command }),
-        ...(cell !== undefined && { cell })
+        ...(cell !== undefined && { cell }),
+        ...(hidden && { hidden })
       }
       return askPane('pane:new', () => req)
     },

@@ -108,6 +108,16 @@ describe('parseScreen', () => {
     expect(parseScreen(clone())!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('keep')
   })
 
+  it('pane 의 hidden 은 true 일 때만 읽고, 표로 나눴다가 이어도 그대로다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].cells[0].panes[1].hidden = true
+    expect(parseScreen(s)!.workspaces[0].cells[0].panes[1].hidden).toBe(true)
+    expect(joinTables(reparse(splitScreen(s)))!.workspaces[0].cells[0].panes[1].hidden).toBe(true)
+    const odd = clone() as { workspaces: { cells: { panes: Record<string, unknown>[] }[] }[] }
+    odd.workspaces[0].cells[0].panes[1].hidden = 'yes'
+    expect(parseScreen(odd)!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('hidden')
+  })
+
   it('cell 의 pane 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {
     const s = clone() as ScreenState
     s.workspaces[0].cells[0].paneCols = 110

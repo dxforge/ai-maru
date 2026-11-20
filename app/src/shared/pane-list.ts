@@ -32,7 +32,8 @@ export function paneRows(
           cell: c.id,
           title: paneName(p, r, shell, commandView(s)),
           dir: p.cwd ?? '',
-          message: r?.message ?? ''
+          message: r?.message ?? '',
+          hidden: p.hidden === true
         })
       }
     }
