@@ -13,6 +13,7 @@ export type CommandId =
   | 'launch-split-right'
   | 'launch-split-down'
   | 'close-pane'
+  | 'background-pane'
   | 'close-workspace'
   | 'rename-workspace'
   | 'toggle-keep-workspace'
@@ -75,6 +76,7 @@ export const commands: readonly Command[] = [
   { id: 'focus-pane-up', title: 'Focus Pane Up', group: 'Pane', menu: 'view' },
   { id: 'focus-pane-down', title: 'Focus Pane Down', group: 'Pane', menu: 'view' },
   { id: 'close-pane', title: 'Close Pane', group: 'Pane', menu: 'file' },
+  { id: 'background-pane', title: 'Send Pane to Background', group: 'Pane', menu: 'file' },
   { id: 'resize-pane-left', title: 'Resize Pane Left', group: 'Pane Size', menu: 'view' },
   { id: 'resize-pane-right', title: 'Resize Pane Right', group: 'Pane Size', menu: 'view' },
   { id: 'resize-pane-up', title: 'Resize Pane Up', group: 'Pane Size', menu: 'view' },

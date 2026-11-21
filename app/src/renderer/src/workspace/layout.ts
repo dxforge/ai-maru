@@ -79,6 +79,15 @@ export function splitRoot(layout: Layout, pane: number, split: SplitDirection): 
   return 'split' in layout && layout.split === split ? resetLine(next) : next
 }
 
+export function atRightEnd(layout: Layout | null, pane: number): Layout {
+  return layout ? splitRoot(layout, pane, 'right') : { pane }
+}
+
+/** `from` 이 배치에 없으면(background pane) 그 옆이 아니라 cell 전체를 나눈다. */
+export function splitsWhole(layout: Layout, from: number, full: boolean): boolean {
+  return full || !panes(layout).includes(from)
+}
+
 type Removed = { layout: Layout; next: number; lineChanged: boolean }
 
 /**
@@ -225,4 +234,28 @@ export function neighbor(
     if (overlap > EPSILON && (!best || overlap > best.overlap + EPSILON)) best = { pane, overlap }
   }
   return best?.pane
+}
+
+/**
+ * 저장할 때 background pane 의 잎을 트리 오른쪽 끝에 하나씩 붙인다. 보이는 줄의 크기는 지우지 않는다. `withoutLeaves` 로
+ * 그 잎을 빼면 원래 트리로 돌아간다.
+ */
+export function appendLeaves(layout: Layout | null, keys: readonly number[]): Layout | null {
+  return keys.reduce<Layout | null>(
+    (l, pane) => (l ? { split: 'right', first: l, second: { pane } } : { pane }),
+    layout
+  )
+}
+
+export function withoutLeaves(layout: Layout, keys: ReadonlySet<number>): Layout | null {
+  if ('pane' in layout) return keys.has(layout.pane) ? null : layout
+  const first = withoutLeaves(layout.first, keys)
+  const second = withoutLeaves(layout.second, keys)
+  if (first && second) {
+    return first === layout.first && second === layout.second
+      ? layout
+      : { ...layout, first, second }
+  }
+  const rest = first ?? second
+  return rest && layout.weight !== undefined ? { ...rest, weight: layout.weight } : rest
 }

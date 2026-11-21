@@ -1,7 +1,7 @@
 import versions from '../../resources/state-versions.json'
 import type { GitHead } from './git'
 import { isObject } from './object'
-import { PANE_MAX_COLS, PANE_MIN, panes as leaves, type Layout } from './layout'
+import { mapLayout, PANE_MAX_COLS, PANE_MIN, panes as leaves, type Layout } from './layout'
 import { isPtyId, randomId } from './pty'
 
 /**
@@ -22,13 +22,17 @@ export const STATE_VERSIONS: {
  * `id` 는 pane 을 만들 때 정하고 실행이 바뀌어도 그대로다. `key` 는 화면 안의 번호로, 뜰 때마다 새로 매긴다.
  * `cwd`·`title`·`git` 은 저장할 때 화면에 보이던 값이다. main 은 `maru pane list` 의 이름을 이 값으로 짓고, 다시 뜬
  * 앱은 pty 의 상태가 오기 전까지 이 값을 보인다. `keep` 은 런처로 띄운 pane 에 붙는다. 앱은 그 pane 의 pty 를
- * `--keep` 으로 띄우고, 명령이 실패하면(`failedExit`) pane 을 남긴다.
+ * `--keep` 으로 띄우고, 명령이 실패하면(`failedExit`) pane 을 남긴다. `background` 인 pane 은 화면에 보이지 않고 pty 만
+ * 돈다. cell 의 `layout` 에서는 그 잎이 오른쪽 끝에 붙어 있고, 앱은 되살릴 때 그 잎을 뺀다. 옛 빌드는 이 필드를 몰라 보이는
+ * pane 으로 연다. `homeLayout` 은 background 로 돌릴 때의 cell 배치(잎은 pane id)로, 꺼낼 때 원래 자리로 돌아갈지 정한다.
  */
 export type LayoutPane = {
   key: number
   id: string
   command?: string[]
   keep?: true
+  background?: true
+  homeLayout?: Layout<string>
   cwd?: string
   title?: string
   git?: GitHead
@@ -204,7 +208,20 @@ function parsePaneFields(v: unknown): Omit<LayoutPane, 'key'> | null {
   if (git === null) return null
   if (v.keep !== undefined && v.keep !== true) return null
   const keep = v.keep === true || undefined
-  return compact({ id: v.id, command, keep, cwd: v.cwd, title: v.title, git })
+  if (v.background !== undefined && v.background !== true) return null
+  const background = v.background === true || undefined
+  // 잘못된 배치는 그 필드만 버린다. 없으면 꺼낼 때 cell 끝에 붙을 뿐이다.
+  const homeLayout = (background && parseLayout(v.homeLayout, isString)) || undefined
+  return compact({
+    id: v.id,
+    command,
+    keep,
+    background,
+    homeLayout,
+    cwd: v.cwd,
+    title: v.title,
+    git
+  })
 }
 
 function parseScreenPane(v: unknown): ScreenPane | null {
@@ -310,12 +327,6 @@ export const parseCellsTable = (v: unknown): Table<CellRow> | null =>
   parseTable(v, STATE_VERSIONS.cells, parseCellRow)
 export const parsePanesTable = (v: unknown): Table<PaneRow> | null =>
   parseTable(v, STATE_VERSIONS.panes, parsePaneRow)
-
-function mapLayout<P, Q>(l: Layout<P>, f: (p: P) => Q): Layout<Q> {
-  return 'pane' in l
-    ? { ...l, pane: f(l.pane) }
-    : { ...l, first: mapLayout(l.first, f), second: mapLayout(l.second, f) }
-}
 
 export type SplitScreen = {
   workspaces: Table<WorkspaceRow>

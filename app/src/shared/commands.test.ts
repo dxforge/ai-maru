@@ -30,6 +30,7 @@ describe('filterCommands', () => {
       'Focus Pane Up',
       'Focus Pane Down',
       'Close Pane',
+      'Send Pane to Background',
       'Resize Pane Left',
       'Resize Pane Right',
       'Resize Pane Up',
@@ -115,7 +116,7 @@ describe('menuSections', () => {
         'close-workspace'
       ],
       ['new-cell'],
-      ['split-right', 'split-down', 'close-pane'],
+      ['split-right', 'split-down', 'close-pane', 'background-pane'],
       ['launcher', 'launch-workspace', 'launch-cell', 'launch-split-right', 'launch-split-down']
     ])
     expect(ids('view')).toEqual([

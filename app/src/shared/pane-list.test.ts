@@ -38,6 +38,11 @@ const git = (branch: string) => ({ repo: 'ai-maru', branch })
 const SHELL = '/bin/zsh'
 
 describe('paneRows', () => {
+  it('background pane 은 background 가 true 다', () => {
+    const [row] = paneRows(one({ ptyId: 'p-a', background: true }), () => undefined, SHELL)
+    expect(row.background).toBe(true)
+  })
+
   it('모든 pane 을 화면 순서대로, 사이드바와 같은 이름으로 돌려주고 dir 은 cwd 이며 cwd 를 모르면 빈 문자열이다', () => {
     const workspaces = [
       {
@@ -87,7 +92,8 @@ describe('paneRows', () => {
         cell: 'c-2',
         title: 'Claude',
         dir: '/r/ai-maru',
-        message: 'reading'
+        message: 'reading',
+        background: false
       },
       {
         pane: 'n-4',
@@ -99,7 +105,8 @@ describe('paneRows', () => {
         cell: 'c-2',
         title: 'zsh',
         dir: '/r/ai-maru',
-        message: ''
+        message: '',
+        background: false
       },
       {
         pane: 'n-6',
@@ -111,7 +118,8 @@ describe('paneRows', () => {
         cell: 'c-5',
         title: 'codex',
         dir: '/r/wt',
-        message: ''
+        message: '',
+        background: false
       },
       {
         pane: 'n-7',
@@ -123,7 +131,8 @@ describe('paneRows', () => {
         cell: 'c-5',
         title: 'fix it',
         dir: '/r/wt/app',
-        message: 'Bash'
+        message: 'Bash',
+        background: false
       },
       {
         pane: 'n-10',
@@ -135,7 +144,8 @@ describe('paneRows', () => {
         cell: 'c-9',
         title: 'Claude',
         dir: '',
-        message: ''
+        message: '',
+        background: false
       }
     ])
   })

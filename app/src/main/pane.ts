@@ -11,7 +11,7 @@ import {
 } from './cli-server'
 import { WINDOW_WAIT_MS, type WindowReady } from './window-ready'
 
-export type PaneChannel = 'pane:new' | 'pane:close' | 'cell:new' | 'pane:cancel'
+export type PaneChannel = 'pane:new' | 'pane:close' | 'pane:background' | 'cell:new' | 'pane:cancel'
 
 const optionalCommand = (v: unknown): string[] | undefined =>
   v === undefined ? undefined : requireCommand(v)
@@ -110,6 +110,7 @@ export function createPanes(
       }
       const command = optionalCommand(params.command)
       const full = optionalBoolean(params.full, 'full')
+      const background = optionalBoolean(params.background, 'background')
       const { cell, pane } = params
       if (cell !== undefined && !isCellId(cell)) {
         throw new InvalidParams('params.cell must be a cell id, e.g. c-1a2b3c4d')
@@ -126,13 +127,19 @@ export function createPanes(
         direction,
         full,
         ...(command && { command }),
-        ...(cell !== undefined && { cell })
+        ...(cell !== undefined && { cell }),
+        ...(background && { background })
       }
       return askPane('pane:new', () => req)
     },
     'pane.close': async ({ target }) => {
       const pane = requirePane(target, 'target')
       await ask('pane:close', (): PaneTarget => ({ pane }))
+      return null
+    },
+    'pane.background': async ({ target }) => {
+      const pane = requirePane(target, 'target')
+      await ask('pane:background', (): PaneTarget => ({ pane }))
       return null
     },
     'cell.new': async (params, pty) => {

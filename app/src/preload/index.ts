@@ -50,6 +50,9 @@ const api = {
   onPaneClose: (cb: (id: number, target: PaneTarget) => void): void => {
     ipcRenderer.on('pane:close', (_event, id: number, target: PaneTarget) => cb(id, target))
   },
+  onPaneBackground: (cb: (id: number, target: PaneTarget) => void): void => {
+    ipcRenderer.on('pane:background', (_event, id: number, target: PaneTarget) => cb(id, target))
+  },
   onCellNew: (cb: (id: number, req: CellNewRequest) => void): void => {
     ipcRenderer.on('cell:new', (_event, id: number, req: CellNewRequest) => cb(id, req))
   },
@@ -58,8 +61,8 @@ const api = {
   },
   paneReply: (id: number, reply: PaneReply): void => ipcRenderer.send('pane:reply', id, reply),
   /**
-   * `onPaneNew`·`onPaneClose`·`onCellNew` 를 단 뒤에 부른다. main 은 이것을 받은 뒤에야 쌓아 둔
-   * `pane:new`·`pane:close`·`cell:new` 를 보낸다.
+   * `onPaneNew`·`onPaneClose`·`onPaneBackground`·`onCellNew` 를 단 뒤에 부른다. main 은 이것을 받은 뒤에야 쌓아 둔
+   * `pane:new`·`pane:close`·`pane:background`·`cell:new` 를 보낸다.
    */
   paneReady: (): void => ipcRenderer.send('pane:ready'),
   gitHead: (cwd: string): Promise<GitHead | null> => ipcRenderer.invoke('git:head', cwd),

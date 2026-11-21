@@ -1,5 +1,8 @@
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import {
+  appendLeaves,
+  withoutLeaves,
   naturalCols,
   edgesOf,
   neighbor,
@@ -440,5 +443,88 @@ describe('크기 필드와 split·닫기', () => {
   it('sameShape 는 크기 필드를 보지 않는다', () => {
     expect(sameShape(sized, { split: 'right', first: { pane: 1 }, second: { pane: 2 } })).toBe(true)
     expect(sameShape(sized, { split: 'down', first: { pane: 1 }, second: { pane: 2 } })).toBe(false)
+  })
+})
+
+describe('appendLeaves·withoutLeaves', () => {
+  it('붙인 잎은 오른쪽 끝에 붙고, 보이는 줄의 몫은 그대로다', () => {
+    const l: Layout = {
+      split: 'right',
+      first: { pane: 1, weight: 3 },
+      second: { pane: 2, weight: 1 }
+    }
+    expect(appendLeaves(l, [5, 6])).toEqual({
+      split: 'right',
+      first: { split: 'right', first: l, second: { pane: 5 } },
+      second: { pane: 6 }
+    })
+    expect(appendLeaves(null, [5, 6])).toEqual({
+      split: 'right',
+      first: { pane: 5 },
+      second: { pane: 6 }
+    })
+    expect(appendLeaves(null, [])).toBeNull()
+  })
+
+  it('가운데 잎을 빼면 형제가 그 자리의 몫을 잇는다', () => {
+    const l: Layout = {
+      split: 'down',
+      first: { pane: 1 },
+      second: { split: 'right', first: { pane: 2 }, second: { pane: 3 }, weight: 2 }
+    }
+    expect(withoutLeaves(l, new Set([3]))).toEqual({
+      split: 'down',
+      first: { pane: 1 },
+      second: { pane: 2, weight: 2 }
+    })
+    expect(withoutLeaves(l, new Set([1, 2, 3]))).toBeNull()
+    expect(withoutLeaves(l, new Set())).toBe(l)
+  })
+
+  const layoutArb = (keys: number[]): fc.Arbitrary<Layout> => {
+    const leaf = (k: number) =>
+      fc.record(
+        {
+          pane: fc.constant(k),
+          cols: fc.integer({ min: 20, max: 200 }),
+          weight: fc.double({ min: 0.1, max: 5, noNaN: true })
+        },
+        { requiredKeys: ['pane'] }
+      )
+    const build = (ks: number[]): fc.Arbitrary<Layout> => {
+      if (ks.length === 1) return leaf(ks[0])
+      return fc.integer({ min: 1, max: ks.length - 1 }).chain((cut) =>
+        fc.record(
+          {
+            split: fc.constantFrom('right' as const, 'down' as const),
+            first: build(ks.slice(0, cut)),
+            second: build(ks.slice(cut)),
+            weight: fc.double({ min: 0.1, max: 5, noNaN: true })
+          },
+          { requiredKeys: ['split', 'first', 'second'] }
+        )
+      )
+    }
+    return build(keys)
+  }
+
+  it('붙였다 빼면 원래 트리다', () => {
+    fc.assert(
+      fc.property(
+        fc
+          .integer({ min: 0, max: 6 })
+          .chain((n) =>
+            fc.tuple(
+              n ? layoutArb([...Array(n).keys()]) : fc.constant(null),
+              fc.uniqueArray(fc.integer({ min: 100, max: 120 }), { maxLength: 4 })
+            )
+          ),
+        ([l, extra]) => {
+          const saved = appendLeaves(l, extra)
+          const back = saved && withoutLeaves(saved, new Set(extra))
+          expect(back ?? null).toEqual(l)
+        }
+      )
+    )
   })
 })

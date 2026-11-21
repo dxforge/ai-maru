@@ -17,6 +17,12 @@ export function panes<P>(layout: Layout<P>): P[] {
   return 'pane' in layout ? [layout.pane] : [...panes(layout.first), ...panes(layout.second)]
 }
 
+export function mapLayout<P, Q>(l: Layout<P>, f: (p: P) => Q): Layout<Q> {
+  return 'pane' in l
+    ? { ...l, pane: f(l.pane) }
+    : { ...l, first: mapLayout(l.first, f), second: mapLayout(l.second, f) }
+}
+
 /**
  * pane 하나가 받는 터미널 크기의 하한. 열은 왼쪽 여백·스크롤바를 뺀 터미널 열, 행은 헤더를 뺀 터미널 행이다
  * (docs/architecture.md 의 "pane 경계와 글자 칸 격자").

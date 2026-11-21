@@ -47,9 +47,10 @@
 //! | `inbox.push` | `to`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
 //! | `inbox.read` | 없음 | `{"messages":[{"from":<보낸 pty id>,"text":<본문>}…]}` |
 //! | `monitor.subscribe` | `ancestors`(양의 정수 배열) | `null` |
-//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `pane`(pane id, 선택), `full`(bool, 선택), `cell`(cell id, 선택) | `{"pane":<새 pane id>,"pty":<새 pty id>}` |
+//! | `pane.new` | `cwd`(절대경로 문자열), `direction`(`"right"`·`"down"`), `command`(문자열 배열, 비어 있지 않음, 선택), `pane`(pane id, 선택), `full`(bool, 선택), `cell`(cell id, 선택), `background`(bool, 선택) | `{"pane":<새 pane id>,"pty":<새 pty id>}` |
 //! | `pane.close` | `target`(pane id) | `null` |
-//! | `pane.list` | 없음 | `{"panes":[{"pane","pty","state","kind","app","workspace","cell","title","dir","message"}…]}` |
+//! | `pane.background` | `target`(pane id) | `null` |
+//! | `pane.list` | 없음 | `{"panes":[{"pane","pty","state","kind","app","workspace","cell","title","dir","message","background"}…]}` |
 //! | `pty.list` | 없음 | `{"ptys":[{"pty","kind","workspace","cell","state","state_kind","exit","name","dir"}…]}` |
 //! | `pty.read` | `target`(pty id) | `{"text":<글자>}` |
 //! | `pty.send` | `target`(pty id), `text`(빈 문자열이 아닌 문자열) | `null` |
@@ -123,6 +124,9 @@
 //! pane id 가 아니거나 그 pane 이 창에 없으면 `invalid_params` 다. pty id 를 주면 `pane.new` 처럼 그 pane 의
 //! id 를 오류 메시지에 적는다. 앱은 pane 을 찾은 뒤 답하고 pty 를 끄므로, 자기 pane 을 닫은 CLI 는 답을
 //! 받기 전에 끝날 수 있다.
+//!
+//! `pane.background` 는 `target` pane 을 background 로 돌리고 pty 는 끄지 않는다. 이미 background 면 아무것도 하지
+//! 않는다. `target` 의 검사와 오류는 `pane.close` 와 같다.
 //!
 //! `pty.read`·`pty.send`·`pty.kill` 의 `target` 은 `pty.list` 에 나오는 pty 의 id 다. 창의 어느 workspace·cell 의
 //! pane 의 pty 든, job 의 pty 든 되고, 부른 pty 도 된다. `pty.list` 에 없는 pty 면 `invalid_params` 다.
@@ -460,6 +464,10 @@ enum PaneCommand {
         /// `maru pane list` shows the cell of each pane.
         #[arg(long, value_name = "CELL")]
         cell: Option<String>,
+        /// Open the pane in the background. The pane stays off screen while its pty keeps running.
+        /// Click its row in the sidebar to bring it back when there is room.
+        #[arg(long)]
+        background: bool,
         /// Command and its arguments.
         #[arg(trailing_var_arg = true)]
         command: Vec<String>,
@@ -470,17 +478,24 @@ enum PaneCommand {
         /// Id of the pane to close, e.g. n-1a2b3c4d.
         pane: String,
     },
+    /// Send a pane, any pane in this window, to the background. Its pty keeps running, and
+    /// clicking its row in the sidebar brings it back when there is room.
+    Background {
+        /// Id of the pane to send, e.g. n-1a2b3c4d.
+        pane: String,
+    },
     /// List the panes in every workspace and cell, in screen order.
     ///
     /// Prints tab-separated columns with a header: PANE, PTY, STATE, APP, WORKSPACE, CELL,
-    /// TITLE, DIR, MESSAGE. PANE is the pane's id, which `maru pane new --split` and
+    /// TITLE, DIR, MESSAGE, BACKGROUND. PANE is the pane's id, which `maru pane new --split` and
     /// `maru pane close` take; it stays the same when the app restarts. PTY is the id of the
     /// pty the pane shows, which `maru pty` takes. STATE, APP and MESSAGE come from the
     /// program status the pane's program reported, and are empty when it reported none. STATE
     /// is idle, working, done, blocked or error; a blocked state with a reason reads e.g.
     /// blocked(permission). APP is the program, e.g. claude-code. WORKSPACE and TITLE are the
     /// names shown in the sidebar. CELL is the id of the pane's cell, e.g. c-1a2b3c4d, which
-    /// `maru pane new --cell` takes. DIR is the pane's directory. Control characters in a
+    /// `maru pane new --cell` takes. DIR is the pane's directory. BACKGROUND is `background` when
+    /// the pane is in the background and empty otherwise. Control characters in a
     /// value, such as tabs and newlines, become spaces, and an unknown value is an empty
     /// column.
     List,
@@ -725,13 +740,17 @@ fn run(command: Command) -> Result<()> {
                 split,
                 full,
                 cell,
+                background,
                 command,
             } => {
-                let (pane, pty) = pane_new(cwd, down, split, full, cell, command)?;
+                let (pane, pty) = pane_new(cwd, down, split, full, cell, background, command)?;
                 write!(std::io::stdout(), "PANE\tPTY\n{pane}\t{pty}\n")?;
             }
             PaneCommand::Close { pane } => {
                 call(&target()?, "pane.close", target_params(pane))?;
+            }
+            PaneCommand::Background { pane } => {
+                call(&target()?, "pane.background", target_params(pane))?;
             }
             PaneCommand::List => pane_list()?,
         },
@@ -1495,6 +1514,7 @@ fn pane_new(
     pane: Option<String>,
     full: bool,
     cell: Option<String>,
+    background: bool,
     command: Vec<String>,
 ) -> Result<(String, String)> {
     let target = target()?;
@@ -1512,6 +1532,9 @@ fn pane_new(
     }
     if let Some(cell) = cell {
         params.insert("cell".into(), cell.into());
+    }
+    if background {
+        params.insert("background".into(), true.into());
     }
     if !command.is_empty() {
         params.insert("command".into(), command.into());
@@ -1691,7 +1714,7 @@ fn pane_list() -> Result<()> {
         return Ok(());
     };
     print_tsv(
-        "PANE\tPTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE",
+        "PANE\tPTY\tSTATE\tAPP\tWORKSPACE\tCELL\tTITLE\tDIR\tMESSAGE\tBACKGROUND",
         rows,
     )
 }
@@ -1750,7 +1773,7 @@ fn pty_row(pty: &Value, home: Option<&str>) -> Result<[String; 8]> {
     Ok(row.map(|v| tsv_field(&v)))
 }
 
-fn pane_row(pane: &Value, home: Option<&str>) -> Result<[String; 9]> {
+fn pane_row(pane: &Value, home: Option<&str>) -> Result<[String; 10]> {
     let fail = || anyhow!("the app answered with a pane it cannot print: {pane}");
     let text = |key: &str| pane[key].as_str().ok_or_else(fail);
     let state = program_state(text("state")?, &pane["kind"]).ok_or_else(fail)?;
@@ -1764,6 +1787,13 @@ fn pane_row(pane: &Value, home: Option<&str>) -> Result<[String; 9]> {
         text("title")?.to_owned(),
         tilde(text("dir")?, home),
         text("message")?.to_owned(),
+        // background 를 모르는 앱은 `background` 를 싣지 않는다.
+        match &pane["background"] {
+            Value::Bool(true) => "background",
+            Value::Bool(false) | Value::Null => "",
+            _ => return Err(fail()),
+        }
+        .to_owned(),
     ];
     Ok(row.map(|v| tsv_field(&v)))
 }

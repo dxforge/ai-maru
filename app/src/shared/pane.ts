@@ -18,6 +18,7 @@ export type PaneNewRequest = PaneTarget & {
   command?: string[]
   full: boolean
   cell?: string
+  background?: boolean
 }
 
 /**
@@ -45,6 +46,7 @@ export type PaneRow = {
   title: string
   dir: string
   message: string
+  background: boolean
 }
 
 /**

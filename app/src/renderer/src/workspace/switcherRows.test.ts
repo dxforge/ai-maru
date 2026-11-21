@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { RowSource } from './sidebarRows'
 import type { Cell, Pane, Workspace } from './store'
+import type { Layout } from './layout'
 import { filterSwitcher, startIndex, switcherItems, switcherRows } from './switcherRows'
 
 const src: RowSource = {
@@ -21,7 +22,7 @@ function pane(key: number, cwd: string, o: Partial<Pane> = {}): Pane {
  */
 function cell(key: number, panes: Pane[], focused = panes[0].key): Cell {
   const [last, ...rest] = [...panes].reverse()
-  const layout = rest.reduce<Cell['layout']>(
+  const layout = rest.reduce<Layout>(
     (first, p) => ({ split: 'right', first, second: { pane: p.key } }),
     { pane: last.key }
   )

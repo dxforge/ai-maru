@@ -3,6 +3,7 @@ import { createServer } from 'node:net'
 import { join } from 'node:path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
+  appRegionAt,
   clickMenu,
   collapseSidebar,
   dragHandle,

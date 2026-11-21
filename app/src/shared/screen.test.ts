@@ -88,7 +88,8 @@ describe('parseScreen', () => {
     ['pane 폭이 정수가 아님', (s) => (s.workspaces[0].cells[0].paneCols = 110.5)],
     ['pane 폭이 0', (s) => (s.workspaces[0].cells[0].paneCols = 0)],
     ['pane 폭이 음수', (s) => (s.workspaces[0].cells[0].paneCols = -5)],
-    ['keep 이 true 가 아님', (s) => (s.workspaces[0].cells[0].panes[1].keep = false)]
+    ['keep 이 true 가 아님', (s) => (s.workspaces[0].cells[0].panes[1].keep = false)],
+    ['background 가 true 가 아님', (s) => (s.workspaces[0].cells[0].panes[1].background = 1)]
   ])('%s 이면 null', (_, spoil) => {
     const s = clone()
     spoil(s)
@@ -106,6 +107,34 @@ describe('parseScreen', () => {
     s.workspaces[0].cells[0].panes[1].keep = true
     expect(parseScreen(s)!.workspaces[0].cells[0].panes[1].keep).toBe(true)
     expect(parseScreen(clone())!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('keep')
+  })
+
+  it('pane 의 background 는 없어도 되고, 있으면 그대로 돌려준다', () => {
+    const s = clone() as ScreenState
+    s.workspaces[0].cells[0].panes[1].background = true
+    expect(parseScreen(s)!.workspaces[0].cells[0].panes[1].background).toBe(true)
+    expect(parseScreen(clone())!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('background')
+  })
+
+  it('background pane 의 homeLayout 은 표로 나눴다 이어도 그대로이고, 잘못됐거나 background 가 아니면 그 필드만 버린다', () => {
+    const s = clone() as ScreenState
+    const home = {
+      split: 'right',
+      first: { pane: 'n-0000000a', weight: 2 },
+      second: { pane: 'n-0000000b' }
+    } as const
+    Object.assign(s.workspaces[0].cells[0].panes[1], { background: true, homeLayout: home })
+    const parsed = parseScreen(s)!
+    expect(parsed.workspaces[0].cells[0].panes[1].homeLayout).toEqual(home)
+    const joined = joinTables(reparse(splitScreen(parsed)))!
+    expect(joined.workspaces[0].cells[0].panes[1].homeLayout).toEqual(home)
+
+    Object.assign(s.workspaces[0].cells[0].panes[1], { homeLayout: { split: 'up' } })
+    expect(parseScreen(s)!.workspaces[0].cells[0].panes[1]).toMatchObject({ background: true })
+    expect(parseScreen(s)!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('homeLayout')
+    const shown = clone() as ScreenState
+    Object.assign(shown.workspaces[0].cells[0].panes[1], { homeLayout: home })
+    expect(parseScreen(shown)!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('homeLayout')
   })
 
   it('cell 의 pane 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {

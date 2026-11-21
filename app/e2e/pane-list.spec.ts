@@ -36,7 +36,18 @@ async function paneList(page: Page, out: string): Promise<string[][]> {
   return lines.slice(0, -1).map((l) => l.split('\t'))
 }
 
-const HEADER = ['PANE', 'PTY', 'STATE', 'APP', 'WORKSPACE', 'CELL', 'TITLE', 'DIR', 'MESSAGE']
+const HEADER = [
+  'PANE',
+  'PTY',
+  'STATE',
+  'APP',
+  'WORKSPACE',
+  'CELL',
+  'TITLE',
+  'DIR',
+  'MESSAGE',
+  'BACKGROUND'
+]
 
 const CELL_ID = expect.stringMatching(/^c-[0-9a-f]{8}$/)
 
@@ -106,10 +117,11 @@ test('maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순
       CELL_ID,
       'Claude',
       dir('proj-a'),
-      'Bash: git push -u origin x'
+      'Bash: git push -u origin x',
+      ''
     ],
-    [PANE_ID, plain, '', '', 'proj-a', CELL_ID, expect.any(String), expect.any(String), ''],
-    [PANE_ID, second, 'working', 'cargo', 'proj-b', CELL_ID, 'cargo', dir('proj-b'), 'reading']
+    [PANE_ID, plain, '', '', 'proj-a', CELL_ID, expect.any(String), expect.any(String), '', ''],
+    [PANE_ID, second, 'working', 'cargo', 'proj-b', CELL_ID, 'cargo', dir('proj-b'), 'reading', '']
   ])
   expect(table.slice(1).map((r) => r[6])).toEqual(await sidebarTitles(page))
   expect(new Set(table.slice(1).map((r) => r[0])).size).toBe(3)
