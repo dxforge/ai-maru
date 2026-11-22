@@ -285,7 +285,7 @@ function spans(): SidebarSpans {
   const slot = list.value!.querySelector(':scope > .new-workspace')
   return {
     workspaces: Array.from(
-      list.value!.querySelectorAll<HTMLElement>(':scope > .workspace'),
+      list.value!.querySelectorAll<HTMLElement>(':scope > .workspaces > .workspace'),
       (el) => {
         const key = Number(el.dataset.workspace)
         const w = workspaces.find((x) => x.key === key)
@@ -384,190 +384,191 @@ const keepTip = (kept: boolean): string =>
 
 <template>
   <nav ref="nav" class="sidebar window-drag" :class="{ collapsed }">
-    <div class="titlebar" />
     <div ref="list" v-overlay-scroll="'y'" class="list">
-      <div
-        v-for="(
-          { w, name, folded: wf, kept, state, notified, dot, favorites, line, items: entries }, wi
-        ) in groups"
-        :key="w.key"
-        class="workspace"
-        :class="{ dragging: workspaceDragged(w.key) }"
-        :data-workspace="w.key"
-      >
-        <button
-          :ref="(el) => headRef(w.key, el)"
-          v-tooltip="{ card: sidebarCard, at: { kind: 'head', workspace: w.key } }"
-          class="workspace-head"
-          :class="{ folded: wf, 'menu-open': menuFor === w.key }"
-          :aria-label="wf ? `Expand ${name}` : `Collapse ${name}`"
-          :aria-expanded="!wf"
-          @mousedown.prevent
-          @pointerdown="grabWorkspace($event, w.key, wi)"
-          @click="emit('fold', w.key)"
+      <div class="workspaces">
+        <div
+          v-for="(
+            { w, name, folded: wf, kept, state, notified, dot, favorites, line, items: entries }, wi
+          ) in groups"
+          :key="w.key"
+          class="workspace"
+          :class="{ dragging: workspaceDragged(w.key) }"
+          :data-workspace="w.key"
         >
-          <span v-if="state" class="state status-icon" :class="[state, { unread: notified }]"
-            ><StatusIcon :state="state"
-          /></span>
-          <span class="workspace-name workspace-title">{{ name }}</span>
-          <span v-if="dot" class="unread-dot" />
-          <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. keep 버튼과 메뉴 버튼의 pointerdown·click 이 헤더의 끌기·접기로 전해지지 않게 막는다. -->
-          <span class="keep-slot" :class="{ on: kept }"
-            ><span
-              v-tooltip="keepTip(kept)"
-              role="button"
-              class="keep icon-button"
-              aria-label="Keep Workspace"
-              :aria-pressed="kept"
-              @pointerdown.stop
-              @click.stop="emit('toggleKeep', w.key)"
-              ><Bookmark class="text-icon" :fill="kept ? 'currentColor' : 'none'" /></span
-          ></span>
-          <span
-            v-tooltip="menuFor === w.key ? undefined : 'Workspace Menu'"
-            role="button"
-            class="workspace-menu-button icon-button"
-            aria-label="Workspace Menu"
-            aria-haspopup="menu"
-            :aria-expanded="menuFor === w.key"
-            @pointerdown.stop
-            @click.stop="toggleMenu(w.key)"
-            ><EllipsisVertical class="text-icon"
-          /></span>
-          <FoldChevron class="chevron" :open="!wf" />
-        </button>
-        <WorkspaceMenu
-          v-if="menuFor === w.key && heads.get(w.key)"
-          :ref="menuRef"
-          :name="name"
-          :kept="kept"
-          :head="heads.get(w.key)!"
-          @done="(n, refocus) => emit('closeMenu', w.key, n, refocus)"
-          @toggle-keep="emit('toggleKeep', w.key)"
-          @close-workspace="emit('closeWorkspace', w.key)"
-        />
-        <div v-if="line" class="dir-card">
           <button
-            v-tooltip="line.path"
-            class="row dir-row"
-            :aria-label="`Open ${line.name}`"
+            :ref="(el) => headRef(w.key, el)"
+            v-tooltip="{ card: sidebarCard, at: { kind: 'head', workspace: w.key } }"
+            class="workspace-head"
+            :class="{ folded: wf, 'menu-open': menuFor === w.key }"
+            :aria-label="wf ? `Expand ${name}` : `Collapse ${name}`"
+            :aria-expanded="!wf"
             @mousedown.prevent
-            @click="openRow($event, w.key, line.dir)"
+            @pointerdown="grabWorkspace($event, w.key, wi)"
+            @click="emit('fold', w.key)"
           >
-            <span class="state"><LeadIcon name="folder-root" /></span>
-            <span class="title">{{ line.path }}</span>
+            <span v-if="state" class="state status-icon" :class="[state, { unread: notified }]"
+              ><StatusIcon :state="state"
+            /></span>
+            <span class="workspace-name workspace-title">{{ name }}</span>
+            <span v-if="dot" class="unread-dot" />
+            <!-- workspace 헤더가 button 이라 그 안에 button 을 넣지 못한다. keep 버튼과 메뉴 버튼의 pointerdown·click 이 헤더의 끌기·접기로 전해지지 않게 막는다. -->
+            <span class="keep-slot" :class="{ on: kept }"
+              ><span
+                v-tooltip="keepTip(kept)"
+                role="button"
+                class="keep icon-button"
+                aria-label="Keep Workspace"
+                :aria-pressed="kept"
+                @pointerdown.stop
+                @click.stop="emit('toggleKeep', w.key)"
+                ><Bookmark class="text-icon" :fill="kept ? 'currentColor' : 'none'" /></span
+            ></span>
+            <span
+              v-tooltip="menuFor === w.key ? undefined : 'Workspace Menu'"
+              role="button"
+              class="workspace-menu-button icon-button"
+              aria-label="Workspace Menu"
+              aria-haspopup="menu"
+              :aria-expanded="menuFor === w.key"
+              @pointerdown.stop
+              @click.stop="toggleMenu(w.key)"
+              ><EllipsisVertical class="text-icon"
+            /></span>
+            <FoldChevron class="chevron" :open="!wf" />
           </button>
-          <template v-if="!entries.length">
-            <div v-for="f in favorites" :key="f.dir" class="dir-line">
+          <WorkspaceMenu
+            v-if="menuFor === w.key && heads.get(w.key)"
+            :ref="menuRef"
+            :name="name"
+            :kept="kept"
+            :head="heads.get(w.key)!"
+            @done="(n, refocus) => emit('closeMenu', w.key, n, refocus)"
+            @toggle-keep="emit('toggleKeep', w.key)"
+            @close-workspace="emit('closeWorkspace', w.key)"
+          />
+          <div v-if="line" class="dir-card">
+            <button
+              v-tooltip="line.path"
+              class="row dir-row"
+              :aria-label="`Open ${line.name}`"
+              @mousedown.prevent
+              @click="openRow($event, w.key, line.dir)"
+            >
+              <span class="state"><LeadIcon name="folder-root" /></span>
+              <span class="title">{{ line.path }}</span>
+            </button>
+            <template v-if="!entries.length">
+              <div v-for="f in favorites" :key="f.dir" class="dir-line">
+                <button
+                  v-tooltip="f.path"
+                  class="row dir-row"
+                  :aria-label="`Open ${f.name}`"
+                  @mousedown.prevent
+                  @click="openRow($event, w.key, f.dir)"
+                >
+                  <span class="state"><LeadIcon name="folder" /></span>
+                  <span class="title">{{ f.path }}</span>
+                </button>
+                <button
+                  v-tooltip="'Remove from Favorites'"
+                  class="remove"
+                  :aria-label="`Remove ${f.name} from Favorites`"
+                  @mousedown.prevent
+                  @click="emit('removeFavorite', w.key, f.dir)"
+                >
+                  <X class="text-icon" />
+                </button>
+              </div>
+            </template>
+            <button
+              v-else-if="favorites.length"
+              v-tooltip="favoritesFor?.key === w.key ? undefined : 'Favorites'"
+              class="more"
+              :aria-label="`${favorites.length} ${favorites.length === 1 ? 'favorite' : 'favorites'}`"
+              aria-haspopup="menu"
+              :aria-expanded="favoritesFor?.key === w.key"
+              @mousedown.prevent
+              @click="toggleFavorites($event, w.key)"
+            >
+              +{{ favorites.length }}
+            </button>
+          </div>
+          <FavoritesMenu
+            v-if="line && favoritesFor?.key === w.key && entries.length && favorites.length"
+            :root="line"
+            :favorites="favorites"
+            :card="favoritesFor.card"
+            :toggle="favoritesFor.toggle"
+            @close="closeFavorites(w.key)"
+            @open="(dir, at) => emit('openDir', w.key, dir, at)"
+            @remove="(dir) => emit('removeFavorite', w.key, dir)"
+          />
+          <div
+            v-for="item in entries"
+            :key="item.c.key"
+            v-tooltip="cellTip(item.c.key)"
+            class="group"
+            :class="{ selected: item.selected, dragging: cellDragged(item.c.key) }"
+          >
+            <span
+              class="grip"
+              aria-hidden="true"
+              @mousedown.prevent
+              @pointerdown="grabCell($event, w.key, item.c.key, item.index)"
+            />
+            <div v-for="r in item.rows" :key="r.pane" class="pane-line">
               <button
-                v-tooltip="f.path"
-                class="row dir-row"
-                :aria-label="`Open ${f.name}`"
+                v-tooltip="cellTip(item.c.key, `pane:${r.pane}`)"
+                class="row pane-row"
+                :class="[r.tone, { shell: !r.state, focused: r.focused }]"
+                :aria-label="r.aria"
                 @mousedown.prevent
-                @click="openRow($event, w.key, f.dir)"
+                @click="emit('focus', item.c.key, r.pane)"
               >
-                <span class="state"><LeadIcon name="folder" /></span>
-                <span class="title">{{ f.path }}</span>
+                <span class="state status-icon" :class="{ unread: r.notice }"
+                  ><PaneIcon :icon="r.icon"
+                /></span>
+                <span class="title">{{ r.text }}</span>
+                <PanePlace v-if="r.place" class="tail" :place="r.place" />
+                <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
+                  commandTail(r.command, now)
+                }}</span>
               </button>
               <button
-                v-tooltip="'Remove from Favorites'"
-                class="remove"
-                :aria-label="`Remove ${f.name} from Favorites`"
+                v-if="r.path"
+                v-tooltip="kept ? favoriteLabel(r.favorite) : 'Keep Workspace to add favorites'"
+                class="favorite"
+                :class="{ on: r.favorite }"
+                :aria-label="favoriteLabel(r.favorite)"
+                :aria-pressed="r.favorite"
+                :aria-disabled="!kept"
                 @mousedown.prevent
-                @click="emit('removeFavorite', w.key, f.dir)"
+                @click="kept && emit('toggleFavorite', item.c.key, r.pane)"
+              >
+                <Star class="text-icon" :fill="r.favorite ? 'currentColor' : 'none'" />
+              </button>
+            </div>
+            <div
+              v-for="j in jobsByCell.get(item.c.id)"
+              :key="j.pty"
+              v-tooltip="cellTip(item.c.key, `job:${j.pty}`)"
+              class="row job-row"
+              :class="{ exited: j.exited }"
+            >
+              <span class="state"><LeadIcon name="gear" /></span>
+              <span class="title">{{ j.text }}</span>
+              <span v-if="j.ports" class="tail ports">{{ j.ports }}</span>
+              <span class="tail time">{{ jobTime(j) }}</span>
+              <button
+                v-tooltip="j.exited ? 'Remove' : 'Stop'"
+                class="tail kill"
+                :aria-label="j.exited ? `Remove ${j.text}` : `Stop ${j.text}`"
+                @mousedown.prevent
+                @click="emit('killJob', j.pty)"
               >
                 <X class="text-icon" />
               </button>
             </div>
-          </template>
-          <button
-            v-else-if="favorites.length"
-            v-tooltip="favoritesFor?.key === w.key ? undefined : 'Favorites'"
-            class="more"
-            :aria-label="`${favorites.length} ${favorites.length === 1 ? 'favorite' : 'favorites'}`"
-            aria-haspopup="menu"
-            :aria-expanded="favoritesFor?.key === w.key"
-            @mousedown.prevent
-            @click="toggleFavorites($event, w.key)"
-          >
-            +{{ favorites.length }}
-          </button>
-        </div>
-        <FavoritesMenu
-          v-if="line && favoritesFor?.key === w.key && entries.length && favorites.length"
-          :root="line"
-          :favorites="favorites"
-          :card="favoritesFor.card"
-          :toggle="favoritesFor.toggle"
-          @close="closeFavorites(w.key)"
-          @open="(dir, at) => emit('openDir', w.key, dir, at)"
-          @remove="(dir) => emit('removeFavorite', w.key, dir)"
-        />
-        <div
-          v-for="item in entries"
-          :key="item.c.key"
-          v-tooltip="cellTip(item.c.key)"
-          class="group"
-          :class="{ selected: item.selected, dragging: cellDragged(item.c.key) }"
-        >
-          <span
-            class="grip"
-            aria-hidden="true"
-            @mousedown.prevent
-            @pointerdown="grabCell($event, w.key, item.c.key, item.index)"
-          />
-          <div v-for="r in item.rows" :key="r.pane" class="pane-line">
-            <button
-              v-tooltip="cellTip(item.c.key, `pane:${r.pane}`)"
-              class="row pane-row"
-              :class="[r.tone, { shell: !r.state, focused: r.focused }]"
-              :aria-label="r.aria"
-              @mousedown.prevent
-              @click="emit('focus', item.c.key, r.pane)"
-            >
-              <span class="state status-icon" :class="{ unread: r.notice }"
-                ><PaneIcon :icon="r.icon"
-              /></span>
-              <span class="title">{{ r.text }}</span>
-              <PanePlace v-if="r.place" class="tail" :place="r.place" />
-              <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
-                commandTail(r.command, now)
-              }}</span>
-            </button>
-            <button
-              v-if="r.path"
-              v-tooltip="kept ? favoriteLabel(r.favorite) : 'Keep Workspace to add favorites'"
-              class="favorite"
-              :class="{ on: r.favorite }"
-              :aria-label="favoriteLabel(r.favorite)"
-              :aria-pressed="r.favorite"
-              :aria-disabled="!kept"
-              @mousedown.prevent
-              @click="kept && emit('toggleFavorite', item.c.key, r.pane)"
-            >
-              <Star class="text-icon" :fill="r.favorite ? 'currentColor' : 'none'" />
-            </button>
-          </div>
-          <div
-            v-for="j in jobsByCell.get(item.c.id)"
-            :key="j.pty"
-            v-tooltip="cellTip(item.c.key, `job:${j.pty}`)"
-            class="row job-row"
-            :class="{ exited: j.exited }"
-          >
-            <span class="state"><LeadIcon name="gear" /></span>
-            <span class="title">{{ j.text }}</span>
-            <span v-if="j.ports" class="tail ports">{{ j.ports }}</span>
-            <span class="tail time">{{ jobTime(j) }}</span>
-            <button
-              v-tooltip="j.exited ? 'Remove' : 'Stop'"
-              class="tail kill"
-              :aria-label="j.exited ? `Remove ${j.text}` : `Stop ${j.text}`"
-              @mousedown.prevent
-              @click="emit('killJob', j.pty)"
-            >
-              <X class="text-icon" />
-            </button>
           </div>
         </div>
       </div>
@@ -584,6 +585,7 @@ const keepTip = (kept: boolean): string =>
         :style="{ top: `${target.line}px` }"
       />
     </div>
+    <div class="titlebar window-drag" />
     <SidebarCard
       :view="cardView"
       :current="cardCurrent"
@@ -610,7 +612,10 @@ const keepTip = (kept: boolean): string =>
     sans-serif;
 }
 
+/* 목록을 스크롤하면 `.workspaces` 의 상자가 `.list` 위로 올라가 titlebar 와 겹친다. drag 영역은 overflow 에 잘리지 않고
+   DOM 에서 뒤의 것이 이기므로, titlebar 를 DOM 에서 `.list` 뒤에 두고 `order` 로 맨 위에 그린다. */
 .titlebar {
+  order: -1;
   flex: none;
   height: var(--titlebar-height);
   border-bottom: 1px solid var(--line);
@@ -622,7 +627,14 @@ const keepTip = (kept: boolean): string =>
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: var(--space-3) 0;
+  padding-bottom: var(--space-3);
+}
+
+/* `.workspaces` 를 통째로 no-drag 로 두므로, workspace 안에 넣는 요소에는 no-drag 를 따로 붙이지 않는다. 사이드바에서
+   창을 끄는 곳은 titlebar 와, 목록 안에서 마지막 workspace 아래로 보이는 빈 곳이다. */
+.workspaces {
+  -webkit-app-region: no-drag;
+  padding-top: var(--space-3);
 }
 
 /* 라이브러리가 그린 세로 스크롤바는 사이드바의 `drag` 를 물려받고 DOM 에서 cell 뒤에 붙는다. drag 영역은 z-index 와
@@ -630,6 +642,12 @@ const keepTip = (kept: boolean): string =>
    스크롤바는 누르는 컨트롤이라 no-drag 로 둔다. */
 .list > :deep(.os-scrollbar-vertical) {
   -webkit-app-region: no-drag;
+}
+
+/* 목록은 세로로만 스크롤하는데도 라이브러리는 가로 스크롤바의 상자를 목록 바닥에 붙인다. 그 상자는 사이드바의 `drag` 를
+   물려받고 DOM 에서 `.workspaces` 뒤에 있어, 목록이 넘치면 바닥의 workspace 위를 창 끌기 영역으로 덮는다. */
+.list > :deep(.os-scrollbar-horizontal) {
+  display: none;
 }
 
 .workspace-head {
@@ -866,7 +884,6 @@ const keepTip = (kept: boolean): string =>
 }
 
 button {
-  -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
   height: var(--row-height);
@@ -959,7 +976,6 @@ button {
 }
 
 .job-row {
-  -webkit-app-region: no-drag;
   position: relative;
   cursor: default;
 }
@@ -1017,7 +1033,6 @@ button {
 }
 
 .grip {
-  -webkit-app-region: no-drag;
   position: absolute;
   top: 0;
   left: 50%;

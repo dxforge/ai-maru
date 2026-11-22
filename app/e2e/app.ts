@@ -1101,3 +1101,33 @@ export function dragRegion(app: ElectronApplication): () => string | undefined {
   })
   return () => last
 }
+
+/**
+ * 좌표 (x, y) 가 창 끌기 영역(`drag`)인지, 밑의 요소가 마우스를 받는 자리(`no-drag`)인지를 Chromium 과 Electron 이 정하는
+ * 규칙대로 계산한다. 테스트가 보내는 마우스 이벤트는 OS 의 창 끌기 처리를 거치지 않고 페이지에 바로 가서, 실제 마우스가
+ * 영역에 막히는 것을 볼 수 없기 때문이다. 규칙: DOM 순서로 보이는 박스마다 영역을 모으고, 겹치면 z-index 와 상관없이
+ * DOM 에서 뒤의 것이 이긴다.
+ */
+export async function appRegionAt(page: Page, x: number, y: number): Promise<string> {
+  return (await appRegionsAt(page, [{ x, y }]))[0]
+}
+
+/** 점마다 `appRegionAt` 의 값을 한 번에 계산한다. */
+export function appRegionsAt(page: Page, points: { x: number; y: number }[]): Promise<string[]> {
+  return page.evaluate((points) => {
+    const boxes: { mode: string; r: DOMRect }[] = []
+    for (const el of Array.from(document.querySelectorAll('*'))) {
+      const style = getComputedStyle(el)
+      const mode = style.getPropertyValue('-webkit-app-region')
+      if (mode === 'none' || style.visibility !== 'visible') continue
+      const r = el.getBoundingClientRect()
+      if (r.width && r.height) boxes.push({ mode, r })
+    }
+    return points.map(({ x, y }) => {
+      let region = 'none'
+      for (const { mode, r } of boxes)
+        if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) region = mode
+      return region
+    })
+  }, points)
+}

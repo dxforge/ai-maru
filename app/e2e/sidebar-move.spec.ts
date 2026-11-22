@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import {
+  appRegionAt,
   cellViews,
   clickMenu,
   collapseSidebar,
@@ -29,7 +30,7 @@ const list = (page: Page) => page.locator('.sidebar .list')
 
 function shape(page: Page): Promise<string[][]> {
   return page
-    .locator('.sidebar .list > .workspace')
+    .locator('.sidebar .workspaces > .workspace')
     .evaluateAll((ws) =>
       ws.map((w) =>
         Array.from(
@@ -127,7 +128,7 @@ test('workspace 이름 줄을 4px 넘게 끌면 workspace 를 옮기고 접지 �
 
   await grabHandle(page, workspaceHeads(page).nth(2), 0)
   await moveTo(page, workspaceHeads(page).nth(0), 0.25)
-  await expect(page.locator('.sidebar .list > .workspace').nth(2)).toHaveClass(/dragging/)
+  await expect(page.locator('.sidebar .workspaces > .workspace').nth(2)).toHaveClass(/dragging/)
   await expect(line(page)).toBeVisible()
   await expect(slot(page)).toHaveCount(0)
   await page.mouse.up()
@@ -256,11 +257,8 @@ test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우�
   await cards(page).nth(1).hover()
   await expect.poll(() => opacity(grip(page, 1))).toBeGreaterThan(0)
   await expect(grip(page, 0)).toHaveCSS('opacity', '0')
-  expect(
-    await grip(page, 0).evaluate((el) =>
-      getComputedStyle(el).getPropertyValue('-webkit-app-region')
-    )
-  ).toBe('no-drag')
+  const b = (await grip(page, 0).boundingBox())!
+  expect(await appRegionAt(page, b.x + b.width / 2, b.y + b.height / 2)).toBe('no-drag')
 })
 
 test('첫 행의 위쪽이라도 손잡이 밖을 누르면 cell 을 끌지 않고 그 pane 을 고른다', async ({

@@ -34,6 +34,8 @@ import {
   cellItems,
   cellFavorite,
   CLASSIC_SCROLLBARS,
+  appRegionAt,
+  appRegionsAt,
   cellPlaces,
   dialogCalls,
   END_EVERYTHING,
@@ -624,23 +626,85 @@ test('목록을 스크롤해도 신호등 버튼 자리는 비어 있다', async
   expect(await underButtons()).toBeNull()
 })
 
-test('사이드바와 접은 사이드바의 빈 곳으로 창을 끌고, 누르는 곳은 끌지 않는다', async ({
+test('사이드바는 titlebar 와 마지막 workspace 아래의 빈 곳으로만 창을 끌고, workspace 들의 구간은 고전 스크롤바 설정에서도 어디든 끌지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const home = zshHome(dataDir, 'sub')
+  const launched = await launch({ SHELL: '/bin/zsh', HOME: home }, undefined, CLASSIC_SCROLLBARS)
+  const { app, page } = launched
+  await run(page, 'cd sub && echo in-$((1+1))', 'in-2')
+  await keepWorkspace(page, 0)
+  await cellItems(page).nth(0).hover()
+  await cellFavorite(page, 0).click()
+  await expect(cellFavorite(page, 0)).toHaveAttribute('aria-pressed', 'true')
+  await run(page, 'maru job new --name web sleep 600 && echo job-$((1+1))', 'job-2')
+  await expect(page.locator('.sidebar .job-row')).toHaveCount(1)
+  await newCell(launched, 2)
+  await newWorkspace(launched, 3)
+  await expect(page.locator('.sidebar .dir-card .more')).toHaveCount(1)
+  await expect(page.locator('.sidebar .list > .os-scrollbar-vertical')).toHaveCount(1)
+
+  await panes(page).first().hover()
+  await expectSidebarRegions(page, true, 'gap')
+  await collapseSidebar(app, page)
+  await expectSidebarRegions(page, false, 'gap')
+})
+
+test('목록이 넘쳐 스크롤해도 titlebar 로는 창을 끌고, workspace 들의 구간은 끌지 않는다', async ({
   launch
 }) => {
-  const { app, page } = await launch()
-  const region = (selector: string): Promise<string> =>
-    page
-      .locator(selector)
-      .first()
-      .evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-app-region'))
+  const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  const { app, page } = launched
+  await resizeBy(app, 0, -450)
+  for (let n = 2; n <= 8; n++) await newWorkspace(launched, n)
+  const list = page.locator('.sidebar .list')
+  await list.evaluate((el) => el.scrollTo(0, 60))
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(60)
 
-  expect(await region('.sidebar')).toBe('drag')
-  expect(await region('.sidebar .pane-row')).toBe('no-drag')
-  expect(await region('.resizer')).toBe('no-drag')
+  await panes(page).first().hover()
+  await expectSidebarRegions(page, true, 'overflow')
   await collapseSidebar(app, page)
-  expect(await region('.sidebar')).toBe('drag')
-  expect(await region('.sidebar .pane-row')).toBe('no-drag')
+  await list.evaluate((el) => el.scrollTo(0, 60))
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(60)
+  await expectSidebarRegions(page, false, 'overflow')
 })
+
+async function expectSidebarRegions(
+  page: Page,
+  open: boolean,
+  bottom: 'gap' | 'overflow'
+): Promise<void> {
+  const scrollbar = page.locator('.sidebar .list > .os-scrollbar-vertical')
+  const nav = await box(page.locator('.sidebar'))
+  const titlebar = await box(page.locator('.sidebar .titlebar'))
+  const list = await box(page.locator('.sidebar .list'))
+  const used = await box(page.locator('.sidebar .workspaces'))
+  const bar = await box(scrollbar)
+  // 사이드바 너비를 바꾸는 `.resizer` 는 사이드바 오른쪽 끝에 겹치고 no-drag 다.
+  const resizer = open ? await box(page.locator('.resizer').first()) : undefined
+  const inside = (r: typeof nav, x: number, y: number): boolean =>
+    x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
+  if (bottom === 'gap') expect(used.y + used.height).toBeLessThan(list.y + list.height - 20)
+  else {
+    expect(used.y).toBeLessThan(list.y)
+    expect(used.y + used.height).toBeGreaterThan(list.y + list.height)
+  }
+  const points: { x: number; y: number }[] = []
+  for (let y = nav.y + 1; y < nav.y + nav.height; y += 4)
+    for (let x = nav.x + 1; x < nav.x + nav.width; x += 4) points.push({ x, y })
+  const regions = await appRegionsAt(page, points)
+  const wrong = points
+    .map(({ x, y }, i) => {
+      const drag =
+        !(resizer && inside(resizer, x, y)) &&
+        (inside(titlebar, x, y) ||
+          (y >= used.y + used.height && inside(list, x, y) && !inside(bar, x, y)))
+      return { x, y, region: regions[i], want: drag ? 'drag' : 'no-drag' }
+    })
+    .filter(({ region, want }) => region !== want)
+  expect(wrong).toEqual([])
+}
 
 const jobRows = (page: Page) => page.locator('.sidebar .job-row')
 
@@ -1905,31 +1969,6 @@ test('workspace 메뉴 안의 버튼이 아닌 곳을 눌러도 메뉴가 남고
   await expect(workspaceMenu(page)).toHaveCount(0)
   await run(page, 'echo gone-$((1+1))', 'gone-2')
 })
-
-/**
- * 좌표 (x, y) 가 창 끌기 영역(`drag`)인지, 밑의 요소가 마우스를 받는 자리(`no-drag`)인지를 Chromium 과 Electron 이 정하는
- * 규칙대로 계산한다. 테스트가 보내는 마우스 이벤트는 OS 의 창 끌기 처리를 거치지 않고 페이지에 바로 가서, 실제 마우스가
- * 영역에 막히는 것을 볼 수 없기 때문이다. 규칙: DOM 순서로 보이는 박스마다 영역을 모으고, 겹치면 z-index 와 상관없이
- * DOM 에서 뒤의 것이 이긴다.
- */
-function appRegionAt(page: Page, x: number, y: number): Promise<string> {
-  return page.evaluate(
-    ({ x, y }) => {
-      let region = 'none'
-      for (const el of Array.from(document.querySelectorAll('*'))) {
-        const style = getComputedStyle(el)
-        const mode = style.getPropertyValue('-webkit-app-region')
-        if (mode === 'none' || style.visibility !== 'visible') continue
-        const r = el.getBoundingClientRect()
-        if (r.width && r.height && x >= r.left && x < r.right && y >= r.top && y < r.bottom) {
-          region = mode
-        }
-      }
-      return region
-    },
-    { x, y }
-  )
-}
 
 test('고전 스크롤바 설정에서도 cell 의 별 가운데는 창 끌기 영역이 아니어서 별이 보이고 눌리고, 목록 아래 끝은 창 끌기 영역으로 남는다', async ({
   launch
