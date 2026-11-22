@@ -117,7 +117,25 @@ describe('pane.new', () => {
     await expect(done).rejects.toThrow('no cell c-0000000b')
   })
 
+  it('background 가 true 일 때만 창에 넘긴다', async () => {
+    const { handlers, sent, answer } = setup()
+    for (const params of [{ background: true }, { background: false }, {}]) {
+      const done = handlers['pane.new'](
+        { cwd: '/', direction: 'down', ...params },
+        A
+      ) as Promise<unknown>
+      answer({ pane: NB, pty: B })
+      await done
+    }
+    expect(sent.map((s) => (s.arg as { background?: boolean }).background)).toEqual([
+      true,
+      undefined,
+      undefined
+    ])
+  })
+
   it.each([
+    [{ cwd: '/', direction: 'right', background: 'yes' }],
     [{ cwd: 'rel', direction: 'right' }],
     [{ cwd: '/', direction: 'right', cell: 'ai-maru main' }],
     [{ cwd: '/', direction: 'right', cell: A }],
@@ -406,6 +424,27 @@ describe('pane.close', () => {
     await expect(handlers['pane.close']({ target: A }, B)).rejects.toThrow(
       `${A} is a pty, not a pane; its pane is ${NA}`
     )
+  })
+})
+
+describe('pane.background', () => {
+  it('target 을 pane 으로 창에 넘기고, 없는 pane 이면 invalid_params', async () => {
+    const { handlers, sent, answer } = setup()
+    const done = handlers['pane.background']({ target: NB }, A)
+    expect(sent[0]).toEqual({ channel: 'pane:background', id: 0, arg: { pane: NB } })
+    answer(null)
+    await expect(done).resolves.toBeNull()
+    const missing = handlers['pane.background']({ target: NB }, A)
+    answer({ error: 'no_pane', message: `no pane ${NB}` })
+    await expect(missing).rejects.toThrow(new InvalidParams(`no pane ${NB}`))
+  })
+
+  it('pane id 가 아닌 target 은 창에 넘기지 않는다', async () => {
+    const { handlers, sent } = setup()
+    await expect(handlers['pane.background']({ target: A }, B)).rejects.toThrow(
+      `${A} is a pty, not a pane; its pane is ${NA}`
+    )
+    expect(sent).toEqual([])
   })
 })
 

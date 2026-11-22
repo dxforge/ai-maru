@@ -69,6 +69,7 @@ test('명령은 File·View 메뉴 맨 위에 단축키와 함께 팔레트의 �
     ['split-right', 'Split Right', 'Command+D'],
     ['split-down', 'Split Down', 'Shift+Command+D'],
     ['close-pane', 'Close Pane', 'Command+W'],
+    ['background-pane', 'Send Pane to Background', 'Shift+Command+H'],
     ['-', '', null],
     ['launcher', 'Open Launcher', 'Command+O'],
     ['launch-workspace', 'Launch in New Workspace…', null],

@@ -30,7 +30,7 @@ workspace·cell 목록은 renderer 만 가진다. renderer 는 pty 를 열 때 `
 
 CLI 서버는 앱이 뜨자마자 요청을 받으므로, 재시작에서 남은 pty 의 요청은 창이 문서를 로드하는 중에도 온다. renderer 가 리스너(`onPaneNew`·`onCanvasPut` 등)를 달기 전에 보낸 IPC 는 받는 쪽이 없어 버려진다. 그래서 main 은 renderer 가 `pane:ready` 를 보낼 때까지 pane 요청과 Canvas 문서를 쌓아 두고(`app/src/main/window-ready.ts`), 창이 새 문서로 바뀌거나(`did-navigate`) renderer 프로세스가 죽으면(`render-process-gone`) 다시 쌓는다. pane 요청은 쌓인 시간을 포함해 8초 안에 답을 받지 못하면 실패로 답한다. Canvas 문서는 8초 안에 창에 넘기지 못하면 실패로 답한다. `maru` 가 10초 안에 답을 받지 못하면 시간 초과로 끝나기 때문이다.
 
-main 이 창에 pane 을 찾게 하는 요청(`pane.new`·`pane.close`·`pty.kill`)은 pane 을 pane id 로 가리키면 `{pane}`, pty id 로 가리키면 `{pty}` 로 싣고(`PaneTarget`, `app/src/shared/pane.ts`), 찾는 것은 renderer 가 자기 배치에서 한다. main 이 `lastScreen` 으로 바꿔 찾으면, pane 의 pty 가 막 바뀐 틈에 옛 값으로 다른 pane 을 가리킬 수 있기 때문이다.
+main 이 창에 pane 을 찾게 하는 요청(`pane.new`·`pane.close`·`pane.background`·`pty.kill`)은 pane 을 pane id 로 가리키면 `{pane}`, pty id 로 가리키면 `{pty}` 로 싣고(`PaneTarget`, `app/src/shared/pane.ts`), 찾는 것은 renderer 가 자기 배치에서 한다. main 이 `lastScreen` 으로 바꿔 찾으면, pane 의 pty 가 막 바뀐 틈에 옛 값으로 다른 pane 을 가리킬 수 있기 때문이다.
 
 renderer 는 화면을 되살린 다음 tick 에 `pane:ready` 를 보낸다(`App.vue`). 다음 tick 에는 되살린 터미널이 mount 돼 `pty:open` 을 보낸 뒤다. 되살리기 전에 넘기면 renderer 는 부른 pane 을 찾지 못한다. 같은 renderer 의 IPC 는 보낸 순서대로 닿으므로, main 은 쌓아 둔 요청을 넘길 때 되살린 pty 의 cell 을 안다(위의 "main 이 아는 pty 의 cell"). 그래서 `cell.new` 는 부른 pty 의 cell 과 `after`·`before` 로 가리킨 pty 의 cell 을 요청을 받을 때가 아니라 창에 넘길 때 찾는다. 터미널이 mount 될 때 pty 를 열지 않도록 바뀌면, main 은 되살린 pty 의 cell 을 모른 채 넘겨 새 cell 이 새 workspace 로 목록 끝에 놓인다.
 
@@ -84,11 +84,13 @@ maru-pty 는 `protocol_version` 이 `MIN_PROTOCOL_VERSION` 부터 `PROTOCOL_VERS
 
 cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을 지울 때 cell 도 지우므로, kill 로 그 cell 의 마지막 pty 가 빠지면 main 은 cell 이 닫힌 것으로 보고 그 cell 의 job 을 끈다(`sendKill`, `app/src/main/index.ts`). 문서가 바뀔 때 이전 문서의 pty 를 끄는 경로도 같은 `sendKill` 을 부른다. 그래서 창을 새로 고치면 그 창 cell 의 job 도 꺼진다. pane 이 없는 cell 을 남기는 경로가 생기면 이 판단이 틀어진다.
 
-## pane 없이 pty 를 남기려면
+## background pane
 
-지금 pty 는 pane 에 보이거나 job 이다. pane 을 떼어 pty 만 남겨 두었다가 다시 붙이려면 세 곳을 바꿔야 한다.
+background 로 돌린 pane 은 renderer 의 pane 으로 남고 분할 트리에서만 빠진다. 그 터미널은 화면 밖에 마운트된 채 pty 에 붙어 있다. 그래서 main 에는 background pane 의 표가 따로 없다. kill·cell 닫힘·pty 종료는 보이는 pane 과 같은 경로를 탄다("main 이 아는 pty 의 cell"). 보이는 pane 이 없는 cell 은 화면에서 빠지고 사이드바에만 남는다.
 
-- renderer 가 kill 없이 pane 을 지우는 경로. 지금은 pane 을 지울 때마다 kill 을 보낸다("main 이 아는 pty 의 cell").
+pane 을 떼어 pty 만 남기는 것(renderer 도 pane 을 갖지 않는 것)은 아직 없다. 그러려면 세 곳을 바꿔야 한다.
+
+- renderer 가 kill 없이 pane 을 지우는 경로. 지금은 pane 을 지울 때마다 kill 을 보낸다.
 - pane 없는 pty 를 cell 에 묶어 두는 표. job 표처럼 main 이 갖는다. 이 표가 없으면 pane 없이 남은 pty 는 다음 실행에 Recovered workspace 로 열린다.
 - cell 이 닫혔다는 판단. 지금은 cell 의 마지막 pty 가 kill 로 빠지면 닫힌 것으로 보므로("job 은 main 이 가진다"), 떼어 둔 pty 만 남은 cell 도 닫힌다.
 
@@ -97,8 +99,8 @@ cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을
 앱이 끝나는 경우는 재시작, 사용자의 끄기, 비정상 종료 셋이다. main 은 어느 경우로 끝나도 다음에 뜬 앱이 읽도록 상태를 userData 의 `state.json` 에 바뀔 때마다 쓴다(`app/src/main/state.ts`). renderer 는 화면(workspace·cell·pane 배치와 사이드바·보기 모드, `app/src/shared/screen.ts`)이 바뀔 때마다 main 에 보내고, main 은 그 화면과 job 표, 창 위치·크기, 테마를 `workspaces`·`cells`·`panes`·`sessions`·`view` 다섯 표로 나눠 쓴다. 표마다 형식 버전이 있고 따로 읽는다. 한 표의 형식이 바뀌어도 그 표만 잃게 하기 위해서다.
 
 - `workspaces` 는 workspace 줄의 배열이고, 줄 순서가 사이드바 순서다. 줄은 `id`·이름·`dir`·즐겨찾기와 keep(`kept: true`)을 갖는다. 옛 빌드가 쓴 줄의 `pinned: true` 도 keep 으로 읽는다. 옛 빌드는 즐겨찾기가 있는 workspace 도 남겼으므로, 즐겨찾기가 있는 줄도 keep 으로 읽는다.
-- `cells` 는 cell 줄의 배열이다. 줄은 자기 `workspace` 의 `id` 와 분할 트리를 갖고, 같은 workspace 안에서는 줄 순서가 cell 순서다. 분할 트리의 잎은 pane 의 `id` 다.
-- `panes` 는 pane 줄의 배열이다. 줄은 자기 `cell` 의 `id` 와 cwd·명령을 갖는다. pane 의 `id` 는 실행이 바뀌어도 그대로다. 실행마다 매기는 key 는 화면 안의 번호라 쓰지 않는다. pty id 를 pane 의 `id` 로 쓰지 않는 것은 Keep layout only 뒤에는 pane 이 남고 pty id 가 바뀌기 때문이다.
+- `cells` 는 cell 줄의 배열이다. 줄은 자기 `workspace` 의 `id` 와 분할 트리를 갖고, 같은 workspace 안에서는 줄 순서가 cell 순서다. 분할 트리의 잎은 pane 의 `id` 다. background pane 의 잎은 트리 오른쪽 끝에 이어 붙여 쓰고, 읽을 때 뺀다. background pane 이 있으면 줄은 돌리기 전의 분할 트리 `home`(background pane 의 잎도 든다)을 가질 수 있다. 나누기·닫기로 보이는 모양이 바뀌면 `home` 은 없다. 표 버전을 올리지 않고 더한 것이라, 옛 빌드는 background pane 을 cell 끝의 보이는 pane 으로 연다.
+- `panes` 는 pane 줄의 배열이다. 줄은 자기 `cell` 의 `id` 와 cwd·명령, background 로 돌렸으면 `background: true` 를 갖는다. pane 의 `id` 는 실행이 바뀌어도 그대로다. 실행마다 매기는 key 는 화면 안의 번호라 쓰지 않는다. pty id 를 pane 의 `id` 로 쓰지 않는 것은 Keep layout only 뒤에는 pane 이 남고 pty id 가 바뀌기 때문이다.
 - `sessions` 는 pane `id` 마다의 pty 와 job 표다.
 - `view` 는 창·테마·사이드바 접힘이고, 버전이 다르면 통째로, 같으면 틀린 필드만 잃는다. 고른 cell 과 사이드바 접힘은 `id` 로 둔다.
 

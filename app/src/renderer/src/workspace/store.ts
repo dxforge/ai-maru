@@ -16,6 +16,7 @@ import {
 import { newPtyId, randomId } from '../../../shared/pty'
 import { paneCwd, paneTitle } from './display'
 import {
+  appendLeaves,
   clearCols,
   neighbor,
   panes,
@@ -23,10 +24,13 @@ import {
   sameShape,
   splitPane,
   splitRoot,
+  splitsWhole,
+  atRightEnd,
   type FocusDirection,
   type Layout,
   type SplitDirection,
-  type Widths
+  type Widths,
+  withoutLeaves
 } from './layout'
 
 /**
@@ -36,7 +40,8 @@ import {
  * 런처로 띄운 pane 에 붙는다. 그 pane 은 명령이 실패해도 닫히지 않고 남는다(`ScreenPane`). `cwd`·`title` 은 화면에 보일
  * 값으로 `paneCwd`·`paneTitle` 이 고르고, `restoredTitle` 은 그 재료다. `cwd` 는 만들 때부터 채워 `startDir` 가 있으면 비지
  * 않는다. `attach` 는 재시작으로 되살린 pane 이 떠 있는 pty 에 붙어야 할 때 true 다. `gitRoot` 는 `git` 을 읽은 cwd 에서
- * 구한 작업 트리 최상위 경로이고, 구하지 못했으면 없다.
+ * 구한 작업 트리 최상위 경로이고, 구하지 못했으면 없다. `background` 인 pane 은 cell 의 `layout` 에 없고, 터미널은 화면 밖에
+ * 붙은 채 pty 를 이어 간다.
  */
 export type Pane = {
   key: number
@@ -51,6 +56,7 @@ export type Pane = {
   gitRoot?: string
   attach?: boolean
   restoredTitle?: string
+  background?: true
 }
 
 /**
@@ -68,9 +74,20 @@ export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
 
 /**
  * `panes` 는 연 순서다. 배치 순서로 그리면 나눌 때마다 터미널의 DOM 이 옮겨진다. `fontSize` 는 ⌘+ / ⌘- 로 바꾼
- * 터미널 글꼴 크기다. 없으면 설정 파일의 `font-size` 를 따른다.
+ * 터미널 글꼴 크기다. 없으면 설정 파일의 `font-size` 를 따른다. 보이는 pane 이 없으면(모두 background) `layout` 은 null
+ * 이고 `focused` 는 마지막으로 포커스한 pane 이다. 그런 cell 은 선택하지 않는다.
  */
-export type Cell = Omit<ScreenCell, 'panes'> & { panes: Pane[] }
+export type Cell = Omit<ScreenCell, 'panes' | 'layout'> & { panes: Pane[]; layout: Layout | null }
+
+const backgroundKeys = (c: { panes: readonly { key: number; background?: true }[] }): Set<number> =>
+  new Set(c.panes.filter((p) => p.background).map((p) => p.key))
+
+function homeKept(c: Cell): Layout | undefined {
+  if (!c.home) return undefined
+  const shown = withoutLeaves(c.home, backgroundKeys(c))
+  const same = shown && c.layout ? sameShape(shown, c.layout) : shown === c.layout
+  return same ? c.home : undefined
+}
 
 /**
  * 마지막 cell 이 닫히면 workspace 도 닫힌다. keep 을 켠 workspace 만 `cells` 가 빈 채로 남는다.
@@ -99,15 +116,20 @@ export function workspaceDir(
   return first?.cwd ?? first?.startDir ?? w.dir
 }
 
-/**
- * `WorkspaceSidebar.vue` 가 cell 의 pane 을 이 순서로 나열한다. `stepPane` 은 같은 순서를 `panes(layout)` 으로 직접
- * 돌므로 한쪽 순서를 바꾸면 다른 쪽도 같이 바꾼다.
- */
-export function orderedPanes<P extends { key: number }>(c: {
-  layout: Layout
+/** `stepPane` 은 보이는 pane 을 `panes(layout)` 순서로 직접 돌므로, 보이는 pane 의 순서를 여기서 바꾸면 `stepPane` 도 같이 바꾼다. */
+export function orderedPanes<P extends { key: number; background?: true }>(c: {
+  layout: Layout | null
+  home?: Layout
   panes: readonly P[]
 }): P[] {
-  return panes(c.layout).map((key) => c.panes.find((p) => p.key === key)!)
+  const shown = c.layout ? panes(c.layout).map((key) => c.panes.find((p) => p.key === key)!) : []
+  const home = c.home ? panes(c.home) : []
+  const at = (p: P): number => {
+    const i = home.indexOf(p.key)
+    return i < 0 ? Infinity : i
+  }
+  const background = c.panes.filter((p) => p.background)
+  return [...shown, ...background.sort((p, q) => at(p) - at(q))]
 }
 
 export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
@@ -331,14 +353,32 @@ export function createWorkspaces(
   function step(by: 1 | -1): number | undefined {
     const all = cells()
     const n = all.length
-    if (!n) return undefined
     const i = all.findIndex((c) => c.key === selectedKey.value)
-    return all[(i + by + n) % n].key
+    for (let k = 1; k <= n; k++) {
+      const c = all[(((i + by * k) % n) + n) % n]
+      if (c.layout) return c.key
+    }
+    return undefined
+  }
+
+  function visibleNear(rest: readonly Cell[], i: number): number | null {
+    const after = rest.slice(i).find((c) => c.layout)
+    return (after ?? rest.slice(0, i).findLast((c) => c.layout))?.key ?? null
+  }
+
+  function leaveEmpty(c: Cell): void {
+    if (selectedKey.value !== c.key) return
+    const all = cells()
+    const i = all.indexOf(c)
+    selectedKey.value = visibleNear(
+      all.filter((x) => x !== c),
+      i
+    )
   }
 
   function stepPane(by: 1 | -1): number | undefined {
     const c = selected()
-    if (c) {
+    if (c?.layout) {
       const order = panes(c.layout)
       const to = order[order.indexOf(c.focused) + by]
       if (to !== undefined) {
@@ -349,7 +389,7 @@ export function createWorkspaces(
     const key = step(by)
     if (key === undefined) return undefined
     const next = cell(key)!
-    next.focused = panes(next.layout).at(by === 1 ? 0 : -1)!
+    next.focused = panes(next.layout!).at(by === 1 ? 0 : -1)!
     return key
   }
 
@@ -362,8 +402,7 @@ export function createWorkspaces(
       w.cells.findIndex((c) => c.key === key)
     )
     if (selectedKey.value !== key) return
-    const rest = cells()
-    selectedKey.value = (rest[i] ?? rest[i - 1])?.key ?? null
+    selectedKey.value = visibleNear(cells(), i)
   }
 
   /**
@@ -426,16 +465,68 @@ export function createWorkspaces(
     from: number,
     direction: SplitDirection,
     init: PaneInit,
-    full = false
+    full = false,
+    background = false
   ): number {
     const c = owner(from)!
     const p = newPane(init)
+    if (background) p.background = true
     c.panes.push(p)
     const pane = p.key
-    c.layout = full
-      ? splitRoot(c.layout, pane, direction)
-      : splitPane(c.layout, from, pane, direction)
+    if (background) return pane
+    delete c.home
+    if (!c.layout) {
+      c.layout = { pane }
+      c.focused = pane
+      // 모든 cell 이 비어 선택이 없었으면 보이는 pane 이 생긴 이 cell 을 고른다. 고르지 않으면 single 보기가 빈 화면이다.
+      if (selectedKey.value === null) selectedKey.value = c.key
+    } else if (splitsWhole(c.layout, from, full)) {
+      c.layout = splitRoot(c.layout, pane, direction)
+    } else {
+      c.layout = splitPane(c.layout, from, pane, direction)
+    }
     return pane
+  }
+
+  /**
+   * pane 을 분할 트리에서만 빼므로 pty 는 그대로 남는다. 이미 돌린 pane 이 있고 `home` 이 지금 배치와 맞으면 `home` 을
+   * 덮지 않는다. 덮으면 먼저 돌린 pane 의 자리를 잃어, 둘 이상을 돌린 뒤 꺼낼 때 원래 배치로 돌아가지 않기 때문이다.
+   */
+  function sendToBackground(key: number): void {
+    const c = owner(key)
+    const p = c?.panes.find((x) => x.key === key)
+    if (!c?.layout || !p || p.background) return
+    c.home = homeKept(c) ?? c.layout
+    p.background = true
+    const removed = removePane(c.layout, key)
+    if (!removed) {
+      c.layout = null
+      return leaveEmpty(c)
+    }
+    c.layout = removed.layout
+    if (c.focused === key) c.focused = removed.next
+  }
+
+  function bringBack(
+    key: number,
+    roomAtEnd: () => boolean = () => true,
+    roomAtHome: (home: Layout) => boolean = () => true
+  ): boolean {
+    const c = owner(key)
+    const p = c?.panes.find((x) => x.key === key)
+    if (!c || !p?.background) return false
+    const rest = backgroundKeys(c)
+    rest.delete(key)
+    const kept = homeKept(c)
+    const back = kept && panes(kept).includes(key) ? withoutLeaves(kept, rest)! : undefined
+    const home = back && roomAtHome(back) ? back : undefined
+    if (!home && !roomAtEnd()) return false
+    delete p.background
+    if (!home || rest.size === 0) delete c.home
+    c.layout = home ?? atRightEnd(c.layout, key)
+    c.focused = key
+    selectedKey.value = c.key
+    return true
   }
 
   function cellById(id: string): Cell | undefined {
@@ -474,9 +565,21 @@ export function createWorkspaces(
     const c = owner(pane)
     if (!c) return
     if (c.panes.length === 1) return close(c.key)
-    const removed = removePane(c.layout, pane)
-    if (!removed) return
     c.panes = c.panes.filter((p) => p.key !== pane)
+    const shown = c.layout && panes(c.layout)
+    if (!shown?.includes(pane)) {
+      if (c.home) c.home = withoutLeaves(c.home, new Set([pane])) ?? undefined
+      if (!c.panes.some((p) => p.background)) delete c.home
+      if (c.focused === pane) c.focused = shown?.[0] ?? c.panes[0].key
+      return
+    }
+    delete c.home
+    const removed = removePane(c.layout!, pane)
+    if (!removed) {
+      c.layout = null
+      c.focused = c.panes[0].key
+      return leaveEmpty(c)
+    }
     c.layout = removed.layout
     if (c.focused === pane) c.focused = removed.next
   }
@@ -488,7 +591,7 @@ export function createWorkspaces(
 
   function moveFocus(direction: FocusDirection, widths: Widths = 'even'): void {
     const c = selected()
-    const to = c && neighbor(c.layout, c.focused, direction, widths)
+    const to = c?.layout ? neighbor(c.layout, c.focused, direction, widths) : undefined
     if (to !== undefined) c!.focused = to
   }
 
@@ -617,18 +720,29 @@ export function createWorkspaces(
     if (!c) return
     if (cols === undefined) delete c.paneCols
     else c.paneCols = cols
-    c.layout = clearCols(c.layout)
+    if (c.layout) c.layout = clearCols(c.layout)
   }
 
   /** 크기만 바꾼 `layout` 으로 갈아 끼운다. pane 구조가 다르면 그동안 split·닫기가 있었던 것이라 버린다. */
   function resize(key: number, layout: Layout): void {
     const c = cell(key)
-    if (c && sameShape(c.layout, layout)) c.layout = layout
+    if (c?.layout && sameShape(c.layout, layout)) c.layout = layout
   }
 
   // IPC 로 보내므로 JSON 으로 reactive proxy 를 벗긴다. `git` 은 main 이 `maru pane list` 의 이름을 짓는 데 쓴다.
+  // `state.json` 의 배치는 cell 의 모든 pane 을 잎으로 가져야 하므로 background pane 을 오른쪽 끝에 붙인다.
   function snapshot(): WorkspacesScreen {
-    const screen = { workspaces: list.value, selected: selectedKey.value }
+    const workspaces = list.value.map((w) => ({
+      ...w,
+      cells: w.cells.map((c) => ({
+        ...c,
+        layout: appendLeaves(
+          c.layout,
+          c.panes.filter((p) => p.background).map((p) => p.key)
+        )
+      }))
+    }))
+    const screen = { workspaces, selected: selectedKey.value }
     return JSON.parse(JSON.stringify(screen, (k, v) => (UNSAVED.has(k) ? undefined : v)))
   }
 
@@ -642,12 +756,19 @@ export function createWorkspaces(
       if (pty) return { ...p, ptyId: pty, startDir: p.cwd, attach: true, restoredTitle: p.title }
       const fresh: Pane = { key: p.key, id: p.id, ptyId: ptyId(), startDir: p.cwd }
       if (p.git) fresh.git = p.git
+      if (p.background) fresh.background = true
       return fresh
     }
     list.value = layout.workspaces.map((w) => {
       const r: Workspace = {
         ...w,
-        cells: w.cells.map((c) => ({ ...c, panes: c.panes.map(restorePane) }))
+        cells: w.cells.map((c) => {
+          const away = new Set(c.panes.filter((p) => p.background).map((p) => p.key))
+          const layout = withoutLeaves(c.layout, away)
+          const focused =
+            layout && !panes(layout).includes(c.focused) ? panes(layout)[0] : c.focused
+          return { ...c, layout, focused, panes: c.panes.map(restorePane) }
+        })
       }
       if (r.kept && r.name === undefined && r.dir !== undefined)
         r.name = savedKeptName(r, r.dir, home)
@@ -655,7 +776,15 @@ export function createWorkspaces(
       settleDir(r, w.cells[0]?.panes[0]?.cwd)
       return r
     })
-    selectedKey.value = layout.selected
+    const chosen = layout.selected === null ? undefined : cell(layout.selected)
+    const all = cells()
+    selectedKey.value =
+      !chosen || chosen.layout
+        ? layout.selected
+        : visibleNear(
+            all,
+            all.findIndex((c) => c.key === chosen.key)
+          )
     nextKey = Math.max(nextKey, ...layoutKeys(layout.workspaces).map((k) => k + 1))
     // main 의 상태가 화면보다 먼저 왔을 수 있다. 저장한 git 은 재시작하는 동안 바뀌었을 수 있어 다시 읽는다.
     for (const c of cells())
@@ -686,6 +815,8 @@ export function createWorkspaces(
     paneOf,
     locate,
     closePane,
+    sendToBackground,
+    bringBack,
     focusPane,
     moveFocus,
     owner,

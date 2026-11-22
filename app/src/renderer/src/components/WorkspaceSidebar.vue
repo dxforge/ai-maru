@@ -133,6 +133,7 @@ function cellGroup(
     selected,
     rows: orderedPanes(c).map((p) => ({
       ...paneRow(src, p, selected && p === current, base),
+      background: !!p.background,
       favorite: findFavorite(w, p.cwd) !== undefined
     }))
   }
@@ -516,38 +517,48 @@ const keepTip = (kept: boolean): string =>
               @mousedown.prevent
               @pointerdown="grabCell($event, w.key, item.c.key, item.index)"
             />
-            <div v-for="r in item.rows" :key="r.pane" class="pane-line">
-              <button
-                v-tooltip="cellTip(item.c.key, `pane:${r.pane}`)"
-                class="row pane-row"
-                :class="[r.tone, { shell: !r.state, focused: r.focused }]"
-                :aria-label="r.aria"
-                @mousedown.prevent
-                @click="emit('focus', item.c.key, r.pane)"
-              >
-                <span class="state status-icon" :class="{ unread: r.notice }"
-                  ><PaneIcon :icon="r.icon"
-                /></span>
-                <span class="title">{{ r.text }}</span>
-                <PanePlace v-if="r.place" class="tail" :place="r.place" />
-                <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
-                  commandTail(r.command, now)
-                }}</span>
-              </button>
-              <button
-                v-if="r.path"
-                v-tooltip="kept ? favoriteLabel(r.favorite) : 'Keep Workspace to add favorites'"
-                class="favorite"
-                :class="{ on: r.favorite }"
-                :aria-label="favoriteLabel(r.favorite)"
-                :aria-pressed="r.favorite"
-                :aria-disabled="!kept"
-                @mousedown.prevent
-                @click="kept && emit('toggleFavorite', item.c.key, r.pane)"
-              >
-                <Star class="text-icon" :fill="r.favorite ? 'currentColor' : 'none'" />
-              </button>
-            </div>
+            <template v-for="(r, i) in item.rows" :key="r.pane">
+              <!-- 줄 사이처럼 cell 의 빈 자리(`row` 없음)로 두면 `keepsCardAt` 이 앞 줄의 강조를 남기므로, 어느 구역과도 맞지
+                   않는 자리를 준다. -->
+              <div
+                v-if="r.background && i > 0 && !item.rows[i - 1].background"
+                v-tooltip="cellTip(item.c.key, 'background-line')"
+                class="background-line"
+                role="separator"
+              />
+              <div class="pane-line">
+                <button
+                  v-tooltip="cellTip(item.c.key, `pane:${r.pane}`)"
+                  class="row pane-row"
+                  :class="[r.tone, { shell: !r.state, focused: r.focused }]"
+                  :aria-label="r.background ? `${r.aria}. Background` : r.aria"
+                  @mousedown.prevent
+                  @click="emit('focus', item.c.key, r.pane)"
+                >
+                  <span class="state status-icon" :class="{ unread: r.notice }"
+                    ><PaneIcon :icon="r.icon"
+                  /></span>
+                  <span class="title">{{ r.text }}</span>
+                  <PanePlace v-if="r.place" class="tail" :place="r.place" />
+                  <span v-else-if="r.command && r.commandTail" class="tail command-tail">{{
+                    commandTail(r.command, now)
+                  }}</span>
+                </button>
+                <button
+                  v-if="r.path"
+                  v-tooltip="kept ? favoriteLabel(r.favorite) : 'Keep Workspace to add favorites'"
+                  class="favorite"
+                  :class="{ on: r.favorite }"
+                  :aria-label="favoriteLabel(r.favorite)"
+                  :aria-pressed="r.favorite"
+                  :aria-disabled="!kept"
+                  @mousedown.prevent
+                  @click="kept && emit('toggleFavorite', item.c.key, r.pane)"
+                >
+                  <Star class="text-icon" :fill="r.favorite ? 'currentColor' : 'none'" />
+                </button>
+              </div>
+            </template>
             <div
               v-for="j in jobsByCell.get(item.c.id)"
               :key="j.pty"
@@ -973,6 +984,16 @@ button {
 .tail.place {
   flex: 0 1 auto;
   max-width: 60%;
+}
+
+.background-line {
+  padding: var(--space-1) var(--space-4);
+}
+
+.background-line::before {
+  content: '';
+  display: block;
+  border-top: 1px dashed color-mix(in srgb, var(--fg) 20%, transparent);
 }
 
 .job-row {

@@ -42,6 +42,7 @@ export const shortcuts: readonly Shortcut[] = [
   { target: 'command', action: 'split-right', key: 'D', meta: true },
   { target: 'command', action: 'split-down', key: 'D', shift: true, meta: true },
   { target: 'command', action: 'close-pane', key: 'W', meta: true },
+  { target: 'command', action: 'background-pane', key: 'H', shift: true, meta: true },
   { target: 'command', action: 'close-workspace', key: 'W', shift: true, meta: true },
   { target: 'command', action: 'rename-workspace', key: 'R', shift: true, meta: true },
   { target: 'command', action: 'toggle-keep-workspace', key: 'P', alt: true, meta: true },

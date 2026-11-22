@@ -52,6 +52,7 @@ import {
   areaOf,
   columnsWidthOf,
   paneMin,
+  roomForLayout,
   roomForSplit,
   snapRects,
   widthsOf,
@@ -64,6 +65,8 @@ import {
   EPSILON,
   rects,
   sameShape,
+  splitsWhole,
+  atRightEnd,
   type Layout,
   type FocusDirection,
   type SplitDirection
@@ -247,6 +250,8 @@ async function focusSelected(): Promise<void> {
 // 선택이 그대로인 클릭에서는 TerminalView 의 active watch 와 아래의 스크롤 watch 가 돌지 않아,
 // 여기서 포커스를 주고 스크롤로 밀려난 pane 을 다시 보인다.
 function selectCell(key: number): void {
+  const c = workspaces.cells().find((x) => x.key === key)
+  if (c && !c.layout) return selectPane(key, c.focused)
   workspaces.select(key)
   void focusSelected().then(() => revealFocused(true))
 }
@@ -329,7 +334,20 @@ function removePane(pane: number, message = 'the pane was closed before its pty 
   answerPaneRequest(pane, { error: 'open_failed', message })
   const pty = workspaces.pane(pane)?.ptyId
   if (pty) ptyStates.remove(pty)
+  heldSizes.delete(pane)
   workspaces.closePane(pane)
+}
+
+// background 터미널에 포커스가 남으면 키 입력이 그리로 가므로, 보이는 pane 이 남지 않아도 포커스를 뺀다.
+function backgroundPane(key: number | undefined): void {
+  if (key === undefined || workspaces.pane(key)?.background) return
+  const size = views.value.flatMap((v) => v.panes).find((v) => v.p.key === key)?.size
+  if (size) heldSizes.set(key, size)
+  const focused = terminals.get(key)?.$el.contains(document.activeElement)
+  if (focused) (document.activeElement as HTMLElement).blur()
+  workspaces.sendToBackground(key)
+  // 포커스가 이 터미널에 있었을 때만 다시 맞춘다. CLI 로 pane 을 돌릴 때 입력창·전환기에 있던 포커스를 터미널로 옮기지 않기 위해서다.
+  if (focused) void focusSelected()
 }
 
 function onSpawned(pane: number, pty: string, dir: string | undefined): void {
@@ -368,7 +386,7 @@ const noPane = (target: PaneTarget): PaneReply => ({
 
 // `cell` 로 가리키면 그 cell 의 아무 pane 에서 cell 전체를 나눈다. `full` 은 나눌 pane 의 cell 만 보기 때문이다.
 window.maru.onPaneNew((id, req) => {
-  const { cwd, direction, command, full, cell } = req
+  const { cwd, direction, command, full, cell, background } = req
   let from: number | undefined
   if (cell === undefined) {
     from = workspaces.paneOf(req)?.key
@@ -380,10 +398,10 @@ window.maru.onPaneNew((id, req) => {
     }
   }
   const whole = full || cell !== undefined
-  if (!roomFor(from, direction, whole)) {
+  if (!background && !roomFor(from, direction, whole)) {
     return window.maru.paneReply(id, { error: 'no_space', message: 'no space for a new pane' })
   }
-  const pane = workspaces.splitFrom(from, direction, { startDir: cwd, command }, whole)
+  const pane = workspaces.splitFrom(from, direction, { startDir: cwd, command }, whole, background)
   paneRequests.set(pane, { id })
 })
 
@@ -407,6 +425,13 @@ window.maru.onPaneCancel((id) => {
   for (const [pane, request] of paneRequests) {
     if (request.id === id) return removePane(pane, 'the request timed out')
   }
+})
+
+window.maru.onPaneBackground((id, target) => {
+  const pane = workspaces.paneOf(target)
+  if (!pane) return window.maru.paneReply(id, noPane(target))
+  backgroundPane(pane.key)
+  window.maru.paneReply(id, null)
 })
 
 window.maru.onPaneClose((id, target) => {
@@ -720,20 +745,37 @@ function moveFocus(direction: FocusDirection): void {
   if (c) workspaces.moveFocus(direction, widthsOf(columnColsOf(c)))
 }
 
+function roomOf(c: Cell, layout: Layout) {
+  return {
+    layout,
+    cell: cellOf(fontOf(c)),
+    measured: gridSizes.get(c.key),
+    cols: columnColsOf(c)
+  }
+}
+
 function roomFor(from: number, direction: SplitDirection, full: boolean): boolean {
   const c = workspaces.owner(from)
-  if (!c) return true
-  const cell = cellOf(fontOf(c))
-  return roomForSplit(
-    { layout: c.layout, cell, measured: gridSizes.get(c.key), cols: columnColsOf(c) },
-    { from, direction, full }
-  )
+  if (!c?.layout) return true
+  return roomForSplit(roomOf(c, c.layout), {
+    from,
+    direction,
+    full: splitsWhole(c.layout, from, full)
+  })
+}
+
+function roomForHome(pane: number, home: Layout): boolean {
+  const c = workspaces.owner(pane)
+  return !c?.layout || roomForLayout(roomOf(c, c.layout), home)
 }
 
 function canSplit(direction: SplitDirection): boolean {
   const c = workspaces.selected()
-  if (!c) return false
-  if (!roomFor(c.focused, direction, false)) {
+  return !!c && roomOrWarn(c.focused, direction, false)
+}
+
+function roomOrWarn(from: number, direction: SplitDirection, full: boolean): boolean {
+  if (!roomFor(from, direction, full)) {
     toasts.put('split', {
       level: 'warning',
       title: 'No space for a new pane',
@@ -756,9 +798,9 @@ function splitSelected(direction: SplitDirection, init?: PaneInit): void {
 type Preview = { cell: number; layout: Layout; by: 'drag' | 'key' }
 const preview = shallowRef<Preview | null>(null)
 
-function shownLayout(c: Cell): Layout {
+function shownLayout(c: Cell): Layout | null {
   const p = preview.value
-  return p && p.cell === c.key && sameShape(p.layout, c.layout) ? p.layout : c.layout
+  return p && c.layout && p.cell === c.key && sameShape(p.layout, c.layout) ? p.layout : c.layout
 }
 
 function boxesOf(c: Cell, layout: Layout): Map<number, Box> | undefined {
@@ -812,6 +854,7 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
   if (e.button !== 0) return
   commitPreview()
   const base = c.layout
+  if (!base) return
   const ctx = resizeContext(c, base)
   if (!ctx) return
   const axis = d.split === 'right' ? 'clientX' : 'clientY'
@@ -828,7 +871,7 @@ function dragDivider(e: PointerEvent, c: Cell, d: Target): void {
     // 끄는 중에 ⌃⌘방향키로 바꾼 크기를 덮지 않도록 끌기를 그친다.
     if (preview.value?.cell !== c.key || preview.value.by !== 'drag') return end()
     // 끄는 동안 pane 이 닫히거나 나뉘면 끌던 경계가 없어진 것이라 버린다.
-    if (!sameShape(c.layout, base)) {
+    if (!c.layout || !sameShape(c.layout, base)) {
       preview.value = null
       return end()
     }
@@ -872,6 +915,7 @@ function handleStyle(d: Divider): Record<string, string> {
 
 function equalizeAt(c: Cell, d: Target): void {
   commitPreview()
+  if (!c.layout) return
   equalizing = c.key
   workspaces.resize(
     c.key,
@@ -884,7 +928,7 @@ function equalizeAt(c: Cell, d: Target): void {
 function equalizeSelected(): void {
   commitPreview()
   const c = workspaces.selected()
-  if (c) workspaces.resize(c.key, equalizeAll(c.layout, widthsOf(columnColsOf(c))))
+  if (c?.layout) workspaces.resize(c.key, equalizeAll(c.layout, widthsOf(columnColsOf(c))))
 }
 
 function resizeSelected(dir: FocusDirection, commit: boolean): void {
@@ -892,11 +936,15 @@ function resizeSelected(dir: FocusDirection, commit: boolean): void {
   if (!c) return
   if (preview.value && (preview.value.cell !== c.key || preview.value.by !== 'key')) commitPreview()
   const base = shownLayout(c)
+  if (!base) return
   const ctx = resizeContext(c, base)
   if (!ctx) return
   preview.value = { cell: c.key, layout: keyResize(base, c.focused, dir, ctx), by: 'key' }
   if (commit) commitPreview()
 }
+
+// background 로 돌릴 때의 터미널 크기. background 동안 이 크기를 그대로 주어 pty 가 크기 변경을 받지 않게 한다.
+const heldSizes = new Map<number, TerminalSize>()
 
 const views = computed(() =>
   workspaces.cells().map((c) => {
@@ -906,22 +954,36 @@ const views = computed(() =>
     const measured = gridSizes.get(c.key)
     const cols = columnColsOf(c)
     const shown = shownLayout(c)
-    const width = columnsWidthOf(shown, cols, cell)
+    const width = shown ? columnsWidthOf(shown, cols, cell) : undefined
     const place = (l: Layout) =>
       placements(l, measured && areaOf(l, cols, cell, measured), cell, cols)
-    const places = place(shown)
-    const saved = shown === c.layout ? places : place(c.layout)
-    const boxes = selected || viewMode.value === 'columns' ? boxesOf(c, shown) : undefined
-    const lines = boxes ? dividers(shown, boxes, widthsOf(cols)) : []
+    const places = shown ? place(shown) : new Map<number, never>()
+    const saved = shown === c.layout ? places : place(c.layout!)
+    const boxes =
+      shown && (selected || viewMode.value === 'columns') ? boxesOf(c, shown) : undefined
+    const lines = boxes ? dividers(shown!, boxes, widthsOf(cols)) : []
+    // 보일 때의 크기가 없는 pane(background 로 떴거나 앱을 다시 띄운 pane)은 지금 꺼냈다고 친 배치의 크기를 받는다.
+    // 크기를 받아야 pty 가 시작하기 때문이다.
+    const backgroundPlace = (key: number) => {
+      const at = place(atRightEnd(c.layout, key)).get(key)!
+      // 처음 받은 크기를 그대로 둔다. 다시 계산하면 보이는 pane 이 나뉘거나 닫힐 때마다 background pty 가 resize 를 받는다.
+      if (at.size && !heldSizes.has(key)) heldSizes.set(key, at.size)
+      const held = heldSizes.get(key)
+      return held ? { ...at, size: held } : at
+    }
     return {
       c,
       selected,
+      empty: !shown,
       font,
       vars: gridVars(cell, font),
       width: width === undefined ? undefined : `${width}px`,
       handles: lines.filter((d) => d.kind === 'line'),
       edge: lines.find((d) => d.kind === 'edge'),
       panes: c.panes.map((p) => {
+        if (p.background) {
+          return { p, active: false, ...backgroundPlace(p.key), badge: undefined }
+        }
         const { size: next, ...rest } = places.get(p.key)!
         const size = saved.get(p.key)!.size
         const changed = next && size && (next.cols !== size.cols || next.rows !== size.rows)
@@ -955,7 +1017,15 @@ function focusPane(cell: number, pane: number): void {
 }
 
 function selectPane(cell: number, pane: number): void {
-  workspaces.focusPane(pane)
+  if (!workspaces.pane(pane)?.background) workspaces.focusPane(pane)
+  else if (
+    !workspaces.bringBack(
+      pane,
+      () => roomOrWarn(pane, 'right', true),
+      (home) => roomForHome(pane, home)
+    )
+  )
+    return
   selectCell(cell)
 }
 
@@ -1197,6 +1267,7 @@ const handlers: Record<CommandId, () => void> = {
   'launch-split-right': () => openLaunch('split-right'),
   'launch-split-down': () => openLaunch('split-down'),
   'close-pane': () => void closePane(),
+  'background-pane': () => backgroundPane(workspaces.selected()?.focused),
   'close-workspace': () => void closeWorkspace(),
   'rename-workspace': () => {
     const w = selectedWorkspace()
@@ -1407,11 +1478,11 @@ void window.maru.restoreScreen().then((r) => {
       @wheel.capture="keepHorizontalScroll"
     >
       <div
-        v-for="{ c, selected, width, font, vars, panes, handles, edge } in views"
+        v-for="{ c, selected, empty, width, font, vars, panes, handles, edge } in views"
         :key="c.key"
         class="panes"
         :data-cell="c.id"
-        :class="{ selected }"
+        :class="{ selected, empty }"
         :style="{ width, ...vars }"
       >
         <div class="cell-band" @mousedown.prevent="selectCell(c.key)" />
@@ -1421,6 +1492,7 @@ void window.maru.restoreScreen().then((r) => {
             :key="p.key"
             class="pane"
             :class="{
+              background: p.background,
               focused: active,
               'at-left': at.left,
               'at-top': at.top,
@@ -1453,7 +1525,7 @@ void window.maru.restoreScreen().then((r) => {
                 :keep="p.keep"
                 :retryable="!paneRequests.has(p.key)"
                 :active="active"
-                :shown="selected || viewMode === 'columns'"
+                :shown="!p.background && (selected || viewMode === 'columns')"
                 :font="font"
                 :theme="terminalTheme"
                 :cols="size?.cols"
@@ -1683,6 +1755,17 @@ void window.maru.restoreScreen().then((r) => {
    그 위에 놓인 pane 이 덮어 보이지 않기 때문이다. 띠 쪽 테두리는 띠 1px 위에 겹친다. single 은 고른 cell 하나만 보이므로 그리지 않는다. */
 .columns .panes.selected .grid {
   box-shadow: 0 0 0 1px var(--cell-edge);
+}
+
+/* 보이는 pane 이 없는 cell 과 background pane 은 화면에서 빠지되, 터미널은 pty 에 붙은 채 마운트해 둔다. */
+.columns .panes.empty {
+  position: absolute;
+}
+
+.panes.empty,
+.pane.background {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .pane {

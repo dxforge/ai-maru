@@ -4,6 +4,7 @@ import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/pr
 import { isPtyId } from '../../../shared/pty'
 import type { PtyState } from '../../../shared/pty-state'
 import { autoWorkspaceName, labelBase } from '../../../shared/names'
+import type { Layout } from '../../../shared/layout'
 import { parseScreen } from '../../../shared/screen'
 import {
   createWorkspaces,
@@ -11,6 +12,7 @@ import {
   findFavorite,
   workspaceDir,
   orderedPanes,
+  type Cell,
   type WorkspacesScreen
 } from './store'
 
@@ -2115,5 +2117,383 @@ describe('즐겨찾기', () => {
     const to = restarted(ws)
     expect(to.list.value[0].favorites).toEqual(['/n-1'])
     expect(stars(to)).toEqual([false, true])
+  })
+})
+
+describe('background', () => {
+  function three() {
+    const ws = opened(1)
+    ws.split('right')
+    ws.split('right')
+    const [a, b, c] = selected(ws).panes.map((p) => p.key)
+    return { ws, a, b, c }
+  }
+
+  it('가운데 pane 을 돌리면 배치에서 빠지고 pane·pty 는 남으며, 포커스는 옆 pane 으로 간다', () => {
+    const { ws, a, b, c } = three()
+    ws.focusPane(b)
+    const pty = ws.pane(b)!.ptyId
+    ws.sendToBackground(b)
+    const cell = selected(ws)
+    expect(cell.layout).toEqual({ split: 'right', first: { pane: a }, second: { pane: c } })
+    expect(cell.panes.map((p) => p.key)).toEqual([a, b, c])
+    expect(ws.pane(b)).toMatchObject({ background: true, ptyId: pty })
+    expect([a, c]).toContain(cell.focused)
+    expect(orderedPanes(cell).map((p) => p.key)).toEqual([a, c, b])
+  })
+
+  it('돌린 뒤 보이는 pane 이 그대로면 꺼낼 때 원래 자리·크기로 돌아오고 포커스·선택을 받는다', () => {
+    const { ws, a, b, c } = three()
+    const sized: Layout = {
+      split: 'right',
+      first: { pane: a, weight: 2 },
+      second: { split: 'right', first: { pane: b, weight: 3 }, second: { pane: c, cols: 90 } }
+    }
+    ws.resize(selected(ws).key, sized)
+    ws.sendToBackground(b)
+    ws.resize(selected(ws).key, {
+      split: 'right',
+      first: { pane: a, weight: 1 },
+      second: { pane: c, weight: 5 }
+    })
+    expect(selected(ws).layout).toMatchObject({ second: { weight: 5 } })
+    ws.open('/other')
+    expect(ws.bringBack(b, () => false)).toBe(true)
+    const cell = ws.cells()[0]
+    expect(ws.selectedKey.value).toBe(cell.key)
+    expect(cell.focused).toBe(b)
+    expect(cell.layout).toEqual(sized)
+    expect(ws.pane(b)).not.toHaveProperty('background')
+    expect(cell).not.toHaveProperty('home')
+  })
+
+  it('돌린 뒤 pane 이 더해지거나 빠졌으면 cell 오른쪽 끝에 붙고, 끝에 자리가 없으면 꺼내지 않는다', () => {
+    const { ws, a, b, c } = three()
+    ws.sendToBackground(b)
+    ws.focusPane(c)
+    ws.split('down')
+    const d = selected(ws).focused
+    const before = JSON.stringify(ws.cells())
+    expect(ws.bringBack(b, () => false)).toBe(false)
+    expect(JSON.stringify(ws.cells())).toBe(before)
+    expect(ws.bringBack(b)).toBe(true)
+    expect(selected(ws).layout).toEqual({
+      split: 'right',
+      first: {
+        split: 'right',
+        first: { pane: a },
+        second: { split: 'down', first: { pane: c }, second: { pane: d } }
+      },
+      second: { pane: b }
+    })
+
+    const two = three()
+    two.ws.sendToBackground(two.b)
+    two.ws.closePane(two.c)
+    two.ws.bringBack(two.b)
+    expect(selected(two.ws).layout).toEqual({
+      split: 'right',
+      first: { pane: two.a },
+      second: { pane: two.b }
+    })
+  })
+
+  it('원래 배치가 지금 자리에 들어가지 않으면 오른쪽 끝에 붙이고, 끝에도 자리가 없으면 꺼내지 않는다', () => {
+    const { ws, a, b, c } = three()
+    ws.sendToBackground(b)
+    const before = JSON.stringify(ws.cells())
+    const offered: Layout[] = []
+    const noHome = (home: Layout) => (offered.push(home), false)
+    expect(ws.bringBack(b, () => false, noHome)).toBe(false)
+    expect(JSON.stringify(ws.cells())).toBe(before)
+    expect(offered[0]).toEqual({
+      split: 'right',
+      first: { pane: a },
+      second: { split: 'right', first: { pane: b }, second: { pane: c } }
+    })
+    expect(ws.bringBack(b, () => true, noHome)).toBe(true)
+    expect(selected(ws).layout).toEqual({
+      split: 'right',
+      first: { split: 'right', first: { pane: a }, second: { pane: c } },
+      second: { pane: b }
+    })
+  })
+
+  it('여럿을 차례로 돌렸으면 어느 순서로 꺼내도 원래 자리로 돌아온다', () => {
+    const { ws, a, b, c } = three()
+    const original = selected(ws).layout
+    ws.sendToBackground(a)
+    ws.sendToBackground(b)
+    ws.bringBack(a)
+    expect(selected(ws).layout).toEqual({ split: 'right', first: { pane: a }, second: { pane: c } })
+    ws.bringBack(b)
+    expect(selected(ws).layout).toEqual(original)
+    expect(selected(ws)).not.toHaveProperty('home')
+
+    ws.sendToBackground(a)
+    ws.sendToBackground(b)
+    ws.bringBack(b)
+    expect(selected(ws).layout).toEqual({ split: 'right', first: { pane: b }, second: { pane: c } })
+    ws.bringBack(a)
+    expect(selected(ws).layout).toEqual(original)
+  })
+
+  it('돌린 동안 나누거나 보이는 pane 을 닫으면 원래 배치를 버리고, background pane 이 닫히면 그 잎만 뺀다', () => {
+    const split = three()
+    split.ws.sendToBackground(split.a)
+    split.ws.focusPane(split.c)
+    split.ws.split('right')
+    const d = selected(split.ws).focused
+    split.ws.closePane(d)
+    expect(selected(split.ws)).not.toHaveProperty('home')
+    split.ws.bringBack(split.a)
+    expect(selected(split.ws).layout).toEqual({
+      split: 'right',
+      first: { split: 'right', first: { pane: split.b }, second: { pane: split.c } },
+      second: { pane: split.a }
+    })
+
+    const { ws, a, b, c } = three()
+    ws.sendToBackground(a)
+    ws.sendToBackground(b)
+    ws.closePane(a)
+    ws.bringBack(b)
+    expect(selected(ws).layout).toEqual({ split: 'right', first: { pane: b }, second: { pane: c } })
+  })
+
+  it('다시 띄워도 돌릴 때의 배치가 남아 원래 자리로 꺼낸다', () => {
+    const { ws, a, b } = three()
+    const original = selected(ws).layout
+    ws.sendToBackground(a)
+    ws.sendToBackground(b)
+    const to = restarted(ws)
+    expect(to.cells()[0].home).toEqual(original)
+    to.bringBack(a)
+    to.bringBack(b)
+    expect(to.cells()[0].layout).toEqual(original)
+    const fresh = createWorkspaces()
+    fresh.restore(ws.snapshot(), null)
+    fresh.bringBack(b)
+    fresh.bringBack(a)
+    expect(fresh.cells()[0].layout).toEqual(original)
+  })
+
+  it('background pane 은 연 순서가 아니라 원래 배치의 자리 순으로 놓이고, 다시 띄워도 그대로이며, 원래 배치를 버리면 연 순서다', () => {
+    const ws = opened(1)
+    const [a] = selected(ws).panes.map((p) => p.key)
+    ws.split('right')
+    ws.focusPane(a)
+    ws.split('right')
+    ws.split('right')
+    const [, b, c, d] = selected(ws).panes.map((p) => p.key)
+    // 배치는 a d c b, 연 순서는 a b c d 다.
+    ws.sendToBackground(b)
+    ws.sendToBackground(c)
+    const order = (cell: Cell) =>
+      orderedPanes(cell)
+        .filter((p) => p.background)
+        .map((p) => p.key)
+    expect(order(selected(ws))).toEqual([c, b])
+    expect(order(restarted(ws).cells()[0])).toEqual([c, b])
+    ws.focusPane(d)
+    ws.split('down')
+    expect(order(selected(ws))).toEqual([b, c])
+  })
+
+  it('원래 배치에 없는, background 로 띄운 pane 은 background 줄의 끝에 놓인다', () => {
+    const ws = opened(1)
+    const [a] = selected(ws).panes.map((p) => p.key)
+    ws.split('right')
+    ws.focusPane(a)
+    ws.split('right')
+    const [, b, c] = selected(ws).panes.map((p) => p.key)
+    const late = ws.splitFrom(a, 'right', {}, false, true)!
+    // 배치는 a c b 다.
+    ws.sendToBackground(c)
+    ws.sendToBackground(b)
+    expect(orderedPanes(selected(ws)).map((p) => p.key)).toEqual([a, c, b, late])
+  })
+
+  it('보이는 pane 을 다시 돌리거나 보이는 pane 을 꺼내면 아무것도 바뀌지 않는다', () => {
+    const { ws, b } = three()
+    ws.sendToBackground(b)
+    const before = JSON.stringify(ws.cells())
+    ws.sendToBackground(b)
+    ws.bringBack(selected(ws).focused)
+    ws.bringBack(999)
+    expect(JSON.stringify(ws.cells())).toBe(before)
+  })
+
+  it('마지막 보이는 pane 을 돌리면 cell 은 남고, 선택은 보이는 이웃 cell 로, 모두 비면 null 이다', () => {
+    const ws = opened(3)
+    const [k0, k1, k2] = keys(ws)
+    ws.select(k1)
+    const p1 = selected(ws).panes[0].key
+    ws.sendToBackground(p1)
+    expect(ws.cells()[1]).toMatchObject({ layout: null, focused: p1 })
+    expect(ws.selectedKey.value).toBe(k2)
+    ws.sendToBackground(ws.cells()[2].panes[0].key)
+    expect(ws.selectedKey.value).toBe(k0)
+    ws.sendToBackground(ws.cells()[0].panes[0].key)
+    expect(ws.selectedKey.value).toBeNull()
+    expect(ws.cells()).toHaveLength(3)
+  })
+
+  it('⌘] / ⌘[ 와 pane 넘기기는 보이는 pane 이 없는 cell 을 건너뛴다', () => {
+    const ws = opened(3)
+    const [k0, , k2] = keys(ws)
+    ws.sendToBackground(ws.cells()[1].panes[0].key)
+    ws.select(k0)
+    expect(ws.step(1)).toBe(k2)
+    ws.select(k2)
+    expect(ws.step(-1)).toBe(k0)
+    ws.select(k0)
+    expect(ws.stepPane(1)).toBe(k2)
+    ws.sendToBackground(ws.cells()[0].panes[0].key)
+    ws.sendToBackground(ws.cells()[2].panes[0].key)
+    expect(ws.step(1)).toBeUndefined()
+    expect(ws.stepPane(1)).toBeUndefined()
+  })
+
+  it('빈 cell 에서 꺼내면 그 pane 하나가 배치가 된다', () => {
+    const ws = opened(1)
+    const p = selected(ws).panes[0].key
+    ws.sendToBackground(p)
+    ws.bringBack(p)
+    expect(selected(ws)).toMatchObject({ layout: { pane: p }, focused: p })
+  })
+
+  it('background 로 나누면 배치·포커스는 그대로이고, 빈 cell 에 보이는 pane 을 넣으면 그 pane 이 포커스를 받는다', () => {
+    const ws = opened(1)
+    const a = selected(ws).panes[0].key
+    const bg = ws.splitFrom(a, 'right', {}, false, true)
+    expect(selected(ws)).toMatchObject({ layout: { pane: a }, focused: a })
+    expect(ws.pane(bg)!.background).toBe(true)
+    ws.sendToBackground(a)
+    const c = ws.cells()[0]
+    const shown = ws.splitFrom(a, 'down', {})
+    expect(c).toMatchObject({ layout: { pane: shown }, focused: shown })
+    const root = ws.splitFrom(bg, 'down', {})
+    expect(c.layout).toEqual({ split: 'down', first: { pane: shown }, second: { pane: root } })
+  })
+
+  it('모든 cell 이 비어 선택이 없을 때 빈 cell 에 보이는 pane 이 들어오면 그 cell 이 선택되고, 다른 cell 을 골라 두었으면 그대로다', () => {
+    const ws = opened(2)
+    const [, k1] = keys(ws)
+    const [a, b] = ws.cells().map((c) => c.panes[0].key)
+    ws.sendToBackground(a)
+    ws.sendToBackground(b)
+    expect(ws.selectedKey.value).toBeNull()
+    ws.splitFrom(b, 'right', {})
+    expect(ws.selectedKey.value).toBe(k1)
+    ws.splitFrom(a, 'right', {})
+    expect(ws.selectedKey.value).toBe(k1)
+    expect(ws.cells()[0].layout).not.toBeNull()
+  })
+
+  it('background pane 이 닫히면 목록에서만 빠지고, 마지막 pane 이면 cell 이 닫힌다', () => {
+    const { ws, a, b, c } = three()
+    ws.sendToBackground(b)
+    const layout = selected(ws).layout
+    ws.closePane(b)
+    expect(selected(ws).layout).toEqual(layout)
+    expect(selected(ws).panes.map((p) => p.key)).toEqual([a, c])
+
+    const one = opened(2)
+    const [k0, k1] = keys(one)
+    const only = one.cells()[0].panes[0].key
+    one.select(k1)
+    one.sendToBackground(only)
+    one.closePane(only)
+    expect(keys(one)).toEqual([k1])
+    expect(one.selectedKey.value).toBe(k1)
+    expect(k0).not.toBe(k1)
+  })
+
+  it('보이는 마지막 pane 이 닫혀 background pane 만 남으면 cell 이 비고 선택이 옮겨 간다', () => {
+    const ws = opened(2)
+    const [k0, k1] = keys(ws)
+    ws.select(k0)
+    const a = selected(ws).panes[0].key
+    const bg = ws.splitFrom(a, 'right', {}, false, true)
+    ws.closePane(a)
+    expect(ws.cells()[0]).toMatchObject({ layout: null, focused: bg })
+    expect(ws.selectedKey.value).toBe(k1)
+  })
+
+  it('background 인 pane 을 포커스하던 빈 cell 을 닫으면 선택은 보이는 cell 로 간다', () => {
+    const ws = opened(3)
+    const [k0, k1, k2] = keys(ws)
+    ws.sendToBackground(ws.cells()[2].panes[0].key)
+    ws.select(k1)
+    shut(ws, k1)
+    expect(ws.selectedKey.value).toBe(k0)
+    expect(keys(ws)).toEqual([k0, k2])
+  })
+
+  it('저장하면 background pane 이 배치 오른쪽 끝에 붙고, 되살리면 빠진 채 크기·포커스가 그대로다', () => {
+    const { ws, a, b, c } = three()
+    ws.focusPane(c)
+    ws.sendToBackground(b)
+    ws.resize(selected(ws).key, {
+      split: 'right',
+      first: { pane: a, weight: 3 },
+      second: { pane: c, weight: 1 }
+    })
+    ws.open('/e')
+    const empty = selected(ws).panes[0].key
+    ws.sendToBackground(empty)
+    ws.select(ws.cells()[0].key)
+    const saved = ws.snapshot()
+    const [first, second] = saved.workspaces.map((w) => w.cells[0])
+    expect(first.layout).toEqual({
+      split: 'right',
+      first: { split: 'right', first: { pane: a, weight: 3 }, second: { pane: c, weight: 1 } },
+      second: { pane: b }
+    })
+    expect(second.layout).toEqual({ pane: empty })
+    expect(first.panes.find((p) => p.key === b)!.background).toBe(true)
+    const screen = { sidebar: { open: true, width: 280, folded: [] }, viewMode: 'single', ...saved }
+    expect(parseScreen(screen)!.workspaces[0].cells[0].panes[1]).toMatchObject({ background: true })
+
+    const to = restarted(ws)
+    expect(to.snapshot()).toEqual(ws.snapshot())
+    expect(to.cells()[0]).toMatchObject({
+      layout: { split: 'right', first: { pane: a, weight: 3 }, second: { pane: c, weight: 1 } },
+      focused: c
+    })
+    expect(to.cells()[1]).toMatchObject({ layout: null, focused: empty })
+    expect(to.pane(b)).toMatchObject({ background: true, attach: true })
+  })
+
+  it('pty 없이 되살린 background pane 도 background 로 남는다', () => {
+    const { ws, b } = three()
+    ws.sendToBackground(b)
+    const to = createWorkspaces()
+    to.restore(ws.snapshot(), null)
+    expect(to.pane(b)!.background).toBe(true)
+    expect(JSON.stringify(to.cells()[0].layout)).not.toContain(`"pane":${b}}`)
+  })
+
+  it('저장한 선택이 빈 cell 이면 보이는 cell 을 고른다', () => {
+    const ws = opened(2)
+    const [, k1] = keys(ws)
+    ws.sendToBackground(ws.cells()[0].panes[0].key)
+    const saved = ws.snapshot()
+    const to = createWorkspaces()
+    to.restore({ ...saved, selected: ws.cells()[0].key }, null)
+    expect(to.selectedKey.value).toBe(k1)
+  })
+
+  it('저장한 선택이 빈 cell 이면 돌릴 때처럼 그 다음 보이는 cell 을 고른다', () => {
+    const ws = opened(3)
+    const [, , k2] = keys(ws)
+    ws.select(ws.cells()[1].key)
+    ws.sendToBackground(ws.cells()[1].panes[0].key)
+    expect(ws.selectedKey.value).toBe(k2)
+    const saved = ws.snapshot()
+    const to = createWorkspaces()
+    to.restore({ ...saved, selected: ws.cells()[1].key }, null)
+    expect(to.selectedKey.value).toBe(k2)
   })
 })
