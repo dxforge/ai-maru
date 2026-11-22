@@ -12,6 +12,7 @@ import {
   findFavorite,
   workspaceDir,
   orderedPanes,
+  type Cell,
   type WorkspacesScreen
 } from './store'
 
@@ -2163,7 +2164,7 @@ describe('background', () => {
     expect(cell.focused).toBe(b)
     expect(cell.layout).toEqual(sized)
     expect(ws.pane(b)).not.toHaveProperty('background')
-    expect(ws.pane(b)).not.toHaveProperty('homeLayout')
+    expect(cell).not.toHaveProperty('home')
   })
 
   it('돌린 뒤 pane 이 더해지거나 빠졌으면 cell 오른쪽 끝에 붙고, 끝에 자리가 없으면 꺼내지 않는다', () => {
@@ -2218,36 +2219,66 @@ describe('background', () => {
     })
   })
 
-  it('여럿을 돌렸으면 거꾸로 꺼낼 때만 원래 자리로 돌아온다', () => {
+  it('여럿을 차례로 돌렸으면 어느 순서로 꺼내도 원래 자리로 돌아온다', () => {
     const { ws, a, b, c } = three()
     const original = selected(ws).layout
     ws.sendToBackground(a)
     ws.sendToBackground(b)
-    ws.bringBack(b)
     ws.bringBack(a)
+    expect(selected(ws).layout).toEqual({ split: 'right', first: { pane: a }, second: { pane: c } })
+    ws.bringBack(b)
     expect(selected(ws).layout).toEqual(original)
+    expect(selected(ws)).not.toHaveProperty('home')
 
     ws.sendToBackground(a)
     ws.sendToBackground(b)
+    ws.bringBack(b)
+    expect(selected(ws).layout).toEqual({ split: 'right', first: { pane: b }, second: { pane: c } })
     ws.bringBack(a)
-    expect(selected(ws).layout).toEqual({ split: 'right', first: { pane: c }, second: { pane: a } })
+    expect(selected(ws).layout).toEqual(original)
+  })
+
+  it('돌린 동안 나누거나 보이는 pane 을 닫으면 원래 배치를 버리고, background pane 이 닫히면 그 잎만 뺀다', () => {
+    const split = three()
+    split.ws.sendToBackground(split.a)
+    split.ws.focusPane(split.c)
+    split.ws.split('right')
+    const d = selected(split.ws).focused
+    split.ws.closePane(d)
+    expect(selected(split.ws)).not.toHaveProperty('home')
+    split.ws.bringBack(split.a)
+    expect(selected(split.ws).layout).toEqual({
+      split: 'right',
+      first: { split: 'right', first: { pane: split.b }, second: { pane: split.c } },
+      second: { pane: split.a }
+    })
+
+    const { ws, a, b, c } = three()
+    ws.sendToBackground(a)
+    ws.sendToBackground(b)
+    ws.closePane(a)
+    ws.bringBack(b)
+    expect(selected(ws).layout).toEqual({ split: 'right', first: { pane: b }, second: { pane: c } })
   })
 
   it('다시 띄워도 돌릴 때의 배치가 남아 원래 자리로 꺼낸다', () => {
-    const { ws, a } = three()
+    const { ws, a, b } = three()
     const original = selected(ws).layout
     ws.sendToBackground(a)
+    ws.sendToBackground(b)
     const to = restarted(ws)
-    expect(to.pane(a)!.homeLayout).toEqual(ws.pane(a)!.homeLayout)
+    expect(to.cells()[0].home).toEqual(original)
     to.bringBack(a)
+    to.bringBack(b)
     expect(to.cells()[0].layout).toEqual(original)
     const fresh = createWorkspaces()
     fresh.restore(ws.snapshot(), null)
+    fresh.bringBack(b)
     fresh.bringBack(a)
     expect(fresh.cells()[0].layout).toEqual(original)
   })
 
-  it('background pane 은 연 순서가 아니라 돌릴 때 배치에서 있던 자리 순으로 놓이고, 그 뒤 배치가 바뀌거나 다시 띄워도 그대로다', () => {
+  it('background pane 은 연 순서가 아니라 원래 배치의 자리 순으로 놓이고, 다시 띄워도 그대로이며, 원래 배치를 버리면 연 순서다', () => {
     const ws = opened(1)
     const [a] = selected(ws).panes.map((p) => p.key)
     ws.split('right')
@@ -2258,23 +2289,18 @@ describe('background', () => {
     // 배치는 a d c b, 연 순서는 a b c d 다.
     ws.sendToBackground(b)
     ws.sendToBackground(c)
+    const order = (cell: Cell) =>
+      orderedPanes(cell)
+        .filter((p) => p.background)
+        .map((p) => p.key)
+    expect(order(selected(ws))).toEqual([c, b])
+    expect(order(restarted(ws).cells()[0])).toEqual([c, b])
     ws.focusPane(d)
     ws.split('down')
-    ws.focusPane(a)
-    ws.split('right')
-    const order = () =>
-      orderedPanes(selected(ws))
-        .filter((p) => p.background)
-        .map((p) => p.key)
-    expect(order()).toEqual([c, b])
-    expect(
-      orderedPanes(restarted(ws).cells()[0])
-        .filter((p) => p.background)
-        .map((p) => p.key)
-    ).toEqual([c, b])
+    expect(order(selected(ws))).toEqual([b, c])
   })
 
-  it('돌릴 때 같은 자리였으면 먼저 돌린 pane 이 앞이고, 배치 없이 background 로 띄운 pane 은 그 뒤에 놓인다', () => {
+  it('원래 배치에 없는, background 로 띄운 pane 은 background 줄의 끝에 놓인다', () => {
     const ws = opened(1)
     const [a] = selected(ws).panes.map((p) => p.key)
     ws.split('right')
@@ -2282,7 +2308,7 @@ describe('background', () => {
     ws.split('right')
     const [, b, c] = selected(ws).panes.map((p) => p.key)
     const late = ws.splitFrom(a, 'right', {}, false, true)!
-    // 배치는 a c b 이고 c 와 b 는 돌릴 때 모두 둘째 자리다.
+    // 배치는 a c b 다.
     ws.sendToBackground(c)
     ws.sendToBackground(b)
     expect(orderedPanes(selected(ws)).map((p) => p.key)).toEqual([a, c, b, late])

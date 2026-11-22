@@ -99,8 +99,8 @@ pane 을 떼어 pty 만 남기는 것(renderer 도 pane 을 갖지 않는 것)�
 앱이 끝나는 경우는 재시작, 사용자의 끄기, 비정상 종료 셋이다. main 은 어느 경우로 끝나도 다음에 뜬 앱이 읽도록 상태를 userData 의 `state.json` 에 바뀔 때마다 쓴다(`app/src/main/state.ts`). renderer 는 화면(workspace·cell·pane 배치와 사이드바·보기 모드, `app/src/shared/screen.ts`)이 바뀔 때마다 main 에 보내고, main 은 그 화면과 job 표, 창 위치·크기, 테마를 `workspaces`·`cells`·`panes`·`sessions`·`view` 다섯 표로 나눠 쓴다. 표마다 형식 버전이 있고 따로 읽는다. 한 표의 형식이 바뀌어도 그 표만 잃게 하기 위해서다.
 
 - `workspaces` 는 workspace 줄의 배열이고, 줄 순서가 사이드바 순서다. 줄은 `id`·이름·`dir`·즐겨찾기와 keep(`kept: true`)을 갖는다. 옛 빌드가 쓴 줄의 `pinned: true` 도 keep 으로 읽는다. 옛 빌드는 즐겨찾기가 있는 workspace 도 남겼으므로, 즐겨찾기가 있는 줄도 keep 으로 읽는다.
-- `cells` 는 cell 줄의 배열이다. 줄은 자기 `workspace` 의 `id` 와 분할 트리를 갖고, 같은 workspace 안에서는 줄 순서가 cell 순서다. 분할 트리의 잎은 pane 의 `id` 다. background pane 의 잎은 트리 오른쪽 끝에 이어 붙여 쓰고, 읽을 때 뺀다. 표 버전을 올리지 않고 더한 것이라, 옛 빌드는 background pane 을 cell 끝의 보이는 pane 으로 연다.
-- `panes` 는 pane 줄의 배열이다. 줄은 자기 `cell` 의 `id` 와 cwd·명령, background 로 돌렸으면 `background: true` 와 돌릴 때의 분할 트리 `homeLayout`(잎은 pane 의 `id`)을 갖는다. pane 의 `id` 는 실행이 바뀌어도 그대로다. 실행마다 매기는 key 는 화면 안의 번호라 쓰지 않는다. pty id 를 pane 의 `id` 로 쓰지 않는 것은 Keep layout only 뒤에는 pane 이 남고 pty id 가 바뀌기 때문이다.
+- `cells` 는 cell 줄의 배열이다. 줄은 자기 `workspace` 의 `id` 와 분할 트리를 갖고, 같은 workspace 안에서는 줄 순서가 cell 순서다. 분할 트리의 잎은 pane 의 `id` 다. background pane 의 잎은 트리 오른쪽 끝에 이어 붙여 쓰고, 읽을 때 뺀다. background pane 이 있으면 줄은 돌리기 전의 분할 트리 `home`(background pane 의 잎도 든다)을 가질 수 있다. 나누기·닫기로 보이는 모양이 바뀌면 `home` 은 없다. 표 버전을 올리지 않고 더한 것이라, 옛 빌드는 background pane 을 cell 끝의 보이는 pane 으로 연다.
+- `panes` 는 pane 줄의 배열이다. 줄은 자기 `cell` 의 `id` 와 cwd·명령, background 로 돌렸으면 `background: true` 를 갖는다. pane 의 `id` 는 실행이 바뀌어도 그대로다. 실행마다 매기는 key 는 화면 안의 번호라 쓰지 않는다. pty id 를 pane 의 `id` 로 쓰지 않는 것은 Keep layout only 뒤에는 pane 이 남고 pty id 가 바뀌기 때문이다.
 - `sessions` 는 pane `id` 마다의 pty 와 job 표다.
 - `view` 는 창·테마·사이드바 접힘이고, 버전이 다르면 통째로, 같으면 틀린 필드만 잃는다. 고른 cell 과 사이드바 접힘은 `id` 로 둔다.
 

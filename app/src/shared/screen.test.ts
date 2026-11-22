@@ -116,25 +116,30 @@ describe('parseScreen', () => {
     expect(parseScreen(clone())!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('background')
   })
 
-  it('background pane 의 homeLayout 은 표로 나눴다 이어도 그대로이고, 잘못됐거나 background 가 아니면 그 필드만 버린다', () => {
+  it('cell 의 home 은 표로 나눴다 이어도 그대로이고, 잘못됐거나 cell 에 없는 pane 을 가리키면 그 필드만 버린다', () => {
     const s = clone() as ScreenState
     const home = {
       split: 'right',
-      first: { pane: 'n-0000000a', weight: 2 },
-      second: { pane: 'n-0000000b' }
+      first: { pane: 0, weight: 2 },
+      second: { pane: 2 }
     } as const
-    Object.assign(s.workspaces[0].cells[0].panes[1], { background: true, homeLayout: home })
+    Object.assign(s.workspaces[0].cells[0], { home })
     const parsed = parseScreen(s)!
-    expect(parsed.workspaces[0].cells[0].panes[1].homeLayout).toEqual(home)
+    expect(parsed.workspaces[0].cells[0].home).toEqual(home)
     const joined = joinTables(reparse(splitScreen(parsed)))!
-    expect(joined.workspaces[0].cells[0].panes[1].homeLayout).toEqual(home)
+    const cell = joined.workspaces[0].cells[0]
+    const keyOf = (id: string) => cell.panes.find((p) => p.id === id)!.key
+    expect(cell.home).toEqual({
+      split: 'right',
+      first: { pane: keyOf('n-0000000a'), weight: 2 },
+      second: { pane: keyOf('n-0000000b') }
+    })
 
-    Object.assign(s.workspaces[0].cells[0].panes[1], { homeLayout: { split: 'up' } })
-    expect(parseScreen(s)!.workspaces[0].cells[0].panes[1]).toMatchObject({ background: true })
-    expect(parseScreen(s)!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('homeLayout')
-    const shown = clone() as ScreenState
-    Object.assign(shown.workspaces[0].cells[0].panes[1], { homeLayout: home })
-    expect(parseScreen(shown)!.workspaces[0].cells[0].panes[1]).not.toHaveProperty('homeLayout')
+    Object.assign(s.workspaces[0].cells[0], { home: { split: 'up' } })
+    expect(parseScreen(s)!.workspaces[0].cells[0]).not.toHaveProperty('home')
+    const t = splitScreen(parsed)
+    Object.assign(t.cells.rows[0], { home: { pane: 'n-gone' } })
+    expect(joinTables(reparse(t))!.workspaces[0].cells[0]).not.toHaveProperty('home')
   })
 
   it('cell 의 pane 폭은 없어도 되고, 있으면 그대로 돌려준다', () => {

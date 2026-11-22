@@ -13,7 +13,6 @@ import {
   type ScreenState,
   type ScreenWorkspace
 } from '../../../shared/screen'
-import { mapLayout } from '../../../shared/layout'
 import { newPtyId, randomId } from '../../../shared/pty'
 import { paneCwd, paneTitle } from './display'
 import {
@@ -58,7 +57,6 @@ export type Pane = {
   attach?: boolean
   restoredTitle?: string
   background?: true
-  homeLayout?: Layout<string>
 }
 
 /**
@@ -80,6 +78,16 @@ export type WorkspacesScreen = Pick<ScreenState, 'workspaces' | 'selected'>
  * 이고 `focused` 는 마지막으로 포커스한 pane 이다. 그런 cell 은 선택하지 않는다.
  */
 export type Cell = Omit<ScreenCell, 'panes' | 'layout'> & { panes: Pane[]; layout: Layout | null }
+
+const backgroundKeys = (c: { panes: readonly { key: number; background?: true }[] }): Set<number> =>
+  new Set(c.panes.filter((p) => p.background).map((p) => p.key))
+
+function homeKept(c: Cell): Layout | undefined {
+  if (!c.home) return undefined
+  const shown = withoutLeaves(c.home, backgroundKeys(c))
+  const same = shown && c.layout ? sameShape(shown, c.layout) : shown === c.layout
+  return same ? c.home : undefined
+}
 
 /**
  * 마지막 cell 이 닫히면 workspace 도 닫힌다. keep 을 켠 workspace 만 `cells` 가 빈 채로 남는다.
@@ -108,26 +116,20 @@ export function workspaceDir(
   return first?.cwd ?? first?.startDir ?? w.dir
 }
 
-/**
- * `WorkspaceSidebar.vue` 가 cell 의 pane 을 이 순서로 나열한다 — 보이는 pane 을 배치 순서로, 그 뒤에 background pane 을
- * 돌릴 때 배치에서 있던 자리 순으로. `stepPane` 은 보이는 pane 의 순서를 `panes(layout)` 으로 직접 돌므로 한쪽 순서를
- * 바꾸면 다른 쪽도 같이 바꾼다.
- */
-export function orderedPanes<
-  P extends { key: number; id: string; background?: true; homeLayout?: Layout<string> }
->(c: { layout: Layout | null; panes: readonly P[] }): P[] {
+/** `stepPane` 은 보이는 pane 을 `panes(layout)` 순서로 직접 돌므로, 보이는 pane 의 순서를 여기서 바꾸면 `stepPane` 도 같이 바꾼다. */
+export function orderedPanes<P extends { key: number; background?: true }>(c: {
+  layout: Layout | null
+  home?: Layout
+  panes: readonly P[]
+}): P[] {
   const shown = c.layout ? panes(c.layout).map((key) => c.panes.find((p) => p.key === key)!) : []
-  const background = c.panes.filter((p) => p.background)
-  const home = new Map(background.map((p) => [p, p.homeLayout ? panes(p.homeLayout) : []]))
+  const home = c.home ? panes(c.home) : []
   const at = (p: P): number => {
-    const i = home.get(p)!.indexOf(p.id)
+    const i = home.indexOf(p.key)
     return i < 0 ? Infinity : i
   }
-  // 같은 자리에서 잇달아 background 로 돌렸으면 먼저 돌린 pane 이 원래 왼쪽에 있었다. 먼저 돌린 pane 의 `homeLayout` 에는
-  // 나중 pane 이 남아 있으므로 그것으로 순서를 가린다.
-  const sentFirst = (p: P, q: P): number =>
-    home.get(p)!.includes(q.id) ? -1 : home.get(q)!.includes(p.id) ? 1 : 0
-  return [...shown, ...background.sort((p, q) => at(p) - at(q) || sentFirst(p, q))]
+  const background = c.panes.filter((p) => p.background)
+  return [...shown, ...background.sort((p, q) => at(p) - at(q))]
 }
 
 export type PlaceError = 'no_caller' | 'no_cell' | 'other_workspace'
@@ -472,6 +474,7 @@ export function createWorkspaces(
     c.panes.push(p)
     const pane = p.key
     if (background) return pane
+    delete c.home
     if (!c.layout) {
       c.layout = { pane }
       c.focused = pane
@@ -486,15 +489,14 @@ export function createWorkspaces(
   }
 
   /**
-   * pane 을 배치에서 빼고 pty 는 끄지 않는다. 꺼낼 때 원래 자리로 돌아가도록, 뺄 때의 배치를 pane id 로 `homeLayout` 에
-   * 남긴다.
+   * pane 을 분할 트리에서만 빼므로 pty 는 그대로 남는다. 이미 돌린 pane 이 있고 `home` 이 지금 배치와 맞으면 `home` 을
+   * 덮지 않는다. 덮으면 먼저 돌린 pane 의 자리를 잃어, 둘 이상을 돌린 뒤 꺼낼 때 원래 배치로 돌아가지 않기 때문이다.
    */
   function sendToBackground(key: number): void {
     const c = owner(key)
     const p = c?.panes.find((x) => x.key === key)
     if (!c?.layout || !p || p.background) return
-    const ids = new Map(c.panes.map((x) => [x.key, x.id]))
-    p.homeLayout = mapLayout(c.layout, (k) => ids.get(k)!)
+    c.home = homeKept(c) ?? c.layout
     p.background = true
     const removed = removePane(c.layout, key)
     if (!removed) {
@@ -513,28 +515,18 @@ export function createWorkspaces(
     const c = owner(key)
     const p = c?.panes.find((x) => x.key === key)
     if (!c || !p?.background) return false
-    const saved = homeOf(c, p)
-    const home = saved && roomAtHome(saved) ? saved : undefined
+    const rest = backgroundKeys(c)
+    rest.delete(key)
+    const kept = homeKept(c)
+    const back = kept && panes(kept).includes(key) ? withoutLeaves(kept, rest)! : undefined
+    const home = back && roomAtHome(back) ? back : undefined
     if (!home && !roomAtEnd()) return false
     delete p.background
-    delete p.homeLayout
+    if (!home || rest.size === 0) delete c.home
     c.layout = home ?? atRightEnd(c.layout, key)
     c.focused = key
     selectedKey.value = c.key
     return true
-  }
-
-  function homeOf(c: Cell, p: Pane): Layout | undefined {
-    if (!p.homeLayout) return undefined
-    const keys = new Map(c.panes.map((x) => [x.id, x.key]))
-    const home = panes(p.homeLayout)
-    const others = home.filter((id) => id !== p.id).map((id) => keys.get(id))
-    const shown = new Set(c.layout ? panes(c.layout) : [])
-    const same =
-      home.includes(p.id) &&
-      others.length === shown.size &&
-      others.every((k) => k !== undefined && shown.has(k))
-    return same ? mapLayout(p.homeLayout, (id) => keys.get(id)!) : undefined
   }
 
   function cellById(id: string): Cell | undefined {
@@ -576,9 +568,12 @@ export function createWorkspaces(
     c.panes = c.panes.filter((p) => p.key !== pane)
     const shown = c.layout && panes(c.layout)
     if (!shown?.includes(pane)) {
+      if (c.home) c.home = withoutLeaves(c.home, new Set([pane])) ?? undefined
+      if (!c.panes.some((p) => p.background)) delete c.home
       if (c.focused === pane) c.focused = shown?.[0] ?? c.panes[0].key
       return
     }
+    delete c.home
     const removed = removePane(c.layout!, pane)
     if (!removed) {
       c.layout = null
@@ -762,7 +757,6 @@ export function createWorkspaces(
       const fresh: Pane = { key: p.key, id: p.id, ptyId: ptyId(), startDir: p.cwd }
       if (p.git) fresh.git = p.git
       if (p.background) fresh.background = true
-      if (p.homeLayout) fresh.homeLayout = p.homeLayout
       return fresh
     }
     list.value = layout.workspaces.map((w) => {
