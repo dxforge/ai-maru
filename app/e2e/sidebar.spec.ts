@@ -643,41 +643,68 @@ test('사이드바는 titlebar 와 마지막 workspace 아래의 빈 곳으로�
   await newCell(launched, 2)
   await newWorkspace(launched, 3)
   await expect(page.locator('.sidebar .dir-card .more')).toHaveCount(1)
-  const scrollbar = page.locator('.sidebar .list > .os-scrollbar-vertical')
-  await expect(scrollbar).toHaveCount(1)
-
-  const check = async (open: boolean): Promise<void> => {
-    const nav = await box(page.locator('.sidebar'))
-    const titlebar = await box(page.locator('.sidebar .titlebar'))
-    const list = await box(page.locator('.sidebar .list'))
-    const used = await box(page.locator('.sidebar .workspaces'))
-    const bar = await box(scrollbar)
-    // 사이드바 너비를 바꾸는 `.resizer` 는 사이드바 오른쪽 끝에 겹치고 no-drag 다.
-    const resizer = open ? await box(page.locator('.resizer').first()) : undefined
-    const inside = (r: typeof nav, x: number, y: number): boolean =>
-      x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
-    expect(used.y + used.height).toBeLessThan(list.y + list.height - 20)
-    const points: { x: number; y: number }[] = []
-    for (let y = nav.y + 1; y < nav.y + nav.height; y += 4)
-      for (let x = nav.x + 1; x < nav.x + nav.width; x += 4) points.push({ x, y })
-    const regions = await appRegionsAt(page, points)
-    const wrong = points
-      .map(({ x, y }, i) => {
-        const drag =
-          !(resizer && inside(resizer, x, y)) &&
-          (inside(titlebar, x, y) ||
-            (y >= used.y + used.height && inside(list, x, y) && !inside(bar, x, y)))
-        return { x, y, region: regions[i], want: drag ? 'drag' : 'no-drag' }
-      })
-      .filter(({ region, want }) => region !== want)
-    expect(wrong).toEqual([])
-  }
+  await expect(page.locator('.sidebar .list > .os-scrollbar-vertical')).toHaveCount(1)
 
   await panes(page).first().hover()
-  await check(true)
+  await expectSidebarRegions(page, true, 'gap')
   await collapseSidebar(app, page)
-  await check(false)
+  await expectSidebarRegions(page, false, 'gap')
 })
+
+test('목록이 넘쳐 스크롤해도 titlebar 로는 창을 끌고, workspace 들의 구간은 끌지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch({}, undefined, CLASSIC_SCROLLBARS)
+  const { app, page } = launched
+  await resizeBy(app, 0, -450)
+  for (let n = 2; n <= 8; n++) await newWorkspace(launched, n)
+  const list = page.locator('.sidebar .list')
+  await list.evaluate((el) => el.scrollTo(0, 60))
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(60)
+
+  await panes(page).first().hover()
+  await expectSidebarRegions(page, true, 'overflow')
+  await collapseSidebar(app, page)
+  await list.evaluate((el) => el.scrollTo(0, 60))
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBe(60)
+  await expectSidebarRegions(page, false, 'overflow')
+})
+
+async function expectSidebarRegions(
+  page: Page,
+  open: boolean,
+  bottom: 'gap' | 'overflow'
+): Promise<void> {
+  const scrollbar = page.locator('.sidebar .list > .os-scrollbar-vertical')
+  const nav = await box(page.locator('.sidebar'))
+  const titlebar = await box(page.locator('.sidebar .titlebar'))
+  const list = await box(page.locator('.sidebar .list'))
+  const used = await box(page.locator('.sidebar .workspaces'))
+  const bar = await box(scrollbar)
+  // 사이드바 너비를 바꾸는 `.resizer` 는 사이드바 오른쪽 끝에 겹치고 no-drag 다.
+  const resizer = open ? await box(page.locator('.resizer').first()) : undefined
+  const inside = (r: typeof nav, x: number, y: number): boolean =>
+    x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
+  if (bottom === 'gap') expect(used.y + used.height).toBeLessThan(list.y + list.height - 20)
+  else {
+    expect(used.y).toBeLessThan(list.y)
+    expect(used.y + used.height).toBeGreaterThan(list.y + list.height)
+  }
+  const points: { x: number; y: number }[] = []
+  for (let y = nav.y + 1; y < nav.y + nav.height; y += 4)
+    for (let x = nav.x + 1; x < nav.x + nav.width; x += 4) points.push({ x, y })
+  const regions = await appRegionsAt(page, points)
+  const wrong = points
+    .map(({ x, y }, i) => {
+      const drag =
+        !(resizer && inside(resizer, x, y)) &&
+        (inside(titlebar, x, y) ||
+          (y >= used.y + used.height && inside(list, x, y) && !inside(bar, x, y)))
+      return { x, y, region: regions[i], want: drag ? 'drag' : 'no-drag' }
+    })
+    .filter(({ region, want }) => region !== want)
+  expect(wrong).toEqual([])
+}
 
 const jobRows = (page: Page) => page.locator('.sidebar .job-row')
 

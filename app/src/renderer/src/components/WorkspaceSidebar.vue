@@ -384,7 +384,6 @@ const keepTip = (kept: boolean): string =>
 
 <template>
   <nav ref="nav" class="sidebar window-drag" :class="{ collapsed }">
-    <div class="titlebar" />
     <div ref="list" v-overlay-scroll="'y'" class="list">
       <div class="workspaces">
         <div
@@ -586,6 +585,7 @@ const keepTip = (kept: boolean): string =>
         :style="{ top: `${target.line}px` }"
       />
     </div>
+    <div class="titlebar window-drag" />
     <SidebarCard
       :view="cardView"
       :current="cardCurrent"
@@ -612,7 +612,10 @@ const keepTip = (kept: boolean): string =>
     sans-serif;
 }
 
+/* 목록을 스크롤하면 `.workspaces` 의 상자가 `.list` 위로 올라가 titlebar 와 겹친다. drag 영역은 overflow 에 잘리지 않고
+   DOM 에서 뒤의 것이 이기므로, titlebar 를 DOM 에서 `.list` 뒤에 두고 `order` 로 맨 위에 그린다. */
 .titlebar {
+  order: -1;
   flex: none;
   height: var(--titlebar-height);
   border-bottom: 1px solid var(--line);
@@ -627,8 +630,8 @@ const keepTip = (kept: boolean): string =>
   padding-bottom: var(--space-3);
 }
 
-/* 사이드바는 창 끌기 영역이고, workspace 들을 담은 구간은 통째로 no-drag 다. 그래서 workspace 안에 넣는 요소에는 no-drag 를
-   따로 붙이지 않는다. 창을 끄는 곳은 titlebar 와 마지막 workspace 아래의 빈 곳이다. */
+/* `.workspaces` 를 통째로 no-drag 로 두므로, workspace 안에 넣는 요소에는 no-drag 를 따로 붙이지 않는다. 사이드바에서
+   창을 끄는 곳은 titlebar 와, 목록 안에서 마지막 workspace 아래로 보이는 빈 곳이다. */
 .workspaces {
   -webkit-app-region: no-drag;
   padding-top: var(--space-3);
@@ -639,6 +642,12 @@ const keepTip = (kept: boolean): string =>
    스크롤바는 누르는 컨트롤이라 no-drag 로 둔다. */
 .list > :deep(.os-scrollbar-vertical) {
   -webkit-app-region: no-drag;
+}
+
+/* 목록은 세로로만 스크롤하는데도 라이브러리는 가로 스크롤바의 상자를 목록 바닥에 붙인다. 그 상자는 사이드바의 `drag` 를
+   물려받고 DOM 에서 `.workspaces` 뒤에 있어, 목록이 넘치면 바닥의 workspace 위를 창 끌기 영역으로 덮는다. */
+.list > :deep(.os-scrollbar-horizontal) {
+  display: none;
 }
 
 .workspace-head {

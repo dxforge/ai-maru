@@ -258,7 +258,7 @@ test('pane 줄을 끌어도 아무것도 옮기지 않고, 손잡이는 마우�
   await expect.poll(() => opacity(grip(page, 1))).toBeGreaterThan(0)
   await expect(grip(page, 0)).toHaveCSS('opacity', '0')
   const b = (await grip(page, 0).boundingBox())!
-  expect(await appRegionAt(page, b.x + b.width / 2, b.y + b.height / 2)).not.toBe('drag')
+  expect(await appRegionAt(page, b.x + b.width / 2, b.y + b.height / 2)).toBe('no-drag')
 })
 
 test('첫 행의 위쪽이라도 손잡이 밖을 누르면 cell 을 끌지 않고 그 pane 을 고른다', async ({
