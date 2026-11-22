@@ -52,6 +52,7 @@ import {
   areaOf,
   columnsWidthOf,
   paneMin,
+  roomForLayout,
   roomForSplit,
   snapRects,
   widthsOf,
@@ -342,10 +343,11 @@ function backgroundPane(key: number | undefined): void {
   if (key === undefined || workspaces.pane(key)?.background) return
   const size = views.value.flatMap((v) => v.panes).find((v) => v.p.key === key)?.size
   if (size) heldSizes.set(key, size)
-  if (terminals.get(key)?.$el.contains(document.activeElement))
-    (document.activeElement as HTMLElement).blur()
+  const focused = terminals.get(key)?.$el.contains(document.activeElement)
+  if (focused) (document.activeElement as HTMLElement).blur()
   workspaces.sendToBackground(key)
-  void focusSelected()
+  // 포커스가 이 터미널에 있었을 때만 다시 맞춘다. CLI 로 pane 을 돌릴 때 입력창·전환기에 있던 포커스를 터미널로 옮기지 않기 위해서다.
+  if (focused) void focusSelected()
 }
 
 function onSpawned(pane: number, pty: string, dir: string | undefined): void {
@@ -743,14 +745,28 @@ function moveFocus(direction: FocusDirection): void {
   if (c) workspaces.moveFocus(direction, widthsOf(columnColsOf(c)))
 }
 
+function roomOf(c: Cell, layout: Layout) {
+  return {
+    layout,
+    cell: cellOf(fontOf(c)),
+    measured: gridSizes.get(c.key),
+    cols: columnColsOf(c)
+  }
+}
+
 function roomFor(from: number, direction: SplitDirection, full: boolean): boolean {
   const c = workspaces.owner(from)
   if (!c?.layout) return true
-  const cell = cellOf(fontOf(c))
-  return roomForSplit(
-    { layout: c.layout, cell, measured: gridSizes.get(c.key), cols: columnColsOf(c) },
-    { from, direction, full: splitsWhole(c.layout, from, full) }
-  )
+  return roomForSplit(roomOf(c, c.layout), {
+    from,
+    direction,
+    full: splitsWhole(c.layout, from, full)
+  })
+}
+
+function roomForHome(pane: number, home: Layout): boolean {
+  const c = workspaces.owner(pane)
+  return !c?.layout || roomForLayout(roomOf(c, c.layout), home)
 }
 
 function canSplit(direction: SplitDirection): boolean {
@@ -1002,7 +1018,14 @@ function focusPane(cell: number, pane: number): void {
 
 function selectPane(cell: number, pane: number): void {
   if (!workspaces.pane(pane)?.background) workspaces.focusPane(pane)
-  else if (!workspaces.bringBack(pane, () => roomOrWarn(pane, 'right', true))) return
+  else if (
+    !workspaces.bringBack(
+      pane,
+      () => roomOrWarn(pane, 'right', true),
+      (home) => roomForHome(pane, home)
+    )
+  )
+    return
   selectCell(cell)
 }
 

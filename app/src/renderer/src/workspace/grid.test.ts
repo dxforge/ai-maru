@@ -8,6 +8,7 @@ import {
   overflow,
   paneMin,
   required,
+  roomForLayout,
   roomForSplit,
   snapRects,
   type Box,
@@ -504,5 +505,25 @@ describe('roomForSplit', () => {
 
   it('pane 영역을 아직 재지 않았으면 나눈다', () => {
     expect(room(twoRight, 2, 'right', undefined)).toBe(true)
+  })
+})
+
+describe('roomForLayout', () => {
+  const three: Layout = { split: 'right', first: { pane: 1 }, second: twoThree }
+
+  it('바꾼 배치의 pane 들에 20열이 들어가지 않으면 받지 않는다', () => {
+    const room = (width: number) =>
+      roomForLayout(
+        { layout: twoRight, cell, measured: { width, height: 700 }, cols: undefined },
+        three
+      )
+    expect(room(66 * 8)).toBe(true)
+    expect(room(66 * 8 - 1)).toBe(false)
+  })
+
+  it('pane 영역을 아직 재지 않았으면 받는다', () => {
+    expect(
+      roomForLayout({ layout: twoRight, cell, measured: undefined, cols: undefined }, three)
+    ).toBe(true)
   })
 })

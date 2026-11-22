@@ -89,6 +89,22 @@ test('꺼낼 자리가 없으면 꺼내지 않고 나누기와 같은 토스트�
   await expect(backgroundLine(page, 0)).toHaveCount(1)
 })
 
+test('background 로 둔 사이 원래 배치가 들어가지 않게 좁아지면 원래 자리로 되돌리지 않고 토스트를 띄운다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await split(app, page, 'split-right', 3)
+  await focusPane(app, page, 'focus-pane-left', 1)
+  await clickMenu(app, 'background-pane')
+  // 이 폭에는 pane 이 둘까지만 들어간다. 원래 자리로 되돌려도 끝에 붙여도 pane 이 셋이 되므로 어느 쪽도 자리가 없다.
+  await resizeGridTo(app, page, 58)
+
+  await paneRowsOf(page, 0).nth(2).click()
+  await expect(toast(page)).toContainText('No space for a new pane')
+  await expect(panes(page).nth(1)).toHaveClass(/background/)
+})
+
 test('cell 의 마지막 pane 을 background 로 돌려도 cell 은 사이드바에 남고 선택은 옆 cell 로 가며, 그 줄을 누르면 다시 나온다', async ({
   launch
 }) => {
@@ -205,6 +221,29 @@ test('maru pane background 로 떠 있는 pane 을 돌리고, ⌘P 전환기에�
   await expect(panes(page).nth(1)).not.toHaveClass(/background/)
   await expect(panes(page).nth(1).locator('.terminal-view')).toHaveClass(/active/)
   await expect(screen(page, 1)).toShow('sent-2')
+})
+
+test('다른 pane 이 maru pane background 로 포커스 없는 pane 을 돌려도 입력창의 포커스는 그대로다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  const pty = (await panes(page).nth(1).getAttribute('data-pty'))!
+  const other = (await panes(page).nth(0).getAttribute('data-pty'))!
+  const id = (await cli(dataDir, pty, ['pane', 'list']))
+    .split('\n')
+    .find((l) => l.includes(other))!
+    .split('\t')[0]
+  const head = page.locator('.sidebar .workspace-head').nth(0)
+  await head.hover()
+  await head.locator('.workspace-menu-button').click()
+  const input = page.locator('.sidebar .workspace-name-input')
+  await expect(input).toBeFocused()
+
+  await cli(dataDir, pty, ['pane', 'background', id])
+  await expect(panes(page).nth(0)).toHaveClass(/background/)
+  await expect(input).toBeFocused()
 })
 
 test('background 로 띄운 pane 은 보이는 pane 을 나눠도 터미널 크기가 바뀌지 않는다', async ({

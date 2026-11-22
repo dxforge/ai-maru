@@ -505,15 +505,16 @@ export function createWorkspaces(
     if (c.focused === key) c.focused = removed.next
   }
 
-  /**
-   * 보이는 pane 이 `homeLayout` 에서 이 pane 을 뺀 것과 같으면(더해지거나 빠진 pane 이 없으면) 그 배치로 돌려 원래
-   * 자리·크기로 꺼낸다. 다르면 cell 오른쪽 끝에 붙이되, `roomAtEnd` 가 false 면 꺼내지 않고 false 를 돌려준다.
-   */
-  function bringBack(key: number, roomAtEnd: () => boolean = () => true): boolean {
+  function bringBack(
+    key: number,
+    roomAtEnd: () => boolean = () => true,
+    roomAtHome: (home: Layout) => boolean = () => true
+  ): boolean {
     const c = owner(key)
     const p = c?.panes.find((x) => x.key === key)
     if (!c || !p?.background) return false
-    const home = homeOf(c, p)
+    const saved = homeOf(c, p)
+    const home = saved && roomAtHome(saved) ? saved : undefined
     if (!home && !roomAtEnd()) return false
     delete p.background
     delete p.homeLayout

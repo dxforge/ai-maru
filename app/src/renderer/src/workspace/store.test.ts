@@ -2197,6 +2197,27 @@ describe('background', () => {
     })
   })
 
+  it('원래 배치가 지금 자리에 들어가지 않으면 오른쪽 끝에 붙이고, 끝에도 자리가 없으면 꺼내지 않는다', () => {
+    const { ws, a, b, c } = three()
+    ws.sendToBackground(b)
+    const before = JSON.stringify(ws.cells())
+    const offered: Layout[] = []
+    const noHome = (home: Layout) => (offered.push(home), false)
+    expect(ws.bringBack(b, () => false, noHome)).toBe(false)
+    expect(JSON.stringify(ws.cells())).toBe(before)
+    expect(offered[0]).toEqual({
+      split: 'right',
+      first: { pane: a },
+      second: { split: 'right', first: { pane: b }, second: { pane: c } }
+    })
+    expect(ws.bringBack(b, () => true, noHome)).toBe(true)
+    expect(selected(ws).layout).toEqual({
+      split: 'right',
+      first: { split: 'right', first: { pane: a }, second: { pane: c } },
+      second: { pane: b }
+    })
+  })
+
   it('여럿을 돌렸으면 거꾸로 꺼낼 때만 원래 자리로 돌아온다', () => {
     const { ws, a, b, c } = three()
     const original = selected(ws).layout

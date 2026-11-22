@@ -166,21 +166,25 @@ export function areaOf(layout: Layout, cols: ColumnCols, cell: Size, measured: S
   }
 }
 
+type Room = { layout: Layout; cell: Size; measured: Size | undefined; cols: ColumnCols }
+
 /**
  * cell 의 pane `from` 을, `full` 이면 cell 전체를 `direction` 으로 나눌 자리가 있는지. `cell` 은 글자 칸 크기이고
  * `measured` 는 잰 pane 영역이다. 아직 재지 않았으면 나눌 수 있다.
  */
 export function roomForSplit(
-  {
-    layout,
-    cell,
-    measured,
-    cols
-  }: { layout: Layout; cell: Size; measured: Size | undefined; cols: ColumnCols },
+  room: Room,
   { from, direction, full }: { from: number; direction: SplitDirection; full: boolean }
 ): boolean {
+  const { layout } = room
+  return roomForLayout(
+    room,
+    full ? splitRoot(layout, -1, direction) : splitPane(layout, from, -1, direction)
+  )
+}
+
+export function roomForLayout({ layout, cell, measured, cols }: Room, next: Layout): boolean {
   if (!measured) return true
-  const next = full ? splitRoot(layout, -1, direction) : splitPane(layout, from, -1, direction)
   const area = (l: Layout): Size => areaOf(l, cols, cell, measured)
   return canSplit(layout, area(layout), next, area(next), paneMin(cell))
 }
