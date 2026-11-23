@@ -30,7 +30,7 @@ export function createPtyStates(deps: PtyStatesDeps) {
   const watches = new Map<string, Watch>()
 
   function view(w: Watch): PtyStateEntry | undefined {
-    if (!w.entry || !w.notification || !('state' in w.entry)) return w.entry
+    if (!w.entry || !w.notification) return w.entry
     return { ...w.entry, notification: w.notification }
   }
 
@@ -60,7 +60,8 @@ export function createPtyStates(deps: PtyStatesDeps) {
       notification: (notification) => {
         if (current()) notify(id, notification)
       },
-      old: () => update({ entry: { old: true } }),
+      // `subscribe` 를 모르는 pty 에는 상태가 오지 않으므로 든 것 없이 둔다. 항목은 남겨 `watch` 가 다시 구독하지 않게 한다.
+      old: () => {},
       closed: () => void reopen(id, w, got)
     })
   }
@@ -125,7 +126,6 @@ export function createPtyStates(deps: PtyStatesDeps) {
   }
 
   function stateOf(pty: string): PtyState | undefined {
-    const entry = watches.get(pty)?.entry
-    return entry && 'state' in entry ? entry.state : undefined
+    return watches.get(pty)?.entry?.state
   }
 }

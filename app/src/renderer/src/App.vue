@@ -16,7 +16,6 @@ import { PANE_MAX_COLS, PANE_MIN } from '../../shared/layout'
 import { cellLabel, windowTitle, workspaceName } from '../../shared/names'
 import type { JobView } from '../../shared/job'
 import type { PaneReply, PaneTarget } from '../../shared/pane'
-import type { ProgramStatusRecord } from '../../shared/program-status'
 import { clampCanvasWidth, clampSidebarWidth, type ScreenState } from '../../shared/screen'
 import { chords, commandKeys, matchesKeys, secondaryCommand } from '../../shared/shortcuts'
 import { uiColors, xtermTheme } from '../../shared/theme'
@@ -121,11 +120,6 @@ syncPtyStates((pty, entry) => {
   workspaces.applyState(pty)
 }, window.maru)
 
-// 이전 maru-pty 의 pty 만 attach 스트림으로 레코드를 보낸다(`pty/states.ts`).
-function onLegacyProgramStatus(pty: string, records: ProgramStatusRecord[]): void {
-  ptyStates.setLegacyRecords(pty, records)
-  if (ptyStates.isOld(pty)) workspaces.applyState(pty)
-}
 const home = window.maru.home
 const shell = window.maru.shell
 watch(
@@ -1535,7 +1529,6 @@ void window.maru.restoreScreen().then((r) => {
                 @failed="(message) => paneFailed(p.key, message)"
                 @retry="reopenPane(p.key)"
                 @spawned="(dir) => onSpawned(p.key, p.ptyId, dir)"
-                @program-status="(records) => onLegacyProgramStatus(p.ptyId, records)"
                 @link-failed="linkFailed"
                 @cell="(cell) => setCell(fontOf(c), cell)"
               />

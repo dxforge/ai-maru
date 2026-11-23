@@ -54,8 +54,7 @@ const handlers = {
   onExit: () => {},
   onGone: () => {},
   onSpawned: () => {},
-  onOpenFailed: () => {},
-  onProgramStatus: () => {}
+  onOpenFailed: () => {}
 }
 
 const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0))
@@ -351,31 +350,7 @@ describe('attach', () => {
     expect(failed).toEqual(['no shell'])
   })
 
-  it('program_status 는 레코드를 넘기고, 모양이 틀리면 무시한다', () => {
-    const term = fakeTerminal(80, 24)
-    const { conn, deliver } = fakeConnection()
-    const got: unknown[] = []
-    attach(term as unknown as Terminal, conn, {
-      ...handlers,
-      onProgramStatus: (records) => got.push(records)
-    })
-    const record = {
-      id: '',
-      state: 'working',
-      kind: null,
-      progress: null,
-      app: 'claude-code',
-      title: '',
-      message: 'hi'
-    }
-    deliver(JSON.stringify({ type: 'program_status', records: [record] }))
-    deliver(JSON.stringify({ type: 'program_status', records: [] }))
-    deliver(JSON.stringify({ type: 'program_status' }))
-    expect(got).toEqual([[record], []])
-    expect(term.written).toEqual([])
-  })
-
-  it('이전 maru-pty 가 보내는 foreground 와 모르는 메시지는 무시한다', () => {
+  it('이전 maru-pty 가 보내는 foreground·program_status 와 모르는 메시지는 무시한다', () => {
     const term = fakeTerminal(80, 24)
     const { conn, deliver } = fakeConnection()
     const got: unknown[] = []
@@ -383,10 +358,10 @@ describe('attach', () => {
       onExit: () => got.push('exit'),
       onGone: () => got.push('gone'),
       onSpawned: () => got.push('spawned'),
-      onOpenFailed: () => got.push('failed'),
-      onProgramStatus: () => got.push('status')
+      onOpenFailed: () => got.push('failed')
     })
     deliver(JSON.stringify({ type: 'foreground', pid: 7, cwd: '/x' }))
+    deliver(JSON.stringify({ type: 'program_status', records: [] }))
     deliver(JSON.stringify({ type: 'state', cwd: '/x', records: [] }))
     expect(got).toEqual([])
     expect(term.written).toEqual([])

@@ -66,25 +66,7 @@ describe('createPtyStates', () => {
     expect(s.notification('p-1')).toEqual(n)
     s.apply('p-1', { state: state() })
     expect(s.notification('p-1')).toBeUndefined()
-    s.apply('p-2', { old: true })
-    expect([s.notification('p-2'), s.notification(undefined)]).toEqual([undefined, undefined])
-  })
-
-  it('attach 스트림의 레코드는 이전 maru-pty 의 pty 에서만 쓴다', () => {
-    const s = createPtyStates()
-    s.setLegacyRecords('p-1', [rec('working')])
-    expect(s.state('p-1')).toBeUndefined()
-    s.apply('p-1', { old: true })
-    expect([s.isOld('p-1'), s.state('p-1'), s.get('p-1')]).toEqual([true, 'working', undefined])
-
-    s.setLegacyRecords('p-2', [rec('working')])
-    s.apply('p-2', { state: state([rec('done')]) })
-    expect([s.isOld('p-2'), s.state('p-2')]).toEqual([false, 'done'])
-
-    s.remove('p-1')
-    expect([s.isOld('p-1'), s.state('p-1')]).toEqual([false, undefined])
-    s.apply('p-1', { old: true })
-    expect(s.state('p-1')).toBeUndefined()
+    expect(s.notification(undefined)).toBeUndefined()
   })
 })
 
@@ -100,12 +82,13 @@ describe('syncPtyStates', () => {
     const fresh = { state: state([], 'new') }
     push('p-1', fresh)
     push('p-gone', null)
-    answer({ 'p-1': { state: state([], 'old') }, 'p-gone': { old: true }, 'p-2': { old: true } })
+    const other = { state: state([], 'other') }
+    answer({ 'p-1': { state: state([], 'old') }, 'p-gone': other, 'p-2': other })
     await Promise.resolve()
     expect(applied).toEqual([
       ['p-1', fresh],
       ['p-gone', null],
-      ['p-2', { old: true }]
+      ['p-2', other]
     ])
     push('p-1', null)
     expect(applied.at(-1)).toEqual(['p-1', null])

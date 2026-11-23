@@ -31,20 +31,13 @@ function record(state: ProgramStatusState, message = ''): ProgramStatusRecord {
   return { id: '', state, kind: null, progress: null, app: 'claude-code', title: '', message }
 }
 
-/** main 이 보낸 상태를 흉내 낸다. `set` 은 그 pty 의 상태를 바꾼 뒤 store 에 알린다. `old` 는 이전 maru-pty 표시다. */
 function source() {
   const states = new Map<string, PtyState>()
-  const old = new Set<string>()
   return {
     get: (pty: string) => states.get(pty),
     rootState: (pty: string) => states.get(pty)?.records.find((r) => r.id === '')?.state,
-    isOld: (pty: string) => old.has(pty),
     set(ws: Workspaces, pty: string, over: Partial<PtyState>): void {
       states.set(pty, { ...(states.get(pty) ?? EMPTY), ...over })
-      ws.applyState(pty)
-    },
-    markOld(ws: Workspaces, pty: string): void {
-      old.add(pty)
       ws.applyState(pty)
     },
     drop(ws: Workspaces, pty: string): void {
@@ -569,7 +562,7 @@ describe('workspaces', () => {
     expect(selected(ws).panes.map((x) => x.title)).toEqual([undefined, undefined])
   })
 
-  it('되살린 제목은 상태가 오기 전까지 두고, 이전 maru-pty 의 pty 면 지운다', () => {
+  it('되살린 제목은 상태가 오기 전까지 둔다', () => {
     const src = source()
     const from = createWorkspaces(undefined, src)
     from.open()
@@ -579,7 +572,7 @@ describe('workspaces', () => {
     src.drop(from, selected(from).panes[0].ptyId)
     to.restore(...full(saved))
     expect(selected(to).panes[0].title).toBe('kept')
-    src.markOld(to, selected(to).panes[0].ptyId)
+    src.set(to, selected(to).panes[0].ptyId, { title: null })
     expect(selected(to).panes[0].title).toBeUndefined()
   })
 })

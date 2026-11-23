@@ -1,5 +1,4 @@
 import type { Terminal } from '@xterm/xterm'
-import { parseProgramStatus, type ProgramStatusRecord } from '../../../shared/program-status'
 import type { PtyExit } from '../../../shared/pty'
 import type { PtyConnection } from './connection'
 import { Acks } from './flow'
@@ -12,11 +11,6 @@ export type AttachHandlers = {
   onSpawned(id: string, cwd: string | undefined): void
   /** pty 가 뜨기 전에 실패했다. 터미널에는 쓰지 않으므로 받는 쪽이 이유를 보인다. */
   onOpenFailed(message: string): void
-  /**
-   * pty 의 OSC 7501 레코드 전체. 상태 구독을 모르는 이전 maru-pty 만 attach 스트림으로 보낸다 — 붙을 때와 바뀔 때마다
-   * 온다. 지금의 maru-pty 는 상태를 main 의 구독으로만 보낸다.
-   */
-  onProgramStatus(records: ProgramStatusRecord[]): void
 }
 
 export type Attachment = {
@@ -115,11 +109,6 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
         spawned = true
         handlers.onSpawned(m.id, m.cwd)
         break
-      case 'program_status': {
-        const records = parseProgramStatus(m)
-        if (records) handlers.onProgramStatus(records)
-        break
-      }
       case 'exit':
         showGone()
         ended = true

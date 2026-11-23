@@ -146,12 +146,11 @@ export type PaneSource = {
   get(ptyId: string): PtyState | undefined
   /** 루트 OSC 7501 레코드의 상태 */
   rootState(ptyId: string): ProgramStatusState | undefined
-  isOld(ptyId: string): boolean
 }
 
 export function createWorkspaces(
   readGit: (cwd: string) => Promise<GitHead | null> = async () => null,
-  source: PaneSource = { get: () => undefined, rootState: () => undefined, isOld: () => false },
+  source: PaneSource = { get: () => undefined, rootState: () => undefined },
   {
     ptyId = newPtyId,
     cellId = () => randomId('c'),
@@ -607,7 +606,7 @@ export function createWorkspaces(
    */
   function refresh(p: Pane, keepCwd = false): boolean {
     const state = source.get(p.ptyId)
-    const title = paneTitle({ state, restoredTitle: p.restoredTitle, old: source.isOld(p.ptyId) })
+    const title = paneTitle({ state, restoredTitle: p.restoredTitle })
     if (p.title !== title) p.title = title
     const cwd = keepCwd && p.cwd !== undefined ? p.cwd : paneCwd({ ...p, state })
     const before = seen.get(p.key)
