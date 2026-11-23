@@ -14,8 +14,7 @@ import {
   powerMonitor,
   screen,
   shell,
-  utilityProcess,
-  type UtilityProcess
+  utilityProcess
 } from 'electron'
 import { canvasPaste, canvasPut, ownerOf, putCanvas, type CellOf } from './canvas'
 import {
@@ -90,7 +89,8 @@ import {
   type CliAccess
 } from './pty'
 import { readLoginStartedMs } from './login-session'
-import type { HostEvent, KillRequest, OpenRequest, QuitRequest } from './pty-host'
+import type { OpenRequest } from './pty-host'
+import { createHostLink } from './host-link'
 import { createPtyCells } from './pty-cells'
 import { createPtyStates } from './pty-state'
 import { claudeNotificationHandlers } from './claude-notification'
@@ -654,8 +654,6 @@ function createWindow(state: WindowState | null): void {
   }
 }
 
-let host: UtilityProcess | null = null
-
 /**
  * Dock 에서 띄운 앱은 LANG 을 받지 못해, 로케일을 스스로 정하지 않는 셸(bash 등)이 US-ASCII 로 떠
  * 한글 입력을 버린다. 지역 설정으로 채운다.
@@ -664,29 +662,6 @@ function hostEnv(): NodeJS.ProcessEnv {
   const env = process.env
   if (process.platform !== 'darwin' || env.LANG || env.LC_ALL || env.LC_CTYPE) return env
   return { ...env, LANG: utf8Locale(app.getSystemLocale()) }
-}
-
-/**
- * pty 바이트는 이 프로세스와 renderer 사이를 오가고 main 을 지나지 않는다 — 출력이 쏟아질 때
- * main 이 막혀 창 조작까지 멈추지 않게.
- */
-function ptyHost(): UtilityProcess {
-  if (!host) {
-    const proc = utilityProcess.fork(join(__dirname, 'pty-host.js'), [], {
-      serviceName: 'maru-pty-host',
-      env: hostEnv()
-    })
-    proc.on('message', (msg: HostEvent) => {
-      if (msg?.type === 'live' && isPtyId(msg.id)) ptyStates.watch(msg.id)
-    })
-    proc.once('exit', () => {
-      host = null
-      // 포트의 반대쪽이 사라져도 renderer 의 MessagePort 는 알려 주지 않는다.
-      sendToWindows('pty:lost')
-    })
-    host = proc
-  }
-  return host
 }
 
 /**
@@ -936,6 +911,23 @@ function start(): void {
   })
   // 셸이 뜨자마자 `maru` 를 불러도 닿게.
   const ready = Promise.all([leftovers, cliServer])
+  // pty 바이트는 pty host 와 renderer 사이를 오가고 main 을 지나지 않는다. main 을 지나면 출력이
+  // 쏟아질 때 main 이 막혀 창 조작까지 멈추기 때문이다.
+  const host = createHostLink({
+    ready,
+    fork: () =>
+      utilityProcess.fork(join(__dirname, 'pty-host.js'), [], {
+        serviceName: 'maru-pty-host',
+        env: hostEnv()
+      }),
+    onEvent: (msg) => {
+      if (msg?.type === 'live' && isPtyId(msg.id)) ptyStates.watch(msg.id)
+    },
+    // 포트의 반대쪽이 사라져도 renderer 의 MessagePort 는 알려 주지 않으므로 main 이 `pty:lost` 로 알린다.
+    onExit: () => sendToWindows('pty:lost'),
+    quitTimeoutMs: QUIT_TIMEOUT_MS,
+    kill: (pid) => process.kill(pid, 'SIGKILL')
+  })
   ipcMain.on('pane:reply', (_event, id: number, reply: PaneReply) => panes.reply(id, reply))
   ipcMain.on('pane:ready', () => windowReady.ready())
   ipcMain.handle('git:head', (_event, cwd: unknown) =>
@@ -981,15 +973,13 @@ function start(): void {
     if (process.platform === 'darwin' && typeof path === 'string')
       BrowserWindow.fromWebContents(event.sender)?.setRepresentedFilename(path)
   })
-  // open 과 같은 `ready.then` 으로 보내야 host 가 그 open 을 먼저 받는다.
   const sendKill = (key: string): void => {
     const closed = ptyCells.close(key)
     if (!closed) return
     // cell 의 마지막 pane 을 지우면 renderer 가 cell 도 지운다(`docs/contracts/cell-and-window-requests.md` 의 "pane·cell 이 닫힌 것은 kill 로 안다").
     if (closed.closed) void jobTable.closeCell(closed.closed)
     ptyStates.forget(closed.pty)
-    const req: KillRequest = { type: 'kill', id: closed.pty, dir: ptyDir() }
-    void ready.then(() => ptyHost().postMessage(req))
+    host.kill({ type: 'kill', id: closed.pty, dir: ptyDir() })
   }
   // `docs/contracts/pty-lifecycle.md` 의 "새로 고친 문서는 이전 문서의 pty 에 붙지 않는다".
   const opened = new Map<number, Set<string>>()
@@ -1026,10 +1016,7 @@ function start(): void {
       bin: ptyBin(),
       setup
     }
-    void ready.then(() => ptyHost().postMessage(req, [port1]))
-    // host 에 넘기는 것(위 ready.then)보다 먼저 renderer 에 가야 한다 — renderer 는 포트보다 먼저 온
-    // pty:lost 를 이 open 이전 host 의 것으로 보고 버린다(renderer/src/pty/connection.ts).
-    event.sender.postMessage('pty:port', key, [port2])
+    host.open(req, port1, () => event.sender.postMessage('pty:port', key, [port2]))
   })
 
   ipcMain.on('pty:kill', (event, key: string) => {
@@ -1047,30 +1034,6 @@ function start(): void {
     event.preventDefault()
     confirmQuit()
   })
-  // open 과 같은 `ready.then` 으로 보내야 host 가 그 앞의 open 을 먼저 받는다.
-  const stopHost = (keepPtys: boolean): Promise<void> =>
-    ready.then(() => {
-      const proc = host
-      if (!proc) return
-      return new Promise<void>((resolve) => {
-        // 멈춘 host 를 기다리느라 앱이 꺼지지 않게 상한을 둔다. 그때 띄우던 pty 가운데 소켓을 연 것은 앱이 pty 를 끄고 끝나면 `killPtys` 가 끈다. 앱이 pty 를 남기고 끝나면 다음 실행이 그 pty 를 Recovered workspace 에 연다.
-        const timer = setTimeout(() => {
-          // 멈춘 프로세스는 SIGTERM 을 처리하지 못한다. host 가 방금 끝나 `exit` 이 아직 오지 않았으면 kill 이 실패한다.
-          try {
-            if (proc.pid) process.kill(proc.pid, 'SIGKILL')
-          } catch {
-            // 이미 끝났다.
-          }
-          resolve()
-        }, QUIT_TIMEOUT_MS)
-        proc.once('exit', () => {
-          clearTimeout(timer)
-          resolve()
-        })
-        const req: QuitRequest = { type: 'quit', keepPtys }
-        proc.postMessage(req)
-      })
-    })
   // pty 는 앱과 따로 떠 있는 프로세스라 앱이 끝나도 남는다.
   let ptysKilled = false
   app.on('will-quit', (event) => {
@@ -1083,7 +1046,7 @@ function start(): void {
     void Promise.all([
       // pty 를 남기고 끝낼 때도 host 를 기다린다. host 가 받은 kill 을 마치기 전에 끝나면 닫은 pane 의 pty 가 남고, 다음 실행이 그 pty 를 Recovered workspace 에 열기 때문이다.
       Promise.all([
-        stopHost(keepPtys),
+        host.stop(keepPtys),
         // job 의 시작 폴더 확인(`startDir`)에는 시간 제한이 없다. 응답하지 않는 마운트에 있는 job 때문에 앱이 꺼지지 않을 수 있으므로, host 와 같은 상한까지만 기다린다.
         keepPtys || Promise.race([Promise.all(jobSpawns), sleep(QUIT_TIMEOUT_MS)])
       ]).then(() =>
