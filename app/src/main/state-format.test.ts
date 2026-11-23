@@ -22,6 +22,7 @@ import {
 /**
  * `state-format/` 의 파일은 한 빌드가 쓴 표와 그때의 화면이다. 다른 빌드가 같은 `state.json` 을 읽으므로 고치지 않는다.
  * 표 형식을 바꾸면 그 형식의 파일을 더한다. 이름을 두고 뜻만 바꾼 필드는 이 테스트가 잡지 못한다.
+ * 지금 앱이 만든 값은 `toMatchObject` 로 파일과 견준다. 버전을 올리지 않고 필드만 더한 빌드에서도 옛 파일이 통과해야 하기 때문이다.
  */
 type Fixture = {
   versions: typeof STATE_VERSIONS
@@ -49,8 +50,8 @@ describe('state.json 표 형식', () => {
   it.each(fixtures)('%s 의 sessions·view 에 적힌 값을 지금 앱이 모두 읽는다', (_, f) => {
     const same = sameVersion(f)
     if (same.includes('sessions'))
-      expect(parseSessionsPart(f.tables.sessions)).toEqual(f.tables.sessions)
-    if (same.includes('view')) expect(parseViewPart(f.tables.view)).toEqual(f.tables.view)
+      expect(parseSessionsPart(f.tables.sessions)).toMatchObject(f.tables.sessions)
+    if (same.includes('view')) expect(parseViewPart(f.tables.view)).toMatchObject(f.tables.view)
   })
 
   it.each(fixtures)('%s 의 표를 지금 앱이 읽으면 그때의 화면이 돌아온다', (_, f) => {
@@ -70,7 +71,7 @@ describe('state.json 표 형식', () => {
     const saved = JSON.parse(
       JSON.stringify(f.screen.workspaces, (k, v) => (k === 'ptyId' ? undefined : v))
     )
-    expect(layout).toEqual({ workspaces: saved, selected: f.screen.selected })
+    expect(layout).toMatchObject({ workspaces: saved, selected: f.screen.selected })
 
     const ptyOf = new Map(parseSessionsPart(t.sessions)?.ptys.map((p) => [p.pane, p.pty]))
     const panes = f.screen.workspaces.flatMap((w) => w.cells.flatMap((c) => c.panes))
@@ -90,11 +91,11 @@ describe('state.json 표 형식', () => {
     const same = sameVersion(f)
     for (const name of ['workspaces', 'cells', 'panes'] as const)
       if (same.includes(name)) expect(split[name]).toMatchObject(f.tables[name])
-    if (same.includes('sessions')) expect(split.ptys).toEqual(f.tables.sessions.ptys)
+    if (same.includes('sessions')) expect(split.ptys).toMatchObject(f.tables.sessions.ptys)
     // 창·테마는 화면에서 오지 않으므로 표의 값을 넘긴다.
     const { version, window, theme } = f.tables.view
     if (same.includes('view'))
-      expect(screenView({ version, window, theme }, f.screen, split.selected)).toEqual(
+      expect(screenView({ version, window, theme }, f.screen, split.selected)).toMatchObject(
         f.tables.view
       )
   })
