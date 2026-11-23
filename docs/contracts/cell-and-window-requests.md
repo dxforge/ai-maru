@@ -1,8 +1,8 @@
 # cell 과 창에 보내는 요청
 
-workspace·cell·pane 은 renderer 만 가진다. main 은 pty 마다 그 cell 을 기억하고, CLI(`maru pane`·`maru cell`·`maru canvas`)의 요청을 창에 넘겨 renderer 의 답을 기다린다. 이 파일은 둘이 그 사이에서 기대는 것을 적는다. 주로 닿는 코드는 `app/src/main/pty-cells.ts`, `app/src/main/pane.ts`, `app/src/main/canvas.ts`, `app/src/main/window-ready.ts`, `app/src/main/index.ts`, `app/src/shared/pane.ts`, `app/src/renderer/src/App.vue`, `app/src/renderer/src/workspace/store.ts` 다.
+workspace·cell·pane 은 renderer 만 가진다. main 은 pty 마다 그 cell 을 기억하고, CLI(`maru pane`·`maru cell`·`maru canvas`)의 요청을 창에 넘겨 renderer 의 답을 기다린다. 이 파일은 둘이 그 사이에서 기대는 것을 적는다.
 
-renderer 는 cell 의 마지막 pane 이 닫히면 그 cell 을 닫는다(`store.ts` 의 `closePane`). keep 을 끈 workspace 는 마지막 cell 이 빠지면 닫는다. 아래 "kill 로 안다" 는 cell 을 닫는 쪽에 기댄다.
+renderer 는 cell 의 마지막 pane 이 닫히면 그 cell 을 닫는다(`renderer/src/workspace/store.ts` 의 `closePane`). keep 을 끈 workspace 는 마지막 cell 이 빠지면 닫는다. 아래 "kill 로 안다" 는 cell 을 닫는 쪽에 기댄다.
 
 ## pty 의 cell 은 `pty:open` 으로 받고 kill 로만 잊는다
 

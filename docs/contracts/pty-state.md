@@ -1,6 +1,6 @@
 # pty 상태와 알림
 
-pty 마다의 상태(명령·cwd·제목·프로그램 상태 레코드)와 알림을 `maru-pty` 가 만들고, main 이 구독해 들고, renderer·`maru` CLI·데스크톱 알림이 main 에서 읽는다. 이 파일은 그 사이의 약속을 적는다. 주로 닿는 코드는 `app/src/main/pty-state.ts`, `app/src/main/pty.ts`(`subscribeState`), `app/src/main/pty-cli.ts`, `app/src/main/seen.ts`, `app/src/main/claude-notification.ts`, `app/src/shared/pane-list.ts`·`pty-list.ts`·`program-status.ts`·`pty-state.ts`, `app/src/renderer/src/pty/states.ts`·`seen.ts`, `core/crates/maru-pty/src/state.rs`·`program_status.rs`, `core/crates/maru/src/main.rs` 다. `subscribe` 요청과 상태·알림 메시지의 모양은 `core/crates/maru-pty/src/lib.rs` 의 모듈 문서에 있다.
+pty 마다의 상태(명령·cwd·제목·프로그램 상태 레코드)와 알림을 `maru-pty` 가 만들고, main 이 구독해 들고, renderer·`maru` CLI·데스크톱 알림이 main 에서 읽는다. 이 파일은 그 사이의 약속을 적는다. `subscribe` 요청과 상태·알림 메시지의 모양은 `core/crates/maru-pty/src/lib.rs` 의 모듈 문서에 있다.
 
 ## main 이 pty 마다 상태를 구독해 든다
 
