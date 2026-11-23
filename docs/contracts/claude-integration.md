@@ -14,11 +14,11 @@
 
 shim 은 PATH 에서 shim 이 아닌 첫 claude 를 찾아 `--plugin-dir "$MARU_CLAUDE_PLUGIN"` 을 붙여 exec 한다. shim 인지는 파일의 둘째 줄(`# ai-maru claude shim`)로 알아본다. 다른 앱의 shim 사본이 PATH 에 함께 있어도 서로를 exec 하지 않게 하기 위해서다. `MARU_CLI`·`MARU_CLAUDE_PLUGIN` 가운데 하나가 비었거나 `CLAUDECODE` 가 있으면(claude 안에서 부른 claude) plugin 없이 그대로 exec 한다. `FORCE_HYPERLINK` 가 없고 `MARU_ZDOTDIR` 이 있으며 `SHELL` 이 zsh 면, claude 프로세스에만 `FORCE_HYPERLINK=1`·`MARU_CLAUDE_FORCED_HYPERLINK=1` 과 앱의 `ZDOTDIR` 을 붙인다.
 
-자식으로 띄우지 않고 exec 하는 것은 foreground 리더가 claude 여야 하기 때문이다. `maru-pty` 는 foreground 리더의 cwd 를 표시 cwd 로 쓴다.
+자식으로 띄우지 않고 exec 하는 것은 foreground 리더가 claude 여야 하기 때문이다. `maru-pty` 는 foreground 리더의 cwd 를 표시 cwd 로 쓴다. 앱은 터미널의 상대경로 링크도 foreground 리더의 cwd 기준으로 푼다.
 
-- 코드: `app/resources/bin/claude` ↔ `maru-pty` 의 `state.rs`(`same_dir_as`)·`procinfo.rs`, `.zshenv`(`MARU_CLAUDE_FORCED_HYPERLINK` 를 지운다)
-- 바꾸면: 둘째 줄을 바꾸면 옛 앱이 남긴 shim 사본을 알아보지 못한다. 자식으로 띄우면 pane 의 cwd 가 claude 가 아니라 shim 의 bash 를 따른다.
-- 테스트: `app/src/main/claude-shim.test.ts` › 「자식으로 띄우지 않고 claude 로 바뀐다」, 「다른 앱의 shim 사본이 PATH 에 함께 있어도 그것을 건너뛰고 진짜 claude 를 plugin 하나로 부른다」, 「claude 에만 FORCE_HYPERLINK=1 과 표식, 앱 ZDOTDIR 을 붙인다」
+- 코드: `app/resources/bin/claude` ↔ `maru-pty` 의 `state.rs`(`same_dir_as`)·`pty.rs`(`foreground`)·`procinfo.rs`, `app/src/main/links.ts` 의 `openLink`·`longestExistingPaths` ↔ `pty.ts` 의 `foregroundCwd`, `.zshenv`(`MARU_CLAUDE_FORCED_HYPERLINK` 를 지운다)
+- 바꾸면: 둘째 줄을 바꾸면 옛 앱이 남긴 shim 사본을 알아보지 못한다. 자식으로 띄우면 pane 의 cwd 와 상대경로 링크의 기준이 claude 가 아니라 shim 의 bash 를 따른다.
+- 테스트: `app/src/main/claude-shim.test.ts` › 「자식으로 띄우지 않고 claude 로 바뀐다」, 「다른 앱의 shim 사본이 PATH 에 함께 있어도 그것을 건너뛰고 진짜 claude 를 plugin 하나로 부른다」, 「claude 에만 FORCE_HYPERLINK=1 과 표식, 앱 ZDOTDIR 을 붙인다」, `app/src/main/links.test.ts` › 「상대경로는 그 pty 의 foreground 프로세스 cwd 기준이고, 기준을 모르면 열지 않는다」, 「상대경로는 foreground 프로세스의 cwd 기준이고, 그 cwd 를 모르면 null 이다」, `app/e2e/links.spec.ts` › 「상대경로는 돌고 있는 명령의 cwd 기준이다」
 
 ## plugin 의 MCP 서버는 `maru mcp` 다
 
