@@ -1,3 +1,4 @@
+import { jobName } from './job'
 import { workspaceName } from './names'
 import { paneRows } from './pane-list'
 import { type ProgramStatusKind, type ProgramStatusState, shownRecord } from './program-status'
@@ -19,7 +20,13 @@ export type PtyRow = {
 }
 
 /** `pty.list` 에 싣는 job 이다. `exit` 는 셸이 끝났을 때만 있다. */
-export type ListedJob = { pty: string; name?: string; cell: string; exit?: PtyExit }
+export type ListedJob = {
+  pty: string
+  name?: string
+  cell: string
+  command: readonly string[]
+  exit?: PtyExit
+}
 
 export function ptyRows(
   workspaces: readonly ScreenWorkspace[],
@@ -52,7 +59,7 @@ export function ptyRows(
       state: r?.state ?? '',
       state_kind: r?.kind ?? null,
       exit: j.exit ?? null,
-      name: j.name ?? '',
+      name: jobName(j),
       dir: s?.cwd ?? ''
     }
   })
