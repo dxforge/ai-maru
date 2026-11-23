@@ -30,7 +30,7 @@ renderer 는 레코드를 모르므로, pty host 가 소켓에 붙기 전에 레
 
 renderer 는 화면이 바뀔 때마다 snapshot 을 main 에 보내고(`screen:state`), main 은 그 화면과 job 표·창·테마를 `workspaces`·`cells`·`panes`·`sessions`·`view` 다섯 표로 나눠 쓴다. parse 함수는 아는 필드만 옮기므로, renderer 의 snapshot 에 필드를 더하면 parse 함수에서도 옮겨야 저장된다. 표마다 형식 버전을 따로 두고(`app/resources/state-versions.json`) 따로 읽는다. 한 표의 형식이 바뀌어도 그 표만 잃게 하기 위해서다. 표마다 무엇을 들고 잃으면 무엇이 남는지는 `state.ts` 의 `StateFile` 에 있다.
 
-- 코드: `renderer/src/workspace/store.ts` 의 `snapshot` ↔ `index.ts` 의 `screen:state` → `state.ts` 의 `createStateStore`(`setScreen`) → `shared/screen.ts` 의 `parseScreen`·`splitScreen`, 다른 빌드의 `parseWorkspacesTable`·`parseCellsTable`·`parsePanesTable`·`parseSessionsPart`·`parseViewPart`
+- 코드: `renderer/src/workspace/store.ts` 의 `snapshot` ↔ `index.ts` 의 `screen:state` → `state.ts` 의 `createStateStore`(`setScreen`)·`screenView` → `shared/screen.ts` 의 `parseScreen`·`splitScreen`, 다른 빌드의 `parseWorkspacesTable`·`parseCellsTable`·`parsePanesTable`·`parseSessionsPart`·`parseViewPart`
 - 바꾸면: parse 함수에서 옮기지 않은 필드는 저장에서 빠진다.
 - 테스트: `shared/screen.test.ts` › 「workspace·cell·pane 표와 pane id 마다의 pty 로 나누고, 표에는 key 와 pty 를 두지 않는다」, 「모르는 필드는 어느 단계에 있든 버린다 — 옛 빌드가 cell 에 쓴 openedBy 도」, `state.test.ts` › 「view 의 버전이 다르면 view 만 비운다」
 
@@ -43,7 +43,7 @@ renderer 는 화면이 바뀔 때마다 snapshot 을 main 에 보내고(`screen:
 - 버전은 그 표를 다시 짤 때만 올린다. `workspaces`·`cells`·`panes`·`sessions` 의 버전을 올리면 재시작이 대화창을 띄우고, 재시작 전의 빌드가 그 표를 비워 쓴다(`finish` 의 `drop`). `view` 의 버전은 재시작이 견주지 않는다. 다시 뜬 빌드가 읽지 못한 `view` 를 비운다.
 
 - 코드: `shared/screen.ts` 의 `STATE_VERSIONS`·`splitScreen`, `state.ts` ↔ 다른 빌드의 parse 함수, `restart.ts` 의 `checkRestart`
-- 테스트: `app/src/shared/state-format.test.ts` › 「지금 버전의 표 형식 파일이 있다」, 「%s 의 표를 지금 앱이 읽으면 그때의 화면이 돌아온다」, 「%s 의 화면을 지금 앱이 나누면 그때의 표를 모두 담는다」, `screen.test.ts` › 「모르는 필드는 어느 단계에 있든 버린다 — 옛 빌드가 cell 에 쓴 openedBy 도」. `state-format.test.ts` 는 버전마다 고정한 표 형식 파일(`app/src/shared/state-format/*.json`)을 읽는다. 옛 자리에도 계속 쓰는 것은 「표를 모두 담는다」 가 잰다. 파일에는 `workspaces`·`cells`·`panes` 표만 있다. `sessions`·`view` 의 parse 함수는 `state.ts` 밖에 내보내지 않기 때문이다. 이름은 두고 뜻만 바꾼 필드는 잡지 못한다.
+- 테스트: `app/src/main/state-format.test.ts` › 「지금 버전의 표 형식 파일이 있다」, 「%s 의 sessions·view 에 적힌 값을 지금 앱이 모두 읽는다」, 「%s 의 표를 지금 앱이 읽으면 그때의 화면이 돌아온다」, 「%s 의 화면을 지금 앱이 나누면 그때의 표를 모두 담는다」, `screen.test.ts` › 「모르는 필드는 어느 단계에 있든 버린다 — 옛 빌드가 cell 에 쓴 openedBy 도」. `state-format.test.ts` 는 버전마다 고정한 표 형식 파일(`app/src/main/state-format/*.json`)을 읽는다. 옛 자리에도 계속 쓰는 것은 「표를 모두 담는다」 가 잰다. 화면에서 오지 않는 값(`sessions` 의 `jobs`·`started`, `view` 의 `window`·`theme`)은 「모두 읽는다」 만 잰다. 이름은 두고 뜻만 바꾼 필드는 잡지 못한다.
 
 ## background pane 의 잎은 배치 끝에 붙여 쓴다
 
