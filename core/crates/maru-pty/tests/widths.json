@@ -1,0 +1,14 @@
+[
+  { "name": "check", "text": "✅", "xterm": 2, "maru_pty": 2 },
+  { "name": "skin tone", "text": "👍🏽", "xterm": 2, "maru_pty": 2 },
+  { "name": "ZWJ family", "text": "👨‍👩‍👧", "xterm": 2, "maru_pty": 2 },
+  { "name": "VS16 heart", "text": "❤️", "xterm": 2, "maru_pty": 2 },
+  { "name": "hangul", "text": "한", "xterm": 2, "maru_pty": 2 },
+  { "name": "record", "text": "⏺", "xterm": 1, "maru_pty": 1 },
+  { "name": "circled", "text": "①", "xterm": 1, "maru_pty": 1 },
+  { "name": "Unicode 14 emoji", "text": "🫠", "xterm": 2, "maru_pty": 2 },
+  { "name": "Unicode 16 emoji", "text": "🫩", "xterm": 2, "maru_pty": 2 },
+  { "name": "skin tone after mode 2027 off", "text": "\u001b[?2027l👍🏽", "xterm": 2, "maru_pty": 4 },
+  { "name": "ZWJ family after mode 2027 off", "text": "\u001b[?2027l👨‍👩‍👧", "xterm": 2, "maru_pty": 6 },
+  { "name": "VS16 heart after mode 2027 off", "text": "\u001b[?2027l❤️", "xterm": 2, "maru_pty": 1 }
+]

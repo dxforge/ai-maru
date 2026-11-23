@@ -1,0 +1,242 @@
+{
+  "versions": {
+    "workspaces": 1,
+    "cells": 1,
+    "panes": 1,
+    "sessions": 2,
+    "view": 2
+  },
+  "screen": {
+    "workspaces": [
+      {
+        "key": 0,
+        "id": "w-0000000a",
+        "name": "atlas",
+        "kept": true,
+        "dir": "/work",
+        "favorites": ["/work/app"],
+        "cells": [
+          {
+            "key": 1,
+            "id": "c-0000000a",
+            "fontSize": 14,
+            "paneCols": 100,
+            "panes": [
+              {
+                "key": 2,
+                "id": "n-0000000a",
+                "ptyId": "p-0000000a",
+                "cwd": "/work/app",
+                "title": "vim",
+                "git": {
+                  "repo": "app",
+                  "branch": "main",
+                  "common": "/work/app/.git",
+                  "sub": "src"
+                }
+              },
+              {
+                "key": 3,
+                "id": "n-0000000b",
+                "ptyId": "p-0000000b",
+                "command": ["npm", "run", "dev"],
+                "keep": true
+              },
+              {
+                "key": 4,
+                "id": "n-0000000c",
+                "ptyId": "p-0000000c",
+                "background": true,
+                "cwd": "/work"
+              }
+            ],
+            "layout": {
+              "split": "right",
+              "first": {
+                "split": "down",
+                "first": {
+                  "pane": 2,
+                  "cols": 120,
+                  "weight": 1.5
+                },
+                "second": {
+                  "pane": 3,
+                  "weight": 2
+                }
+              },
+              "second": {
+                "pane": 4
+              }
+            },
+            "focused": 3,
+            "home": {
+              "split": "down",
+              "first": {
+                "pane": 2
+              },
+              "second": {
+                "split": "right",
+                "first": {
+                  "pane": 3
+                },
+                "second": {
+                  "pane": 4
+                }
+              },
+              "weight": 3
+            }
+          }
+        ]
+      },
+      {
+        "key": 5,
+        "id": "w-0000000b",
+        "kept": true,
+        "dir": "/docs",
+        "cells": []
+      },
+      {
+        "key": 6,
+        "id": "w-0000000c",
+        "cells": [
+          {
+            "key": 7,
+            "id": "c-0000000b",
+            "panes": [
+              {
+                "key": 8,
+                "id": "n-0000000d",
+                "ptyId": "p-0000000d",
+                "cwd": "/tmp"
+              }
+            ],
+            "layout": {
+              "pane": 8
+            },
+            "focused": 8
+          }
+        ]
+      }
+    ],
+    "selected": 7,
+    "sidebar": {
+      "open": true,
+      "width": 282,
+      "folded": ["w-0000000b"]
+    },
+    "viewMode": "columns",
+    "canvas": {
+      "width": 480
+    }
+  },
+  "tables": {
+    "workspaces": {
+      "version": 1,
+      "rows": [
+        {
+          "id": "w-0000000a",
+          "name": "atlas",
+          "kept": true,
+          "dir": "/work",
+          "favorites": ["/work/app"]
+        },
+        {
+          "id": "w-0000000b",
+          "kept": true,
+          "dir": "/docs"
+        },
+        {
+          "id": "w-0000000c"
+        }
+      ]
+    },
+    "cells": {
+      "version": 1,
+      "rows": [
+        {
+          "id": "c-0000000a",
+          "fontSize": 14,
+          "paneCols": 100,
+          "workspace": "w-0000000a",
+          "layout": {
+            "split": "right",
+            "first": {
+              "split": "down",
+              "first": {
+                "pane": "n-0000000a",
+                "cols": 120,
+                "weight": 1.5
+              },
+              "second": {
+                "pane": "n-0000000b",
+                "weight": 2
+              }
+            },
+            "second": {
+              "pane": "n-0000000c"
+            }
+          },
+          "focused": "n-0000000b",
+          "home": {
+            "split": "down",
+            "first": {
+              "pane": "n-0000000a"
+            },
+            "second": {
+              "split": "right",
+              "first": {
+                "pane": "n-0000000b"
+              },
+              "second": {
+                "pane": "n-0000000c"
+              }
+            },
+            "weight": 3
+          }
+        },
+        {
+          "id": "c-0000000b",
+          "workspace": "w-0000000c",
+          "layout": {
+            "pane": "n-0000000d"
+          },
+          "focused": "n-0000000d"
+        }
+      ]
+    },
+    "panes": {
+      "version": 1,
+      "rows": [
+        {
+          "id": "n-0000000a",
+          "cwd": "/work/app",
+          "title": "vim",
+          "git": {
+            "repo": "app",
+            "branch": "main",
+            "common": "/work/app/.git",
+            "sub": "src"
+          },
+          "cell": "c-0000000a"
+        },
+        {
+          "id": "n-0000000b",
+          "command": ["npm", "run", "dev"],
+          "keep": true,
+          "cell": "c-0000000a"
+        },
+        {
+          "id": "n-0000000c",
+          "background": true,
+          "cwd": "/work",
+          "cell": "c-0000000a"
+        },
+        {
+          "id": "n-0000000d",
+          "cwd": "/tmp",
+          "cell": "c-0000000b"
+        }
+      ]
+    }
+  }
+}

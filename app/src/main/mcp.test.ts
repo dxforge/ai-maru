@@ -103,6 +103,18 @@ describe('mcp.message', () => {
     expect(CANVAS_PUT_TOOL.name).toBe('canvas_put')
   })
 
+  it('initialize 를 받지 않은 앱도 tools/list·tools/call 에 답한다', async () => {
+    // 앱이 다시 뜨면 `maru mcp` 는 initialize 없이 새 앱에 다음 메시지를 보낸다.
+    const { send, calls } = hub(async () => ({ id: 'd-1' }))
+    await expect(
+      send({ jsonrpc: '2.0', id: 4, method: 'tools/list', params: {} })
+    ).resolves.toMatchObject({ message: { result: { tools: [CANVAS_PUT_TOOL] } } })
+    await expect(send(call({ text: 'x' }))).resolves.toMatchObject({
+      message: { id: 7, result: { content: [{ type: 'text', text: 'd-1' }] } }
+    })
+    expect(calls).toEqual([{ text: 'x' }])
+  })
+
   it.each([['server/discover'], ['resources/list']])(
     '모르는 method %s 는 -32601 이다',
     async (method) => {

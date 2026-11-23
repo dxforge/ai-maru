@@ -1,10 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   cellItems,
   dialogCalls,
   expect,
   panes,
+  programStatus,
   run,
   screen,
   shellValue,
@@ -55,6 +56,20 @@ test('maru pty list 는 pane 의 pty 를 화면 순서대로, 그 뒤에 job 을
     [sleeper, 'job', workspace, cell, '', '', 'sleeper', any],
     [quick, 'job', workspace, cell, '', '3', 'quick', any]
   ])
+})
+
+test('job 이 OSC 7501 로 알린 상태를 maru pty list 의 STATE 에 찍는다', async ({
+  launch,
+  dataDir
+}) => {
+  const { page } = await launch()
+  const script = join(dataDir, 'status.sh')
+  writeFileSync(script, `${programStatus('done')}sleep 600\n`)
+  await run(
+    page,
+    `maru job new --name st sh ${script} >/dev/null; until maru pty list | awk -F'\\t' '$7 == "st" && $5 == "done"' | grep -q .; do sleep 0.1; done; echo seen-$((1+1))`,
+    'seen-2'
+  )
 })
 
 test('maru pty send 로 pane 과 job 의 pty 에 글자를 쓰고 maru pty read 로 그 화면을 읽는다', async ({

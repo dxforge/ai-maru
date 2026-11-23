@@ -8,7 +8,7 @@
 
 - 코드: `shared/protocol.ts` 의 `PROTOCOL_VERSION`·`MIN_PROTOCOL_VERSION` ↔ `lib.rs` 의 같은 이름의 상수, `server.rs` 의 범위 검사(`protocol_mismatch`)
 - 바꾸면: 한쪽만 바꾸면 두 쪽이 받는 버전 범위가 달라진다. 예를 들어 하한은 두고 Rust 쪽 `PROTOCOL_VERSION` 만 올리면, 새로 띄운 pty 에는 붙지만 다음에 앱이 뜰 때 그 pty 들이 꺼진다. 앱은 레코드의 버전이 붙을 수 없는 버전이면 앱의 버전을 넣어 요청하고(`protocolOf`), `maru-pty` 는 범위 안의 그 버전을 받는다. 다음 실행은 레코드의 버전이 붙을 수 없는 pty 를 되살리지도 Recovered workspace 에 열지도 않고 끈다(`restorePlan`·`recoverPtys`·`keepAttachable`).
-- 테스트: `core/crates/maru-pty/tests/process.rs` › `every_request_at_the_lowest_version_gets_that_versions_answer`. TS 와 Rust 의 상수가 같은지 보는 테스트는 없다. e2e 가 진짜 바이너리로 돌아 간접으로만 잰다.
+- 테스트: `app/src/shared/protocol.test.ts` › 「앱과 maru-pty 의 PROTOCOL_VERSION·MIN_PROTOCOL_VERSION 이 같다」(`lib.rs` 를 읽는다), `core/crates/maru-pty/tests/process.rs` › `every_request_at_the_lowest_version_gets_that_versions_answer`
 
 ## 앱은 pty 의 레코드 버전으로 요청한다
 
@@ -43,7 +43,7 @@ renderer 는 화면이 바뀔 때마다 snapshot 을 main 에 보내고(`screen:
 - 버전은 그 표를 다시 짤 때만 올린다. `workspaces`·`cells`·`panes`·`sessions` 의 버전을 올리면 재시작이 대화창을 띄우고, 재시작 전의 빌드가 그 표를 비워 쓴다(`finish` 의 `drop`). `view` 의 버전은 재시작이 견주지 않는다. 다시 뜬 빌드가 읽지 못한 `view` 를 비운다.
 
 - 코드: `shared/screen.ts` 의 `STATE_VERSIONS`·`splitScreen`, `state.ts` ↔ 다른 빌드의 parse 함수, `restart.ts` 의 `checkRestart`
-- 테스트: 이 규칙을 지키는 테스트는 없다. `screen.test.ts` › 「모르는 필드는 어느 단계에 있든 버린다 — 옛 빌드가 cell 에 쓴 openedBy 도」 는 읽는 쪽만 잰다.
+- 테스트: `app/src/shared/state-format.test.ts` › 「지금 버전의 표 형식 파일이 있다」, 「%s 의 표를 지금 앱이 읽으면 그때의 화면이 돌아온다」, 「%s 의 화면을 지금 앱이 나누면 그때의 표를 모두 담는다」, `screen.test.ts` › 「모르는 필드는 어느 단계에 있든 버린다 — 옛 빌드가 cell 에 쓴 openedBy 도」. `state-format.test.ts` 는 버전마다 고정한 표 형식 파일(`app/src/shared/state-format/*.json`)을 읽는다. 옛 자리에도 계속 쓰는 것은 「표를 모두 담는다」 가 잰다. 파일에는 `workspaces`·`cells`·`panes` 표만 있다. `sessions`·`view` 의 parse 함수는 `state.ts` 밖에 내보내지 않기 때문이다. 이름은 두고 뜻만 바꾼 필드는 잡지 못한다.
 
 ## background pane 의 잎은 배치 끝에 붙여 쓴다
 
@@ -51,7 +51,7 @@ renderer 는 화면이 바뀔 때마다 snapshot 을 main 에 보내고(`screen:
 
 - 코드: `renderer/src/workspace/store.ts` 의 `snapshot`(`appendLeaves`)·`restore`(`withoutLeaves`) ↔ `shared/screen.ts` 의 `joinTables`·`LayoutPane`
 - 바꾸면: 잎을 붙이지 않으면 `joinTables` 가 배치의 잎에 해당하는 pane 행만 추리므로(`own`), cell 은 보이는 pane 들로 열리고 background pane 만 빠진다. 빠진 pane 의 pty 는 붙을 pane 이 없는 pty 가 되어 Recovered workspace 에 열린다. 배치의 잎 가운데 그 cell 의 pane 행이 없는 것이 있거나 같은 pane 을 두 번 가리킬 때만 cell 을 새 pane 하나로 연다.
-- 테스트: `app/e2e/pane-background.spec.ts` › 「background 로 둔 채 다시 띄워도 background 로 뜨고, 꺼내면 같은 pty 다」. 옛 빌드가 읽는 쪽은 잴 수 없다.
+- 테스트: `app/e2e/pane-background.spec.ts` › 「background 로 둔 채 다시 띄워도 background 로 뜨고, 꺼내면 같은 pty 다」, `app/src/renderer/src/workspace/store.test.ts` › 「background 를 모르는 빌드가 표를 읽어도 모든 pane 이 열리고, background pane 은 배치 오른쪽 끝에 보인다」. `store.test.ts` 는 표에서 `background`·`home` 을 지워 옛 빌드의 parse 를 흉내 내고, pane 이 모두 background 인 cell 도 잰다. 되살리기는 옛 빌드의 것 대신 지금의 `restore` 를 쓴다.
 
 ## `sessions.started` 는 버전을 올리지 않고 더한 필드다
 

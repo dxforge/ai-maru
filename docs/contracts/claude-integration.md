@@ -50,4 +50,4 @@ claude 는 `maru mcp` 를 띄울 때 한 번만 `initialize` 를 보낸다. 앱�
 
 - 코드: `mcp.ts` 의 `mcpHandlers` ↔ `main.rs` 의 `relay`·`connect_waiting`
 - 바꾸면: 앱이 `initialize` 를 받은 세션만 받게 하면 앱을 재시작한 뒤 claude 의 도구 호출이 모두 실패한다.
-- 테스트: `mcp.rs` › `waits_for_a_stale_socket_to_be_replaced_by_a_new_app`(다시 붙는 것만 잰다). `mcp.test.ts` 의 `tools/call canvas_put` 묶음(「text·id·title 과 maru mcp 의 pty 를…」, 「maru mcp 가 file 을 바꾼 path 를…」)은 `initialize` 없이 보낸 `tools/call` 이 성공하기를 기대하므로 이 계약도 함께 잰다.
+- 테스트: `mcp.rs` › `waits_for_a_stale_socket_to_be_replaced_by_a_new_app`, `mcp.test.ts` › 「initialize 를 받지 않은 앱도 tools/list·tools/call 에 답한다」

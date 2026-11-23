@@ -33,6 +33,11 @@ jobs:
             app:
               - 'app/**'
               - '.github/workflows/ci.yml'
+              # app 의 테스트가 읽어 값을 맞춰 보는 core 파일
+              - 'core/crates/maru/src/main.rs'
+              - 'core/crates/maru-pty/src/lib.rs'
+              - 'core/crates/maru-pty/src/attach.rs'
+              - 'core/crates/maru-pty/tests/*.json'
 
   fmt:
     needs: changes

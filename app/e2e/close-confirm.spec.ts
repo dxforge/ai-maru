@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import type { Page } from '@playwright/test'
 import { STATE_VERSIONS } from '../src/shared/screen'
 import {
@@ -10,6 +11,7 @@ import {
   END_EVERYTHING,
   expect,
   foregroundNames,
+  hostPid,
   KEEP_LAYOUT,
   KEEP_TERMINALS,
   newWorkspace,
@@ -235,6 +237,36 @@ test('Keep terminals 로 끄면 pty 와 job 이 남고, 다음 실행은 같은 
   await run(page, 'maru job list', /j\s+running/)
   expect(sockets(dataDir)).toEqual(before)
   await expect(toast(page)).toHaveCount(0)
+})
+
+test('Keep terminals 로 끌 때도 앱은 host 가 앞서 받은 kill 을 처리하고 끝나기를 기다린다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await split(app, page, 'split-right', 2)
+  await expect.poll(() => sockets(dataDir)).toHaveLength(2)
+  const pid = await hostPid(app)
+  process.kill(pid, 'SIGSTOP')
+  try {
+    await clickMenu(app, 'close-pane')
+    await expect(panes(page)).toHaveCount(1)
+    await stubDialog(app, KEEP_TERMINALS)
+    const closed = app.waitForEvent('close').then(() => Date.now())
+    await app.evaluate(({ app }) => app.quit())
+    // main 이 host 를 기다리는 상한(`QUIT_TIMEOUT_MS`)보다 일찍 깨운다.
+    await sleep(2000)
+    const woke = Date.now()
+    process.kill(pid, 'SIGCONT')
+    expect(await closed).toBeGreaterThanOrEqual(woke)
+  } finally {
+    try {
+      process.kill(pid, 'SIGCONT')
+    } catch {
+      // 이미 끝났다.
+    }
+  }
+  expect(sockets(dataDir)).toHaveLength(1)
 })
 
 test('Keep layout only 로 끄면 pty 를 끄고, 다음 실행은 같은 배치의 pane 마다 그 cwd 에서 새 셸을 띄우며 알리지 않는다', async ({

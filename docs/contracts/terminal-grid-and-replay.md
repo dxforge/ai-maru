@@ -30,11 +30,11 @@ pane 헤더의 높이는 `--row` 이고 터미널과 같은 글꼴·크기로 �
 
 renderer 의 xterm 과 `maru-pty` 의 VT 는 글자마다 차지하는 글자 칸 수를 같은 규칙으로 센다. 둘이 다르게 세면 재생한 화면에서 그 글자 뒤의 글자가 밀린다. 둘 다 grapheme cluster 를 한 글자로 센다. 피부색 수식자나 ZWJ 로 이은 emoji, VS16 이 붙은 글자는 폭이 2 다. xterm 은 `@xterm/addon-unicode-graphemes` 로, `maru-pty` 는 VT 를 만들 때 mode 2027 을 기본값으로 켜서 센다.
 
-프로그램이 `CSI ? 2027 l` 로 mode 2027 을 끄면 `maru-pty` 만 꺼지므로 두 쪽이 다르게 센다. xterm 은 이 mode 를 처리하지 않는다.
+프로그램이 `CSI ? 2027 l` 로 mode 2027 을 끄면 `maru-pty` 만 꺼지므로 두 쪽이 다르게 센다. xterm 은 이 mode 를 처리하지 않는다. 이때 xterm 은 👍🏽·👨‍👩‍👧·❤️ 를 모두 2 로 세고, `maru-pty` 는 4·6·1 로 센다.
 
 - 코드: `TerminalView.vue`(`UnicodeGraphemesAddon`) ↔ `core/crates/maru-pty/src/vt/mod.rs`(mode 2027)
 - 바꾸면: 한쪽의 폭 규칙만 바꾸면 재시작해 다시 붙은 pane 의 커서가 xterm 이 센 열과 어긋난다.
-- 테스트: `app/e2e/unicode.spec.ts` › 「emoji 를 찍고 재시작하면 maru-pty 가 재생한 커서가 xterm 이 센 열과 같다」, `vt/mod.rs` › `emoji_sequences_take_the_cells_the_app_counts`, `emoji_sequences_keep_their_cells_after_a_full_reset`
+- 테스트: `vt/mod.rs` › `emoji_sequences_take_the_cells_of_the_shared_samples`, `app/src/renderer/src/components/terminalWidth.test.ts` › 「xterm 은 %s 를 fixture 의 폭으로 센다」, `app/e2e/unicode.spec.ts` › 「emoji·한글을 찍은 뒤 커서를 Claude Code 가 세는 열에 둔다」. 셋 다 `core/crates/maru-pty/tests/widths.json` 을 읽는다. mode 2027 을 끈 뒤의 차이도 이 fixture 에 적혀 있다. e2e 는 두 쪽의 폭이 같은 줄만 찍는다. `vt/mod.rs` › `emoji_sequences_keep_their_cells_after_a_full_reset` 과 `unicode.spec.ts` › 「emoji 를 찍고 재시작하면 maru-pty 가 재생한 커서가 xterm 이 센 열과 같다」 는 fixture 를 읽지 않고 글자와 폭을 테스트 안에 둔다.
 
 ## 밀린 클라이언트는 RIS 와 재생으로 다시 맞춘다
 
@@ -42,4 +42,4 @@ observer 가 밀리면 `maru-pty` 는 그 사이의 출력을 버리고, `resync
 
 - 코드: `attach.rs` 의 `resync`·`VT_RESET` ↔ `renderer/src/pty/attach.ts`(`resync`)
 - 바꾸면: `maru-pty` 가 RIS 를 빼면 renderer 의 xterm 에 버려진 출력의 모드와 반쯤 받은 시퀀스가 남는다.
-- 테스트: `process.rs` › `a_client_that_falls_behind_is_resynced`, `a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs`, `a_resync_in_the_middle_of_a_sequence_replays_its_start`. renderer 가 reset 하지 않는 것과, xterm 이 RIS 로 반쯤 받은 시퀀스를 끊는 것은 재는 테스트가 없다.
+- 테스트: `process.rs` › `a_client_that_falls_behind_is_resynced`, `a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs`, `a_resync_in_the_middle_of_a_sequence_replays_its_start`, `attach.test.ts` › 「프레임이 %s 중간에서 끝난 뒤 resync 를 받으면 화면이 재생과 같다」, 「버려진 출력이 %s 를 켰어도 resync 뒤의 화면과 모드는 재생과 같다」(대체 화면·스크롤 영역·bracketed paste). `attach.test.ts` 는 `attach.rs` 의 `VT_RESET` 을 읽어 쓴다. 숨긴 커서는 xterm 의 RIS 가 되돌리지 않아 케이스에 넣지 않았다. renderer 가 reset 하지 않는 것은 지킬 규칙이 아니다. renderer 가 reset 해도 뒤따르는 RIS 가 같은 일을 하기 때문이다.
