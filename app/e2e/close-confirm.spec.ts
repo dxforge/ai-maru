@@ -5,6 +5,7 @@ import { STATE_VERSIONS } from '../src/shared/screen'
 import {
   activeHeader,
   blockStateWrites,
+  cellGroups,
   cellItems,
   clickMenu,
   dialogCalls,
@@ -14,6 +15,7 @@ import {
   hostPid,
   KEEP_LAYOUT,
   KEEP_TERMINALS,
+  newCell,
   newWorkspace,
   panes,
   readState,
@@ -123,6 +125,80 @@ test('maru pane close 는 프로그램이 돌아도 묻지 않는다', async ({ 
   await expect(panes(page)).toHaveCount(2)
   await run(page, 'maru pane close "$ID"; echo closed-$?', 'closed-0')
   await expect(panes(page)).toHaveCount(1)
+  expect(await dialogCalls(app)).toEqual([])
+})
+
+test('⌘W 가 cell 의 마지막 pane 을 닫게 되면 그 cell 에서 도는 job 이름과 함께 묻고, 취소하면 pane 과 job 이 남고 Close 면 cell 과 job 이 끝난다', async ({
+  launch,
+  dataDir
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await run(page, 'maru job new --name other sleep 600 && echo first-$((1+1))', 'first-2')
+  await newCell(launched, 2)
+  await run(page, 'maru job new --name dev sleep 600 && echo up-$((1+1))', 'up-2')
+  expect(sockets(dataDir)).toHaveLength(4)
+
+  await stubDialog(app, 1)
+  await clickMenu(app, 'close-pane')
+  await expect
+    .poll(() => dialogCalls(app))
+    .toMatchObject([
+      {
+        message: 'Close this pane?',
+        detail: 'This is the last pane in this cell, so its job will stop: `dev`.',
+        buttons: ['Close', 'Cancel']
+      }
+    ])
+  await expect(panes(page)).toHaveCount(1)
+  await expect(cellGroups(page).nth(1).locator('.job-row .title')).toHaveText(['dev'])
+  expect(sockets(dataDir)).toHaveLength(4)
+
+  await stubDialog(app, 0)
+  await clickMenu(app, 'close-pane')
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect.poll(() => sockets(dataDir)).toHaveLength(2)
+  await expect(page.locator('.job-row .title')).toHaveText(['other'])
+  expect(await dialogCalls(app)).toHaveLength(1)
+})
+
+test('⌘W 로 닫는 pane 뒤에 background pane 이 남으면 cell 이 닫히지 않으므로 job 때문에 묻지 않는다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  await run(page, 'maru job new --name dev sleep 600 && echo up-$((1+1))', 'up-2')
+  await run(
+    page,
+    `maru pane new --background bash -c 'read x' >/dev/null && echo bg-$((1+1))`,
+    'bg-2'
+  )
+  await expect(panes(page)).toHaveCount(2)
+  await expect(panes(page).nth(1)).toHaveClass(/background/)
+
+  await stubDialog(app, 1)
+  await clickMenu(app, 'close-pane')
+  await expect(page.locator('.panes.empty')).toHaveCount(1)
+  await expect(page.locator('.pane.background')).toHaveCount(1)
+  expect(await dialogCalls(app)).toEqual([])
+  await expect(page.locator('.job-row .title')).toHaveText(['dev'])
+  await expect.poll(() => sockets(dataDir)).toHaveLength(2)
+})
+
+test('⌘W 로 cell 의 마지막 pane 을 닫아도 그 cell 의 job 이 모두 끝났으면 묻지 않는다', async ({
+  launch
+}) => {
+  const launched = await launch()
+  const { app, page } = launched
+  await newCell(launched, 2)
+  await run(
+    page,
+    `maru job new --name done true; until maru job list | awk '$2=="done" && $3=="exited"' | grep -q .; do sleep 0.1; done; echo over-$((1+1))`,
+    'over-2'
+  )
+  await stubDialog(app, 1)
+  await clickMenu(app, 'close-pane')
+  await expect(cellItems(page)).toHaveCount(1)
   expect(await dialogCalls(app)).toEqual([])
 })
 

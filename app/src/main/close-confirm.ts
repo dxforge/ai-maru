@@ -1,4 +1,5 @@
 import type { MessageBoxOptions } from 'electron'
+import { jobName } from '../shared/job'
 import type { PtyCommand } from '../shared/pty-state'
 import type { ScreenPane } from '../shared/screen'
 import type { Foreground } from './pty'
@@ -69,18 +70,42 @@ export function createQuitPermission(graceMs: number): {
 
 export type Dialog = Pick<MessageBoxOptions, 'message' | 'detail' | 'buttons'>
 
-export function closePaneDialog(name: string | null): Dialog {
-  return {
-    message: 'Close this pane?',
-    detail: name === null ? 'A program is still running in it.' : `\`${name}\` is still running.`,
-    buttons: ['Close', 'Cancel']
-  }
+/** 확인 창은 job 이름을 이만큼까지 적고 나머지는 수로 줄인다. 본문이 몇 줄 안에 들게 하기 위해서다. */
+const JOB_NAMES_SHOWN = 3
+
+function jobsStopping(names: readonly string[]): string {
+  const shown = names.slice(0, JOB_NAMES_SHOWN).map((n) => `\`${n}\``)
+  const rest = names.length - shown.length
+  const items = rest ? [...shown, `${rest} more`] : shown
+  const last = items.pop()
+  const list =
+    items.length > 1 ? `${items.join(', ')}, and ${last}` : [...items, last].join(' and ')
+  const noun = names.length === 1 ? 'job' : 'jobs'
+  return `This is the last pane in this cell, so its ${noun} will stop: ${list}.`
 }
 
-export function stopJobDialog(name: string): Dialog {
+/** `jobs` 는 pane 을 닫으면 cell 과 함께 끝날 job 의 이름이다. */
+export function closePaneDialog(
+  program: { name: string | null } | null,
+  jobs: readonly string[]
+): Dialog | null {
+  const parts: string[] = []
+  if (program) {
+    parts.push(
+      program.name === null
+        ? 'A program is still running in it.'
+        : `\`${program.name}\` is still running.`
+    )
+  }
+  if (jobs.length) parts.push(jobsStopping(jobs))
+  if (!parts.length) return null
+  return { message: 'Close this pane?', detail: parts.join(' '), buttons: ['Close', 'Cancel'] }
+}
+
+export function stopJobDialog(job: { name?: string; command: readonly string[] }): Dialog {
   return {
     message: 'Stop this job?',
-    detail: `\`${name}\` is still running.`,
+    detail: `\`${jobName(job)}\` is still running.`,
     buttons: ['Stop', 'Cancel']
   }
 }

@@ -110,20 +110,61 @@ describe('runningPanes', () => {
 
 describe('확인 창', () => {
   it('pane 은 이름이 있으면 이름을, 없으면 일반 문구를 적는다', () => {
-    expect(closePaneDialog('vim')).toEqual({
+    expect(closePaneDialog({ name: 'vim' }, [])).toEqual({
       message: 'Close this pane?',
       detail: '`vim` is still running.',
       buttons: ['Close', 'Cancel']
     })
-    expect(closePaneDialog(null).detail).toBe('A program is still running in it.')
+    expect(closePaneDialog({ name: null }, [])?.detail).toBe('A program is still running in it.')
+  })
+
+  it('pane 에 도는 것도 함께 끝날 job 도 없으면 묻지 않는다', () => {
+    expect(closePaneDialog(null, [])).toBeNull()
+  })
+
+  it.each([
+    [['dev'], 'This is the last pane in this cell, so its job will stop: `dev`.'],
+    [
+      ['dev', 'watch'],
+      'This is the last pane in this cell, so its jobs will stop: `dev` and `watch`.'
+    ],
+    [
+      ['a', 'b', 'c'],
+      'This is the last pane in this cell, so its jobs will stop: `a`, `b`, and `c`.'
+    ],
+    [
+      ['a', 'b', 'c', 'd', 'e'],
+      'This is the last pane in this cell, so its jobs will stop: `a`, `b`, `c`, and 2 more.'
+    ]
+  ])('cell 과 함께 끝날 job 이 %j 면 "%s"', (jobs, detail) => {
+    expect(closePaneDialog(null, jobs)).toEqual({
+      message: 'Close this pane?',
+      detail,
+      buttons: ['Close', 'Cancel']
+    })
+  })
+
+  it('pane 에 도는 프로그램과 함께 끝날 job 을 한 창에 적는다', () => {
+    expect(closePaneDialog({ name: 'vim' }, ['dev'])?.detail).toBe(
+      '`vim` is still running. This is the last pane in this cell, so its job will stop: `dev`.'
+    )
+    expect(closePaneDialog({ name: null }, ['dev', 'watch'])?.detail).toBe(
+      'A program is still running in it. This is the last pane in this cell, so its jobs will stop: `dev` and `watch`.'
+    )
   })
 
   it('job 을 끌 때는 그 이름으로 묻는다', () => {
-    expect(stopJobDialog('dev')).toEqual({
+    expect(stopJobDialog({ name: 'dev', command: ['pnpm', 'dev'] })).toEqual({
       message: 'Stop this job?',
       detail: '`dev` is still running.',
       buttons: ['Stop', 'Cancel']
     })
+  })
+
+  it('이름 없는 job 은 사이드바 job 줄처럼 명령 전체로 부른다', () => {
+    expect(stopJobDialog({ command: ['npm', 'run', 'dev'] }).detail).toBe(
+      '`npm run dev` is still running.'
+    )
   })
 
   it.each([

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
   clickMenu,
+  dialogCalls,
   expect,
   newWorkspace,
   restartWith,
@@ -193,9 +194,13 @@ test('다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell �
   await run(page, 'maru job new --name b sleep 100; echo second-$((1+1))', 'second-2')
   expect(sockets(dataDir)).toHaveLength(4)
 
+  await stubDialog(app, 0)
   await cellItems(page).nth(0).click()
   await clickMenu(app, 'close-pane')
   await expect(cellItems(page)).toHaveCount(1)
+  expect((await dialogCalls(app)).map((c) => c.detail)).toEqual([
+    'This is the last pane in this cell, so its job will stop: `a`.'
+  ])
   await expect.poll(() => sockets(dataDir).length).toBe(2)
   await page.locator('.terminal-view.active .xterm-screen').click()
   await run(page, 'maru job list', /b\s+running/)

@@ -7,6 +7,7 @@ import {
   requireCwd,
   type Handlers
 } from './cli-server'
+import { jobName } from '../shared/job'
 import { isObject } from '../shared/object'
 import type { PtyExit } from '../shared/pty'
 import { isPtyId } from '../shared/pty'
@@ -55,6 +56,9 @@ export function createJobs(deps: JobDeps) {
   const jobs: JobRecord[] = []
   const waits = new Map<string, () => void>()
   let detached = false
+
+  const runningIn = (cells?: ReadonlySet<string>): JobRecord[] =>
+    jobs.filter((j) => !j.exit && (!cells || cells.has(j.cell)))
 
   function cellOf(pty: string): string | undefined {
     return deps.cellOf(pty) ?? jobs.find((j) => j.pty === pty)?.cell
@@ -218,8 +222,8 @@ export function createJobs(deps: JobDeps) {
       // 저장된 표에 pending 이 남으면 다시 뜬 앱이 같은 알림을 또 보낸다.
       if (sent) deps.changed()
     },
-    running: (cells?: ReadonlySet<string>): number =>
-      jobs.filter((j) => !j.exit && (!cells || cells.has(j.cell))).length,
+    running: (cells?: ReadonlySet<string>): number => runningIn(cells).length,
+    runningNames: (cell: string): string[] => runningIn(new Set([cell])).map(jobName),
     closeCell: async (cell: string): Promise<void> => {
       const closing = jobs.filter((j) => j.cell === cell)
       for (const j of closing) remove(j)
