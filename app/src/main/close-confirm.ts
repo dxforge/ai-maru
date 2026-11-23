@@ -1,4 +1,5 @@
 import type { MessageBoxOptions } from 'electron'
+import { jobName } from '../shared/job'
 import type { PtyCommand } from '../shared/pty-state'
 import type { ScreenPane } from '../shared/screen'
 import type { Foreground } from './pty'
@@ -101,10 +102,10 @@ export function closePaneDialog(
   return { message: 'Close this pane?', detail: parts.join(' '), buttons: ['Close', 'Cancel'] }
 }
 
-export function stopJobDialog(name: string): Dialog {
+export function stopJobDialog(job: { name?: string; command: readonly string[] }): Dialog {
   return {
     message: 'Stop this job?',
-    detail: `\`${name}\` is still running.`,
+    detail: `\`${jobName(job)}\` is still running.`,
     buttons: ['Stop', 'Cancel']
   }
 }

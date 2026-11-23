@@ -49,7 +49,7 @@ import { createPanes } from './pane'
 import { ptyCli } from './pty-cli'
 import { isObject } from '../shared/object'
 import { createWindowReady } from './window-ready'
-import { createJobs, JOB_REPLY_MS, jobLabel } from './job'
+import { createJobs, JOB_REPLY_MS } from './job'
 import { removeTmpFiles } from './json-file'
 import { createLauncherStore, listDirs, notDirectory } from './launcher'
 import { longestExistingPaths, openLink, type LinkOpener } from './links'
@@ -881,7 +881,7 @@ function start(): void {
     if (!isPtyId(pty)) return
     const { close } = await checkClose(async () => {
       const j = jobTable.get(pty)
-      return j && !j.exit ? stopJobDialog(jobLabel(j)) : null
+      return j && !j.exit ? stopJobDialog(j) : null
     })
     if (close) await jobTable.kill(pty)
   })

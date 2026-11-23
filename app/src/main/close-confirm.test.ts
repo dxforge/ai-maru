@@ -154,11 +154,17 @@ describe('확인 창', () => {
   })
 
   it('job 을 끌 때는 그 이름으로 묻는다', () => {
-    expect(stopJobDialog('dev')).toEqual({
+    expect(stopJobDialog({ name: 'dev', command: ['pnpm', 'dev'] })).toEqual({
       message: 'Stop this job?',
       detail: '`dev` is still running.',
       buttons: ['Stop', 'Cancel']
     })
+  })
+
+  it('이름 없는 job 은 사이드바 job 줄처럼 명령 전체로 부른다', () => {
+    expect(stopJobDialog({ command: ['npm', 'run', 'dev'] }).detail).toBe(
+      '`npm run dev` is still running.'
+    )
   })
 
   it.each([

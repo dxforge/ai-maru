@@ -7,6 +7,7 @@ import {
   requireCwd,
   type Handlers
 } from './cli-server'
+import { jobName } from '../shared/job'
 import { isObject } from '../shared/object'
 import type { PtyExit } from '../shared/pty'
 import { isPtyId } from '../shared/pty'
@@ -43,10 +44,6 @@ export type JobDeps = {
   emit: (pty: string, event: object) => boolean
   now: () => number
   changed: () => void
-}
-
-export function jobLabel(job: Pick<JobRecord, 'name' | 'command'>): string {
-  return job.name ?? job.command[0]
 }
 
 /**
@@ -226,7 +223,7 @@ export function createJobs(deps: JobDeps) {
       if (sent) deps.changed()
     },
     running: (cells?: ReadonlySet<string>): number => runningIn(cells).length,
-    runningNames: (cell: string): string[] => runningIn(new Set([cell])).map(jobLabel),
+    runningNames: (cell: string): string[] => runningIn(new Set([cell])).map(jobName),
     closeCell: async (cell: string): Promise<void> => {
       const closing = jobs.filter((j) => j.cell === cell)
       for (const j of closing) remove(j)

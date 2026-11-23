@@ -345,14 +345,15 @@ describe('running', () => {
     expect(t.jobs.running(new Set())).toBe(0)
   })
 
-  it('runningNames 는 그 cell 에서 도는 job 의 이름이고, 이름이 없으면 명령의 첫 낱말로 부른다', async () => {
+  it('runningNames 는 그 cell 에서 도는 job 의 이름이고, 이름이 없으면 사이드바 job 줄처럼 명령 전체로 부른다', async () => {
     const t = setup()
     const done = await t.start({ name: 'done' })
     await t.start({ name: 'dev' })
-    await t.start({ command: ['sleep', '100'] })
+    await t.start({ command: ['npm', 'run', 'dev'] })
+    await t.start({ command: ['npm', 'run', 'test'] })
     await t.start({ name: 'other' }, C)
     await t.exit(done, { code: 0, signal: null })
-    expect(t.jobs.runningNames('c-1')).toEqual(['dev', 'sleep'])
+    expect(t.jobs.runningNames('c-1')).toEqual(['dev', 'npm run dev', 'npm run test'])
     expect(t.jobs.runningNames('c-9')).toEqual([])
   })
 
