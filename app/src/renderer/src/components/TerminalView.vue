@@ -21,7 +21,6 @@ import { attach as attachTerminal, type Attachment } from '../pty/attach'
 import { openPty, type PtyConnection } from '../pty/connection'
 import { OPENING_SHOW_MS, openingView } from '../pty/opening'
 import StatusIcon from './StatusIcon.vue'
-import type { ProgramStatusRecord } from '../../../shared/program-status'
 import { exitMessage, failedExit } from '../../../shared/pty'
 import { isSelectAll, terminalInput } from '../../../shared/shortcuts'
 import { sameFont, type TerminalFont } from '../config/terminal'
@@ -76,8 +75,6 @@ const emit = defineEmits<{
   retry: []
   /** `cwd` 는 pty 를 띄운 실제 시작 디렉토리다. 되살린 pane 이 남은 pty 에 붙으면 없다. */
   spawned: [cwd: string | undefined]
-  /** 이전 maru-pty 의 pty 만 attach 스트림으로 보내는 OSC 7501 레코드(`pty/states.ts`). */
-  programStatus: [records: ProgramStatusRecord[]]
   linkFailed: [reason: string]
   cell: [cell: Size]
 }>()
@@ -415,8 +412,7 @@ onMounted(() => {
       clearTimeout(tick)
       outcome.value = 'opened'
       emit('spawned', dir)
-    },
-    onProgramStatus: (records) => emit('programStatus', records)
+    }
   })
   // 조합한 글자는 다음 키가 오면 그 키보다 먼저 setTimeout 을 기다리지 않고 간다. 그 바로 뒤에 보낸다.
   // pty 에 보내는 attach 의 listener 보다 뒤에 걸어야 미룬 키가 조합한 글자 뒤로 간다.

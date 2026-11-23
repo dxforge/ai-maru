@@ -118,12 +118,14 @@ describe('createPtyStates', () => {
     expect(t.subs).toHaveLength(2)
   })
 
-  it('이전 maru-pty 의 pty 는 old 로 든다', () => {
+  it('이전 maru-pty 의 pty 는 상태 없이 두고 다시 구독하지 않는다', () => {
     const t = setup()
     t.states.watch('p-1')
     t.last().on.old()
-    expect(t.emitted).toEqual([['p-1', { old: true }]])
-    expect(t.states.entries()).toEqual({ 'p-1': { old: true } })
+    t.states.watch('p-1')
+    expect(t.subs).toHaveLength(1)
+    expect(t.emitted).toEqual([])
+    expect(t.states.entries()).toEqual({})
     expect(t.states.state('p-1')).toBeUndefined()
   })
 

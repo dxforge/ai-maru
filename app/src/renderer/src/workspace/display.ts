@@ -15,16 +15,7 @@ export function paneCwd(s: CwdSources): string | undefined {
   return s.state?.foregroundCwd ?? s.state?.cwd ?? s.startDir
 }
 
-/**
- * pane 의 제목. 상태가 오기 전에는 되살린 제목을 쓴다. 이전 maru-pty 의 pty 는 제목을 보내지 않으므로, 되살린 제목이
- * 낡은 채 남지 않게 비운다.
- */
-export function paneTitle(s: {
-  state?: PtyState
-  restoredTitle?: string
-  old: boolean
-}): string | undefined {
-  if (s.old) return undefined
+export function paneTitle(s: { state?: PtyState; restoredTitle?: string }): string | undefined {
   return s.state ? (s.state.title ?? undefined) : s.restoredTitle
 }
 

@@ -24,11 +24,10 @@ describe('paneCwd', () => {
 })
 
 describe('paneTitle', () => {
-  it('상태의 제목을 쓰고, 상태가 없으면 되살린 제목을, 이전 maru-pty 의 pty 면 아무것도 쓰지 않는다', () => {
-    expect(paneTitle({ state: state({ title: 't' }), restoredTitle: 'r', old: false })).toBe('t')
-    expect(paneTitle({ state: state({}), restoredTitle: 'r', old: false })).toBeUndefined()
-    expect(paneTitle({ restoredTitle: 'r', old: false })).toBe('r')
-    expect(paneTitle({ restoredTitle: 'r', old: true })).toBeUndefined()
+  it('상태의 제목을 쓰고, 상태가 없으면 되살린 제목을 쓴다', () => {
+    expect(paneTitle({ state: state({ title: 't' }), restoredTitle: 'r' })).toBe('t')
+    expect(paneTitle({ state: state({}), restoredTitle: 'r' })).toBeUndefined()
+    expect(paneTitle({ restoredTitle: 'r' })).toBe('r')
   })
 })
 

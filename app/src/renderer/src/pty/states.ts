@@ -10,25 +10,12 @@ import type { PtyNotification, PtyState, PtyStateEntry } from '../../../shared/p
 
 const NONE: readonly ProgramStatusRecord[] = []
 
-/**
- * pty 상태를 `ptyId` 로 찾는 저장소. 상태는 main 에서만 받는다(`apply`). 이전 maru-pty 의 pty(`old`)만은 상태가 오지
- * 않으므로 attach 스트림의 `program_status` 를 레코드로 쓴다(`setLegacyRecords`). 이 예외는 이전 maru-pty 의 pty 가
- * 모두 끝나면 지울 잠정 경로다.
- */
 export function createPtyStates() {
   // 항목은 메시지마다 통째로 바뀌고 안에서 고치지 않으므로 키 단위 반응이면 된다.
   const entries = shallowReactive(new Map<string, PtyStateEntry>())
-  const legacy = shallowReactive(new Map<string, ProgramStatusRecord[]>())
 
-  const get = (pty: string): PtyState | undefined => {
-    const e = entries.get(pty)
-    return e && 'state' in e ? e.state : undefined
-  }
-  const records = (pty: string): readonly ProgramStatusRecord[] => {
-    const e = entries.get(pty)
-    if (!e) return NONE
-    return 'state' in e ? e.state.records : (legacy.get(pty) ?? NONE)
-  }
+  const get = (pty: string): PtyState | undefined => entries.get(pty)?.state
+  const records = (pty: string): readonly ProgramStatusRecord[] => get(pty)?.records ?? NONE
   // 같은 레코드 배열에는 같은 객체를 돌려준다. `shownRecord` 는 고른 하위 레코드의 `app` 이 루트와 다르면 부를 때마다 루트의 `app` 을 단 새 객체를 만든다.
   // 매번 새 객체를 돌려주면 그것을 prop 으로 받은 pane 헤더가 다른 pane 의 상태가 바뀔 때도 다시 그려진다.
   const perList = <T>(f: (list: readonly ProgramStatusRecord[]) => T, none: T) => {
@@ -60,25 +47,14 @@ export function createPtyStates() {
       records(pty).find((r) => r.id === '')?.state,
     command,
     /** 사용자가 아직 보지 않은 마지막 알림 */
-    notification: (pty?: string): PtyNotification | undefined => {
-      const e = pty === undefined ? undefined : entries.get(pty)
-      return e && 'notification' in e ? e.notification : undefined
-    },
-    isOld: (pty: string): boolean => {
-      const e = entries.get(pty)
-      return e !== undefined && 'old' in e
-    },
+    notification: (pty?: string): PtyNotification | undefined =>
+      pty === undefined ? undefined : entries.get(pty)?.notification,
     apply(pty: string, entry: PtyStateEntry | null): void {
       if (entry) entries.set(pty, entry)
       else entries.delete(pty)
     },
-    /** 이전 maru-pty 의 pty 에서 attach 스트림으로 온 레코드. 그 pty 가 `old` 일 때만 쓰인다. */
-    setLegacyRecords(pty: string, list: ProgramStatusRecord[]): void {
-      legacy.set(pty, list)
-    },
     remove(pty: string): void {
       entries.delete(pty)
-      legacy.delete(pty)
     }
   }
 }

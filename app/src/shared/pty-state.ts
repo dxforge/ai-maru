@@ -38,11 +38,8 @@ export function isBodyless(n: PtyNotification): boolean {
   return !n.title && !n.body
 }
 
-/**
- * main 이 pty 마다 든 것. `old` 는 상태 구독을 모르는 이전 maru-pty 의 pty 다 — 그 pty 의 상태는 오지 않는다.
- * 이 표시는 이전 maru-pty 의 pty 가 모두 끝나면 지울 잠정 경로다. `notification` 은 사용자가 아직 보지 않은 마지막 알림이다.
- */
-export type PtyStateEntry = { state: PtyState; notification?: PtyNotification } | { old: true }
+/** main 이 pty 마다 든 것. `notification` 은 사용자가 아직 보지 않은 마지막 알림이다. */
+export type PtyStateEntry = { state: PtyState; notification?: PtyNotification }
 
 const stringOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null)
 const numberOrNull = (v: unknown): number | null => (typeof v === 'number' ? v : null)
