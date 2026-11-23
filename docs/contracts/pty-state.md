@@ -14,9 +14,9 @@ main 은 pane 과 job 의 pty 마다 `maru-pty` 에 `subscribe` 연결을 직접
 
 main 은 pane 의 pty 를 pty host 가 붙은 뒤 `live` 를 보낼 때, job 의 pty 를 main 이 띄운 뒤, 뜰 때 되살린 pty 를 남은 pty 정리 뒤에 구독한다. host 는 되살린 pty 에 붙을 때(`reattach`) `live` 를 보내지 않으므로, 되살린 pty 는 마지막 경로에 기댄다.
 
-- 코드: `pty-host.ts` 의 `HostEvent`(`live`) ↔ `index.ts` 의 `ptyHost`(`ptyStates.watch`)·job 의 `spawn`·`leftovers`
+- 코드: `pty-host.ts` 의 `HostEvent`(`live`) ↔ `index.ts` 의 `createHostLink` 의 `onEvent`(`ptyStates.watch`)·job 의 `spawn`·`leftovers`
 - 바꾸면: 세 경로 가운데 하나가 빠지면 그 pty 의 상태가 사이드바와 `maru pane list` 에서 빈다.
-- 테스트: 없다.
+- 테스트: pane 의 pty 는 `pty-host.test.ts` › 「띄운 pty 에 붙으면 main 에 live 를 알리고, 붙지 못했거나 다시 붙은 pty 는 알리지 않는다」 와 `app/e2e/program-status.spec.ts` › 「OSC 7501 보고가 오면 사이드바의 pane 줄과 pane 헤더의 상태가 바뀌고, clear 로 사라진다」, job 의 pty 는 `app/e2e/pty-cli.spec.ts` › 「job 이 OSC 7501 로 알린 상태를 maru pty list 의 STATE 에 찍는다」, 되살린 pty 는 `app/e2e/restart.spec.ts` › 「재시작 뒤에도 pty 가 들고 있던 상태가 다시 붙을 때 돌아오고, 되살린 셸의 보고를 따른다」
 
 ## renderer 는 상태를 main 에서만 받는다
 
@@ -80,7 +80,7 @@ renderer 는 입력 focus 를 가진 pane 의 pty 를 `pty:viewed` 로 알린다
 
 - 코드: `claude-notification.ts` 의 `lineText` ↔ `core/crates/maru-pty/src/vt/mod.rs` 의 `line_text`
 - 바꾸면: 한쪽만 바꾸면 같은 글의 알림이 오는 경로에 따라 다르게 보인다.
-- 테스트: 두 함수가 같은지 보는 테스트는 없다.
+- 테스트: `vt/mod.rs` › `line_text_trims_the_shared_samples_like_the_app`, `claude-notification.test.ts` › 「maru-pty 와 같은 fixture 를 같게 다듬는다」. 둘 다 `core/crates/maru-pty/tests/line-text.json` 을 읽는다. 앞뒤의 U+FEFF 는 `lineText` 만 떼어 두 함수가 다르게 다듬으므로 fixture 에 넣지 않았다.
 
 ## Claude Code 알림은 hook 으로 온다
 

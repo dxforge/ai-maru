@@ -18,7 +18,7 @@ renderer 는 pane 을 지울 때마다 kill 을 보낸다. pty 가 스스로 끝
 
 - 코드: `App.vue` 의 `removePane`(늘 `kill()`)·`store.ts` 의 `closePane` ↔ `pty-cells.ts` 의 `close`(`closed`) → `index.ts` 의 `sendKill` → `job.ts` 의 `closeCell`
 - 바꾸면: kill 없이 pane 을 지우는 경로가 생기면 main 이 끝난 pty 의 cell 을 계속 기억하고 그 cell 의 job 을 끄지 않는다. pane 이 없는 cell 을 남기는 경로가 생기면 main 은 cell 이 닫혔다고 보고 job 을 끈다.
-- 테스트: `pty-cells.test.ts` › 「끈 key 의 pty id 를 돌려주고, cell 의 마지막 pty 면 그 cell id 도 돌려준다」, `job.test.ts` › 「그 cell 의 job 만 끄고 알리지 않는다」, `app/e2e/job.spec.ts` › 「다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell 의 job 만 끝난다」, `app/e2e/pane-background.spec.ts` › 「background pty 가 끝나면 그 줄이 사라지고, cell 의 마지막 pane 이었으면 cell 이 닫힌다」(renderer 쪽만 본다). pty 가 스스로 끝나 닫힌 pane 에서 main 이 cell 을 닫고 그 cell 의 job 을 끄는지 보는 테스트는 없다.
+- 테스트: `pty-cells.test.ts` › 「끈 key 의 pty id 를 돌려주고, cell 의 마지막 pty 면 그 cell id 도 돌려준다」, `job.test.ts` › 「그 cell 의 job 만 끄고 알리지 않는다」, `app/e2e/job.spec.ts` › 「다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell 의 job 만 끝난다」, `app/e2e/pane-background.spec.ts` › 「background pty 가 끝나면 그 줄이 사라지고, cell 의 마지막 pane 이었으면 cell 이 닫힌다」(renderer 쪽만 본다), `app/e2e/job.spec.ts` › 「셸이 끝나 cell 이 닫히면 그 cell 의 job 도 끝난다」
 
 ## 창이 준비되기 전에 온 요청은 쌓는다
 
@@ -50,7 +50,7 @@ main 은 창에 넘길 pane 요청을 쌓인 시간까지 넣어 `WINDOW_WAIT_MS
 
 - 코드: `window-ready.ts` 의 `WINDOW_WAIT_MS`, `job.ts` 의 `JOB_REPLY_MS`, `pty.ts` 의 `JOB_SPAWN_TIMEOUT_MS`·`JOB_KILL_TIMEOUT_MS` ↔ `core/crates/maru/src/main.rs` 의 `TIMEOUT`
 - 바꾸면: main 의 상한이 `TIMEOUT` 보다 길면, `maru` 는 이유 없는 시간 초과로 끝나고 main 은 그 뒤에 요청을 처리한다.
-- 테스트: `pane.test.ts` › 「기다리는 시간도 시간 초과에 들고, 시간 초과한 요청은 준비돼도 넘기지 않으며 취소도 보내지 않는다」, `canvas.test.ts` › 「기다리는 시간을 넘기면 실패하고, 그 뒤 준비돼도 보내지 않는다」. 두 상한의 크기를 묶는 테스트는 없다.
+- 테스트: `pane.test.ts` › 「기다리는 시간도 시간 초과에 들고, 시간 초과한 요청은 준비돼도 넘기지 않으며 취소도 보내지 않는다」, `canvas.test.ts` › 「기다리는 시간을 넘기면 실패하고, 그 뒤 준비돼도 보내지 않는다」, `timeouts.test.ts` › 「maru 의 TIMEOUT 보다 짧아 main 의 오류가 maru 에 닿는다」(`core/crates/maru/src/main.rs` 를 읽는다)
 
 ## 시간 초과한 pane 요청은 창이 취소한다
 
@@ -58,7 +58,7 @@ main 은 창에 넘길 pane 요청을 쌓인 시간까지 넣어 `WINDOW_WAIT_MS
 
 - 코드: `pane.ts` 의 `request` ↔ preload 의 `onPaneCancel` ↔ `App.vue` 의 `onPaneCancel`·`paneRequests`
 - 바꾸면: renderer 가 취소를 듣지 않으면, 실패로 답한 요청의 pane 이 남는다.
-- 테스트: `pane.test.ts` › 「창이 답하지 않으면 기다리기를 그만두고 창에 취소를 보내며, 늦게 온 답은 버린다」, 「창이 실패로 답하면 취소를 보내지 않는다」. renderer 가 pane 을 닫는 쪽의 테스트는 없다.
+- 테스트: `pane.test.ts` › 「창이 답하지 않으면 기다리기를 그만두고 창에 취소를 보내며, 늦게 온 답은 버린다」, 「창이 실패로 답하면 취소를 보내지 않는다」, `app/e2e/pane-cli.spec.ts` › 「창이 시간 안에 답하지 못해 실패한 maru pane new 의 pane 은 창이 늦게 열어도 닫는다」
 
 ## pane 을 찾는 것은 renderer 다
 

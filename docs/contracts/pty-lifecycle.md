@@ -1,14 +1,14 @@
 # pty 의 수명
 
-pty 를 열고, pty host 가 바뀌고, pty 를 끄고, 앱이 끝나고 다시 뜰 때 renderer·main·pty host·`maru-pty` 가 서로에게 기대는 순서다. 주로 닿는 코드는 `app/src/main/index.ts`(`pty:open`·`sendKill`·`will-quit`), `app/src/main/pty-host.ts`, `app/src/main/pty.ts`, `app/src/main/pty-cells.ts`, `app/src/main/state.ts`, `app/src/renderer/src/pty/connection.ts`·`attach.ts`, `core/crates/maru-pty/src/server.rs` 다.
+pty 를 열고, pty host 가 바뀌고, pty 를 끄고, 앱이 끝나고 다시 뜰 때 renderer·main·pty host·`maru-pty` 가 서로에게 기대는 순서다. 주로 닿는 코드는 `app/src/main/index.ts`(`pty:open`·`sendKill`·`will-quit`), `app/src/main/host-link.ts`, `app/src/main/pty-host.ts`, `app/src/main/pty.ts`, `app/src/main/pty-cells.ts`, `app/src/main/state.ts`, `app/src/renderer/src/pty/connection.ts`·`attach.ts`, `core/crates/maru-pty/src/server.rs` 다.
 
 ## 포트는 renderer 에 먼저 간다
 
 renderer 가 `pty:open` 을 보내면 main 은 `MessageChannelMain` 을 만들어 한쪽 포트를 곧바로 renderer 에 `pty:port` 로 보내고, 다른 쪽은 `ready` 가 풀린 뒤 pty host 에 넘긴다. host 가 죽으면 main 은 모든 창에 `pty:lost` 를 보낸다. renderer 는 포트보다 먼저 온 `pty:lost` 를 이 open 을 받기 전에 죽은 host 의 것으로 보고 무시한다. 이 open 은 새로 띄운 host 가 받기 때문이다.
 
-- 코드: `index.ts` 의 `pty:open`·`ptyHost` ↔ `connection.ts` 의 `onPort`
+- 코드: `index.ts` 의 `pty:open` → `host-link.ts` 의 `open` ↔ `connection.ts` 의 `onPort`
 - 바꾸면: main 이 포트를 host 에 넘긴 뒤에 renderer 에 보내면, 새 host 가 받은 연결이 앞 host 의 `pty:lost` 로 닫힌다.
-- 테스트: `connection.test.ts` › 「포트가 오기 전의 pty:lost 로는 닫히지 않고, 온 뒤의 것으로 닫힌다」(renderer 쪽만). main 이 보내는 순서를 지키는 테스트는 없다.
+- 테스트: `connection.test.ts` › 「포트가 오기 전의 pty:lost 로는 닫히지 않고, 온 뒤의 것으로 닫힌다」, `host-link.test.ts` › 「포트를 renderer 에 먼저 보내고 host 에는 ready 가 풀린 뒤 넘긴다」
 
 ## 새로 고친 문서는 이전 문서의 pty 에 붙지 않는다
 
@@ -32,13 +32,13 @@ renderer 의 `reopenPane` 은 새 pty id 로 터미널을 mount 해 `pty:open` �
 
 - 코드: `App.vue` 의 `reopenPane` ↔ `pty-cells.ts` 의 `close`
 - 바꾸면: pane 하나뿐인 cell 에서 옛 pty 의 kill 이 먼저 가면 main 이 그 cell 의 job 을 끈다.
-- 테스트: 없다.
+- 테스트: `app/e2e/pty.spec.ts` › 「pane 하나뿐인 cell 에서 다시 열어도 그 cell 의 job 은 살아 있다」
 
 ## 앱을 끄면 main 은 host 가 끝난 뒤에 레코드를 읽어 pty 를 끈다
 
 main 은 `will-quit` 에서 pty host 에 `quit` 을 보낸다. host 는 `quit` 을 받으면 새 open 을 받지 않고, 띄우던 pty 가 다 뜨거나 멈추고 받은 kill 이 끝난 뒤에 끝난다. pty 를 끄고 끝낼 때 host 는 띄우던 pty 가 뜨기를 기다리지 않고 멈춘다. main 은 host 가 끝난 뒤에 pty 디렉토리의 레코드를 읽어 남은 pty 를 끈다.
 
-- 코드: `index.ts` 의 `will-quit`·`stopHost` → `pty.ts` 의 `killPtys` ↔ `pty-host.ts` 의 `QuitRequest` 처리
+- 코드: `index.ts` 의 `will-quit` → `host-link.ts` 의 `stop` → `pty.ts` 의 `killPtys` ↔ `pty-host.ts` 의 `QuitRequest` 처리
 - 바꾸면: main 이 host 를 기다리지 않고 레코드를 읽으면, 앱이 끝난 뒤에 뜬 pty 가 남는다.
 - 테스트: `app/e2e/pty.spec.ts` › 「앱을 끄면 pty 도 끝나고, 다시 켜면 새 셸이 뜬다」, `app/e2e/lifecycle.spec.ts` › 「셸이 뜨기 전에 앱을 끄면 띄우던 pty 를 멈추고 남기지 않는다」
 
@@ -46,17 +46,17 @@ main 은 `will-quit` 에서 pty host 에 `quit` 을 보낸다. host 는 `quit` �
 
 main 은 open·kill·`quit` 을 모두 `ready.then` 으로 host 에 보낸다. 그래서 host 는 `quit` 앞에 온 open·kill 을 먼저 받는다.
 
-- 코드: `index.ts` 의 `stopHost`·`pty:open`·`sendKill` ↔ `pty-host.ts` 의 `quitting`
+- 코드: `host-link.ts` 의 `createHostLink`(`open`·`kill`·`stop`) ↔ `pty-host.ts` 의 `quitting`
 - 바꾸면: `quit` 이 앞서 보낸 open 을 앞지르면, host 가 그 open 을 거절해 renderer 가 기다리던 pty 가 뜨지 않는다.
-- 테스트: 없다.
+- 테스트: `host-link.test.ts` › 「ready 전에 받은 open·kill 뒤에 quit 을 보낸다」
 
 ## pty 를 남기고 끝낼 때도 main 은 host 를 기다린다
 
 재시작·Keep terminals 로 pty 를 남기고 끝낼 때도 main 은 host 가 끝나기를 기다린다. host 가 받은 kill 을 마치기 전에 끝나면 닫은 pane 의 pty 가 남고, 다음 실행이 그 pty 를 붙을 pane 없는 pty 로 보고 Recovered workspace 에 열기 때문이다. 기다림에는 상한(`QUIT_TIMEOUT_MS`)이 있다. 상한을 넘기면 main 은 host 를 SIGKILL 로 끄고 넘어가므로, 그때 host 가 띄우던 pty 는 남을 수 있다. 그 가운데 소켓을 연 pty 는 앱이 pty 를 끄고 끝나면 `killPtys` 가 끄고, pty 를 남기고 끝나면 다음 실행이 Recovered workspace 에 연다.
 
-- 코드: `index.ts` 의 `will-quit`·`stopHost` ↔ `pty-host.ts` 의 `quit` ↔ 다음 실행의 `state.ts` 복원
+- 코드: `index.ts` 의 `will-quit` → `host-link.ts` 의 `stop` ↔ `pty-host.ts` 의 `quit` ↔ 다음 실행의 `state.ts` 복원
 - 바꾸면: 남기고 끝낼 때 host 를 기다리지 않으면, 닫은 pane 이 다음 실행에 Recovered workspace 로 돌아온다.
-- 테스트: `pty-host.test.ts` › 「quit 은 그 앞뒤로 받은 kill 과 …」(host 쪽만). Keep 으로 끌 때 닫은 pane 의 pty 가 남지 않는지 보는 e2e 는 없다.
+- 테스트: `pty-host.test.ts` › 「quit 은 그 앞뒤로 받은 kill 과 …」, `app/e2e/close-confirm.spec.ts` › 「Keep terminals 로 끌 때도 앱은 host 가 앞서 받은 kill 을 처리하고 끝나기를 기다린다」, `host-link.test.ts` › 「host 가 상한 안에 끝나지 않으면 kill 한 뒤 stop 이 풀린다」·「host 가 상한 안에 끝나면 stop 이 풀리고, 상한이 지나도 kill 하지 않는다」·「상한에서 host 를 끄지 못해도 stop 은 풀린다」
 
 ## `maru-pty` 는 레코드를 쓴 뒤에 소켓을 연다
 
