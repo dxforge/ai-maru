@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { coreMatch } from '../shared/core-source'
 import { JOB_REPLY_MS } from './job'
+import { JOB_KILL_TIMEOUT_MS, JOB_SPAWN_TIMEOUT_MS } from './pty'
 import { WINDOW_WAIT_MS } from './window-ready'
 
 describe('창과 pty 를 기다리는 상한', () => {
@@ -14,5 +15,6 @@ describe('창과 pty 를 기다리는 상한', () => {
       ) * 1000
     expect(WINDOW_WAIT_MS).toBeLessThan(timeoutMs)
     expect(JOB_REPLY_MS).toBeLessThan(timeoutMs)
+    expect(JOB_SPAWN_TIMEOUT_MS + JOB_KILL_TIMEOUT_MS).toBeLessThan(timeoutMs)
   })
 })

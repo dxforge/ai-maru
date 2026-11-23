@@ -33,7 +33,11 @@ const sameVersion = (f: Fixture) => TABLES.filter((t) => f.versions[t] === STATE
 
 describe('state.json 표 형식', () => {
   it('지금 버전의 표 형식 파일이 있다', () => {
-    expect(fixtures.map(([, f]) => f.versions)).toContainEqual(STATE_VERSIONS)
+    const tableVersions = (v: typeof STATE_VERSIONS) =>
+      Object.fromEntries(TABLES.map((t) => [t, v[t]]))
+    expect(fixtures.map(([, f]) => tableVersions(f.versions))).toContainEqual(
+      tableVersions(STATE_VERSIONS)
+    )
   })
 
   it.each(fixtures)('%s 의 표를 지금 앱이 읽으면 그때의 화면이 돌아온다', (_, f) => {

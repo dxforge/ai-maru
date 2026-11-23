@@ -34,7 +34,7 @@ renderer 의 xterm 과 `maru-pty` 의 VT 는 글자마다 차지하는 글자 �
 
 - 코드: `TerminalView.vue`(`UnicodeGraphemesAddon`) ↔ `core/crates/maru-pty/src/vt/mod.rs`(mode 2027)
 - 바꾸면: 한쪽의 폭 규칙만 바꾸면 재시작해 다시 붙은 pane 의 커서가 xterm 이 센 열과 어긋난다.
-- 테스트: `vt/mod.rs` › `emoji_sequences_take_the_cells_of_the_shared_samples`, `emoji_sequences_keep_their_cells_after_a_full_reset`, `app/src/renderer/src/components/terminalWidth.test.ts` › 「xterm 은 %s 를 fixture 의 폭으로 센다」. 셋 다 `core/crates/maru-pty/tests/widths.json` 을 읽고, 위의 차이도 이 fixture 에 있다. `app/e2e/unicode.spec.ts` › 「emoji 를 찍고 재시작하면 maru-pty 가 재생한 커서가 xterm 이 센 열과 같다」 는 같은 fixture 에서 두 쪽의 폭이 같은 줄을 찍어 잰다.
+- 테스트: `vt/mod.rs` › `emoji_sequences_take_the_cells_of_the_shared_samples`, `app/src/renderer/src/components/terminalWidth.test.ts` › 「xterm 은 %s 를 fixture 의 폭으로 센다」, `app/e2e/unicode.spec.ts` › 「emoji·한글을 찍은 뒤 커서를 Claude Code 가 세는 열에 둔다」. 셋 다 `core/crates/maru-pty/tests/widths.json` 을 읽는다. mode 2027 을 끈 뒤의 차이도 이 fixture 에 적혀 있다. e2e 는 두 쪽의 폭이 같은 줄만 찍는다. `vt/mod.rs` › `emoji_sequences_keep_their_cells_after_a_full_reset` 과 `unicode.spec.ts` › 「emoji 를 찍고 재시작하면 maru-pty 가 재생한 커서가 xterm 이 센 열과 같다」 는 fixture 를 읽지 않고 글자와 폭을 테스트 안에 둔다.
 
 ## 밀린 클라이언트는 RIS 와 재생으로 다시 맞춘다
 
