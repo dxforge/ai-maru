@@ -45,6 +45,10 @@ export type JobDeps = {
   changed: () => void
 }
 
+export function jobLabel(job: Pick<JobRecord, 'name' | 'command'>): string {
+  return job.name ?? job.command[0]
+}
+
 /**
  * 계약은 `main.rs`(`core/crates/maru/src/main.rs`)의 모듈 doc 에 있다. 표는 띄운 순서다.
  *
@@ -55,6 +59,9 @@ export function createJobs(deps: JobDeps) {
   const jobs: JobRecord[] = []
   const waits = new Map<string, () => void>()
   let detached = false
+
+  const runningIn = (cells?: ReadonlySet<string>): JobRecord[] =>
+    jobs.filter((j) => !j.exit && (!cells || cells.has(j.cell)))
 
   function cellOf(pty: string): string | undefined {
     return deps.cellOf(pty) ?? jobs.find((j) => j.pty === pty)?.cell
@@ -218,8 +225,8 @@ export function createJobs(deps: JobDeps) {
       // 저장된 표에 pending 이 남으면 다시 뜬 앱이 같은 알림을 또 보낸다.
       if (sent) deps.changed()
     },
-    running: (cells?: ReadonlySet<string>): number =>
-      jobs.filter((j) => !j.exit && (!cells || cells.has(j.cell))).length,
+    running: (cells?: ReadonlySet<string>): number => runningIn(cells).length,
+    runningNames: (cell: string): string[] => runningIn(new Set([cell])).map(jobLabel),
     closeCell: async (cell: string): Promise<void> => {
       const closing = jobs.filter((j) => j.cell === cell)
       for (const j of closing) remove(j)

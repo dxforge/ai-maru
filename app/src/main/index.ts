@@ -23,7 +23,6 @@ import {
   QUIT_OUTCOMES,
   quitDialog,
   runningDialog,
-  runningJobNames,
   runningPanes,
   runningProgram,
   stopJobDialog,
@@ -50,7 +49,7 @@ import { createPanes } from './pane'
 import { ptyCli } from './pty-cli'
 import { isObject } from '../shared/object'
 import { createWindowReady } from './window-ready'
-import { createJobs, JOB_REPLY_MS } from './job'
+import { createJobs, JOB_REPLY_MS, jobLabel } from './job'
 import { removeTmpFiles } from './json-file'
 import { createLauncherStore, listDirs, notDirectory } from './launcher'
 import { longestExistingPaths, openLink, type LinkOpener } from './links'
@@ -507,7 +506,7 @@ async function closePaneCheck(paneId: string, pty: string): Promise<Dialog | nul
   const program = await runningProgram(pane, programDeps)
   // pane 을 닫아 cell 이 닫히면 `sendKill` 이 그 cell 의 job 도 끈다.
   const cell = ptyCells.closes(pty)
-  return closePaneDialog(program, cell && jobs ? runningJobNames(jobs.list(), cell) : [])
+  return closePaneDialog(program, cell && jobs ? jobs.runningNames(cell) : [])
 }
 
 async function closeWorkspaceCheck(workspace: string): Promise<Dialog | null> {
@@ -882,7 +881,7 @@ function start(): void {
     if (!isPtyId(pty)) return
     const { close } = await checkClose(async () => {
       const j = jobTable.get(pty)
-      return j && !j.exit ? stopJobDialog(j.name ?? j.command[0]) : null
+      return j && !j.exit ? stopJobDialog(jobLabel(j)) : null
     })
     if (close) await jobTable.kill(pty)
   })

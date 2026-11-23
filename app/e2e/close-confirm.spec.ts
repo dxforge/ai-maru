@@ -134,7 +134,6 @@ test('⌘W 가 cell 의 마지막 pane 을 닫게 되면 그 cell 에서 도는 
 }) => {
   const launched = await launch()
   const { app, page } = launched
-  // 다른 cell 의 job 은 적지 않고 끄지도 않는다.
   await run(page, 'maru job new --name other sleep 600 && echo first-$((1+1))', 'first-2')
   await newCell(launched, 2)
   await run(page, 'maru job new --name dev sleep 600 && echo up-$((1+1))', 'up-2')

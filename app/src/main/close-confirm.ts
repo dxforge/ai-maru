@@ -1,7 +1,6 @@
 import type { MessageBoxOptions } from 'electron'
 import type { PtyCommand } from '../shared/pty-state'
 import type { ScreenPane } from '../shared/screen'
-import type { JobRecord } from './job'
 import type { Foreground } from './pty'
 
 type PaneTarget = Pick<ScreenPane, 'ptyId' | 'command'>
@@ -70,39 +69,36 @@ export function createQuitPermission(graceMs: number): {
 
 export type Dialog = Pick<MessageBoxOptions, 'message' | 'detail' | 'buttons'>
 
-/** 이름을 이만큼까지 적고 나머지는 수로 줄인다. 확인 창의 본문이 몇 줄 안에 들게 하기 위해서다. */
+/** 확인 창은 job 이름을 이만큼까지 적고 나머지는 수로 줄인다. 본문이 몇 줄 안에 들게 하기 위해서다. */
 const JOB_NAMES_SHOWN = 3
 
 function jobsStopping(names: readonly string[]): string {
   const shown = names.slice(0, JOB_NAMES_SHOWN).map((n) => `\`${n}\``)
   const rest = names.length - shown.length
-  const list = rest ? `${shown.join(', ')}, and ${rest} more` : shown.join(', ')
+  const items = rest ? [...shown, `${rest} more`] : shown
+  const last = items.pop()
+  const list =
+    items.length > 1 ? `${items.join(', ')}, and ${last}` : [...items, last].join(' and ')
   const noun = names.length === 1 ? 'job' : 'jobs'
   return `This is the last pane in this cell, so its ${noun} will stop: ${list}.`
 }
 
-/** `jobs` 는 pane 을 닫으면 cell 과 함께 끝날 job 의 이름이다. 도는 프로그램도 job 도 없으면 묻지 않는다. */
+/** `jobs` 는 pane 을 닫으면 cell 과 함께 끝날 job 의 이름이다. */
 export function closePaneDialog(
   program: { name: string | null } | null,
-  jobs: readonly string[] = []
+  jobs: readonly string[]
 ): Dialog | null {
-  const parts = [
-    program &&
-      (program.name === null
+  const parts: string[] = []
+  if (program) {
+    parts.push(
+      program.name === null
         ? 'A program is still running in it.'
-        : `\`${program.name}\` is still running.`),
-    jobs.length > 0 && jobsStopping(jobs)
-  ].filter((p): p is string => Boolean(p))
+        : `\`${program.name}\` is still running.`
+    )
+  }
+  if (jobs.length) parts.push(jobsStopping(jobs))
   if (!parts.length) return null
   return { message: 'Close this pane?', detail: parts.join(' '), buttons: ['Close', 'Cancel'] }
-}
-
-/** cell 에서 도는 job 의 이름이다. 끝난 job 은 세지 않는다. 이름이 없는 job 은 명령의 첫 낱말로 부른다. */
-export function runningJobNames(
-  jobs: readonly Pick<JobRecord, 'name' | 'cell' | 'command' | 'exit'>[],
-  cell: string
-): string[] {
-  return jobs.filter((j) => j.cell === cell && !j.exit).map((j) => j.name ?? j.command[0])
 }
 
 export function stopJobDialog(name: string): Dialog {
