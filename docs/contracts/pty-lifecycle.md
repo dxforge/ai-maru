@@ -1,6 +1,6 @@
 # pty 의 수명
 
-pty 를 열고, pty host 가 바뀌고, pty 를 끄고, 앱이 끝나고 다시 뜰 때 renderer·main·pty host·`maru-pty` 가 서로에게 기대는 순서다. 주로 닿는 코드는 `app/src/main/index.ts`(`pty:open`·`sendKill`·`will-quit`), `app/src/main/host-link.ts`, `app/src/main/pty-host.ts`, `app/src/main/pty.ts`, `app/src/main/pty-cells.ts`, `app/src/main/state.ts`, `app/src/renderer/src/pty/connection.ts`·`attach.ts`, `core/crates/maru-pty/src/server.rs` 다.
+이 파일은 pty 를 열고, pty host 가 바뀌고, pty 를 끄고, 앱이 끝나고 다시 뜰 때 renderer·main·pty host·`maru-pty` 가 서로에게 기대는 순서를 적는다.
 
 ## 포트는 renderer 에 먼저 간다
 

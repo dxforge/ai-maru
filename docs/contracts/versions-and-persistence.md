@@ -1,6 +1,6 @@
 # 버전과 저장
 
-떠 있는 pty 는 앱을 다시 설치하고 재시작해도 옛 `maru-pty` 로 돌고, `state.json` 은 끄기 전의 빌드가 쓰고 다시 뜬 빌드가 읽는다. 그래서 서로 다른 빌드의 코드가 같은 pty·같은 파일에 기댄다. 이 파일은 그 약속을 적는다. 주로 닿는 코드는 `app/src/shared/protocol.ts`, `core/crates/maru-pty/src/lib.rs`·`server.rs`, `app/src/main/pty.ts`·`pty-host.ts`·`bridge.ts`, `app/src/main/state.ts`, `app/src/shared/screen.ts`, `app/src/main/restart.ts`, `app/resources/state-versions.json` 이다. 프로토콜 버전을 올리는 규칙은 `.claude/rules/pty-protocol.md` 에 있다.
+떠 있는 pty 는 앱을 다시 설치하고 재시작해도 옛 `maru-pty` 로 돌고, `state.json` 은 끄기 전의 빌드가 쓰고 다시 뜬 빌드가 읽는다. 그래서 서로 다른 빌드의 코드가 같은 pty·같은 파일에 기댄다. 이 파일은 그 약속을 적는다. 프로토콜 버전을 올리는 규칙은 `.claude/rules/pty-protocol.md` 에 있다.
 
 ## 앱과 `maru-pty` 는 버전 범위를 함께 지킨다
 

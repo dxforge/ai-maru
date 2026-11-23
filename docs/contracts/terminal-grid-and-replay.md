@@ -1,6 +1,6 @@
 # 글자 칸 격자와 재생
 
-renderer 는 pane 을 터미널 글자 칸의 격자에 맞춰 놓고 열·행 수를 정하며, `maru-pty` 는 그 크기로 화면을 재생한다. 그래서 renderer 의 JS 셈과 CSS, renderer 의 xterm 과 `maru-pty` 의 VT 가 같은 값과 같은 규칙을 써야 한다. 이 파일은 그 약속을 적는다. 주로 닿는 코드는 `app/src/renderer/src/App.vue`, `components/TerminalView.vue`, `workspace/columns.ts`·`grid.ts`, `style.css`, `app/src/shared/layout.ts`, `app/src/renderer/src/pty/attach.ts`, `core/crates/maru-pty/src/attach.rs`·`pty.rs`·`vt/mod.rs` 다.
+renderer 는 pane 을 터미널 글자 칸의 격자에 맞춰 놓고 열·행 수를 정하며, `maru-pty` 는 그 크기로 화면을 재생한다. 그래서 renderer 의 JS 셈과 CSS, renderer 의 xterm 과 `maru-pty` 의 VT 가 같은 값과 같은 규칙을 써야 한다. 이 파일은 그 약속을 적는다.
 
 ## 열 수 셈이 빼는 폭과 CSS 가 그리는 폭은 같다
 
