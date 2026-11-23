@@ -67,6 +67,13 @@ describe('uiColors', () => {
     expect(uiColors({ ...GHOSTTY, ansi }).working).toBe(ansi[12])
   })
 
+  it('마우스를 올린 pane 의 덮개는 focus 없는 pane 의 덮개보다 옅고, 걷히지 않는다', () => {
+    const alpha = (c: string): number => parseInt(c.slice(7, 9), 16)
+    const ui = uiColors(GHOSTTY)
+    expect(alpha(ui.dimHover)).toBeGreaterThan(0)
+    expect(alpha(ui.dimHover)).toBeLessThan(alpha(ui.dim))
+  })
+
   it('cell 띠는 터미널 배경을 글자색 쪽으로 섞어 정한 대비를 낸다', () => {
     const dark = uiColors(GHOSTTY)
     expect(contrast(dark.cellBand, dark.ground)).toBeCloseTo(CELL_BAND_CONTRAST, 1)

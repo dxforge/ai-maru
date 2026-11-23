@@ -627,6 +627,23 @@ export function panes(page: Page) {
   return page.locator('.panes.selected .pane')
 }
 
+export function dimToken(pane: Locator): Promise<string> {
+  return pane.locator('.body').evaluate((el) => {
+    const style = getComputedStyle(el, '::after')
+    if (style.content === 'none') return 'none'
+    const probe = document.body.appendChild(document.createElement('div'))
+    try {
+      for (const token of ['--dim', '--dim-hover']) {
+        probe.style.background = `var(${token})`
+        if (getComputedStyle(probe).backgroundColor === style.backgroundColor) return token
+      }
+      return style.backgroundColor
+    } finally {
+      probe.remove()
+    }
+  })
+}
+
 export async function paneBox(page: Page, i: number) {
   return (await panes(page).nth(i).boundingBox())!
 }

@@ -172,6 +172,8 @@ export function uiColors(theme: TerminalTheme) {
     muted: mix(fg, bg, 0.35),
     faint: mix(fg, bg, 0.55),
     dim: bg + '73',
+    // 마우스를 올린 pane 의 본문도 dim 의 절반쯤 되는 불투명도로 덮는다. 덮지 않으면 입력을 받는 pane 과 헷갈리기 때문이다.
+    dimHover: bg + '3a',
     thumb: fg + THUMB_ALPHA,
     track: fg + '0f',
     working: status(4),
