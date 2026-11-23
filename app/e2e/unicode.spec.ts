@@ -1,17 +1,17 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { expect, restartWith, test } from './app'
 
-// Unicode 14 이후에 추가된 emoji(🫠 등)는 `@xterm/addon-unicode-graphemes` 의 폭 표에 없어 폭을 1로 세므로
-// 넣지 않는다.
-const SAMPLES: [name: string, text: string, cells: number][] = [
-  ['check', '✅', 2],
-  ['skin tone', '👍🏽', 2],
-  ['ZWJ family', '👨‍👩‍👧', 2],
-  ['VS16 heart', '❤️', 2],
-  ['hangul', '한', 2],
-  ['record', '⏺', 1],
-  ['circled', '①', 1]
-]
+type Sample = { name: string; text: string; xterm: number; maru_pty: number }
+
+const SAMPLES = (
+  JSON.parse(
+    readFileSync(join(__dirname, '../../core/crates/maru-pty/tests/widths.json'), 'utf8')
+  ) as Sample[]
+)
+  .filter((s) => s.xterm === s.maru_pty)
+  .map((s) => [s.name, s.text, s.xterm] as const)
 
 // 셸의 locale·버전과 상관없이 같은 바이트를 내도록 printf 의 8진 escape 로 쓴다.
 function octal(text: string): string {

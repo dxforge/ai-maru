@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PtyNotification } from '../shared/pty-state'
+import { coreFile } from '../shared/core-source'
 import { InvalidParams } from './cli-server'
 import { claudeNotificationHandlers, lineText } from './claude-notification'
 
@@ -71,5 +72,14 @@ describe('claude.notification', () => {
 describe('lineText', () => {
   it('줄바꿈·탭은 공백으로, 그 밖의 C0·DEL·C1 은 지우고 앞뒤 공백을 뗀다', () => {
     expect(lineText('\u0000 x\ny\tz\u007f\u0085 ')).toBe('x y z')
+  })
+
+  // maru-pty 의 `line_text`(`vt/mod.rs`)도 같은 fixture 로 잰다.
+  const samples: { in: string; out: string }[] = JSON.parse(
+    coreFile('crates/maru-pty/tests/line-text.json')
+  )
+  it('maru-pty 와 같은 fixture 를 같게 다듬는다', () => {
+    expect(samples.length).toBeGreaterThan(0)
+    for (const s of samples) expect(lineText(s.in), JSON.stringify(s.in)).toBe(s.out)
   })
 })

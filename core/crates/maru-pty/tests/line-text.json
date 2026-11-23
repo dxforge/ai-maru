@@ -1,0 +1,14 @@
+[
+  { "in": "build done", "out": "build done" },
+  { "in": "  　 padded  　", "out": "padded" },
+  { "in": "a\nb\tc", "out": "a b c" },
+  { "in": "\n\t", "out": "" },
+  { "in": "line\r\nnext", "out": "line next" },
+  { "in": "\u0000\u0007\u001b[31mred\u007f", "out": "[31mred" },
+  { "in": "c1\u0080\u0085\u009b\u009fend", "out": "c1end" },
+  { "in": "\u0000 x\ny\tz\u007f\u0085 ", "out": "x y z" },
+  { "in": "한글 ✅ 👨‍👩‍👧", "out": "한글 ✅ 👨‍👩‍👧" },
+  { "in": "a b", "out": "a b" },
+  { "in": " a ", "out": "a" },
+  { "in": "", "out": "" }
+]

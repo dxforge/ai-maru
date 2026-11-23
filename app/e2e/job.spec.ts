@@ -201,6 +201,18 @@ test('다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell �
   await run(page, 'maru job list', /b\s+running/)
 })
 
+test('셸이 끝나 cell 이 닫히면 그 cell 의 job 도 끝난다', async ({ launch, dataDir }) => {
+  const launched = await launch()
+  const { page } = launched
+  await newWorkspace(launched, 2)
+  await run(page, 'maru job new --name a sleep 100; echo up-$((1+1))', 'up-2')
+  expect(sockets(dataDir)).toHaveLength(3)
+
+  await page.keyboard.type('exit\n')
+  await expect(cellItems(page)).toHaveCount(1)
+  await expect.poll(() => sockets(dataDir).length).toBe(1)
+})
+
 test('스크롤백을 넘치게 찍은 job 도 read 가 답한다', async ({ launch }) => {
   const { page } = await launch()
   await run(

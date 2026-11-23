@@ -1082,6 +1082,18 @@ mod tests {
         );
     }
 
+    /// 앱의 `lineText`(`claude-notification.ts`)도 같은 fixture 로 잰다.
+    #[test]
+    fn line_text_trims_the_shared_samples_like_the_app() {
+        let cases: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../../tests/line-text.json")).unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let (input, want) = (case["in"].as_str().unwrap(), case["out"].as_str().unwrap());
+            assert_eq!(line_text(input.as_bytes()), want, "{input:?}");
+        }
+    }
+
     #[test]
     fn command_text_turns_newlines_and_tabs_into_spaces() {
         let mut t = term();
@@ -1154,20 +1166,22 @@ mod tests {
         assert!(plain(&t).contains("한글 테스트"));
     }
 
+    /// 앱의 xterm 이 세는 폭(`xterm`)은 `terminalWidth.test.ts` 가 같은 fixture 로 잰다.
     #[test]
-    fn emoji_sequences_take_the_cells_the_app_counts() {
-        for (text, cells) in [
-            ("✅", 2),
-            ("👍🏽", 2),
-            ("👨\u{200d}👩\u{200d}👧", 2),
-            ("❤\u{fe0f}", 2),
-            ("한", 2),
-            ("⏺", 1),
-            ("①", 1),
-        ] {
+    fn emoji_sequences_take_the_cells_of_the_shared_samples() {
+        let cases: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../../tests/widths.json")).unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let text = case["text"].as_str().unwrap();
             let mut t = term();
             t.write(text.as_bytes());
-            assert_eq!(t.cursor().unwrap().0, cells, "{text}");
+            assert_eq!(
+                t.cursor().unwrap().0 as u64,
+                case["maru_pty"].as_u64().unwrap(),
+                "{}",
+                case["name"]
+            );
         }
     }
 

@@ -4,8 +4,15 @@ import type { ProgramStatusRecord, ProgramStatusState } from '../../../shared/pr
 import { isPtyId } from '../../../shared/pty'
 import type { PtyState } from '../../../shared/pty-state'
 import { autoWorkspaceName, labelBase } from '../../../shared/names'
-import type { Layout } from '../../../shared/layout'
-import { parseScreen } from '../../../shared/screen'
+import { panes as leavesOf, type Layout } from '../../../shared/layout'
+import {
+  joinTables,
+  parseCellsTable,
+  parsePanesTable,
+  parseScreen,
+  parseWorkspacesTable,
+  splitScreen
+} from '../../../shared/screen'
 import {
   createWorkspaces,
   focusedPane,
@@ -2457,6 +2464,34 @@ describe('background', () => {
     })
     expect(to.cells()[1]).toMatchObject({ layout: null, focused: empty })
     expect(to.pane(b)).toMatchObject({ background: true, attach: true })
+  })
+
+  it('background 를 모르는 빌드가 표를 읽어도 모든 pane 이 열리고, background pane 은 배치 오른쪽 끝에 보인다', () => {
+    const { ws, a, b, c } = three()
+    ws.sendToBackground(b)
+    ws.open('/e')
+    const only = selected(ws).panes[0].key
+    ws.sendToBackground(only)
+    const id = (key: number) => ws.pane(key)!.id
+    const screen = { sidebar: { open: true, width: 280, folded: [] }, viewMode: 'single' as const }
+    const t = JSON.parse(JSON.stringify(splitScreen({ ...screen, ...ws.snapshot() })))
+    // `background`·`home` 이 생기기 전의 빌드는 이 필드를 읽지 않는다.
+    for (const row of t.panes.rows) delete row.background
+    for (const row of t.cells.rows) delete row.home
+    const old = createWorkspaces()
+    old.restore(
+      joinTables({
+        workspaces: parseWorkspacesTable(t.workspaces),
+        cells: parseCellsTable(t.cells),
+        panes: parsePanesTable(t.panes)
+      })!,
+      null
+    )
+    const leaves = old.cells().map((cell) => {
+      const ids = new Map(cell.panes.map((p) => [p.key, p.id]))
+      return leavesOf(cell.layout!).map((k) => ids.get(k))
+    })
+    expect(leaves).toEqual([[id(a), id(c), id(b)], [id(only)]])
   })
 
   it('pty 없이 되살린 background pane 도 background 로 남는다', () => {

@@ -294,7 +294,7 @@ test('창이 시간 안에 답하지 못해 실패한 maru pane new 의 pane 은
       '{ const t = Date.now(); while (Date.now() - t < 10000) {} }'
     )
   })
-  await expect(screen(page)).toShow('did not answer', { timeout: 20_000 })
+  await expect(screen(page)).toShow('the window did not answer', { timeout: 20_000 })
   await expect(screen(page)).toShow('code-1')
   await page.waitForTimeout(500)
   await expect(panes(page)).toHaveCount(1)

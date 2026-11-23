@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type IModes } from '@xterm/xterm'
 import { describe, expect, it } from 'vitest'
+import { coreMatch } from '../../../shared/core-source'
 import { attach, GONE_MESSAGE } from './attach'
 import type { PtyConnection, PtyMessage } from './connection'
 
@@ -64,7 +65,20 @@ const REPLAY_END = JSON.stringify({ type: 'replay_end' })
 const header = (type: string): string =>
   JSON.stringify({ type, cols: 20, rows: 4, cursor_x: 0, cursor_y: 0 })
 
-async function drawn(messages: PtyMessage[]): Promise<{ lines: string[]; cursor: number[] }> {
+/** `maru-pty` 가 resync 헤더 뒤에 보내는 바이트(`attach.rs` 의 `VT_RESET`). Rust 바이트 문자열의 `\xNN` 만 푼다. */
+const VT_RESET = coreMatch(
+  'crates/maru-pty/src/attach.rs',
+  /^const VT_RESET: &\[u8\] = b"((?:\\x[0-9a-f]{2}|[ -!#-[\]-~])+)";$/m
+).replace(/\\x([0-9a-f]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+
+type Drawn = {
+  lines: string[]
+  cursor: number[]
+  buffer: string
+  modes: IModes
+}
+
+async function drawn(messages: PtyMessage[]): Promise<Drawn> {
   const term = new Terminal({ cols: 20, rows: 4, allowProposedApi: true })
   const { conn, deliver } = fakeConnection()
   attach(term, conn, handlers)
@@ -73,8 +87,9 @@ async function drawn(messages: PtyMessage[]): Promise<{ lines: string[]; cursor:
   const b = term.buffer.active
   const lines = Array.from({ length: b.length }, (_, y) => b.getLine(y)!.translateToString(true))
   const cursor = [b.cursorX, b.cursorY]
+  const result = { lines, cursor, buffer: b.type, modes: { ...term.modes } }
   term.dispose()
-  return { lines, cursor }
+  return result
 }
 
 describe('attach', () => {
@@ -366,7 +381,8 @@ describe('attach', () => {
     expect(got).toEqual([])
     expect(term.written).toEqual([])
   })
-  // resync 의 RIS 가 끝나지 않은 시퀀스를 끊는다는 계약(`docs/contracts/terminal-grid-and-replay.md` 의 "밀린 클라이언트는 RIS 와 재생으로 다시 맞춘다")을 확인한다.
+  // resync 의 RIS 가 끝나지 않은 시퀀스를 끊고 모드를 기본값으로 돌린다는 계약(`docs/contracts/terminal-grid-and-replay.md` 의
+  // "밀린 클라이언트는 RIS 와 재생으로 다시 맞춘다")을 확인한다.
   it.each([
     ['UTF-8 글자', '\xea\xb0'],
     ['CSI', '\x1b[38;5;'],
@@ -380,7 +396,7 @@ describe('attach', () => {
       latin1('before\r\n'),
       latin1(`$ ${cut}`),
       header('resync'),
-      latin1('\x1bc'),
+      latin1(VT_RESET),
       latin1(replay),
       REPLAY_END,
       next
@@ -389,4 +405,30 @@ describe('attach', () => {
     expect(resynced).toEqual(fresh)
     expect(fresh.lines[1]).toBe('$ 가다 tail')
   })
+  it.each([
+    ['대체 화면', '\x1b[?1049h', (d: Drawn) => d.buffer === 'alternate'],
+    ['스크롤 영역', '\x1b[2;3r', (d: Drawn) => d.lines.join('|') !== 'x|a|b|c'],
+    ['bracketed paste', '\x1b[?2004h', (d: Drawn) => d.modes.bracketedPasteMode]
+  ])(
+    '버려진 출력이 %s 를 켰어도 resync 뒤의 화면과 모드는 재생과 같다',
+    async (_, mode, changed) => {
+      // `replay` 는 화면만 다시 그리므로 resync 뒤의 모드는 기본값이어야 한다. `next` 의 줄바꿈이 스크롤 영역을 드러낸다.
+      const replay = '\x1b[H\x1b[2Jx'
+      const next = latin1('\r\na\r\nb\r\nc')
+      const lost = [header('attached'), latin1(mode)]
+      // 버려진 출력의 모드가 남으면 다르게 보인다는 것을 먼저 확인한다.
+      expect(changed(await drawn([...lost, latin1(replay), next]))).toBe(true)
+      const resynced = await drawn([
+        ...lost,
+        header('resync'),
+        latin1(VT_RESET),
+        latin1(replay),
+        REPLAY_END,
+        next
+      ])
+      const fresh = await drawn([header('attached'), latin1(replay), REPLAY_END, next])
+      expect(resynced).toEqual(fresh)
+      expect(changed(fresh)).toBe(false)
+    }
+  )
 })
