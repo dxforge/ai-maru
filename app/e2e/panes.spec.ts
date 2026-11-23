@@ -4,6 +4,7 @@ import {
   cellSize,
   clickMenu,
   delayPtyPort,
+  dimAlpha,
   expect,
   focusPane,
   openPalette,
@@ -177,29 +178,28 @@ test('포커스가 터미널 밖에 있어도 ⇧⌘방향키는 pane 을 옮긴
   await typesInto(page, 0, 'left')
 })
 
-test('입력 pane 이 아닌 pane 에 마우스를 올리면 덮은 것만 걷히고, 테두리와 입력은 원래 pane 에 남는다', async ({
+test('입력 pane 이 아닌 pane 에 마우스를 올리면 덮은 것이 옅어지고, 테두리와 입력은 원래 pane 에 남는다', async ({
   launch
 }) => {
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
-  const dimmed = (i: number) =>
-    panes(page)
-      .nth(i)
-      .locator('.body')
-      .evaluate((el) => getComputedStyle(el, '::after').content !== 'none')
-  await expect.poll(() => dimmed(0)).toBe(true)
+  const left = panes(page).nth(0)
+  await expect.poll(() => dimAlpha(left)).toBeGreaterThan(0)
+  const full = await dimAlpha(left)
 
-  await panes(page).nth(0).locator('.body').hover()
-  await expect.poll(() => dimmed(0)).toBe(false)
-  await expect(panes(page).nth(0)).not.toHaveClass(/focused/)
+  await left.locator('.body').hover()
+  await expect.poll(() => dimAlpha(left)).toBeLessThan(full)
+  expect(await dimAlpha(left)).toBeGreaterThan(0)
+  await expect(left).not.toHaveClass(/focused/)
   await expect(panes(page).nth(1)).toHaveClass(/focused/)
   await typesInto(page, 1, 'hovered-left')
 
   await panes(page).nth(1).locator('.body').hover()
-  await expect.poll(() => dimmed(0)).toBe(true)
+  await expect.poll(() => dimAlpha(left)).toBe(full)
 
-  await panes(page).nth(0).locator('.pane-header').hover()
-  await expect.poll(() => dimmed(0)).toBe(false)
+  await left.locator('.pane-header').hover()
+  await expect.poll(() => dimAlpha(left)).toBeLessThan(full)
+  expect(await dimAlpha(left)).toBeGreaterThan(0)
   await expect(panes(page).nth(1)).toHaveClass(/focused/)
 })
 

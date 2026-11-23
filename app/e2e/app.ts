@@ -627,6 +627,16 @@ export function panes(page: Page) {
   return page.locator('.panes.selected .pane')
 }
 
+/** pane 본문을 덮은 것의 불투명도다. 덮지 않았으면 0 이다. */
+export function dimAlpha(pane: Locator): Promise<number> {
+  return pane.locator('.body').evaluate((el) => {
+    const style = getComputedStyle(el, '::after')
+    if (style.content === 'none') return 0
+    const alpha = style.backgroundColor.match(/rgba\(.*,\s*([\d.]+)\)/)
+    return alpha ? Number(alpha[1]) : 1
+  })
+}
+
 export async function paneBox(page: Page, i: number) {
   return (await panes(page).nth(i).boundingBox())!
 }

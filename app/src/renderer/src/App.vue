@@ -1876,13 +1876,17 @@ void window.maru.restoreScreen().then((r) => {
   bottom: var(--row);
 }
 
-.pane:not(.focused):not(:hover) > .body::after {
+.pane:not(.focused) > .body::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: 1;
   background: var(--dim);
   pointer-events: none;
+}
+
+.pane:not(.focused):hover > .body::after {
+  background: var(--dim-hover);
 }
 
 /* 입력을 받는 pane 의 테두리다. 경계선처럼 자리를 차지하지 않게 헤더와 터미널 가장자리 위에 겹친다. cell 의 모서리에
