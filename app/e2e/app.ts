@@ -627,13 +627,20 @@ export function panes(page: Page) {
   return page.locator('.panes.selected .pane')
 }
 
-/** pane 본문을 덮은 것의 불투명도다. 덮지 않았으면 0 이다. */
-export function dimAlpha(pane: Locator): Promise<number> {
+export function dimToken(pane: Locator): Promise<string> {
   return pane.locator('.body').evaluate((el) => {
     const style = getComputedStyle(el, '::after')
-    if (style.content === 'none') return 0
-    const alpha = style.backgroundColor.match(/rgba\(.*,\s*([\d.]+)\)/)
-    return alpha ? Number(alpha[1]) : 1
+    if (style.content === 'none') return 'none'
+    const probe = document.body.appendChild(document.createElement('div'))
+    try {
+      for (const token of ['--dim', '--dim-hover']) {
+        probe.style.background = `var(${token})`
+        if (getComputedStyle(probe).backgroundColor === style.backgroundColor) return token
+      }
+      return style.backgroundColor
+    } finally {
+      probe.remove()
+    }
   })
 }
 

@@ -5,7 +5,7 @@ import {
   CLASSIC_SCROLLBARS,
   cellSize,
   clickMenu,
-  dimAlpha,
+  dimToken,
   expect,
   expectCols,
   focusPane,
@@ -266,13 +266,11 @@ test('columns 에서 고르지 않은 cell 의 pane 에 마우스를 올리면 �
   await toggleView(launched, 'columns')
   const other = cellViews(page).nth(0).locator('.pane')
   await expect(cellViews(page).nth(1)).toHaveClass(/selected/)
-  await expect.poll(() => dimAlpha(other)).toBeGreaterThan(0)
-  const full = await dimAlpha(other)
+  await expect.poll(() => dimToken(other)).toBe('--dim')
 
   await other.locator('.body').hover()
 
-  await expect.poll(() => dimAlpha(other)).toBeLessThan(full)
-  expect(await dimAlpha(other)).toBeGreaterThan(0)
+  await expect.poll(() => dimToken(other)).toBe('--dim-hover')
   await expect(cellViews(page).nth(0)).not.toHaveClass(/selected/)
   await run(page, 'echo "x=$X"', 'x=b-4')
 })

@@ -4,7 +4,7 @@ import {
   cellSize,
   clickMenu,
   delayPtyPort,
-  dimAlpha,
+  dimToken,
   expect,
   focusPane,
   openPalette,
@@ -184,22 +184,19 @@ test('입력 pane 이 아닌 pane 에 마우스를 올리면 덮은 것이 옅�
   const { app, page } = await launch()
   await split(app, page, 'split-right', 2)
   const left = panes(page).nth(0)
-  await expect.poll(() => dimAlpha(left)).toBeGreaterThan(0)
-  const full = await dimAlpha(left)
+  await expect.poll(() => dimToken(left)).toBe('--dim')
 
   await left.locator('.body').hover()
-  await expect.poll(() => dimAlpha(left)).toBeLessThan(full)
-  expect(await dimAlpha(left)).toBeGreaterThan(0)
+  await expect.poll(() => dimToken(left)).toBe('--dim-hover')
   await expect(left).not.toHaveClass(/focused/)
   await expect(panes(page).nth(1)).toHaveClass(/focused/)
   await typesInto(page, 1, 'hovered-left')
 
   await panes(page).nth(1).locator('.body').hover()
-  await expect.poll(() => dimAlpha(left)).toBe(full)
+  await expect.poll(() => dimToken(left)).toBe('--dim')
 
   await left.locator('.pane-header').hover()
-  await expect.poll(() => dimAlpha(left)).toBeLessThan(full)
-  expect(await dimAlpha(left)).toBeGreaterThan(0)
+  await expect.poll(() => dimToken(left)).toBe('--dim-hover')
   await expect(panes(page).nth(1)).toHaveClass(/focused/)
 })
 
