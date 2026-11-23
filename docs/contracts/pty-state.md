@@ -28,17 +28,17 @@ renderer 는 로드하면 `pty:states` 로 전체를 묻고, 그 뒤 `pty:state`
 
 ## `pane list`·`pty list` 는 renderer 에 묻지 않고 답한다
 
-main 은 `maru pane list`·`maru pty list` 에 renderer 를 거치지 않고 답한다. 프로그램 상태 레코드·명령은 main 이 구독한 상태에서, workspace 이름·cell id·pane 의 cwd·제목·git 은 renderer 가 보낸 화면 snapshot(`lastScreen`)에서 가져온다. `pty list` 의 EXIT 는 pane 이면 `maru-pty` 의 `status` 에서, job 이면 job 표에서 가져오고, job 의 DIR 은 main 이 구독한 상태의 cwd 다. 그래서 snapshot 은 pane 의 `git` 과 바꾼 workspace 이름 `name` 을 싣고, main 은 사이드바와 같은 `workspaceName`·`paneName` 으로 이름을 짓는다.
+main 은 `maru pane list`·`maru pty list` 에 renderer 를 거치지 않고 답한다. 프로그램 상태 레코드·명령은 main 이 구독한 상태에서, workspace 이름·cell id·pane 의 cwd·제목·git 은 renderer 가 보낸 화면 snapshot(`lastScreen`)에서 가져온다. `pty list` 의 EXIT 는 pane 이면 `maru-pty` 의 `status` 에서, job 이면 job 표에서 가져오고, job 의 DIR 은 main 이 구독한 상태의 cwd 다. 그래서 snapshot 은 pane 의 `git` 과 바꾼 workspace 이름 `name` 을 싣고, main 은 사이드바와 같은 규칙으로 이름을 짓는다. pane 이름은 양쪽이 `paneName` 을 함께 쓴다. workspace 이름은 main 이 `workspaceName` 을 부르고, 사이드바(`WorkspaceSidebar.vue`)는 같은 규칙(`w.name ?? autoWorkspaceName(w, home)`)을 직접 쓴다.
 
-- 코드: `index.ts` 의 `currentPaneRows`, `pty-cli.ts` 의 `pty.list`, `shared/pane-list.ts` 의 `paneRows`, `shared/pty-list.ts` 의 `ptyRows` ↔ `shared/screen.ts` 의 snapshot 필드, `shared/names.ts` 의 `workspaceName`, `shared/pane-name.ts` 의 `paneName` ↔ renderer 의 `sidebarRows.ts`·`switcherRows.ts`·`PaneHeader.vue`
-- 바꾸면: snapshot 에서 필드를 빼거나 이름 짓는 함수를 한쪽만 바꾸면 `maru pane list` 의 이름이 사이드바와 달라진다.
+- 코드: `index.ts` 의 `currentPaneRows`, `pty-cli.ts` 의 `pty.list`, `shared/pane-list.ts` 의 `paneRows`, `shared/pty-list.ts` 의 `ptyRows` ↔ `shared/screen.ts` 의 snapshot 필드, `shared/names.ts` 의 `workspaceName`·`autoWorkspaceName`, `shared/pane-name.ts` 의 `paneName` ↔ renderer 의 `WorkspaceSidebar.vue`·`sidebarRows.ts`·`switcherRows.ts`·`PaneHeader.vue`
+- 바꾸면: snapshot 에서 필드를 빼거나 이름 짓는 규칙을 한쪽만 바꾸면 `maru pane list` 의 이름이 사이드바와 달라진다. `workspaceName` 만 바꾸면 사이드바의 workspace 이름은 그대로다.
 - 테스트: `pane-list.test.ts` › 「바꾼 이름이 있는 workspace 의 WORKSPACE 는 그 이름이다」, `app/e2e/pane-list.spec.ts` › 「maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순서대로, 사이드바의 이름과 함께 TSV 로 찍는다」
 
 ## 보일 레코드는 `shownRecord` 하나가 고른다
 
-pty 에 레코드가 여럿(루트·하위) 있을 때 보일 레코드는 `shownRecord` 가 고른다. renderer 의 사이드바·헤더, main 의 `pane list`·`pty list`·데스크톱 알림 본문이 같은 함수를 쓴다.
+pty 에 레코드가 여럿(루트·하위) 있을 때 보일 레코드는 `shownRecord` 가 고른다. renderer 의 사이드바·헤더, main 의 `pane list`·`pty list`·데스크톱 알림 본문이 같은 함수를 쓴다. 데스크톱 알림 본문은 `index.ts` 가 `statusText` 로 넘기고, `statusText` 가 `shownRecord` 를 부른다.
 
-- 코드: `shared/program-status.ts` 의 `shownRecord` ↔ `renderer/src/pty/states.ts`, `pane-list.ts`·`pty-list.ts`, `desktop-notification.ts`
+- 코드: `shared/program-status.ts` 의 `shownRecord`·`statusText` ↔ `renderer/src/pty/states.ts`, `pane-list.ts`·`pty-list.ts`, `index.ts`(`createDesktopNotifications` 의 `status`)
 - 바꾸면: 한쪽이 다른 규칙으로 고르면 화면과 `pane list` 의 상태가 다르다.
 - 테스트: `pane-list.test.ts` › 「claude 의 루트가 done 이고 하위가 blocked 면 하위의 상태·kind·메시지를 낸다」, `app/e2e/program-status.spec.ts` › 「maru status 로 쓴 하위 레코드가 루트보다 급하면 사이드바·pane 헤더가 그것을 보인다」
 
@@ -87,15 +87,15 @@ renderer 는 입력 focus 를 가진 pane 의 pty 를 `pty:viewed` 로 알린다
 Claude Code 의 알림은 앱 plugin 의 Notification hook 이 `maru claude hook` 을 불러 `claude.notification` 으로 앱에 보낸다. main 은 OSC 알림과 같이 그 pty 의 알림으로 든다.
 
 - 코드: `app/resources/claude-plugin/hooks/hooks.json` ↔ `main.rs` 의 `claude_hook` ↔ `claude-notification.ts` 의 `claudeNotificationHandlers` → `pty-state.ts` 의 `notify`
-- 바꾸면: hook 이 넘기는 필드(`message`·`type`·`title`)를 바꾸면 main 이 거절한다.
+- 바꾸면: hook 이 `message` 를 빼거나 다른 이름으로 넘기면 main 이 거절한다. `type`·`title` 은 없어도 거절하지 않는다. 그래서 `type` 을 다른 이름으로 넘기면 main 은 종류를 모른 채 글 있는 알림으로 받고, `idle_prompt` 같은 종류의 알림이 점 대신 글로 보인다.
 - 테스트: `cli.rs` › `claude_hook_on_notification_passes_it_to_the_app`, `claude-notification.test.ts` › 「맞지 않는 params 는 거절한다」
 
 ## 글 없는 알림은 "점만 달고 본문은 상태" 다
 
 상태 레코드가 같은 내용을 보이는 종류(`idle_prompt`·`permission_prompt`·`elicitation_dialog`)는 main 이 글 없는 알림(`title`·`body` 둘 다 빈 값)으로 든다. 사이드바·헤더는 이 알림에 점만 달고, 데스크톱 알림은 본문에 그 pane 의 상태를 쓴다.
 
-- 코드: `claude-notification.ts`(`SHOWN_BY_STATUS`) ↔ `shared/pty-state.ts` 의 `isBodyless` ↔ `pty-state.ts` 의 `notify`, `desktop-notification.ts`, renderer 의 `sidebarRows.ts`·`PaneHeader.vue`
-- 바꾸면: 빈 값이 아닌 표시로 바꾸면 `isBodyless` 를 읽는 곳이 글 있는 알림으로 본다.
+- 코드: `claude-notification.ts`(`SHOWN_BY_STATUS`) ↔ `shared/pty-state.ts` 의 `isBodyless` ↔ `pty-state.ts` 의 `notify`, `desktop-notification.ts` ↔ renderer 의 `sidebarRows.ts`(`notice.body || notice.title`)·`display.ts` 의 `notificationText`
+- 바꾸면: renderer 는 `isBodyless` 를 부르지 않고 빈 문자열이 거짓인 것에 기댄다. 빈 값 대신 다른 표시를 쓰면 main 의 `isBodyless` 와 함께 renderer 의 이 두 곳도 고쳐야 한다. 고치지 않으면 사이드바와 헤더에 그 표시가 알림 글로 보인다.
 - 테스트: `claude-notification.test.ts` › 「상태 레코드가 같은 내용을 보이는 종류는 글 없는 알림으로 넣고 null 로 답한다」, `desktop-notification.test.ts` › 「글 없는 알림은 제목에 pane 이름을, 본문에 그 pane 의 상태를 쓰고…」
 
 ## `pty send`·`job send` 의 붙여넣기 감싸기는 `maru-pty` 가 정한다

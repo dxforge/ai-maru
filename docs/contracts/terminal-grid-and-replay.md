@@ -20,20 +20,17 @@ pane 헤더의 높이는 `--row` 이고 터미널과 같은 글꼴·크기로 �
 
 ## 붙을 때의 크기로 재생하고, 그 뒤에는 primary 만 크기를 바꾼다
 
-`TerminalView` 는 처음 받은 열·행 수로 pty 에 붙는다. `maru-pty` 는 그 크기로 화면을 재생한다. 그 뒤 `TerminalView` 는 primary 일 때만 받은 열·행 수로 `term.resize` 를 부르고, `maru-pty` 는 primary 의 resize 만 pty 에 적용한다. observer 는 `attached`·`resync` 에 실린 크기를 따른다.
+`TerminalView` 는 처음 받은 열·행 수로 pty 에 붙는다. `maru-pty` 는 그 크기로 화면을 재생한다. 그 뒤 `TerminalView` 는 primary 일 때만 받은 열·행 수로 `term.resize` 를 부르고, `maru-pty` 는 primary 의 resize 만 pty 에 적용한다. observer 는 `attached`·`resync` 에 실린 크기와, 붙어 있는 동안 primary 가 크기를 바꾸면 `maru-pty` 가 다른 연결에 보내는 `size` 를 따른다.
 
-- 코드: `TerminalView.vue` 의 `applySize` ↔ `renderer/src/pty/attach.ts`(`attached`·`resync`) ↔ `maru-pty` 의 `attach.rs`, `pty.rs` 의 `resize_if_primary`
+- 코드: `TerminalView.vue` 의 `applySize` ↔ `renderer/src/pty/attach.ts`(`attached`·`resync`·`size`) ↔ `maru-pty` 의 `attach.rs`(`size`), `pty.rs` 의 `resize_if_primary`
 - 바꾸면: observer 가 자기 크기로 resize 하면 primary 의 크기로 그린 출력이 observer 화면에서 어긋난다.
-- 테스트: `app/src/renderer/src/pty/attach.test.ts` › 「자리를 내준 뒤 밀려 resync 를 받으면 그 크기를 따른다」, `core/crates/maru-pty/tests/process.rs` › `a_primary_that_reads_late_is_not_resynced`
+- 테스트: `app/src/renderer/src/pty/attach.test.ts` › 「자리를 내준 뒤 밀려 resync 를 받으면 그 크기를 따른다」, `core/crates/maru-pty/tests/process.rs` › `only_one_primary_sets_the_size`, `other_clients_learn_the_size_the_primary_sets`
 
 ## xterm 과 `maru-pty` 는 글자 폭을 같은 규칙으로 센다
 
 renderer 의 xterm 과 `maru-pty` 의 VT 는 글자마다 차지하는 글자 칸 수를 같은 규칙으로 센다. 둘이 다르게 세면 재생한 화면에서 그 글자 뒤의 글자가 밀린다. 둘 다 grapheme cluster 를 한 글자로 센다. 피부색 수식자나 ZWJ 로 이은 emoji, VS16 이 붙은 글자는 폭이 2 다. xterm 은 `@xterm/addon-unicode-graphemes` 로, `maru-pty` 는 VT 를 만들 때 mode 2027 을 기본값으로 켜서 센다.
 
-두 쪽이 다르게 세는 경우가 둘 남아 있다.
-
-- 이 addon 의 emoji 폭 표에는 Unicode 14 이후에 더해진 emoji(🫠 등)가 없어 폭을 1 로 센다. `maru-pty` 는 2 로 센다. `maru-pty` 쪽은 테스트로 확인하지 않았다.
-- 프로그램이 `CSI ? 2027 l` 로 mode 2027 을 끄면 `maru-pty` 만 꺼진다. xterm 은 이 mode 를 처리하지 않는다.
+프로그램이 `CSI ? 2027 l` 로 mode 2027 을 끄면 `maru-pty` 만 꺼지므로 두 쪽이 다르게 센다. xterm 은 이 mode 를 처리하지 않는다.
 
 - 코드: `TerminalView.vue`(`UnicodeGraphemesAddon`) ↔ `core/crates/maru-pty/src/vt/mod.rs`(mode 2027)
 - 바꾸면: 한쪽의 폭 규칙만 바꾸면 재시작해 다시 붙은 pane 의 커서가 xterm 이 센 열과 어긋난다.

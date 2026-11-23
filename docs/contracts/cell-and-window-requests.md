@@ -18,7 +18,7 @@ renderer 는 pane 을 지울 때마다 kill 을 보낸다. pty 가 스스로 끝
 
 - 코드: `App.vue` 의 `removePane`(늘 `kill()`)·`store.ts` 의 `closePane` ↔ `pty-cells.ts` 의 `close`(`closed`) → `index.ts` 의 `sendKill` → `job.ts` 의 `closeCell`
 - 바꾸면: kill 없이 pane 을 지우는 경로가 생기면 main 이 끝난 pty 의 cell 을 계속 기억하고 그 cell 의 job 을 끄지 않는다. pane 이 없는 cell 을 남기는 경로가 생기면 main 은 cell 이 닫혔다고 보고 job 을 끈다.
-- 테스트: `pty-cells.test.ts` › 「끈 key 의 pty id 를 돌려주고, cell 의 마지막 pty 면 그 cell id 도 돌려준다」, `job.test.ts` › 「그 cell 의 job 만 끄고 알리지 않는다」, `app/e2e/job.spec.ts` › 「다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell 의 job 만 끝난다」, `app/e2e/pane-background.spec.ts` › 「background pty 가 끝나면 그 줄이 사라지고, cell 의 마지막 pane 이었으면 cell 이 닫힌다」. pty 가 스스로 끝난 pane 의 경로를 보는 테스트는 없다.
+- 테스트: `pty-cells.test.ts` › 「끈 key 의 pty id 를 돌려주고, cell 의 마지막 pty 면 그 cell id 도 돌려준다」, `job.test.ts` › 「그 cell 의 job 만 끄고 알리지 않는다」, `app/e2e/job.spec.ts` › 「다른 cell 의 job 은 보이지 않고, 마지막 pane 을 닫은 cell 의 job 만 끝난다」, `app/e2e/pane-background.spec.ts` › 「background pty 가 끝나면 그 줄이 사라지고, cell 의 마지막 pane 이었으면 cell 이 닫힌다」(renderer 쪽만 본다). pty 가 스스로 끝나 닫힌 pane 에서 main 이 cell 을 닫고 그 cell 의 job 을 끄는지 보는 테스트는 없다.
 
 ## 창이 준비되기 전에 온 요청은 쌓는다
 
@@ -40,15 +40,15 @@ renderer 는 화면을 되살린 다음 tick 에 `pane:ready` 를 보낸다. 그
 
 `cell.new` 는 부른 pty 의 cell 과 `after`·`before` 의 cell 을, Canvas 문서는 보낸 pty 의 cell(`ownerOf`)을 창에 넘길 때 찾는다. 쌓인 동안에는 아직 `pty:open` 이 닿지 않았을 수 있기 때문이다.
 
-- 코드: `pane.ts` 의 `request`(인자를 함수로 받아 넘길 때 부름)·`cell.new`, `canvas.ts` 의 `ownerOf`·`putCanvas` ↔ `pty-cells.ts` 의 `cellOf`
-- 바꾸면: 받을 때 찾으면 main 이 cell 을 몰라, 새 cell 이 새 workspace 로 목록 끝에 놓인다(`store.ts` 의 `openCellFrom`). 터미널이 mount 때 pty 를 열지 않게 바뀌어도 같다.
+- 코드: `pane.ts` 의 `request`(인자를 함수로 받아 넘길 때 부름)·`cell.new`, `canvas.ts` 의 `ownerOf`·`putCanvas` ↔ `index.ts` 의 `cellOf` → `job.ts` 의 `cellOf`(`pty-cells.ts` 의 `cellOf`, 없으면 job 표의 cell)
+- 바꾸면: 받을 때 찾으면 main 이 cell 을 모른다. `--before`·`--after` 없는 `maru cell new` 는 새 cell 을 새 workspace 로 목록 끝에 놓는다(`store.ts` 의 `openCellFrom`). `--before`·`--after` 가 있으면 main 이 가리킨 pty 의 cell 을 몰라 창에 넘기지 않고 `invalid_params` 로 거절한다. 터미널이 mount 때 pty 를 열지 않게 바뀌어도 같다.
 - 테스트: `pane.test.ts` › 「cell 은 쌓을 때가 아니라 넘길 때 정한다」, 「가리킨 cell 도 쌓을 때가 아니라 넘길 때 정한다」, `canvas.test.ts` › 「보낸 pty 의 cell 은 창이 준비된 뒤에 찾는다」, `app/e2e/restart.spec.ts` › 「재시작 직후 남은 pty 가 곧바로 부른 maru cell new --before 는 가리킨 cell 앞에 띄운다」
 
 ## 창과 pty 를 기다리는 상한은 `maru` 의 상한보다 짧다
 
-main 은 창에 넘길 pane 요청을 쌓인 시간까지 넣어 `WINDOW_WAIT_MS` 안에 답하지 못하면, Canvas 문서는 그 안에 넘기지 못하면 실패로 답한다. job 과 `maru pty read`·`maru pty send` 가 pty 를 기다리는 상한(`JOB_REPLY_MS`)도 같다. `maru` 가 `TIMEOUT` 이 지나면 시간 초과로 끝나므로, main 의 오류가 그 안에 닿아야 한다.
+main 은 창에 넘길 pane 요청을 쌓인 시간까지 넣어 `WINDOW_WAIT_MS` 안에 답하지 못하면, Canvas 문서는 그 안에 넘기지 못하면 실패로 답한다. `maru job read`·`maru job send`·`maru pty read`·`maru pty send` 가 pty 를 기다리는 상한(`JOB_REPLY_MS`, `index.ts` 의 `capturePtyText`·`pastePtyText`)도 같다. `maru job new` 는 시작 폴더를 확인한 뒤, job 을 띄우는 시간 제한(`JOB_SPAWN_TIMEOUT_MS`)과 그 뒤 SIGKILL 까지 기다리는 시간(`JOB_KILL_TIMEOUT_MS`)을 더한 시간 안에 답한다. 시작 폴더 확인(`startDir`)에는 시간 제한이 없다. `maru` 가 `TIMEOUT` 이 지나면 시간 초과로 끝나므로, main 의 오류가 그 안에 닿아야 한다.
 
-- 코드: `window-ready.ts` 의 `WINDOW_WAIT_MS`, `job.ts` 의 `JOB_REPLY_MS` ↔ `core/crates/maru/src/main.rs` 의 `TIMEOUT`
+- 코드: `window-ready.ts` 의 `WINDOW_WAIT_MS`, `job.ts` 의 `JOB_REPLY_MS`, `pty.ts` 의 `JOB_SPAWN_TIMEOUT_MS`·`JOB_KILL_TIMEOUT_MS` ↔ `core/crates/maru/src/main.rs` 의 `TIMEOUT`
 - 바꾸면: main 의 상한이 `TIMEOUT` 보다 길면, `maru` 는 이유 없는 시간 초과로 끝나고 main 은 그 뒤에 요청을 처리한다.
 - 테스트: `pane.test.ts` › 「기다리는 시간도 시간 초과에 들고, 시간 초과한 요청은 준비돼도 넘기지 않으며 취소도 보내지 않는다」, `canvas.test.ts` › 「기다리는 시간을 넘기면 실패하고, 그 뒤 준비돼도 보내지 않는다」. 두 상한의 크기를 묶는 테스트는 없다.
 
@@ -62,9 +62,9 @@ main 은 창에 넘길 pane 요청을 쌓인 시간까지 넣어 `WINDOW_WAIT_MS
 
 ## pane 을 찾는 것은 renderer 다
 
-pane 을 가리키는 요청(`pane.new`·`pane.close`·`pane.background`·`pty.kill`)은 `PaneTarget`(`{pane}` 또는 `{pty}`)으로 창에 넘기고, renderer 가 pane 을 찾는다. main 은 `lastScreen` 으로 둘을 서로 바꿔 찾지 않는다. pty 가 막 바뀐 틈에는 `lastScreen` 이 다른 pane 을 가리키기 때문이다. main 의 `paneOfPty` 는 오류 문구에만 쓴다.
+pane 을 가리키는 요청(`pane.new`·`pane.close`·`pane.background`·`pty.kill`)은 `PaneTarget`(`{pane}` 또는 `{pty}`)으로 창에 넘기고, renderer 가 pane 을 찾는다. `pty.kill` 은 넘기기 전에 main 이 job 표와 `lastScreen` 에서 그 pty 를 찾는다(`pty-cli.ts` 의 `find`). 없으면 `no pty` 로 거절하고, job 의 pty 이면 창에 넘기지 않고 `killJob` 으로 끈다. main 은 `lastScreen` 으로 둘을 서로 바꿔 찾지 않는다. pty 가 막 바뀐 틈에는 `lastScreen` 이 다른 pane 을 가리키기 때문이다. main 의 `paneOfPty` 는 오류 문구에만 쓴다.
 
-- 코드: `pane.ts`(`closePty`), `shared/pane.ts` 의 `PaneTarget` ↔ `App.vue` 의 `onPaneNew`·`onPaneClose`·`onPaneBackground` → `store.ts` 의 `paneOf`
+- 코드: `pty-cli.ts` 의 `find`·`pty.kill` → `pane.ts`(`closePty`), `shared/pane.ts` 의 `PaneTarget` ↔ `App.vue` 의 `onPaneNew`·`onPaneClose`·`onPaneBackground` → `store.ts` 의 `paneOf`
 - 바꾸면: main 이 `lastScreen` 으로 찾아 넘기면, pty 가 막 바뀐 틈에 온 요청이 다른 pane 을 가리킨다.
 - 테스트: `pane.test.ts` › 「target 을 pane 으로 창에 넘기고, 없는 pane 이면 invalid_params」, 「pty 로 창에 넘기고, 창이 그 pty 의 pane 을 못 찾으면 invalid_params」
 

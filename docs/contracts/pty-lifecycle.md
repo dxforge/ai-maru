@@ -84,7 +84,7 @@ job 의 pty 는 pane 의 pty 와 같은 디렉토리에 있다. 전체 복원이
 
 ## 전체 복원은 같은 pty id 목록으로 다시 붙는다
 
-전체 복원이면 main 은 `sessions` 의 pty 만 남기고, renderer 에 그 pty 를 `screen:restore` 로 준다. 되살린 pane 은 `pty:open` 의 `attach` 로 pty 를 띄우지 않고 붙는다. main 의 정리, renderer 의 되살리기, host 의 `reattach` 가 같은 pty id 목록에 기댄다.
+전체 복원이면 main 은 되살린 pane 이 붙을 `sessions` 의 pty 와 Recovered workspace 의 pane 이 붙을 pty 를 renderer 에 `screen:restore` 로 준다. main 이 끄지 않고 남기는 pty 는 이 pty 들과 job 의 pty 다(`recoverPtys` 의 `keep`). 되살린 pane 은 `pty:open` 의 `attach` 로 pty 를 띄우지 않고 붙는다. main 의 정리, renderer 의 되살리기, host 의 `reattach` 가 같은 pty id 목록에 기댄다.
 
 - 코드: `state.ts` 의 `fullRestore`·`startRestore` ↔ `renderer/src/workspace/store.ts` 의 `restore`(`attach: true`) ↔ `pty-host.ts` 의 `reattach`
 - 바꾸면: 셋 가운데 하나가 다른 목록을 쓰면 되살린 pane 이 남은 pty 대신 새 셸을 띄우거나, 붙을 pty 가 꺼진다.
@@ -102,6 +102,6 @@ job 의 pty 는 pane 의 pty 와 같은 디렉토리에 있다. 전체 복원이
 
 런처가 명령으로 띄운 pane 은 화면 snapshot 에 `keep` 이 붙고(`ScreenPane`), pty 를 `maru-pty --keep` 으로 띄운다. `--keep` 으로 뜬 `maru-pty` 는 셸이 끝나도 끝나지 않고 화면과 종료 상태를 든다. 그래서 재시작 뒤 다시 붙은 pane 도 `exit` 를 다시 받아 남는다. `maru-pty` 는 명령이 끝나면 상태의 명령을 도는 중이 아닌 것으로 바꾸고 종료 코드(시그널이면 128+n)를 싣는다. 헤더·사이드바와 닫기 확인은 이 상태를 읽는다.
 
-- 코드: `App.vue`(런처의 `keep: true`) → `shared/screen.ts` 의 `ScreenPane.keep` → `TerminalView.vue` → `pty-host.ts` → `pty.ts`(`--keep`) ↔ `server.rs`·`attach.rs`·`state.rs` 의 `command_exited` ↔ `shared/pane-name.ts` 의 `commandView`·`close-confirm.ts` 의 `runningProgram`
-- 바꾸면: `keep` 이 snapshot 에서 빠지면 재시작 뒤의 pane 이 `--keep` 없이 다시 떠, 실패한 명령의 화면이 남지 않는다.
+- 코드: `App.vue`(런처의 `keep: true`) → `shared/screen.ts` 의 `ScreenPane.keep` → `TerminalView.vue` → `pty-host.ts` → `pty.ts`(`--keep`) ↔ `server.rs`(`keep`), `pty.rs` → `state.rs` 의 `command_exited` ↔ `shared/pane-name.ts` 의 `commandView`·`close-confirm.ts` 의 `runningProgram`
+- 바꾸면: `keep` 이 snapshot 에서 빠져도 pty 는 `--keep` 으로 떠 있다. 전체 복원은 그 pty 에 붙기만 하기 때문이다. 대신 `keep` prop 없이 다시 붙은 `TerminalView` 가 다시 받은 `exit` 에 `emit('exit')` 해 pane 이 닫히고, 실패한 명령의 화면이 남지 않는다.
 - 테스트: `process.rs` › `keep_leaves_the_files_and_answers_after_the_shell_exits`, `a_kept_command_pty_reports_the_exit_code_once_its_command_ends`, `app/e2e/launcher.spec.ts` › 「재시작 뒤에도 실패한 채 남긴 pane 은 화면과 종료 코드를 보이고, 런처의 목록이 남는다」
