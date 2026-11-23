@@ -80,7 +80,7 @@ renderer 는 입력 focus 를 가진 pane 의 pty 를 `pty:viewed` 로 알린다
 
 - 코드: `claude-notification.ts` 의 `lineText` ↔ `core/crates/maru-pty/src/vt/mod.rs` 의 `line_text`
 - 바꾸면: 한쪽만 바꾸면 같은 글의 알림이 오는 경로에 따라 다르게 보인다.
-- 테스트: `vt/mod.rs` › `line_text_trims_the_shared_samples_like_the_app`, `claude-notification.test.ts` › 「maru-pty 와 같은 fixture 를 같게 다듬는다」. 둘 다 `core/crates/maru-pty/tests/line-text.json` 을 읽는다. 앞뒤의 U+FEFF 는 `lineText` 만 떼어 두 함수가 다르게 다듬으므로 fixture 에 넣지 않았다.
+- 테스트: `vt/mod.rs` › `line_text_trims_the_shared_samples_like_the_app`, `claude-notification.test.ts` › 「maru-pty 와 같은 fixture 를 같게 다듬는다」. 둘 다 `core/crates/maru-pty/tests/line-text.json` 을 읽는다.
 
 ## Claude Code 알림은 hook 으로 온다
 
