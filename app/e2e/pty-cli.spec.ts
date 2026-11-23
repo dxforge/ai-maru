@@ -17,7 +17,7 @@ import {
 
 const CELL_ID = expect.stringMatching(/^c-[0-9a-f]{8}$/)
 
-test('maru pty list 는 pane 의 pty 를 화면 순서대로, 그 뒤에 job 을 띄운 순서대로 찍고, 끝난 job 은 EXIT 에 종료 코드를 찍는다', async ({
+test('maru pty list 는 pane 의 pty 를 화면 순서대로, 그 뒤에 job 을 띄운 순서대로 찍고, 끝난 job 은 EXIT 에 종료 코드를, 이름 없는 job 은 NAME 에 명령을 찍는다', async ({
   launch,
   dataDir
 }) => {
@@ -31,16 +31,11 @@ test('maru pty list 는 pane 의 pty 를 화면 순서대로, 그 뒤에 job 을
     'sleeper',
     '$(maru job new --name sleeper sleep 600)'
   )
-  const quick = await shellValue(
-    page,
-    dataDir,
-    'quick',
-    `$(maru job new --name quick sh -c 'exit 3')`
-  )
+  const quick = await shellValue(page, dataDir, 'quick', `$(maru job new sh -c 'exit 3')`)
   const out = join(dataDir, 'ptys.out')
   await run(
     page,
-    `until maru pty list | awk -F'\\t' '$7 == "quick" && $6 == "3"' | grep -q .; do sleep 0.1; done; maru pty list >${out}; echo listed-$?`,
+    `until maru pty list | awk -F'\\t' '$2 == "job" && $6 == "3"' | grep -q .; do sleep 0.1; done; maru pty list >${out}; echo listed-$?`,
     'listed-0'
   )
   const table = readFileSync(out, 'utf8')
@@ -54,7 +49,7 @@ test('maru pty list 는 pane 의 pty 를 화면 순서대로, 그 뒤에 job 을
     [first, 'pane', workspace, CELL_ID, '', '', any, any],
     [second, 'pane', workspace, cell, '', '', any, any],
     [sleeper, 'job', workspace, cell, '', '', 'sleeper', any],
-    [quick, 'job', workspace, cell, '', '3', 'quick', any]
+    [quick, 'job', workspace, cell, '', '3', 'sh -c exit 3', any]
   ])
 })
 

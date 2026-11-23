@@ -84,8 +84,9 @@
 //! 순서로 싣는다. `kind` 는 `pane`·`job` 이다. `workspace`·`cell` 은 그 pane 이나 job 이 든 workspace 의 이름과
 //! cell 의 id 이고, 모르면 빈 문자열이다. `state`·`state_kind` 는 `pane.list` 의 `state`·`kind` 와 같다. `exit` 는
 //! 셸이 돌고 있거나 모르면 null 이고, 끝났으면 `{"code","signal"}` 이다 — 끝난 job 과 셸이 끝난 뒤 남은 pane
-//! 이 그렇다. `name` 은 pane 이면 `pane.list` 의 `title`, job 이면 job 의 이름이고, 없으면 빈 문자열이다. `dir` 는
-//! pane 이면 `pane.list` 의 `dir`, job 이면 셸이 알린 cwd 절대경로이고, 모르면 빈 문자열이다.
+//! 이 그렇다. `name` 은 pane 이면 `pane.list` 의 `title` 이다. job 이면 job 의 이름이고, 이름이 없으면 사이드바와
+//! 같이 명령의 인자를 공백으로 이은 것이다. `dir` 는 pane 이면 `pane.list` 의 `dir`, job 이면 셸이 알린 cwd
+//! 절대경로이고, 모르면 빈 문자열이다.
 //!
 //! cell id 는 cell 이 닫힐 때까지 바뀌지 않는다. cell 을 다른 workspace 로 옮겨도, `app.restart` 뒤에도
 //! 같다.
@@ -389,8 +390,9 @@ enum PtyCommand {
     /// name shown in the sidebar and CELL the id of the cell the pane or job belongs to. STATE
     /// is the program status, as in `maru pane list`. EXIT is empty while the pty runs, and
     /// once it has exited is the exit code, or e.g. `signal 15`. NAME is the pane's title or
-    /// the job's name. DIR is the pty's directory. Control characters in a value, such as tabs
-    /// and newlines, become spaces, and an unknown value is an empty column.
+    /// the job's name, and for a job without a name its command, as in the sidebar. DIR is the
+    /// pty's directory. Control characters in a value, such as tabs and newlines, become
+    /// spaces, and an unknown value is an empty column.
     List,
     /// Print the scrollback and screen of a pty as text. Lines wrapped at the screen width are
     /// joined.

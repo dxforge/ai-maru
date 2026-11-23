@@ -54,7 +54,7 @@ const workspaces: ScreenWorkspace[] = [
 ]
 
 describe('ptyRows', () => {
-  it('pane 의 pty 를 화면 순서로, 그 뒤에 job 을 표 순서로 싣는다', () => {
+  it('pane 의 pty 를 화면 순서로, 그 뒤에 job 을 표 순서로 싣고, 이름 없는 job 의 NAME 은 사이드바처럼 명령이다', () => {
     const states = new Map([
       ['p-a', state('/r/ai-maru', [{ state: 'blocked', kind: 'permission' }])],
       ['p-j', state('/r/other/app', [{ state: 'idle' }])]
@@ -63,8 +63,8 @@ describe('ptyRows', () => {
     const rows = ptyRows(
       workspaces,
       [
-        { pty: 'p-j', name: 'dev', cell: 'c-5' },
-        { pty: 'p-k', cell: 'c-2', exit: { code: null, signal: 15 } }
+        { pty: 'p-j', name: 'dev', cell: 'c-5', command: ['pnpm', 'dev'] },
+        { pty: 'p-k', cell: 'c-2', command: ['sleep', '600'], exit: { code: null, signal: 15 } }
       ],
       (pty) => states.get(pty),
       (pty) => exits.get(pty) ?? null,
@@ -112,7 +112,7 @@ describe('ptyRows', () => {
         state: '',
         state_kind: null,
         exit: { code: null, signal: 15 },
-        name: '',
+        name: 'sleep 600',
         dir: ''
       }
     ])
@@ -121,7 +121,7 @@ describe('ptyRows', () => {
   it('창에 없는 cell 의 job 은 WORKSPACE 를 비우고 싣는다', () => {
     const rows = ptyRows(
       [],
-      [{ pty: 'p-j', cell: 'c-9' }],
+      [{ pty: 'p-j', cell: 'c-9', command: ['sleep', '600'] }],
       () => undefined,
       () => null,
       '/bin/zsh'

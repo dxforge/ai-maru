@@ -31,7 +31,7 @@ const SCREEN: ScreenState = {
 
 function setup({
   screen = SCREEN as ScreenState | null,
-  jobs = [{ pty: J, name: 'dev', cell: 'c-00000002' }] as ListedJob[],
+  jobs = [{ pty: J, name: 'dev', cell: 'c-00000002', command: ['pnpm', 'dev'] }] as ListedJob[],
   exits = new Map<string, PtyExit | null>(),
   capture = async (pty: string) => `screen of ${pty}`
 } = {}) {
@@ -142,7 +142,9 @@ describe('pty.kill', () => {
 
   it('끝난 job 의 pty 도 job 으로 끝내 표에서 지운다', async () => {
     const { run, calls } = setup({
-      jobs: [{ pty: J, cell: 'c-00000002', exit: { code: 0, signal: null } }]
+      jobs: [
+        { pty: J, cell: 'c-00000002', command: ['sleep', '1'], exit: { code: 0, signal: null } }
+      ]
     })
     await run('pty.kill', { target: J })
     expect(calls).toEqual([`killJob ${J}`])

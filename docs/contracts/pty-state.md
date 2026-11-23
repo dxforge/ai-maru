@@ -28,11 +28,11 @@ renderer 는 로드하면 `pty:states` 로 전체를 묻고, 그 뒤 `pty:state`
 
 ## `pane list`·`pty list` 는 renderer 에 묻지 않고 답한다
 
-main 은 `maru pane list`·`maru pty list` 에 renderer 를 거치지 않고 답한다. 프로그램 상태 레코드·명령은 main 이 구독한 상태에서, workspace 이름·cell id·pane 의 cwd·제목·git 은 renderer 가 보낸 화면 snapshot(`lastScreen`)에서 가져온다. `pty list` 의 EXIT 는 pane 이면 `maru-pty` 의 `status` 에서, job 이면 job 표에서 가져오고, job 의 DIR 은 main 이 구독한 상태의 cwd 다. 그래서 snapshot 은 pane 의 `git` 과 바꾼 workspace 이름 `name` 을 싣고, main 은 사이드바와 같은 규칙으로 이름을 짓는다. pane 이름은 양쪽이 `paneName` 을 함께 쓴다. workspace 이름은 main 이 `workspaceName` 을 부르고, 사이드바(`WorkspaceSidebar.vue`)는 같은 규칙(`w.name ?? autoWorkspaceName(w, home)`)을 직접 쓴다.
+main 은 `maru pane list`·`maru pty list` 에 renderer 를 거치지 않고 답한다. 프로그램 상태 레코드·명령은 main 이 구독한 상태에서, workspace 이름·cell id·pane 의 cwd·제목·git 은 renderer 가 보낸 화면 snapshot(`lastScreen`)에서 가져온다. `pty list` 의 EXIT 는 pane 이면 `maru-pty` 의 `status` 에서, job 이면 job 표에서 가져오고, job 의 DIR 은 main 이 구독한 상태의 cwd 다. 그래서 snapshot 은 pane 의 `git` 과 바꾼 workspace 이름 `name` 을 싣고, main 은 사이드바와 같은 규칙으로 이름을 짓는다. pane 이름은 양쪽이 `paneName` 을, job 이름은 양쪽이 `jobName` 을 함께 쓴다. workspace 이름은 main 이 `workspaceName` 을 부르고, 사이드바(`WorkspaceSidebar.vue`)는 같은 규칙(`w.name ?? autoWorkspaceName(w, home)`)을 직접 쓴다.
 
-- 코드: `index.ts` 의 `currentPaneRows`, `pty-cli.ts` 의 `pty.list`, `shared/pane-list.ts` 의 `paneRows`, `shared/pty-list.ts` 의 `ptyRows` ↔ `shared/screen.ts` 의 snapshot 필드, `shared/names.ts` 의 `workspaceName`·`autoWorkspaceName`, `shared/pane-name.ts` 의 `paneName` ↔ renderer 의 `WorkspaceSidebar.vue`·`sidebarRows.ts`·`switcherRows.ts`·`PaneHeader.vue`
-- 바꾸면: snapshot 에서 필드를 빼거나 이름 짓는 규칙을 한쪽만 바꾸면 `maru pane list` 의 이름이 사이드바와 달라진다. `workspaceName` 만 바꾸면 사이드바의 workspace 이름은 그대로다.
-- 테스트: `pane-list.test.ts` › 「바꾼 이름이 있는 workspace 의 WORKSPACE 는 그 이름이다」, `app/e2e/pane-list.spec.ts` › 「maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순서대로, 사이드바의 이름과 함께 TSV 로 찍는다」
+- 코드: `index.ts` 의 `currentPaneRows`, `pty-cli.ts` 의 `pty.list`, `shared/pane-list.ts` 의 `paneRows`, `shared/pty-list.ts` 의 `ptyRows` ↔ `shared/screen.ts` 의 snapshot 필드, `shared/names.ts` 의 `workspaceName`·`autoWorkspaceName`, `shared/pane-name.ts` 의 `paneName`, `shared/job.ts` 의 `jobName` ↔ renderer 의 `WorkspaceSidebar.vue`·`sidebarRows.ts`·`sidebarCard.ts`·`switcherRows.ts`·`PaneHeader.vue`
+- 바꾸면: snapshot 에서 필드를 빼거나 이름 짓는 규칙을 한쪽만 바꾸면 `maru pane list`·`pty list` 의 이름이 사이드바와 달라진다. `workspaceName` 만 바꾸면 사이드바의 workspace 이름은 그대로다.
+- 테스트: `pane-list.test.ts` › 「바꾼 이름이 있는 workspace 의 WORKSPACE 는 그 이름이다」, `pty-list.test.ts` › 「pane 의 pty 를 화면 순서로, 그 뒤에 job 을 표 순서로 싣고, 이름 없는 job 의 NAME 은 사이드바처럼 명령이다」, `app/e2e/pty-cli.spec.ts` › 「maru pty list 는 pane 의 pty 를 화면 순서대로, 그 뒤에 job 을 띄운 순서대로 찍고, 끝난 job 은 EXIT 에 종료 코드를, 이름 없는 job 은 NAME 에 명령을 찍는다」, `app/e2e/pane-list.spec.ts` › 「maru pane list 는 레코드가 있는 pane 과 없는 pane 을 화면 순서대로, 사이드바의 이름과 함께 TSV 로 찍는다」
 
 ## 보일 레코드는 `shownRecord` 하나가 고른다
 
