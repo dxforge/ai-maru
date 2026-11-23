@@ -88,6 +88,8 @@ export function attach(term: Terminal, conn: PtyConnection, handlers: AttachHand
         break
       case 'resync':
         // xterm 을 따로 reset 하지 않는다. maru-pty 가 이 헤더 뒤에 RIS 와 재생을 보낸다(`docs/contracts/terminal-grid-and-replay.md`).
+        // 커서만 먼저 보이게 둔다. xterm 의 RIS 는 숨긴 커서를 되돌리지 않고, 재생은 커서가 숨었을 때만 `?25l` 을 싣기 때문이다.
+        term.write('\x1b[?25h')
         if (!primary) term.resize(m.cols, m.rows)
         break
       case 'replay_end':

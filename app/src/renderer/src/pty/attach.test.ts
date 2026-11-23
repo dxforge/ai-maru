@@ -408,7 +408,8 @@ describe('attach', () => {
   it.each([
     ['대체 화면', '\x1b[?1049h', (d: Drawn) => d.buffer === 'alternate'],
     ['스크롤 영역', '\x1b[2;3r', (d: Drawn) => d.lines.join('|') !== 'x|a|b|c'],
-    ['bracketed paste', '\x1b[?2004h', (d: Drawn) => d.modes.bracketedPasteMode]
+    ['bracketed paste', '\x1b[?2004h', (d: Drawn) => d.modes.bracketedPasteMode],
+    ['커서 숨김 모드', '\x1b[?25l', (d: Drawn) => !d.modes.showCursor]
   ])(
     '버려진 출력이 %s 를 켰어도 resync 뒤의 화면과 모드는 재생과 같다',
     async (_, mode, changed) => {
@@ -431,4 +432,16 @@ describe('attach', () => {
       expect(changed(fresh)).toBe(false)
     }
   )
+  it('재생이 커서를 숨겼으면 resync 뒤에도 커서가 숨어 있다', async () => {
+    const replay = '\x1b[H\x1b[2Jx\x1b[?25l'
+    const resynced = await drawn([
+      header('attached'),
+      header('resync'),
+      latin1(VT_RESET),
+      latin1(replay),
+      REPLAY_END
+    ])
+    expect(resynced.modes.showCursor).toBe(false)
+    expect(resynced).toEqual(await drawn([header('attached'), latin1(replay), REPLAY_END]))
+  })
 })
