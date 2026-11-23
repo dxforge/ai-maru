@@ -156,6 +156,7 @@ export function createWorkspaces(
     ptyId = newPtyId,
     cellId = () => randomId('c'),
     workspaceId = () => randomId('w'),
+    // pane id 는 pty id 와 따로 짓는다. Keep layout only 로 다시 뜨면 pane 은 남고 pty id 는 바뀌기 때문이다.
     paneId = () => randomId('n'),
     home
   }: {

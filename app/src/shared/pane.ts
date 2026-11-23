@@ -2,8 +2,8 @@ import type { ProgramStatusKind, ProgramStatusState } from './program-status'
 
 /**
  * main 이 renderer 에 pane 을 가리키는 값이다. `pane` 이면 그 id 의 pane 을, `pty` 면 renderer 가 그 pty 를 보이는
- * pane 을 찾는다. main 은 둘을 서로 바꿔 찾지 않는다(`docs/architecture.md` 의 "창에 보내는 요청은 창이 준비된 뒤에
- * 넘긴다").
+ * pane 을 찾는다. main 은 둘을 서로 바꿔 찾지 않는다(`docs/contracts/cell-and-window-requests.md` 의 "pane 을 찾는 것은
+ * renderer 다").
  */
 export type PaneTarget = { pane: string } | { pty: string }
 
@@ -51,7 +51,7 @@ export type PaneRow = {
 
 /**
  * `pane`·`pty` 는 새 pane 과 그 pty 의 id 이고, `cell` 은 `cell.new` 가 연 cell 의 id 다. `no_space` 는 나눌
- * 자리가 없어 거절한 것이다(`docs/architecture.md` 의 "pane 경계와 글자 칸 격자"). `no_cell` 은 `pane.new` 가
+ * 자리가 없어 거절한 것이다(`docs/contracts/cell-and-window-requests.md` 의 "나눌 자리가 없으면 `no_space` 로 답한다"). `no_cell` 은 `pane.new` 가
  * 가리킨 cell 이 창에 없다는 것이다. `bad_place` 는 `cell.new` 가 가리킨 자리에 cell 을 넣지 못해 거절한 것이다.
  */
 export type PaneReply =

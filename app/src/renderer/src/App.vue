@@ -328,8 +328,8 @@ function answerPaneRequest(pane: number, reply: PaneReply): void {
 }
 
 function removePane(pane: number, message = 'the pane was closed before its pty started'): void {
-  // pty 가 스스로 끝나 닫는 pane 도 kill 을 보낸다 — docs/architecture.md 의
-  // "main 이 아는 pty 의 cell". 이미 끝난 pty 의 kill 은 pty 소켓에 닿지 못해 아무것도 하지 않는다(`main/pty.ts` 의 `requestKill`).
+  // pty 가 스스로 끝나 닫는 pane 도 kill 을 보낸다 — `docs/contracts/cell-and-window-requests.md` 의
+  // "pane·cell 이 닫힌 것은 kill 로 안다". 이미 끝난 pty 의 kill 은 pty 소켓에 닿지 못해 아무것도 하지 않는다(`main/pty.ts` 의 `requestKill`).
   terminals.get(pane)?.kill()
   answerPaneRequest(pane, { error: 'open_failed', message })
   const pty = workspaces.pane(pane)?.ptyId
@@ -363,7 +363,7 @@ function paneFailed(pane: number, message: string): void {
 }
 
 // 앞 pty 를 끄기 전에 새 pty 를 연다. pane 하나뿐인 cell 에서 앞 연결의 kill 이 먼저 가면, main 이 그 cell 을 닫힌
-// 것으로 보고 cell 의 job 을 끈다(docs/architecture.md 의 "main 이 아는 pty 의 cell").
+// 것으로 보고 cell 의 job 을 끈다(`docs/contracts/cell-and-window-requests.md` 의 "pane·cell 이 닫힌 것은 kill 로 안다").
 async function reopenPane(pane: number): Promise<void> {
   const old = terminals.get(pane)
   const oldPty = workspaces.reopen(pane)
@@ -420,7 +420,7 @@ const placeErrors: Record<PlaceError, string> = {
 }
 
 // `pane:cancel` 은 main 이 시간 초과한 요청의 id 를 싣는다. 그 요청으로 열어 아직 pty 를 기다리는 pane 을 닫는다
-// (docs/architecture.md 의 "시간 초과한 pane 요청은 창이 취소한다").
+// (`docs/contracts/cell-and-window-requests.md` 의 "시간 초과한 pane 요청은 창이 취소한다").
 window.maru.onPaneCancel((id) => {
   for (const [pane, request] of paneRequests) {
     if (request.id === id) return removePane(pane, 'the request timed out')
@@ -1421,7 +1421,7 @@ void window.maru.restoreScreen().then((r) => {
     }
   )
   watch(screen, window.maru.saveScreen, { immediate: true })
-  // 되살린 터미널이 `pty:open` 을 보낸 다음 tick 에 부른다(docs/architecture.md 의 "창에 보내는 요청은 창이 준비된 뒤에 넘긴다").
+  // 되살린 터미널이 `pty:open` 을 보낸 다음 tick 에 부른다(`docs/contracts/cell-and-window-requests.md` 의 "`pane:ready` 는 되살린 터미널이 `pty:open` 을 보낸 뒤에 간다").
   void nextTick(window.maru.paneReady)
 })
 </script>
@@ -1776,7 +1776,7 @@ void window.maru.restoreScreen().then((r) => {
   background: var(--ground);
 }
 
-/* 좌우 pane 의 경계선. 자리를 차지하지 않게 겹친다 — docs/architecture.md 의 "pane 경계와 글자 칸 격자". */
+/* 좌우 pane 의 경계선. 자리를 차지하지 않게 겹친다 — `docs/contracts/terminal-grid-and-replay.md` 의 "열 수 셈이 빼는 폭과 CSS 가 그리는 폭은 같다". */
 .pane:not(.at-left)::before {
   content: '';
   position: absolute;
@@ -1842,7 +1842,7 @@ void window.maru.restoreScreen().then((r) => {
   pointer-events: none;
 }
 
-/* 위아래 pane 의 경계선. 헤더의 터미널 반대쪽 가장자리에 자리를 차지하지 않게 겹친다 — docs/architecture.md 의 "pane 경계와 글자 칸 격자". */
+/* 위아래 pane 의 경계선. 헤더의 터미널 반대쪽 가장자리에 자리를 차지하지 않게 겹친다 — `docs/contracts/terminal-grid-and-replay.md` 의 "pane 헤더는 터미널 한 행이다". */
 .pane-header {
   position: absolute;
   top: 0;

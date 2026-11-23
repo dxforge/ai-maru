@@ -83,6 +83,7 @@ const emit = defineEmits<{
 }>()
 
 const host = useTemplateRef<HTMLDivElement>('host')
+// xterm 은 화면만 그린다. cwd(OSC 7)·제목·알림은 maru-pty 가 해석해 main 을 거쳐 오므로 xterm 에서 읽지 않는다.
 const term = new Terminal({
   theme,
   ...font,
@@ -95,7 +96,7 @@ const term = new Terminal({
   // `UnicodeGraphemesAddon` 이 쓰는 `term.unicode` 가 proposed API 라서, 끄면 `loadAddon` 이 예외를 던진다.
   allowProposedApi: true
 })
-// 이 addon 을 빼거나 바꾸면 `maru-pty` 와 글자 폭이 달라진다(`docs/architecture.md` 의 "글자 폭").
+// 이 addon 을 빼거나 바꾸면 `maru-pty` 와 글자 폭이 달라진다(`docs/contracts/terminal-grid-and-replay.md` 의 "xterm 과 `maru-pty` 는 글자 폭을 같은 규칙으로 센다").
 term.loadAddon(new UnicodeGraphemesAddon())
 // 링크는 ⌘+클릭으로만 연다(Terminal.app·iTerm2 의 관행). 그냥 클릭은 터미널로 간다.
 function activateLink(event: MouseEvent, text: string): void {

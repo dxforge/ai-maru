@@ -1,6 +1,6 @@
 #!/bin/bash
 # ai-maru claude shim
-# 앱이 터미널 PATH 앞쪽에 두는 claude 다(docs/architecture.md 「claude 는 PATH 의 shim 이 plugin 을 싣는다」).
+# 앱이 터미널 PATH 앞쪽에 두는 claude 다(docs/contracts/claude-integration.md 「터미널 PATH 앞에 shim 디렉토리를 둔다」).
 # claude 를 자식으로 띄우지 않고 exec 한다 — 앱이 foreground 리더로 claude 의 cwd 를 재고 이름을 보이기 때문이다.
 
 real=

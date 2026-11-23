@@ -259,6 +259,7 @@ const RECOVERED_NAME = 'Recovered'
 /**
  * 붙을 pane 이 없는 살아 있는 pty 를 끄지 않고, 목록 끝에 더한 `Recovered` workspace 에 pty 하나를 cell 하나로 연다.
  * 표를 잃어도 그 pty 에서 돌던 프로그램이 꺼지지 않게 하기 위해서다. 앱이 붙을 수 없는 버전의 pty 는 넣지 않는다.
+ * `sessions` 만 잃었으면 배치는 되살아나 pane 마다 새 셸이 뜨므로, 같은 자리의 셸이 그 새 셸과 Recovered 의 옛 pty 로 두 벌 생긴다.
  */
 export function recoverPtys(
   layout: SavedLayout | null,

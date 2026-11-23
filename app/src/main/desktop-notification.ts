@@ -27,6 +27,8 @@ export type DesktopNotificationDeps = {
  * ghostty 의 방식대로 앱 전체에서 1초에 하나, 마지막으로 띄운 것과 같은 알림은 5초에 하나로 제한한다. 제한에 걸린 알림은
  * 버린다. 같은 알림인지는 pty·제목·본문으로 가린다. 제목이 없으면 pane 이름을 제목으로 쓰므로, 이름이 같은 다른 pane 의
  * 알림을 버리지 않으려고 pty 도 비교한다.
+ *
+ * 데스크톱 알림은 renderer 가 아니라 main 이 한 번 띄운다. 같은 pty 를 보이는 창·클라이언트가 여럿이어도 겹쳐 뜨지 않게 하기 위해서다.
  */
 export function createDesktopNotifications(deps: DesktopNotificationDeps) {
   let last: { at: number; pty: string; title: string; body: string } | null = null

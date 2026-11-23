@@ -1,162 +1,71 @@
 # Architecture
 
+AI Maru 의 큰 구조 — 프로세스, 각자 가진 상태, 연결, 화면의 층 — 를 적는다. 여러 코드가 함께 지키는 계약은 `docs/contracts/` 에 있다. 이 문서나 계약 문서가 코드와 다르면 코드가 맞다.
+
 ## 화면의 층
 
-창은 workspace 목록을 보인다. workspace 는 cell 을 묶는다. cell 은 pane 배치·글꼴 크기·columns 폭·job 을 갖고, 선택과 single 보기의 단위다. pane 은 화면의 자리이고, 지금은 pane 마다 pty 하나를 보인다. pane id(`n-…`)는 실행이 바뀌어도 그대로다. pty 는 `maru-pty` 프로세스 하나가 드는 터미널 본체다 — pty 장치의 master 쪽, 그 위의 셸, libghostty-vt 로 해석한 화면·scrollback, cwd·제목·OSC 7501 상태, 레코드와 소켓. pty 는 pty id(`p-…`)를 갖는다. 앱이 재시작해도 pty 는 남고, 다시 뜬 앱이 그 pty 에 붙는다. job 은 pane 없는 pty 다("job 은 main 이 가진다"). `maru pane` 은 pane 을 pane id 로, `maru pty` 는 pane 의 pty 와 job 을 pty id 로 받는다. cell 의 마지막 pane 이 닫히면 cell 이 닫히고, workspace 의 마지막 cell 이 닫히면 workspace 가 닫힌다. keep 을 켠 workspace 는 마지막 cell 이 닫혀도 남는다. cell 이 없는 workspace 는 keep 을 끄면 닫힌다. 즐겨찾기는 workspace 가 갖는 디렉토리 목록이고, keep 을 켠 workspace 만 갖는다. keep 을 끄면 즐겨찾기도 지운다.
-
-## pty 를 여는 순서
-
-터미널이 pty 를 열면 renderer 가 `pty:open` 을 보내고, main 은 `MessageChannelMain` 을 만들어 한쪽 포트는 곧바로 renderer 에(`pty:port`), 다른 쪽은 `ready` 가 풀린 뒤(`ready.then`) pty host 에 넘긴다(`app/src/main/index.ts`).
-
-renderer 는 이 순서에 기댄다. host 가 죽으면 main 이 모든 창에 `pty:lost` 를 보내는데, 포트보다 먼저 온 `pty:lost` 는 이 open 을 받기 전에 죽은 host 의 것이고 이 open 은 새로 띄운 host 가 받는다. 그래서 연결은 포트를 받은 뒤에만 `pty:lost` 를 듣는다(`app/src/renderer/src/pty/connection.ts`). main 이 포트를 host 에 넘긴 뒤에 renderer 에 보내도록 바뀌면 이 판단이 틀어진다.
-
-## 문서가 바뀌면 이전 문서의 pty 를 끈다
-
-창이 새로 고쳐지면(dev 의 Vite 새로 고침 등) 새 문서는 pty 를 새로 연다. 새 문서는 이전 문서가 연 pty 를 모르므로 거기에 다시 붙지 않는다. 그래서 main 이 이전 문서의 pty 를 끈다(`app/src/main/index.ts`).
-
-## kill 은 pty id 로 보낸다
-
-main 은 kill 이 올 때까지 key 의 pty id 를 기억하고(`app/src/main/pty-cells.ts`), pty host 에 보내는 kill 에 그 pty id 를 싣는다. host 는 받은 id 로 pty 를 끄므로, host 가 죽어 새로 떴어도 이전 host 가 연 pty 를 끈다(`app/src/main/pty-host.ts`). host 가 자기가 연 pty 의 표에서 찾아 끄도록 바뀌면, host 가 새로 뜬 뒤에 닫은 pane 의 pty 가 남는다.
-
-## 앱을 끄면 띄우던 pty 도 끈다
-
-main 은 `will-quit` 에서 pty host 에 `quit` 을 보내고, pty 를 끄고 끝낼 때는 host 가 끝난 뒤에 pty 디렉토리의 레코드를 읽어 pty 를 끈다(`app/src/main/index.ts`). host 는 `quit` 을 받으면 새 open 을 받지 않고, 띄우던 pty 가 다 뜨거나 멈추고 받은 kill 이 끝난 뒤에 끝난다. pty 를 끄고 끝낼 때는 띄우던 pty 가 뜨기를 기다리지 않고 SIGTERM 으로 멈춘 뒤 그 프로세스가 끝나기를 기다린다. pty 를 남기고 끝낼 때(재시작, Keep terminals)도 main 은 host 를 기다린다. 닫은 pane 의 pty 가 남으면 다음 실행이 붙을 pane 이 없는 pty 로 보고 Recovered workspace 에 열기 때문이다. main 도 같은 때부터 job 을 새로 띄우지 않는다. pty 를 끄고 끝낼 때는 띄우던 job 이 다 뜨기를 기다린다. maru-pty 는 레코드를 쓴 뒤에 소켓을 연다(`core/crates/maru-pty/src/server.rs` 의 `publish`). host 와 main 은 소켓이 열린 것을 보고 pty 가 떴다고 보므로, host 가 끝난 뒤에 main 이 읽는 레코드에는 띄우던 pty 도 있다. `quit` 은 open 과 같은 `ready.then` 으로 보내므로 host 는 그 앞에 온 open 을 먼저 받는다. main 이 host 를 기다리지 않고 레코드를 읽도록 바뀌면, 앱이 끝난 뒤에 뜬 pty 가 남는다. host 가 `QUIT_TIMEOUT_MS` 안에 끝나지 않으면 main 은 host 를 SIGKILL 로 끄고 레코드를 읽는다. 그때 host 가 띄우던 pty 는 남을 수 있다. 그 가운데 소켓을 연 pty 는 앱이 pty 를 끄고 끝나면 main 이 끈다. 앱이 pty 를 남기고 끝나면 다음 실행이 그 pty 를 Recovered workspace 에 연다. pane 의 pty 띄우기에는 시간 제한이 없으므로, pty 를 남기고 끝낼 때 소켓을 열지 못한 채 멈춘 pty 는 이 상한까지 기다린 뒤 남는다. main 은 띄우던 job 도 같은 상한까지만 기다린다. job 의 spawn 시간 제한(`JOB_SPAWN_TIMEOUT_MS`)이 이 상한보다 짧으므로, 시작 폴더 확인이 2초 안에 끝난 job 은 소켓을 열지 못해도 main 이 SIGTERM 으로 멈춘 뒤에 앱이 끝난다.
-
-## main 이 아는 pty 의 cell
-
-workspace·cell 목록은 renderer 만 가진다. renderer 는 pty 를 열 때 `pty:open` 에 그 pane 의 cell id 를 싣는다. main 은 그 key 의 kill 이 올 때까지 pty 의 cell 을 기억한다(`app/src/main/pty-cells.ts`). 그래서 renderer 는 pane 을 지울 때마다, pty 가 스스로 끝났어도 kill 을 보낸다(`App.vue` 의 `removePane`). kill 을 보내지 않고 pane 을 지우는 경로가 생기면 main 은 끝난 pty 의 cell 을 계속 기억한다.
-
-## 창에 보내는 요청은 창이 준비된 뒤에 넘긴다
-
-CLI 서버는 앱이 뜨자마자 요청을 받으므로, 재시작에서 남은 pty 의 요청은 창이 문서를 로드하는 중에도 온다. renderer 가 리스너(`onPaneNew`·`onCanvasPut` 등)를 달기 전에 보낸 IPC 는 받는 쪽이 없어 버려진다. 그래서 main 은 renderer 가 `pane:ready` 를 보낼 때까지 pane 요청과 Canvas 문서를 쌓아 두고(`app/src/main/window-ready.ts`), 창이 새 문서로 바뀌거나(`did-navigate`) renderer 프로세스가 죽으면(`render-process-gone`) 다시 쌓는다. pane 요청은 쌓인 시간을 포함해 8초 안에 답을 받지 못하면 실패로 답한다. Canvas 문서는 8초 안에 창에 넘기지 못하면 실패로 답한다. `maru` 가 10초 안에 답을 받지 못하면 시간 초과로 끝나기 때문이다.
-
-main 이 창에 pane 을 찾게 하는 요청(`pane.new`·`pane.close`·`pane.background`·`pty.kill`)은 pane 을 pane id 로 가리키면 `{pane}`, pty id 로 가리키면 `{pty}` 로 싣고(`PaneTarget`, `app/src/shared/pane.ts`), 찾는 것은 renderer 가 자기 배치에서 한다. main 이 `lastScreen` 으로 바꿔 찾으면, pane 의 pty 가 막 바뀐 틈에 옛 값으로 다른 pane 을 가리킬 수 있기 때문이다.
-
-renderer 는 화면을 되살린 다음 tick 에 `pane:ready` 를 보낸다(`App.vue`). 다음 tick 에는 되살린 터미널이 mount 돼 `pty:open` 을 보낸 뒤다. 되살리기 전에 넘기면 renderer 는 부른 pane 을 찾지 못한다. 같은 renderer 의 IPC 는 보낸 순서대로 닿으므로, main 은 쌓아 둔 요청을 넘길 때 되살린 pty 의 cell 을 안다(위의 "main 이 아는 pty 의 cell"). 그래서 `cell.new` 는 부른 pty 의 cell 과 `after`·`before` 로 가리킨 pty 의 cell 을 요청을 받을 때가 아니라 창에 넘길 때 찾는다. 터미널이 mount 될 때 pty 를 열지 않도록 바뀌면, main 은 되살린 pty 의 cell 을 모른 채 넘겨 새 cell 이 새 workspace 로 목록 끝에 놓인다.
-
-Canvas 문서도 같은 이유로, main 은 보낸 pty 의 cell 을 창에 넘길 때 찾는다(`app/src/main/canvas.ts` 의 `ownerOf`). main 은 문서에 보낸 pty 와 그 cell id 를 붙이고(`CanvasOwner`), cell 을 찾지 못하면 pty 만 붙인다. workspace 는 붙이지 않는다. renderer 가 문서의 이름을 그릴 때 cell 이 지금 속한 workspace 로 짓기 때문이다. 그래서 cell 을 다른 workspace 로 옮기면 문서의 이름도 따라간다. renderer 는 문서를 (cell, id) 로 구별하므로, 다른 cell 이 같은 id 로 보낸 문서는 따로 둔다.
-
-## 터미널에 붙인 이미지는 터미널에 가는 내용을 바꾸지 않고 Canvas 에도 넣는다
-
-이미지가 pane 에 들어오는 경로는 셋이다. renderer(`TerminalView.vue`)가 경로마다 main 에 요청하고, main(`app/src/main/canvas.ts` 의 `canvasPaste`)이 붙인 pty 의 cell 에 문서를 넣는다. 어느 프로그램이 도는지는 보지 않는다.
-
-- 경로가 있는 파일(Finder 에서 복사해 ⌘V, 끌어다 놓기): 터미널에는 경로를 붙인다. main 은 그 가운데 이미지 확장자인 파일을 넣고, 문서 id 는 그 경로다.
-- 이미지만 든 클립보드의 ⌘V: paste 이벤트를 막지 않는다. xterm 이 보내는 빈 bracketed paste 를 받아 Claude Code 가 클립보드의 이미지를 읽기 때문이다. main 은 클립보드의 `image/png` 를 읽어 붙일 때마다 새 문서로 넣는다.
-- ⌃V: paste 이벤트가 없고 `\x16` 이 그대로 pty 로 간다. Claude Code 는 이 키를 받아 클립보드를 직접 읽는다. renderer 는 keydown 을 보고 ⌘V 와 같은 요청을 보낸다.
-
-## pty 상태는 main 이 구독해 든다
-
-셸 cwd(OSC 7)·제목(OSC 0/2)·foreground cwd·OSC 7501 레코드는 maru-pty 가 해석해 하나의 상태로 든다. main 은 pty 마다 maru-pty 에 `subscribe` 연결을 직접 열어 마지막 상태를 든다(`app/src/main/pty-state.ts`). 이 연결로는 화면 바이트가 오지 않는다. attach 스트림은 renderer 가 붙어 있을 때만 있으므로, 상태를 attach 스트림에서 읽으면 main 은 renderer 가 붙은 동안에만 상태를 갖는다.
-
-구독을 여는 때는 셋이다. pane 의 pty 는 pty host 가 띄운 pty 에 붙은 뒤 main 에 `live` 를 보낼 때, job 의 pty 는 main 이 띄운 뒤, 뜰 때 되살린 pty 는 남은 pty 정리가 끝난 뒤다.
-
-renderer 는 상태를 main 에서만 받는다. 문서를 로드하면 `pty:states` 로 전체를 묻고, 그 뒤로 main 이 `pty:state` 로 보낸다(`app/src/renderer/src/pty/states.ts`). 화면에 보일 cwd 는 `app/src/renderer/src/workspace/display.ts` 가, pane 이름은 `app/src/shared/pane-name.ts` 가 고른다. xterm.js 는 화면만 그리고 OSC 7·제목을 읽지 않는다.
-
-`maru pane list`·`maru pty list` 는 main 이 renderer 에 묻지 않고 답한다. 레코드와 셸이 알린 명령은 main 의 상태에서, workspace 이름·cell id 와 pane 의 cwd·제목은 renderer 가 마지막으로 보낸 화면(`lastScreen`)에서 읽는다. 그래서 화면 snapshot 은 pane 의 `git` 과 사용자가 바꾼 workspace 이름(`name`)을 싣는다. workspace 이름은 사이드바와 같은 `workspaceName`(`app/src/shared/names.ts`)으로, pane 이름은 사이드바와 같은 `paneName`(`app/src/shared/pane-name.ts`)으로 짓는다.
-
-`maru pty read`·`maru pty send` 도 대상이 이 창의 pane 의 pty 인지 `lastScreen` 으로, job 인지 job 표로 확인하고, main 이 그 pty 의 maru-pty 에 `capture`·`input` 을 직접 보낸다(`app/src/main/pty-cli.ts`). `pty send`·`job send` 의 본문을 bracketed paste 로 감쌀지는 maru-pty 가 그 pty 의 mode 2004 와 본문의 길이·줄바꿈을 보고 정한다(`core/crates/maru-pty/src/paste.rs`). pty 의 mode 2004 상태는 maru-pty 안의 libghostty-vt 만 알기 때문이다.
-
-OSC 7501 레코드는 pty 마다 여럿일 수 있다(루트와 하위). 사이드바·pane 헤더와 `maru pane list` 가 보일 레코드 하나는 `shownRecord`(`app/src/shared/program-status.ts`)가 고른다. renderer 와 main 이 같은 함수를 써서 화면과 `maru pane list` 가 같은 상태를 보인다.
-
-`maru status` 는 앱 소켓을 쓰지 않고 터미널 장치(제어 터미널, 없으면 가장 가까운 조상 프로세스의 제어 터미널)에 OSC 7501 을 쓴다. 그래서 이 명령이 쓴 레코드도 터미널 안의 프로그램이 보낸 레코드처럼 maru-pty 가 해석하고 보관한다.
-
-프로그램이 끝나며 `clear` 를 보내지 못해도 레코드가 남지 않게, maru-pty 는 `app` 이 붙은 루트 레코드를 보낸 때의 foreground 리더가 바뀌거나 셸이 끝나면 레코드를 전부 지운다(계약은 `core/crates/maru-pty/src/lib.rs` 의 `records`).
-
-renderer 는 입력 focus 를 가진 pane 의 pty 를 main 에 `pty:viewed` 로 알린다(앱 창에 focus 가 없거나, 런처처럼 터미널이 아닌 요소가 키보드 focus 를 가지거나, `notification.seen-ms` 가 `false` 면 null). 그 pty 에서 새로 done 이 된 레코드는 main 이 바로 idle 로 바꾼다(`app/src/main/pty-state.ts` 의 `doneWhileViewed`). 그 전부터 done 이던 레코드는, 사용자가 그 pane 에 들어와 `notification.seen-ms`(`docs/config.md`)만큼 머물렀을 때 renderer 가 `pty:seen` 으로 알리면 idle 로 바꾼다(`app/src/renderer/src/pty/seen.ts`). 어느 쪽이든 main 은 done 인 레코드마다 `maru status put idle --pty <id>` 를 실행한다(`app/src/main/seen.ts`). `--pty` 는 그 pty 의 터미널 장치에 OSC 7501 을 쓴다. 앱 메모리에서만 덮지 않는 것은, pty 가 앱 재시작에도 살아 있어 다시 뜬 앱에 maru-pty 가 done 을 다시 보내기 때문이다. OSC 7501 보고는 레코드를 통째로 바꾸므로 main 이 done 을 본 뒤 프로그램이 보낸 새 상태를 idle 로 덮을 수 있다. 앱은 이것을 막지 않는다.
-
-프로그램이 OSC 9·OSC 777 로 보낸 알림도 같은 `subscribe` 연결로 온다. 상태와 달리 한 번 일어난 일이라 maru-pty 는 알림을 들지 않고 받을 때마다 구독자에게 보낸다. main 은 pty 마다 읽지 않은 마지막 알림 하나를 상태와 함께 든다(`pty:state` 의 `notification`). 새 알림은 이전 것을 대신한다. 아래 Claude Code 의 글 없는 알림만 예외다. main 은 `pty:viewed` 로 받은 pty 에 온 알림을 들지 않고, 그 전에 온 알림은 위의 done 과 같이 `pty:seen` 을 받으면 지운다. maru-pty 가 알림을 들지 않으므로 앱을 끄면 읽지 않은 알림은 사라진다. 데스크톱 알림은 main 이 한 번만 띄운다(`app/src/main/desktop-notification.ts`). 같은 pty 에 붙은 창이나 클라이언트가 여럿이어도 겹치지 않게 하기 위해서다. 앱의 창이 포커스되어 있으면 사이드바와 pane 헤더에 보이므로 띄우지 않는다. 알림을 누르면 main 이 창을 앞으로 가져오고 `pane:select` 로 renderer 에 그 pane 을 고르게 한다.
-
-Claude Code 의 알림은 앱이 싣는 plugin 의 Notification hook 으로 받는다. hook 이 부르는 `maru claude hook` 이 앱에 `claude.notification` 으로 넘기고, main 은 OSC 알림과 같이 든다. 알림은 "언제 볼지" 를 알리고 "무엇인지" 는 상태 레코드가 보인다. 그래서 main 은 상태 레코드가 같은 내용을 보이는 종류(`idle_prompt`·`permission_prompt`·`elicitation_dialog`)는 글 없는 알림으로 든다(`app/src/main/claude-notification.ts`). 사이드바와 pane 헤더는 글 없는 알림에 점만 달고, 데스크톱 알림은 본문에 그 pane 의 상태 메시지(없으면 상태 이름)를 쓴다. 글 없는 알림은 읽지 않은 글 있는 알림을 대신하지 않는다(`app/src/main/pty-state.ts`). 글 있는 알림 뒤에 턴이 끝나면 60초 뒤 `idle_prompt` 가 오는데, 그때도 앞 알림의 글이 사이드바와 pane 헤더에 남는다. MCP elicitation 에 사용자가 답하거나 취소·거절한 직후 오는 `elicitation_response` 는 들지 않는다. 사용자가 방금 한 일을 되풀이하기 때문이다. 그 밖의 종류는 글을 싣는다. claude 가 같은 알림을 OSC 알림으로도 쓰면(`preferredNotifChannel` 에 따라) 앱은 둘 다 받는다. OSC 알림에는 종류가 없어 hook 으로 받은 것과 가려낼 수 없기 때문이다.
-
-버전 1 의 maru-pty 가운데는 `subscribe` 를 모르는 것이 있어서, main 은 그 pty 를 `old` 로 renderer 에 알리고 renderer 는 그 pty 에 한해 attach 스트림의 `program_status` 를 레코드로 쓴다. 앱은 `MIN_PROTOCOL_VERSION` 보다 낮은 버전의 pty 에 붙지 않으므로, 이 경로에는 닿지 않는다.
-
-## 앱은 pty 의 레코드 버전으로 요청한다
-
-maru-pty 는 `protocol_version` 이 `MIN_PROTOCOL_VERSION` 부터 `PROTOCOL_VERSION` 까지인 요청을 받고, 앱은 그 범위의 버전으로 떠 있는 pty 에 붙는다(두 상수는 `app/src/shared/protocol.ts` 와 `core/crates/maru-pty/src/lib.rs` 에 있다). 앱은 pty 에 보내는 모든 요청에 그 pty 의 레코드(`<id>.json`)에 적힌 버전을 넣고, maru-pty 는 받은 버전의 모양으로 답한다. renderer 는 레코드를 모르므로 pty host 가 attach 요청에 버전을 넣는다(`app/src/main/bridge.ts`). 그래서 `PROTOCOL_VERSION` 을 올린 빌드를 설치하고 재시작해도, 다시 뜬 앱은 이전 버전으로 떠 있는 pty 에 붙는다. 버전을 올리는 기준은 `PROTOCOL_VERSION` 의 doc 주석에, 버전을 올리지 않고 더한 기능을 앱이 알아보는 법은 `.claude/rules/pty-protocol.md` 에 있다.
-
-## 시간 초과한 pane 요청은 창이 취소한다
-
-시간 초과를 받은 호출자가 같은 명령을 다시 부른 뒤 창이 늦게 첫 요청의 pane 도 열면 pane 이 둘 생긴다. 그래서 main 은 창에 보낸 요청이 시간 초과하면 `pane:cancel` 을 보내고, renderer 는 그 요청으로 열어 아직 pty 를 기다리는 pane 을 닫는다. renderer 가 답을 보낸 직후, 그 답이 main 에 닿기 전에 main 이 시간 초과하면 pane 은 남는다.
-
-## job 은 main 이 가진다
-
-`maru job` 의 job 은 pane 과 같은 pty 디렉토리에 `maru-pty --keep` 으로 뜨는 pty 다. main 의 jobs 표(`app/src/main/job.ts`)가 이름·cell·`job.new` 를 부른 pty·띄운 시각을 가진다. pty host 는 job 을 모른다. renderer 는 사이드바에 보이려고 표의 사본만 받는다. main 은 표가 바뀔 때마다 전체 목록(`JobView`, `app/src/shared/job.ts`)을 `jobs:changed` 로 보내고, renderer 는 처음에 `jobs:list` 로 한 번 받는다. 목록에는 job 과 그 자손이 LISTEN 중인 TCP 포트가 실린다. 포트가 바뀌어도 알려 주는 곳이 없어, main 은 도는 job 이 있는 동안 주기마다 `ps`·`lsof` 로 다시 잰다(`app/src/main/ports.ts`). renderer 가 job 을 끌 때는 `job:kill` 을 보낸다. main 은 `job:kill` 을 받으면 `job.kill` 과 달리 부른 cell 을 따지지 않는다. 도는 job 이면 main 이 확인 창을 띄운다. job 의 출력 바이트는 main 을 지나지 않는다. main 은 돌고 있는 job 마다 셸이 끝나기를 기다리는 `status` 연결 하나를 두고, 출력은 `job.read` 를 받을 때 `capture` 로 한 번 받는다.
-
-cell 이 닫힌 것은 kill 로 안다. renderer 는 cell 의 마지막 pane 을 지울 때 cell 도 지우므로, kill 로 그 cell 의 마지막 pty 가 빠지면 main 은 cell 이 닫힌 것으로 보고 그 cell 의 job 을 끈다(`sendKill`, `app/src/main/index.ts`). 문서가 바뀔 때 이전 문서의 pty 를 끄는 경로도 같은 `sendKill` 을 부른다. 그래서 창을 새로 고치면 그 창 cell 의 job 도 꺼진다. pane 이 없는 cell 을 남기는 경로가 생기면 이 판단이 틀어진다.
-
-## background pane
-
-background 로 돌린 pane 은 renderer 의 pane 으로 남고 분할 트리에서만 빠진다. 그 터미널은 화면 밖에 마운트된 채 pty 에 붙어 있다. 그래서 main 에는 background pane 의 표가 따로 없다. kill·cell 닫힘·pty 종료는 보이는 pane 과 같은 경로를 탄다("main 이 아는 pty 의 cell"). 보이는 pane 이 없는 cell 은 화면에서 빠지고 사이드바에만 남는다.
-
-pane 을 떼어 pty 만 남기는 것(renderer 도 pane 을 갖지 않는 것)은 아직 없다. 그러려면 세 곳을 바꿔야 한다.
-
-- renderer 가 kill 없이 pane 을 지우는 경로. 지금은 pane 을 지울 때마다 kill 을 보낸다.
-- pane 없는 pty 를 cell 에 묶어 두는 표. job 표처럼 main 이 갖는다. 이 표가 없으면 pane 없이 남은 pty 는 다음 실행에 Recovered workspace 로 열린다.
-- cell 이 닫혔다는 판단. 지금은 cell 의 마지막 pty 가 kill 로 빠지면 닫힌 것으로 보므로("job 은 main 이 가진다"), 떼어 둔 pty 만 남은 cell 도 닫힌다.
-
-## 끄기·뜨기·재시작
-
-앱이 끝나는 경우는 재시작, 사용자의 끄기, 비정상 종료 셋이다. main 은 어느 경우로 끝나도 다음에 뜬 앱이 읽도록 상태를 userData 의 `state.json` 에 바뀔 때마다 쓴다(`app/src/main/state.ts`). renderer 는 화면(workspace·cell·pane 배치와 사이드바·보기 모드, `app/src/shared/screen.ts`)이 바뀔 때마다 main 에 보내고, main 은 그 화면과 job 표, 창 위치·크기, 테마를 `workspaces`·`cells`·`panes`·`sessions`·`view` 다섯 표로 나눠 쓴다. 표마다 형식 버전이 있고 따로 읽는다. 한 표의 형식이 바뀌어도 그 표만 잃게 하기 위해서다.
-
-- `workspaces` 는 workspace 줄의 배열이고, 줄 순서가 사이드바 순서다. 줄은 `id`·이름·`dir`·즐겨찾기와 keep(`kept: true`)을 갖는다. 옛 빌드가 쓴 줄의 `pinned: true` 도 keep 으로 읽는다. 옛 빌드는 즐겨찾기가 있는 workspace 도 남겼으므로, 즐겨찾기가 있는 줄도 keep 으로 읽는다.
-- `cells` 는 cell 줄의 배열이다. 줄은 자기 `workspace` 의 `id` 와 분할 트리를 갖고, 같은 workspace 안에서는 줄 순서가 cell 순서다. 분할 트리의 잎은 pane 의 `id` 다. background pane 의 잎은 트리 오른쪽 끝에 이어 붙여 쓰고, 읽을 때 뺀다. background pane 이 있으면 줄은 돌리기 전의 분할 트리 `home`(background pane 의 잎도 든다)을 가질 수 있다. 나누기·닫기로 보이는 모양이 바뀌면 `home` 은 없다. 표 버전을 올리지 않고 더한 것이라, 옛 빌드는 background pane 을 cell 끝의 보이는 pane 으로 연다.
-- `panes` 는 pane 줄의 배열이다. 줄은 자기 `cell` 의 `id` 와 cwd·명령, background 로 돌렸으면 `background: true` 를 갖는다. pane 의 `id` 는 실행이 바뀌어도 그대로다. 실행마다 매기는 key 는 화면 안의 번호라 쓰지 않는다. pty id 를 pane 의 `id` 로 쓰지 않는 것은 Keep layout only 뒤에는 pane 이 남고 pty id 가 바뀌기 때문이다.
-- `sessions` 는 pane `id` 마다의 pty 와 job 표다.
-- `view` 는 창·테마·사이드바 접힘이고, 버전이 다르면 통째로, 같으면 틀린 필드만 잃는다. 고른 cell 과 사이드바 접힘은 `id` 로 둔다.
-
-부모는 자식 목록을 들지 않고, 자식 줄이 부모의 `id` 를 든다. 표 하나를 잃으면(읽지 못했거나 버전이 다르면) 그 표 만큼만 잃는다. `workspaces` 를 잃으면 cell 이 가리키는 workspace `id` 로 묶어 이름 없는 workspace 를 다시 만든다. 이름·즐겨찾기·keep 을 잃고, cell 이 없던 workspace 는 사라진다. `cells` 를 잃으면 `panes`·`sessions` 도 쓸 데가 없어, keep 을 켠 workspace 만 cell 없이 돌아온다. `panes` 를 잃으면 cell 은 남기고 cell 마다 workspace 의 `dir`(`workspaces` 도 잃어 모르면 홈)에서 셸 하나를 띄운다. `sessions` 를 잃으면 배치만 되살린다.
-
-표의 형식은 이 규칙으로 바꾼다. 재시작하면 다른 빌드가 같은 `state.json` 을 읽기 때문이다.
-
-- 있는 필드의 뜻을 바꾸지 않는다. 뜻이 바뀌면 새 이름의 필드를 더한다.
-- 다른 표로 옮기는 정보는 옛 자리에도 계속 쓴다.
-- 버전은 그 표를 다시 짤 때만 올린다.
-
-뜰 때는 묻지 않고 하나를 고른다. `cells` 를 읽지 못하면 keep 을 켠 workspace 만 cell 없이 되살린다. `cells` 는 읽었는데 `panes`·`sessions` 가운데 하나가 없거나 읽지 못했거나, `sessions` 의 살아 있는 pty 가운데 앱이 붙지 못하는 버전(`MIN_PROTOCOL_VERSION` 보다 낮거나 앱의 `PROTOCOL_VERSION` 보다 높은 것)의 pty 가 하나라도 있으면 배치만 되살린다. 배치만 되살리면 pane 마다 저장한 cwd 에서 새 셸을 띄운다. `panes` 를 잃었으면 cell 마다 workspace 의 `dir` 에서 셸 하나를 띄운다. 명령은 다시 돌리지 않는다. 모두 되면 전체 복원이다. `sessions` 의 pty 만 남기고, 되살린 pane 은 `pty:open` 의 `attach` 로 pty 를 띄우지 않고 붙는다. 붙을 pty 가 이미 끝났으면 pty host 가 `gone` 을 보낸 뒤 같은 pty id 로 저장한 cwd 에서 새 셸을 띄우고, pane 은 그 이유를 터미널에 쓴다. 어느 경우든 살아 있는 pty 가운데 붙을 pane 이 없고 앱이 붙을 수 있는 버전인 것은 끄지 않는다. pty 하나를 cell 하나로 만들어 그 pty 에 붙이고, 이 cell 들을 pty 를 띄운 순서로 목록 끝의 keep 을 끈 workspace "Recovered" 에 모은다. 표를 잃어 배치를 되살리지 못해도 작업 중이던 터미널이 꺼지지 않게 하기 위해서다. `sessions` 만 잃었으면 같은 자리의 셸이 새 셸과 Recovered 의 옛 pty 로 두 벌 생긴다. 앱이 붙지 못하는 버전의 pty 는 끈다. `view` 가 아닌 표가 있는데 읽지 못했거나 앱이 붙지 못하는 버전의 pty 가 있어 버렸으면 toast 로 알린다. 잃은 표의 아래 표는 함께 쓸 데가 없어지므로 따로 알리지 않는다. Recovered 로 옮긴 pty 가 있으면 다른 알림이 있을 때와 전체 복원일 때 알린다. 전체 복원에서 Recovered 가 생기면 사용자가 모르는 사이에 pty 가 남은 것이다. 앱이 강제로 끝났거나 pty host 를 기다리다 시간을 넘긴 때가 그렇다. 재시작에서 고른 결과로 표를 비웠으면 대화창에서 이미 알렸으므로 알리지 않는다.
-
-⌘Q·메뉴의 Quit·창 닫기는 pane 이 하나라도 있으면 늘 묻는다: Keep terminals / Keep layout only / End everything / Cancel. Keep terminals 는 pty 를 끄지 않는다. Keep layout only 는 `sessions` 를 비워 쓰고 pty 를 끈다. End everything 은 `cells`·`panes`·`sessions` 를 비우고 `workspaces` 에는 keep 을 켠 workspace 줄만 남겨 쓰고 pty 를 끈다. 다음 실행에 이 workspace 들이 cell 없이 돌아온다. 고른 결과를 쓴 뒤의 변경은 쓰지 않는다 — pty 가 끝나며 renderer 가 pane 을 닫아도 고른 결과가 남는다. OS 종료(`powerMonitor` 의 `shutdown`)와 SIGTERM·SIGINT·SIGHUP 은 묻지 않고 Keep layout only 로 끝낸다. pty 는 OS 와 함께 끝나거나 이 앱이 끈다.
-
-재시작은 pty 를 남긴다. 재시작 전에 설치된 번들의 `maru-pty` 에 `--min-protocol-version`·`--protocol-version` 을 물어, 살아 있는 pty 마다 레코드의 버전이 그 범위 안인지 본다. `state-versions.json`(표마다의 형식 버전)도 지금 앱의 것과 견준다(`app/src/main/restart.ts`). 다시 뜬 앱이 전체 복원을 할 수 있으면 묻지 않는다. `--min-protocol-version` 을 모르는 번들은 자기 버전만 받는 것으로 본다. 할 수 없으면 무엇을 잃는지 보이고 재시작할지 묻는다: 배치만 되살릴지(범위 밖 pty 가 있거나 `sessions` 형식이 다를 때), cell 마다 셸 하나로 열지(`panes` 형식이 다를 때), cell 을 모두 닫을지(`cells` 형식이 다를 때). 고르면 그 결과를 쓰고 다시 뜬다. pty 는 범위 밖인 것만 끄고, 대화창도 그 수만 센다. 범위 안의 pty 와, 형식만 다를 때의 pty 는 남기고, 다시 뜬 앱이 그 pty 를 Recovered workspace 에 연다. `workspaces` 형식만 다르면 다시 뜬 앱이 pty 에 다시 붙으므로 Recovered 로 옮길 pty 도 없다. 그래도 workspace 의 이름·즐겨찾기·keep 을 잃으므로 재시작할지 묻는다. 형식이 다른 표는 고른 결과와 상관없이 비워 쓴다. 남기면 다시 뜬 앱이 읽지 못한 표를 toast 로 알리기 때문이다. 재시작은 renderer 에게 묻지 않으므로 renderer 가 멈춰 있어도 재시작한다. renderer 프로세스가 죽으면(`render-process-gone`) main 이 대화창으로 재시작할지 묻고, Restart 를 고르면 메뉴의 Restart 와 같은 경로로 재시작한다.
-
-## claude 는 PATH 의 shim 이 plugin 을 싣는다
-
-앱은 터미널 PATH 앞에 claude shim(`app/resources/bin/claude`)이 든 디렉토리를 둔다. shim 은 PATH 의 실행 파일이라, 스크립트·`exec`·`command claude`·새로 연 셸에서 띄운 claude 도 거친다. shim 은 PATH 에서 shim 이 아닌 첫 claude 를 찾아 `--plugin-dir` 을 붙여 exec 한다. 자식으로 띄우지 않는 것은 foreground 리더가 claude 여야 표시 cwd 와 닫기 확인 창의 이름이 claude 를 따르기 때문이다.
-
-## MCP 도구는 `maru mcp` 가 앱에 중계한다
-
-앱이 claude 에 싣는 plugin(`app/resources/claude-plugin`)의 `.mcp.json` 이 `maru mcp` 를 MCP 서버로 띄운다. `maru mcp` 는 MCP 메시지를 줄 프로토콜의 `mcp.message` 로 하나씩 앱에 보내고, 도구는 앱의 main(`app/src/main/mcp.ts`)이 처리한다. `canvas_put` 은 `maru canvas put` 과 같은 `canvasPut` 으로 간다. MCP 메시지를 처리하는 쪽을 나중에 앱 밖의 프로세스로 옮겨도 `maru mcp`·plugin 설정·도구 이름이 그대로이도록, `maru mcp` 는 메시지를 해석하지 않는다. 예외는 `canvas_put` 의 `file` 을 절대경로로 바꿔 `path` 로 보내는 것뿐이다 — 상대 경로의 기준인 claude 의 cwd 를 `maru mcp` 가 알기 때문이다. 파일은 앱이 읽고, 터미널의 경로 링크와 같은 규칙으로 문서 종류를 고른다. 앱은 MCP 세션의 상태를 두지 않는다. 그래서 앱이 다시 떠도 claude 는 `initialize` 를 다시 보내지 않고 같은 `maru mcp` 로 도구를 부른다. MCP 의 HTTP 전송을 쓰지 않은 것은 앱에 HTTP 서버와 MCP SDK 를 들이지 않기 위해서다.
-
-## 런처로 띄운 pane 은 명령이 실패하면 남는다
-
-런처(⌘O)가 명령으로 띄운 pane 은 화면 snapshot 에 `keep` 이 붙고(`ScreenPane`), pty 를 `maru-pty --keep` 으로 띄운다. 명령이 0 이나 130 으로 끝나거나 셸이 SIGINT 로 끝나면 다른 명령 pane 처럼 pane 을 지운다. 130 과 SIGINT 는 사용자가 Ctrl-C 로 끈 것이기 때문이다. 그 밖의 코드나 시그널로 끝나면 renderer 는 pane 을 지우지 않고 종료 상태를 터미널 마지막 줄에 쓴다. 재시작 뒤 다시 붙은 pane 도 `exit` 를 다시 받아 종료 상태를 마지막 줄에 쓰고 남는다. maru-pty 가 화면과 종료 상태를 들고 있기 때문이다. maru-pty 는 명령이 끝나면 상태의 명령을 안 도는 중으로 바꾸고 종료 코드를 싣는다. 그래서 OSC 7501 레코드가 없는 남긴 pane 은 헤더와 사이드바에 종료 코드를 보인다. ⌘W 는 그 pane 을 실행 중으로 보지 않으므로 확인 창을 띄우지 않는다. 남긴 pane 을 닫으면 renderer 가 보내는 kill 로 maru-pty 도 끝난다.
-
-## 닫기 전 확인 창은 main 이 띄운다
-
-⌘W(pane)·⇧⌘W(workspace)는 셸 말고 도는 프로그램이나 끝나지 않은 job 이 있으면 확인 창을 띄운다(`app/src/main/close-confirm.ts`). 창 닫기·⌘Q 는 pane 이 하나라도 있으면 늘 묻고("끄기·뜨기·재시작"), 그 창에 도는 프로그램과 job 의 수를 적는다. 실행 중인지는 maru-pty 의 `foreground` 응답과 main 의 job 표로 가리므로, ⌘W·⇧⌘W 도 renderer 가 아니라 main 이 묻고 renderer 는 답을 받은 뒤에 닫는다. 어느 경로든 main 은 renderer 가 마지막으로 보낸 화면(`lastScreen`)에서 pane 과 cell 을 찾는다. `maru pane close`·`maru pty kill` 은 프로그램이 돌아도 묻지 않는다 — CLI 의 답 상한 안에 사용자의 답을 기다릴 수 없기 때문이다.
-
-## pane 경계와 글자 칸 격자
-
-나란히 놓인 pane 끼리 터미널 행이, 위아래로 놓인 pane 끼리 열이 이어지도록 pane 경계를 터미널 글자 칸 크기의 배수에 둔다. columns 보기의 좌우 경계는 pane 마다 그 열 수로 잰 폭(`columnWidth`(`columns.ts`))을 더한 곳에 둔다. 그 폭은 글자 칸 폭의 배수라, columns 보기에서도 위아래 pane 끼리 열이 이어진다. ⌘+ / ⌘- 로 cell 마다 글꼴 크기가 다를 수 있으므로 `App.vue` 는 글꼴마다 마지막으로 잰 글자 칸 크기를 둔다. cell 마다 그 글꼴의 글자 칸 크기를 `--row`·`--cell` 로, 터미널 왼쪽 여백 4px 를 `--pad` 로 그 cell 의 `.panes` 요소에 둔다. 여백은 `.xterm` 의 `padding-left` 다.
-
-`App.vue` 는 pane 배치(`snapRects`(`grid.ts`))와 함께 터미널의 열·행 수를 정해 `TerminalView` 에 `cols`·`rows` 로 넘긴다. `TerminalView` 는 처음 받은 열·행 수로 pty 에 붙고, 그 뒤에는 primary 일 때만 그 값으로 `term.resize` 를 부른다. pane 크기를 정하려고 화면에서 재는 것은 cell 마다 pane 이 놓일 영역(`.grid`)의 크기와 글자 칸 크기다. columns 보기는 영역 폭을 쓰지 않고, pane 마다 열 수(끌거나 ⌃⌘←/→ 로 바꾼 pane 의 `cols`, 없으면 `layout.column-cols` 나 ⇧⌘. / ⇧⌘, 로 바꾼 cell 의 값)로 pane 폭을 만든다.
-
-pane 헤더는 터미널 한 행이다. 높이는 `--row` 이고 터미널과 같은 글꼴·크기로 쓴다. 헤더는 `config.toml` 의 `layout.header` 에 따라 pane 의 맨 아래(기본값)나 맨 위에 놓이고(`docs/config.md`), 터미널은 나머지 행을 쓴다. pane 헤더처럼 격자 위에 놓이는 것은 터미널 글꼴을, 사이드바·팔레트·Canvas 처럼 격자 밖의 것은 system-ui 를 쓴다.
-
-cell 의 pane 들은 cell 띠(`.cell-band`)로 한 묶음으로 보인다. 띠는 pane 헤더와 같은 쪽의 cell 가장자리에 놓이고, 격자 밖에서 자리를 차지한다. 그래서 pane 이 놓일 영역은 cell 에서 띠를 뺀 나머지다.
-
-경계선은 자리를 차지하지 않는다. 1px 라도 자리를 차지하면 그 뒤 pane 이 격자에서 밀리기 때문이다. 좌우 pane 의 경계선은 오른쪽 pane 의 터미널 왼쪽 여백 위에 겹쳐 그리고, 위아래 pane 은 헤더가 아래면 위 pane 의 헤더가, 위면 아래 pane 의 헤더가 경계가 된다.
-
-pane 은 터미널 20열 × 5행(`PANE_MIN`(`app/src/shared/layout.ts`)) 아래로 내려가지 않는다. 열은 왼쪽 여백·스크롤바를 뺀 터미널 열, 행은 헤더를 뺀 터미널 행이다. `snapRects`(`grid.ts`)는 같은 방향으로 늘어선 항목(pane 하나, 또는 다른 방향으로 나눈 부분 하나)을 한 번에 나눈다. 고르게 나눈 몫보다 필요한 크기(`required`)가 큰 항목은 그 크기를 먼저 받고, 나머지 항목은 남은 길이를 몫(`weight`) 비율로 나눠 받는다. 몫이 없는 항목은 1 이다. 창·사이드바·글꼴 크기가 바뀌어 cell 이 pane 들이 필요한 크기보다 작아지면 뒤쪽 pane 이 cell 끝 밖으로 나가 잘린다. cell 안에서 스크롤하지 않는다. 나눠서 밖으로 나가는 길이가 늘어나는 split 은 `canSplit` 이 거절한다. 단축키·메뉴는 토스트를 띄우고, `maru pane new` 는 `no_space` 오류를 받는다. columns 보기의 좌우 split 은 cell 이 그만큼 넓어지므로 거절하지 않는다.
-
-## 글자 폭
-
-renderer 의 xterm 과 `maru-pty` 의 VT 는 글자마다 차지하는 글자 칸 수를 같은 규칙으로 센다. 둘이 다르게 세면 재생한 화면에서 그 글자 뒤의 글자가 밀린다. 둘 다 grapheme cluster 를 한 글자로 센다. 피부색 수식자나 ZWJ 로 이은 emoji, VS16 이 붙은 글자는 폭이 2다. xterm 은 `@xterm/addon-unicode-graphemes`(`TerminalView.vue`)로, `maru-pty` 는 VT 를 만들 때 mode 2027 을 기본값으로 켜서 센다(`core/crates/maru-pty/src/vt/mod.rs`).
-
-두 쪽이 다르게 세는 경우가 둘 남아 있다.
-
-- 이 addon 의 emoji 폭 표에는 Unicode 14 이후에 추가된 emoji(🫠 등)가 없어 폭을 1로 센다. `maru-pty` 는 2로 센다.
-- 프로그램이 `CSI ? 2027 l` 로 mode 2027 을 끄면 `maru-pty` 만 꺼진다. xterm 은 이 mode 를 처리하지 않는다.
-
-## 밀린 클라이언트는 RIS 와 재생으로 다시 맞춘다
-
-observer 가 밀리면 `maru-pty` 는 그 사이의 출력을 버리고, `resync` 헤더 뒤에 RIS(`\x1bc`)와 재생을 보낸다(`attach.rs` 의 `VT_RESET`). renderer(`pty/attach.ts`)는 resync 를 받아도 xterm 을 따로 reset 하지 않고 이 RIS 에 기댄다. RIS 는 xterm 의 그리드와 모드를 기본값으로 돌리고, 버려진 출력의 마지막 프레임이 남긴 끝나지 않은 시퀀스나 UTF-8 글자도 끊는다.
+- **workspace** — 창이 사이드바에 보이는 목록의 한 줄이다. cell 을 묶는다.
+- **cell** — pane 배치를 갖고 선택의 단위다. job 도 cell 에 속한다. Canvas 문서는 cell 이나 pty 에 붙는다.
+- **pane** — cell 을 나눈 화면 영역이다. pane 마다 pty 하나를 보인다. pane id(`n-…`)는 앱을 다시 띄워도 그대로다.
+- **pty** — 셸과 그 안의 프로그램이 도는 터미널이다. `maru-pty` 프로세스 하나가 pty 하나를 든다. pty id 는 `p-…` 다.
+- **job** — pane 없이 도는 pty 다.
+
+## 프로세스
+
+```mermaid
+flowchart LR
+  subgraph app[Electron 앱]
+    R[renderer]
+    M[main]
+    H[pty host]
+  end
+  P["maru-pty (pty 마다)"]
+  C[maru CLI]
+  CL["claude + 앱 plugin"]
+  R <-- IPC --> M
+  R <-- "MessagePort (pty 바이트)" --> H
+  H <-- "소켓 (attach)" --> P
+  M <-- "소켓 (상태 구독·요청)" --> P
+  C -- "앱 소켓 (JSON-RPC)" --> M
+  C -. "OSC 7501 (tty)" .-> P
+  CL -- "hook·monitor·MCP" --> C
+```
+
+| 프로세스 | 가진 것 |
+| --- | --- |
+| renderer | 화면(workspace·cell·pane 배치, 보기 설정), xterm 으로 그린 터미널, Canvas 문서. 화면이 바뀔 때마다 main 에 알린다. |
+| main | 디스크의 상태(`state.json`), job 표, pty 마다의 마지막 상태와 알림, 설정(`~/.ai-maru`), `maru` 가 붙는 앱 소켓. 창과 끄기·재시작을 정한다. |
+| pty host | pane 의 pty 를 띄우고 붙어, renderer 와 `maru-pty` 사이의 바이트를 잇는다. Electron 의 utility process 다. |
+| `maru-pty` | pty 장치와 그 위의 셸, libghostty-vt 로 해석한 화면·scrollback, cwd·제목·프로그램 상태 레코드. 자기 레코드 파일과 소켓을 앱의 run 디렉토리에 둔다. |
+| `maru` CLI | 앱 터미널 안의 프로그램이 앱을 부르는 명령이다. 앱은 pty 마다 `MARU_SOCKET`·`MARU_PTY_ID` 를 넣는다. |
+| claude plugin | 앱 터미널에서 띄운 claude 에 앱이 싣는 plugin 이다. hook·monitor·MCP 서버가 모두 `maru` 를 부른다. |
+
+## 연결
+
+- **renderer ↔ main** — Electron IPC. 화면 상태, pane·cell 요청과 답, pty 상태의 push 가 오간다.
+- **renderer ↔ pty host** — main 이 만들어 양쪽에 넘긴 MessagePort. pty 의 입출력 바이트가 오간다.
+- **앱 ↔ `maru-pty`** — pty 마다의 Unix 소켓. pty host 는 화면을 붙이고(attach), main 은 상태를 구독하고 끄기 같은 짧은 요청을 보낸다. 요청에는 프로토콜 버전을 싣는다.
+- **`maru` → main** — 앱 소켓의 줄 단위 JSON-RPC. 요청마다 연결 하나다. monitor 의 구독만 연결을 잇는다.
+- **터미널 안의 프로그램 → `maru-pty`** — 터미널 출력. 셸의 cwd(OSC 7), 알림(OSC 9·777), 프로그램 상태(OSC 7501)를 `maru-pty` 가 해석한다. `maru status` 도 앱 소켓이 아니라 이 경로로 쓴다.
+
+## 이렇게 나눈 이유
+
+- **pty 마다 `maru-pty` 프로세스를 둔다.** 앱이 끝나거나 재시작해도 셸과 그 안의 프로그램, 화면이 살아남고, 다시 뜬 앱이 그 pty 에 붙는다.
+- **pty 바이트는 main 을 지나지 않는다.** 출력이 쏟아져도 main 이 막혀 창 조작까지 멈추지 않게 하기 위해서다.
+- **main 이 pty 상태를 직접 구독한다.** renderer 의 attach 연결은 화면이 붙은 동안에만 있다. `maru` 의 목록·데스크톱 알림은 renderer 없이 답해야 한다.
+- **프로그램 상태의 주인은 `maru-pty` 다.** 앱이 꺼진 동안 쓴 상태도 남고, 다시 뜬 앱이 그대로 받는다.
+- **`state.json` 은 표마다 형식 버전을 둔다.** 재시작하면 다른 빌드가 같은 파일을 읽으므로, 한 표의 형식이 바뀌어도 그 표만 잃게 한다.
+- **claude 연동은 모두 `maru` 를 거친다.** hook·monitor·MCP 서버가 `maru` 의 하위 명령이고 앱에는 앱 소켓으로 닿는다. 그래서 앱에 HTTP 서버를 따로 두지 않는다.
+
+## 계약 문서
+
+| 파일 | 다루는 것 |
+| --- | --- |
+| [`pty-lifecycle.md`](contracts/pty-lifecycle.md) | pty 를 열고 붙고 끄는 순서, 앱을 끌 때와 다시 뜰 때의 pty |
+| [`cell-and-window-requests.md`](contracts/cell-and-window-requests.md) | pty 의 cell, 창에 보내는 pane·cell 요청, job 표, 닫기 확인 |
+| [`pty-state.md`](contracts/pty-state.md) | pty 상태와 알림의 구독, `pane list`·`pty list`, 프로그램 상태 레코드 |
+| [`versions-and-persistence.md`](contracts/versions-and-persistence.md) | 프로토콜 버전, `state.json` 의 표와 형식, 재시작 |
+| [`claude-integration.md`](contracts/claude-integration.md) | claude shim, `maru mcp` 중계 |
+| [`terminal-grid-and-replay.md`](contracts/terminal-grid-and-replay.md) | 글자 칸 격자, 글자 폭, attach 크기와 재동기화 |
+
+`maru` 의 요청 형식은 `core/crates/maru/src/main.rs`, `maru-pty` 의 소켓 프로토콜은 `core/crates/maru-pty/src/lib.rs` 의 모듈 문서에 있다. 설정은 `docs/config.md` 에 있다.

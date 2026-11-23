@@ -61,7 +61,8 @@ export function createPanes(
         unqueue = windowReady.whenReady(deliver)
       })
     } catch (err) {
-      // 보낸 뒤의 실패는 시간 초과뿐이다(docs/architecture.md 의 "시간 초과한 pane 요청은 창이 취소한다").
+      // 보낸 뒤의 실패는 시간 초과뿐이다(`docs/contracts/cell-and-window-requests.md` 의 "시간 초과한 pane 요청은 창이 취소한다").
+      // 창이 답을 보낸 직후 그 답이 닿기 전에 시간 초과하면, 창은 이미 답한 요청이라 pane 을 닫지 않고 pane 이 남는다.
       if (sent) send('pane:cancel', id, null)
       throw err
     } finally {
@@ -132,6 +133,7 @@ export function createPanes(
       }
       return askPane('pane:new', () => req)
     },
+    // 프로그램이 돌아도 닫기 확인 창을 띄우지 않는다. CLI 의 답 상한 안에 사용자의 답을 기다릴 수 없기 때문이다.
     'pane.close': async ({ target }) => {
       const pane = requirePane(target, 'target')
       await ask('pane:close', (): PaneTarget => ({ pane }))

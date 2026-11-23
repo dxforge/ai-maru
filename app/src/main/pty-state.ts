@@ -71,9 +71,13 @@ export function createPtyStates(deps: PtyStatesDeps) {
     if (entry) deps.emit(id, entry)
   }
 
+  // 알림은 main 의 메모리에만 든다. maru-pty 는 알림을 들지 않으므로, 앱을 끄면 읽지 않은 알림은 사라진다.
+  // claude 가 같은 알림을 hook 과 OSC 로 함께 보내면(`preferredNotifChannel`) 둘 다 받는다. OSC 알림에는 종류가 없어 가려낼 수 없기 때문이다.
   function notify(id: string, notification: PtyNotification): void {
     const w = watches.get(id)
     if (!w || deps.viewing(id)) return
+    // 글 없는 알림은 읽지 않은 글 있는 알림을 대신하지 않는다. claude 는 턴을 끝내고 60초 뒤에 `idle_prompt` 를 보내고,
+    // main 은 그것을 글 없는 알림으로 든다. 그 알림이 앞 알림의 글을 지우지 않게 하기 위해서다.
     if (!isBodyless(notification) || !w.notification || isBodyless(w.notification))
       set(id, w, { notification })
     deps.notified(id, notification)

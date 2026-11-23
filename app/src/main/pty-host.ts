@@ -26,7 +26,7 @@ export type KillRequest = { type: 'kill'; id: string; dir: string }
 /** host 가 main 에 보내는 것. `live` 는 띄운 pty 에 붙었다는 뜻이다 — main 은 그 pty 의 상태 구독을 연다. */
 export type HostEvent = { type: 'live'; id: string }
 /** `quit` 을 받은 host 는 띄우는 중인 pty 가 다 뜨거나 멈추고 받은 kill 이 끝난 뒤에 끝난다. 끄던 pty 가 남으면 다음 실행이
- * 붙을 pane 이 없는 pty 로 보고 Recovered workspace 에 되살리기 때문이다. main 은 host 가 끝난 뒤에 레코드를 읽어야 그 pty 까지 끈다(docs/architecture.md 의 "앱을 끄면 띄우던 pty 도 끈다").
+ * 붙을 pane 이 없는 pty 로 보고 Recovered workspace 에 되살리기 때문이다. main 은 host 가 끝난 뒤에 레코드를 읽어야 그 pty 까지 끈다(`docs/contracts/pty-lifecycle.md` 의 "앱을 끄면 main 은 host 가 끝난 뒤에 레코드를 읽어 pty 를 끈다").
  * `keepPtys` 가 false 면 어차피 끌 pty 이므로 띄우는 중인 pty 를 기다리지 않고 멈춘다. */
 export type QuitRequest = { type: 'quit'; keepPtys: boolean }
 type HostRequest = OpenRequest | KillRequest | QuitRequest
