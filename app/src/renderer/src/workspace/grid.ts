@@ -27,7 +27,7 @@ export function naturalWidth(layout: Layout, cols: number, cellWidth: number): n
 /**
  * pane 경계를 `unit` 의 배수로 반올림한 px 상자. `unit` 은 글자 칸 크기다. columns 보기의 좌우는 항목마다
  * `naturalWidth` 를 주고, 줄의 마지막 항목이 남는 폭을 채운다 — 줄마다 폭이 다르면 좁은 줄의 마지막 pane 이 넓어진다.
- * cell 끝에 닿는 경계는 그대로 둔다 — docs/architecture.md 의 "pane 경계와 글자 칸 격자". `min` 은 pane 하나의
+ * cell 끝에 닿는 경계는 그대로 둔다. `min` 은 pane 하나의
  * px 하한이고 `unit` 의 배수다. cell 이 `required` 보다 작으면 그 크기에 놓아, 뒤쪽 pane 이 cell 밖으로 나간다.
  */
 export function snapRects(

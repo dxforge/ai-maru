@@ -28,6 +28,7 @@ export function idleArgs(pty: string, r: ProgramStatusRecord): string[] {
 /**
  * 그 pane 의 done 레코드를 idle 로 바꾼다. `records` 를 넘기지 않으면 든 레코드 전부를 본다. 레코드는 maru-pty 가 들고
  * 있으므로 그 pty 의 터미널에 OSC 7501 을 쓴다 — 앱 메모리에서만 덮으면 앱을 다시 띄울 때 maru-pty 가 done 을 다시 보낸다.
+ * done 을 본 뒤 프로그램이 보낸 새 상태도 idle 로 덮을 수 있고, 앱은 그것을 막지 않는다.
  */
 export function createSeen(
   deps: SeenDeps

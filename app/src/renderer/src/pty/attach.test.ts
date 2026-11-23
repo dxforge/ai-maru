@@ -366,7 +366,7 @@ describe('attach', () => {
     expect(got).toEqual([])
     expect(term.written).toEqual([])
   })
-  // resync 의 RIS 가 끝나지 않은 시퀀스를 끊는다는 계약(`docs/architecture.md`)을 확인한다.
+  // resync 의 RIS 가 끝나지 않은 시퀀스를 끊는다는 계약(`docs/contracts/terminal-grid-and-replay.md` 의 "밀린 클라이언트는 RIS 와 재생으로 다시 맞춘다")을 확인한다.
   it.each([
     ['UTF-8 글자', '\xea\xb0'],
     ['CSI', '\x1b[38;5;'],

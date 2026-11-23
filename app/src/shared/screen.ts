@@ -7,7 +7,7 @@ import { isPtyId, randomId } from './pty'
 /**
  * `state.json` 의 표마다의 형식 버전이다. 번들의 `state-versions.json` 에서 읽어, 재시작 전 앱이 설치된 빌드의 같은 파일과
  * 견줄 수 있게 한다(`main/restart.ts`). 다음에 뜬 앱은 모르는 버전의 표를 버린다. 버전을 올리는 규칙은
- * `docs/architecture.md` 의 "끄기·뜨기·재시작" 에 있다. 없어도 되는 필드를 더할 때는 해당 parse 함수에서도 옮긴다.
+ * `docs/contracts/versions-and-persistence.md` 의 "표 형식은 다른 빌드가 읽을 수 있게 바꾼다" 에 있다. 없어도 되는 필드를 더할 때는 해당 parse 함수에서도 옮긴다.
  * parse 함수는 아는 필드만 옮기고, 선택 필드는 빠뜨려도 타입 검사를 통과하기 때문이다.
  */
 export const STATE_VERSIONS: {

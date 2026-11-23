@@ -45,7 +45,12 @@ export type JobDeps = {
   changed: () => void
 }
 
-/** 계약은 `main.rs`(`core/crates/maru/src/main.rs`)의 모듈 doc 에 있다. 표는 띄운 순서다. */
+/**
+ * 계약은 `main.rs`(`core/crates/maru/src/main.rs`)의 모듈 doc 에 있다. 표는 띄운 순서다.
+ *
+ * job 의 출력은 main 을 지나지 않는다. main 은 도는 job 마다 셸이 끝나기를 기다리는 연결(`waitExit`)과 상태 구독만
+ * 두고, 출력은 `job.read` 때 `capture` 로 한 번 읽는다.
+ */
 export function createJobs(deps: JobDeps) {
   const jobs: JobRecord[] = []
   const waits = new Map<string, () => void>()

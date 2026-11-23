@@ -101,7 +101,7 @@ async function result(method: string, params: Message, deps: Deps): Promise<unkn
   }
 }
 
-/** 앱은 MCP 세션도 `initialize` 여부도 기억하지 않는다(`docs/architecture.md` 「MCP 도구는 `maru mcp` 가 앱에 중계한다」). 그래서 앱이 다시 떠도 claude 는 `initialize` 를 다시 보내지 않아도 된다. */
+/** 앱은 MCP 세션도 `initialize` 여부도 기억하지 않는다(`docs/contracts/claude-integration.md` 의 "앱은 MCP 세션의 상태를 두지 않는다"). 그래서 앱이 다시 떠도 claude 는 `initialize` 를 다시 보내지 않아도 된다. */
 async function handle(msg: Message, deps: Deps): Promise<Message | null> {
   // 앱이 클라이언트에 거는 요청이 없으므로 응답이 올 일도 없다.
   if (typeof msg.method !== 'string') return null

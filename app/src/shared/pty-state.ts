@@ -30,7 +30,7 @@ export type PtyState = {
  * 않는다. OSC 9 는 제목을 싣지 않아 `title` 이 비어 있다. Claude Code 의 Notification hook 으로 받은 알림도 이 모양이다.
  * Claude Code 의 Notification hook 으로 받은 알림 가운데 상태 레코드가 같은 내용을 보이는 종류는 `title`·`body` 가 모두 빈
  * 알림(`isBodyless`)이다. 사이드바와 pane 헤더는 이 알림에 점만 달고, 데스크톱 알림은 본문에 pane 의 상태를
- * 쓴다(`docs/architecture.md`).
+ * 쓴다(`docs/contracts/pty-state.md` 의 「글 없는 알림은 "점만 달고 본문은 상태" 다」).
  */
 export type PtyNotification = { title: string; body: string }
 

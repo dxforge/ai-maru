@@ -23,6 +23,8 @@ export function ptyCli(deps: {
     return s
   }
 
+  // 대상은 job 표와 창이 마지막으로 알린 화면에서 찾는다. 찾은 pty 의 화면 읽기·글자 쓰기는 renderer 를 거치지 않고
+  // main 이 maru-pty 에 `capture`·`input` 으로 직접 보낸다(`deps.capture`·`deps.paste`).
   function find(target: unknown): { pty: string; job: boolean } {
     if (!isPtyId(target)) throw new InvalidParams('params.target must be a pty id, e.g. p-1a2b3c4d')
     if (deps.jobs().some((j) => j.pty === target)) return { pty: target, job: true }
@@ -58,6 +60,7 @@ export function ptyCli(deps: {
       if ((await deps.paste(pty, text)) === 'exited') throw new Error(`pty ${pty} has exited`)
       return null
     },
+    // `pane.close` 와 같이 닫기 확인 창을 띄우지 않는다.
     'pty.kill': async ({ target }) => {
       const { pty, job } = find(target)
       await (job ? deps.killJob(pty) : deps.closePty(pty))

@@ -254,7 +254,7 @@ const desktopNotifications = createDesktopNotifications({
 // renderer 가 `pty:viewed` 로 알린, 입력 focus 를 가진 pane 의 pty. renderer 를 다시 읽으면 renderer 가 다시 알리기 전까지 보고 있는 pty 가 없는 것으로 친다.
 let viewedPty: string | null = null
 
-// main 은 renderer 가 붙어 있든 아니든 pty 마다 상태 구독을 열어 마지막 상태를 든다(docs/architecture.md 의 "pty 상태는 main 이 구독해 든다").
+// main 은 renderer 가 붙어 있든 아니든 pty 마다 상태 구독을 열어 마지막 상태를 든다(`docs/contracts/pty-state.md` 의 "main 이 pty 마다 상태를 구독해 든다").
 const ptyStates = createPtyStates({
   subscribe: (id, on) => subscribeState(ptyDir(), id, on),
   isLive: (id) => ptyLive(ptyDir(), id),
@@ -499,6 +499,7 @@ async function checkClose(find: () => Promise<Dialog | null>): Promise<CloseAnsw
   }
 }
 
+// 닫기 확인(⌘W·⇧⌘W·창 닫기·⌘Q)은 모두 창이 마지막으로 알린 화면(`currentScreen`)에서 pane·cell 을 찾는다.
 // 화면에 아직 없는 pane 은 명령 pane 인지 모르므로 foreground 로 가른다.
 async function closePaneCheck(paneId: string, pty: string): Promise<Dialog | null> {
   const pane = paneShowing(currentScreen(), paneId, pty) ?? { ptyId: pty }
@@ -566,6 +567,7 @@ function confirmQuit(): void {
   })().finally(() => (quitCheck = null))
 }
 
+// `maru canvas put`(`canvas.put`)과 MCP 의 `canvas_put` 은 같은 처리로 문서를 넣는다.
 const putDoc = canvasPut(mainWindow, windowReady, cellOf)
 
 const cliHandlers: Handlers = {
@@ -841,6 +843,7 @@ function start(): void {
     cellOf: ptyCells.cellOf,
     spawn: async (id, cwd, command) => {
       await ready
+      // 앱을 끄기 시작하면(`will-quit`) 새 job 은 띄우지 않는다. `will-quit` 은 그때 띄우던 job 만 기다리므로, 그 뒤에 뜬 job 의 pty 는 끄는 순서에서 빠진다.
       if (quitting) throw new Error('AI Maru is quitting')
       const spawned = startDir(cwd).then(async (dir) => {
         const state = await spawnPty(ptyBin(), ptyDir(), setup, id, dir, command, {
@@ -982,13 +985,13 @@ function start(): void {
   const sendKill = (key: string): void => {
     const closed = ptyCells.close(key)
     if (!closed) return
-    // cell 의 마지막 pane 을 지우면 renderer 가 cell 도 지운다(docs/architecture.md).
+    // cell 의 마지막 pane 을 지우면 renderer 가 cell 도 지운다(`docs/contracts/cell-and-window-requests.md` 의 "pane·cell 이 닫힌 것은 kill 로 안다").
     if (closed.closed) void jobTable.closeCell(closed.closed)
     ptyStates.forget(closed.pty)
     const req: KillRequest = { type: 'kill', id: closed.pty, dir: ptyDir() }
     void ready.then(() => ptyHost().postMessage(req))
   }
-  // docs/architecture.md 의 "문서가 바뀌면 이전 문서의 pty 를 끈다".
+  // `docs/contracts/pty-lifecycle.md` 의 "새로 고친 문서는 이전 문서의 pty 에 붙지 않는다".
   const opened = new Map<number, Set<string>>()
   app.on('web-contents-created', (_event, contents) => {
     let leaving = new Set<string>()
@@ -996,6 +999,7 @@ function start(): void {
     contents.on('did-start-navigation', ({ isMainFrame, isSameDocument }) => {
       if (isMainFrame && !isSameDocument) leaving = new Set(opened.get(contents.id))
     })
+    // 닫은 pane 과 같은 `sendKill` 로 끄므로, 창을 새로 고치면 그 창 cell 의 job 도 꺼진다.
     contents.on('did-navigate', () => {
       for (const key of leaving) {
         opened.get(contents.id)?.delete(key)

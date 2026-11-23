@@ -360,7 +360,7 @@ impl VtTerminal {
                 bail!("ghostty_terminal_set(opt={opt}) rc={rc}");
             }
         }
-        // 앱의 xterm 과 같은 규칙으로 글자 폭을 센다(`docs/architecture.md` 의 "글자 폭"). 기본값으로 두어야
+        // 앱의 xterm 과 같은 규칙으로 글자 폭을 센다(`docs/contracts/terminal-grid-and-replay.md` 의 "xterm 과 `maru-pty` 는 글자 폭을 같은 규칙으로 센다"). 기본값으로 두어야
         // 셸의 `reset`(RIS) 뒤에도 켜져 있다.
         let mode = ffi::GhosttyTerminalModeConfig {
             mode: ffi::GHOSTTY_MODE_GRAPHEME_CLUSTER,
