@@ -33,9 +33,9 @@ async function typesIntoTerminal(page: Page, marker: string): Promise<void> {
 }
 
 /**
- * 프로그램이 kitty 키보드 플래그를 켠 뒤 출력한 `marker` 를 renderer 가 그릴 때까지 기다린다. 키를 kitty 시퀀스로 바꿀지는
+ * kitty 키보드 플래그를 켜거나 끈 뒤에 출력된 `marker` 를 renderer 가 그릴 때까지 기다린다. 키를 kitty 시퀀스로 바꿀지는
  * renderer 의 xterm 이 가진 플래그로 정한다. `toShow` 가 읽는 host 의 화면에 찍힌 뒤에도 xterm 은 그 출력을 아직 파싱하지
- * 않았을 수 있고, 그 사이에 보낸 키는 플래그를 켜기 전의 시퀀스로 보내진다. `launch(DOM_RENDERER)` 로 띄운 테스트만 쓴다.
+ * 않았을 수 있고, 그 사이에 보낸 키는 플래그를 바꾸기 전의 시퀀스로 보내진다. `launch(DOM_RENDERER)` 로 띄운 테스트만 쓴다.
  */
 async function drawn(page: Page, marker: string): Promise<void> {
   await expect(rows(page)).toContainText(marker)
@@ -198,6 +198,26 @@ async function pressHangulCtrlR(page: Page): Promise<void> {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key })
   await cdp.detach()
 }
+
+test('한글 배열의 ⌃R 은 플래그 4 를 켠 kitty 프로그램에 물리 키의 r 을 base layout key 로 붙여 간다', async ({
+  launch
+}) => {
+  const { page } = await launch(DOM_RENDERER)
+  await armKitty(page, 5, '-t 2 -n15')
+  await pressHangulCtrlR(page)
+  await expect(screen(page)).toShow("got=$'\\E[12593::114;5u'")
+
+  await armKitty(page, 1, '-t 2 -n10')
+  await pressHangulCtrlR(page)
+  await expect(screen(page)).toShow("got=$'\\E[12593;5u'")
+
+  await page.keyboard.type(
+    'echo legacy-$((1+1)); IFS= read -rs -t 2 -n1 k; printf \'got=%q\\n\' "$k"\n'
+  )
+  await drawn(page, 'legacy-2')
+  await pressHangulCtrlR(page)
+  await expect(screen(page)).toShow("got=$'\\022'")
+})
 
 test('플래그 2 를 함께 켠 kitty 프로그램에는 한글 배열의 ⌃R 을 뗄 때도 누를 때와 같은 키 번호와 base layout key 로 간다', async ({
   launch
