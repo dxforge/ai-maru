@@ -1,6 +1,6 @@
 # Claude Code 연동
 
-앱은 터미널에서 띄운 claude 에 앱의 plugin(`app/resources/claude-plugin`)을 싣고, 그 plugin 의 MCP 서버(`maru mcp`)가 도구 호출을 앱에 중계한다. 이 파일은 그 사이의 약속을 적는다. 주로 닿는 코드는 `app/resources/bin/claude`(shim), `app/resources/zsh/.zshenv`, `app/src/main/pty.ts`(`shellEnv`), `app/resources/claude-plugin/.mcp.json`, `core/crates/maru/src/main.rs`(`mcp`), `app/src/main/mcp.ts`·`canvas.ts` 다. Notification hook 으로 오는 알림은 `pty-state.md` 에 있다.
+앱은 터미널에서 띄운 claude 에 앱의 plugin(`app/resources/claude-plugin`)을 싣고, 그 plugin 의 MCP 서버(`maru mcp`)가 도구 호출을 앱에 중계한다. 이 파일은 그 사이의 약속을 적는다. 주로 닿는 코드는 `app/resources/bin/claude`(shim), `app/resources/zsh/.zshenv`·`.zlogin`, `app/src/main/pty.ts`(`shellEnv`·`foregroundCwd`), `app/electron-builder.yml`, `app/src/main/links.ts`, `core/crates/maru-pty/src/state.rs`·`pty.rs`·`procinfo.rs`, `app/resources/claude-plugin/.mcp.json`, `core/crates/maru/src/main.rs`(`mcp`), `app/src/main/mcp.ts`·`canvas.ts` 다. Notification hook 으로 오는 알림은 `pty-state.md` 에 있다.
 
 ## 터미널 PATH 앞에 shim 디렉토리를 둔다
 
