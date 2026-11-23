@@ -30,14 +30,14 @@ importers:
         specifier: ^6.0.11
         version: 6.0.11(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(vue@3.5.45(typescript@6.0.3))
       '@xterm/addon-unicode-graphemes':
-        specifier: 0.5.0-beta.331
-        version: 0.5.0-beta.331(@xterm/xterm@6.1.0-beta.337)
+        specifier: 0.5.0-beta.332
+        version: 0.5.0-beta.332(@xterm/xterm@6.1.0-beta.338)
       '@xterm/addon-webgl':
-        specifier: 0.20.0-beta.330
-        version: 0.20.0-beta.330(@xterm/xterm@6.1.0-beta.337)
+        specifier: 0.20.0-beta.331
+        version: 0.20.0-beta.331(@xterm/xterm@6.1.0-beta.338)
       '@xterm/xterm':
-        specifier: 6.1.0-beta.337
-        version: 6.1.0-beta.337
+        specifier: 6.1.0-beta.338
+        version: 6.1.0-beta.338
       dompurify:
         specifier: ^3.4.17
         version: 3.4.17
@@ -1133,18 +1133,18 @@ packages:
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
     engines: {node: '>=10.0.0'}
 
-  '@xterm/addon-unicode-graphemes@0.5.0-beta.331':
-    resolution: {integrity: sha512-0YpRheKOdRfuGqwxTfi4zpEBmhvjggw8lqK1TMUZROfck7l0+MrBaf9NTvSpd4uSOJLVs+uvX2VbzRF6gfiM3Q==}
+  '@xterm/addon-unicode-graphemes@0.5.0-beta.332':
+    resolution: {integrity: sha512-Wvoh0M37OcZRDLUfxvKtzcL241LZMZXa9UhJPhmawRA1i55ZkKu3rLyNiijoidKlycDqv9OOrXP7AMDX0dtnGQ==}
     peerDependencies:
-      '@xterm/xterm': ^6.1.0-beta.337
+      '@xterm/xterm': ^6.1.0-beta.338
 
-  '@xterm/addon-webgl@0.20.0-beta.330':
-    resolution: {integrity: sha512-gcxemutOlpGCEnxZckSwR8oZ/twZXrcQw6N3aRcDVrPguIMr9YvrzegfllCo4WxRnOc4gWkHhjD1toX3emug3A==}
+  '@xterm/addon-webgl@0.20.0-beta.331':
+    resolution: {integrity: sha512-gAcYQI1zgO62vAZmeAho1C3D+rqoFslS60eGr5lfxah+POEQCzIjEV97wrDwzY1m+VReKawMiYkZ8Nhawbzkfw==}
     peerDependencies:
-      '@xterm/xterm': ^6.1.0-beta.337
+      '@xterm/xterm': ^6.1.0-beta.338
 
-  '@xterm/xterm@6.1.0-beta.337':
-    resolution: {integrity: sha512-zstczNBAT/FaaWzCCoLx3DavRcAW0ndK7g/Y0893nPvZwWmjMU8WeuqJYqMRVommGwv1KRoxdlOOt0KukxHadA==}
+  '@xterm/xterm@6.1.0-beta.338':
+    resolution: {integrity: sha512-VBygvapFKV5gsqvVFsk6gYpArn4AXnUtZvt3tfN2LXI284i0mivC6Kus84GMJo0GJPLRFziWcSPVz95nViPuWw==}
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
@@ -4187,15 +4187,15 @@ snapshots:
 
   '@xmldom/xmldom@0.8.15': {}
 
-  '@xterm/addon-unicode-graphemes@0.5.0-beta.331(@xterm/xterm@6.1.0-beta.337)':
+  '@xterm/addon-unicode-graphemes@0.5.0-beta.332(@xterm/xterm@6.1.0-beta.338)':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.337
+      '@xterm/xterm': 6.1.0-beta.338
 
-  '@xterm/addon-webgl@0.20.0-beta.330(@xterm/xterm@6.1.0-beta.337)':
+  '@xterm/addon-webgl@0.20.0-beta.331(@xterm/xterm@6.1.0-beta.338)':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.337
+      '@xterm/xterm': 6.1.0-beta.338
 
-  '@xterm/xterm@6.1.0-beta.337': {}
+  '@xterm/xterm@6.1.0-beta.338': {}
 
   abbrev@4.0.0: {}
 
