@@ -23,6 +23,7 @@ import {
   QUIT_OUTCOMES,
   quitDialog,
   runningDialog,
+  runningJobNames,
   runningPanes,
   runningProgram,
   stopJobDialog,
@@ -504,7 +505,9 @@ async function checkClose(find: () => Promise<Dialog | null>): Promise<CloseAnsw
 async function closePaneCheck(paneId: string, pty: string): Promise<Dialog | null> {
   const pane = paneShowing(currentScreen(), paneId, pty) ?? { ptyId: pty }
   const program = await runningProgram(pane, programDeps)
-  return program && closePaneDialog(program.name)
+  // pane 을 닫아 cell 이 닫히면 `sendKill` 이 그 cell 의 job 도 끈다.
+  const cell = ptyCells.closes(pty)
+  return closePaneDialog(program, cell && jobs ? runningJobNames(jobs.list(), cell) : [])
 }
 
 async function closeWorkspaceCheck(workspace: string): Promise<Dialog | null> {

@@ -94,8 +94,8 @@ main 은 job 표가 바뀔 때마다 전체 `JobView` 를 `jobs:changed` 로 보
 
 ## 닫기 확인은 main 이 묻는다
 
-pane 이나 workspace 를 닫을 때 renderer 는 main 에 묻고(`pane:confirm-close`·`workspace:confirm-close`) 답을 받은 뒤 닫는다. 실행 중인 프로그램은 셸 pane 이면 `maru-pty` 의 `foreground` 로, 명령을 띄운 pane 이면 상태의 `command.running` 으로 가린다. workspace 를 닫을 때(⇧⌘W)는 그 cell 들의 job 표도 센다. pane 을 닫을 때(⌘W)는 job 을 세지 않는다.
+pane 이나 workspace 를 닫을 때 renderer 는 main 에 묻고(`pane:confirm-close`·`workspace:confirm-close`) 답을 받은 뒤 닫는다. 실행 중인 프로그램은 셸 pane 이면 `maru-pty` 의 `foreground` 로, 명령을 띄운 pane 이면 상태의 `command.running` 으로 가린다. workspace 를 닫을 때(⇧⌘W)는 그 cell 들의 job 표도 센다. pane 을 닫을 때(⌘W)는 그 pane 의 pty 가 cell 의 마지막 pty 일 때만 그 cell 에서 도는 job 의 이름을 적어 묻는다. cell 이 닫히면 그 cell 의 job 도 끝나기 때문이다. background pane 이 남은 cell 은 닫히지 않으므로 job 을 적지 않는다.
 
-- 코드: `App.vue` 의 `closePane`·`closeWorkspace` ↔ preload ↔ `index.ts` 의 `checkClose`·`closePaneCheck`·`closeWorkspaceCheck` ↔ `close-confirm.ts` 의 `runningProgram` ↔ `pty.ts` 의 `foreground`
+- 코드: `App.vue` 의 `closePane`·`closeWorkspace` ↔ preload ↔ `index.ts` 의 `checkClose`·`closePaneCheck`·`closeWorkspaceCheck` ↔ `close-confirm.ts` 의 `runningProgram`·`runningJobNames` ↔ `pty.ts` 의 `foreground`, `closePaneCheck` ↔ `pty-cells.ts` 의 `closes`
 - 바꾸면: renderer 가 답을 기다리지 않고 닫으면 확인 창이 뜬 동안 pane 이 사라진다.
 - 테스트: `app/e2e/close-confirm.spec.ts` › 「확인 창이 뜨면 그 사이에 누른 ⌘W 는 버린다」

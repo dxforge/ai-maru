@@ -5,6 +5,7 @@ import {
   QUIT_OUTCOMES,
   quitDialog,
   runningDialog,
+  runningJobNames,
   runningPanes,
   runningProgram,
   stopJobDialog,
@@ -110,12 +111,56 @@ describe('runningPanes', () => {
 
 describe('확인 창', () => {
   it('pane 은 이름이 있으면 이름을, 없으면 일반 문구를 적는다', () => {
-    expect(closePaneDialog('vim')).toEqual({
+    expect(closePaneDialog({ name: 'vim' })).toEqual({
       message: 'Close this pane?',
       detail: '`vim` is still running.',
       buttons: ['Close', 'Cancel']
     })
-    expect(closePaneDialog(null).detail).toBe('A program is still running in it.')
+    expect(closePaneDialog({ name: null })?.detail).toBe('A program is still running in it.')
+  })
+
+  it('pane 에 도는 것도 함께 끝날 job 도 없으면 묻지 않는다', () => {
+    expect(closePaneDialog(null)).toBeNull()
+    expect(closePaneDialog(null, [])).toBeNull()
+  })
+
+  it.each([
+    [['dev'], 'This is the last pane in this cell, so its job will stop: `dev`.'],
+    [
+      ['dev', 'watch'],
+      'This is the last pane in this cell, so its jobs will stop: `dev`, `watch`.'
+    ],
+    [['a', 'b', 'c'], 'This is the last pane in this cell, so its jobs will stop: `a`, `b`, `c`.'],
+    [
+      ['a', 'b', 'c', 'd', 'e'],
+      'This is the last pane in this cell, so its jobs will stop: `a`, `b`, `c`, and 2 more.'
+    ]
+  ])('cell 과 함께 끝날 job 이 %j 면 "%s"', (jobs, detail) => {
+    expect(closePaneDialog(null, jobs)).toEqual({
+      message: 'Close this pane?',
+      detail,
+      buttons: ['Close', 'Cancel']
+    })
+  })
+
+  it('pane 에 도는 프로그램과 함께 끝날 job 을 한 창에 적는다', () => {
+    expect(closePaneDialog({ name: 'vim' }, ['dev'])?.detail).toBe(
+      '`vim` is still running. This is the last pane in this cell, so its job will stop: `dev`.'
+    )
+    expect(closePaneDialog({ name: null }, ['dev', 'watch'])?.detail).toBe(
+      'A program is still running in it. This is the last pane in this cell, so its jobs will stop: `dev`, `watch`.'
+    )
+  })
+
+  it('cell 에서 도는 job 의 이름만 고르고, 이름이 없으면 명령의 첫 낱말로 부른다', () => {
+    const jobs = [
+      { name: 'dev', cell: 'c-1', command: ['pnpm', 'dev'] },
+      { cell: 'c-1', command: ['sleep', '100'] },
+      { name: 'done', cell: 'c-1', command: ['true'], exit: { code: 0, signal: null } },
+      { name: 'other', cell: 'c-2', command: ['sleep', '100'] }
+    ]
+    expect(runningJobNames(jobs, 'c-1')).toEqual(['dev', 'sleep'])
+    expect(runningJobNames(jobs, 'c-3')).toEqual([])
   })
 
   it('job 을 끌 때는 그 이름으로 묻는다', () => {

@@ -33,4 +33,16 @@ describe('createPtyCells', () => {
     expect(cs.close('k2')).toBeUndefined()
     expect(cs.close('k-unknown')).toBeUndefined()
   })
+
+  it('closes 는 그 pty 를 끄면 닫힐 cell 이고, cell 에 다른 pty 가 남거나 모르는 pty 면 없다', () => {
+    const cs = createPtyCells()
+    cs.open('k1', 'p-00000001', 'c-00000001')
+    cs.open('k2', 'p-00000002', 'c-00000001')
+    cs.open('k3', 'p-00000003', 'c-00000002')
+    expect(cs.closes('p-00000001')).toBeUndefined()
+    expect(cs.closes('p-00000003')).toBe('c-00000002')
+    expect(cs.closes('p-00000004')).toBeUndefined()
+    cs.close('k2')
+    expect(cs.closes('p-00000001')).toBe('c-00000001')
+  })
 })
