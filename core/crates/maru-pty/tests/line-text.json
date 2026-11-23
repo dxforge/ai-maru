@@ -10,5 +10,7 @@
   { "in": "한글 ✅ 👨‍👩‍👧", "out": "한글 ✅ 👨‍👩‍👧" },
   { "in": "a b", "out": "a b" },
   { "in": " a ", "out": "a" },
+  { "in": "\ufeff\u00a0bom\u00a0\ufeff", "out": "\ufeff\u00a0bom\u00a0\ufeff" },
+  { "in": "\u00a0 nbsp \u00a0", "out": "nbsp" },
   { "in": "", "out": "" }
 ]

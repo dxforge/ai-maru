@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import type { PtyNotification } from '../shared/pty-state'
 import { coreFile } from '../shared/core-source'
@@ -81,5 +82,37 @@ describe('lineText', () => {
   it('maru-pty 와 같은 fixture 를 같게 다듬는다', () => {
     expect(samples.length).toBeGreaterThan(0)
     for (const s of samples) expect(lineText(s.in), JSON.stringify(s.in)).toBe(s.out)
+  })
+  it('공백이 길게 이어진 글도 바로 다듬는다', () => {
+    const text = `a${' '.repeat(100_000)}b`
+    const start = performance.now()
+    expect(lineText(text)).toBe(text)
+    expect(performance.now() - start).toBeLessThan(1000)
+  })
+  it('다듬은 결과는 제어 문자가 없고 앞뒤가 White_Space 가 아니며, 다시 다듬어도 같다', () => {
+    const unit = fc.oneof(
+      fc.constantFrom(
+        ' ',
+        '\t',
+        '\n',
+        '\r',
+        '\u00a0',
+        '\u2028',
+        '\u3000',
+        '\ufeff',
+        '\u0085',
+        '\u007f'
+      ),
+      fc.string({ unit: 'binary', minLength: 1, maxLength: 1 })
+    )
+    fc.assert(
+      fc.property(fc.string({ unit }), (text) => {
+        const once = lineText(text)
+        expect(once).not.toMatch(/^\p{White_Space}|\p{White_Space}$/u)
+        // eslint-disable-next-line no-control-regex
+        expect(once).not.toMatch(/[\x00-\x1f\x7f-\x9f]/)
+        expect(lineText(once)).toBe(once)
+      })
+    )
   })
 })

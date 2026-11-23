@@ -237,6 +237,82 @@
           "cell": "c-0000000b"
         }
       ]
+    },
+    "sessions": {
+      "version": 2,
+      "ptys": [
+        {
+          "pane": "n-0000000a",
+          "pty": "p-0000000a"
+        },
+        {
+          "pane": "n-0000000b",
+          "pty": "p-0000000b"
+        },
+        {
+          "pane": "n-0000000c",
+          "pty": "p-0000000c"
+        },
+        {
+          "pane": "n-0000000d",
+          "pty": "p-0000000d"
+        }
+      ],
+      "jobs": [
+        {
+          "pty": "p-0000000e",
+          "name": "tests",
+          "cell": "c-0000000a",
+          "owner": "p-0000000a",
+          "command": ["npm", "test"],
+          "started": 1700000100000,
+          "exit": {
+            "code": 1,
+            "signal": null
+          },
+          "pending": false
+        },
+        {
+          "pty": "p-0000000f",
+          "cell": "c-0000000b",
+          "owner": "p-0000000d",
+          "command": ["make"],
+          "pending": true
+        }
+      ],
+      "started": {
+        "p-0000000a": 1700000000000,
+        "p-0000000b": 1700000500000,
+        "p-0000000c": 1700000500000,
+        "p-0000000d": 1700000500000,
+        "p-0000000e": 1700000500000,
+        "p-0000000f": 1700000500000
+      }
+    },
+    "view": {
+      "version": 2,
+      "window": {
+        "x": 40,
+        "y": 30,
+        "width": 1280,
+        "height": 800,
+        "isMaximized": false,
+        "isFullScreen": false
+      },
+      "theme": {
+        "background": "#1e1e2e",
+        "mode": "dark"
+      },
+      "viewMode": "columns",
+      "sidebar": {
+        "open": true,
+        "width": 282
+      },
+      "folded": ["w-0000000b"],
+      "canvas": {
+        "width": 480
+      },
+      "selected": "c-0000000b"
     }
   }
 }

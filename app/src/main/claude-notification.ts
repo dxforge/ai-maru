@@ -13,13 +13,26 @@ const ELICITATION_RESPONSE = 'elicitation_response'
 
 /** maru-pty 가 OSC 알림의 텍스트를 다듬는 규칙(`line_text`)과 같게 한 줄로 다듬는다. */
 export function lineText(text: string): string {
-  return (
+  return trimWhiteSpace(
     text
       .replace(/[\n\t]/g, ' ')
       // eslint-disable-next-line no-control-regex
       .replace(/[\x00-\x1f\x7f-\x9f]/g, '')
-      .trim()
   )
+}
+
+const WHITE_SPACE = /^\p{White_Space}$/u
+
+/**
+ * Rust 의 `str::trim` 처럼 앞뒤의 Unicode White_Space 만 뗀다. JS 의 `trim` 은 U+FEFF 도 떼어 `line_text` 와 다르게 다듬기
+ * 때문이다. 정규식 `/\p{White_Space}+$/` 는 공백이 길게 이어지면 그 길이의 제곱만큼 걸린다. 그래서 끝에서부터 한 글자씩 본다.
+ */
+function trimWhiteSpace(s: string): string {
+  let start = 0
+  let end = s.length
+  while (start < end && WHITE_SPACE.test(s[start])) start++
+  while (end > start && WHITE_SPACE.test(s[end - 1])) end--
+  return s.slice(start, end)
 }
 
 /** 앱 plugin 의 Notification hook 이 보낸 claude 알림을 그 pty 에 넣는다. */

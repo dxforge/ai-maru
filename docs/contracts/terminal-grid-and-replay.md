@@ -38,8 +38,8 @@ renderer 의 xterm 과 `maru-pty` 의 VT 는 글자마다 차지하는 글자 �
 
 ## 밀린 클라이언트는 RIS 와 재생으로 다시 맞춘다
 
-observer 가 밀리면 `maru-pty` 는 그 사이의 출력을 버리고, `resync` 헤더 뒤에 RIS(`\x1bc`)와 재생을 보낸다. renderer 는 resync 를 받아도 xterm 을 따로 reset 하지 않고 이 RIS 에 기댄다. RIS 는 xterm 의 그리드와 모드를 기본값으로 돌리고, 버려진 출력의 마지막 프레임이 남긴 끝나지 않은 시퀀스나 UTF-8 글자도 끊는다.
+observer 가 밀리면 `maru-pty` 는 그 사이의 출력을 버리고, `resync` 헤더 뒤에 RIS(`\x1bc`)와 재생을 보낸다. renderer 는 resync 를 받아도 xterm 을 따로 reset 하지 않고 이 RIS 에 기댄다. RIS 는 xterm 의 그리드와 모드를 기본값으로 돌리고, 버려진 출력의 마지막 프레임이 남긴 끝나지 않은 시퀀스나 UTF-8 글자도 끊는다. 다만 xterm 의 RIS 는 숨긴 커서(`?25l`)를 되돌리지 않는다. 재생은 커서가 숨었을 때만 `?25l` 을 싣는다. 그래서 renderer 는 resync 헤더를 받으면 RIS 앞에 `?25h` 를 써 커서를 보이게 둔다.
 
 - 코드: `attach.rs` 의 `resync`·`VT_RESET` ↔ `renderer/src/pty/attach.ts`(`resync`)
-- 바꾸면: `maru-pty` 가 RIS 를 빼면 renderer 의 xterm 에 버려진 출력의 모드와 반쯤 받은 시퀀스가 남는다.
-- 테스트: `process.rs` › `a_client_that_falls_behind_is_resynced`, `a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs`, `a_resync_in_the_middle_of_a_sequence_replays_its_start`, `attach.test.ts` › 「프레임이 %s 중간에서 끝난 뒤 resync 를 받으면 화면이 재생과 같다」, 「버려진 출력이 %s 를 켰어도 resync 뒤의 화면과 모드는 재생과 같다」(대체 화면·스크롤 영역·bracketed paste). `attach.test.ts` 는 `attach.rs` 의 `VT_RESET` 을 읽어 쓴다. 숨긴 커서는 xterm 의 RIS 가 되돌리지 않아 케이스에 넣지 않았다. renderer 가 reset 하지 않는 것은 지킬 규칙이 아니다. renderer 가 reset 해도 뒤따르는 RIS 가 같은 일을 하기 때문이다.
+- 바꾸면: `maru-pty` 가 RIS 를 빼면 renderer 의 xterm 에 버려진 출력의 모드와 반쯤 받은 시퀀스가 남는다. renderer 가 `?25h` 를 빼면 버려진 출력이 커서를 숨겼을 때 resync 뒤에도 커서가 숨은 채 남는다.
+- 테스트: `process.rs` › `a_client_that_falls_behind_is_resynced`, `a_client_that_keeps_falling_behind_is_cut_off_after_five_resyncs`, `a_resync_in_the_middle_of_a_sequence_replays_its_start`, `attach.test.ts` › 「프레임이 %s 중간에서 끝난 뒤 resync 를 받으면 화면이 재생과 같다」, 「버려진 출력이 %s 를 켰어도 resync 뒤의 화면과 모드는 재생과 같다」(대체 화면·스크롤 영역·bracketed paste·커서 숨김 모드), 「재생이 커서를 숨겼으면 resync 뒤에도 커서가 숨어 있다」. `attach.test.ts` 는 `attach.rs` 의 `VT_RESET` 을 읽어 쓴다. renderer 가 reset 하지 않는 것은 지킬 규칙이 아니다. renderer 가 reset 해도 뒤따르는 RIS 가 같은 일을 하기 때문이다.

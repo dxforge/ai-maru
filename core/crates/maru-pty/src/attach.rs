@@ -9,8 +9,9 @@ use tokio::net::UnixStream;
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 
-/// RIS. 화면만 지우면 밀린 사이 프로그램이 기본값으로 되돌린 모드(대체 화면·숨긴 커서·스크롤
-/// 리전)가 클라이언트에 남는다. 전부 기본값으로 돌린 뒤 재생이 필요한 것만 다시 세운다.
+/// RIS. 화면만 지우면 밀린 사이 프로그램이 기본값으로 되돌린 모드(대체 화면·스크롤 리전)가 클라이언트에
+/// 남는다. 전부 기본값으로 돌린 뒤 재생이 필요한 것만 다시 세운다. xterm 의 RIS 가 되돌리지 않는 숨긴 커서는
+/// renderer 가 resync 헤더를 받을 때 되돌린다(`attach.ts`).
 const VT_RESET: &[u8] = b"\x1bc";
 /// 성공해도 되돌리지 않는다 — 못 따라잡는 소비자에게 덤프를 계속 보내며 부하를 키우지 않게.
 const MAX_RESYNCS: u32 = 5;

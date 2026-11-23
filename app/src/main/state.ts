@@ -15,6 +15,7 @@ import {
   type PaneRow,
   type RestoreNotice,
   type SavedLayout,
+  type ScreenState,
   type Table,
   type Tables,
   type ViewPrefs,
@@ -64,7 +65,7 @@ export type SessionsPart = {
  * `theme` 은 마지막으로 적용한 테마다. 다음 실행의 첫 창이 renderer 가 그리기 전부터 그 배경색으로 뜨게 한다.
  * `selected` 는 선택한 cell 의 id 다.
  */
-type ViewPart = ViewPrefs & {
+export type ViewPart = ViewPrefs & {
   version: number
   window?: WindowState
   theme?: WindowTheme
@@ -92,7 +93,7 @@ export function removeOldStateFiles(userData: string): void {
     rmSync(join(userData, name), { force: true })
 }
 
-function parseSessionsPart(v: unknown): SessionsPart | null {
+export function parseSessionsPart(v: unknown): SessionsPart | null {
   if (!isObject(v) || v.version !== STATE_VERSIONS.sessions || !Array.isArray(v.ptys)) return null
   const ptys = v.ptys.map((p) =>
     isObject(p) && typeof p.pane === 'string' && isPtyId(p.pty)
@@ -130,7 +131,7 @@ function stampStarted(s: SessionsPart, appStarted: number): SessionsPart {
   return { ...s, started }
 }
 
-function parseViewPart(v: unknown): ViewPart {
+export function parseViewPart(v: unknown): ViewPart {
   const view: ViewPart = { version: STATE_VERSIONS.view }
   if (!isObject(v) || v.version !== STATE_VERSIONS.view) return view
   const window = parseWindowState(v.window)
@@ -143,6 +144,26 @@ function parseViewPart(v: unknown): ViewPart {
     ...(theme && { theme }),
     ...(typeof selected === 'string' && { selected })
   }
+}
+
+/** 화면의 보기 설정과 선택한 cell(`selected`, cell id)로 `view` 를 고친다. 창·테마는 화면에서 오지 않으므로 그대로 둔다. */
+export function screenView(
+  view: ViewPart,
+  screen: ScreenState,
+  selected: string | undefined
+): ViewPart {
+  const { viewMode, sidebar, canvas } = screen
+  const next: ViewPart = {
+    ...view,
+    viewMode,
+    sidebar: { open: sidebar.open, width: sidebar.width },
+    folded: [...sidebar.folded]
+  }
+  if (canvas) next.canvas = { ...canvas }
+  else delete next.canvas
+  if (selected !== undefined) next.selected = selected
+  else delete next.selected
+  return next
 }
 
 function part<T>(v: unknown, parse: (v: unknown) => T | null): Part<T> {
@@ -403,17 +424,7 @@ export function createStateStore(o: {
     screen = undefined
     if (!parsed) return
     const { workspaces, cells, panes, ptys, selected } = splitScreen(parsed)
-    const { viewMode, sidebar, canvas } = parsed
-    const view: ViewPart = {
-      ...state.view,
-      viewMode,
-      sidebar: { open: sidebar.open, width: sidebar.width },
-      folded: [...sidebar.folded]
-    }
-    if (canvas) view.canvas = { ...canvas }
-    else delete view.canvas
-    if (selected !== undefined) view.selected = selected
-    else delete view.selected
+    const view = screenView(state.view, parsed, selected)
     state = { workspaces, cells, panes, sessions: { ...sessions(), ptys }, view }
   }
   const write = (): void => {
