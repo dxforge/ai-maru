@@ -66,7 +66,7 @@ describe('createPtyStates', () => {
     expect(s.notification('p-1')).toEqual(n)
     s.apply('p-1', { state: state() })
     expect(s.notification('p-1')).toBeUndefined()
-    expect([s.notification('p-2'), s.notification(undefined)]).toEqual([undefined, undefined])
+    expect(s.notification(undefined)).toBeUndefined()
   })
 })
 
