@@ -301,13 +301,13 @@ test('Keep terminals 를 골랐는데 state.json 을 쓰지 못해도 pty 를 �
   expect(sockets(dataDir)).toEqual(before)
 })
 
-test('pane 이 하나도 없으면 묻지 않고 끄고, 다음 실행은 빈 화면이다', async ({
-  launch,
-  dataDir
-}) => {
+test('pane 이 하나도 없으면 묻지 않고 모두 끝낸다', async ({ launch, dataDir }) => {
   const first = await launch()
   await first.page.keyboard.type('exit\n')
   await expect(cellItems(first.page)).toHaveCount(0)
+  // 앱을 끝낼 때 물을지는 main 이 renderer 에게서 마지막으로 받은 `screen:state` 로 pane 을 세어 정한다. 그 값이 오기 전에
+  // 끝내면 닫힌 pane 까지 세어 묻는다. state 파일의 `cells` 가 빈 표로 쓰였으면 main 이 pane 이 없는 화면을 받은 것이다.
+  await expect.poll(() => readState(dataDir).cells?.rows).toEqual([])
   await stubDialog(first.app, CANCEL)
   const closed = first.app.waitForEvent('close')
   await first.app.evaluate(({ app }) => app.quit())

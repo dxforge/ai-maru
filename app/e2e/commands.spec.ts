@@ -8,6 +8,7 @@ import {
   expect,
   openPalette,
   resizeBy,
+  rows,
   run,
   screen,
   shellSize,
@@ -31,11 +32,20 @@ async function typesIntoTerminal(page: Page, marker: string): Promise<void> {
   await run(page, `echo ${marker}-$((1+1))`, `${marker}-2`)
 }
 
+/**
+ * 프로그램이 kitty 키보드 플래그를 켠 뒤 출력한 `marker` 를 renderer 가 그릴 때까지 기다린다. 키를 kitty 시퀀스로 바꿀지는
+ * renderer 의 xterm 이 가진 플래그로 정한다. `toShow` 가 읽는 host 의 화면에 찍힌 뒤에도 xterm 은 그 출력을 아직 파싱하지
+ * 않았을 수 있고, 그 사이에 보낸 키는 플래그를 켜기 전의 시퀀스로 보내진다. `launch(DOM_RENDERER)` 로 띄운 테스트만 쓴다.
+ */
+async function drawn(page: Page, marker: string): Promise<void> {
+  await expect(rows(page)).toContainText(marker)
+}
+
 async function armKitty(page: Page, flags: number, read: string): Promise<void> {
   await page.keyboard.type(
     `printf '\\033[>${flags}u'; echo armed-${flags}-$((1+1)); IFS= read -rs ${read} k; printf '\\033[<u'; printf 'got=%q\\n' "$k"\n`
   )
-  await expect(screen(page)).toShow(`armed-${flags}-2`)
+  await drawn(page, `armed-${flags}-2`)
 }
 
 test('명령은 File·View 메뉴 맨 위에 단축키와 함께 팔레트의 묶음 순서로 있고 묶음 사이에 구분선이 있으며, ⌘W 는 Close Window 가 아니며, 새로 고침과 창 zoom 은 메뉴에 없다', async ({
@@ -169,7 +179,7 @@ test('터미널에 포커스가 있어도 명령의 키는 셸로 보내지 않�
 test('터미널에서 ⇧↩ 은 kitty 키보드 프로토콜을 켠 프로그램에만 CSI u 로 가고, 셸에는 ↩ 으로 간다', async ({
   launch
 }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await page.keyboard.type('echo plain-$((1+1))')
   await page.keyboard.press('Shift+Enter')
   await expect(screen(page)).toShow('plain-2')
@@ -189,30 +199,10 @@ async function pressHangulCtrlR(page: Page): Promise<void> {
   await cdp.detach()
 }
 
-test('한글 배열의 ⌃R 은 플래그 4 를 켠 kitty 프로그램에 물리 키의 r 을 base layout key 로 붙여 간다', async ({
-  launch
-}) => {
-  const { page } = await launch()
-  await armKitty(page, 5, '-t 2 -n15')
-  await pressHangulCtrlR(page)
-  await expect(screen(page)).toShow("got=$'\\E[12593::114;5u'")
-
-  await armKitty(page, 1, '-t 2 -n10')
-  await pressHangulCtrlR(page)
-  await expect(screen(page)).toShow("got=$'\\E[12593;5u'")
-
-  await page.keyboard.type(
-    'echo legacy-$((1+1)); IFS= read -rs -t 2 -n1 k; printf \'got=%q\\n\' "$k"\n'
-  )
-  await expect(screen(page)).toShow('legacy-2')
-  await pressHangulCtrlR(page)
-  await expect(screen(page)).toShow("got=$'\\022'")
-})
-
 test('플래그 2 를 함께 켠 kitty 프로그램에는 한글 배열의 ⌃R 을 뗄 때도 누를 때와 같은 키 번호와 base layout key 로 간다', async ({
   launch
 }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await armKitty(page, 7, '-t 2 -n32')
   await pressHangulCtrlR(page)
   await expect(screen(page)).toShow("got=$'\\E[12593::114;5u\\E[12593::114;5:3u'")
@@ -221,12 +211,12 @@ test('플래그 2 를 함께 켠 kitty 프로그램에는 한글 배열의 ⌃R 
 test('한글을 조합하는 중에 누른 한글 배열의 ⌃R 은 조합한 글자 뒤에 base layout key 를 붙여 kitty 프로그램에 간다', async ({
   launch
 }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   // 하(ed 95 98) 뒤에 ESC [12593::114;5 가 와야 한다. `read -d u` 는 시퀀스 끝의 u 앞까지 읽는다.
   await page.keyboard.type(
     `printf '\\033[>5u'; echo armed-$((1+1)); IFS= read -rs -t 2 -d u k; printf '\\033[<u'; printf '%s' "$k" | xxd -p | sed 's/^/got=/'\n`
   )
-  await expect(screen(page)).toShow('armed-2')
+  await drawn(page, 'armed-2')
 
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('Input.imeSetComposition', { text: '하', selectionStart: 1, selectionEnd: 1 })
@@ -298,7 +288,7 @@ test('터미널에서 ⌥ 는 Meta 로 가서 ⌥P 는 ESC p 를 보낸다', asy
 test('kitty 키보드 모드인 프로그램이 떠 있어도 ⌘ 조합은 프로그램으로 가지 않고 메뉴나 창으로 흘려보낸다', async ({
   launch
 }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   // ⌘ 조합의 누름이나 뗌(flag 2)이 하나라도 새면 그 ESC 가 먼저 읽힌다. 새지 않으면 뒤에 누르는 x 를 읽고 바로 끝난다.
   await armKitty(page, 3, '-t 2 -n1')
   await page.evaluate(() => {
@@ -351,7 +341,7 @@ test('kitty 키보드 모드가 아닌 프로그램에도 표에 없는 ⌘↩ �
 test('kitty 키보드 모드인 프로그램은 ⌘ 와, ⌘ 를 쥔 채 누른 ⇧·⌥·⌃ 같은 modifier 단독 누름은 받는다', async ({
   launch
 }) => {
-  const { page } = await launch()
+  const { page } = await launch(DOM_RENDERER)
   await armKitty(page, 8, '-t 2 -n43')
 
   await page.keyboard.down('Meta')

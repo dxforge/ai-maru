@@ -962,6 +962,20 @@ export async function resizeGridTo(
   const cell = await cellSize(page)
   const grid = (await page.locator('.panes.selected .grid').boundingBox())!
   await resizeBy(app, Math.round(cells * cell.width - grid.width), 0)
+  // split 이 재는 영역 크기(`App.vue` 의 `gridSizes`)는 창 크기가 바뀐 뒤 ResizeObserver 콜백이 갱신한다. 그 전에 split 을
+  // 보내면 `roomFor` 가 옛 폭으로 잰다. 좁혔으면 거절할 split 을 받고, 넓혔으면 될 split 을 거절한다. pane 요소도
+  // `gridSizes` 로 놓이므로, 보이는 pane 요소들이 새 폭을 채울 때까지 기다린다. background pane 은 숨긴 채 오른쪽 끝에
+  // 꺼냈다고 친 배치로 놓이므로 뺀다.
+  await expect
+    .poll(() =>
+      page.locator('.panes.selected .pane:not(.background)').evaluateAll((els, width) => {
+        const boxes = els.map((el) => el.getBoundingClientRect())
+        return Math.round(
+          (Math.max(...boxes.map((b) => b.right)) - Math.min(...boxes.map((b) => b.left))) / width
+        )
+      }, cell.width)
+    )
+    .toBe(cells)
 }
 
 export async function cellWidth(page: Page, i = 0): Promise<number> {

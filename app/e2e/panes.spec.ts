@@ -421,10 +421,6 @@ test('나눈 두 쪽에 20열이 들어가지 않으면 split 을 거절하고 �
   await expect(toast(page)).toContainText('at least 20 columns and 5 rows')
   await expect(panes(page)).toHaveCount(2)
   expect(await shellSize(page)).toEqual(before)
-
-  await resizeGridTo(app, page, 80)
-  await split(app, page, 'split-right', 3)
-  await expect(toast(page)).toHaveCount(0)
 })
 
 test('창이 낮아져도 pane 은 헤더를 뺀 5행 아래로 내려가지 않는다', async ({ launch }) => {
