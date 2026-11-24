@@ -222,8 +222,8 @@ test('스크롤백을 넘치게 찍은 job 도 read 가 답한다', async ({ lau
   const { page } = await launch()
   await run(
     page,
-    `maru job new --name big seq 1 200000 >/dev/null; ${untilExited('big')}; maru job read big | tail -n 1 | sed 's/^/last=/'`,
-    'last=200000'
+    `maru job new --name big seq 1 20000 >/dev/null; ${untilExited('big')}; maru job read big | grep . | awk 'NR == 1 { f = $0 } END { print "overflowed=" (f > 1) " last=" $0 }'`,
+    'overflowed=1 last=20000'
   )
 })
 

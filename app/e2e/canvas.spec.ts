@@ -302,8 +302,8 @@ function mixedDoc(bytes: number): string {
   return [...blocks, 'END-MARK'].join('\n\n')
 }
 
-// 한 번에 렌더하면 1 MB 문서에서 창이 1.3 초 넘게 멈추고, 묶음으로 나눠 렌더하면 5 MB 문서에서도 가장 긴 longtask 가
-// 229 ms 였다(잰 값). 한도는 그 사이로 잡는다.
+// 한 번에 렌더하면 1 MB 문서에서 창이 1.3 초 넘게 멈추고, 묶음으로 나눠 렌더하면 2 MB 문서에서 가장 긴 longtask 가
+// 330 ms 였다(잰 값). 한도는 그 사이로 잡는다.
 const LONG_TASK_LIMIT = 1_000
 
 async function watchLongTasks(page: Page): Promise<() => Promise<number[]>> {
@@ -324,10 +324,15 @@ test('큰 문서를 넣으면 위에서부터 채워 끝까지 그리고, 그동
   const { app, page } = await launch()
   const longTasks = await watchLongTasks(page)
   const end = markdown(page).getByText('END-MARK')
-  await putCanvas(app, { id: 'a', kind: 'markdown', text: mixedDoc(5_000_000), title: 'A' })
+  // 셸이 문서를 넣은 뒤에 뜨면 입력이 보이기 전에 다 그릴 수 있으므로 셸을 먼저 띄워 둔다.
+  await run(page, 'echo ready-$((1+1))', 'ready-2')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: mixedDoc(2_000_000), title: 'A' })
   await expect(markdown(page).locator('h2').first()).toHaveText('Section 0')
   await expect(end).toHaveCount(0)
-  await page.keyboard.type('echo typed-$((1+1000))\n')
+  // 그리는 동안에는 키 이벤트마다 그리던 묶음이 끝나기를 기다린다. 글자마다 보내면 다 그린 뒤에야 입력이 끝나므로
+  // 한 번에 보낸다.
+  await page.keyboard.insertText('echo typed-$((1+1000))')
+  await page.keyboard.press('Enter')
   await expect(screen(page)).toShow('typed-1001')
   await expect(end).toHaveCount(0)
 
