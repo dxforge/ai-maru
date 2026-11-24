@@ -70,7 +70,8 @@ function cards(): CardBox[] {
   })
 }
 
-// 카드 위치는 스크롤해도 바뀌지 않으므로, 스크롤마다 재지 않고 크기나 항목이 바뀔 때 잰 값을 쓴다.
+// 카드 위치는 카드 크기나 항목이 바뀔 때만 바뀌므로, 스크롤마다 재지 않고 그때 잰 값을 쓴다. 스크롤해 Canvas 문서의
+// 묶음이 처음 그려지며 카드 높이가 바뀌는 것도 `list` 의 ResizeObserver 가 알린다.
 let tops: number[] = []
 
 function measure(): CardBox[] {

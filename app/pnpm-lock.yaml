@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  overlayscrollbars@2.17.1:
+    hash: c1b054c7866aedd8d41e18f23741e6cb59dd804bc41ce9cdc706b1c12233612b
+    path: patches/overlayscrollbars-2.17.1.patch
+
 importers:
 
   .:
@@ -76,7 +81,7 @@ importers:
         version: 12.3.0
       overlayscrollbars:
         specifier: ^2.17.1
-        version: 2.17.1
+        version: 2.17.1(patch_hash=c1b054c7866aedd8d41e18f23741e6cb59dd804bc41ce9cdc706b1c12233612b)
       prettier:
         specifier: ^3.10.1
         version: 3.10.1
@@ -5746,7 +5751,7 @@ snapshots:
       type-check: 0.4.0
       word-wrap: 1.2.5
 
-  overlayscrollbars@2.17.1: {}
+  overlayscrollbars@2.17.1(patch_hash=c1b054c7866aedd8d41e18f23741e6cb59dd804bc41ce9cdc706b1c12233612b): {}
 
   p-cancelable@2.1.1: {}
 
