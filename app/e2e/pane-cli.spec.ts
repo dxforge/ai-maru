@@ -283,17 +283,24 @@ test('maru pane new --cell 은 가리킨 cell 에 나눌 자리가 없으면 부
 })
 
 test('창이 시간 안에 답하지 못해 실패한 maru pane new 의 pane 은 창이 늦게 열어도 닫는다', async ({
-  launch
+  launch,
+  dataDir
 }) => {
   test.setTimeout(40_000)
   const { app, page } = await launch()
-  await page.keyboard.type(`sleep 1; maru pane new -- sh -c 'echo late; sleep 30'; echo code-$?\n`)
-  // renderer 메인 스레드를 10초 동안 블록해, `pane:new` 를 main 의 `REPLY_MS`(8초)가 지난 뒤에야 받게 한다.
+  const go = join(dataDir, 'go')
+  await run(page, 'echo ready-$((1+1))', 'ready-2')
+  await page.keyboard.type(
+    `until [ -e '${go}' ]; do sleep 0.05; done; maru pane new -- sh -c 'echo late; sleep 30'; echo code-$?\n`
+  )
+  // renderer 메인 스레드를 10초 동안 블록해, `pane:new` 를 main 의 `WINDOW_WAIT_MS`(8초)가 지난 뒤에야 받게 한다.
   await app.evaluate(({ BrowserWindow }) => {
     void BrowserWindow.getAllWindows()[0].webContents.executeJavaScript(
       '{ const t = Date.now(); while (Date.now() - t < 10000) {} }'
     )
   })
+  // 블록이 시작된 뒤에 CLI 를 띄워야 8초 시간 초과가 블록 동안 난다.
+  writeFileSync(go, '')
   await expect(screen(page)).toShow('the window did not answer', { timeout: 20_000 })
   await expect(screen(page)).toShow('code-1')
   await page.waitForTimeout(500)
