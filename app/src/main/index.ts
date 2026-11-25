@@ -80,6 +80,7 @@ import {
   readRecord,
   runDir,
   ptyLive,
+  roomDbPath,
   spawnPty,
   startDir,
   subscribeState,
@@ -809,7 +810,16 @@ function start(): void {
   }
   ipcMain.on('app:restart', () => void restartByUser())
   const cli = cliAccess()
-  const setup = { cli, zdotdir: resourceDir('zsh'), claudePlugin: resourceDir('claude-plugin') }
+  const setup = {
+    cli,
+    zdotdir: resourceDir('zsh'),
+    claudePlugin: resourceDir('claude-plugin'),
+    roomDb: roomDbPath(
+      app.getPath('userData'),
+      app.isPackaged,
+      app.commandLine.hasSwitch('user-data-dir')
+    )
+  }
   // pane 의 셸과 같은 환경(LANG 보정 포함)으로 job 을 띄운다.
   const jobEnv = hostEnv()
   // job 은 host 를 거치지 않으므로, 앱을 끌 때 main 이 띄우던 job 을 직접 기다린다.

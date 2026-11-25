@@ -198,6 +198,10 @@
 //! - job 의 셸이 스스로 끝나면 그 job 을 띄운 pty 에 `{"event":"job","pty":<job 의 pty id>,
 //!   "name":<이름, 없으면 뺀다>,"code","signal"}` 을 보낸다. 그 pty 에 구독이 없으면 보류했다가
 //!   구독이 생길 때 보낸다. `job.kill` 이나 cell 닫기로 끝난 job 은 알리지 않는다.
+//! - 방의 알림은 앱이 아니라 monitor 가 방 파일에서 만든다(아래 "claude monitor"). 모양은
+//!   `{"event":"room","room":<방 이름>,"seq":<마지막 번호>,"from":<보낸 이>,"kind":<마지막 기록의 종류>,
+//!   "text":<읽는 법 안내>}` 이다. `kind` 는 `post`·`pass`·`close` 다. 여러 기록이 쌓였으면 한 줄로 묶고
+//!   `first`(첫 번호)를 더하며, `from` 은 보낸 이들을 `, ` 로 잇는다.
 //!
 //! # mcp
 //!
@@ -248,8 +252,14 @@
 //! 다시 붙는다. 그래서 앱은 그 경로에 소켓을 둘 때 이미 connect 를 받고 있어야 한다. 소켓이 보인 뒤에
 //! listen 을 시작하면, 그 사이에 붙어 본 monitor 는 다음 변화가 올 때까지 붙지 못한다.
 //!
+//! monitor 는 방 파일(`maru room`)도 지켜본다. 앱 소켓과 상관없이, 이 pty 가 알림 받는 claude 참여자인 방에 남이
+//! 올린 기록이 생기면 `{"event":"room",…}` 한 줄을 쓴다. 모양은 위의 알림 목록에 있다. 방 파일이 이
+//! 빌드가 모르는 더 높은 스키마 버전이면 room 알림만 멈추고 앱의 알림은 계속 쓴다.
+//!
 //! 종료 신호를 받거나 stdout 의 상대가 닫히면 끝난다. claude 는 정상으로 끝날 때 SIGTERM 을 보내지만,
 //! 신호 없이 죽으면(SIGKILL 등) monitor 에 남는 흔적은 stdout 이 닫히는 것뿐이다.
+
+mod room;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
@@ -339,6 +349,14 @@ enum Command {
         #[command(subcommand)]
         command: StatusCommand,
     },
+    /// Talk in a room with the person and the AI sessions in other panes.
+    ///
+    /// A room keeps its entries in a file, so they outlast the app. A claude session joins with
+    /// `maru room join` and is notified of new entries through its monitor.
+    Room {
+        #[command(subcommand)]
+        command: room::RoomCommand,
+    },
     /// Serve the app's MCP tools, such as canvas_put, over stdin and stdout.
     ///
     /// Relays each MCP message, one JSON-RPC message per line, to the app and writes the
@@ -355,10 +373,11 @@ enum Command {
 #[derive(Subcommand)]
 enum ClaudeCommand {
     /// Read the claude hook payload on stdin. On SessionStart, print what claude should know
-    /// about this terminal. On Notification, pass the notification to the app.
+    /// about this terminal and leave the rooms an earlier session here joined. On Notification,
+    /// pass the notification to the app.
     Hook,
-    /// Write the app's notifications to stdout, one per line, until stdout closes. The app's
-    /// claude plugin runs this as a monitor.
+    /// Write the app's notifications and new room entries to stdout, one per line, until stdout
+    /// closes. The app's claude plugin runs this as a monitor.
     Monitor,
 }
 
@@ -701,7 +720,10 @@ fn main() -> ExitCode {
         Err(e) => {
             // 띄운 쪽이 stderr 를 닫았으면 `eprintln!` 은 패닉한다.
             let _ = writeln!(std::io::stderr(), "maru: {e:#}");
-            ExitCode::FAILURE
+            match e.downcast_ref::<room::Refusal>() {
+                Some(r) => ExitCode::from(r.code),
+                None => ExitCode::FAILURE,
+            }
         }
     }
 }
@@ -809,6 +831,7 @@ fn run(command: Command) -> Result<()> {
             };
             write_once(terminal, &report)?
         }
+        Command::Room { command } => room::run(command)?,
         Command::Mcp => mcp()?,
         Command::Claude { command } => match command {
             ClaudeCommand::Hook => claude_hook()?,
@@ -1042,9 +1065,17 @@ fn claude_hook() -> Result<()> {
             "You are in AI Maru pty {}. Messages from other ptys arrive as\n\
              monitor notifications. Send: `maru inbox push <pty> <message>`. Unread: `maru inbox read`.\n\
              Background processes (dev servers, builds, watchers): `maru job new --name <name> <command>`.\n\
-             When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n",
+             When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n\
+             Rooms (talks with the person and other claude sessions): `maru room list`. Join one only when asked: `maru room join <room> --as <name>`.\n",
             target.pty
         )?;
+        // 방 정리에 실패해도 hook 은 성공으로 끝낸다(`docs/contracts/room.md` 의 「SessionStart hook 은 이 pty 의
+        // 지난 세션 참여를 지운다」).
+        if let Some(session) = payload["session_id"].as_str()
+            && let Err(e) = room::forget_other_sessions(&target.pty, session)
+        {
+            let _ = writeln!(std::io::stderr(), "maru: cannot update rooms: {e:#}");
+        }
     }
     if event == "Notification" {
         let mut params = Map::new();
@@ -1083,13 +1114,21 @@ fn claude_monitor() -> Result<()> {
         0,
         0,
     );
-    let mut events = [idle; 3];
+    // 처음에 한 번 읽어, 이 monitor 가 뜨기 전에 올라온 글도 알린다.
+    let mut room = room::Monitor::start(&kq, &target.pty);
+    if let Some(r) = &mut room
+        && r.changed(&kq).is_err()
+    {
+        return Ok(());
+    }
+    let mut events = [idle; 6];
     loop {
         let n = match kq.kevent(&[], &mut events, None) {
             Ok(n) => n,
             Err(Errno::EINTR) => continue,
             Err(e) => return Err(e).context("cannot watch stdout"),
         };
+        let mut room_changed = false;
         for ev in &events[..n] {
             if ev.ident() == 1 {
                 if ev.flags().contains(EvFlags::EV_EOF) {
@@ -1102,7 +1141,13 @@ fn claude_monitor() -> Result<()> {
                 if app.is_none() && !resubscribe(&kq, &target, &mut app)? {
                     return Ok(());
                 }
-            } else if let Some(a) = &mut app {
+            } else if room.as_ref().is_some_and(|r| r.owns(ev.ident())) {
+                // 디렉토리와 알림 파일이 한 묶음에 함께 올 수 있다. 묶음이 끝난 뒤 한 번만 본다.
+                room_changed = true;
+            } else if let Some(a) = app
+                .as_mut()
+                .filter(|a| ev.ident() == a.stream.as_raw_fd() as usize)
+            {
                 match a.read() {
                     Flow::Open => {}
                     // 닫은 fd 는 kqueue 에서도 빠진다. 앱이 이미 다시 떠 있으면 디렉토리가 더 바뀌지 않으므로
@@ -1116,6 +1161,12 @@ fn claude_monitor() -> Result<()> {
                     Flow::StdoutClosed => return Ok(()),
                 }
             }
+        }
+        if room_changed
+            && let Some(r) = &mut room
+            && r.changed(&kq).is_err()
+        {
+            return Ok(());
         }
     }
 }
@@ -1736,7 +1787,11 @@ fn print_tsv<const N: usize>(header: &str, rows: Vec<[String; N]>) -> Result<()>
         text.push_str(&row.join("\t"));
         text.push('\n');
     }
-    // `| head -1` 처럼 읽는 쪽이 먼저 닫는 것은 실패가 아니다.
+    write_stdout(&text)
+}
+
+/// `| head -1` 처럼 읽는 쪽이 먼저 닫는 것은 실패가 아니다.
+fn write_stdout(text: &str) -> Result<()> {
     match std::io::stdout().lock().write_all(text.as_bytes()) {
         Err(e) if e.kind() == ErrorKind::BrokenPipe => Ok(()),
         r => Ok(r?),

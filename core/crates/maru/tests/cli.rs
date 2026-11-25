@@ -76,6 +76,8 @@ fn maru_cmd(sock: Option<&Path>, args: &[&str]) -> Command {
     cmd.args(args)
         .env_remove("MARU_SOCKET")
         .env_remove("MARU_PTY_ID")
+        // monitor·hook 이 이 머신의 방 파일을 건드리지 않게, 만들 수 없는 경로를 준다.
+        .env("MARU_ROOM_DB", "/dev/null/rooms.sqlite")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(sock) = sock {
@@ -634,7 +636,8 @@ fn claude_hook_on_session_start_tells_claude_its_pty_and_the_inbox() {
                 "You are in AI Maru pty {PTY}. Messages from other ptys arrive as\n\
                  monitor notifications. Send: `maru inbox push <pty> <message>`. Unread: `maru inbox read`.\n\
                  Background processes (dev servers, builds, watchers): `maru job new --name <name> <command>`.\n\
-                 When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n"
+                 When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n\
+                 Rooms (talks with the person and other claude sessions): `maru room list`. Join one only when asked: `maru room join <room> --as <name>`.\n"
             )
         );
     }
