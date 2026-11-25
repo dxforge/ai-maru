@@ -1,6 +1,6 @@
 # Claude Code 연동
 
-앱은 터미널에서 띄운 claude 에 앱의 plugin(`app/resources/claude-plugin`)을 싣고, 그 plugin 의 MCP 서버(`maru mcp`)가 도구 호출을 앱에 중계한다. 이 파일은 그 사이의 약속을 적는다. Notification hook 으로 오는 알림은 `pty-state.md` 에, monitor 가 방 파일을 지켜보고 SessionStart hook 이 방 참여를 지우는 것은 `room.md` 에 있다.
+앱은 터미널에서 띄운 claude 에 앱의 plugin(`app/resources/claude-plugin`)을 싣고, 그 plugin 의 MCP 서버(`maru mcp`)가 도구 호출을 앱에 중계한다. 이 파일은 그 사이의 약속을 적는다. Notification hook 으로 오는 알림은 `pty-state.md` 에, monitor 가 방 파일을 지켜보는 것은 `room.md` 에 있다.
 
 ## 터미널 PATH 앞에 shim 디렉토리를 둔다
 

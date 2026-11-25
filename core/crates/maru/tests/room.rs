@@ -460,7 +460,7 @@ fn join_needs_a_claude_session_and_prints_the_notice_without_at_signs() {
         "exit 5",
         "exit 6",
         "이름 앞에 기호를 붙이지 않는다",
-        "/clear",
+        "/clear 해도 방에서 나가지 않는다",
     ] {
         assert!(notice.contains(part), "{part}: {notice}");
     }
@@ -1019,52 +1019,20 @@ fn members(r: &Rooms) -> Vec<String> {
 }
 
 #[test]
-fn session_start_with_a_new_session_leaves_the_rooms_of_this_pane() {
+fn session_start_leaves_rooms_alone() {
     let r = Rooms::new();
+    let out = hook(&r, A.0, A.1);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(!stdout(&out).contains("room"), "{}", stdout(&out));
+    assert!(!r.db().exists());
+
     r.open_review(&[(A, "A"), (B, "B")]);
     r.say("가나", "x");
-    r.ok(None, &["room", "new", "other"]);
-    r.ok(Some(A), &["room", "join", "other", "--as", "A"]);
-    r.ok(None, &["room", "close", "other"]);
-    let m = Monitor::start(&r, B.0);
-    m.next();
-    // resume·compact 는 같은 id 다.
-    let out = hook(&r, A.0, A.1);
-    assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(members(&r), ["A", "A", "B", "가나"]);
-    // startup·clear 는 새 id 다. 다른 pane 의 참여와 사람은 남는다.
-    hook(&r, A.0, "s-a-new");
-    assert_eq!(members(&r), ["B", "가나"]);
-    // 열린 방에만 나감을 남기고 알린다.
-    assert_eq!(
-        m.next()["text"],
-        "방 review 에서 A 가 나갔다 (#2) — maru room read review 로 읽는다."
-    );
-    assert_eq!(
-        r.ok(None, &["room", "read", "review", "--all"]),
-        "#1 가나(사람)  x\n#2 · A 가 나갔다\n"
-    );
-    assert_eq!(
-        r.ok(None, &["room", "read", "other", "--all"]),
-        "#1 · 방이 닫혔다\n방이 닫혔다 (마지막 #1).\n"
-    );
-}
-
-#[test]
-fn session_start_without_a_room_file_does_not_make_one() {
-    let r = Rooms::new();
-    let out = hook(&r, A.0, A.1);
-    assert!(out.status.success(), "{}", stderr(&out));
-    assert!(stdout(&out).contains("maru room join <room> --as <name>"));
-    assert!(!r.db().exists());
-}
-
-#[test]
-fn session_start_leaves_a_newer_room_file_alone() {
-    let r = Rooms::new();
-    r.open_review(&[(A, "A")]);
-    r.sql("PRAGMA user_version = 2");
     let out = hook(&r, A.0, "s-a-new");
     assert!(out.status.success(), "{}", stderr(&out));
-    assert_eq!(members(&r), ["A"]);
+    assert_eq!(members(&r), ["A", "B", "가나"]);
+    assert_eq!(
+        r.ok(None, &["room", "read", "review", "--all"]),
+        "#1 가나(사람)  x\n"
+    );
 }

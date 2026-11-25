@@ -373,8 +373,7 @@ enum Command {
 #[derive(Subcommand)]
 enum ClaudeCommand {
     /// Read the claude hook payload on stdin. On SessionStart, print what claude should know
-    /// about this terminal and leave the rooms an earlier session here joined. On Notification,
-    /// pass the notification to the app.
+    /// about this terminal. On Notification, pass the notification to the app.
     Hook,
     /// Write the app's notifications and new room entries to stdout, one per line, until stdout
     /// closes. The app's claude plugin runs this as a monitor.
@@ -1065,17 +1064,9 @@ fn claude_hook() -> Result<()> {
             "You are in AI Maru pty {}. Messages from other ptys arrive as\n\
              monitor notifications. Send: `maru inbox push <pty> <message>`. Unread: `maru inbox read`.\n\
              Background processes (dev servers, builds, watchers): `maru job new --name <name> <command>`.\n\
-             When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n\
-             Rooms (talks with the person and other claude sessions): `maru room list`. Join one only when asked: `maru room join <room> --as <name>`.\n",
+             When one exits on its own you get a {{\"event\":\"job\"}} notification; `maru job read <name>` shows its output.\n",
             target.pty
         )?;
-        // 방 정리에 실패해도 hook 은 성공으로 끝낸다(`docs/contracts/room.md` 의 「SessionStart hook 은 이 pty 의
-        // 지난 세션 참여를 지운다」).
-        if let Some(session) = payload["session_id"].as_str()
-            && let Err(e) = room::forget_other_sessions(&target.pty, session)
-        {
-            let _ = writeln!(std::io::stderr(), "maru: cannot update rooms: {e:#}");
-        }
     }
     if event == "Notification" {
         let mut params = Map::new();

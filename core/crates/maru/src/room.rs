@@ -154,7 +154,7 @@ enum Opened {
     Ready(Connection),
 }
 
-fn open(path: &Path, create: bool, busy: Duration) -> Result<Opened> {
+fn open(path: &Path, create: bool) -> Result<Opened> {
     if !create && !path.exists() {
         return Ok(Opened::Missing);
     }
@@ -168,7 +168,7 @@ fn open(path: &Path, create: bool, busy: Duration) -> Result<Opened> {
     }
     let mut conn = Connection::open_with_flags(path, flags)
         .with_context(|| format!("cannot open {}", path.display()))?;
-    conn.busy_timeout(busy)?;
+    conn.busy_timeout(BUSY_TIMEOUT)?;
     let version = user_version(&conn)?;
     if version > SCHEMA_VERSION {
         return Ok(Opened::Newer(version));
@@ -192,7 +192,7 @@ fn user_version(conn: &Connection) -> Result<i64> {
 }
 
 fn connect(path: &Path, create: bool) -> Result<Option<Connection>> {
-    match open(path, create, BUSY_TIMEOUT)? {
+    match open(path, create)? {
         Opened::Missing => Ok(None),
         Opened::Newer(v) => bail!(
             "{} has room schema version {v}, newer than this maru knows ({SCHEMA_VERSION}) — update AI Maru",
@@ -544,17 +544,6 @@ fn new_person(name: &str) -> Member {
     }
 }
 
-fn remove_member(tx: &Connection, room: i64, who: (&str, MemberKind), open: bool) -> Result<()> {
-    tx.execute(
-        "DELETE FROM participants WHERE room = ?1 AND name = ?2",
-        params![room, who.0],
-    )?;
-    if open {
-        add_entry(tx, room, Some(who), Kind::Leave, "")?;
-    }
-    Ok(())
-}
-
 fn mark_read(conn: &Connection, room: i64, name: &str, seq: i64) -> Result<()> {
     conn.execute(
         "UPDATE participants SET read_seq = MAX(read_seq, ?3) WHERE room = ?1 AND name = ?2",
@@ -721,7 +710,7 @@ fn notice(conn: &Connection, room: &Room, me: &str) -> Result<String> {
          \n\
          - 사람이 이 터미널에 직접 쓴 말은 너에게 주는 지시다. 따르되 방에 할 말은 여전히 maru room post 로 올리고, 터미널에는 짧게만 답한다.\n\
          - 할 말을 터미널에 써 두고 끝내지 않는다. 올리거나 아무것도 하지 않는다.\n\
-         - 나갈 때는 maru room leave {r}. /clear 하면 방에서 나간다.\n",
+         - 나갈 때는 maru room leave {r}. /clear 해도 방에서 나가지 않는다.\n",
         josa(me, Josa::Euro)
     ))
 }
@@ -741,7 +730,13 @@ fn leave(path: &Path, arg: &str, name: Option<&str>) -> Result<String> {
         Some(name) => member_named(&tx, room.id, name)?
             .ok_or_else(|| anyhow!("방 {} 에 {} 없다", room.name, josa(name, Josa::I)))?,
     };
-    remove_member(&tx, room.id, (&gone.name, gone.kind), !room.closed)?;
+    tx.execute(
+        "DELETE FROM participants WHERE room = ?1 AND name = ?2",
+        params![room.id, gone.name],
+    )?;
+    if !room.closed {
+        add_entry(&tx, room.id, Some((&gone.name, gone.kind)), Kind::Leave, "")?;
+    }
     let out = match name {
         None => format!("방 {} 에서 나왔다.\n", room.name),
         Some(_) => format!(
@@ -1025,39 +1020,6 @@ fn close(path: &Path, arg: &str, as_name: Option<&str>) -> Result<String> {
     ))
 }
 
-/// SessionStart hook 이 부른다. 이 pty 의 claude 참여 가운데 지금 세션이 아닌 것을 지운다 — `/clear` 나 같은
-/// pane 에서 새로 띄운 claude 는 방에서 나간다. 열린 방이면 `leave` 처럼 나감을 기록으로 남긴다. 파일이 없거나
-/// 모르는 버전이면 건드리지 않는다.
-pub fn forget_other_sessions(pty: &str, session: &str) -> Result<()> {
-    let path = db_path()?;
-    // claude 가 이 hook 을 기다리며 뜬다. 오래 잠겨 있으면 정리를 거른다.
-    let Opened::Ready(mut conn) = open(&path, false, Duration::from_millis(500))? else {
-        return Ok(());
-    };
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let gone = {
-        let mut stmt = tx.prepare(
-            "SELECT p.room, p.name, r.closed_ms IS NULL FROM participants p JOIN rooms r ON r.id = p.room
-             WHERE p.pty = ?1 AND p.kind = 'claude' AND p.session IS NOT ?2",
-        )?;
-        stmt.query_map(params![pty, session], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, bool>(2)?,
-            ))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?
-    };
-    if gone.is_empty() {
-        return Ok(());
-    }
-    for (room, name, open) in &gone {
-        remove_member(&tx, *room, (name, MemberKind::Claude), *open)?;
-    }
-    commit_and_ring(tx, &path)
-}
-
 /// 한 참여자에게 알릴 것. 줄을 쓴 뒤 `mark` 로 알린 자리를 올린다.
 struct Pending {
     room: i64,
@@ -1276,7 +1238,7 @@ impl Watch {
         };
         if self.conn.as_ref().map(|c| c.1) != Some(db_ino) {
             self.conn = None;
-            match open(&self.path, false, BUSY_TIMEOUT) {
+            match open(&self.path, false) {
                 Ok(Opened::Ready(conn)) => self.conn = Some((conn, db_ino)),
                 Ok(Opened::Newer(_)) => return State::Newer,
                 _ => return State::Waiting,
