@@ -63,6 +63,9 @@ pub enum RoomCommand {
         room: String,
         #[arg(long)]
         all: bool,
+        /// Accepted for consistency with post and pass; ignored by read.
+        #[arg(long)]
+        seen: Option<i64>,
     },
     /// Post TEXT (or stdin, with `-` or no TEXT) if SEEN is still the last entry's number.
     ///
@@ -118,7 +121,7 @@ pub fn run(command: RoomCommand) -> Result<()> {
         RoomCommand::New { room, topic } => new(&path, &room, topic.as_deref().unwrap_or(""))?,
         RoomCommand::Join { room, name, quiet } => join(&path, &room, &name, quiet)?,
         RoomCommand::Leave { room, name } => leave(&path, &room, name.as_deref())?,
-        RoomCommand::Read { room, all } => read(&path, &room, all)?,
+        RoomCommand::Read { room, all, .. } => read(&path, &room, all)?,
         RoomCommand::Post { room, seen, text } => {
             let text = match text.filter(|t| t != "-") {
                 Some(t) => t,
@@ -495,7 +498,7 @@ fn notice(conn: &Connection, room: &Room, me: &str, quiet: bool) -> Result<Strin
          {wake}\n\
          \n\
          읽고 쓰기:\n\
-         1. maru room read {r} 로 새 글을 읽는다. 마지막 줄에 다음 --seen 번호가 나온다.\n\
+         1. maru room read {r} 로 새 글을 읽는다. 마지막 줄의 번호를 post·pass 의 --seen 에 쓴다.\n\
          2. 새 정보·반론·구체화·꼭 필요한 질문이 있을 때만 올린다. 앞 사람 말을 되풀이하거나 동의만 하는 말은 올리지 않는다. 3~6문장, 한국어 대화체, 제목·이름표 없이 본문만 쓴다.\n\
          \x20  maru room post {r} --seen <번호> - <<'EOF'\n\
          \x20  <글>\n\

@@ -144,6 +144,28 @@ fn posts_are_read_once_and_read_ends_with_the_next_seen() {
 }
 
 #[test]
+fn read_takes_seen_like_post_and_ignores_it() {
+    let r = Rooms::new();
+    r.open_review(&[(A, "A"), (B, "B"), (C, "C")]);
+    r.post(A, 0, "첫 글");
+    r.post(B, 1, "둘째 글");
+
+    assert_eq!(
+        r.ok(Some(C), &["room", "read", "review", "--seen", "1"]),
+        "#1 A  첫 글\n#2 B  둘째 글\n마지막 #2 — 올릴 때 --seen 2\n"
+    );
+    assert_eq!(
+        r.ok(Some(C), &["room", "read", "review", "--seen", "0"]),
+        "새 글이 없다.\n마지막 #2 — 올릴 때 --seen 2\n"
+    );
+    // post 라면 exit 4 로 거절할 값이다.
+    assert_eq!(
+        r.ok(Some(C), &["room", "read", "review", "--seen", "99"]),
+        "새 글이 없다.\n마지막 #2 — 올릴 때 --seen 2\n"
+    );
+}
+
+#[test]
 fn post_with_a_stale_seen_exits_4_and_names_what_came_first() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
