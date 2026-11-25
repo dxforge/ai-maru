@@ -15,8 +15,8 @@ const root = useTemplateRef<HTMLElement>('root')
 
 // 첫 묶음은 렌더할 때 넣는다. 카드를 펼치거나 넣은 뒤 `CardStream` 이 카드 자리를 재는 post watcher 가 이 컴포넌트의
 // watcher 보다 먼저 돌아, 그때 본문이 비어 있으면 잘못 잰 자리로 스크롤하기 때문이다.
-// 같은 id 로 다시 온 문서는 `body.id` 를 key 로 새 요소에 그린다. 첫 묶음의 HTML 이 같으면 `v-html` 이 요소를 비우지
-// 않아, 앞 문서의 나머지 묶음이 남기 때문이다.
+// 같은 id 로 다시 온 문서는 `body.id` 를 key 로 새 요소에 그린다. `v-html` 은 첫 묶음을 감싼 요소의 내용만 바꾸므로,
+// 같은 요소에 그리면 앞 문서의 나머지 묶음이 남는다.
 const body = computed(() => bodyOf(doc))
 const first = computed(() => body.value?.html(0) ?? '')
 const code = computed(() => codeBodyOf(doc))
@@ -70,7 +70,7 @@ onBeforeUnmount(reset)
 </script>
 
 <template>
-  <!-- eslint-disable vue/no-v-html -- MarkdownBody 가 낸 HTML 이다. lexing 한 묶음은 DOMPurify 로 걸렀고, 글자 묶음은 escape 했다 -->
+  <!-- 첫 묶음은 따로 감싼다. `fillBody` 가 그 높이로 나머지 묶음의 높이를 어림한다. -->
   <div
     v-if="doc.kind === 'markdown'"
     :key="body?.id"
@@ -78,9 +78,10 @@ onBeforeUnmount(reset)
     class="markdown zoomable"
     :class="{ classic }"
     @pointerover="hover"
-    v-html="first"
-  />
-  <!-- eslint-enable vue/no-v-html -->
+  >
+    <!-- eslint-disable-next-line vue/no-v-html -- MarkdownBody 가 낸 HTML 이다. lexing 한 묶음은 DOMPurify 로 걸렀고, 글자 묶음은 escape 했다 -->
+    <div v-html="first" />
+  </div>
   <CodeView v-else-if="code" :key="code.id" :body="code" />
   <!-- 같은 id 로 다른 이미지가 오면 `doc.url` 을 key 로 새 요소에 그린다. 앞 이미지에 붙인 확대·축소를 남기지 않기 위해서다.
        이미지 요소에도 `ref="root"` 를 다는 것은, `root` 가 바뀌면 `watch(root)` 의 `reset()` 이 앞 이미지에 씌운 스크롤바를

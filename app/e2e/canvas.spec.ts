@@ -343,6 +343,52 @@ test('큰 문서를 넣으면 위에서부터 채워 끝까지 그리고, 그동
   expect(Math.max(...(await longTasks()))).toBeLessThan(LONG_TASK_LIMIT)
 })
 
+test('큰 문서를 위로 조금씩 스크롤하다 처음 그려지는 묶음의 높이가 어림값과 달라도 읽던 내용은 스크롤한 만큼만 움직인다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  // 코드 블록만 있는 묶음은 첫 묶음으로 어림한 높이와 실제 높이가 다르다.
+  const code = Array.from(
+    { length: 2_000 },
+    (_, n) => '```ts\n' + `const v${n} = ${n}\n`.repeat(12) + '```'
+  )
+  const text = [mixedDoc(200_000), ...code, 'TAIL-MARK'].join('\n\n')
+  await putCanvas(app, { id: 'a', kind: 'markdown', text, title: 'A' })
+  await expect(markdown(page).getByText('TAIL-MARK')).toHaveCount(1, { timeout: 60_000 })
+  const r = await page.evaluate(async () => {
+    const md = document.querySelector<HTMLElement>('.canvas .markdown')!
+    const viewport = md.closest<HTMLElement>('[data-overlayscrollbars-viewport]')!
+    const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const box = viewport.getBoundingClientRect()
+    const center = () =>
+      document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)!
+    const parts = md.querySelectorAll(':scope > .part')
+    const part = parts[Math.floor(parts.length / 2)]!
+    const goTo = (offset: number) => {
+      viewport.scrollTop += part.getBoundingClientRect().top - box.top + offset
+    }
+    // 묶음 안 깊이 뛰어 그 묶음만 그린다. 바로 위 묶음은 Chrome 이 미리 그리는 거리 밖이라 한 번도 그리지 않은 채로 남는다.
+    goTo(20_000)
+    for (let i = 0; i < 60 && center().classList.contains('part'); i++) await frame()
+    goTo(3_000)
+    await frame()
+    let changed = 0
+    const moved: number[] = []
+    for (let i = 0; i < 13; i++) {
+      const el = center()
+      const before = el.getBoundingClientRect().top
+      const height = viewport.scrollHeight
+      viewport.scrollTop -= 300
+      await frame()
+      if (viewport.scrollHeight !== height) changed++
+      moved.push(Math.round(el.getBoundingClientRect().top - before))
+    }
+    return { changed, moved }
+  })
+  expect(r.changed).toBeGreaterThan(0)
+  expect(r.moved).toEqual(r.moved.map(() => 300))
+})
+
 test('채우는 도중 같은 id 로 이미지가 오면 떨어져 나간 본문에 더 붙이지 않는다', async ({
   launch
 }) => {
