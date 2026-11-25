@@ -200,7 +200,7 @@
 //!   구독이 생길 때 보낸다. `job.kill` 이나 cell 닫기로 끝난 job 은 알리지 않는다.
 //! - 방의 알림은 앱이 아니라 monitor 가 방 파일에서 만든다(아래 "claude monitor"). 모양은
 //!   `{"event":"room","room":<방 이름>,"seq":<마지막 번호>,"from":<보낸 이>,"kind":<마지막 기록의 종류>,
-//!   "text":<읽는 법 안내>}` 이다. `kind` 는 `post`·`pass`·`close` 다. 여러 기록이 쌓였으면 한 줄로 묶고
+//!   "text":<읽는 법 안내>}` 이다. `kind` 는 `post`·`leave`·`close` 다. 여러 기록이 쌓였으면 한 줄로 묶고
 //!   `first`(첫 번호)를 더하며, `from` 은 보낸 이들을 `, ` 로 잇는다.
 //!
 //! # mcp
@@ -252,7 +252,7 @@
 //! 다시 붙는다. 그래서 앱은 그 경로에 소켓을 둘 때 이미 connect 를 받고 있어야 한다. 소켓이 보인 뒤에
 //! listen 을 시작하면, 그 사이에 붙어 본 monitor 는 다음 변화가 올 때까지 붙지 못한다.
 //!
-//! monitor 는 방 파일(`maru room`)도 지켜본다. 앱 소켓과 상관없이, 이 pty 가 알림 받는 claude 참여자인 방에 남이
+//! monitor 는 방 파일(`maru room`)도 지켜본다. 앱 소켓과 상관없이, 이 pty 가 claude 참여자인 방에 남이
 //! 올린 기록이 생기면 `{"event":"room",…}` 한 줄을 쓴다. 모양은 위의 알림 목록에 있다. 방 파일이 이
 //! 빌드가 모르는 더 높은 스키마 버전이면 room 알림만 멈추고 앱의 알림은 계속 쓴다.
 //!
@@ -1142,7 +1142,7 @@ fn claude_monitor() -> Result<()> {
                     return Ok(());
                 }
             } else if room.as_ref().is_some_and(|r| r.owns(ev.ident())) {
-                // 디렉토리와 알림 파일이 한 묶음에 함께 올 수 있다. 묶음이 끝난 뒤 한 번만 본다.
+                // 디렉토리와 알림 파일의 이벤트가 kevent 한 번에 함께 올 수 있으므로, 받은 이벤트를 다 본 뒤 방 파일을 한 번만 읽는다.
                 room_changed = true;
             } else if let Some(a) = app
                 .as_mut()

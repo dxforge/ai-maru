@@ -1,6 +1,6 @@
 # room
 
-`maru room` 은 사람 하나와 pane 에 떠 있는 claude 세션 여럿이 한 방의 글을 함께 보는 대화방이다. 방의 상태는 sqlite 파일 하나에 있고 앱(main)을 거치지 않는다. 글을 올리는 `maru` CLI 가 규칙을 지키고, 각 claude 의 `maru claude monitor` 가 파일을 지켜보다 그 세션에 알린다. 이 파일은 CLI·monitor·hook 과, 다른 빌드의 같은 코드가 함께 지키는 약속을 적는다.
+`maru room` 은 사람과 pane 에 떠 있는 claude 세션 여럿이 한 방의 글을 함께 보는 대화방이다. 방의 상태는 sqlite 파일 하나에 있고 앱(main)을 거치지 않는다. 글을 올리는 `maru` CLI 가 규칙을 지키고, 각 claude 의 `maru claude monitor` 가 파일을 지켜보다 그 세션에 알린다. 이 파일은 CLI·monitor·hook 과, 다른 빌드의 같은 코드가 함께 지키는 약속을 적는다.
 
 ## 방 파일은 `MARU_ROOM_DB`, 없으면 `~/.ai-maru/rooms.sqlite` 다
 
@@ -20,39 +20,48 @@
 - 바꾸면: 열의 뜻을 바꾸거나 표를 다시 짜면, 떠 있는 옛 monitor 가 새 CLI 가 쓴 행을 잘못 읽는다.
 - 테스트: `tests/room.rs` › `a_newer_schema_is_refused`, `monitor_stops_room_notices_on_a_newer_schema`, `session_start_leaves_a_newer_room_file_alone`
 
+## 참여자는 pane 에 묶인 claude 와 이름만 있는 사람이다
+
+claude 참여자는 `room join <방> --as <이름>` 으로 들어오고, 참여자 행(`kind = 'claude'`)에 그 pane 의 `MARU_PTY_ID` 와 `CLAUDE_CODE_SESSION_ID` 를 적는다. 사람 참여자는 `join` 하지 않고, `room post <방> --as <이름>` 으로 처음 올릴 때 `pty`·`session` 이 비어 있는 행(`kind = 'human'`)으로 더해진다. monitor 와 SessionStart hook 은 `kind = 'claude'` 인 행만 보므로, 사람에게는 알림이 가지 않고 hook 도 사람을 지우지 않는다. `post`·`read`·`close` 의 `--as` 는 claude 참여자의 이름을 거절한다.
+
+- 코드: `room.rs` 의 `join`·`person`·`member`·`post`·`shown`
+- 바꾸면: 사람을 pty 에 묶으면, 사람이 쓰던 터미널이 닫히거나 그 pane 의 claude 가 `/clear` 할 때 사람이 방에서 빠진다.
+- 테스트: `tests/room.rs` › `a_person_is_added_on_the_first_post_and_reads_from_its_own_place`, `as_with_a_claude_members_name_is_refused`, `ais_stop_after_three_posts_until_a_person_posts`, `session_start_with_a_new_session_leaves_the_rooms_of_this_pane`
+
 ## 기록은 `BEGIN IMMEDIATE` 하나에서 확인하고 더한다
 
-`room post`·`pass` 는 `BEGIN IMMEDIATE` 트랜잭션 하나에서 "참여자인지 → 닫힌 방인지 → `--seen` 이 마지막 번호인지 → AI 연속 상한" 을 보고 기록을 더한다. `room close` 도 트랜잭션 하나에서 닫힘 기록을 더한다. 글쓴이의 읽은 자리와 알린 자리는 그 기록의 번호로 올린다. 거절은 exit code 로 알리고, stderr 에 다음 할 일을 적는다.
+`room post` 는 `BEGIN IMMEDIATE` 트랜잭션 하나에서 "참여자인지 → 닫힌 방인지 → AI 연속 상한" 을 보고 글을 더한다. `room leave` 는 나감 기록을, `room close` 는 닫은 쪽을 적은 닫힘 기록을 같은 방식으로 더한다. 글을 더한 트랜잭션에서 글쓴이의 알린 자리를 그 글의 번호로 올린다. 거절은 아래 exit code 로 알린다.
+
+AI 연속 상한은 마지막 사람 글 뒤의 claude 글 수다. 나감·닫힘 기록은 세지 않는다. 상한은 방을 열 때 `room new <방> --ai-limit N` 으로 정하고(기본 3, 0 은 상한 없음) `rooms.ai_limit` 에 둔다.
 
 | exit | 뜻 |
 | --- | --- |
-| 4 | `--seen` 이 마지막 번호가 아니다. 그사이 올라온 번호(`#14` 나 `#14~#16`)를 적는다 |
-| 5 | 마지막 사람 글 뒤에 AI 글이 이미 3개다. 사람이 글을 올리면 다시 된다 |
-| 6 | 닫힌 방이다. `join` 도 같다 |
+| 5 | 마지막 사람 글 뒤에 claude 글이 이미 상한만큼 있다. 사람이 글을 올리면 다시 된다 |
+| 6 | 닫힌 방이다. `join`·`close` 도 같다 |
 
-- 코드: `room.rs` 의 `append`·`ai_streak`·`Refusal` ↔ `main.rs` 의 `main`(Refusal 을 exit code 로)
-- 바꾸면: 확인과 저장을 다른 트랜잭션으로 나누면 같은 글을 본 둘이 함께 올라간다.
-- 테스트: `tests/room.rs` › `post_with_a_stale_seen_exits_4_and_names_what_came_first`, `posts_on_the_same_seen_at_once_let_only_one_in`, `pass_is_refused_like_a_post`, `ais_stop_after_three_posts_until_the_person_posts`, `a_closed_room_refuses_with_6_and_its_name_can_be_reused`
+- 코드: `room.rs` 의 `post`·`leave`·`close`·`add_entry`·`ai_streak`·`Refusal` ↔ `main.rs` 의 `main`(Refusal 을 exit code 로)
+- 바꾸면: 확인과 저장을 다른 트랜잭션으로 나누면, 상한에 닿은 방에 claude 둘이 함께 올린다.
+- 테스트: `tests/room.rs` › `posts_at_once_each_get_their_own_number`, `ais_stop_after_three_posts_until_a_person_posts`, `a_room_sets_its_own_ai_limit_and_0_is_none`, `a_post_over_unread_entries_leaves_them_for_the_next_read`, `leaving_is_an_entry_of_the_room`, `the_close_entry_names_who_closed_the_room`, `a_closed_room_refuses_with_6_and_its_name_can_be_reused`
 
 ## 기록을 더한 쪽은 커밋한 뒤 `-notify` 파일을 건드린다
 
-monitor 와 `room chat` 은 방 파일 옆의 `rooms.sqlite-notify` 를 kqueue 로 지켜보고, 바뀌면 방 파일을 다시 읽는다. 방 파일이나 `-notify` 가 아직 없으면 디렉토리를 지켜보다 생긴 뒤에 붙는다.
+monitor 는 방 파일 경로 뒤에 `-notify` 를 붙인 파일(기본은 `rooms.sqlite-notify`)을 kqueue 로 지켜보고, 바뀌면 방 파일을 다시 읽는다. 방 파일이나 `-notify` 가 아직 없으면 디렉토리를 지켜보다 생긴 뒤에 붙는다.
 
 - 코드: `room.rs` 의 `ring`·`bell_path`·`Watch`
 - 바꾸면: 기록을 더하는 새 명령이 `ring` 을 부르지 않으면, 그 기록은 다음 기록이 올 때까지 알려지지 않는다.
-- 테스트: `tests/room.rs` › `monitor_notifies_a_post_without_the_app`, `chat_shows_entries_as_they_come_and_posts_lines_as_human`
+- 테스트: `tests/room.rs` › `monitor_notifies_a_post_without_the_app`, `monitor_notifies_who_left`
 
 ## monitor 는 자기 pty 의 참여자에게만 `room` 이벤트를 쓴다
 
-monitor 는 자기 `MARU_PTY_ID` 가 알림 받는(`--quiet` 이 아닌) claude 참여자인 방마다, 알린 자리 뒤에 남이 더한 기록을 찾아 한 줄을 쓰고 알린 자리를 올린다. 앱 소켓과 상관없이 돈다. session id 는 보지 않는다. `/clear` 하면 Bash 쪽 `CLAUDE_CODE_SESSION_ID` 는 새 id 가 되지만 monitor 는 다시 뜨지 않기 때문이다.
+monitor 는 자기 `MARU_PTY_ID` 가 claude 참여자인 방마다, 알린 자리 뒤에 남이 더한 기록을 찾아 한 줄을 쓰고 알린 자리를 올린다. 앱 소켓과 상관없이 돈다. session id 는 보지 않는다. `/clear` 하면 Bash 쪽 `CLAUDE_CODE_SESSION_ID` 는 새 id 가 되지만 monitor 는 다시 뜨지 않기 때문이다.
 
 - 코드: `room.rs` 의 `pending`·`event`·`mark`·`Monitor` ↔ `main.rs` 의 `claude_monitor`(모듈 doc 의 알림 모양)
 - 바꾸면: 알린 자리를 쓰기 전에 올리면, 줄을 쓰지 못하고 끝난 monitor 의 알림을 다음 monitor 가 내지 않는다.
-- 테스트: `tests/room.rs` › `monitor_notifies_a_post_without_the_app`, `monitor_batches_entries_posted_while_it_was_away`, `monitor_skips_quiet_members_and_other_panes`, `monitor_says_when_it_is_the_last_ai_turn_and_when_turns_are_over`, `monitor_tells_once_that_the_room_closed`, `monitor_writes_room_and_app_notices_and_keeps_room_ones_after_the_app_goes`, `monitor_stops_notices_after_leave`, `rejoining_with_notices_does_not_wake_for_entries_already_read`
+- 테스트: `tests/room.rs` › `monitor_notifies_a_post_without_the_app`, `monitor_batches_entries_posted_while_it_was_away`, `monitor_skips_other_panes`, `monitor_says_when_it_is_the_last_ai_turn_and_when_turns_are_over`, `monitor_tells_once_that_the_room_closed_and_who_closed_it`, `monitor_writes_room_and_app_notices_and_keeps_room_ones_after_the_app_goes`, `monitor_stops_notices_after_leave`, `rejoining_does_not_wake_for_entries_already_read`
 
 ## SessionStart hook 은 이 pty 의 지난 세션 참여를 지운다
 
-`maru claude hook` 은 SessionStart 마다 이 pty 의 참여자 가운데 session id 가 지금 것과 다른 행을 지운다. 그래서 `/clear` 하거나 같은 pane 에서 claude 를 새로 띄우면 방에서 나가고, `--resume`·압축처럼 id 가 그대로인 시작은 남는다. 같은 세션을 다른 pane 에서 `--resume` 하면, 같은 이름의 `join` 이 참여를 그 pane 으로 옮긴다. 닫힌 pane 에 남은 참여는 `room leave <방> --as <이름>` 으로 지운다. claude 가 이 hook 을 기다리며 뜨므로 정리는 쓰기 한 번이고, 500ms 넘게 잠겨 있으면 거르고 hook 은 성공으로 끝난다.
+`maru claude hook` 은 SessionStart 마다 이 pty 의 claude 참여자 가운데 session id 가 지금 것과 다른 행을 지우고, 열린 방에는 나감 기록을 더한다. 그래서 `/clear` 하거나 같은 pane 에서 claude 를 새로 띄우면 방에서 나가고, `--resume`·압축처럼 id 가 그대로인 시작은 남는다. 같은 세션을 다른 pane 에서 `--resume` 하면, 같은 이름의 `join` 이 참여를 그 pane 으로 옮긴다. 닫힌 pane 에 남은 참여는 `room leave <방> --as <이름>` 으로 지운다. claude 가 이 hook 을 기다리며 뜨므로 정리는 쓰기 한 번이고, 500ms 넘게 잠겨 있으면 거르고 hook 은 성공으로 끝난다.
 
 - 코드: `room.rs` 의 `forget_other_sessions` ↔ `main.rs` 의 `claude_hook`, `room.rs` 의 `join`(`CLAUDE_CODE_SESSION_ID` 를 적는다)
 - 바꾸면: hook 이 지우지 않으면, `/clear` 로 새로 시작한 대화에 지난 대화의 방 알림이 온다.

@@ -424,7 +424,7 @@ export function ptyEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 export type CliAccess = { socket: string; bin: string }
 
-/** `roomDb` 는 격리된 실행(dev·e2e)에서만 준다. 없으면 `maru room` 이 홈 아래 기본 경로를 쓴다. */
+/** `roomDb` 는 `roomDbPath` 가 격리된 실행으로 본 경우에만 준다. 없으면 `maru room` 이 홈 아래 기본 경로를 쓴다(`docs/contracts/room.md`). */
 export type ShellSetup = { cli: CliAccess; zdotdir: string; claudePlugin: string; roomDb?: string }
 
 /** 설치본을 기본 userData 로 띄운 것이 아닌 실행은 userData 아래 방 파일을 쓴다. 사용자의 방을 건드리지 않기 위해서다. */

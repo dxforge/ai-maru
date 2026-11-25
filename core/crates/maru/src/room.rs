@@ -1,11 +1,12 @@
-//! `maru room` — 사람 하나와 claude 세션 여럿의 대화방. 계약은 `docs/contracts/room.md` 에 있다.
+//! `maru room` — 사람과 claude 세션 여럿의 대화방. 계약은 `docs/contracts/room.md` 에 있다.
 //!
 //! 알림·안내문·거절 메시지에는 `@` 를 넣지 않는다. Claude Code 가 `@` 뒤를 파일·agent 참조로 읽기 때문이다.
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Subcommand;
 use nix::sys::event::{EventFilter, FilterFlag, Kqueue};
-use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, ToSql, TransactionBehavior, params};
 use serde_json::{Value, json};
 use std::fs::File;
 use std::io::Write;
@@ -13,17 +14,13 @@ use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-mod chat;
-
 /// 파일의 `PRAGMA user_version`. 스키마는 더하기만 하므로, 이보다 높은 버전은 이 빌드가 모르는 열·표가 있다는 뜻이다.
 const SCHEMA_VERSION: i64 = 1;
-/// 사람 글 뒤에 이어 올라갈 수 있는 AI 글 수.
-const AI_STREAK_CAP: i64 = 3;
-const HUMAN: &str = "human";
+const DEFAULT_AI_LIMIT: u32 = 3;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const FILE: &str = "rooms.sqlite";
+const MAX_MEMBER_NAME_CHARS: usize = 32;
 
-const EXIT_SEEN: u8 = 4;
 const EXIT_CAPPED: u8 = 5;
 const EXIT_CLOSED: u8 = 6;
 
@@ -38,19 +35,21 @@ pub enum RoomCommand {
         room: String,
         #[arg(long)]
         topic: Option<String>,
+        /// How many claude posts may follow a person's post before claude sessions must wait
+        /// for a person. 0 is no limit.
+        #[arg(long, value_name = "N", default_value_t = DEFAULT_AI_LIMIT)]
+        ai_limit: u32,
     },
     /// Join a room from a claude session (this pty and CLAUDE_CODE_SESSION_ID). Prints how to
-    /// take part.
+    /// take part. A person does not join, but posts with --as.
     Join {
         room: String,
-        /// Your name in the room.
+        /// Your name in the room: 1–32 letters, digits and `_.+-`.
         #[arg(long = "as", value_name = "NAME")]
         name: String,
-        /// Do not get notified of new entries; read them yourself.
-        #[arg(long)]
-        quiet: bool,
     },
-    /// Leave a room, or with --as take NAME out of it (e.g. a member whose pane was closed).
+    /// Leave a room, or with --as take NAME out of it (a person, or a member whose pane was
+    /// closed).
     Leave {
         room: String,
         #[arg(long = "as", value_name = "NAME")]
@@ -61,39 +60,37 @@ pub enum RoomCommand {
     /// ROOM is an open room's name, or a room id from `maru room list` (closed rooms too).
     Read {
         room: String,
+        /// Read as the person NAME, from where NAME last read.
+        #[arg(long = "as", value_name = "NAME")]
+        name: Option<String>,
         #[arg(long)]
         all: bool,
-        /// Accepted for consistency with post and pass; ignored by read.
-        #[arg(long)]
-        seen: Option<i64>,
     },
-    /// Post TEXT (or stdin, with `-` or no TEXT) if SEEN is still the last entry's number.
+    /// Post TEXT (or stdin, with `-` or no TEXT) as the claude session that joined from this
+    /// pane, or with --as NAME as a person.
     ///
-    /// Exits 4 if newer entries came first, 5 if AIs have used their turns since the person
-    /// last posted, and 6 if the room is closed.
+    /// Exits 5 if AIs have used their turns since a person last posted, and 6 if the room is
+    /// closed.
     Post {
         room: String,
-        /// The last entry's number you read.
-        #[arg(long)]
-        seen: i64,
+        /// Post as the person NAME. The first post adds NAME to the room.
+        #[arg(long = "as", value_name = "NAME")]
+        name: Option<String>,
         text: Option<String>,
     },
-    /// Record that you have nothing to add when you were asked. Same exit codes as post.
-    Pass {
-        room: String,
-        #[arg(long)]
-        seen: i64,
-    },
-    /// Talk in a room from this terminal as `human`.
-    Chat { room: String },
     /// List open rooms and who is in them.
     List {
         /// List closed rooms instead.
         #[arg(long)]
         closed: bool,
     },
-    /// Close a room. Its entries stay and `maru room read <id> --all` reads them.
-    Close { room: String },
+    /// Close a room. Its entries stay and `maru room read <id> --all` reads them. Exits 6 if it is already closed.
+    Close {
+        room: String,
+        /// Close as the person NAME.
+        #[arg(long = "as", value_name = "NAME")]
+        name: Option<String>,
+    },
 }
 
 /// 규칙에 걸려 거절한 요청이다. `main.rs` 의 `main` 이 `code` 를 exit code 로 쓴다.
@@ -118,32 +115,31 @@ fn refuse(code: u8, message: String) -> anyhow::Error {
 pub fn run(command: RoomCommand) -> Result<()> {
     let path = db_path()?;
     let out = match command {
-        RoomCommand::New { room, topic } => new(&path, &room, topic.as_deref().unwrap_or(""))?,
-        RoomCommand::Join { room, name, quiet } => join(&path, &room, &name, quiet)?,
+        RoomCommand::New {
+            room,
+            topic,
+            ai_limit,
+        } => new(&path, &room, topic.as_deref().unwrap_or(""), ai_limit)?,
+        RoomCommand::Join { room, name } => join(&path, &room, &name)?,
         RoomCommand::Leave { room, name } => leave(&path, &room, name.as_deref())?,
-        RoomCommand::Read { room, all, .. } => read(&path, &room, all)?,
-        RoomCommand::Post { room, seen, text } => {
+        RoomCommand::Read { room, name, all } => read(&path, &room, name.as_deref(), all)?,
+        RoomCommand::Post { room, name, text } => {
             let text = match text.filter(|t| t != "-") {
                 Some(t) => t,
                 None => crate::read_stdin(
-                    "give TEXT or pipe it into stdin, e.g. `maru room post review --seen 3 - <<'EOF'`",
+                    "give TEXT or pipe it into stdin, e.g. `maru room post review - <<'EOF'`",
                 )?,
             };
-            let seq = append(&path, &room, Kind::Post, seen, text.trim_end())?;
+            let seq = post(&path, &room, name.as_deref(), text.trim_end())?;
             format!("#{seq}\n")
         }
-        RoomCommand::Pass { room, seen } => {
-            let seq = append(&path, &room, Kind::Pass, seen, "")?;
-            format!("#{seq}\n")
-        }
-        RoomCommand::Chat { room } => return chat::run(&path, &room),
         RoomCommand::List { closed } => list(&path, closed)?,
-        RoomCommand::Close { room } => close(&path, &room)?,
+        RoomCommand::Close { room, name } => close(&path, &room, name.as_deref())?,
     };
     crate::write_stdout(&out)
 }
 
-/// 앱은 격리된 실행(dev·e2e)에서만 pty 에 `MARU_ROOM_DB` 를 넣는다(`docs/contracts/room.md`).
+/// 앱은 설치본을 기본 userData 로 띄운 실행이 아닐 때만 pty 에 `MARU_ROOM_DB` 를 넣는다(`docs/contracts/room.md`).
 fn db_path() -> Result<PathBuf> {
     if let Some(path) = crate::env_var("MARU_ROOM_DB") {
         return Ok(path.into());
@@ -212,11 +208,13 @@ fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     // 다른 프로세스가 먼저 만들었을 수 있다.
     if user_version(&tx)? == 0 {
+        // 사람 참여자는 pty·session 이 없다.
         tx.execute_batch(
             "CREATE TABLE rooms (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
                 topic TEXT NOT NULL DEFAULT '',
+                ai_limit INTEGER NOT NULL,
                 created_ms INTEGER NOT NULL,
                 closed_ms INTEGER
             );
@@ -225,9 +223,8 @@ fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
                 room INTEGER NOT NULL,
                 name TEXT NOT NULL,
                 kind TEXT NOT NULL,
-                pty TEXT NOT NULL,
+                pty TEXT,
                 session TEXT,
-                quiet INTEGER NOT NULL DEFAULT 0,
                 notified_seq INTEGER NOT NULL DEFAULT 0,
                 read_seq INTEGER NOT NULL DEFAULT 0,
                 joined_ms INTEGER NOT NULL,
@@ -270,32 +267,149 @@ fn is_id(arg: &str) -> bool {
     !arg.is_empty() && arg.bytes().all(|b| b.is_ascii_digit())
 }
 
+/// 참여자 이름은 한글 같은 글자도 받는다. 공백·괄호는 받지 않는다. `read` 가 `#번호 이름  글` 로 찍고, 사람은
+/// `이름(사람)` 으로 보이기 때문이다.
+fn is_member_name(name: &str) -> bool {
+    let n = name.chars().count();
+    (1..=MAX_MEMBER_NAME_CHARS).contains(&n)
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || "_.+-".contains(c))
+}
+
+/// `word` 를 소리 내어 읽은 끝소리. 조사를 고르는 데 쓴다.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Coda {
+    Open,
+    /// ㄹ 받침. `으로/로` 는 ㄹ 받침 뒤에 `로` 를 쓴다.
+    Rieul,
+    Closed,
+}
+
+/// 한글은 종성으로, 숫자는 한자어로 읽은 소리(일·이·삼…, 0 으로 끝나면 영·십·백·천·만)로 가린다. 영문자는 l·m·n
+/// 으로 끝나면(엘·엠·엔, 단어면 -l·-m·-n) 받침으로, r 한 글자(알)도 받침으로 친다. 그 밖은 받침 없음으로 친다.
+fn coda(word: &str) -> Coda {
+    let Some(last) = word.chars().last() else {
+        return Coda::Open;
+    };
+    if ('가'..='힣').contains(&last) {
+        return match (last as u32 - '가' as u32) % 28 {
+            0 => Coda::Open,
+            8 => Coda::Rieul,
+            _ => Coda::Closed,
+        };
+    }
+    match last.to_ascii_lowercase() {
+        '1' | '7' | '8' | 'l' => Coda::Rieul,
+        'r' if word.chars().count() == 1 => Coda::Rieul,
+        '0' | '3' | '6' | 'm' | 'n' => Coda::Closed,
+        _ => Coda::Open,
+    }
+}
+
+/// 이름 뒤에 붙이는 조사. 받침 뒤의 꼴로 부른다.
+#[derive(Clone, Copy)]
+enum Josa {
+    I,
+    Eul,
+    Eun,
+    Euro,
+}
+
+fn particle(word: &str, j: Josa) -> &'static str {
+    let c = coda(word);
+    let (closed, open) = match j {
+        Josa::I => ("이", "가"),
+        Josa::Eul => ("을", "를"),
+        Josa::Eun => ("은", "는"),
+        Josa::Euro if c == Coda::Rieul => return "로",
+        Josa::Euro => ("으로", "로"),
+    };
+    if c == Coda::Open { open } else { closed }
+}
+
+fn josa(word: &str, j: Josa) -> String {
+    format!("{word} {}", particle(word, j))
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum MemberKind {
+    Human,
+    Claude,
+}
+
+impl MemberKind {
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "human" => Some(MemberKind::Human),
+            "claude" => Some(MemberKind::Claude),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            MemberKind::Human => "human",
+            MemberKind::Claude => "claude",
+        }
+    }
+}
+
+impl ToSql for MemberKind {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(self.as_str().into())
+    }
+}
+
+impl FromSql for MemberKind {
+    fn column_result(v: ValueRef<'_>) -> FromSqlResult<Self> {
+        MemberKind::parse(v.as_str()?).ok_or(FromSqlError::InvalidType)
+    }
+}
+
+fn shown(name: &str, kind: MemberKind) -> String {
+    match kind {
+        MemberKind::Human => format!("{name}(사람)"),
+        MemberKind::Claude => name.to_owned(),
+    }
+}
+
+/// `shown` 에 조사를 붙인다. 조사는 괄호 밖의 이름을 따른다("가나(사람) 가").
+fn shown_josa(name: &str, kind: MemberKind, j: Josa) -> String {
+    format!("{} {}", shown(name, kind), particle(name, j))
+}
+
 struct Room {
     id: i64,
     name: String,
     topic: String,
+    /// 0 이면 상한이 없다.
+    ai_limit: i64,
     closed: bool,
+}
+
+const ROOM_COLS: &str = "SELECT id, name, topic, ai_limit, closed_ms FROM rooms";
+
+fn room_row(r: &rusqlite::Row) -> rusqlite::Result<Room> {
+    Ok(Room {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        topic: r.get(2)?,
+        ai_limit: r.get(3)?,
+        closed: r.get::<_, Option<i64>>(4)?.is_some(),
+    })
 }
 
 /// 숫자면 방 id, 아니면 그 이름의 열린 방, 없으면 그 이름으로 마지막에 닫힌 방이다.
 fn find_room(conn: &Connection, arg: &str) -> Result<Room> {
-    let row = |r: &rusqlite::Row| {
-        Ok(Room {
-            id: r.get(0)?,
-            name: r.get(1)?,
-            topic: r.get(2)?,
-            closed: r.get::<_, Option<i64>>(3)?.is_some(),
-        })
-    };
-    let cols = "SELECT id, name, topic, closed_ms FROM rooms";
     let found = if is_id(arg) {
-        conn.query_row(&format!("{cols} WHERE id = ?1"), [arg], row)
+        conn.query_row(&format!("{ROOM_COLS} WHERE id = ?1"), [arg], room_row)
             .optional()?
     } else {
         conn.query_row(
-            &format!("{cols} WHERE name = ?1 ORDER BY closed_ms IS NOT NULL, id DESC LIMIT 1"),
+            &format!("{ROOM_COLS} WHERE name = ?1 ORDER BY closed_ms IS NOT NULL, id DESC LIMIT 1"),
             [arg],
-            row,
+            room_row,
         )
         .optional()?
     };
@@ -303,7 +417,10 @@ fn find_room(conn: &Connection, arg: &str) -> Result<Room> {
 }
 
 fn no_room(arg: &str) -> anyhow::Error {
-    anyhow!("방 {arg} 이 없다 — maru room list 로 열린 방을 본다")
+    anyhow!(
+        "방 {} 없다 — maru room list 로 열린 방을 본다",
+        josa(arg, Josa::I)
+    )
 }
 
 fn last_seq(conn: &Connection, room: i64) -> Result<i64> {
@@ -314,8 +431,6 @@ fn last_seq(conn: &Connection, room: i64) -> Result<i64> {
     )?)
 }
 
-/// 마지막 사람 글 뒤에 올라간 AI 글 수. pass 와 close 는 세지 않는다. pass 는 상한에서도 올라간다. 불렸는데
-/// 할 말이 없는 쪽이 비킬 수 있어야 하기 때문이다.
 fn ai_streak(conn: &Connection, room: i64) -> Result<i64> {
     Ok(conn.query_row(
         "SELECT COUNT(*) FROM entries WHERE room = ?1 AND kind = 'post' AND author_kind = 'claude'
@@ -326,24 +441,62 @@ fn ai_streak(conn: &Connection, room: i64) -> Result<i64> {
     )?)
 }
 
+/// 사람 글 뒤의 AI 차례가 어디까지 왔는지.
+#[derive(Clone, Copy, PartialEq)]
+enum Turn {
+    Open,
+    /// 다음 AI 글이 마지막이다.
+    Last,
+    Over,
+}
+
+fn turn(conn: &Connection, room: i64, ai_limit: i64) -> Result<Turn> {
+    if ai_limit == 0 {
+        return Ok(Turn::Open);
+    }
+    let streak = ai_streak(conn, room)?;
+    Ok(if streak >= ai_limit {
+        Turn::Over
+    } else if streak == ai_limit - 1 {
+        Turn::Last
+    } else {
+        Turn::Open
+    })
+}
+
 struct Member {
     name: String,
-    kind: String,
+    kind: MemberKind,
     read_seq: i64,
 }
 
+const MEMBER_COLS: &str = "SELECT name, kind, read_seq FROM participants";
+
+fn member_row(r: &rusqlite::Row) -> rusqlite::Result<Member> {
+    Ok(Member {
+        name: r.get(0)?,
+        kind: r.get(1)?,
+        read_seq: r.get(2)?,
+    })
+}
+
+/// 이 pty 의 claude 참여자. 사람 참여자는 pty 가 없으므로 여기서 찾지 않는다.
 fn member(conn: &Connection, room: i64, pty: &str) -> Result<Option<Member>> {
     Ok(conn
         .query_row(
-            "SELECT name, kind, read_seq FROM participants WHERE room = ?1 AND pty = ?2",
+            &format!("{MEMBER_COLS} WHERE room = ?1 AND pty = ?2"),
             params![room, pty],
-            |r| {
-                Ok(Member {
-                    name: r.get(0)?,
-                    kind: r.get(1)?,
-                    read_seq: r.get(2)?,
-                })
-            },
+            member_row,
+        )
+        .optional()?)
+}
+
+fn member_named(conn: &Connection, room: i64, name: &str) -> Result<Option<Member>> {
+    Ok(conn
+        .query_row(
+            &format!("{MEMBER_COLS} WHERE room = ?1 AND name = ?2"),
+            params![room, name],
+            member_row,
         )
         .optional()?)
 }
@@ -353,6 +506,53 @@ fn me_here(conn: &Connection, room: i64) -> Result<Option<Member>> {
         Some(pty) => member(conn, room, &pty),
         None => Ok(None),
     }
+}
+
+fn check_member_name(name: &str) -> Result<()> {
+    if !is_member_name(name) {
+        bail!("--as 는 1–{MAX_MEMBER_NAME_CHARS} 자의 글자·숫자·`_.+-` 다 (got {name:?})");
+    }
+    Ok(())
+}
+
+/// `--as` 의 사람. 아직 올린 적이 없으면 `None` 이다. claude 참여자의 이름이면 거절한다 — 그 이름으로 올리면
+/// 글쓴이를 가를 수 없기 때문이다.
+fn person(conn: &Connection, room: &Room, name: &str) -> Result<Option<Member>> {
+    check_member_name(name)?;
+    match member_named(conn, room.id, name)? {
+        Some(m) if m.kind != MemberKind::Human => bail!(
+            "방 {} 의 {} claude 참여자다 — 사람은 다른 이름을 --as 에 쓴다",
+            room.name,
+            josa(name, Josa::Eun)
+        ),
+        found => Ok(found),
+    }
+}
+
+fn speaker(conn: &Connection, room: &Room, as_name: Option<&str>) -> Result<Option<Member>> {
+    match as_name {
+        Some(name) => person(conn, room, name),
+        None => me_here(conn, room.id),
+    }
+}
+
+fn new_person(name: &str) -> Member {
+    Member {
+        name: name.to_owned(),
+        kind: MemberKind::Human,
+        read_seq: 0,
+    }
+}
+
+fn remove_member(tx: &Connection, room: i64, who: (&str, MemberKind), open: bool) -> Result<()> {
+    tx.execute(
+        "DELETE FROM participants WHERE room = ?1 AND name = ?2",
+        params![room, who.0],
+    )?;
+    if open {
+        add_entry(tx, room, Some(who), Kind::Leave, "")?;
+    }
+    Ok(())
 }
 
 fn mark_read(conn: &Connection, room: i64, name: &str, seq: i64) -> Result<()> {
@@ -365,26 +565,19 @@ fn mark_read(conn: &Connection, room: i64, name: &str, seq: i64) -> Result<()> {
 
 fn participants_text(conn: &Connection, room: i64) -> Result<String> {
     let mut stmt = conn.prepare(
-        "SELECT name, kind, quiet FROM participants WHERE room = ?1 ORDER BY kind = 'claude', joined_ms",
+        "SELECT name, kind FROM participants WHERE room = ?1 ORDER BY kind = 'claude', joined_ms",
     )?;
     let names = stmt
-        .query_map([room], |r| {
-            let (name, kind, quiet): (String, String, bool) = (r.get(0)?, r.get(1)?, r.get(2)?);
-            Ok(match (kind.as_str(), quiet) {
-                ("human", _) => format!("{name}(사람)"),
-                (_, true) => format!("{name}(알림 안 받음)"),
-                _ => name,
-            })
-        })?
+        .query_map([room], |r| Ok(shown(&r.get::<_, String>(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(if names.is_empty() {
-        "(아직 없음)".into()
+        "(없음)".into()
     } else {
         names.join(", ")
     })
 }
 
-fn new(path: &Path, name: &str, topic: &str) -> Result<String> {
+fn new(path: &Path, name: &str, topic: &str, ai_limit: u32) -> Result<String> {
     if !crate::is_name(name) || is_id(name) {
         bail!("a room name is 1–32 letters, digits and `_.+-`, not only digits (got {name:?})");
     }
@@ -396,165 +589,180 @@ fn new(path: &Path, name: &str, topic: &str) -> Result<String> {
         |r| r.get(0),
     )?;
     if open {
-        bail!("열린 방 {name} 이 이미 있다 — 다른 이름을 쓰거나 maru room close {name} 로 닫는다");
+        bail!(
+            "열린 방 {} 이미 있다 — 다른 이름을 쓰거나 maru room close {name} 로 닫는다",
+            josa(name, Josa::I)
+        );
     }
     tx.execute(
-        "INSERT INTO rooms (name, topic, created_ms) VALUES (?1, ?2, ?3)",
-        params![name, topic, now_ms()],
+        "INSERT INTO rooms (name, topic, ai_limit, created_ms) VALUES (?1, ?2, ?3, ?4)",
+        params![name, topic, ai_limit, now_ms()],
     )?;
     let id = tx.last_insert_rowid();
     tx.commit()?;
     Ok(format!(
-        "방 {name} 을 열었다 (id {id}).\n\
-         사람: maru room chat {name}\n\
-         claude 세션: 그 pane 의 claude 에게 방 {name} 에 이름을 정해 들어가라고 하면 maru room join {name} --as <이름> 을 부른다.\n"
+        "방 {} 열었다 (id {id}, {limit}).\n\
+         사람: maru room post {name} --as <이름> <글> 로 올린다.\n\
+         claude 세션: 그 pane 의 claude 에게 방 {name} 에 이름을 정해 들어가라고 하면 maru room join {name} --as <이름> 을 부른다.\n",
+        josa(name, Josa::Eul),
+        limit = match ai_limit {
+            0 => "AI 연속 상한 없음".to_owned(),
+            n => format!("사람 글 뒤 AI 글 {n}개까지"),
+        }
     ))
 }
 
-fn join(path: &Path, arg: &str, name: &str, quiet: bool) -> Result<String> {
+fn join(path: &Path, arg: &str, name: &str) -> Result<String> {
+    check_member_name(name)?;
     let pty = this_pty()?;
     let session = crate::env_var("CLAUDE_CODE_SESSION_ID").ok_or_else(|| {
-        anyhow!("join 은 claude 세션의 Bash 에서 부른다(CLAUDE_CODE_SESSION_ID 가 없다) — 사람은 maru room chat {arg}")
+        anyhow!(
+            "join 은 claude 세션의 Bash 에서 부른다(CLAUDE_CODE_SESSION_ID 가 없다) — 사람은 join 없이 maru room post {arg} --as <이름> <글> 로 올린다"
+        )
     })?;
-    if !crate::is_name(name) || name == HUMAN {
-        bail!("--as 는 1–32 자의 영문·숫자·`_.+-` 이고 {HUMAN} 이 아니어야 한다 (got {name:?})");
-    }
     let mut conn = connect(path, false)?.ok_or_else(|| no_room(arg))?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let room = find_room(&tx, arg)?;
     if room.closed {
-        return Err(refuse(EXIT_CLOSED, format!("방 {} 은 닫혔다.", room.name)));
+        return Err(refuse(
+            EXIT_CLOSED,
+            format!("방 {} 닫혔다.", josa(&room.name, Josa::Eun)),
+        ));
     }
     let here = member(&tx, room.id, &pty)?;
     if let Some(m) = &here
         && m.name != name
     {
         bail!(
-            "이 pane 은 방 {} 에 이미 {} 로 들어 있다 — 그 이름으로 다시 join 하거나 maru room leave {} 뒤에 join 한다",
+            "이 pane 은 방 {} 에 이미 {} 들어 있다 — 그 이름으로 다시 join 하거나 maru room leave {} 뒤에 join 한다",
             room.name,
-            m.name,
+            josa(&m.name, Josa::Euro),
             room.name
         );
     }
-    let held: Option<Option<String>> = tx
+    let held: Option<(MemberKind, Option<String>)> = tx
         .query_row(
-            "SELECT session FROM participants WHERE room = ?1 AND name = ?2",
+            "SELECT kind, session FROM participants WHERE room = ?1 AND name = ?2",
             params![room.id, name],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
     match held {
         // 이 pane 의 참여이거나, 같은 세션을 다른 pane 에서 `--resume` 했다. 참여를 이 pane 으로 옮긴다.
-        // 알림 없이 있던 동안 `room read` 로 읽은 글은 다시 알리지 않는다.
-        Some(held) if here.is_some() || held.as_deref() == Some(session.as_str()) => {
+        // monitor 가 없던 동안 `room read` 로 읽은 글은 다시 알리지 않는다.
+        Some((MemberKind::Claude, held)) if here.is_some() || held.as_deref() == Some(&session) => {
             tx.execute(
-                "UPDATE participants SET pty = ?3, session = ?4, quiet = ?5, notified_seq = MAX(notified_seq, read_seq)
+                "UPDATE participants SET pty = ?3, session = ?4, notified_seq = MAX(notified_seq, read_seq)
                  WHERE room = ?1 AND name = ?2",
-                params![room.id, name, pty, session, quiet],
+                params![room.id, name, pty, session],
             )?;
         }
+        Some((MemberKind::Human, _)) => bail!(
+            "방 {} 에 {} 이미 있다 — 다른 이름으로 들어간다.",
+            room.name,
+            shown_josa(name, MemberKind::Human, Josa::I)
+        ),
         Some(_) => bail!(
-            "방 {0} 에 {name} 이 이미 있다 — 다른 이름으로 들어간다. {name} 의 pane 이 닫혔으면 maru room leave {0} --as {name} 로 내보낸 뒤 들어간다",
-            room.name
+            "방 {0} 에 {1} 이미 있다 — 다른 이름으로 들어간다. {name} 의 pane 이 닫혔으면 maru room leave {0} --as {name} 로 내보낸 뒤 들어간다",
+            room.name,
+            josa(name, Josa::I)
         ),
         None => {
             // 들어오기 전의 글은 알리지 않는다. 읽은 자리는 0 으로 두어 첫 `room read` 가 지난 글을 모두 보이게 한다.
             tx.execute(
-                "INSERT INTO participants (room, name, kind, pty, session, quiet, notified_seq, read_seq, joined_ms)
-                 VALUES (?1, ?2, 'claude', ?3, ?4, ?5, ?6, 0, ?7)",
-                params![room.id, name, pty, session, quiet, last_seq(&tx, room.id)?, now_ms()],
+                "INSERT INTO participants (room, name, kind, pty, session, notified_seq, read_seq, joined_ms)
+                 VALUES (?1, ?2, 'claude', ?3, ?4, ?5, 0, ?6)",
+                params![room.id, name, pty, session, last_seq(&tx, room.id)?, now_ms()],
             )?;
         }
     }
-    let notice = notice(&tx, &room, name, quiet)?;
+    let notice = notice(&tx, &room, name)?;
     tx.commit()?;
     Ok(notice)
 }
 
-/// join 이 찍는 안내문이다. claude 의 컨텍스트에 들어간다. `@` 를 넣지 않는다. Claude Code 가 `@` 뒤를 파일·agent
-/// 참조로 읽기 때문이다.
-fn notice(conn: &Connection, room: &Room, me: &str, quiet: bool) -> Result<String> {
+fn notice(conn: &Connection, room: &Room, me: &str) -> Result<String> {
     let r = &room.name;
     let topic = if room.topic.is_empty() {
         String::new()
     } else {
-        format!("주제: {}\n", room.topic)
+        format!("주제: {}\n", printable(&room.topic))
     };
     let others = participants_text(conn, room.id)?;
-    let wake = if quiet {
-        format!(
-            "너는 알림을 받지 않는다. 사람이 이 터미널에서 방을 보라고 하거나 하던 일이 한 단락 끝났을 때 maru room read {r} 로 읽는다."
-        )
-    } else {
-        format!(
-            "방에 새 글이 오면 monitor 알림({{\"event\":\"room\",\"room\":\"{r}\",…}})이 온다. 알림에는 글 내용이 없다. 새 글은 누가 불렸든 글쓴이를 뺀, 알림 받는 참여자 모두에게 알려진다."
-        )
+    let (limit, capped) = match room.ai_limit {
+        0 => (String::new(), ""),
+        n => (
+            format!(
+                "- 사람 글 뒤에 AI 글은 {n}개까지 올라간다. 마지막 차례의 알림에는 그렇다고 적혀 온다.\n"
+            ),
+            "exit 5 면 AI 차례가 끝난 것이니 사람이 쓸 때까지 올리지 않는다. ",
+        ),
     };
     Ok(format!(
-        "방 {r} 에 {me} 로 들어왔다.\n\
+        "방 {r} 에 {} 들어왔다.\n\
          {topic}참여자: {others}\n\
          \n\
          이 터미널은 방이 아니다. 여기에 쓴 답은 방의 누구도 읽지 않는다. 방에 할 말은 maru room post 로만 올린다.\n\
-         {wake}\n\
+         방에 새 글이 오면 monitor 알림({{\"event\":\"room\",\"room\":\"{r}\",…}})이 온다. 알림에는 글 내용이 없다. 새 글은 누가 불렸든 글쓴이를 뺀 claude 참여자 모두에게 알려진다.\n\
          \n\
          읽고 쓰기:\n\
-         1. maru room read {r} 로 새 글을 읽는다. 마지막 줄의 번호를 post·pass 의 --seen 에 쓴다.\n\
+         1. maru room read {r} 로 새 글을 읽는다.\n\
          2. 새 정보·반론·구체화·꼭 필요한 질문이 있을 때만 올린다. 앞 사람 말을 되풀이하거나 동의만 하는 말은 올리지 않는다. 3~6문장, 한국어 대화체, 제목·이름표 없이 본문만 쓴다.\n\
-         \x20  maru room post {r} --seen <번호> - <<'EOF'\n\
+         \x20  maru room post {r} - <<'EOF'\n\
          \x20  <글>\n\
          \x20  EOF\n\
-         3. exit 4 면 그사이 새 글이 올라온 것이다. 다시 읽고 판단한다 — 여전히 보탬이 되면 고쳐서 새 번호로 올리고, 다른 사람이 같은 말을 했으면 올리지 않는다. exit 5 면 AI 차례가 끝난 것이니 사람이 쓸 때까지 올리지 않는다. exit 6 이면 방이 닫혔다.\n\
-         4. 올릴 말이 없으면(이름으로 불렸으면 pass 로 넘긴 뒤) 도구를 더 부르지 말고 턴을 끝낸다.\n\
+         3. {capped}exit 6 이면 방이 닫혔다.\n\
+         4. 올릴 말이 없으면 도구를 더 부르지 말고 턴을 끝낸다.\n\
          \n\
          차례:\n\
-         - 누가 이름으로 불렸으면 그 사람이 먼저 답한다. 너를 부른 게 아니면 불린 사람이 답하거나 넘길 때까지 기다린다. 불린 사람이 답한 뒤에는 보탤 게 있으면 말한다.\n\
-         - 너를 이름으로 불렀는데 할 말이 없으면 maru room pass {r} --seen <번호> 로 넘긴다. 그래야 기다리던 쪽이 안다. 너를 부르지 않은 글에는 pass 하지 않는다.\n\
+         - 누가 이름으로 불렸으면 그 사람이 먼저 답한다. 너를 부른 게 아니면 불린 사람이 답할 때까지 기다린다. 불린 사람이 답한 뒤에는 보탤 게 있으면 말한다.\n\
          - 다른 참여자는 글에서 이름으로 부른다(\"B, …\" 또는 \"B 는 어떻게 보나요?\"). 이름 앞에 기호를 붙이지 않는다 — 기호는 파일·agent 참조로 읽힌다.\n\
-         - 사람 글 뒤에 AI 글은 {AI_STREAK_CAP}개까지 올라간다. 마지막 차례의 알림에는 그렇다고 적혀 온다.\n\
+         {limit}\
          \n\
          - 사람이 이 터미널에 직접 쓴 말은 너에게 주는 지시다. 따르되 방에 할 말은 여전히 maru room post 로 올리고, 터미널에는 짧게만 답한다.\n\
-         - 할 말을 터미널에 써 두고 끝내지 않는다. 올리거나 넘기거나, 아무것도 하지 않는다.\n\
-         - 나갈 때는 maru room leave {r}. /clear 하면 방에서 나간다.\n"
+         - 할 말을 터미널에 써 두고 끝내지 않는다. 올리거나 아무것도 하지 않는다.\n\
+         - 나갈 때는 maru room leave {r}. /clear 하면 방에서 나간다.\n",
+        josa(me, Josa::Euro)
     ))
 }
 
-/// `name` 이 없으면 이 pane 의 참여를, 있으면 그 이름의 참여를 지운다. 이름으로도 지우는 것은 닫힌 pane 에
-/// 남은 참여를 그 pane 에서 지울 수 없기 때문이다.
+/// `name` 이 없으면 이 pane 의 참여를, 있으면 그 이름의 참여를 지운다. 이름으로도 지우는 것은 사람 참여자와, 닫힌
+/// pane 에 남은 참여를 지우기 위해서다. 열린 방이면 나감을 기록으로 남겨 남은 참여자에게 알린다.
 fn leave(path: &Path, arg: &str, name: Option<&str>) -> Result<String> {
-    let pty = this_pty()?;
     let mut conn = connect(path, false)?.ok_or_else(|| no_room(arg))?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let room = find_room(&tx, arg)?;
-    let done = match name {
+    let gone = match name {
         None => {
-            if tx.execute(
-                "DELETE FROM participants WHERE room = ?1 AND pty = ?2",
-                params![room.id, pty],
-            )? == 0
-            {
-                bail!("이 pane 은 방 {} 에 들어 있지 않다", room.name);
-            }
-            format!("방 {} 에서 나왔다.\n", room.name)
+            let pty = this_pty()?;
+            member(&tx, room.id, &pty)?
+                .ok_or_else(|| anyhow!("이 pane 은 방 {} 에 들어 있지 않다", room.name))?
         }
-        Some(name) => {
-            if tx.execute(
-                "DELETE FROM participants WHERE room = ?1 AND name = ?2",
-                params![room.id, name],
-            )? == 0
-            {
-                bail!("방 {} 에 {name} 이 없다", room.name);
-            }
-            format!("방 {} 에서 {name} 을 내보냈다.\n", room.name)
-        }
+        Some(name) => member_named(&tx, room.id, name)?
+            .ok_or_else(|| anyhow!("방 {} 에 {} 없다", room.name, josa(name, Josa::I)))?,
     };
-    tx.commit()?;
-    Ok(done)
+    remove_member(&tx, room.id, (&gone.name, gone.kind), !room.closed)?;
+    let out = match name {
+        None => format!("방 {} 에서 나왔다.\n", room.name),
+        Some(_) => format!(
+            "방 {} 에서 {} 내보냈다.\n",
+            room.name,
+            shown_josa(&gone.name, gone.kind, Josa::Eul)
+        ),
+    };
+    if room.closed {
+        tx.commit()?;
+    } else {
+        commit_and_ring(tx, path)?;
+    }
+    Ok(out)
 }
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Post,
-    Pass,
+    /// 나감도 기록 하나로 남긴다. 부른 참여자가 나간 것을 기다리던 쪽이 알아야 하기 때문이다.
+    Leave,
     /// 닫힘도 기록 하나로 남겨, monitor 가 다른 글처럼 한 번 알리게 한다.
     Close,
 }
@@ -563,24 +771,43 @@ impl Kind {
     fn as_str(self) -> &'static str {
         match self {
             Kind::Post => "post",
-            Kind::Pass => "pass",
+            Kind::Leave => "leave",
             Kind::Close => "close",
         }
     }
 }
 
-/// 커밋은 `commit_and_ring` 으로 한다. `ring` 을 거르면 지켜보는 쪽이 이 기록을 다음 기록이 올 때까지 모른다.
+impl ToSql for Kind {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(self.as_str().into())
+    }
+}
+
+impl FromSql for Kind {
+    fn column_result(v: ValueRef<'_>) -> FromSqlResult<Self> {
+        match v.as_str()? {
+            "post" => Ok(Kind::Post),
+            "leave" => Ok(Kind::Leave),
+            "close" => Ok(Kind::Close),
+            _ => Err(FromSqlError::InvalidType),
+        }
+    }
+}
+
+/// `author` 가 없으면(닫은 쪽을 모르는 닫힘) 글쓴이를 비워 둔다. 커밋은 `commit_and_ring` 으로 한다. `ring` 을
+/// 거르면 지켜보는 쪽이 이 기록을 다음 기록이 올 때까지 모른다.
 fn add_entry(
     tx: &Connection,
     room: i64,
-    author: (&str, &str),
+    author: Option<(&str, MemberKind)>,
     kind: Kind,
     text: &str,
 ) -> Result<i64> {
     let seq = last_seq(tx, room)? + 1;
+    let (name, author_kind) = author.map_or(("", ""), |(name, kind)| (name, kind.as_str()));
     tx.execute(
         "INSERT INTO entries (room, seq, author, author_kind, kind, text, at_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![room, seq, author.0, author.1, kind.as_str(), text, now_ms()],
+        params![room, seq, name, author_kind, kind, text, now_ms()],
     )?;
     Ok(seq)
 }
@@ -591,57 +818,64 @@ fn commit_and_ring(tx: rusqlite::Transaction, path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn append(path: &Path, arg: &str, kind: Kind, seen: i64, text: &str) -> Result<i64> {
-    let pty = this_pty()?;
-    if kind == Kind::Post && text.trim().is_empty() {
+fn post(path: &Path, arg: &str, as_name: Option<&str>, text: &str) -> Result<i64> {
+    enum Who<'a> {
+        Person(&'a str),
+        Pane(String),
+    }
+    let who = match as_name {
+        Some(name) => Who::Person(name),
+        None => Who::Pane(this_pty()?),
+    };
+    if text.trim().is_empty() {
         bail!("the text is empty");
     }
     let mut conn = connect(path, false)?.ok_or_else(|| no_room(arg))?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let room = find_room(&tx, arg)?;
-    let me = member(&tx, room.id, &pty)?.ok_or_else(|| {
-        anyhow!(
-            "이 pane 은 방 {0} 에 들어 있지 않다 — claude 세션은 maru room join {0} --as <이름>, 사람은 maru room chat {0} 으로 들어간다",
-            room.name
-        )
-    })?;
+    // 사람은 처음 올릴 때 참여자로 적힌다. 아래에서 거절하면 커밋하지 않으므로 적힌 것도 사라진다.
+    let me = match who {
+        Who::Person(name) => match person(&tx, &room, name)? {
+            Some(m) => m,
+            None => {
+                let m = new_person(name);
+                tx.execute(
+                    "INSERT INTO participants (room, name, kind, joined_ms) VALUES (?1, ?2, ?3, ?4)",
+                    params![room.id, m.name, m.kind, now_ms()],
+                )?;
+                m
+            }
+        },
+        Who::Pane(pty) => member(&tx, room.id, &pty)?.ok_or_else(|| {
+            anyhow!(
+                "이 pane 은 방 {0} 에 들어 있지 않다 — 열린 방이면 claude 세션은 maru room join {0} --as <이름> 으로 들어간다. 사람은 --as <이름> 을 붙여 올린다",
+                room.name
+            )
+        })?,
+    };
     if room.closed {
         return Err(refuse(
             EXIT_CLOSED,
-            format!("방 {} 은 닫혔다 — 더 올리지 않는다.", room.name),
+            format!(
+                "방 {} 닫혔다 — 더 올리지 않는다.",
+                josa(&room.name, Josa::Eun)
+            ),
         ));
     }
-    let last = last_seq(&tx, room.id)?;
-    if seen != last {
-        let message = if seen > last {
-            format!(
-                "--seen {seen} 은 마지막 번호 #{last} 보다 크다 — maru room read {} 로 읽고 마지막 번호를 쓴다.",
-                room.name
-            )
-        } else {
-            let came = if last == seen + 1 {
-                format!("#{last} 가")
-            } else {
-                format!("#{}~#{last} 가", seen + 1)
-            };
-            format!(
-                "{came} 먼저 올라왔다 — maru room read {} 로 읽고 다시 판단한다.",
-                room.name
-            )
-        };
-        return Err(refuse(EXIT_SEEN, message));
-    }
-    if kind == Kind::Post && me.kind != HUMAN && ai_streak(&tx, room.id)? >= AI_STREAK_CAP {
+    if me.kind == MemberKind::Claude && turn(&tx, room.id, room.ai_limit)? == Turn::Over {
         return Err(refuse(
             EXIT_CAPPED,
-            format!("사람 글 뒤 AI 글이 {AI_STREAK_CAP}개라 {CAPPED}"),
+            format!("AI 글이 연달아 {}개라 {CAPPED}", room.ai_limit),
         ));
     }
-    let seq = add_entry(&tx, room.id, (&me.name, &me.kind), kind, text)?;
-    // 자기 글은 읽었고 알릴 것도 아니다.
+    let seq = add_entry(&tx, room.id, Some((&me.name, me.kind)), Kind::Post, text)?;
+    // 자기 글은 알릴 것이 아니다. 읽지 않은 글이 남았으면 읽은 자리를 그대로 두어 다음 `read` 가 그 글들을 보이게
+    // 한다.
     tx.execute(
-        "UPDATE participants SET read_seq = ?3, notified_seq = ?3 WHERE room = ?1 AND pty = ?2",
-        params![room.id, pty, seq],
+        "UPDATE participants SET notified_seq = ?3,
+            read_seq = CASE WHEN read_seq >= ?3 - 1 THEN ?3 ELSE read_seq END
+         WHERE room = ?1 AND name = ?2",
+        params![room.id, me.name, seq],
     )?;
     commit_and_ring(tx, path)?;
     Ok(seq)
@@ -650,23 +884,37 @@ fn append(path: &Path, arg: &str, kind: Kind, seen: i64, text: &str) -> Result<i
 struct Entry {
     seq: i64,
     author: String,
-    kind: String,
+    /// 닫은 쪽을 모르는 닫힘 기록은 글쓴이가 비어 `None` 이다.
+    author_kind: Option<MemberKind>,
+    kind: Kind,
     text: String,
-    at_ms: i64,
+}
+
+impl Entry {
+    fn who(&self) -> String {
+        match self.author_kind {
+            Some(kind) => shown(&self.author, kind),
+            None => self.author.clone(),
+        }
+    }
+
+    fn who_josa(&self, j: Josa) -> String {
+        format!("{} {}", self.who(), particle(&self.author, j))
+    }
 }
 
 fn entries_after(conn: &Connection, room: i64, after: i64) -> Result<Vec<Entry>> {
     let mut stmt = conn.prepare(
-        "SELECT seq, author, kind, text, at_ms FROM entries WHERE room = ?1 AND seq > ?2 ORDER BY seq",
+        "SELECT seq, author, author_kind, kind, text FROM entries WHERE room = ?1 AND seq > ?2 ORDER BY seq",
     )?;
     let rows = stmt
         .query_map(params![room, after], |r| {
             Ok(Entry {
                 seq: r.get(0)?,
                 author: r.get(1)?,
-                kind: r.get(2)?,
-                text: r.get(3)?,
-                at_ms: r.get(4)?,
+                author_kind: MemberKind::parse(&r.get::<_, String>(2)?),
+                kind: r.get(3)?,
+                text: r.get(4)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -674,23 +922,32 @@ fn entries_after(conn: &Connection, room: i64, after: i64) -> Result<Vec<Entry>>
 }
 
 fn plain(e: &Entry) -> String {
-    match e.kind.as_str() {
-        "pass" => format!("#{} · {} 가 넘겼다", e.seq, e.author),
-        "close" => format!("#{} · 방이 닫혔다", e.seq),
-        _ => format!(
+    match e.kind {
+        Kind::Leave => format!("#{} · {} 나갔다", e.seq, e.who_josa(Josa::I)),
+        Kind::Close if e.author.is_empty() => format!("#{} · 방이 닫혔다", e.seq),
+        Kind::Close => format!("#{} · {} 방을 닫았다", e.seq, e.who_josa(Josa::I)),
+        Kind::Post => format!(
             "#{} {}  {}",
             e.seq,
-            e.author,
-            e.text.replace('\n', "\n    ")
+            e.who(),
+            printable(&e.text).replace('\n', "\n    ")
         ),
     }
 }
 
-fn read(path: &Path, arg: &str, all: bool) -> Result<String> {
+/// 글을 터미널에 찍기 전에 줄바꿈 밖의 제어 문자를 공백으로 바꾼다. 다른 참여자가 올린 ESC·OSC 가 읽는
+/// 쪽 터미널에서 실행되지 않게 하기 위해서다.
+fn printable(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_control() && c != '\n' { ' ' } else { c })
+        .collect()
+}
+
+fn read(path: &Path, arg: &str, as_name: Option<&str>, all: bool) -> Result<String> {
     let mut conn = connect(path, false)?.ok_or_else(|| no_room(arg))?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let room = find_room(&tx, arg)?;
-    let me = me_here(&tx, room.id)?;
+    let me = speaker(&tx, &room, as_name)?;
     let from = match &me {
         Some(m) if !all => m.read_seq,
         _ => 0,
@@ -707,8 +964,6 @@ fn read(path: &Path, arg: &str, all: bool) -> Result<String> {
     }
     if room.closed {
         out.push_str(&format!("방이 닫혔다 (마지막 #{last}).\n"));
-    } else {
-        out.push_str(&format!("마지막 #{last} — 올릴 때 --seen {last}\n"));
     }
     if let Some(m) = &me {
         mark_read(&tx, room.id, &m.name, last)?;
@@ -718,30 +973,25 @@ fn read(path: &Path, arg: &str, all: bool) -> Result<String> {
 }
 
 fn list(path: &Path, closed: bool) -> Result<String> {
-    let mut out = String::from("ID\tNAME\tLAST\tPARTICIPANTS\tTOPIC\n");
+    let mut out = String::from("ID\tNAME\tLAST\tAI_LIMIT\tPARTICIPANTS\tTOPIC\n");
     let Some(conn) = connect(path, false)? else {
         return Ok(out);
     };
     let mut stmt = conn.prepare(&format!(
-        "SELECT id, name, topic FROM rooms WHERE closed_ms IS {} NULL ORDER BY id",
+        "{ROOM_COLS} WHERE closed_ms IS {} NULL ORDER BY id",
         if closed { "NOT" } else { "" }
     ))?;
     let rooms = stmt
-        .query_map([], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })?
+        .query_map([], room_row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    for (id, name, topic) in rooms {
+    for room in rooms {
         let row = [
-            id.to_string(),
-            name,
-            format!("#{}", last_seq(&conn, id)?),
-            participants_text(&conn, id)?,
-            topic,
+            room.id.to_string(),
+            room.name,
+            format!("#{}", last_seq(&conn, room.id)?),
+            room.ai_limit.to_string(),
+            participants_text(&conn, room.id)?,
+            room.topic,
         ];
         out.push_str(&row.map(|v| crate::tsv_field(&v)).join("\t"));
         out.push('\n');
@@ -749,7 +999,7 @@ fn list(path: &Path, closed: bool) -> Result<String> {
     Ok(out)
 }
 
-fn close(path: &Path, arg: &str) -> Result<String> {
+fn close(path: &Path, arg: &str, as_name: Option<&str>) -> Result<String> {
     let mut conn = connect(path, false)?.ok_or_else(|| no_room(arg))?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let room = find_room(&tx, arg)?;
@@ -759,8 +1009,8 @@ fn close(path: &Path, arg: &str) -> Result<String> {
             format!("방 {} (id {}) 은 이미 닫혔다.", room.name, room.id),
         ));
     }
-    let me = me_here(&tx, room.id)?;
-    let author = me.as_ref().map_or(("", HUMAN), |m| (&m.name, &m.kind));
+    let closer = speaker(&tx, &room, as_name)?.or_else(|| as_name.map(new_person));
+    let author = closer.as_ref().map(|m| (m.name.as_str(), m.kind));
     add_entry(&tx, room.id, author, Kind::Close, "")?;
     tx.execute(
         "UPDATE rooms SET closed_ms = ?2 WHERE id = ?1",
@@ -768,23 +1018,44 @@ fn close(path: &Path, arg: &str) -> Result<String> {
     )?;
     commit_and_ring(tx, path)?;
     Ok(format!(
-        "방 {} 을 닫았다 (id {}). 글은 maru room read {} --all 로 읽는다.\n",
-        room.name, room.id, room.id
+        "방 {} 닫았다 (id {}). 글은 maru room read {} --all 로 읽는다.\n",
+        josa(&room.name, Josa::Eul),
+        room.id,
+        room.id
     ))
 }
 
-/// SessionStart hook 이 부른다. 이 pty 의 참여 가운데 지금 세션이 아닌 것을 지운다 — `/clear` 나 같은 pane
-/// 에서 새로 띄운 claude 는 방에서 나간다. 파일이 없거나 모르는 버전이면 건드리지 않는다.
+/// SessionStart hook 이 부른다. 이 pty 의 claude 참여 가운데 지금 세션이 아닌 것을 지운다 — `/clear` 나 같은
+/// pane 에서 새로 띄운 claude 는 방에서 나간다. 열린 방이면 `leave` 처럼 나감을 기록으로 남긴다. 파일이 없거나
+/// 모르는 버전이면 건드리지 않는다.
 pub fn forget_other_sessions(pty: &str, session: &str) -> Result<()> {
+    let path = db_path()?;
     // claude 가 이 hook 을 기다리며 뜬다. 오래 잠겨 있으면 정리를 거른다.
-    let Opened::Ready(conn) = open(&db_path()?, false, Duration::from_millis(500))? else {
+    let Opened::Ready(mut conn) = open(&path, false, Duration::from_millis(500))? else {
         return Ok(());
     };
-    conn.execute(
-        "DELETE FROM participants WHERE pty = ?1 AND session IS NOT ?2",
-        params![pty, session],
-    )?;
-    Ok(())
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let gone = {
+        let mut stmt = tx.prepare(
+            "SELECT p.room, p.name, r.closed_ms IS NULL FROM participants p JOIN rooms r ON r.id = p.room
+             WHERE p.pty = ?1 AND p.kind = 'claude' AND p.session IS NOT ?2",
+        )?;
+        stmt.query_map(params![pty, session], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, bool>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    if gone.is_empty() {
+        return Ok(());
+    }
+    for (room, name, open) in &gone {
+        remove_member(&tx, *room, (name, MemberKind::Claude), *open)?;
+    }
+    commit_and_ring(tx, &path)
 }
 
 /// 한 참여자에게 알릴 것. 줄을 쓴 뒤 `mark` 로 알린 자리를 올린다.
@@ -797,8 +1068,8 @@ struct Pending {
 
 fn pending(conn: &Connection, pty: &str) -> Result<Vec<Pending>> {
     let mut stmt = conn.prepare(
-        "SELECT p.room, r.name, p.name, p.notified_seq FROM participants p JOIN rooms r ON r.id = p.room
-         WHERE p.pty = ?1 AND p.kind = 'claude' AND NOT p.quiet
+        "SELECT p.room, r.name, r.ai_limit, p.name, p.notified_seq FROM participants p JOIN rooms r ON r.id = p.room
+         WHERE p.pty = ?1 AND p.kind = 'claude'
            AND EXISTS (SELECT 1 FROM entries e WHERE e.room = p.room AND e.seq > p.notified_seq)
          ORDER BY p.room",
     )?;
@@ -807,20 +1078,21 @@ fn pending(conn: &Connection, pty: &str) -> Result<Vec<Pending>> {
             Ok((
                 r.get::<_, i64>(0)?,
                 r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, i64>(4)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut out = Vec::new();
-    for (room, room_name, name, notified) in rows {
+    for (room, room_name, ai_limit, name, notified) in rows {
         let all = entries_after(conn, room, notified)?;
         let seq = all.last().map_or(notified, |e| e.seq);
         let news: Vec<&Entry> = all.iter().filter(|e| e.author != name).collect();
         let event = if news.is_empty() {
             None
         } else {
-            Some(event(&room_name, &news, ai_streak(conn, room)?))
+            Some(event(&room_name, &news, turn(conn, room, ai_limit)?))
         };
         out.push(Pending {
             room,
@@ -840,54 +1112,76 @@ fn mark(conn: &Connection, p: &Pending) -> Result<()> {
     Ok(())
 }
 
-fn event(room: &str, news: &[&Entry], streak: i64) -> Value {
+fn event(room: &str, news: &[&Entry], turn: Turn) -> Value {
     let first = news[0].seq;
     let last = news[news.len() - 1];
-    let mut from: Vec<&str> = Vec::new();
+    let mut authors: Vec<&Entry> = Vec::new();
     for e in news {
-        if !e.author.is_empty() && !from.contains(&e.author.as_str()) {
-            from.push(&e.author);
+        if !e.author.is_empty() && !authors.iter().any(|a| a.author == e.author) {
+            authors.push(e);
         }
     }
-    let from = from.join(", ");
-    let closed = news.iter().any(|e| e.kind == "close");
-    let kind = if closed { "close" } else { last.kind.as_str() };
-    let mut text = if closed {
-        format!("방이 닫혔다 ({room}) — 더 올리지 않는다.")
+    let from = authors
+        .iter()
+        .map(|e| e.author.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let shown_from = authors
+        .iter()
+        .map(|e| e.who())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let close = news.iter().find(|e| e.kind == Kind::Close);
+    let kind = if close.is_some() {
+        Kind::Close
+    } else {
+        last.kind
+    };
+    let read = format!("maru room read {room} 로 읽는다.");
+    let mut text = if let Some(c) = close {
+        if c.author.is_empty() {
+            format!("방이 닫혔다 ({room}) — 더 올리지 않는다.")
+        } else {
+            format!(
+                "방이 닫혔다 ({room}, 닫은 이: {}) — 더 올리지 않는다.",
+                c.who()
+            )
+        }
     } else if news.len() > 1 {
         format!(
-            "방 {room} 에 새 기록 #{first}~#{} (보낸 이: {from}) — maru room read {room} 로 읽는다.",
+            "방 {room} 에 새 기록 #{first}~#{} (보낸 이: {shown_from}) — {read}",
             last.seq
         )
-    } else if kind == "pass" {
+    } else if kind == Kind::Leave {
         format!(
-            "방 {room} 에서 {from} 가 넘겼다 (#{}) — maru room read {room} 로 읽는다.",
+            "방 {room} 에서 {} 나갔다 (#{}) — {read}",
+            last.who_josa(Josa::I),
             last.seq
         )
     } else {
         format!(
-            "방 {room} 에 새 글 #{} (보낸 이: {from}) — maru room read {room} 로 읽는다.",
+            "방 {room} 에 새 글 #{} (보낸 이: {shown_from}) — {read}",
             last.seq
         )
     };
-    if !closed {
-        if streak == AI_STREAK_CAP - 1 {
-            text = format!("{text} {LAST_TURN}");
-        } else if streak >= AI_STREAK_CAP {
-            text = format!("{text} {CAPPED}");
+    if close.is_none() {
+        match turn {
+            Turn::Open => {}
+            Turn::Last => text = format!("{text} {LAST_TURN}"),
+            Turn::Over => text = format!("{text} {CAPPED}"),
         }
     }
-    let mut ev = json!({ "event": "room", "room": room, "seq": last.seq, "from": from, "kind": kind, "text": text });
+    let mut ev = json!({ "event": "room", "room": room, "seq": last.seq, "from": from, "kind": kind.as_str(), "text": text });
     if news.len() > 1 {
         ev["first"] = first.into();
     }
     ev
 }
 
-/// 기록을 더한 쪽이 커밋한 뒤 건드리는 파일. 지켜보는 쪽(monitor·chat)은 이 파일이 바뀌면 방 파일을 다시 읽는다.
+/// 기록을 더한 쪽이 커밋한 뒤 건드리는 파일. 지켜보는 쪽(monitor)은 이 파일이 바뀌면 방 파일을 다시 읽는다.
 ///
 /// `-wal` 을 지켜보면 커밋이 보이기 전에 깨어, 그 기록의 알림이 다음 기록까지 밀린다. sqlite 가 프레임을 `-wal` 에
-/// 쓴 뒤 `-shm` 의 머리를 갱신하는 사이에 읽기 때문으로 보인다(sqlite 소스로 확인하지 않았다).
+/// 쓴 뒤 `-shm` 의 헤더를 갱신하기 전에 읽기 때문으로 보인다(sqlite 소스로 확인하지 않았다).
 fn bell_path(db: &Path) -> PathBuf {
     let mut p = db.as_os_str().to_owned();
     p.push("-notify");
@@ -1049,5 +1343,69 @@ impl Monitor {
             let _ = mark(conn, &p);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Coda, Josa, MemberKind, coda, is_member_name, josa, shown_josa};
+
+    #[test]
+    fn coda_reads_hangul_digits_and_latin_letters() {
+        for (word, want) in [
+            ("가나", Coda::Open),
+            ("민준", Coda::Closed),
+            ("하늘", Coda::Rieul),
+            ("#1", Coda::Rieul),
+            ("#2", Coda::Open),
+            ("#3", Coda::Closed),
+            ("#4", Coda::Open),
+            ("#5", Coda::Open),
+            ("#6", Coda::Closed),
+            ("#7", Coda::Rieul),
+            ("#8", Coda::Rieul),
+            ("#9", Coda::Open),
+            ("#10", Coda::Closed),
+            ("#1~#20", Coda::Closed),
+            ("A", Coda::Open),
+            ("B", Coda::Open),
+            ("L", Coda::Rieul),
+            ("M", Coda::Closed),
+            ("N", Coda::Closed),
+            ("R", Coda::Rieul),
+            ("reviewer", Coda::Open),
+            ("design", Coda::Closed),
+            ("", Coda::Open),
+        ] {
+            assert_eq!(coda(word), want, "{word}");
+        }
+    }
+
+    #[test]
+    fn josa_picks_the_particle_by_the_last_sound() {
+        assert_eq!(josa("#8", Josa::I), "#8 이");
+        assert_eq!(josa("#9", Josa::I), "#9 가");
+        assert_eq!(josa("B", Josa::I), "B 가");
+        assert_eq!(josa("review", Josa::Eul), "review 를");
+        assert_eq!(josa("design", Josa::Eun), "design 은");
+        assert_eq!(josa("민준", Josa::Euro), "민준 으로");
+        assert_eq!(josa("하늘", Josa::Euro), "하늘 로");
+        assert_eq!(josa("가나", Josa::Euro), "가나 로");
+        assert_eq!(
+            shown_josa("민준", MemberKind::Human, Josa::I),
+            "민준(사람) 이"
+        );
+        assert_eq!(shown_josa("B", MemberKind::Claude, Josa::I), "B 가");
+    }
+
+    #[test]
+    fn member_names_take_letters_of_any_script_but_no_spaces_or_brackets() {
+        assert!(is_member_name("가나"));
+        assert!(is_member_name("reviewer-2"));
+        assert!(is_member_name(&"가".repeat(32)));
+        assert!(!is_member_name(&"가".repeat(33)));
+        for bad in ["", "a b", "a(b)", "a@b", "a\tb", "a\u{1b}b"] {
+            assert!(!is_member_name(bad), "{bad:?}");
+        }
     }
 }
