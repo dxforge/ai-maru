@@ -345,6 +345,75 @@ test('큰 문서에서 마지막 묶음이 붙기 전에 각주 번호를 눌러
   expect(await hash(page)).toBe('')
 })
 
+for (const [how, move] of [
+  ['휠', (page: Page) => page.mouse.wheel(0, 400)],
+  ['키', (page: Page) => page.keyboard.press('PageDown')]
+] as const) {
+  test(`큰 문서에서 각주 번호를 누른 뒤 마지막 묶음이 붙기 전에 ${how}로 스크롤하면 붙은 뒤에도 정의로 가지 않는다`, async ({
+    launch
+  }) => {
+    test.setTimeout(120_000)
+    const { app, page } = await launch()
+    await putCanvas(app, {
+      id: 'a',
+      kind: 'markdown',
+      text: footnoteDoc('A', mixedDoc(2_000_000)),
+      title: 'A'
+    })
+    const md = markdown(page)
+    const ref = md.locator('sup a').first()
+    await expect(ref).toBeVisible()
+    await ref.click()
+    await move(page)
+    expect(await md.locator('.footnotes').count()).toBe(0)
+    const scrollTop = () => page.locator('.canvas .scroll').evaluate((el) => el.scrollTop)
+    await expect.poll(scrollTop).toBeGreaterThan(0)
+    const moved = await scrollTop()
+
+    const note = md.locator('.footnotes li').first()
+    await expect(note).toContainText('A note a', { timeout: 60_000 })
+    // `scrollTo`(`CanvasDoc.vue`)는 묶음이 붙은 뒤 최대 10 프레임 동안 scrollTop 을 다시 맞추므로, 그보다 긴 20 프레임을 기다린다.
+    await page.evaluate(async () => {
+      for (let i = 0; i < 20; i++) await new Promise(requestAnimationFrame)
+    })
+    expect(await landed(note)).toBe(false)
+    expect(Math.abs((await scrollTop()) - moved)).toBeLessThan(1000)
+  })
+}
+
+test('큰 문서에서 각주 번호를 누른 뒤 마지막 묶음이 붙기 전에 위에 붙은 카드 제목을 누르면 붙은 뒤에도 정의로 가지 않는다', async ({
+  launch
+}) => {
+  test.setTimeout(120_000)
+  const { app, page } = await launch()
+  await putCanvas(app, {
+    id: 'a',
+    kind: 'markdown',
+    text: footnoteDoc('A', mixedDoc(4_000_000)),
+    title: 'A'
+  })
+  const md = markdown(page)
+  const ref = md.locator('sup a').first()
+  await expect(ref).toBeVisible()
+  await ref.click()
+  // 카드 제목이 위에 붙게 scrollTop 을 맞춘다. 사용자 입력이 아니므로 점프를 버리지 않는다.
+  const scroller = page.locator('.canvas .scroll')
+  await scroller.evaluate((el) => (el.scrollTop = 300))
+  await page.locator('.canvas .pins.top .row[data-id="a"]').click()
+  expect(await md.locator('.footnotes').count()).toBe(0)
+  const scrollTop = () => scroller.evaluate((el) => el.scrollTop)
+  await expect.poll(scrollTop).toBeLessThan(300)
+  const moved = await scrollTop()
+
+  const note = md.locator('.footnotes li').first()
+  await expect(note).toContainText('A note a', { timeout: 60_000 })
+  await page.evaluate(async () => {
+    for (let i = 0; i < 20; i++) await new Promise(requestAnimationFrame)
+  })
+  expect(await landed(note)).toBe(false)
+  expect(Math.abs((await scrollTop()) - moved)).toBeLessThan(1000)
+})
+
 test('각주가 있는 문서가 둘이면 각 문서의 번호는 그 문서의 정의로 간다', async ({ launch }) => {
   const { app, page } = await launch()
   await putCanvas(app, { id: 'a', kind: 'markdown', text: footnoteDoc('A', long('a')), title: 'A' })
