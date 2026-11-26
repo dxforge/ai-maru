@@ -35,6 +35,38 @@ const PARAGRAPH_REST = new RegExp(PARAGRAPH.source.replace('^([^\\n]+', '^([^\\n
 const continuesParagraph = (line: string): boolean =>
   PARAGRAPH.exec(`x\n${line}`)?.[0].length === line.length + 2
 
+const continues = (line: string): boolean =>
+  line.trim() !== '' && continuesParagraph(line) && !DEF_START.test(line)
+
+const LINE = /[^\n]*/y
+const MARK = /\uE000(\d+)\uE001/g
+
+type Lazy = { line: number; pos: number }
+
+// 블록 토큰 안의 문단마다 `f` 를 부른다. 목록 항목의 문단은 `text` 토큰이다.
+function paragraphs(tokens: Token[], f: (raw: string) => void): void {
+  for (const t of tokens) {
+    if (t.type === 'paragraph' || t.type === 'text') f(t.raw)
+    else if (t.type === 'list')
+      for (const item of (t as Tokens.List).items) paragraphs(item.tokens, f)
+    else if ('tokens' in t && t.tokens) paragraphs(t.tokens, f)
+  }
+}
+
+// `lazy` 가운데 앞 문단을 잇지 못한 첫 줄의 차례를 돌려준다. 모두 이으면 `undefined` 다. 줄마다 표시를 붙여 정의를 한 번
+// lexing 하고, 표시 앞에 글자가 있는 문단에 든 줄을 이은 줄로 본다. 줄마다 그 앞까지를 다시 lexing 하면 lex 시간이 정의
+// 크기의 제곱으로 늘어난다(잰 값: 중첩 목록 항목 2,000개에 9.4 s).
+function firstLoose(lexer: Lexer, lines: string[], lazy: Lazy[]): number | undefined {
+  const tagged = [...lines]
+  lazy.forEach(({ line }, i) => (tagged[line] = `\uE000${i}\uE001${tagged[line]}`))
+  const kept = new Set<number>()
+  paragraphs(lexer.blockTokens(tagged.join('\n'), []), (raw) => {
+    for (const m of raw.matchAll(MARK)) if (raw.slice(0, m.index).trim()) kept.add(Number(m[1]))
+  })
+  const i = lazy.findIndex((_, i) => !kept.has(i))
+  return i === -1 ? undefined : i
+}
+
 function untilDef(s: string): string {
   const cut = s.search(DEF_LINE)
   return cut === -1 ? s : s.slice(0, cut + 1)
@@ -79,13 +111,30 @@ export const footnotes: MarkedExtension = {
           pos += line.length
           if (src[pos] === '\n') pos++
         }
+        const lazy: Lazy[] = []
         for (;;) {
           INDENTED.lastIndex = pos
           const more = INDENTED.exec(src)
-          if (!more) break
-          for (const line of more[0].replace(/\n$/, '').split('\n'))
-            lines.push(line.replace(/^(?: {1,4}|\t)/, ''))
-          pos += more[0].length
+          if (more) {
+            for (const line of more[0].replace(/\n$/, '').split('\n'))
+              lines.push(line.replace(/^(?: {1,4}|\t)/, ''))
+            pos += more[0].length
+            continue
+          }
+          LINE.lastIndex = pos
+          const line = LINE.exec(src)![0]
+          if (!continues(line) || !lines.at(-1)!.trim()) break
+          lazy.push({ line: lines.length, pos })
+          lines.push(line)
+          pos += line.length
+          if (src[pos] === '\n') pos++
+        }
+        const loose = lazy.length
+          ? firstLoose(new Lexer(this.lexer.options), lines, lazy)
+          : undefined
+        if (loose !== undefined) {
+          lines.length = lazy[loose]!.line
+          pos = lazy[loose]!.pos
         }
         // 정의는 문서 끝 목록에 그려지므로, 목록 항목 안에 있어도 `state.top` 을 켜고 읽는다. marked 는 `state.top` 이
         // 꺼져 있으면 문단을 `paragraph` 가 아니라 `text` 토큰으로 내기 때문이다.

@@ -367,6 +367,43 @@ describe('각주', () => {
     expect(el.children[1]!.textContent).toBe('back to body')
   })
 
+  it('정의의 들여 쓴 문단·목록 항목·인용 바로 다음 줄은 들여 쓰지 않아도 그 안에 이어 붙는다', () => {
+    const item = (text: string): Element => body(text).querySelector('ol.footnotes > li')!
+    const two = item('a[^1]\n\n[^1]: one\n\n    two\nthree')
+    expect([...two.children].map((c) => c.textContent)).toEqual(['one', 'two\nthree ↩︎'])
+    expect(item('a[^1]\n\n[^1]:\n    two\nthree').textContent!.trim()).toBe('two\nthree ↩︎')
+    expect(
+      item('a[^1]\n\n[^1]: one\n\n    two\nthree\n    four\nfive').children[1]!.textContent
+    ).toBe('two\nthree\nfour\nfive ↩︎')
+    expect(item('a[^1]\n\n[^1]: one\n\n    - a\nthree').querySelector('ul > li')!.textContent).toBe(
+      'a\nthree'
+    )
+    expect(
+      item('a[^1]\n\n[^1]: one\n\n    > a\nthree').querySelector('blockquote')!.textContent
+    ).toBe('\na\nthree\n')
+    expect(
+      item('a[^1]\n\n[^1]: one\n\n    - a\n\n    - b\nthree').querySelector(
+        'ul > li:last-child > p'
+      )!.textContent
+    ).toBe('b\nthree')
+    for (const text of [
+      'a[^1]\n\n[^1]: one\n\n    - a\n\n        b\nthree',
+      'a[^1]\n\n[^1]: one\n\n    - a\n\n      b\n\n        c\nthree'
+    ])
+      expect(item(text).querySelector('ul > li > p:last-child')!.textContent).toMatch(/\nthree$/)
+    expect(
+      item('a[^1]\n\n[^1]: one\n\n    ```\n    a\n\n    b\n    ```\n    c\nthree').lastElementChild!
+        .textContent
+    ).toBe('c\nthree ↩︎')
+    const after = (text: string): string[] =>
+      [...body(text).children].slice(1, -2).map((c) => c.outerHTML)
+    expect(after('a[^1]\n\n[^1]: one\n\n    ```\n    x\nthree')).toEqual(['<p>three</p>'])
+    expect(after('a[^1]\n\n[^1]: one\n\n    ```\n    a\n\n    b\nthree')).toEqual(['<p>three</p>'])
+    expect(after('a[^1]\n\n[^1]: one\n\n    two\n# h')).toEqual(['<h1>h</h1>'])
+    expect(after('a[^1]\n\n[^1]: one\n\n    two\n- three')).toEqual(['<ul>\n<li>three</li>\n</ul>'])
+    expect(notes(body('a[^1][^2]\n\n[^1]: one\n\n    two\n[^2]: x'))).toEqual(['one\ntwo ↩︎', 'x ↩︎'])
+  })
+
   it('정의는 빈 줄 없이 앞 문단을 끊고, 빈 줄 없이 이어진 정의도 따로 읽는다', () => {
     const el = body('a[^1] b[^2]\n[^1]: one\n[^2]: two')
     expect(el.querySelector('p')!.textContent).toBe('a1 b2')
