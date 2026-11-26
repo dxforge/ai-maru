@@ -25,9 +25,21 @@ const DEF_LINE = /\n {0,3}\[\^[^\]\s]+\]:/
 const INDENTED = /(?:[ \t]*\n)*(?: {4}|\t)[^\n]*(?:\n|$)/y
 const PARAGRAPH = Lexer.rules.block.gfm.paragraph
 
+// 문단은 다음 정의 줄 앞에서 끊는다. 끊은 자리의 줄바꿈은 문단 쪽에 남긴다.
+function untilDef(s: string): string {
+  const cut = s.search(DEF_LINE)
+  return cut === -1 ? s : s.slice(0, cut + 1)
+}
+
+let documents = 0
+/** 한 창에 같이 붙는 문서마다 다른 각주 id 머리. lex 하는 문서마다 하나씩 받는다. */
+export const nextPrefix = (): string => `md${++documents}-`
 const ID = /^md\d+-fn(?:ref)?-\d+(?:-\d+)?$/
 /** 각주 확장이 만든 id 인가. sanitize 와 문서 안 링크 처리가 이것으로 각주 링크를 가린다. */
 export const isFootnoteId = (id: string): boolean => ID.test(id)
+const noteId = (prefix: string, number: number): string => `${prefix}fn-${number}`
+const refId = (prefix: string, number: number, nth: number): string =>
+  `${prefix}fnref-${number}${nth > 1 ? `-${nth}` : ''}`
 
 const BACK_TITLE = '본문으로 돌아가기'
 
@@ -38,9 +50,8 @@ export const footnotes: MarkedExtension = {
     paragraph(src) {
       const cap = PARAGRAPH.exec(src)
       if (!cap) return undefined
-      const cut = cap[0].search(DEF_LINE)
-      const raw = cut === -1 ? cap[0] : cap[0].slice(0, cut + 1)
-      const body = cut === -1 ? cap[1]! : raw
+      const raw = untilDef(cap[0])
+      const body = raw === cap[0] ? cap[1]! : raw
       const text = body.endsWith('\n') ? body.slice(0, -1) : body
       return { type: 'paragraph', raw, text, tokens: this.lexer.inline(text) }
     }
@@ -56,8 +67,7 @@ export const footnotes: MarkedExtension = {
         const lines: string[] = []
         const first = PARAGRAPH.exec(src.slice(pos))
         if (first) {
-          const cut = first[0].search(DEF_LINE)
-          const raw = cut === -1 ? first[0] : first[0].slice(0, cut + 1)
+          const raw = untilDef(first[0])
           lines.push(raw.replace(/\n$/, ''))
           pos += raw.length
         } else {
@@ -95,8 +105,7 @@ export const footnotes: MarkedExtension = {
       renderer(token) {
         const { raw, prefix, number, nth } = token as Ref
         if (number === undefined) return escapeText(raw)
-        const id = `${prefix}fnref-${number}${nth! > 1 ? `-${nth}` : ''}`
-        return `<sup><a id="${id}" href="#${prefix}fn-${number}">${number}</a></sup>`
+        return `<sup><a id="${refId(prefix!, number, nth!)}" href="#${noteId(prefix!, number)}">${number}</a></sup>`
       }
     },
     {
@@ -106,16 +115,16 @@ export const footnotes: MarkedExtension = {
         const items = notes.map(({ number, refs, tokens }) => {
           const back = Array.from({ length: refs }, (_, i) => {
             const n = i + 1
-            const href = `#${prefix}fnref-${number}${n > 1 ? `-${n}` : ''}`
-            return `<a href="${href}" title="${BACK_TITLE}">↩︎${n > 1 ? `<sup>${n}</sup>` : ''}</a>`
+            const sup = n > 1 ? `<sup>${n}</sup>` : ''
+            return `<a href="#${refId(prefix, number, n)}" title="${BACK_TITLE}">↩︎${sup}</a>`
           }).join(' ')
           // 복귀 링크는 정의가 문단으로 끝나면 그 문단 끝에, 아니면 새 문단에 둔다(cmark-gfm 과 같다).
-          const last = tokens.at(-1)
+          const body = this.parser.parse(tokens)
           const html =
-            last?.type === 'paragraph'
-              ? this.parser.parse(tokens).replace(/<\/p>\n?$/, ` ${back}</p>\n`)
-              : `${this.parser.parse(tokens)}<p>${back}</p>\n`
-          return `<li id="${prefix}fn-${number}">\n${html}</li>\n`
+            tokens.at(-1)?.type === 'paragraph'
+              ? body.replace(/<\/p>\n?$/, ` ${back}</p>\n`)
+              : `${body}<p>${back}</p>\n`
+          return `<li id="${noteId(prefix, number)}">\n${html}</li>\n`
         })
         return `<hr>\n<ol class="footnotes">\n${items.join('')}</ol>\n`
       }

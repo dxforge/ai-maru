@@ -321,9 +321,7 @@ describe('각주', () => {
     const list = el.lastElementChild!
     expect(list.matches('ol.footnotes')).toBe(true)
     expect(list.previousElementSibling!.tagName).toBe('HR')
-    expect(
-      el.querySelector('ol.footnotes')!.previousElementSibling!.previousElementSibling!.textContent
-    ).toBe('after')
+    expect(list.previousElementSibling!.previousElementSibling!.textContent).toBe('after')
     const item = list.querySelector('li')!
     expect(ref.getAttribute('href')).toBe(`#${item.id}`)
     const back = item.querySelector('p > a')!
@@ -429,9 +427,9 @@ describe('각주', () => {
     const one = prepareMarkdown('a[^x] b[^y]\n\n[^x]: X\n\n[^y]: Y')
     const two = prepareMarkdown('c[^z]\n\n[^z]: Z')
     const el = document.createElement('div')
-    el.innerHTML = two.parts.map(renderPart).join('')
+    el.innerHTML = html(two.parts)
     expect(refs(el)).toEqual(['1'])
-    el.innerHTML = one.parts.map(renderPart).join('')
+    el.innerHTML = html(one.parts)
     expect(refs(el)).toEqual(['1', '2'])
   })
 

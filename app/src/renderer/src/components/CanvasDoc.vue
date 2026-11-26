@@ -63,7 +63,7 @@ function follow(e: MouseEvent): void {
 
 let jumps = 0
 function jumpTo(id: string): void {
-  const target = root.value?.querySelector<HTMLElement>(`[id="${id}"]`)
+  const target = root.value?.querySelector<HTMLElement>(`#${id}`)
   if (!target) return
   waiting = undefined
   void scrollTo(target, ++jumps)
@@ -74,8 +74,8 @@ function jumpTo(id: string): void {
 async function scrollTo(target: HTMLElement, jump: number): Promise<void> {
   const scroller = scrollParent(target)
   if (!scroller) return
+  const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0
   for (let i = 0; i < 10 && jump === jumps; i++) {
-    const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0
     const from = scroller.scrollTop
     scroller.scrollTop =
       from + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - margin

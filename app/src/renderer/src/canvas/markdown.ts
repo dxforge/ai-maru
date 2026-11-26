@@ -3,7 +3,7 @@ import { decodeHTML, escapeText } from 'entities'
 import { Marked, Renderer, type Token, type Tokens } from 'marked'
 import type { HighlightCache } from './codeBlocks'
 import type { DiagramCache } from './diagrams'
-import { collectFootnotes, footnotes, isFootnoteId } from './footnotes'
+import { collectFootnotes, footnotes, isFootnoteId, nextPrefix } from './footnotes'
 
 // 문서 안의 이미지는 띄우지 않고 대체 텍스트만 남긴다 — 원격 주소는 CSP 가 막아 깨진 그림이 되고,
 // 상대 경로는 기준이 될 디렉토리를 받지 않는다.
@@ -72,9 +72,6 @@ export type Part = { tokens: Token[] } | { text: string }
 
 export type Prepared = { heading: string | undefined; parts: Part[] }
 
-// 각주 id 의 머리에 붙일 문서 번호. 한 창에 각주가 있는 문서가 둘 붙어도 id 가 겹치지 않게 한다.
-let documents = 0
-
 /**
  * 문서를 한 번 lexing 해 첫 heading 과 렌더할 묶음을 낸다. 묶음은 최상위 블록 경계에서 나누므로 코드 블록·표가
  * 묶음 사이에서 잘리지 않는다. HTML 로 연 태그가 닫히기 전에는 나누지 않는다. 참조형 링크는 lexing 할 때 이미
@@ -88,7 +85,8 @@ export function prepareMarkdown(text: string, size = PART_SIZE): Prepared {
     // 아주 긴 문단은 marked 의 정규식이 호출 스택을 넘겨 던지므로, 문서를 버리지 않고 원문을 글자로 보인다.
     return { heading: undefined, parts: splitText(text, size).map((t) => ({ text: t })) }
   }
-  collectFootnotes(tokens, `md${++documents}-`)
+  // 참조도 정의도 원문에 `[^` 가 있어야 생기므로, 없는 문서는 토큰을 다시 걷지 않는다.
+  if (text.includes('[^')) collectFootnotes(tokens, nextPrefix())
   const heading = tokens.find((t) => t.type === 'heading') as Tokens.Heading | undefined
   const parts: Part[] = []
   let part: Token[] = []
