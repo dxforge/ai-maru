@@ -292,7 +292,7 @@ onBeforeUnmount(reset)
 }
 
 .markdown :deep(.footnotes) {
-  font-size: var(--text-2);
+  padding-left: var(--space-6);
   color: var(--muted);
 }
 
