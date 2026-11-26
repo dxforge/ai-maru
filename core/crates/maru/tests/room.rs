@@ -154,6 +154,29 @@ fn a_multiline_body_from_stdin_is_one_line_with_backslash_escapes() {
 }
 
 #[test]
+fn a_body_and_a_topic_may_start_with_a_hyphen() {
+    let r = Rooms::new();
+    assert_eq!(r.ok(&["new", "review", "--topic", "- 목록"]), "1\n");
+    r.ok(&["join", "review", "--as", "A"]);
+    r.ok(&["join", "review", "--as", "B"]);
+    for text in ["- item one", "-3 도", "- a\n- b", "--bogus"] {
+        r.ok(&["post", "review", "--as", "A", text]);
+    }
+    r.ok(&["post", "review", "- 앞에 둔 글", "--as", "A"]);
+    let out = r.input(&["post", "review", "--as", "A", "-"], "- stdin\n");
+    assert_eq!(stdout(&out), "6\n", "{}", stderr(&out));
+    assert_eq!(
+        r.read("B"),
+        "1\tA\tpost\t- item one\n2\tA\tpost\t-3 도\n3\tA\tpost\t- a\\n- b\n\
+         4\tA\tpost\t--bogus\n5\tA\tpost\t- 앞에 둔 글\n6\tA\tpost\t- stdin\n"
+    );
+    assert_eq!(
+        r.ok(&["list"]),
+        "ID\tNAME\tLAST\tMEMBERS\tTOPIC\n1\treview\t6\tA, B\t- 목록\n"
+    );
+}
+
+#[test]
 fn control_characters_in_a_body_and_a_topic_are_spaces() {
     let r = Rooms::new();
     r.ok(&["new", "t", "--topic", "a\tb\nc\x1b[31md"]);

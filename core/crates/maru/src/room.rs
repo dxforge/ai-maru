@@ -20,7 +20,7 @@ pub enum RoomCommand {
     /// Open a room and print its id. Fails if an open room already has this name.
     New {
         room: String,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         topic: Option<String>,
     },
     /// Join a room as NAME.
@@ -53,6 +53,8 @@ pub enum RoomCommand {
         room: String,
         #[arg(long = "as", value_name = "NAME")]
         name: String,
+        /// The text. It may start with `-`.
+        #[arg(allow_hyphen_values = true)]
         text: Option<String>,
     },
     /// List open rooms with their last entry number and members.
