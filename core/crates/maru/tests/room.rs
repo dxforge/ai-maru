@@ -395,22 +395,29 @@ fn the_room_file_is_only_for_this_user() {
 }
 
 #[test]
-fn a_newer_schema_is_refused() {
+fn a_newer_schema_with_added_columns_is_used_as_is() {
     let r = Rooms::new();
     r.open_review(&["A"]);
-    r.sql("PRAGMA user_version = 2");
-    for out in [
-        r.run(&["new", "other"]),
-        r.run(&["join", "review", "--as", "B"]),
-        r.run(&["read", "review", "--as", "A"]),
-        r.post("A", "x"),
-        r.run(&["list"]),
-    ] {
-        assert_eq!(out.status.code(), Some(1));
-        assert!(
-            stderr(&out).contains("schema version 2"),
-            "{}",
-            stderr(&out)
-        );
-    }
+    r.sql(
+        "ALTER TABLE rooms ADD COLUMN owner TEXT;
+         ALTER TABLE participants ADD COLUMN kind TEXT NOT NULL DEFAULT 'human';
+         ALTER TABLE entries ADD COLUMN reply_to INTEGER;
+         CREATE TABLE reactions (room INTEGER, seq INTEGER, name TEXT);
+         PRAGMA user_version = 2;",
+    );
+    assert_eq!(r.ok(&["new", "other"]), "2\n");
+    r.ok(&["join", "review", "--as", "B"]);
+    assert_eq!(stdout(&r.post("A", "x")), "1\n");
+    assert_eq!(r.read("B"), "1\tA\tpost\tx\n");
+    r.ok(&["leave", "review", "--as", "B"]);
+    r.ok(&["close", "review", "--as", "A"]);
+    assert_eq!(
+        r.ok(&["list"]),
+        "ID\tNAME\tLAST\tMEMBERS\tTOPIC\n2\tother\t0\t\t\n"
+    );
+    let version: i64 = Connection::open(r.db())
+        .unwrap()
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 2, "옛 빌드가 버전을 낮췄다");
 }

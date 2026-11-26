@@ -7,7 +7,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, pa
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// 파일의 `PRAGMA user_version`. 올릴 때는 열·표를 더하기만 한다(`docs/contracts/room.md` 의 「스키마는 더하기만 하고 버전은 `user_version` 이다」).
+/// 파일의 `PRAGMA user_version`. 올릴 때는 열·표를 더하기만 하고, 더하는 열은 DEFAULT 를 두거나 NULL 을 받게 한다(`docs/contracts/room.md` 의 「스키마는 더하기만 하고 버전은 `user_version` 이다」).
 const SCHEMA_VERSION: i64 = 1;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const FILE: &str = "rooms.sqlite";
@@ -134,14 +134,8 @@ fn create(path: &Path) -> Result<Connection> {
 fn prepare(conn: rusqlite::Result<Connection>, path: &Path) -> Result<Connection> {
     let mut conn = conn.with_context(|| format!("cannot open {}", path.display()))?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
-    let version = user_version(&conn)?;
-    if version > SCHEMA_VERSION {
-        bail!(
-            "{} has room schema version {version}, newer than this maru knows ({SCHEMA_VERSION})",
-            path.display()
-        );
-    }
-    if version < SCHEMA_VERSION {
+    // 더 높은 버전은 새 빌드가 열·표를 더한 파일이다. 아는 열만 쓰고 읽으며 버전은 낮추지 않는다.
+    if user_version(&conn)? < SCHEMA_VERSION {
         migrate(&mut conn)?;
     }
     Ok(conn)
