@@ -14,7 +14,7 @@
 
 - 코드: `room.rs` 의 `SCHEMA_VERSION`·`migrate`·`prepare`
 - 바꾸면: 더 높은 버전을 거절하면, 개발 빌드가 열 하나만 더해도 같은 파일을 쓰는 설치한 앱의 `maru room` 이 모두 막힌다. 더하는 열을 NOT NULL 로 DEFAULT 없이 두면 옛 빌드의 쓰기가 실패한다. 열의 뜻을 바꾸면 옛 빌드가 새 빌드가 쓴 행을 잘못 읽는다.
-- 테스트: `tests/room.rs` › `a_newer_schema_with_added_columns_is_used_as_is`
+- 테스트: `tests/room.rs` › `a_newer_schema_with_added_columns_is_used_as_is`, `rooms_made_at_once_on_a_new_file_all_open`
 
 ## 참여자는 이름과 읽은 자리뿐이다
 

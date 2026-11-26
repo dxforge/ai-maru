@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Subcommand;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// 파일의 `PRAGMA user_version`. 올릴 때는 열·표를 더하기만 하고, 더하는 열은 DEFAULT 를 두거나 NULL 을 받게 한다(`docs/contracts/room.md` 의 「스키마는 더하기만 하고 버전은 `user_version` 이다」).
 const SCHEMA_VERSION: i64 = 1;
@@ -177,7 +177,7 @@ fn user_version(conn: &Connection) -> Result<i64> {
 
 fn migrate(conn: &mut Connection) -> Result<()> {
     // sqlite 는 트랜잭션 안에서 journal_mode 를 WAL 로 바꾸지 않으므로 트랜잭션 밖에서 바꾼다. WAL 은 파일에 남아 다음 연결도 따른다.
-    conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
+    set_wal(conn)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     // 다른 프로세스가 먼저 만들었을 수 있다.
     if user_version(&tx)? == 0 {
@@ -210,6 +210,22 @@ fn migrate(conn: &mut Connection) -> Result<()> {
     }
     tx.commit()?;
     Ok(())
+}
+
+/// 새 파일을 여러 프로세스가 함께 WAL 로 바꾸면 busy_timeout 을 두어도 SQLITE_BUSY 로 실패한다(잰 값:
+/// 새 파일에 `new` 8개씩 120번 띄워 960개 가운데 19개). 그래서 `BUSY_TIMEOUT` 까지 다시 한다.
+fn set_wal(conn: &Connection) -> Result<()> {
+    let deadline = Instant::now() + BUSY_TIMEOUT;
+    loop {
+        match conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(())) {
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == rusqlite::ErrorCode::DatabaseBusy && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            done => return Ok(done?),
+        }
+    }
 }
 
 fn now_ms() -> i64 {

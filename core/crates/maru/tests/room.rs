@@ -385,6 +385,21 @@ fn posts_at_once_each_get_their_own_number() {
 }
 
 #[test]
+fn rooms_made_at_once_on_a_new_file_all_open() {
+    for _ in 0..20 {
+        let r = Rooms::new();
+        let children: Vec<_> = (0..8)
+            .map(|i| r.cmd(&["new", &format!("r{i}")]).spawn().unwrap())
+            .collect();
+        for child in children {
+            let out = child.wait_with_output().unwrap();
+            assert!(out.status.success(), "{}", stderr(&out));
+        }
+        assert_eq!(r.ok(&["list"]).lines().count(), 9);
+    }
+}
+
+#[test]
 fn the_room_file_is_only_for_this_user() {
     use std::os::unix::fs::PermissionsExt;
     let r = Rooms::new();
