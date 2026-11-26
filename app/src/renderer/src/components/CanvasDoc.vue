@@ -296,6 +296,15 @@ onBeforeUnmount(reset)
   color: var(--muted);
 }
 
+/* 각주 목록은 본문보다 좁게 띄운다. 항목 사이는 `li + li` 가, 한 항목 안의 문단·코드 블록·↩ 사이는 `li > *` 가 정한다. */
+.markdown :deep(.footnotes li > *) {
+  margin-block: var(--space-2);
+}
+
+.markdown :deep(.footnotes li + li) {
+  margin-top: var(--space-4);
+}
+
 .markdown :deep(hr) {
   border: none;
   border-top: 1px solid var(--line);
