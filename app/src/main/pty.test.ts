@@ -24,7 +24,6 @@ import {
   runDir,
   ptyEnv,
   ptyExit,
-  roomDbPath,
   shellEnv,
   socketPath,
   spawnPty,
@@ -150,20 +149,6 @@ describe('shellEnv', () => {
       COLORTERM: 'truecolor',
       CLAUDE_CODE_FORCE_STRIKETHROUGH: '1'
     })
-  })
-
-  it('방 파일을 받으면 MARU_ROOM_DB 로 넣고, 받지 않으면 물려받은 값도 넘기지 않는다', () => {
-    const outer = { MARU_ROOM_DB: '/outer/rooms.sqlite' }
-    expect(shellEnv(outer, 'p-1', { ...setup, roomDb: '/data/rooms.sqlite' }).MARU_ROOM_DB).toBe(
-      '/data/rooms.sqlite'
-    )
-    expect(shellEnv(outer, 'p-1', setup)).not.toHaveProperty('MARU_ROOM_DB')
-  })
-
-  it('방 파일은 dev 실행과 --user-data-dir 로 띄운 설치본에서만 userData 아래로 정한다', () => {
-    expect(roomDbPath('/data', false, false)).toBe('/data/rooms.sqlite')
-    expect(roomDbPath('/data', true, true)).toBe('/data/rooms.sqlite')
-    expect(roomDbPath('/data', true, false)).toBeUndefined()
   })
 
   it('물려받은 ZDOTDIR·MARU_ZDOTDIR 대신 앱의 zsh 디렉토리를 넣는다', () => {

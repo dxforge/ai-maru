@@ -198,11 +198,6 @@
 //! - job 의 셸이 스스로 끝나면 그 job 을 띄운 pty 에 `{"event":"job","pty":<job 의 pty id>,
 //!   "name":<이름, 없으면 뺀다>,"code","signal"}` 을 보낸다. 그 pty 에 구독이 없으면 보류했다가
 //!   구독이 생길 때 보낸다. `job.kill` 이나 cell 닫기로 끝난 job 은 알리지 않는다.
-//! - 방의 알림은 앱이 아니라 monitor 가 방 파일에서 만든다(아래 "claude monitor"). 모양은
-//!   `{"event":"room","room":<방 이름>,"seq":<마지막 번호>,"from":<보낸 이>,"kind":<마지막 기록의 종류>,
-//!   "text":<무슨 기록인지와 읽는 명령을 적고, 상한까지 하나 남았거나 상한에 닿았으면 그 사실을 덧붙인
-//!   문장. 닫힘은 닫혔다는 것만 적는다>}` 이다. `kind` 는 `post`·`leave`·`close` 다. 여러 기록이 쌓였으면
-//!   한 줄로 묶고 `first`(첫 번호)를 더하며, `from` 은 보낸 이들을 `, ` 로 잇는다.
 //!
 //! # mcp
 //!
@@ -252,10 +247,6 @@
 //! 처음부터 없으면, `MARU_SOCKET` 이 있는 디렉토리가 바뀔 때마다 다시 구독해 본다 — 재시작한 앱에도
 //! 다시 붙는다. 그래서 앱은 그 경로에 소켓을 둘 때 이미 connect 를 받고 있어야 한다. 소켓이 보인 뒤에
 //! listen 을 시작하면, 그 사이에 붙어 본 monitor 는 다음 변화가 올 때까지 붙지 못한다.
-//!
-//! monitor 는 방 파일(`maru room`)도 지켜본다. 앱 소켓과 상관없이, 이 pty 가 claude 참여자인 방에 남이
-//! 올린 기록이 생기면 `{"event":"room",…}` 한 줄을 쓴다. 모양은 위의 알림 목록에 있다. 방 파일이 이
-//! 빌드가 모르는 더 높은 스키마 버전이면 room 알림만 멈추고 앱의 알림은 계속 쓴다.
 //!
 //! 종료 신호를 받거나 stdout 의 상대가 닫히면 끝난다. claude 는 정상으로 끝날 때 SIGTERM 을 보내지만,
 //! 신호 없이 죽으면(SIGKILL 등) monitor 에 남는 흔적은 stdout 이 닫히는 것뿐이다.
@@ -350,10 +341,11 @@ enum Command {
         #[command(subcommand)]
         command: StatusCommand,
     },
-    /// Rooms that people and the AI sessions in panes post to.
+    /// Named rooms whose members post entries and read them.
     ///
-    /// A room keeps its entries in a file, so they outlast the app. A claude session joins with
-    /// `maru room join` and is notified of new entries through its monitor.
+    /// The rooms are kept in one sqlite file, `MARU_ROOM_DB` or `~/.ai-maru/rooms.sqlite`, so
+    /// they outlast the app. Commands that write to a closed room (join, leave, post, close)
+    /// exit 6.
     Room {
         #[command(subcommand)]
         command: room::RoomCommand,
@@ -376,8 +368,8 @@ enum ClaudeCommand {
     /// Read the claude hook payload on stdin. On SessionStart, print what claude should know
     /// about this terminal. On Notification, pass the notification to the app.
     Hook,
-    /// Write the app's notifications and new room entries to stdout, one per line, until stdout
-    /// closes. The app's claude plugin runs this as a monitor.
+    /// Write the app's notifications to stdout, one per line, until stdout closes. The app's
+    /// claude plugin runs this as a monitor.
     Monitor,
 }
 
@@ -703,6 +695,21 @@ enum CanvasCommand {
     },
 }
 
+/// exit code 를 1 이 아닌 값으로 정한 거절이다. `main` 이 `code` 로 끝낸다.
+#[derive(Debug)]
+struct Refusal {
+    code: u8,
+    message: String,
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Refusal {}
+
 fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
@@ -720,7 +727,7 @@ fn main() -> ExitCode {
         Err(e) => {
             // 띄운 쪽이 stderr 를 닫았으면 `eprintln!` 은 패닉한다.
             let _ = writeln!(std::io::stderr(), "maru: {e:#}");
-            match e.downcast_ref::<room::Refusal>() {
+            match e.downcast_ref::<Refusal>() {
                 Some(r) => ExitCode::from(r.code),
                 None => ExitCode::FAILURE,
             }
@@ -844,7 +851,7 @@ fn run(command: Command) -> Result<()> {
 // 사양(revision 0.4)의 상한. libghostty-vt 의 파서도 이 값을 넘는 보고를 버린다.
 const MAX_ID_BYTES: usize = 128;
 const MAX_ID_DEPTH: usize = 8;
-const MAX_NAME_BYTES: usize = 32;
+pub(crate) const MAX_NAME_BYTES: usize = 32;
 const MAX_TITLE_BYTES: usize = 192;
 const MAX_MSG_BYTES: usize = 2048;
 
@@ -1106,21 +1113,13 @@ fn claude_monitor() -> Result<()> {
         0,
         0,
     );
-    // 처음에 한 번 읽어, 이 monitor 가 뜨기 전에 올라온 글도 알린다.
-    let mut room = room::Monitor::start(&kq, &target.pty);
-    if let Some(r) = &mut room
-        && r.changed(&kq).is_err()
-    {
-        return Ok(());
-    }
-    let mut events = [idle; 6];
+    let mut events = [idle; 3];
     loop {
         let n = match kq.kevent(&[], &mut events, None) {
             Ok(n) => n,
             Err(Errno::EINTR) => continue,
             Err(e) => return Err(e).context("cannot watch stdout"),
         };
-        let mut room_changed = false;
         for ev in &events[..n] {
             if ev.ident() == 1 {
                 if ev.flags().contains(EvFlags::EV_EOF) {
@@ -1133,13 +1132,7 @@ fn claude_monitor() -> Result<()> {
                 if app.is_none() && !resubscribe(&kq, &target, &mut app)? {
                     return Ok(());
                 }
-            } else if room.as_ref().is_some_and(|r| r.owns(ev.ident())) {
-                // 디렉토리와 알림 파일의 이벤트가 kevent 한 번에 함께 올 수 있으므로, 받은 이벤트를 다 본 뒤 방 파일을 한 번만 읽는다.
-                room_changed = true;
-            } else if let Some(a) = app
-                .as_mut()
-                .filter(|a| ev.ident() == a.stream.as_raw_fd() as usize)
-            {
+            } else if let Some(a) = &mut app {
                 match a.read() {
                     Flow::Open => {}
                     // 닫은 fd 는 kqueue 에서도 빠진다. 앱이 이미 다시 떠 있으면 디렉토리가 더 바뀌지 않으므로
@@ -1153,12 +1146,6 @@ fn claude_monitor() -> Result<()> {
                     Flow::StdoutClosed => return Ok(()),
                 }
             }
-        }
-        if room_changed
-            && let Some(r) = &mut room
-            && r.changed(&kq).is_err()
-        {
-            return Ok(());
         }
     }
 }
@@ -1515,7 +1502,7 @@ fn read_stdin(hint: &str) -> Result<String> {
         .read_to_end(&mut bytes)
         .context("cannot read stdin")?;
     if bytes.len() as u64 > MAX_LINE {
-        bail!("stdin is larger than the 16 MiB the app accepts");
+        bail!("stdin is larger than 16 MiB");
     }
     String::from_utf8(bytes).map_err(|_| anyhow!("stdin is not UTF-8"))
 }

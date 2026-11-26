@@ -76,8 +76,6 @@ fn maru_cmd(sock: Option<&Path>, args: &[&str]) -> Command {
     cmd.args(args)
         .env_remove("MARU_SOCKET")
         .env_remove("MARU_PTY_ID")
-        // monitor 가 이 머신의 방 파일을 건드리지 않게, 만들 수 없는 경로를 준다.
-        .env("MARU_ROOM_DB", "/dev/null/rooms.sqlite")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(sock) = sock {
@@ -569,7 +567,7 @@ fn canvas_put_stops_reading_past_what_the_app_accepts() {
     let out = wait_within(maru_with(Some(&sock), &["canvas", "put"], input));
     let _ = yes.kill();
     let _ = yes.wait();
-    assert_fails_with(&out, "stdin is larger than the 16 MiB the app accepts");
+    assert_fails_with(&out, "stdin is larger than 16 MiB");
 }
 
 #[test]
