@@ -216,8 +216,8 @@ onBeforeUnmount(() => {
     <div ref="stage" class="stage">
       <div ref="scroller" v-overlay-scroll="'y'" class="scroll" @scroll="onScroll">
         <div ref="list" class="cards">
-          <!-- `--pinned-top` 은 이 카드 안을 읽을 때 위에 붙는 제목 줄의 높이다. 본문이 문서 안 링크로 스크롤할 때 대상이
-               그 줄에 가리지 않게 쓴다. -->
+          <!-- `--pinned-top` 은 이 카드 안을 읽을 때 위에 붙는 제목 줄의 높이다. `CanvasDoc` 이 문서 안 링크로 스크롤할 때
+               대상이 그 줄에 가리지 않도록 `scroll-margin-top` 에 쓴다. -->
           <section
             v-for="(item, i) in items"
             :key="item.key"

@@ -50,8 +50,9 @@ function added(html: string): void {
   if (waiting) jumpTo(waiting)
 }
 
-// 각주 번호·↩ 를 누르면 이 문서 안에서 대상을 찾아 스크롤하고, 기본 해시 이동은 막는다. 해시로 가면 창에서 처음 맞는
-// id 로 가기 때문이다. 정의는 마지막 묶음에 있으므로, 그 묶음이 아직 붙지 않았으면 붙은 뒤에 간다.
+// 각주 번호·↩ 를 누르면 이 문서 안에서 대상을 찾아 스크롤하고, 기본 해시 이동은 막는다. 해시 이동은 창의 주소를
+// 바꾸고, 아직 붙지 않은 묶음 안의 대상으로는 가지 못하기 때문이다. 정의는 마지막 묶음에 있으므로, 그 묶음이 아직 붙지
+// 않았으면 붙은 뒤에 간다.
 let waiting: string | undefined
 function follow(e: MouseEvent): void {
   const href = (e.target as Element).closest('a')?.getAttribute('href')
@@ -70,12 +71,14 @@ function jumpTo(id: string): void {
 }
 
 // 화면 밖 묶음의 높이는 어림값이라, 스크롤해 대상 위의 묶음이 그려지면 대상이 움직인다. 그래서 대상이 제자리에 설 때까지
-// 프레임마다 다시 맞춘다. 맞출 수 없는 자리(문서 끝)면 scrollTop 이 바뀌지 않아 멈춘다.
+// 프레임마다 다시 맞춘다. 맞출 수 없는 자리(문서 끝)면 scrollTop 이 바뀌지 않아 멈춘다. 대상이 문서에서 떨어졌거나
+// 그려지지 않으면(닫힌 `<details>` 안) 자리가 없으므로 멈춘다.
 async function scrollTo(target: HTMLElement, jump: number): Promise<void> {
   const scroller = scrollParent(target)
   if (!scroller) return
   const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0
   for (let i = 0; i < 10 && jump === jumps; i++) {
+    if (!target.isConnected || !target.getClientRects().length) return
     const from = scroller.scrollTop
     scroller.scrollTop =
       from + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - margin
@@ -296,7 +299,6 @@ onBeforeUnmount(reset)
   color: var(--muted);
 }
 
-/* 각주 목록은 본문보다 좁게 띄운다. 항목 사이는 `li + li` 가, 한 항목 안의 문단·코드 블록·↩ 사이는 `li > *` 가 정한다. */
 .markdown :deep(.footnotes li > *) {
   margin-block: var(--space-2);
 }

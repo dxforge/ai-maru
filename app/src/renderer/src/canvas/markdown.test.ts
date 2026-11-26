@@ -3,6 +3,7 @@
 import fc from 'fast-check'
 import { Marked } from 'marked'
 import { describe, expect, it, vi } from 'vitest'
+import { footnotes } from './footnotes'
 import { MarkdownBody, prepareMarkdown, renderPart, type Part } from './markdown'
 
 const html = (parts: Part[]): string => parts.map(renderPart).join('')
@@ -300,7 +301,6 @@ describe('prepareMarkdown 의 묶음', () => {
 })
 
 describe('각주', () => {
-  // 묶음을 따로 렌더해 붙인 본문
   function body(text: string, size?: number): HTMLElement {
     const el = document.createElement('div')
     for (const p of prepareMarkdown(text, size).parts)
@@ -311,7 +311,6 @@ describe('각주', () => {
     [...el.querySelectorAll('sup > a')].map((a) => a.textContent!)
   const notes = (el: HTMLElement): string[] =>
     [...el.querySelectorAll('ol.footnotes > li')].map((li) => li.textContent!.trim())
-  // 문서마다 다른 id 머리를 지운 HTML
   const plain = (el: HTMLElement): string => el.innerHTML.replace(/md\d+-fn/g, 'fn')
 
   it('참조는 위첨자 번호 링크, 정의는 문서 끝 구분선 아래 번호 목록이고 ↩ 로 참조에 돌아간다', () => {
@@ -372,6 +371,35 @@ describe('각주', () => {
     const el = body('a[^1] b[^2]\n[^1]: one\n[^2]: two')
     expect(el.querySelector('p')!.textContent).toBe('a1 b2')
     expect(notes(el)).toEqual(['one ↩\uFE0E', 'two ↩\uFE0E'])
+    expect(notes(body('x[^1]\na\n[^1]: one'))).toEqual(['one ↩\uFE0E'])
+  })
+
+  it('각주가 없는 문서는 확장 없이 읽은 것과 같다', () => {
+    const line = fc.constantFrom(
+      'a',
+      'line two',
+      'name value',
+      '|---|---|',
+      '| a | b |',
+      '- item',
+      '1. item',
+      '# h',
+      '> q',
+      '```',
+      '    code',
+      '***',
+      'x *em* `c`',
+      '[x]: /url',
+      ''
+    )
+    const plainMarked = new Marked({ gfm: true })
+    const withNotes = new Marked({ gfm: true }).use(footnotes)
+    fc.assert(
+      fc.property(fc.array(line, { maxLength: 10 }), (ls) => {
+        const text = ls.join('\n')
+        expect(withNotes.parse(text)).toBe(plainMarked.parse(text))
+      })
+    )
   })
 
   it('라벨에 공백이 든 것, 주소가 붙은 것, 코드 안의 것은 각주가 아니다', () => {
@@ -385,6 +413,25 @@ describe('각주', () => {
     const el = body('a[^x]\n\n[^x]: see[^y]\n\n[^y]: Y')
     expect(refs(el)).toEqual(['1', '2'])
     expect(notes(el)).toEqual(['see2 ↩\uFE0E', 'Y ↩\uFE0E'])
+  })
+
+  it('그려지지 않는 자리의 참조는 번호를 받지 않는다', () => {
+    // 참조 없는 정의 안, 같은 라벨의 둘째 정의 안, 이미지 alt 안
+    for (const text of [
+      'a[^2]\n\n[^u]: x[^1]\n\n[^1]: one\n\n[^2]: two',
+      'a[^1]\n\n[^1]: first\n\n[^1]: dup[^2]\n\n[^2]: two',
+      '![alt[^1]](x.png) b[^2]\n\n[^1]: one\n\n[^2]: two'
+    ]) {
+      const el = body(text)
+      expect(refs(el)).toEqual(['1'])
+      expect(el.querySelectorAll('ol.footnotes > li')).toHaveLength(1)
+      for (const a of el.querySelectorAll('a[href^="#"]'))
+        expect(el.querySelector(a.getAttribute('href')!)).not.toBeNull()
+    }
+  })
+
+  it('같은 라벨의 정의가 여럿이면 처음 것을 쓴다', () => {
+    expect(notes(body('a[^1]\n\n[^1]: first\n\n[^1]: second'))).toEqual(['first ↩\uFE0E'])
   })
 
   it('heading 의 참조는 제목 글자에 넣지 않는다', () => {

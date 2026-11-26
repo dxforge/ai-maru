@@ -280,14 +280,13 @@ test('목록의 제목은 본문 heading 과 같은 글자로 보인다', async 
   await expect(titles(page)).toHaveText(body!)
 })
 
-// 각주 번호와 ↩ 를 두 개씩 둔 문서. 번호와 정의 사이에 `filler` 를 두어 스크롤해야 닿게 한다.
 const footnoteDoc = (tag: string, filler: string) =>
   [`${tag} first[^a] and second[^b].`, filler, `[^a]: ${tag} note a`, `[^b]: ${tag} note b`].join(
     '\n\n'
   )
 
-// 대상이 Canvas 스크롤러 안에서 위에 붙은 제목 줄에 가리지 않고 보이며, 그 줄 바로 아래에 있는지. 정의는 문서 끝에
-// 있어 그 아래로 더 스크롤할 수 없으면 스크롤러 끝에 닿은 것으로 본다.
+// 대상이 Canvas 스크롤러 안에서 위에 붙은 제목 줄에 가리지 않고 보이며, 그 줄 바로 아래에 있는지 본다. 정의는 문서
+// 끝에 있어 제목 줄 바로 아래까지 올라오지 못할 수 있으므로, 스크롤러가 끝에 닿았으면 그것도 도착으로 본다.
 async function landed(target: Locator): Promise<boolean> {
   return target.evaluate((el) => {
     const viewport = el.closest<HTMLElement>('[data-overlayscrollbars-viewport]')!
