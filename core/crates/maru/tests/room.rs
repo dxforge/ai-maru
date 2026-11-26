@@ -390,21 +390,28 @@ fn list_shows_rooms_with_their_last_entry_and_members() {
 
 #[test]
 fn posts_at_once_each_get_their_own_number() {
-    let r = Rooms::new();
-    r.open_review(&["A", "B", "C"]);
-    let posts: Vec<_> = ["A", "B", "C"]
-        .map(|name| {
-            r.cmd(&["post", "review", "--as", name, "x"])
-                .spawn()
-                .unwrap()
-        })
-        .into();
-    let mut seqs: Vec<_> = posts
-        .into_iter()
-        .map(|p| stdout(&p.wait_with_output().unwrap()))
-        .collect();
-    seqs.sort();
-    assert_eq!(seqs, ["1\n", "2\n", "3\n"]);
+    let names = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    for _ in 0..10 {
+        let r = Rooms::new();
+        r.open_review(&names);
+        let posts: Vec<_> = names
+            .map(|name| {
+                r.cmd(&["post", "review", "--as", name, "x"])
+                    .spawn()
+                    .unwrap()
+            })
+            .into();
+        let mut seqs: Vec<i64> = posts
+            .into_iter()
+            .map(|p| {
+                let out = p.wait_with_output().unwrap();
+                assert!(out.status.success(), "{}", stderr(&out));
+                stdout(&out).trim().parse().unwrap()
+            })
+            .collect();
+        seqs.sort();
+        assert_eq!(seqs, (1..=8).collect::<Vec<_>>());
+    }
 }
 
 #[test]
