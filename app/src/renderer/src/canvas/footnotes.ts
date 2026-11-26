@@ -56,7 +56,12 @@ function paragraphs(tokens: Token[], f: (raw: string) => void): void {
 // `lazy` 가운데 앞 문단을 잇지 못한 첫 줄의 차례를 돌려준다. 모두 이으면 `undefined` 다. 줄마다 표시를 붙여 정의를 한 번
 // lexing 하고, 표시 앞에 글자가 있는 문단에 든 줄을 이은 줄로 본다. 줄마다 그 앞까지를 다시 lexing 하면 lex 시간이 정의
 // 크기의 제곱으로 늘어난다(잰 값: 중첩 목록 항목 2,000개에 9.4 s).
-function firstLoose(lexer: Lexer, lines: string[], lazy: Lazy[]): number | undefined {
+// `firstLoose` 가 하는 lexing 안에서 만난 정의는 lazy 줄을 판정하지 않고 모두 이은 줄로 읽는다. 안쪽 정의도 판정하면 정의를
+// 한 단 겹칠 때마다 lex 시간이 두 배로 는다(잰 값: 16단에 535 ms).
+const judging = new WeakSet<Lexer>()
+function firstLoose(options: Lexer['options'], lines: string[], lazy: Lazy[]): number | undefined {
+  const lexer = new Lexer(options)
+  judging.add(lexer)
   const tagged = [...lines]
   lazy.forEach(({ line }, i) => (tagged[line] = `\uE000${i}\uE001${tagged[line]}`))
   const kept = new Set<number>()
@@ -129,9 +134,10 @@ export const footnotes: MarkedExtension = {
           pos += line.length
           if (src[pos] === '\n') pos++
         }
-        const loose = lazy.length
-          ? firstLoose(new Lexer(this.lexer.options), lines, lazy)
-          : undefined
+        const loose =
+          lazy.length && !judging.has(this.lexer)
+            ? firstLoose(this.lexer.options, lines, lazy)
+            : undefined
         if (loose !== undefined) {
           lines.length = lazy[loose]!.line
           pos = lazy[loose]!.pos
@@ -143,8 +149,6 @@ export const footnotes: MarkedExtension = {
         state.top = true
         const tokens = this.lexer.blockTokens(lines.join('\n'), [])
         state.top = top
-        // 끝의 빈 줄 토큰을 떼어, ↩ 가 마지막 문단 끝에 붙게 한다.
-        while (tokens.at(-1)?.type === 'space') tokens.pop()
         const def: Def = { type: 'footnoteDef', raw: src.slice(0, pos), label: m[1]!, tokens }
         return def
       },
@@ -182,8 +186,10 @@ export const footnotes: MarkedExtension = {
             return `<a href="#${refId(prefix, number, n)}" title="${BACK_TITLE}">↩︎${sup}</a>`
           }).join(' ')
           const body = this.parser.parse(tokens)
+          // ↩ 를 마지막 문단 끝에 붙이려고, 끝의 빈 줄 토큰을 건너뛰고 마지막 토큰이 문단인지 본다. 안쪽 정의를 뺀 자리에도
+          // 빈 줄 토큰이 남는다.
           const html =
-            tokens.at(-1)?.type === 'paragraph'
+            tokens.findLast((t) => !isSpace(t))?.type === 'paragraph'
               ? body.replace(/<\/p>\n?$/, ` ${back}</p>\n`)
               : `${body}<p>${back}</p>\n`
           return `<li id="${noteId(prefix, number)}">\n${html}</li>\n`

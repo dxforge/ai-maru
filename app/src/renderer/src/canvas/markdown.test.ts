@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // DOMPurify 는 DOM 이 없으면 입력을 거르지 않고 그대로 돌려주므로, 이 파일만 DOM 환경에서 돌린다.
 import fc from 'fast-check'
-import { Marked } from 'marked'
+import { Lexer, Marked } from 'marked'
 import { describe, expect, it, vi } from 'vitest'
 import { footnotes } from './footnotes'
 import { MarkdownBody, prepareMarkdown, renderPart, type Part } from './markdown'
@@ -470,12 +470,33 @@ describe('각주', () => {
     for (const text of [
       '- item[^1]\n\n  [^1]: one',
       '> q[^1]\n>\n> [^1]: one',
-      'a[^1]\n\n[^1]: one\n    \nnext'
+      'a[^1]\n\n[^1]: one\n    \nnext',
+      'a[^1]\n\n[^1]: one\n\n    [^2]: two\n\nb[^2]'
     ]) {
       const item = body(text).querySelector('ol.footnotes > li')!
       expect([...item.children].map((c) => c.tagName)).toEqual(['P'])
       expect(item.textContent!.trim()).toBe('one ↩︎')
     }
+  })
+
+  it('정의 안에 정의를 겹쳐 들여 써도 lexing 하는 양은 단마다 두 배로 늘지 않는다', () => {
+    // 들여 쓰지 않은 줄(`lazy<i>`)마다 `firstLoose` 가 이은 줄인지 판정하므로, 고치기 전에는 단마다 판정이 겹쳐 lexing 이
+    // 두 배씩 늘었다.
+    const nested = (depth: number): string =>
+      Array.from({ length: depth }, (_, i) => {
+        const indent = '    '.repeat(i)
+        return `${indent}[^${i}]: a\n\n${indent}    p${i}\nlazy${i}\n`
+      }).join('\n')
+    const calls = (depth: number): number => {
+      const spy = vi.spyOn(Lexer.prototype, 'blockTokens')
+      try {
+        prepareMarkdown(`x[^0]\n\n${nested(depth)}`)
+        return spy.mock.calls.length
+      } finally {
+        spy.mockRestore()
+      }
+    }
+    expect(calls(16) / calls(8)).toBeLessThan(8)
   })
 
   it('정의만 담았던 인용은 남기지 않는다', () => {
