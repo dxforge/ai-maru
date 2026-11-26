@@ -390,6 +390,8 @@ describe('각주', () => {
       '***',
       'x *em* `c`',
       '[x]: /url',
+      '[^\\]] [^&amp;] [^*e*]',
+      '[see [^x]](/u)',
       ''
     )
     const plainMarked = new Marked({ gfm: true })
@@ -400,6 +402,63 @@ describe('각주', () => {
         expect(withNotes.parse(text)).toBe(plainMarked.parse(text))
       })
     )
+  })
+
+  it('정의 없는 참조는 확장 없이 읽은 것과 같이 escape·entity·꾸밈을 푼다', () => {
+    const plainMarked = new Marked({ gfm: true })
+    for (const text of [
+      'regex [^\\]] and [^&amp;] and [^\\\\]',
+      '[^*em*] [^`c`] [^<b>x</b>] [^a[^b]',
+      '# h [^&lt;x&gt;]'
+    ])
+      expect(body(text).innerHTML).toBe(renderPart({ tokens: plainMarked.lexer(text) }))
+    expect(prepareMarkdown('# h [^&lt;x&gt;] [^\\]]').heading).toBe('h [^<x>] [^]]')
+  })
+
+  it('링크 글자 안의 참조는 링크를 끊지 않고 번호로 보이며, ↩ 는 그 번호로 돌아온다', () => {
+    const el = body('[see [^1]](https://x)\n\n[^1]: one')
+    const link = el.querySelector('p > a')!
+    expect(link.getAttribute('href')).toBe('https://x')
+    expect(link.innerHTML).toMatch(/^see <sup id="md\d+-fnref-1">1<\/sup>$/)
+    expect(el.querySelector('li a')!.getAttribute('href')).toBe(`#${link.querySelector('sup')!.id}`)
+  })
+
+  it('목록에 실리지 않는 정의 안에 들여 쓴 정의도, 실리면 그 안의 참조를 센다', () => {
+    const el = body('x[^b]\n\n[^a]: A\n\n    [^b]: B[^c]\n\n[^c]: C')
+    expect(refs(el)).toEqual(['1', '2'])
+    expect(notes(el)).toEqual(['B2 ↩︎', 'C ↩︎'])
+  })
+
+  it('목록·인용 안의 정의나 빈 칸 줄로 끝나는 정의도 ↩ 를 마지막 문단 끝에 붙인다', () => {
+    for (const text of [
+      '- item[^1]\n\n  [^1]: one',
+      '> q[^1]\n>\n> [^1]: one',
+      'a[^1]\n\n[^1]: one\n    \nnext'
+    ]) {
+      const item = body(text).querySelector('ol.footnotes > li')!
+      expect([...item.children].map((c) => c.tagName)).toEqual(['P'])
+      expect(item.textContent!.trim()).toBe('one ↩︎')
+    }
+  })
+
+  it('정의만 담았던 인용은 남기지 않는다', () => {
+    const el = body('a [^1]\n\n> [^1]: in quote\n\n> kept')
+    expect([...el.querySelectorAll('blockquote')].map((q) => q.textContent!.trim())).toEqual([
+      'kept'
+    ])
+  })
+
+  it('정의 첫 줄이 펜스·heading 이면 다음 들여 쓴 줄을 그 블록으로 읽는다', () => {
+    const fence = body('a[^1]\n\n[^1]: ```js\n    let x = 1\n    ```').querySelector('li pre')!
+    expect(fence.textContent).toBe('let x = 1\n')
+    const item = body('a[^1]\n\n[^1]: # Title\n    para').querySelector('li')!
+    expect([...item.children].map((c) => c.tagName)).toEqual(['H1', 'P'])
+  })
+
+  it('문서 끝의 닫히지 않은 HTML 태그는 각주 목록을 감싸지 않는다', () => {
+    const el = body('a[^1]\n\n[^1]: one\n\n<details>\n\nhidden')
+    expect(el.querySelector('details ol.footnotes')).toBeNull()
+    expect(el.lastElementChild!.matches('ol.footnotes')).toBe(true)
   })
 
   it('라벨에 공백이 든 것, 주소가 붙은 것, 코드 안의 것은 각주가 아니다', () => {

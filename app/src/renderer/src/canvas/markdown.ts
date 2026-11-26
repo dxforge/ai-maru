@@ -67,15 +67,19 @@ function sanitizer(): typeof DOMPurify {
 // 묶음 하나를 HTML 로 만들어 붙이는 데 50 ms 안팎이 걸리는 크기다(100 KB 문서의 parse·sanitize·삽입을 잰 값).
 const PART_SIZE = 100_000
 
-/** 차례로 렌더해 이어 붙일 문서의 한 묶음. lexing 하지 못한 문서는 원문을 글자 그대로 나눈 것이다. */
-export type Part = { tokens: Token[] } | { text: string }
+/**
+ * 차례로 렌더해 이어 붙일 문서의 한 묶음. lexing 하지 못한 문서는 원문을 글자 그대로 나눈 것이다. `notes` 는
+ * 마지막 묶음에만 있는 각주 목록이다.
+ */
+export type Part = { tokens: Token[]; notes?: Token } | { text: string }
 
 export type Prepared = { heading: string | undefined; parts: Part[] }
 
 /**
  * 문서를 한 번 lexing 해 첫 heading 과 렌더할 묶음을 낸다. 묶음은 최상위 블록 경계에서 나누므로 코드 블록·표가
  * 묶음 사이에서 잘리지 않는다. HTML 로 연 태그가 닫히기 전에는 나누지 않는다. 참조형 링크는 lexing 할 때 이미
- * 주소로 풀리므로 묶음마다 따로 렌더해도 된다. 각주도 lexing 한 뒤 번호를 토큰에 적고 정의를 마지막 묶음으로 모은다.
+ * 주소로 풀리므로 묶음마다 따로 렌더해도 된다. 각주도 lexing 한 뒤 번호를 토큰에 적고, 정의를 모은 목록은
+ * 마지막 묶음에 붙인다.
  */
 export function prepareMarkdown(text: string, size = PART_SIZE): Prepared {
   let tokens: Token[]
@@ -86,7 +90,7 @@ export function prepareMarkdown(text: string, size = PART_SIZE): Prepared {
     return { heading: undefined, parts: splitText(text, size).map((t) => ({ text: t })) }
   }
   // 참조도 정의도 원문에 `[^` 가 있어야 생기므로, 없는 문서는 토큰을 다시 걷지 않는다.
-  if (text.includes('[^')) collectFootnotes(tokens, nextPrefix())
+  const notes = text.includes('[^') ? collectFootnotes(tokens, nextPrefix()) : undefined
   const heading = tokens.find((t) => t.type === 'heading') as Tokens.Heading | undefined
   const parts: Part[] = []
   let part: Token[] = []
@@ -102,7 +106,8 @@ export function prepareMarkdown(text: string, size = PART_SIZE): Prepared {
       length = 0
     }
   }
-  if (part.length || !parts.length) parts.push({ tokens: part })
+  if (part.length || !parts.length) parts.push({ tokens: part, notes })
+  else if (notes) (parts.at(-1) as { notes?: Token }).notes = notes
   return { heading: heading && plainText(heading.tokens), parts }
 }
 
@@ -168,7 +173,13 @@ function splitText(text: string, size: number): string[] {
 
 export function renderPart(part: Part): string {
   if ('text' in part) return `<div class="plain">${escapeText(part.text)}</div>`
-  return sanitizer().sanitize(marked.parser(part.tokens), {
+  // 각주 목록은 본문과 따로 sanitize 한다. 문서 끝에 닫히지 않은 `<details>` 가 있어도 목록을 감싸지 않게 하기 위해서다.
+  const html = sanitize(part.tokens)
+  return part.notes ? html + sanitize([part.notes]) : html
+}
+
+function sanitize(tokens: Token[]): string {
+  return sanitizer().sanitize(marked.parser(tokens), {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOW_DATA_ATTR: false,
@@ -204,11 +215,11 @@ const textRenderer = new Renderer()
 function plainText(tokens: Token[]): string {
   return tokens
     .map((t) => {
+      if (t.type === 'footnoteRef') return t.number === undefined ? plainText(t.tokens!) : ''
       if ('tokens' in t && t.tokens) return plainText(t.tokens)
       // 본문 글자는 marked 가 text 토큰을 escape 한 HTML 을 브라우저가 푼 것이라 같은 두 단계를 거친다.
       // escape 를 건너뛰면 marked 가 &amp; 로 바꿔 둔 세미콜론 없는 참조까지 풀린다.
       if (t.type === 'text') return decodeHTML(textRenderer.text(t as Tokens.Text))
-      if (t.type === 'footnoteRef') return t.number === undefined ? t.raw : ''
       return t.type === 'codespan' || t.type === 'escape' ? t.text : ''
     })
     .join('')
