@@ -1,6 +1,10 @@
 //! `maru room` — 사람과 claude 세션 여럿의 대화방. 계약은 `docs/contracts/room.md` 에 있다.
 //!
 //! 알림·안내문·거절 메시지에는 `@` 를 넣지 않는다. Claude Code 가 `@` 뒤를 파일·agent 참조로 읽기 때문이다.
+//!
+//! 안내문·알림·거절 메시지는 방의 사실(기록, 참여자, 주제, 상한)과 쓰는 명령만 적는다. claude 가 방을
+//! 어떻게 쓸지(차례, 기다림, 분량, 말투)는 적지 않는다. 거절 메시지는 거절한 까닭만 적고, 다음에 칠 명령을
+//! 권하지 않는다.
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Subcommand;
@@ -24,10 +28,6 @@ const MAX_MEMBER_NAME_CHARS: usize = 32;
 const EXIT_CAPPED: u8 = 5;
 const EXIT_CLOSED: u8 = 6;
 
-const LAST_TURN: &str =
-    "이번이 AI 의 마지막 차례다 — 다른 AI 를 부르지 말고 사람에게 넘기거나 끝맺는다.";
-const CAPPED: &str = "AI 차례가 끝났다 — 사람이 글을 올릴 때까지 올리지 않는다.";
-
 #[derive(Subcommand)]
 pub enum RoomCommand {
     /// Open a room. Fails if an open room already has this name.
@@ -35,13 +35,13 @@ pub enum RoomCommand {
         room: String,
         #[arg(long)]
         topic: Option<String>,
-        /// How many claude posts may follow a person's post before claude sessions must wait
-        /// for a person. 0 is no limit.
+        /// How many claude posts may follow the last person's post (or the room's start). Claude
+        /// posts over it are refused (exit 5) until a person posts. 0 is no limit.
         #[arg(long, value_name = "N", default_value_t = DEFAULT_AI_LIMIT)]
         ai_limit: u32,
     },
-    /// Join a room from a claude session (this pty and CLAUDE_CODE_SESSION_ID). Prints how to
-    /// take part. A person does not join, but posts with --as.
+    /// Join a room from a claude session (this pty and CLAUDE_CODE_SESSION_ID). Prints the
+    /// room's members and commands. A person does not join, but posts with --as.
     Join {
         room: String,
         /// Your name in the room: 1–32 letters, digits and `_.+-`.
@@ -69,8 +69,8 @@ pub enum RoomCommand {
     /// Post TEXT (or stdin, with `-` or no TEXT) as the claude session that joined from this
     /// pane, or with --as NAME as a person.
     ///
-    /// Exits 5 if AIs have used their turns since a person last posted, and 6 if the room is
-    /// closed.
+    /// Exits 5 if claude posts since a person last posted have reached the room's AI limit, and 6
+    /// if the room is closed.
     Post {
         room: String,
         /// Post as the person NAME. The first post adds NAME to the room.
@@ -195,7 +195,7 @@ fn connect(path: &Path, create: bool) -> Result<Option<Connection>> {
     match open(path, create)? {
         Opened::Missing => Ok(None),
         Opened::Newer(v) => bail!(
-            "{} has room schema version {v}, newer than this maru knows ({SCHEMA_VERSION}) — update AI Maru",
+            "{} has room schema version {v}, newer than this maru knows ({SCHEMA_VERSION}) ",
             path.display()
         ),
         Opened::Ready(conn) => Ok(Some(conn)),
@@ -417,10 +417,7 @@ fn find_room(conn: &Connection, arg: &str) -> Result<Room> {
 }
 
 fn no_room(arg: &str) -> anyhow::Error {
-    anyhow!(
-        "방 {} 없다 — maru room list 로 열린 방을 본다",
-        josa(arg, Josa::I)
-    )
+    anyhow!("방 {} 없다", josa(arg, Josa::I))
 }
 
 fn last_seq(conn: &Connection, room: i64) -> Result<i64> {
@@ -441,13 +438,31 @@ fn ai_streak(conn: &Connection, room: i64) -> Result<i64> {
     )?)
 }
 
-/// 사람 글 뒤의 AI 차례가 어디까지 왔는지.
+/// 사람 글 없이 이어진 AI 글이 상한까지 얼마나 왔는지.
 #[derive(Clone, Copy, PartialEq)]
 enum Turn {
     Open,
-    /// 다음 AI 글이 마지막이다.
     Last,
     Over,
+}
+
+impl Turn {
+    fn note(self, ai_limit: i64) -> Option<String> {
+        match self {
+            Turn::Open => None,
+            Turn::Last => Some(format!(
+                "사람 글 없이 이어진 AI 글 {}개 — 상한 {ai_limit}개까지 하나 남았다.",
+                ai_limit - 1
+            )),
+            Turn::Over => Some(capped(ai_limit)),
+        }
+    }
+}
+
+fn capped(ai_limit: i64) -> String {
+    format!(
+        "사람 글 없이 이어진 AI 글 {ai_limit}개로 상한에 닿았다 — 사람이 올릴 때까지 AI 글은 거절된다."
+    )
 }
 
 fn turn(conn: &Connection, room: i64, ai_limit: i64) -> Result<Turn> {
@@ -521,7 +536,7 @@ fn person(conn: &Connection, room: &Room, name: &str) -> Result<Option<Member>> 
     check_member_name(name)?;
     match member_named(conn, room.id, name)? {
         Some(m) if m.kind != MemberKind::Human => bail!(
-            "방 {} 의 {} claude 참여자다 — 사람은 다른 이름을 --as 에 쓴다",
+            "방 {} 의 {} claude 참여자다",
             room.name,
             josa(name, Josa::Eun)
         ),
@@ -578,10 +593,7 @@ fn new(path: &Path, name: &str, topic: &str, ai_limit: u32) -> Result<String> {
         |r| r.get(0),
     )?;
     if open {
-        bail!(
-            "열린 방 {} 이미 있다 — 다른 이름을 쓰거나 maru room close {name} 로 닫는다",
-            josa(name, Josa::I)
-        );
+        bail!("열린 방 {} 이미 있다", josa(name, Josa::I));
     }
     tx.execute(
         "INSERT INTO rooms (name, topic, ai_limit, created_ms) VALUES (?1, ?2, ?3, ?4)",
@@ -591,12 +603,12 @@ fn new(path: &Path, name: &str, topic: &str, ai_limit: u32) -> Result<String> {
     tx.commit()?;
     Ok(format!(
         "방 {} 열었다 (id {id}, {limit}).\n\
-         사람: maru room post {name} --as <이름> <글> 로 올린다.\n\
-         claude 세션: 그 pane 의 claude 에게 방 {name} 에 이름을 정해 들어가라고 하면 maru room join {name} --as <이름> 을 부른다.\n",
+         claude 세션은 maru room join {name} --as <이름> 으로 들어온다.\n\
+         사람은 join 없이 maru room post {name} --as <이름> <글> 로 올린다.\n",
         josa(name, Josa::Eul),
         limit = match ai_limit {
             0 => "AI 연속 상한 없음".to_owned(),
-            n => format!("사람 글 뒤 AI 글 {n}개까지"),
+            n => format!("사람 글 없이 이어지는 AI 글 {n}개까지"),
         }
     ))
 }
@@ -605,9 +617,7 @@ fn join(path: &Path, arg: &str, name: &str) -> Result<String> {
     check_member_name(name)?;
     let pty = this_pty()?;
     let session = crate::env_var("CLAUDE_CODE_SESSION_ID").ok_or_else(|| {
-        anyhow!(
-            "join 은 claude 세션의 Bash 에서 부른다(CLAUDE_CODE_SESSION_ID 가 없다) — 사람은 join 없이 maru room post {arg} --as <이름> <글> 로 올린다"
-        )
+        anyhow!("join 은 claude 세션의 Bash 에서만 된다 — CLAUDE_CODE_SESSION_ID 가 없다")
     })?;
     let mut conn = connect(path, false)?.ok_or_else(|| no_room(arg))?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -623,10 +633,9 @@ fn join(path: &Path, arg: &str, name: &str) -> Result<String> {
         && m.name != name
     {
         bail!(
-            "이 pane 은 방 {} 에 이미 {} 들어 있다 — 그 이름으로 다시 join 하거나 maru room leave {} 뒤에 join 한다",
+            "이 pane 은 방 {} 에 이미 {} 들어 있다",
             room.name,
-            josa(&m.name, Josa::Euro),
-            room.name
+            josa(&m.name, Josa::Euro)
         );
     }
     let held: Option<(MemberKind, Option<String>)> = tx
@@ -646,15 +655,10 @@ fn join(path: &Path, arg: &str, name: &str) -> Result<String> {
                 params![room.id, name, pty, session],
             )?;
         }
-        Some((MemberKind::Human, _)) => bail!(
-            "방 {} 에 {} 이미 있다 — 다른 이름으로 들어간다.",
+        Some((kind, _)) => bail!(
+            "방 {} 에 {} 이미 있다",
             room.name,
-            shown_josa(name, MemberKind::Human, Josa::I)
-        ),
-        Some(_) => bail!(
-            "방 {0} 에 {1} 이미 있다 — 다른 이름으로 들어간다. {name} 의 pane 이 닫혔으면 maru room leave {0} --as {name} 로 내보낸 뒤 들어간다",
-            room.name,
-            josa(name, Josa::I)
+            shown_josa(name, kind, Josa::I)
         ),
         None => {
             // 들어오기 전의 글은 알리지 않는다. 읽은 자리는 0 으로 두어 첫 `room read` 가 지난 글을 모두 보이게 한다.
@@ -678,39 +682,24 @@ fn notice(conn: &Connection, room: &Room, me: &str) -> Result<String> {
         format!("주제: {}\n", printable(&room.topic))
     };
     let others = participants_text(conn, room.id)?;
-    let (limit, capped) = match room.ai_limit {
-        0 => (String::new(), ""),
-        n => (
-            format!(
-                "- 사람 글 뒤에 AI 글은 {n}개까지 올라간다. 마지막 차례의 알림에는 그렇다고 적혀 온다.\n"
-            ),
-            "exit 5 면 AI 차례가 끝난 것이니 사람이 쓸 때까지 올리지 않는다. ",
+    let limit = match room.ai_limit {
+        0 => String::new(),
+        n => format!(
+            "사람 글 없이 이어지는 AI 글은 {n}개까지 올라간다. 넘는 글은 post 가 exit 5 로 거절한다. 상한까지 하나 남았을 때와 상한에 닿았을 때는 알림에 그렇다고 적힌다.\n"
         ),
     };
     Ok(format!(
         "방 {r} 에 {} 들어왔다.\n\
          {topic}참여자: {others}\n\
          \n\
-         이 터미널은 방이 아니다. 여기에 쓴 답은 방의 누구도 읽지 않는다. 방에 할 말은 maru room post 로만 올린다.\n\
-         방에 새 글이 오면 monitor 알림({{\"event\":\"room\",\"room\":\"{r}\",…}})이 온다. 알림에는 글 내용이 없다. 새 글은 누가 불렸든 글쓴이를 뺀 claude 참여자 모두에게 알려진다.\n\
+         새 기록(글·나감·닫힘)은 글쓴이를 뺀 claude 참여자 모두에게 monitor 알림({{\"event\":\"room\",\"room\":\"{r}\",…}})으로 간다. 알림에는 글 내용이 없다.\n\
          \n\
-         읽고 쓰기:\n\
-         1. maru room read {r} 로 새 글을 읽는다.\n\
-         2. 새 정보·반론·구체화·꼭 필요한 질문이 있을 때만 올린다. 앞 사람 말을 되풀이하거나 동의만 하는 말은 올리지 않는다. 3~6문장, 한국어 대화체, 제목·이름표 없이 본문만 쓴다.\n\
-         \x20  maru room post {r} - <<'EOF'\n\
-         \x20  <글>\n\
-         \x20  EOF\n\
-         3. {capped}exit 6 이면 방이 닫혔다.\n\
-         4. 올릴 말이 없으면 도구를 더 부르지 말고 턴을 끝낸다.\n\
+         명령:\n\
+         - maru room read {r} — 지난번 읽은 뒤의 기록을 찍는다. --all 이면 모두 찍는다.\n\
+         - maru room post {r} <글> — 글을 올린다. <글> 이 없거나 - 면 stdin 에서 읽는다.\n\
+         - maru room leave {r} — 방에서 나간다.\n\
          \n\
-         차례:\n\
-         - 누가 이름으로 불렸으면 그 사람이 먼저 답한다. 너를 부른 게 아니면 불린 사람이 답할 때까지 기다린다. 불린 사람이 답한 뒤에는 보탤 게 있으면 말한다.\n\
-         - 다른 참여자는 글에서 이름으로 부른다(\"B, …\" 또는 \"B 는 어떻게 보나요?\"). 이름 앞에 기호를 붙이지 않는다 — 기호는 파일·agent 참조로 읽힌다.\n\
-         {limit}\
-         \n\
-         - 사람이 이 터미널에 직접 쓴 말은 너에게 주는 지시다. 따르되 방에 할 말은 여전히 maru room post 로 올리고, 터미널에는 짧게만 답한다.\n\
-         - 할 말을 터미널에 써 두고 끝내지 않는다. 올리거나 아무것도 하지 않는다.\n\
-         - 나갈 때는 maru room leave {r}. /clear 해도 방에서 나가지 않는다.\n",
+         {limit}닫힌 방이면 post 가 exit 6 으로 거절한다.\n",
         josa(me, Josa::Euro)
     ))
 }
@@ -841,27 +830,17 @@ fn post(path: &Path, arg: &str, as_name: Option<&str>, text: &str) -> Result<i64
                 m
             }
         },
-        Who::Pane(pty) => member(&tx, room.id, &pty)?.ok_or_else(|| {
-            anyhow!(
-                "이 pane 은 방 {0} 에 들어 있지 않다 — 열린 방이면 claude 세션은 maru room join {0} --as <이름> 으로 들어간다. 사람은 --as <이름> 을 붙여 올린다",
-                room.name
-            )
-        })?,
+        Who::Pane(pty) => member(&tx, room.id, &pty)?
+            .ok_or_else(|| anyhow!("이 pane 은 방 {} 에 들어 있지 않다", room.name))?,
     };
     if room.closed {
         return Err(refuse(
             EXIT_CLOSED,
-            format!(
-                "방 {} 닫혔다 — 더 올리지 않는다.",
-                josa(&room.name, Josa::Eun)
-            ),
+            format!("방 {} 닫혔다.", josa(&room.name, Josa::Eun)),
         ));
     }
     if me.kind == MemberKind::Claude && turn(&tx, room.id, room.ai_limit)? == Turn::Over {
-        return Err(refuse(
-            EXIT_CAPPED,
-            format!("AI 글이 연달아 {}개라 {CAPPED}", room.ai_limit),
-        ));
+        return Err(refuse(EXIT_CAPPED, capped(room.ai_limit)));
     }
     let seq = add_entry(&tx, room.id, Some((&me.name, me.kind)), Kind::Post, text)?;
     // 자기 글은 알릴 것이 아니다. 읽지 않은 글이 남았으면 읽은 자리를 그대로 두어 다음 `read` 가 그 글들을 보이게
@@ -1001,7 +980,11 @@ fn close(path: &Path, arg: &str, as_name: Option<&str>) -> Result<String> {
     if room.closed {
         return Err(refuse(
             EXIT_CLOSED,
-            format!("방 {} (id {}) 은 이미 닫혔다.", room.name, room.id),
+            format!(
+                "방 {} 이미 닫혔다 (id {}).",
+                josa(&room.name, Josa::Eun),
+                room.id
+            ),
         ));
     }
     let closer = speaker(&tx, &room, as_name)?.or_else(|| as_name.map(new_person));
@@ -1054,7 +1037,8 @@ fn pending(conn: &Connection, pty: &str) -> Result<Vec<Pending>> {
         let event = if news.is_empty() {
             None
         } else {
-            Some(event(&room_name, &news, turn(conn, room, ai_limit)?))
+            let note = turn(conn, room, ai_limit)?.note(ai_limit);
+            Some(event(&room_name, &news, note))
         };
         out.push(Pending {
             room,
@@ -1074,7 +1058,7 @@ fn mark(conn: &Connection, p: &Pending) -> Result<()> {
     Ok(())
 }
 
-fn event(room: &str, news: &[&Entry], turn: Turn) -> Value {
+fn event(room: &str, news: &[&Entry], note: Option<String>) -> Value {
     let first = news[0].seq;
     let last = news[news.len() - 1];
     let mut authors: Vec<&Entry> = Vec::new();
@@ -1102,12 +1086,9 @@ fn event(room: &str, news: &[&Entry], turn: Turn) -> Value {
     let read = format!("maru room read {room} 로 읽는다.");
     let mut text = if let Some(c) = close {
         if c.author.is_empty() {
-            format!("방이 닫혔다 ({room}) — 더 올리지 않는다.")
+            format!("방이 닫혔다 ({room}).")
         } else {
-            format!(
-                "방이 닫혔다 ({room}, 닫은 이: {}) — 더 올리지 않는다.",
-                c.who()
-            )
+            format!("방이 닫혔다 ({room}, 닫은 이: {}).", c.who())
         }
     } else if news.len() > 1 {
         format!(
@@ -1126,12 +1107,10 @@ fn event(room: &str, news: &[&Entry], turn: Turn) -> Value {
             last.seq
         )
     };
-    if close.is_none() {
-        match turn {
-            Turn::Open => {}
-            Turn::Last => text = format!("{text} {LAST_TURN}"),
-            Turn::Over => text = format!("{text} {CAPPED}"),
-        }
+    if close.is_none()
+        && let Some(note) = note
+    {
+        text = format!("{text} {note}");
     }
     let mut ev = json!({ "event": "room", "room": room, "seq": last.seq, "from": from, "kind": kind.as_str(), "text": text });
     if news.len() > 1 {

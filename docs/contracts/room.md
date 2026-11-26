@@ -34,7 +34,7 @@ claude 참여는 `leave` 하기 전까지 그 pane 에 남는다. 같은 pane �
 
 `room post` 는 `BEGIN IMMEDIATE` 트랜잭션 하나에서 "참여자인지 → 닫힌 방인지 → AI 연속 상한" 을 보고 글을 더한다. `room leave` 는 나감 기록을, `room close` 는 닫은 쪽을 적은 닫힘 기록을 같은 방식으로 더한다. 글을 더한 트랜잭션에서 글쓴이의 알린 자리를 그 글의 번호로 올린다. 거절은 아래 exit code 로 알린다.
 
-AI 연속 상한은 마지막 사람 글 뒤의 claude 글 수다. 나감·닫힘 기록은 세지 않는다. 상한은 방을 열 때 `room new <방> --ai-limit N` 으로 정하고(기본 3, 0 은 상한 없음) `rooms.ai_limit` 에 둔다.
+AI 연속 상한은 마지막 사람 글 뒤의 claude 글 수다(사람 글이 없으면 방이 열린 뒤의 claude 글 수). 나감·닫힘 기록은 세지 않는다. 상한은 방을 열 때 `room new <방> --ai-limit N` 으로 정하고(기본 3, 0 은 상한 없음) `rooms.ai_limit` 에 둔다.
 
 | exit | 뜻 |
 | --- | --- |
@@ -59,4 +59,4 @@ monitor 는 자기 `MARU_PTY_ID` 가 claude 참여자인 방마다, 알린 자�
 
 - 코드: `room.rs` 의 `pending`·`event`·`mark`·`Monitor` ↔ `main.rs` 의 `claude_monitor`(모듈 doc 의 알림 모양)
 - 바꾸면: 알린 자리를 쓰기 전에 올리면, 줄을 쓰지 못하고 끝난 monitor 의 알림을 다음 monitor 가 내지 않는다.
-- 테스트: `tests/room.rs` › `monitor_notifies_a_post_without_the_app`, `monitor_batches_entries_posted_while_it_was_away`, `monitor_skips_other_panes`, `monitor_says_when_it_is_the_last_ai_turn_and_when_turns_are_over`, `monitor_tells_once_that_the_room_closed_and_who_closed_it`, `monitor_writes_room_and_app_notices_and_keeps_room_ones_after_the_app_goes`, `monitor_stops_notices_after_leave`, `rejoining_does_not_wake_for_entries_already_read`
+- 테스트: `tests/room.rs` › `monitor_notifies_a_post_without_the_app`, `monitor_batches_entries_posted_while_it_was_away`, `monitor_skips_other_panes`, `monitor_says_when_one_ai_post_is_left_and_when_the_limit_is_reached`, `monitor_tells_once_that_the_room_closed_and_who_closed_it`, `monitor_writes_room_and_app_notices_and_keeps_room_ones_after_the_app_goes`, `monitor_stops_notices_after_leave`, `rejoining_does_not_wake_for_entries_already_read`

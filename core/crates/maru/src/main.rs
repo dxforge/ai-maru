@@ -200,8 +200,9 @@
 //!   구독이 생길 때 보낸다. `job.kill` 이나 cell 닫기로 끝난 job 은 알리지 않는다.
 //! - 방의 알림은 앱이 아니라 monitor 가 방 파일에서 만든다(아래 "claude monitor"). 모양은
 //!   `{"event":"room","room":<방 이름>,"seq":<마지막 번호>,"from":<보낸 이>,"kind":<마지막 기록의 종류>,
-//!   "text":<읽는 법 안내>}` 이다. `kind` 는 `post`·`leave`·`close` 다. 여러 기록이 쌓였으면 한 줄로 묶고
-//!   `first`(첫 번호)를 더하며, `from` 은 보낸 이들을 `, ` 로 잇는다.
+//!   "text":<무슨 기록인지와 읽는 명령을 적고, 상한까지 하나 남았거나 상한에 닿았으면 그 사실을 덧붙인
+//!   문장. 닫힘은 닫혔다는 것만 적는다>}` 이다. `kind` 는 `post`·`leave`·`close` 다. 여러 기록이 쌓였으면
+//!   한 줄로 묶고 `first`(첫 번호)를 더하며, `from` 은 보낸 이들을 `, ` 로 잇는다.
 //!
 //! # mcp
 //!
@@ -349,7 +350,7 @@ enum Command {
         #[command(subcommand)]
         command: StatusCommand,
     },
-    /// Talk in a room with the person and the AI sessions in other panes.
+    /// Rooms that people and the AI sessions in panes post to.
     ///
     /// A room keeps its entries in a file, so they outlast the app. A claude session joins with
     /// `maru room join` and is notified of new entries through its monitor.

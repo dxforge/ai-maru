@@ -110,6 +110,12 @@ fn refused(out: &Output, code: i32, message: &str) {
     assert!(stderr(out).contains(message), "{}", stderr(out));
 }
 
+/// 거절 메시지가 `message` 하나뿐이다 — 까닭 뒤에 다음에 칠 명령이 붙지 않는다.
+fn refused_exactly(out: &Output, code: i32, message: &str) {
+    refused(out, code, message);
+    assert_eq!(stderr(out), format!("maru: {message}\n"));
+}
+
 #[test]
 fn posts_are_read_once_and_read_all_shows_them_again() {
     let r = Rooms::new();
@@ -161,17 +167,22 @@ fn ais_stop_after_three_posts_until_a_person_posts() {
     r.post(A, "1");
     r.post(B, "2");
     r.post(A, "3");
-    refused(&r.post(B, "4"), 5, "AI 차례가 끝났다");
+    // 사람 글이 아직 없으면 방이 열린 뒤의 AI 글을 센다.
+    refused_exactly(
+        &r.post(B, "4"),
+        5,
+        "사람 글 없이 이어진 AI 글 3개로 상한에 닿았다 — 사람이 올릴 때까지 AI 글은 거절된다.",
+    );
     // 나감은 세지 않고 상한을 풀지도 않는다.
     r.ok(Some(C), &["room", "join", "review", "--as", "C"]);
     r.ok(Some(C), &["room", "leave", "review"]);
-    refused(&r.post(B, "4"), 5, "AI 차례가 끝났다");
+    refused(&r.post(B, "4"), 5, "AI 글 3개로 상한에 닿았다");
     // 사람은 상한을 보지 않고, 사람의 글이 상한을 푼다.
     assert_eq!(stdout(&r.say("가나", "사람 글")), "#5\n");
     assert_eq!(stdout(&r.post(B, "다시")), "#6\n");
     r.post(A, "8");
     r.post(B, "9");
-    refused(&r.post(A, "10"), 5, "AI 차례가 끝났다");
+    refused(&r.post(A, "10"), 5, "AI 글 3개로 상한에 닿았다");
     // claude 의 pane 에서 `--as` 로 올린 글도 사람의 글이다.
     let out = r.run(
         Some(A),
@@ -219,7 +230,9 @@ fn a_room_sets_its_own_ai_limit_and_0_is_none() {
     let r = Rooms::new();
     let out = r.ok(None, &["room", "new", "one", "--ai-limit", "1"]);
     assert!(
-        out.starts_with("방 one 를 열었다 (id 1, 사람 글 뒤 AI 글 1개까지).\n"),
+        out == "방 one 를 열었다 (id 1, 사람 글 없이 이어지는 AI 글 1개까지).\n\
+                claude 세션은 maru room join one --as <이름> 으로 들어온다.\n\
+                사람은 join 없이 maru room post one --as <이름> <글> 로 올린다.\n",
         "{out}"
     );
     let out = r.ok(None, &["room", "new", "free", "--ai-limit", "0"]);
@@ -236,16 +249,11 @@ fn a_room_sets_its_own_ai_limit_and_0_is_none() {
     r.ok(Some(B), &["room", "join", "one", "--as", "B"]);
     let m = Monitor::start(&r, B.0);
     r.run(Some(A), &["room", "post", "one", "1"]);
-    assert!(
-        m.next()["text"]
-            .as_str()
-            .unwrap()
-            .contains("AI 차례가 끝났다")
-    );
+    assert!(m.next()["text"].as_str().unwrap().contains("상한에 닿았다"));
     refused(
         &r.run(Some(B), &["room", "post", "one", "2"]),
         5,
-        "AI 글이 연달아 1개라",
+        "AI 글 1개로 상한에 닿았다",
     );
 
     // 상한이 없는 방은 상한도 exit 5 도 적지 않는다.
@@ -254,47 +262,51 @@ fn a_room_sets_its_own_ai_limit_and_0_is_none() {
         !notice.contains("개까지") && !notice.contains("exit 5"),
         "{notice}"
     );
-    assert!(notice.contains("3. exit 6 이면 방이 닫혔다."), "{notice}");
+    assert!(
+        notice.ends_with("\n\n닫힌 방이면 post 가 exit 6 으로 거절한다.\n"),
+        "{notice}"
+    );
     r.ok(Some(B), &["room", "join", "free", "--as", "B"]);
-    // B 의 monitor 는 A 의 글만 받는다. 다섯 번째 AI 글에도 차례 말이 붙지 않는다.
+    // B 의 monitor 는 A 의 글만 받는다. 다섯 번째 AI 글에도 상한 문장이 붙지 않는다.
     for i in 0..5 {
         let who = if i % 2 == 0 { A } else { B };
         let out = r.run(Some(who), &["room", "post", "free", "x"]);
         assert!(out.status.success(), "{}", stderr(&out));
         if who == A {
             let text = m.next()["text"].as_str().unwrap().to_owned();
-            assert!(!text.contains("차례"), "{text}");
+            assert!(!text.contains("상한"), "{text}");
         }
     }
 }
 
 #[test]
-fn a_person_s_post_and_leave_are_told_with_the_turn_of_the_ais() {
+fn a_person_s_post_and_leave_are_told_with_the_ai_limit() {
     let r = Rooms::new();
     r.ok(None, &["room", "new", "one", "--ai-limit", "1"]);
     r.ok(Some(A), &["room", "join", "one", "--as", "A"]);
     r.ok(Some(B), &["room", "join", "one", "--as", "B"]);
     let m = Monitor::start(&r, B.0);
-    // 상한이 1 이면 사람 글 바로 뒤가 AI 의 마지막 차례다.
     r.ok(None, &["room", "post", "one", "--as", "민준", "시작"]);
     let text = m.next()["text"].as_str().unwrap().to_owned();
-    assert!(text.contains("마지막 차례"), "{text}");
+    assert!(
+        text.ends_with("사람 글 없이 이어진 AI 글 0개 — 상한 1개까지 하나 남았다."),
+        "{text}"
+    );
     r.ok(Some(A), &["room", "post", "one", "1"]);
     let text = m.next()["text"].as_str().unwrap().to_owned();
-    assert!(text.contains("AI 차례가 끝났다"), "{text}");
-    // 사람이 나가는 것은 상한을 풀지 않고, 나감 알림에도 차례가 끝났다고 적는다.
+    assert!(text.contains("상한에 닿았다"), "{text}");
     r.ok(None, &["room", "leave", "one", "--as", "민준"]);
     let ev = m.next();
     assert_eq!(ev["kind"], "leave");
     let text = ev["text"].as_str().unwrap();
     assert!(
-        text.contains("나갔다") && text.contains("AI 차례가 끝났다"),
+        text.contains("나갔다") && text.contains("상한에 닿았다"),
         "{text}"
     );
     refused(
         &r.run(Some(B), &["room", "post", "one", "2"]),
         5,
-        "AI 글이 연달아 1개라",
+        "AI 글 1개로 상한에 닿았다",
     );
 }
 
@@ -331,14 +343,12 @@ fn as_with_a_claude_members_name_is_refused() {
         &["room", "close", "review", "--as", "A"],
     ] {
         let out = r.run(None, args);
-        refused(&out, 1, "A 는 claude 참여자다");
+        refused_exactly(&out, 1, "방 review 의 A 는 claude 참여자다");
     }
     // 사람의 이름으로 join 하지도 못한다.
     r.say("가나", "x");
     let out = r.run(Some(B), &["room", "join", "review", "--as", "가나"]);
     refused(&out, 1, "가나(사람) 가 이미 있다");
-    // 사람에게는 pane 이 없으므로 사람을 내보내라고 안내하지 않는다.
-    assert!(!stderr(&out).contains("leave"), "{}", stderr(&out));
     let out = r.say("a b", "x");
     refused(&out, 1, "--as 는");
 }
@@ -362,7 +372,7 @@ fn a_closed_room_refuses_with_6_and_its_name_can_be_reused() {
     r.open_review(&[(A, "A"), (B, "B")]);
     r.post(A, "옛 방의 글");
     assert!(r.ok(None, &["room", "close", "review"]).contains("id 1"));
-    refused(&r.post(B, "늦음"), 6, "닫혔다");
+    refused_exactly(&r.post(B, "늦음"), 6, "방 review 는 닫혔다.");
     refused(&r.say("가나", "늦음"), 6, "닫혔다");
     // 거절된 첫 글은 사람을 참여자로 남기지 않는다.
     assert_eq!(members(&r), ["A", "B"]);
@@ -371,7 +381,11 @@ fn a_closed_room_refuses_with_6_and_its_name_can_be_reused() {
         6,
         "닫혔다",
     );
-    refused(&r.run(None, &["room", "close", "review"]), 6, "이미 닫혔다");
+    refused_exactly(
+        &r.run(None, &["room", "close", "review"]),
+        6,
+        "방 review 는 이미 닫혔다 (id 1).",
+    );
     assert!(r.ok(None, &["room", "list"]).lines().count() == 1);
     assert!(
         r.ok(None, &["room", "list", "--closed"])
@@ -415,7 +429,7 @@ fn a_room_name_cannot_be_only_digits_or_taken_by_an_open_room() {
     assert_eq!(r.run(None, &["room", "new", "42"]).status.code(), Some(1));
     r.ok(None, &["room", "new", "review"]);
     let out = r.run(None, &["room", "new", "review"]);
-    refused(&out, 1, "이미 있다");
+    refused_exactly(&out, 1, "열린 방 review 가 이미 있다");
 }
 
 #[test]
@@ -423,9 +437,9 @@ fn a_pane_rejoins_only_under_its_name() {
     let r = Rooms::new();
     r.open_review(&[(A, "A")]);
     let out = r.run(Some(A), &["room", "join", "review", "--as", "Z"]);
-    refused(&out, 1, "이미 A 로 들어 있다");
+    refused_exactly(&out, 1, "이 pane 은 방 review 에 이미 A 로 들어 있다");
     let out = r.run(Some(B), &["room", "join", "review", "--as", "A"]);
-    refused(&out, 1, "A 가 이미 있다");
+    refused_exactly(&out, 1, "방 review 에 A 가 이미 있다");
 
     let new_session = (A.0, "s-a2");
     r.ok(Some(new_session), &["room", "join", "review", "--as", "A"]);
@@ -446,8 +460,11 @@ fn join_needs_a_claude_session_and_prints_the_notice_without_at_signs() {
     r.ok(None, &["room", "new", "review", "--topic", "설계 검토"]);
     let mut cmd = r.cmd(Some(A), &["room", "join", "review", "--as", "A"]);
     let out = cmd.env_remove("CLAUDE_CODE_SESSION_ID").output().unwrap();
-    refused(&out, 1, "CLAUDE_CODE_SESSION_ID");
-    refused(&out, 1, "maru room post review --as <이름> <글>");
+    refused(
+        &out,
+        1,
+        "join 은 claude 세션의 Bash 에서만 된다 — CLAUDE_CODE_SESSION_ID 가 없다",
+    );
 
     let notice = r.ok(Some(A), &["room", "join", "review", "--as", "A"]);
     assert!(
@@ -455,17 +472,28 @@ fn join_needs_a_claude_session_and_prints_the_notice_without_at_signs() {
         "{notice}"
     );
     for part in [
-        "maru room read review",
-        "maru room post review - <<'EOF'",
-        "exit 5",
+        "참여자: A\n",
+        "{\"event\":\"room\",\"room\":\"review\",…}",
+        "- maru room read review — ",
+        "- maru room post review <글> — ",
+        "- maru room leave review — ",
+        "사람 글 없이 이어지는 AI 글은 3개까지 올라간다. 넘는 글은 post 가 exit 5 로 거절한다.",
         "exit 6",
-        "이름 앞에 기호를 붙이지 않는다",
-        "/clear 해도 방에서 나가지 않는다",
     ] {
         assert!(notice.contains(part), "{part}: {notice}");
     }
-    for gone in ['@'.to_string(), "--seen".into(), "pass".into()] {
-        assert!(!notice.contains(&gone), "{gone}: {notice}");
+    // room.rs 모듈 doc 의 "사실과 명령만" 을 지킨다.
+    for gone in [
+        "@",
+        "--seen",
+        "pass",
+        "이 터미널",
+        "/clear",
+        "기다린다",
+        "턴을",
+        "차례",
+    ] {
+        assert!(!notice.contains(gone), "{gone}: {notice}");
     }
     // 참여자 이름은 한글도 받는다. 조사는 이름의 끝소리를 따른다.
     let notice = r.ok(Some(B), &["room", "join", "review", "--as", "민준"]);
@@ -586,14 +614,6 @@ fn a_session_resumed_in_another_pane_takes_its_name_back_on_join() {
 }
 
 #[test]
-fn join_under_a_name_held_by_another_session_points_to_leave_as() {
-    let r = Rooms::new();
-    r.open_review(&[(A, "A")]);
-    let out = r.run(Some(B), &["room", "join", "review", "--as", "A"]);
-    refused(&out, 1, "maru room leave review --as A");
-}
-
-#[test]
 fn leave_as_removes_a_member_left_in_another_pane() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
@@ -623,9 +643,10 @@ fn commands_outside_a_pane_say_so() {
     refused(&out, 1, "MARU_PTY_ID");
     let out = r.post(A, "x");
     refused(&out, 1, "들어 있지 않다");
-    refused(&out, 1, "--as <이름>");
+    // room.rs 모듈 doc 의 "거절한 까닭만" 을 지킨다.
+    assert!(!stderr(&out).contains("maru room"), "{}", stderr(&out));
     let out = r.run(None, &["room", "read", "nope"]);
-    refused(&out, 1, "방 nope 가 없다");
+    refused_exactly(&out, 1, "방 nope 가 없다");
 }
 
 // ---- monitor ----
@@ -797,27 +818,28 @@ fn monitor_skips_other_panes() {
 }
 
 #[test]
-fn monitor_says_when_it_is_the_last_ai_turn_and_when_turns_are_over() {
+fn monitor_says_when_one_ai_post_is_left_and_when_the_limit_is_reached() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B"), (C, "C")]);
     let m = Monitor::start(&r, A.0);
     r.post(B, "1");
-    assert!(!m.next()["text"].as_str().unwrap().contains("마지막 차례"));
-    r.post(C, "2");
-    assert!(m.next()["text"].as_str().unwrap().ends_with(
-        "이번이 AI 의 마지막 차례다 — 다른 AI 를 부르지 말고 사람에게 넘기거나 끝맺는다."
-    ));
-    r.post(B, "3");
-    assert!(
-        m.next()["text"]
-            .as_str()
-            .unwrap()
-            .contains("AI 차례가 끝났다")
+    assert_eq!(
+        m.next()["text"],
+        "방 review 에 새 글 #1 (보낸 이: B) — maru room read review 로 읽는다."
     );
-    // 사람의 글이 차례를 다시 연다.
+    r.post(C, "2");
+    assert_eq!(
+        m.next()["text"],
+        "방 review 에 새 글 #2 (보낸 이: C) — maru room read review 로 읽는다. 사람 글 없이 이어진 AI 글 2개 — 상한 3개까지 하나 남았다."
+    );
+    r.post(B, "3");
+    assert_eq!(
+        m.next()["text"],
+        "방 review 에 새 글 #3 (보낸 이: B) — maru room read review 로 읽는다. 사람 글 없이 이어진 AI 글 3개로 상한에 닿았다 — 사람이 올릴 때까지 AI 글은 거절된다."
+    );
     r.say("가나", "계속");
     let text = m.next()["text"].as_str().unwrap().to_owned();
-    assert!(!text.contains("차례"), "{text}");
+    assert!(!text.contains("상한"), "{text}");
 }
 
 #[test]
@@ -858,7 +880,7 @@ fn monitor_tells_once_that_the_room_closed_and_who_closed_it() {
     r.ok(None, &["room", "close", "review"]);
     let ev = m.next();
     assert_eq!(ev["kind"], "close");
-    assert_eq!(ev["text"], "방이 닫혔다 (review) — 더 올리지 않는다.");
+    assert_eq!(ev["text"], "방이 닫혔다 (review).");
     m.quiet_for(Duration::from_millis(800));
 
     r.ok(None, &["room", "new", "review"]);
@@ -869,7 +891,7 @@ fn monitor_tells_once_that_the_room_closed_and_who_closed_it() {
         m.next(),
         serde_json::json!({
             "event": "room", "room": "review", "seq": 1, "from": "B", "kind": "close",
-            "text": "방이 닫혔다 (review, 닫은 이: B) — 더 올리지 않는다."
+            "text": "방이 닫혔다 (review, 닫은 이: B)."
         })
     );
 }
@@ -897,7 +919,7 @@ fn monitor_batches_a_post_and_the_close_after_it_as_the_close() {
         ev,
         serde_json::json!({
             "event": "room", "room": "review", "first": 1, "seq": 2, "from": "B, 가나", "kind": "close",
-            "text": "방이 닫혔다 (review, 닫은 이: 가나(사람)) — 더 올리지 않는다."
+            "text": "방이 닫혔다 (review, 닫은 이: 가나(사람))."
         })
     );
 }
