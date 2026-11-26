@@ -251,8 +251,13 @@ fn a_room_name_cannot_be_only_digits_or_taken_by_an_open_room() {
     let r = Rooms::new();
     let long = "a".repeat(33);
     for bad in ["42", "a b", "방", "", &long] {
-        let out = r.run(&["new", bad]);
-        assert_eq!(out.status.code(), Some(1), "{bad:?}: {}", stderr(&out));
+        refused(
+            &r.run(&["new", bad]),
+            1,
+            &format!(
+                "a room name must be 1 to 32 ASCII letters, digits, `_`, `.`, `+` or `-`, not only digits (got {bad:?})"
+            ),
+        );
     }
     assert!(!r.db().exists(), "거절된 new 가 방 파일을 만들었다");
     assert_eq!(r.ok(&["new", &"a".repeat(32)]), "1\n");

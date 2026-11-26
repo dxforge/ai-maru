@@ -325,7 +325,7 @@ fn members(conn: &Connection, room: i64) -> Result<Vec<String>> {
 fn new(path: &Path, name: &str, topic: &str) -> Result<i64> {
     if !crate::is_name(name) || is_id(name) {
         bail!(
-            "a room name must be 1 to {} letters, digits, `_`, `.`, `+` or `-`, not only digits (got {name:?})",
+            "a room name must be 1 to {} ASCII letters, digits, `_`, `.`, `+` or `-`, not only digits (got {name:?})",
             crate::MAX_NAME_BYTES
         );
     }
