@@ -3,6 +3,7 @@ import { decodeHTML, escapeText } from 'entities'
 import { Marked, Renderer, type Token, type Tokens } from 'marked'
 import type { HighlightCache } from './codeBlocks'
 import type { DiagramCache } from './diagrams'
+import { collectFootnotes, footnotes, isFootnoteId } from './footnotes'
 
 // 문서 안의 이미지는 띄우지 않고 대체 텍스트만 남긴다 — 원격 주소는 CSP 가 막아 깨진 그림이 되고,
 // 상대 경로는 기준이 될 디렉토리를 받지 않는다.
@@ -12,7 +13,7 @@ const marked = new Marked({
       return this.text({ type: 'text', raw: text, text })
     }
   }
-})
+}).use(footnotes)
 
 // 문서 안의 HTML 은 아래 목록의 태그·속성만 남긴다. 빼야 할 것이 앱 CSS 가 걸리는 class 말고도 브라우저가
 // 패널 밖 창 위에 띄우는 `popover` 속성·`dialog` 태그까지 여러 갈래라, 나열하면 하나를 빠뜨리기 쉽기 때문이다.
@@ -26,7 +27,9 @@ const ALLOWED_TAGS = [
 ]
 // `type`·`checked`·`disabled` 는 작업 목록의 checkbox, `align` 은 표 정렬, `start` 는 번호 목록의 시작 번호다.
 // `href` 의 `javascript:` 같은 주소는 DOMPurify 의 기본 URI 검사가 지운다.
+// `id` 는 각주 확장이 만든 것만 남긴다.
 const ALLOWED_ATTR = [
+  'id',
   'href',
   'title',
   'class',
@@ -44,10 +47,13 @@ let purify: typeof DOMPurify | undefined
 function sanitizer(): typeof DOMPurify {
   if (purify) return purify
   purify = DOMPurify()
-  // `class` 는 코드 블록의 `language-*` 만 남긴다. 앱의 class 를 붙이면 앱 CSS 가 걸리기 때문이다.
+  // `class` 는 코드 블록의 `language-*` 와 각주 목록의 `footnotes` 만 남긴다. 앱의 class 를 붙이면 앱 CSS 가 걸리기 때문이다.
   purify.addHook('uponSanitizeAttribute', (node, data) => {
+    if (data.attrName === 'id') data.keepAttr = isFootnoteId(data.attrValue)
     if (data.attrName !== 'class') return
-    data.keepAttr = node.nodeName === 'CODE' && /^language-\S+$/.test(data.attrValue)
+    data.keepAttr =
+      (node.nodeName === 'CODE' && /^language-\S+$/.test(data.attrValue)) ||
+      (node.nodeName === 'OL' && data.attrValue === 'footnotes')
   })
   // `input` 은 작업 목록(`- [ ]`)이 만드는 비활성 checkbox 만 남긴다.
   purify.addHook('uponSanitizeElement', (node, data) => {
@@ -66,10 +72,13 @@ export type Part = { tokens: Token[] } | { text: string }
 
 export type Prepared = { heading: string | undefined; parts: Part[] }
 
+// 각주 id 의 머리에 붙일 문서 번호. 한 창에 각주가 있는 문서가 둘 붙어도 id 가 겹치지 않게 한다.
+let documents = 0
+
 /**
  * 문서를 한 번 lexing 해 첫 heading 과 렌더할 묶음을 낸다. 묶음은 최상위 블록 경계에서 나누므로 코드 블록·표가
  * 묶음 사이에서 잘리지 않는다. HTML 로 연 태그가 닫히기 전에는 나누지 않는다. 참조형 링크는 lexing 할 때 이미
- * 주소로 풀리므로 묶음마다 따로 렌더해도 된다.
+ * 주소로 풀리므로 묶음마다 따로 렌더해도 된다. 각주도 lexing 한 뒤 번호를 토큰에 적고 정의를 마지막 묶음으로 모은다.
  */
 export function prepareMarkdown(text: string, size = PART_SIZE): Prepared {
   let tokens: Token[]
@@ -79,6 +88,7 @@ export function prepareMarkdown(text: string, size = PART_SIZE): Prepared {
     // 아주 긴 문단은 marked 의 정규식이 호출 스택을 넘겨 던지므로, 문서를 버리지 않고 원문을 글자로 보인다.
     return { heading: undefined, parts: splitText(text, size).map((t) => ({ text: t })) }
   }
+  collectFootnotes(tokens, `md${++documents}-`)
   const heading = tokens.find((t) => t.type === 'heading') as Tokens.Heading | undefined
   const parts: Part[] = []
   let part: Token[] = []
@@ -200,6 +210,7 @@ function plainText(tokens: Token[]): string {
       // 본문 글자는 marked 가 text 토큰을 escape 한 HTML 을 브라우저가 푼 것이라 같은 두 단계를 거친다.
       // escape 를 건너뛰면 marked 가 &amp; 로 바꿔 둔 세미콜론 없는 참조까지 풀린다.
       if (t.type === 'text') return decodeHTML(textRenderer.text(t as Tokens.Text))
+      if (t.type === 'footnoteRef') return t.number === undefined ? t.raw : ''
       return t.type === 'codespan' || t.type === 'escape' ? t.text : ''
     })
     .join('')

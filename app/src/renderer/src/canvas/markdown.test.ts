@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // DOMPurify 는 DOM 이 없으면 입력을 거르지 않고 그대로 돌려주므로, 이 파일만 DOM 환경에서 돌린다.
+import fc from 'fast-check'
 import { Marked } from 'marked'
 import { describe, expect, it, vi } from 'vitest'
 import { MarkdownBody, prepareMarkdown, renderPart, type Part } from './markdown'
@@ -295,6 +296,167 @@ describe('prepareMarkdown 의 묶음', () => {
     } finally {
       lexer.mockRestore()
     }
+  })
+})
+
+describe('각주', () => {
+  // 묶음을 따로 렌더해 붙인 본문
+  function body(text: string, size?: number): HTMLElement {
+    const el = document.createElement('div')
+    for (const p of prepareMarkdown(text, size).parts)
+      el.insertAdjacentHTML('beforeend', renderPart(p))
+    return el
+  }
+  const refs = (el: HTMLElement): string[] =>
+    [...el.querySelectorAll('sup > a')].map((a) => a.textContent!)
+  const notes = (el: HTMLElement): string[] =>
+    [...el.querySelectorAll('ol.footnotes > li')].map((li) => li.textContent!.trim())
+  // 문서마다 다른 id 머리를 지운 HTML
+  const plain = (el: HTMLElement): string => el.innerHTML.replace(/md\d+-fn/g, 'fn')
+
+  it('참조는 위첨자 번호 링크, 정의는 문서 끝 구분선 아래 번호 목록이고 ↩ 로 참조에 돌아간다', () => {
+    const el = body('# T\n\nA[^1] b.\n\n[^1]: Note.\n\nafter')
+    const ref = el.querySelector('p > sup > a')!
+    expect(ref.textContent).toBe('1')
+    const list = el.lastElementChild!
+    expect(list.matches('ol.footnotes')).toBe(true)
+    expect(list.previousElementSibling!.tagName).toBe('HR')
+    expect(
+      el.querySelector('ol.footnotes')!.previousElementSibling!.previousElementSibling!.textContent
+    ).toBe('after')
+    const item = list.querySelector('li')!
+    expect(ref.getAttribute('href')).toBe(`#${item.id}`)
+    const back = item.querySelector('p > a')!
+    expect(back.textContent).toBe('↩\uFE0E')
+    expect(back.getAttribute('title')).toBe('본문으로 돌아가기')
+    expect(back.getAttribute('href')).toBe(`#${ref.id}`)
+    expect(item.querySelector('p')!.textContent).toBe('Note. ↩\uFE0E')
+  })
+
+  it('번호는 첫 참조 순서이고, 이름 라벨도 번호로 보이며, 라벨은 대소문자를 가리지 않는다', () => {
+    const el = body('x[^b] y[^Note] z[^a] w[^B]\n\n[^a]: A\n[^note]: N\n[^b]: B')
+    expect(refs(el)).toEqual(['1', '2', '3', '1'])
+    expect(notes(el).map((n) => n[0])).toEqual(['B', 'N', 'A'])
+  })
+
+  it('정의 없는 참조는 글자 그대로, 참조 없는 정의는 그리지 않는다', () => {
+    const el = body('x[^1] y[^none]\n\n[^1]: one\n\n[^unused]: gone')
+    expect(el.querySelector('p')!.textContent).toBe('x1 y[^none]')
+    expect(notes(el)).toEqual(['one ↩\uFE0E'])
+    expect(el.textContent).not.toContain('gone')
+  })
+
+  it('참조가 하나도 없으면 목록도 구분선도 없다', () => {
+    const el = body('text\n\n[^1]: lonely')
+    expect(el.innerHTML).toBe('<p>text</p>\n')
+  })
+
+  it('같은 각주를 두 번 참조하면 ↩ 를 참조마다 달고 둘째부터 번호를 붙인다', () => {
+    const el = body('a[^1] b[^1]\n\n[^1]: N')
+    const [first, second] = el.querySelectorAll<HTMLAnchorElement>('sup > a')
+    expect(first!.id).not.toBe(second!.id)
+    const back = [...el.querySelectorAll('li a')]
+    expect(back.map((a) => a.innerHTML)).toEqual(['↩\uFE0E', '↩\uFE0E<sup>2</sup>'])
+    expect(back.map((a) => a.getAttribute('href'))).toEqual([`#${first!.id}`, `#${second!.id}`])
+  })
+
+  it('정의는 4칸 들여 쓴 줄로 여러 문단·코드 블록을 담는다', () => {
+    const el = body('a[^1]\n\n[^1]: first\n    lazy\n\n    second\n\n        code\n\nback to body')
+    const item = el.querySelector('ol.footnotes > li')!
+    expect([...item.children].map((c) => c.tagName)).toEqual(['P', 'P', 'PRE', 'P'])
+    expect(item.querySelector('pre')!.textContent).toBe('code\n')
+    expect(item.lastElementChild!.textContent).toBe('↩\uFE0E')
+    expect([...el.children].map((c) => c.tagName)).toEqual(['P', 'P', 'HR', 'OL'])
+    expect(el.children[1]!.textContent).toBe('back to body')
+  })
+
+  it('정의는 빈 줄 없이 앞 문단을 끊고, 빈 줄 없이 이어진 정의도 따로 읽는다', () => {
+    const el = body('a[^1] b[^2]\n[^1]: one\n[^2]: two')
+    expect(el.querySelector('p')!.textContent).toBe('a1 b2')
+    expect(notes(el)).toEqual(['one ↩\uFE0E', 'two ↩\uFE0E'])
+  })
+
+  it('라벨에 공백이 든 것, 주소가 붙은 것, 코드 안의 것은 각주가 아니다', () => {
+    const el = body('[^a b] [^1](https://x) `[^1]`\n\n[^1]: one')
+    expect(el.querySelector('sup')).toBeNull()
+    expect(el.querySelector('p a')!.getAttribute('href')).toBe('https://x')
+    expect(el.querySelector('p')!.textContent).toBe('[^a b] ^1 [^1]')
+  })
+
+  it('정의 안의 참조도 그 정의 자리 순서로 센다', () => {
+    const el = body('a[^x]\n\n[^x]: see[^y]\n\n[^y]: Y')
+    expect(refs(el)).toEqual(['1', '2'])
+    expect(notes(el)).toEqual(['see2 ↩\uFE0E', 'Y ↩\uFE0E'])
+  })
+
+  it('heading 의 참조는 제목 글자에 넣지 않는다', () => {
+    expect(prepareMarkdown('# T[^1] [^none]\n\n[^1]: n').heading).toBe('T [^none]')
+  })
+
+  it('참조와 정의가 다른 묶음에 있어도 번호가 맞고, 정의는 마지막 묶음에 들어간다', () => {
+    const text = 'a[^p]\n\n[^p]: P\n\n' + 'filler\n\n'.repeat(20) + 'b[^q] c[^p]\n\n[^q]: Q'
+    const { parts } = prepareMarkdown(text, 20)
+    expect(parts.length).toBeGreaterThan(2)
+    const html = parts.map(renderPart)
+    expect(html.findIndex((h) => h.includes('<ol class="footnotes">'))).toBe(html.length - 1)
+    const el = body(text, 20)
+    expect(refs(el)).toEqual(['1', '2', '1'])
+    expect(notes(el)).toEqual(['P ↩\uFE0E ↩\uFE0E2', 'Q ↩\uFE0E'])
+  })
+
+  it('sanitize 뒤에도 각주 링크마다 같은 본문에 가리키는 id 가 하나 있다', () => {
+    const el = body('a[^1] b[^n] c[^1]\n\n[^1]: one\n\n[^n]: two\n\n    more')
+    const links = [...el.querySelectorAll('a')]
+    expect(links).toHaveLength(6)
+    for (const a of links)
+      expect(el.querySelectorAll(`[id="${a.getAttribute('href')!.slice(1)}"]`)).toHaveLength(1)
+  })
+
+  it('사용자 HTML 의 id 는 각주 id 모양이 아니면 지운다', () => {
+    const el = body('<p id="app">x</p><a id="md1-fnref-1x">y</a>')
+    expect(el.querySelectorAll('[id]')).toHaveLength(0)
+  })
+
+  it('문서마다 id 머리가 달라 같은 창에 붙어도 id 가 겹치지 않는다', () => {
+    const a = body('x[^1]\n\n[^1]: n')
+    const b = body('x[^1]\n\n[^1]: n')
+    const ids = [...a.querySelectorAll('[id]'), ...b.querySelectorAll('[id]')].map((e) => e.id)
+    expect(new Set(ids).size).toBe(4)
+    expect(plain(a)).toBe(plain(b))
+  })
+
+  it('두 문서를 lexing 만 먼저 한 뒤 렌더해도 두 문서 모두 번호가 1 부터다', () => {
+    const one = prepareMarkdown('a[^x] b[^y]\n\n[^x]: X\n\n[^y]: Y')
+    const two = prepareMarkdown('c[^z]\n\n[^z]: Z')
+    const el = document.createElement('div')
+    el.innerHTML = two.parts.map(renderPart).join('')
+    expect(refs(el)).toEqual(['1'])
+    el.innerHTML = one.parts.map(renderPart).join('')
+    expect(refs(el)).toEqual(['1', '2'])
+  })
+
+  it('묶음 크기와 상관없이, 묶음을 따로 렌더해 붙인 본문은 한 번에 렌더한 것과 같다', () => {
+    const block = fc.constantFrom(
+      'p[^1] q[^Two]',
+      'r[^3][^1]',
+      '[^1]: one[^3]',
+      '[^two]: two\n    more\n\n        code',
+      '[^3]: three\n[^4]: unused',
+      '> quote[^4]',
+      '- item[^two]',
+      '[^none] text',
+      '# h[^1]'
+    )
+    fc.assert(
+      fc.property(
+        fc.array(block, { maxLength: 12 }),
+        fc.integer({ min: 1, max: 60 }),
+        (bs, size) => {
+          const text = bs.join('\n\n')
+          expect(plain(body(text, size))).toBe(plain(body(text, Infinity)))
+        }
+      )
+    )
   })
 })
 

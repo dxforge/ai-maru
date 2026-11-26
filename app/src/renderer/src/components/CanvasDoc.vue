@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
 import { BlockHighlighter, hasCodeBlock } from '../canvas/codeBlocks'
 import { drawDiagrams, hasDiagram } from '../canvas/diagrams'
 import { fillBody } from '../canvas/fill'
+import { isFootnoteId } from '../canvas/footnotes'
 import { zoomImage } from '../canvas/zoomBox'
 import { loadMermaid } from '../canvas/mermaid'
 import { bodyOf, codeBodyOf, type CanvasEntry } from '../canvas/store'
@@ -28,6 +29,7 @@ function reset(): void {
   stop = undefined
   blocks?.stop()
   blocks = undefined
+  waiting = undefined
   scrollbars.release()
 }
 watch(
@@ -45,6 +47,47 @@ watch(
 function added(html: string): void {
   if (hasDiagram(html)) draw()
   if (hasCodeBlock(html)) blocks?.scan()
+  if (waiting) jumpTo(waiting)
+}
+
+// 각주 번호·↩ 를 누르면 이 문서 안에서 대상을 찾아 스크롤하고, 기본 해시 이동은 막는다. 해시로 가면 창에서 처음 맞는
+// id 로 가기 때문이다. 정의는 마지막 묶음에 있으므로, 그 묶음이 아직 붙지 않았으면 붙은 뒤에 간다.
+let waiting: string | undefined
+function follow(e: MouseEvent): void {
+  const href = (e.target as Element).closest('a')?.getAttribute('href')
+  if (!href?.startsWith('#') || !isFootnoteId(href.slice(1))) return
+  e.preventDefault()
+  waiting = href.slice(1)
+  jumpTo(waiting)
+}
+
+let jumps = 0
+function jumpTo(id: string): void {
+  const target = root.value?.querySelector<HTMLElement>(`[id="${id}"]`)
+  if (!target) return
+  waiting = undefined
+  void scrollTo(target, ++jumps)
+}
+
+// 화면 밖 묶음의 높이는 어림값이라, 스크롤해 대상 위의 묶음이 그려지면 대상이 움직인다. 그래서 대상이 제자리에 설 때까지
+// 프레임마다 다시 맞춘다. 맞출 수 없는 자리(문서 끝)면 scrollTop 이 바뀌지 않아 멈춘다.
+async function scrollTo(target: HTMLElement, jump: number): Promise<void> {
+  const scroller = scrollParent(target)
+  if (!scroller) return
+  for (let i = 0; i < 10 && jump === jumps; i++) {
+    const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0
+    const from = scroller.scrollTop
+    scroller.scrollTop =
+      from + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - margin
+    if (Math.abs(scroller.scrollTop - from) < 1) return
+    await new Promise(requestAnimationFrame)
+  }
+}
+
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement)
+    if (/auto|scroll/.test(getComputedStyle(p).overflowY)) return p
+  return null
 }
 
 function draw(): void {
@@ -78,6 +121,7 @@ onBeforeUnmount(reset)
     class="markdown zoomable"
     :class="{ classic }"
     @pointerover="hover"
+    @click="follow"
   >
     <!-- eslint-disable-next-line vue/no-v-html -- MarkdownBody 가 낸 HTML 이다. lexing 한 묶음은 DOMPurify 로 걸렀고, 글자 묶음은 escape 했다 -->
     <div v-html="first" />
@@ -241,6 +285,15 @@ onBeforeUnmount(reset)
 .markdown :deep(.diagram-error) {
   color: var(--error);
   font-size: var(--text-1);
+}
+
+.markdown :deep([id]) {
+  scroll-margin-top: calc(var(--pinned-top, 0px) + var(--space-4));
+}
+
+.markdown :deep(.footnotes) {
+  font-size: var(--text-2);
+  color: var(--muted);
 }
 
 .markdown :deep(hr) {

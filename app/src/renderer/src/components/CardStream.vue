@@ -21,6 +21,7 @@ import StreamRow from './StreamRow.vue'
 import {
   ROW_H,
   anchorScroll,
+  bandRows,
   computePins,
   fitPins,
   goToScrollTop,
@@ -215,12 +216,15 @@ onBeforeUnmount(() => {
     <div ref="stage" class="stage">
       <div ref="scroller" v-overlay-scroll="'y'" class="scroll" @scroll="onScroll">
         <div ref="list" class="cards">
+          <!-- `--pinned-top` 은 이 카드 안을 읽을 때 위에 붙는 제목 줄의 높이다. 본문이 문서 안 링크로 스크롤할 때 대상이
+               그 줄에 가리지 않게 쓴다. -->
           <section
             v-for="(item, i) in items"
             :key="item.key"
             class="card"
             :data-key="item.key"
             :data-id="item.id"
+            :style="{ '--pinned-top': `${bandRows(i + 1) * ROW_H}px` }"
           >
             <StreamRow
               :title="item.title"

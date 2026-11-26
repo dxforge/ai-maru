@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import {
   activePane,
   attachFromOutside,
@@ -278,6 +278,88 @@ test('목록의 제목은 본문 heading 과 같은 글자로 보인다', async 
   const body = await markdown(page).locator('h1').textContent()
   expect(body).toBe('Tom & J <3> © & &amp; &amp;')
   await expect(titles(page)).toHaveText(body!)
+})
+
+// 각주 번호와 ↩ 를 두 개씩 둔 문서. 번호와 정의 사이에 `filler` 를 두어 스크롤해야 닿게 한다.
+const footnoteDoc = (tag: string, filler: string) =>
+  [`${tag} first[^a] and second[^b].`, filler, `[^a]: ${tag} note a`, `[^b]: ${tag} note b`].join(
+    '\n\n'
+  )
+
+// 대상이 Canvas 스크롤러 안에서 위에 붙은 제목 줄에 가리지 않고 보이며, 그 줄 바로 아래에 있는지. 정의는 문서 끝에
+// 있어 그 아래로 더 스크롤할 수 없으면 스크롤러 끝에 닿은 것으로 본다.
+async function landed(target: Locator): Promise<boolean> {
+  return target.evaluate((el) => {
+    const viewport = el.closest<HTMLElement>('[data-overlayscrollbars-viewport]')!
+    const box = viewport.getBoundingClientRect()
+    const floor =
+      document.querySelector('.canvas .pins.top')?.getBoundingClientRect().bottom ?? box.top
+    const { top, bottom } = el.getBoundingClientRect()
+    const end = viewport.scrollTop >= viewport.scrollHeight - viewport.clientHeight - 1
+    return top >= floor - 0.5 && bottom <= box.bottom && (top < floor + 40 || end)
+  })
+}
+
+const hash = (page: Page) => page.evaluate(() => location.hash)
+
+test('각주 번호를 누르면 그 정의로 가고, 정의의 ↩ 를 누르면 그 번호로 돌아오며, 창의 주소는 바뀌지 않는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: footnoteDoc('A', long('a')), title: 'A' })
+  const md = markdown(page)
+  await expect(md.locator('.footnotes li')).toHaveCount(2)
+  await settle(page)
+
+  await md.locator('sup a', { hasText: '2' }).click()
+  const note = md.locator('.footnotes li').nth(1)
+  await expect(note).toContainText('A note b')
+  await expect.poll(() => landed(note)).toBe(true)
+
+  await note.getByTitle('본문으로 돌아가기').click()
+  await expect.poll(() => landed(md.locator('sup').nth(1))).toBe(true)
+  expect(await hash(page)).toBe('')
+})
+
+test('큰 문서에서 마지막 묶음이 붙기 전에 각주 번호를 눌러도 붙은 뒤 그 정의로 가고, ↩ 로 돌아온다', async ({
+  launch
+}) => {
+  test.setTimeout(120_000)
+  const { app, page } = await launch()
+  await putCanvas(app, {
+    id: 'a',
+    kind: 'markdown',
+    text: footnoteDoc('A', mixedDoc(2_000_000)),
+    title: 'A'
+  })
+  const md = markdown(page)
+  await expect(md.locator('sup a').first()).toBeVisible()
+  await expect(md.locator('.footnotes')).toHaveCount(0)
+
+  await md.locator('sup a').first().click()
+  const note = md.locator('.footnotes li').first()
+  await expect(note).toContainText('A note a', { timeout: 60_000 })
+  await expect.poll(() => landed(note)).toBe(true)
+
+  await note.getByTitle('본문으로 돌아가기').click()
+  await expect.poll(() => landed(md.locator('sup').first())).toBe(true)
+  expect(await hash(page)).toBe('')
+})
+
+test('각주가 있는 문서가 둘이면 각 문서의 번호는 그 문서의 정의로 간다', async ({ launch }) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: footnoteDoc('A', long('a')), title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: footnoteDoc('B', long('b')), title: 'B' })
+  await expect(page.locator('.canvas .footnotes li')).toHaveCount(4)
+  await settle(page)
+
+  for (const id of ['a', 'b']) {
+    const md = card(page, id).locator('.markdown')
+    await md.locator('sup a').first().click()
+    const note = md.locator('.footnotes li').first()
+    await expect(note).toContainText(`${id.toUpperCase()} note a`)
+    await expect.poll(() => landed(note)).toBe(true)
+  }
 })
 
 function mixedDoc(bytes: number): string {
