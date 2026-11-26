@@ -40,8 +40,8 @@ pub enum RoomCommand {
         #[arg(long, value_name = "N", default_value_t = DEFAULT_AI_LIMIT)]
         ai_limit: u32,
     },
-    /// Join a room from a claude session (this pty and CLAUDE_CODE_SESSION_ID). Prints the
-    /// room's members and commands. A person does not join, but posts with --as.
+    /// Join a room from a claude session in this pane (MARU_PTY_ID). Prints the room's members
+    /// and commands. A person does not join, but posts with --as.
     Join {
         room: String,
         /// Your name in the room: 1–32 letters, digits and `_.+-`.
@@ -208,7 +208,6 @@ fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     // 다른 프로세스가 먼저 만들었을 수 있다.
     if user_version(&tx)? == 0 {
-        // 사람 참여자는 pty·session 이 없다.
         tx.execute_batch(
             "CREATE TABLE rooms (
                 id INTEGER PRIMARY KEY,
@@ -224,7 +223,6 @@ fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
                 name TEXT NOT NULL,
                 kind TEXT NOT NULL,
                 pty TEXT,
-                session TEXT,
                 notified_seq INTEGER NOT NULL DEFAULT 0,
                 read_seq INTEGER NOT NULL DEFAULT 0,
                 joined_ms INTEGER NOT NULL,
@@ -616,9 +614,6 @@ fn new(path: &Path, name: &str, topic: &str, ai_limit: u32) -> Result<String> {
 fn join(path: &Path, arg: &str, name: &str) -> Result<String> {
     check_member_name(name)?;
     let pty = this_pty()?;
-    let session = crate::env_var("CLAUDE_CODE_SESSION_ID").ok_or_else(|| {
-        anyhow!("join 은 claude 세션의 Bash 에서만 된다 — CLAUDE_CODE_SESSION_ID 가 없다")
-    })?;
     let mut conn = connect(path, false)?.ok_or_else(|| no_room(arg))?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let room = find_room(&tx, arg)?;
@@ -638,34 +633,33 @@ fn join(path: &Path, arg: &str, name: &str) -> Result<String> {
             josa(&m.name, Josa::Euro)
         );
     }
-    let held: Option<(MemberKind, Option<String>)> = tx
+    let held: Option<MemberKind> = tx
         .query_row(
-            "SELECT kind, session FROM participants WHERE room = ?1 AND name = ?2",
+            "SELECT kind FROM participants WHERE room = ?1 AND name = ?2",
             params![room.id, name],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| r.get(0),
         )
         .optional()?;
-    match held {
-        // 이 pane 의 참여이거나, 같은 세션을 다른 pane 에서 `--resume` 했다. 참여를 이 pane 으로 옮긴다.
+    match (here, held) {
         // monitor 가 없던 동안 `room read` 로 읽은 글은 다시 알리지 않는다.
-        Some((MemberKind::Claude, held)) if here.is_some() || held.as_deref() == Some(&session) => {
+        (Some(_), _) => {
             tx.execute(
-                "UPDATE participants SET pty = ?3, session = ?4, notified_seq = MAX(notified_seq, read_seq)
+                "UPDATE participants SET notified_seq = MAX(notified_seq, read_seq)
                  WHERE room = ?1 AND name = ?2",
-                params![room.id, name, pty, session],
+                params![room.id, name],
             )?;
         }
-        Some((kind, _)) => bail!(
+        (None, Some(kind)) => bail!(
             "방 {} 에 {} 이미 있다",
             room.name,
             shown_josa(name, kind, Josa::I)
         ),
-        None => {
+        (None, None) => {
             // 들어오기 전의 글은 알리지 않는다. 읽은 자리는 0 으로 두어 첫 `room read` 가 지난 글을 모두 보이게 한다.
             tx.execute(
-                "INSERT INTO participants (room, name, kind, pty, session, notified_seq, read_seq, joined_ms)
-                 VALUES (?1, ?2, 'claude', ?3, ?4, ?5, 0, ?6)",
-                params![room.id, name, pty, session, last_seq(&tx, room.id)?, now_ms()],
+                "INSERT INTO participants (room, name, kind, pty, notified_seq, read_seq, joined_ms)
+                 VALUES (?1, ?2, 'claude', ?3, ?4, 0, ?5)",
+                params![room.id, name, pty, last_seq(&tx, room.id)?, now_ms()],
             )?;
         }
     }

@@ -22,13 +22,13 @@
 
 ## 참여자는 pane 에 묶인 claude 와 이름만 있는 사람이다
 
-claude 참여자는 `room join <방> --as <이름>` 으로 들어오고, 참여자 행(`kind = 'claude'`)에 그 pane 의 `MARU_PTY_ID` 와 `CLAUDE_CODE_SESSION_ID` 를 적는다. 사람 참여자는 `join` 하지 않고, `room post <방> --as <이름>` 으로 처음 올릴 때 `pty`·`session` 이 비어 있는 행(`kind = 'human'`)으로 더해진다. monitor 는 `kind = 'claude'` 인 행만 보므로 사람에게는 알림이 가지 않는다. `post`·`read`·`close` 의 `--as` 는 claude 참여자의 이름을 거절한다.
+claude 참여자는 `room join <방> --as <이름>` 으로 들어오고, 참여자 행(`kind = 'claude'`)에 그 pane 의 `MARU_PTY_ID` 를 적는다. 사람 참여자는 `join` 하지 않고, `room post <방> --as <이름>` 으로 처음 올릴 때 `pty` 가 비어 있는 행(`kind = 'human'`)으로 더해진다. monitor 는 `kind = 'claude'` 인 행만 보므로 사람에게는 알림이 가지 않는다. `post`·`read`·`close` 의 `--as` 는 claude 참여자의 이름을 거절한다.
 
 claude 참여는 `leave` 하기 전까지 그 pane 에 남는다. 같은 pane 에서 `/clear` 하거나 claude 를 새로 띄우면, 방에 들어간 적 없는 새 세션이 옛 이름으로 알림을 받고 `--as` 없이 올린 글도 옛 이름으로 적힌다. 막으려면 `/clear` 전에 `room leave <방>` 하거나, 누구든 `room leave <방> --as <이름>` 으로 내보낸다.
 
 - 코드: `room.rs` 의 `join`·`person`·`member`·`post`·`shown`
 - 바꾸면: 사람 행에 pty 를 적으면, `member` 가 kind 를 보지 않고 pty 로만 참여자를 찾으므로, 사람이 claude 의 pane 에서 올린 뒤에는 그 pane 의 claude 가 `--as` 없이 올린 글이 사람 글로 적힐 수 있다.
-- 테스트: `tests/room.rs` › `a_person_is_added_on_the_first_post_and_reads_from_its_own_place`, `as_with_a_claude_members_name_is_refused`, `ais_stop_after_three_posts_until_a_person_posts`, `session_start_leaves_rooms_alone`
+- 테스트: `tests/room.rs` › `a_person_is_added_on_the_first_post_and_reads_from_its_own_place`, `as_with_a_claude_members_name_is_refused`, `ais_stop_after_three_posts_until_a_person_posts`, `another_pane_takes_a_name_only_after_leave_as`, `session_start_leaves_rooms_alone`
 
 ## 기록은 `BEGIN IMMEDIATE` 하나에서 확인하고 더한다
 
@@ -55,7 +55,7 @@ monitor 는 방 파일 경로 뒤에 `-notify` 를 붙인 파일(기본은 `room
 
 ## monitor 는 자기 pty 의 참여자에게만 `room` 이벤트를 쓴다
 
-monitor 는 자기 `MARU_PTY_ID` 가 claude 참여자인 방마다, 알린 자리 뒤에 남이 더한 기록을 찾아 한 줄을 쓰고 알린 자리를 올린다. 앱 소켓과 상관없이 돈다. session id 는 보지 않는다. `/clear` 하면 Bash 쪽 `CLAUDE_CODE_SESSION_ID` 는 새 id 가 되지만 monitor 는 다시 뜨지 않기 때문이다.
+monitor 는 자기 `MARU_PTY_ID` 가 claude 참여자인 방마다, 알린 자리 뒤에 남이 더한 기록을 찾아 한 줄을 쓰고 알린 자리를 올린다. 앱 소켓과 상관없이 돈다.
 
 - 코드: `room.rs` 의 `pending`·`event`·`mark`·`Monitor` ↔ `main.rs` 의 `claude_monitor`(모듈 doc 의 알림 모양)
 - 바꾸면: 알린 자리를 쓰기 전에 올리면, 줄을 쓰지 못하고 끝난 monitor 의 알림을 다음 monitor 가 내지 않는다.

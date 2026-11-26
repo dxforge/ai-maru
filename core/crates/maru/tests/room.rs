@@ -7,9 +7,9 @@ use std::process::{Child, Command, Output, Stdio};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-const A: (&str, &str) = ("p-aaaa0001", "s-a");
-const B: (&str, &str) = ("p-bbbb0002", "s-b");
-const C: (&str, &str) = ("p-cccc0003", "s-c");
+const A: &str = "p-aaaa0001";
+const B: &str = "p-bbbb0002";
+const C: &str = "p-cccc0003";
 
 struct Rooms {
     dir: tempfile::TempDir,
@@ -28,7 +28,7 @@ impl Rooms {
         self.dir.path().join("state").join("rooms.sqlite")
     }
 
-    fn cmd(&self, who: Option<(&str, &str)>, args: &[&str]) -> Command {
+    fn cmd(&self, who: Option<&str>, args: &[&str]) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_maru"));
         cmd.args(args)
             .env("MARU_ROOM_DB", self.db())
@@ -38,18 +38,17 @@ impl Rooms {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        if let Some((pty, session)) = who {
-            cmd.env("MARU_PTY_ID", pty)
-                .env("CLAUDE_CODE_SESSION_ID", session);
+        if let Some(pty) = who {
+            cmd.env("MARU_PTY_ID", pty);
         }
         cmd
     }
 
-    fn run(&self, who: Option<(&str, &str)>, args: &[&str]) -> Output {
+    fn run(&self, who: Option<&str>, args: &[&str]) -> Output {
         self.cmd(who, args).output().unwrap()
     }
 
-    fn input(&self, who: Option<(&str, &str)>, args: &[&str], input: &str) -> Output {
+    fn input(&self, who: Option<&str>, args: &[&str], input: &str) -> Output {
         let mut child = self.cmd(who, args).stdin(Stdio::piped()).spawn().unwrap();
         child
             .stdin
@@ -60,14 +59,14 @@ impl Rooms {
         child.wait_with_output().unwrap()
     }
 
-    fn ok(&self, who: Option<(&str, &str)>, args: &[&str]) -> String {
+    fn ok(&self, who: Option<&str>, args: &[&str]) -> String {
         let out = self.run(who, args);
         assert!(out.status.success(), "{args:?}: {}", stderr(&out));
         stdout(&out)
     }
 
     /// 이 pane 에서 join 한 claude 로 올린다.
-    fn post(&self, who: (&str, &str), text: &str) -> Output {
+    fn post(&self, who: &str, text: &str) -> Output {
         self.run(Some(who), &["room", "post", "review", text])
     }
 
@@ -76,7 +75,7 @@ impl Rooms {
         self.run(None, &["room", "post", "review", "--as", name, text])
     }
 
-    fn open_review(&self, members: &[((&str, &str), &str)]) {
+    fn open_review(&self, members: &[(&str, &str)]) {
         self.ok(None, &["room", "new", "review", "--topic", "설계 검토"]);
         for (who, name) in members {
             self.ok(Some(*who), &["room", "join", "review", "--as", name]);
@@ -247,7 +246,7 @@ fn a_room_sets_its_own_ai_limit_and_0_is_none() {
     let notice = r.ok(Some(A), &["room", "join", "one", "--as", "A"]);
     assert!(notice.contains("AI 글은 1개까지"), "{notice}");
     r.ok(Some(B), &["room", "join", "one", "--as", "B"]);
-    let m = Monitor::start(&r, B.0);
+    let m = Monitor::start(&r, B);
     r.run(Some(A), &["room", "post", "one", "1"]);
     assert!(m.next()["text"].as_str().unwrap().contains("상한에 닿았다"));
     refused(
@@ -285,7 +284,7 @@ fn a_person_s_post_and_leave_are_told_with_the_ai_limit() {
     r.ok(None, &["room", "new", "one", "--ai-limit", "1"]);
     r.ok(Some(A), &["room", "join", "one", "--as", "A"]);
     r.ok(Some(B), &["room", "join", "one", "--as", "B"]);
-    let m = Monitor::start(&r, B.0);
+    let m = Monitor::start(&r, B);
     r.ok(None, &["room", "post", "one", "--as", "민준", "시작"]);
     let text = m.next()["text"].as_str().unwrap().to_owned();
     assert!(
@@ -440,32 +439,13 @@ fn a_pane_rejoins_only_under_its_name() {
     refused_exactly(&out, 1, "이 pane 은 방 review 에 이미 A 로 들어 있다");
     let out = r.run(Some(B), &["room", "join", "review", "--as", "A"]);
     refused_exactly(&out, 1, "방 review 에 A 가 이미 있다");
-
-    let new_session = (A.0, "s-a2");
-    r.ok(Some(new_session), &["room", "join", "review", "--as", "A"]);
-    let session: String = Connection::open(r.db())
-        .unwrap()
-        .query_row(
-            "SELECT session FROM participants WHERE name = 'A'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(session, "s-a2");
+    r.ok(Some(A), &["room", "join", "review", "--as", "A"]);
 }
 
 #[test]
-fn join_needs_a_claude_session_and_prints_the_notice_without_at_signs() {
+fn join_prints_the_notice_without_at_signs() {
     let r = Rooms::new();
     r.ok(None, &["room", "new", "review", "--topic", "설계 검토"]);
-    let mut cmd = r.cmd(Some(A), &["room", "join", "review", "--as", "A"]);
-    let out = cmd.env_remove("CLAUDE_CODE_SESSION_ID").output().unwrap();
-    refused(
-        &out,
-        1,
-        "join 은 claude 세션의 Bash 에서만 된다 — CLAUDE_CODE_SESSION_ID 가 없다",
-    );
-
     let notice = r.ok(Some(A), &["room", "join", "review", "--as", "A"]);
     assert!(
         notice.starts_with("방 review 에 A 로 들어왔다.\n주제: 설계 검토\n"),
@@ -594,21 +574,18 @@ fn leaving_is_an_entry_of_the_room() {
 }
 
 #[test]
-fn a_session_resumed_in_another_pane_takes_its_name_back_on_join() {
+fn another_pane_takes_a_name_only_after_leave_as() {
     let r = Rooms::new();
     r.open_review(&[(A, "A")]);
-    // 같은 claude 세션(s-a)을 다른 pane 에서 `--resume` 했다.
-    let moved = ("p-aaaa0009", A.1);
-    let out = r.post(moved, "x");
-    refused(&out, 1, "들어 있지 않다");
+    let moved = "p-aaaa0009";
+    refused(&r.post(moved, "x"), 1, "들어 있지 않다");
+    refused_exactly(
+        &r.run(Some(moved), &["room", "join", "review", "--as", "A"]),
+        1,
+        "방 review 에 A 가 이미 있다",
+    );
+    r.ok(Some(moved), &["room", "leave", "review", "--as", "A"]);
     r.ok(Some(moved), &["room", "join", "review", "--as", "A"]);
-    let pty: String = Connection::open(r.db())
-        .unwrap()
-        .query_row("SELECT pty FROM participants WHERE name = 'A'", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(pty, moved.0);
     assert!(r.post(moved, "옮긴 pane 에서").status.success());
     assert_eq!(r.post(A, "옛 pane 에서").status.code(), Some(1));
 }
@@ -736,7 +713,7 @@ impl Drop for Monitor {
 fn monitor_notifies_a_post_without_the_app() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     r.post(B, "A, 어떻게 보나요?");
     assert_eq!(
         m.next(),
@@ -756,7 +733,7 @@ fn monitor_notifies_a_post_without_the_app() {
 fn monitor_notifies_a_persons_post_with_the_person_mark() {
     let r = Rooms::new();
     r.open_review(&[(A, "A")]);
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     r.say("가나", "A, 봐 줘");
     assert_eq!(
         m.next(),
@@ -771,7 +748,7 @@ fn monitor_notifies_a_persons_post_with_the_person_mark() {
 fn monitor_notifies_who_left() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     r.ok(Some(B), &["room", "leave", "review"]);
     assert_eq!(
         m.next(),
@@ -788,7 +765,7 @@ fn monitor_batches_entries_posted_while_it_was_away() {
     r.open_review(&[(A, "A"), (B, "B"), (C, "C")]);
     r.post(B, "하나");
     r.say("가나", "둘");
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     let ev = m.next();
     assert_eq!(
         (
@@ -812,7 +789,7 @@ fn monitor_batches_entries_posted_while_it_was_away() {
 fn monitor_skips_other_panes() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
-    let stranger = Monitor::start(&r, C.0);
+    let stranger = Monitor::start(&r, C);
     r.post(B, "x");
     stranger.quiet_for(Duration::from_millis(800));
 }
@@ -821,7 +798,7 @@ fn monitor_skips_other_panes() {
 fn monitor_says_when_one_ai_post_is_left_and_when_the_limit_is_reached() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B"), (C, "C")]);
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     r.post(B, "1");
     assert_eq!(
         m.next()["text"],
@@ -846,7 +823,7 @@ fn monitor_says_when_one_ai_post_is_left_and_when_the_limit_is_reached() {
 fn monitor_stops_notices_after_leave() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     r.ok(Some(A), &["room", "leave", "review"]);
     r.post(B, "x");
     m.quiet_for(Duration::from_millis(800));
@@ -857,11 +834,9 @@ fn rejoining_does_not_wake_for_entries_already_read() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
     r.post(B, "읽은 글");
-    // A 는 monitor 없이 읽었고, 같은 세션을 다른 pane 에서 이어 다시 join 했다.
     r.ok(Some(A), &["room", "read", "review"]);
-    let moved = ("p-aaaa0009", A.1);
-    r.ok(Some(moved), &["room", "join", "review", "--as", "A"]);
-    let m = Monitor::start(&r, moved.0);
+    r.ok(Some(A), &["room", "join", "review", "--as", "A"]);
+    let m = Monitor::start(&r, A);
     m.quiet_for(Duration::from_millis(800));
     r.post(B, "새 글");
     let ev = m.next();
@@ -876,7 +851,7 @@ fn rejoining_does_not_wake_for_entries_already_read() {
 fn monitor_tells_once_that_the_room_closed_and_who_closed_it() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     r.ok(None, &["room", "close", "review"]);
     let ev = m.next();
     assert_eq!(ev["kind"], "close");
@@ -900,8 +875,8 @@ fn monitor_tells_once_that_the_room_closed_and_who_closed_it() {
 fn a_member_who_closes_the_room_is_not_told_by_its_own_monitor() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
-    let closer = Monitor::start(&r, A.0);
-    let other = Monitor::start(&r, B.0);
+    let closer = Monitor::start(&r, A);
+    let other = Monitor::start(&r, B);
     r.ok(Some(A), &["room", "close", "review"]);
     assert_eq!(other.next()["kind"], "close");
     closer.quiet_for(Duration::from_millis(800));
@@ -913,7 +888,7 @@ fn monitor_batches_a_post_and_the_close_after_it_as_the_close() {
     r.open_review(&[(A, "A"), (B, "B")]);
     r.post(B, "마지막 말");
     r.ok(None, &["room", "close", "review", "--as", "가나"]);
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     let ev = m.next();
     assert_eq!(
         ev,
@@ -927,7 +902,7 @@ fn monitor_batches_a_post_and_the_close_after_it_as_the_close() {
 #[test]
 fn monitor_started_before_any_room_notices_rooms_made_later() {
     let r = Rooms::new();
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     assert!(!r.db().exists(), "monitor 가 방 파일을 만들었다");
     r.open_review(&[(A, "A"), (B, "B")]);
     r.post(B, "x");
@@ -939,7 +914,7 @@ fn monitor_stops_room_notices_on_a_newer_schema() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
     let app = FakeApp::listen(&r);
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     r.sql("PRAGMA user_version = 2");
     r.sql("INSERT INTO entries (room, seq, author, author_kind, kind, text, at_ms) VALUES (1, 1, 'B', 'claude', 'post', 'x', 0)");
     r.ring();
@@ -955,7 +930,7 @@ fn monitor_writes_room_and_app_notices_and_keeps_room_ones_after_the_app_goes() 
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
     let app = FakeApp::listen(&r);
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     let inbox = serde_json::json!({"event": "inbox", "from": "p-0000000a", "body": "x"});
     app.send(&inbox);
     assert_eq!(m.next(), inbox);
@@ -971,7 +946,7 @@ fn monitor_writes_room_and_app_notices_and_keeps_room_ones_after_the_app_goes() 
 fn monitor_does_not_spin_on_its_own_connection() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     r.post(B, "x");
     m.next();
     let start = cpu_ms(m.child.id());
@@ -998,7 +973,7 @@ fn monitor_writes_nothing_at_start_when_nothing_is_new() {
     let r = Rooms::new();
     r.open_review(&[(A, "A"), (B, "B")]);
     r.post(A, "자기 글");
-    let m = Monitor::start(&r, A.0);
+    let m = Monitor::start(&r, A);
     m.quiet_for(Duration::from_millis(800));
 }
 
@@ -1043,14 +1018,14 @@ fn members(r: &Rooms) -> Vec<String> {
 #[test]
 fn session_start_leaves_rooms_alone() {
     let r = Rooms::new();
-    let out = hook(&r, A.0, A.1);
+    let out = hook(&r, A, "s-a");
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(!stdout(&out).contains("room"), "{}", stdout(&out));
     assert!(!r.db().exists());
 
     r.open_review(&[(A, "A"), (B, "B")]);
     r.say("가나", "x");
-    let out = hook(&r, A.0, "s-a-new");
+    let out = hook(&r, A, "s-a-new");
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(members(&r), ["A", "B", "가나"]);
     assert_eq!(
