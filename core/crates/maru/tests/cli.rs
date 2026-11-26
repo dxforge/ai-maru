@@ -567,7 +567,7 @@ fn canvas_put_stops_reading_past_what_the_app_accepts() {
     let out = wait_within(maru_with(Some(&sock), &["canvas", "put"], input));
     let _ = yes.kill();
     let _ = yes.wait();
-    assert_fails_with(&out, "stdin is larger than the 16 MiB the app accepts");
+    assert_fails_with(&out, "stdin is larger than 16 MiB");
 }
 
 #[test]

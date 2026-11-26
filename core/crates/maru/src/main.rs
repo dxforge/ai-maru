@@ -251,6 +251,8 @@
 //! 종료 신호를 받거나 stdout 의 상대가 닫히면 끝난다. claude 는 정상으로 끝날 때 SIGTERM 을 보내지만,
 //! 신호 없이 죽으면(SIGKILL 등) monitor 에 남는 흔적은 stdout 이 닫히는 것뿐이다.
 
+mod room;
+
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use nix::errno::Errno;
@@ -338,6 +340,15 @@ enum Command {
         pty: Option<String>,
         #[command(subcommand)]
         command: StatusCommand,
+    },
+    /// Named rooms whose members post entries and read them.
+    ///
+    /// The rooms are kept in one sqlite file, `MARU_ROOM_DB` or `~/.ai-maru/rooms.sqlite`, so
+    /// they outlast the app. Commands that write to a closed room (join, leave, post, close)
+    /// exit 6.
+    Room {
+        #[command(subcommand)]
+        command: room::RoomCommand,
     },
     /// Serve the app's MCP tools, such as canvas_put, over stdin and stdout.
     ///
@@ -684,6 +695,21 @@ enum CanvasCommand {
     },
 }
 
+/// exit code 를 1 이 아닌 값으로 정한 거절이다. `main` 이 `code` 로 끝낸다.
+#[derive(Debug)]
+struct Refusal {
+    code: u8,
+    message: String,
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Refusal {}
+
 fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
@@ -701,7 +727,10 @@ fn main() -> ExitCode {
         Err(e) => {
             // 띄운 쪽이 stderr 를 닫았으면 `eprintln!` 은 패닉한다.
             let _ = writeln!(std::io::stderr(), "maru: {e:#}");
-            ExitCode::FAILURE
+            match e.downcast_ref::<Refusal>() {
+                Some(r) => ExitCode::from(r.code),
+                None => ExitCode::FAILURE,
+            }
         }
     }
 }
@@ -809,6 +838,7 @@ fn run(command: Command) -> Result<()> {
             };
             write_once(terminal, &report)?
         }
+        Command::Room { command } => room::run(command)?,
         Command::Mcp => mcp()?,
         Command::Claude { command } => match command {
             ClaudeCommand::Hook => claude_hook()?,
@@ -821,7 +851,7 @@ fn run(command: Command) -> Result<()> {
 // 사양(revision 0.4)의 상한. libghostty-vt 의 파서도 이 값을 넘는 보고를 버린다.
 const MAX_ID_BYTES: usize = 128;
 const MAX_ID_DEPTH: usize = 8;
-const MAX_NAME_BYTES: usize = 32;
+pub(crate) const MAX_NAME_BYTES: usize = 32;
 const MAX_TITLE_BYTES: usize = 192;
 const MAX_MSG_BYTES: usize = 2048;
 
@@ -1472,7 +1502,7 @@ fn read_stdin(hint: &str) -> Result<String> {
         .read_to_end(&mut bytes)
         .context("cannot read stdin")?;
     if bytes.len() as u64 > MAX_LINE {
-        bail!("stdin is larger than the 16 MiB the app accepts");
+        bail!("stdin is larger than 16 MiB");
     }
     String::from_utf8(bytes).map_err(|_| anyhow!("stdin is not UTF-8"))
 }
@@ -1736,7 +1766,11 @@ fn print_tsv<const N: usize>(header: &str, rows: Vec<[String; N]>) -> Result<()>
         text.push_str(&row.join("\t"));
         text.push('\n');
     }
-    // `| head -1` 처럼 읽는 쪽이 먼저 닫는 것은 실패가 아니다.
+    write_stdout(&text)
+}
+
+/// `| head -1` 처럼 읽는 쪽이 먼저 닫는 것은 실패가 아니다.
+fn write_stdout(text: &str) -> Result<()> {
     match std::io::stdout().lock().write_all(text.as_bytes()) {
         Err(e) if e.kind() == ErrorKind::BrokenPipe => Ok(()),
         r => Ok(r?),
