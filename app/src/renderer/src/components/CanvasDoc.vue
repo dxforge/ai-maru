@@ -7,6 +7,7 @@ import { isFootnoteId } from '../canvas/footnotes'
 import { zoomImage } from '../canvas/zoomBox'
 import { loadMermaid } from '../canvas/mermaid'
 import { bodyOf, codeBodyOf, type CanvasEntry } from '../canvas/store'
+import { onUserScroll } from '../canvas/userScroll'
 import { prefersDark } from '../colorScheme'
 import { HoverScrollbars } from '../overlayScroll'
 import CodeView from './CodeView.vue'
@@ -65,38 +66,17 @@ function follow(e: MouseEvent): void {
   jumpTo(waiting)
 }
 
-// 각주 점프가 마지막 묶음을 기다리거나 `scrollTo` 가 scrollTop 을 맞추는 동안, 사용자가 휠·스크롤 키로 스크롤하거나 이 문서
-// 밖을 누르면 그 점프를 버린다. 묶음이 붙은 뒤 다른 곳을 읽던 화면이 정의로 끌려가지 않게 하기 위해서다. `scroll` 이벤트는
-// 앱이 scrollTop 을 맞출 때도 나므로 쓰지 않는다.
-const SCROLL_KEYS = new Set([' ', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'])
+// 각주 점프가 마지막 묶음을 기다리거나 `scrollTo` 가 scrollTop 을 맞추는 동안 사용자가 스크롤을 옮기면(`onUserScroll`) 그
+// 점프를 버린다. 묶음이 붙은 뒤 다른 곳을 읽던 화면이 정의로 끌려가지 않게 하기 위해서다.
 let unwatch: (() => void) | undefined
 function watchUser(): void {
   const doc = root.value
   const scroller = doc && scrollParent(doc)
   if (unwatch || !scroller) return
-  const drop = (): void => {
+  unwatch = onUserScroll(doc, scroller, () => {
     waiting = undefined
     jumps++
-  }
-  // 스크롤바와, 스크롤러 옆에 붙은 카드 제목 줄도 누르면 스크롤러를 움직이므로 스크롤러를 담은 요소에서 받는다. 다른 카드를
-  // 누른 것도 다른 곳으로 옮겨 간 것으로 본다.
-  const area = scroller.parentElement ?? scroller
-  const onPointer = (e: PointerEvent): void => {
-    if (!doc.contains(e.target as Node)) drop()
-  }
-  // 키는 포커스가 스크롤러 안에 있거나 아무 데도 없을 때만 스크롤러를 움직인다.
-  const onKey = (e: KeyboardEvent): void => {
-    const t = e.target as Node
-    if (SCROLL_KEYS.has(e.key) && (t === document.body || scroller.contains(t))) drop()
-  }
-  scroller.addEventListener('wheel', drop, { passive: true })
-  area.addEventListener('pointerdown', onPointer)
-  window.addEventListener('keydown', onKey)
-  unwatch = () => {
-    scroller.removeEventListener('wheel', drop)
-    area.removeEventListener('pointerdown', onPointer)
-    window.removeEventListener('keydown', onKey)
-  }
+  })
 }
 
 let jumps = 0
