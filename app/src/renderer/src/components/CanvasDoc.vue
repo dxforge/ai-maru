@@ -3,9 +3,11 @@ import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
 import { BlockHighlighter, hasCodeBlock } from '../canvas/codeBlocks'
 import { drawDiagrams, hasDiagram } from '../canvas/diagrams'
 import { fillBody } from '../canvas/fill'
+import { isFootnoteId } from '../canvas/footnotes'
 import { zoomImage } from '../canvas/zoomBox'
 import { loadMermaid } from '../canvas/mermaid'
 import { bodyOf, codeBodyOf, type CanvasEntry } from '../canvas/store'
+import { onUserScroll } from '../canvas/userScroll'
 import { prefersDark } from '../colorScheme'
 import { HoverScrollbars } from '../overlayScroll'
 import CodeView from './CodeView.vue'
@@ -28,6 +30,9 @@ function reset(): void {
   stop = undefined
   blocks?.stop()
   blocks = undefined
+  waiting = undefined
+  unwatch?.()
+  unwatch = undefined
   scrollbars.release()
 }
 watch(
@@ -45,6 +50,64 @@ watch(
 function added(html: string): void {
   if (hasDiagram(html)) draw()
   if (hasCodeBlock(html)) blocks?.scan()
+  if (waiting) jumpTo(waiting)
+}
+
+// 각주 번호·↩ 를 누르면 이 문서 안에서 대상을 찾아 스크롤하고, 기본 해시 이동은 막는다. 해시 이동은 창의 주소를
+// 바꾸고, 아직 붙지 않은 묶음 안의 대상으로는 가지 못하기 때문이다. 정의는 마지막 묶음에 있으므로, 그 묶음이 아직 붙지
+// 않았으면 붙은 뒤에 간다.
+let waiting: string | undefined
+function follow(e: MouseEvent): void {
+  const href = (e.target as Element).closest('a')?.getAttribute('href')
+  if (!href?.startsWith('#') || !isFootnoteId(href.slice(1))) return
+  e.preventDefault()
+  waiting = href.slice(1)
+  watchUser()
+  jumpTo(waiting)
+}
+
+// 각주 점프가 마지막 묶음을 기다리거나 `scrollTo` 가 scrollTop 을 맞추는 동안 사용자가 스크롤을 옮기면(`onUserScroll`) 그
+// 점프를 버린다. 묶음이 붙은 뒤 다른 곳을 읽던 화면이 정의로 끌려가지 않게 하기 위해서다.
+let unwatch: (() => void) | undefined
+function watchUser(): void {
+  const doc = root.value
+  const scroller = doc && scrollParent(doc)
+  if (unwatch || !scroller) return
+  unwatch = onUserScroll(doc, scroller, () => {
+    waiting = undefined
+    jumps++
+  })
+}
+
+let jumps = 0
+function jumpTo(id: string): void {
+  const target = root.value?.querySelector<HTMLElement>(`#${id}`)
+  if (!target) return
+  waiting = undefined
+  void scrollTo(target, ++jumps)
+}
+
+// 화면 밖 묶음의 높이는 어림값이라, 스크롤해 대상 위의 묶음이 그려지면 대상이 움직인다. 그래서 대상이 제자리에 설 때까지
+// 프레임마다 다시 맞춘다. 맞출 수 없는 자리(문서 끝)면 scrollTop 이 바뀌지 않아 멈춘다. 대상이 문서에서 떨어졌거나
+// 그려지지 않으면(닫힌 `<details>` 안) 자리가 없으므로 멈춘다.
+async function scrollTo(target: HTMLElement, jump: number): Promise<void> {
+  const scroller = scrollParent(target)
+  if (!scroller) return
+  const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0
+  for (let i = 0; i < 10 && jump === jumps; i++) {
+    if (!target.isConnected || !target.getClientRects().length) return
+    const from = scroller.scrollTop
+    scroller.scrollTop =
+      from + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - margin
+    if (Math.abs(scroller.scrollTop - from) < 1) return
+    await new Promise(requestAnimationFrame)
+  }
+}
+
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement)
+    if (/auto|scroll/.test(getComputedStyle(p).overflowY)) return p
+  return null
 }
 
 function draw(): void {
@@ -78,6 +141,7 @@ onBeforeUnmount(reset)
     class="markdown zoomable"
     :class="{ classic }"
     @pointerover="hover"
+    @click="follow"
   >
     <!-- eslint-disable-next-line vue/no-v-html -- MarkdownBody 가 낸 HTML 이다. lexing 한 묶음은 DOMPurify 로 걸렀고, 글자 묶음은 escape 했다 -->
     <div v-html="first" />
@@ -241,6 +305,28 @@ onBeforeUnmount(reset)
 .markdown :deep(.diagram-error) {
   color: var(--error);
   font-size: var(--text-1);
+}
+
+.markdown :deep([id]) {
+  scroll-margin-top: calc(var(--pinned-top, 0px) + var(--space-4));
+}
+
+.markdown :deep(sup:has(> a[id*='-fnref-'])),
+.markdown :deep(sup[id*='-fnref-']) {
+  margin-left: var(--space-1);
+}
+
+.markdown :deep(.footnotes) {
+  padding-left: var(--space-6);
+  color: var(--muted);
+}
+
+.markdown :deep(.footnotes li > *) {
+  margin-block: var(--space-2);
+}
+
+.markdown :deep(.footnotes li + li) {
+  margin-top: var(--space-4);
 }
 
 .markdown :deep(hr) {
