@@ -1,3 +1,4 @@
+import { backgroundOf, diagramPng } from './copyImage'
 import { attachZoom } from './zoomBox'
 
 export type Diagram = { svg: string } | { error: string }
@@ -56,7 +57,7 @@ export async function drawDiagrams(
       if (drawn.get(pre) !== claim || !el.isConnected) return
       let out: HTMLElement
       if ('svg' in d) {
-        out = diagramBox(d.svg, (claim.out && zooms.get(claim.out)) ?? 1)
+        out = diagramBox(d.svg, (claim.out && zooms.get(claim.out)) ?? { scale: 1 })
       } else {
         out = document.createElement('div')
         out.className = 'diagram-error'
@@ -70,14 +71,16 @@ export async function drawDiagrams(
   )
 }
 
-// 다이어그램(`.diagram`)마다 지금 배율. 밝기가 바뀌어 다시 그린 다이어그램이 앞 배율을 잇는 데 쓴다.
-const zooms = new WeakMap<Element, number>()
+type Zoom = { scale: number; height?: number }
+
+// 다이어그램(`.diagram`)마다 지금 배율과 블록 높이다. 밝기가 바뀌어 다시 그린 다이어그램이 앞 배율과 블록 높이를 잇는 데 쓴다.
+const zooms = new WeakMap<Element, Zoom>()
 
 /**
  * SVG 를 mermaid 가 정한 크기로 담고 확대·축소(`attachZoom`)를 붙인 블록을 만든다. 블록 높이는 100% 일 때의 다이어그램
- * 높이로 고정한다.
+ * 높이로 고정한다. fit 을 눌렀으면 맞춘 다이어그램의 높이다.
  */
-function diagramBox(svg: string, scale: number): HTMLElement {
+function diagramBox(svg: string, { scale, height }: Zoom): HTMLElement {
   const out = document.createElement('div')
   out.className = 'diagram zoom'
   const view = document.createElement('div')
@@ -90,8 +93,9 @@ function diagramBox(svg: string, scale: number): HTMLElement {
   if (!graphic || !size) return out
   attachZoom(out, view, graphic, size, {
     scale,
-    reset: () => 1,
-    changed: (s) => zooms.set(out, s ?? 1)
+    height,
+    changed: (s, h) => zooms.set(out, { scale: s ?? 1, height: h }),
+    png: () => diagramPng(graphic, size, backgroundOf(out), devicePixelRatio)
   })
   return out
 }

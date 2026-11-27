@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { anchorScroll, bandRows, computePins, goToScrollTop, pinBands } from './streamLayout'
+import {
+  anchorScroll,
+  bandRows,
+  computePins,
+  goToScrollTop,
+  pinBands,
+  readingBands
+} from './streamLayout'
 
 const R = 26
 const tall = (n: number): number[] => Array.from({ length: n }, (_, i) => i * 300)
@@ -79,6 +86,19 @@ describe('pinBands', () => {
       top: { more: [0], shown: [1, 2] },
       bottom: { shown: [3, 4], more: [5] }
     })
+  })
+})
+
+describe('readingBands', () => {
+  it('위에는 그 카드까지의 제목을, 아래에는 뒤 카드의 제목을 센다', () => {
+    expect(readingBands(0, 1)).toEqual({ above: R, below: 0 })
+    expect(readingBands(0, 2)).toEqual({ above: R, below: R })
+    expect(readingBands(1, 2)).toEqual({ above: 2 * R, below: 0 })
+  })
+
+  it('넘친 제목은 한 줄로 묶어 센다', () => {
+    expect(readingBands(5, 10)).toEqual({ above: 3 * R, below: 3 * R })
+    expect(readingBands(2, 3)).toEqual({ above: 3 * R, below: 0 })
   })
 })
 

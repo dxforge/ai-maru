@@ -242,6 +242,11 @@ onBeforeUnmount(reset)
 
 .zoomable :deep(.zoom) {
   position: relative;
+  /* `attachZoom`(`zoomBox.ts`)의 fit 은 Canvas 에 보이는 높이에서 이 값을 위아래로 뺀 높이에 맞춘다. 블록이 가려졌으면
+     이만큼 띄워 보이게 스크롤한다. 위아래에 붙는 카드 제목 묶음에 블록이 가리지 않게 하기 위해서다. `--pinned-top`·
+     `--pinned-bottom` 은 `CardStream` 이 카드마다 둔다. */
+  scroll-margin: calc(var(--pinned-top) + var(--space-3)) 0
+    calc(var(--pinned-bottom) + var(--space-3));
 }
 
 /* 블록보다 작은 그림(다이어그램·이미지)은 가로·세로 가운데에 두고, 크면 블록 안에서 스크롤한다. flex 의 auto margin 은 넘칠 때 0 이
@@ -294,6 +299,11 @@ onBeforeUnmount(reset)
 /* 위의 `background: none` 이 `.icon-button:hover` 보다 앞서므로 hover 색을 다시 둔다. */
 .zoomable :deep(.zoom-bar button:hover) {
   background: var(--hover);
+}
+
+.zoomable :deep(.zoom-sep) {
+  width: 1px;
+  background: var(--line);
 }
 
 .zoomable :deep(.zoom-reset) {

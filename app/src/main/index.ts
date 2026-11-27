@@ -6,6 +6,7 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  ClipboardItem,
   dialog,
   ipcMain,
   MessageChannelMain,
@@ -964,6 +965,11 @@ function start(): void {
   })
   ipcMain.on('canvas:paste-clipboard', (_event, pty: unknown) => {
     if (isPtyId(pty)) paste.clipboard(pty).catch(pasteFailed)
+  })
+  ipcMain.handle('canvas:copy-image', (_event, png: unknown) => {
+    if (!(png instanceof Uint8Array)) throw new Error('canvas:copy-image takes PNG bytes')
+    const blob = new Blob([png as Uint8Array<ArrayBuffer>], { type: 'image/png' })
+    return clipboard.write([new ClipboardItem({ 'image/png': blob })])
   })
   ipcMain.handle('link:longest-existing', (_event, groups: unknown, pty: unknown) => {
     if (!Array.isArray(groups) || !groups.every(isPathCandidates) || typeof pty !== 'string') {

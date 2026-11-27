@@ -623,7 +623,7 @@ const mermaid = (source: string) => '```mermaid\n' + source + '\n```'
 const WIDE = mermaid(
   `flowchart LR\n  ${Array.from({ length: 30 }, (_, i) => `N${i}[Node ${i}]`).join(' --> ')}`
 )
-const diagrams = (page: Page) => markdown(page).locator('.diagram svg')
+const diagrams = (page: Page) => markdown(page).locator('.diagram .zoom-view > svg')
 // `loadMermaid` 가 그릴 때마다 SVG 에 새 id(`maru-mermaid-N`)를 붙이므로, id 가 같으면 다시 그리지 않은 것이다.
 const diagramIds = (page: Page) => diagrams(page).evaluateAll((svgs) => svgs.map((s) => s.id))
 // mermaid 내장 테마 `default` 의 노드 채움색이다.
@@ -801,7 +801,7 @@ test('다이어그램은 카드 너비에 맞춰 줄이지 않고 블록 안에�
   expect(await scroll()).toEqual([left! + 40, top! + 20])
 })
 
-test('카드보다 큰 이미지는 카드 너비에 맞춰 보이고, 버튼으로 블록 높이를 바꾸지 않고 확대해 끌어서 옮기며, 배율 버튼은 100% 로 갔다가 다시 누르면 맞춘 크기로 돌아간다', async ({
+test('카드보다 큰 이미지는 카드 너비에 맞춰 보이고, 버튼으로 블록 높이를 바꾸지 않고 확대해 끌어서 옮기며, 배율 버튼은 100% 로, fit 은 맞춘 크기로 간다', async ({
   launch
 }) => {
   const { app, page } = await launch()
@@ -851,10 +851,142 @@ test('카드보다 큰 이미지는 카드 너비에 맞춰 보이고, 버튼으
   expect(await width()).toBeCloseTo(2000, 0)
   expect(await viewHeight()).toBeCloseTo(fitHeight, 0)
   await reset.click()
+  await expect(reset).toHaveText('100%')
+  await bar.getByRole('button', { name: 'Fit' }).click()
   expect(await width()).toBeCloseTo(fit, 0)
   expect(await viewHeight()).toBeCloseTo(fitHeight, 0)
-  await expect(view).not.toHaveAttribute('style', /height/)
   await expect(reset).toHaveText(`${Math.round((fit / 2000) * 100)}%`)
+  await expect(view).not.toHaveClass(/pannable/)
+})
+
+const TALL = mermaid(
+  `flowchart TD\n  ${Array.from({ length: 30 }, (_, i) => `N${i}[Node ${i}]`).join(' --> ')}`
+)
+
+test('fit 은 다이어그램 전체가 Canvas 에 보이게 맞추고, 블록 높이를 맞춘 다이어그램의 높이로 바꾼다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const text = ['# Diagrams', mermaid('flowchart LR\n  A --> B'), TALL].join('\n\n')
+  // 앞뒤에 카드를 두어 위아래에 제목이 여러 줄 붙게 한다.
+  for (const id of ['b', 'c', 'd'])
+    await putCanvas(app, { id, kind: 'markdown', text: `# ${id}`, title: id })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text, title: 'A' })
+  for (const id of ['e', 'f', 'g'])
+    await putCanvas(app, { id, kind: 'markdown', text: `# ${id}`, title: id })
+  await expect(diagrams(page)).toHaveCount(2)
+  const boxes = markdown(page).locator('.diagram')
+  const fit = async (i: number) => {
+    // 블록 위 끝을 Canvas 가운데로 옮겨, 블록 위쪽의 막대가 붙은 제목에 가리지 않게 한다.
+    await boxes.nth(i).evaluate((box) => {
+      const scroller = box.closest<HTMLElement>('.canvas .scroll')!
+      const area = scroller.getBoundingClientRect()
+      scroller.scrollTop += box.getBoundingClientRect().top - (area.top + area.height / 2)
+    })
+    await boxes.nth(i).hover({ position: { x: 10, y: 10 } })
+    await boxes.nth(i).getByRole('button', { name: 'Fit' }).click()
+    return boxes.nth(i).evaluate((box) => {
+      const view = box.querySelector<HTMLElement>('.zoom-view')!
+      const svg = view.querySelector('svg')!.getBoundingClientRect()
+      let scroller = box.parentElement!
+      while (!['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY))
+        scroller = scroller.parentElement!
+      const area = scroller.getBoundingClientRect()
+      const band = (where: string) =>
+        document.querySelector(`.canvas .pins.${where}`)!.getBoundingClientRect()
+      return {
+        svg: { top: svg.top, bottom: svg.bottom, width: svg.width, height: svg.height },
+        view: { width: view.clientWidth, height: view.getBoundingClientRect().height },
+        area: { top: area.top, bottom: area.bottom, height: area.height },
+        bands: { top: band('top'), bottom: band('bottom') },
+        pannable: view.classList.contains('pannable'),
+        label: box.querySelector('.zoom-reset')!.textContent
+      }
+    })
+  }
+
+  const small = await fit(0)
+  expect(small.svg.width).toBeCloseTo(small.view.width, 0)
+  expect(small.view.height).toBeCloseTo(small.svg.height, 0)
+  expect(parseInt(small.label!)).toBeGreaterThan(100)
+  expect(small.pannable).toBe(false)
+
+  const tall = await fit(1)
+  expect(tall.svg.height).toBeLessThan(tall.area.height)
+  expect(tall.view.height).toBeCloseTo(tall.svg.height, 0)
+  expect(tall.bands.top.height).toBeGreaterThan(0)
+  expect(tall.svg.top).toBeGreaterThanOrEqual(tall.bands.top.bottom)
+  expect(tall.svg.bottom).toBeLessThanOrEqual(
+    tall.bands.bottom.height ? tall.bands.bottom.top : tall.area.bottom
+  )
+  expect(parseInt(tall.label!)).toBeLessThan(100)
+  expect(tall.pannable).toBe(false)
+})
+
+test('복사 버튼은 다이어그램을 배경을 채운 100% 크기의 화면 배율 배 PNG 로, 이미지를 원본 크기의 PNG 로 클립보드에 싣는다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const errors: string[] = []
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text())
+  })
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: mermaid('flowchart LR\n  A --> B') })
+  await putCanvas(app, {
+    id: 'i',
+    kind: 'image',
+    name: 'red.svg',
+    mime: 'image/svg+xml',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="100%" height="100%" fill="red"/></svg>'
+  })
+  await expect(diagrams(page)).toHaveCount(1)
+  const clipboard = (x: number, y: number) =>
+    app.evaluate(
+      async ({ clipboard, nativeImage }, [x, y]) => {
+        const [item] = await clipboard.read()
+        const png = await item!.getType('image/png')
+        const image = nativeImage.createFromBuffer(Buffer.from(await png.arrayBuffer()))
+        const size = image.getSize()
+        const bitmap = image.toBitmap()
+        const at = (y! * size.width + x!) * 4
+        // `toBitmap` 은 BGRA 순서다.
+        return { size, pixel: [bitmap[at + 2], bitmap[at + 1], bitmap[at], bitmap[at + 3]] }
+      },
+      [x, y]
+    )
+  const copy = async (box: ReturnType<Page['locator']>) => {
+    await app.evaluate(({ clipboard }) => clipboard.clear())
+    await box.hover()
+    const button = box.getByRole('button', { name: 'Copy image' })
+    await button.click()
+    await expect(button).toHaveClass(/copied/)
+  }
+
+  const diagram = markdown(page).locator('.diagram')
+  const [natural, dpr, background] = await diagram.evaluate((box) => {
+    const r = box.querySelector('.zoom-view > svg')!.getBoundingClientRect()
+    let bg = 'rgba(0, 0, 0, 0)'
+    for (let e: Element | null = box; e && bg === 'rgba(0, 0, 0, 0)'; e = e.parentElement)
+      bg = getComputedStyle(e).backgroundColor
+    return [{ width: r.width, height: r.height }, devicePixelRatio, bg] as const
+  })
+  await diagram.hover()
+  await diagram.getByRole('button', { name: 'Zoom in' }).click()
+  await copy(diagram)
+  const copied = await clipboard(0, 0)
+  expect(copied.size).toEqual({
+    width: Math.round(natural.width * dpr),
+    height: Math.round(natural.height * dpr)
+  })
+  expect(`rgb(${copied.pixel.slice(0, 3).join(', ')})`).toBe(background)
+  expect(copied.pixel[3]).toBe(255)
+
+  await copy(card(page, 'i').locator('.zoom'))
+  expect(await clipboard(150, 100)).toEqual({
+    size: { width: 300, height: 200 },
+    pixel: [255, 0, 0, 255]
+  })
+  expect(errors).toEqual([])
 })
 
 test('확대·축소 버튼은 블록에 보이는 영역의 가운데를 중심으로 하고, 블록보다 작아진 다이어그램은 블록 가운데에 둔다', async ({
