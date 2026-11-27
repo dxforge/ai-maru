@@ -79,8 +79,7 @@ export function attachZoom(
   const fit = (): void => {
     const scroller = scrollParent(out)
     const margin = scrollMargins(out)
-    const room = scroller ? scroller.clientHeight - margin.top - margin.bottom : Infinity
-    const next = fitScale(size, { width: view.clientWidth, height: room })
+    const next = fitScale(size, { width: view.clientWidth, height: fitHeight(scroller, margin) })
     scale = next
     height = size.height * next
     apply()
@@ -225,6 +224,14 @@ function scrollParent(el: HTMLElement): HTMLElement | null {
     if (overflowY === 'auto' || overflowY === 'scroll') return p
   }
   return null
+}
+
+// 스크롤 영역이 scroll-margin 위아래 합보다 낮으면 여백을 빼지 않은 높이에 맞춘다. 빼면 0 이하가 되어 `fitScale` 이
+// 높이를 보지 않고 너비에만 맞추기 때문이다.
+function fitHeight(scroller: HTMLElement | null, margin: { top: number; bottom: number }): number {
+  if (!scroller) return Infinity
+  const room = scroller.clientHeight - margin.top - margin.bottom
+  return room > 0 ? room : scroller.clientHeight
 }
 
 function scrollMargins(el: HTMLElement): { top: number; bottom: number } {

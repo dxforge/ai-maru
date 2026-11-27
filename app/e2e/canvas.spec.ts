@@ -963,13 +963,22 @@ test('복사 버튼은 다이어그램을 배경을 채운 100% 크기의 화면
   }
 
   const diagram = markdown(page).locator('.diagram')
-  const [natural, dpr, background] = await diagram.evaluate((box) => {
-    const r = box.querySelector('.zoom-view > svg')!.getBoundingClientRect()
+  const [natural, node, dpr, background] = await diagram.evaluate((box) => {
+    const svg = box.querySelector('.zoom-view > svg')!
+    const r = svg.getBoundingClientRect()
+    // 첫 노드 rect 의 왼쪽 테두리에서 4px 안쪽, 세로 가운데 픽셀의 색을 잰다. 라벨 글자와 테두리 선을 피하는 자리이기 때문이다.
+    const n = svg.querySelector('.node rect')!.getBoundingClientRect()
     let bg = 'rgba(0, 0, 0, 0)'
     for (let e: Element | null = box; e && bg === 'rgba(0, 0, 0, 0)'; e = e.parentElement)
       bg = getComputedStyle(e).backgroundColor
-    return [{ width: r.width, height: r.height }, devicePixelRatio, bg] as const
+    return [
+      { width: r.width, height: r.height },
+      { x: n.left - r.left + 4, y: n.top - r.top + n.height / 2 },
+      devicePixelRatio,
+      bg
+    ] as const
   })
+  const fill = await nodeFill(page)
   await diagram.hover()
   await diagram.getByRole('button', { name: 'Zoom in' }).click()
   await copy(diagram)
@@ -980,6 +989,8 @@ test('복사 버튼은 다이어그램을 배경을 채운 100% 크기의 화면
   })
   expect(`rgb(${copied.pixel.slice(0, 3).join(', ')})`).toBe(background)
   expect(copied.pixel[3]).toBe(255)
+  const drawn = await clipboard(Math.round(node.x * dpr), Math.round(node.y * dpr))
+  expect(`rgb(${drawn.pixel.slice(0, 3).join(', ')})`).toBe(fill)
 
   await copy(card(page, 'i').locator('.zoom'))
   expect(await clipboard(150, 100)).toEqual({

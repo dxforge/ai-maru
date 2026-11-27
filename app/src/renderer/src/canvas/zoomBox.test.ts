@@ -200,6 +200,14 @@ describe('fit', () => {
     expect(state()).toEqual(['120px', '240px', '240px', '12%'])
   })
 
+  it('스크롤 영역이 scroll-margin 위아래 합보다 낮으면 여백을 빼지 않은 높이에 맞춘다', () => {
+    const area = scroller(100)
+    const { box, fit, state } = image({ width: 1000, height: 2000 }, undefined, area)
+    box.style.scrollMargin = '84px 0'
+    fit.click()
+    expect(state()).toEqual(['50px', '100px', '100px', '5%'])
+  })
+
   it('맞춘 뒤 확대·축소해도 블록 높이는 맞춘 그림의 높이 그대로이고, 배율 버튼은 100% 로 간다', () => {
     const { into, out, reset, fit, state } = image({ width: 200, height: 100 })
     fit.click()
