@@ -240,9 +240,7 @@ onBeforeUnmount(() => {
               @remove="emit('remove', item.key)"
             >
               <template #meta><slot name="meta" :item="item" /></template>
-              <template v-if="$slots.actions" #actions
-                ><slot name="actions" :item="item"
-              /></template>
+              <template #actions><slot name="actions" :item="item" /></template>
             </StreamRow>
             <div v-if="expanded.has(item.key)" class="body">
               <slot name="body" :item="item" />
@@ -278,9 +276,7 @@ onBeforeUnmount(() => {
           @remove="emit('remove', items[i].key)"
         >
           <template #meta><slot name="meta" :item="items[i]" /></template>
-          <template v-if="$slots.actions" #actions
-            ><slot name="actions" :item="items[i]"
-          /></template>
+          <template #actions><slot name="actions" :item="items[i]" /></template>
         </StreamRow>
       </div>
       <Transition name="held">

@@ -8,7 +8,8 @@ import {
   type Named
 } from '../../../shared/names'
 import { CodeBody } from './code'
-import { docSource, type DocSource } from './docFile'
+import { docSource, fileName, saveName, type DocSource } from './docFile'
+import { fullHtml } from './fill'
 import { MarkdownBody, prepareMarkdown } from './markdown'
 
 // `at` 은 renderer 가 문서를 받은 시각(ms)이다. 문서를 고쳐 보냈으면 고친 시각이다.
@@ -295,19 +296,21 @@ export function sourceOf(entry: CanvasEntry): DocSource | undefined {
   return sources.get(toRaw(entry))
 }
 
-/** 클립보드에 실을 것. 마크다운은 원문과 문서 전체를 그린 HTML 이다. 이미지 문서는 복사하지 않으므로 undefined 다. */
-export function copyOf(entry: CanvasEntry): { text: string; html?: string } | undefined {
+/** 이미지 문서는 제목 줄에서 복사하지 않는다. 그림 복사는 확대·축소 막대(`zoomBox.ts`)가 맡는다. */
+export function canCopy(entry: CanvasEntry): boolean {
+  const source = sourceOf(entry)
+  return source !== undefined && 'text' in source
+}
+
+export async function copyOf(
+  entry: CanvasEntry
+): Promise<{ text: string; html?: string } | undefined> {
   const source = sourceOf(entry)
   if (!source || !('text' in source)) return undefined
   const body = source.rich ? bodyOf(entry) : undefined
-  if (!body) return { text: source.text }
-  return {
-    text: source.text,
-    html: Array.from({ length: body.length }, (_, i) => body.html(i)).join('')
-  }
+  return body ? { text: source.text, html: await fullHtml(body) } : { text: source.text }
 }
 
-/** 저장 대화상자의 기본 이름과 쓸 내용. */
 export async function fileOf(
   entry: CanvasEntry
 ): Promise<{ name: string; data: string | Uint8Array } | undefined> {
@@ -316,8 +319,6 @@ export async function fileOf(
   const data = 'text' in source ? source.text : new Uint8Array(await source.blob.arrayBuffer())
   return { name: source.name, data }
 }
-
-const fileName = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
 
 function toEntry(item: CanvasItem, at: number): CanvasEntry {
   const owner: CanvasOwner & { key: string } = {
@@ -350,7 +351,7 @@ function toEntry(item: CanvasItem, at: number): CanvasEntry {
     url,
     ...owner
   }
-  sources.set(entry, docSource(item, undefined, blob))
+  sources.set(entry, { name: saveName(item), blob })
   return entry
 }
 

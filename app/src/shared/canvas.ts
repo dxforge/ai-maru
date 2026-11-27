@@ -26,9 +26,11 @@ export type CanvasItem = CanvasDoc & CanvasOwner
 
 const MERMAID_EXTS = ['.mmd', '.mermaid']
 
-/** `.mmd`·`.mermaid` 파일은 main 이 `mermaidDoc` 으로 감싼 마크다운 문서로 보낸다. */
-export const isMermaidPath = (path: string): boolean =>
-  MERMAID_EXTS.some((ext) => path.toLowerCase().endsWith(ext))
+export function isMermaidPath(path: string): boolean {
+  const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
+  // `path.extname` 처럼, 이름이 `.mmd` 뿐인 파일은 확장자 없는 숨김 파일로 본다.
+  return MERMAID_EXTS.some((ext) => name.length > ext.length && name.endsWith(ext))
+}
 
 /**
  * mermaid 파일의 원문을 그 원문 하나만 든 mermaid 코드 블록으로 감싼다. 펜스는 원문에서 가장 길게 이어진 backtick 보다
@@ -42,15 +44,14 @@ export function mermaidDoc(source: string): string {
 }
 
 /**
- * `mermaidDoc` 이 감싼 문서에서 원문을 꺼낸다. 끝 줄바꿈이 없던 원문에는 `mermaidDoc` 이 붙인 줄바꿈이 남는다. 그 모양이
- * 아니면 받은 그대로 돌려준다.
+ * `mermaidDoc` 이 감싼 문서에서 원문을 꺼낸다. 끝 줄바꿈이 없던 원문에는 `mermaidDoc` 이 붙인 줄바꿈이 남는다.
+ * `mermaidDoc` 이 감싼 모양이 아니면 받은 그대로 돌려준다.
  */
 export function mermaidSource(doc: string): string {
   const m = /^(`{3,})mermaid\n([\s\S]*)\1\n$/.exec(doc)
   return m ? m[2]! : doc
 }
 
-/** Canvas 가 이미지 문서로 여는 파일의 확장자와 그 MIME 타입. */
 export const IMAGE_TYPES: Readonly<Record<string, string>> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',

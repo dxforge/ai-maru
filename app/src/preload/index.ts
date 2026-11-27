@@ -110,7 +110,7 @@ const api = {
   /** Canvas 문서를 클립보드에 쓴다. `html` 이 있으면 `text` 와 함께 싣는다. */
   copyDoc: (text: string, html?: string): Promise<void> =>
     ipcRenderer.invoke('canvas:copy-doc', text, html),
-  /** 저장 대화상자를 `name` 으로 열어 고른 경로에 `data` 를 쓴다. 저장했으면 true, 취소했으면 false 다. */
+  /** 저장 대화상자를 기본 이름 `name` 으로 열고, 고른 경로에 `data` 를 쓴다. 저장했으면 true, 취소했으면 false 다. */
   saveDoc: (name: string, data: string | Uint8Array): Promise<boolean> =>
     ipcRenderer.invoke('canvas:save-doc', name, data),
   setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),

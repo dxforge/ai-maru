@@ -15,6 +15,16 @@ function nextTask(): Promise<void> {
 
 const CHAR_HEIGHT = '--char-height'
 
+/** `body` 의 묶음을 모두 HTML 로 만들어 잇는다. 큰 문서를 복사할 때도 묶음 사이에 메인 스레드를 내준다. */
+export async function fullHtml(body: Pick<MarkdownBody, 'length' | 'html'>): Promise<string> {
+  const parts: string[] = []
+  for (let i = 0; i < body.length; i++) {
+    if (i > 0) await nextTask()
+    parts.push(body.html(i))
+  }
+  return parts.join('')
+}
+
 /**
  * 첫 묶음을 감싼 요소 하나만 든 `el` 에 `body` 의 나머지 묶음을 task 마다 하나씩 붙인다. 묶음을 붙일 때마다 그 HTML 로
  * `added` 를 부른다. 돌려준 함수를 부르면 더 붙이지 않는다.

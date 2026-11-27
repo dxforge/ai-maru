@@ -35,5 +35,7 @@ describe('isMermaidPath', () => {
     expect(isMermaidPath('/a/FLOW.Mermaid')).toBe(true)
     expect(isMermaidPath('/a/notes.md')).toBe(false)
     expect(isMermaidPath('/a/mmd')).toBe(false)
+    expect(isMermaidPath('/a/.mmd')).toBe(false)
+    expect(isMermaidPath('/a/..mmd')).toBe(true)
   })
 })

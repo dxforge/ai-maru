@@ -606,6 +606,24 @@ describe('docSaver', () => {
     expect(written).toEqual([['/Users/me/x/c.md', '# c']])
   })
 
+  it('대화상자가 떠 있는 동안 다시 저장하면 대화상자를 더 띄우지 않고 false 다', async () => {
+    let answer!: (path: string | undefined) => void
+    const asked: string[] = []
+    const save = docSaver(
+      () => '/Users/me/Downloads',
+      (path) => (asked.push(path), new Promise((resolve) => (answer = resolve))),
+      async () => {}
+    )
+    const first = save('a.md', '# a')
+    expect(await save('a.md', '# a')).toBe(false)
+    answer('/Users/me/a.md')
+    expect(await first).toBe(true)
+    const third = save('b.md', '# b')
+    answer(undefined)
+    expect(await third).toBe(false)
+    expect(asked).toEqual(['/Users/me/Downloads/a.md', '/Users/me/b.md'])
+  })
+
   it('쓰다 실패하면 그 디렉토리를 기억하지 않는다', async () => {
     const asked: string[] = []
     const save = docSaver(

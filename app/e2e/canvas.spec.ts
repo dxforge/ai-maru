@@ -46,7 +46,6 @@ const titles = (page: Page) => page.locator('.canvas .cards .title')
 const markdown = (page: Page) => page.locator('.canvas .markdown')
 const card = (page: Page, id: string) => page.locator(`.canvas .card[data-id="${id}"]`)
 
-/** 제목 줄의 ✕ 는 포인터를 줄에 올려야 나타나므로, 줄의 제목에 먼저 올린 뒤 ✕ 를 돌려준다. */
 async function removeButton(row: Locator): Promise<Locator> {
   await row.locator('.head').first().hover()
   return row.locator('.remove')
@@ -1128,6 +1127,17 @@ test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터�
   await typesIntoTerminal()
   await page.locator('.canvas .expand-all').click()
   await typesIntoTerminal()
+  await card(page, 'a').locator('.head').hover()
+  await card(page, 'a').locator('.copy').click()
+  await expect(card(page, 'a').locator('.copy')).toHaveClass(/done/)
+  await typesIntoTerminal()
+  // 대화상자를 취소하면 ✓ 가 되지 않는다.
+  await stubSaveDialog(app, [undefined])
+  await card(page, 'a').locator('.head').hover()
+  await card(page, 'a').locator('.save').click()
+  await expect.poll(() => savePaths(app)).toHaveLength(1)
+  await typesIntoTerminal()
+  await expect(card(page, 'a').locator('.save')).not.toHaveClass(/done/)
   await (await removeButton(card(page, 'b'))).click()
   await expect(titles(page)).toHaveText(['A'])
   await typesIntoTerminal()
@@ -1345,6 +1355,9 @@ test('붙은 제목을 누르면 그 문서로 가서, 그 제목이 위쪽 묶�
   const pinned = page.locator('.canvas .pins.bottom .row[data-id="b"]')
   await expect(pinned).toBeVisible()
   await expect(card(page, 'b').locator('.row')).toHaveClass(/ghost/)
+  await pinned.locator('.head').hover()
+  await expect(pinned.locator('.copy')).toBeVisible()
+  await expect(pinned.locator('.save')).toBeVisible()
   await pinned.locator('.head').click()
 
   await expect(card(page, 'b').locator('.markdown')).toContainText('b line 0')
@@ -1860,8 +1873,10 @@ test('끄는 도중 Canvas 를 닫으면 끌기가 끝나, 닫힌 뒤의 움직�
   expect(await canvasWidth(page)).toBe(before + 50)
 })
 
-/** 저장 대화상자를 띄우지 않고, 받은 기본 경로를 모으고 `answers` 의 경로를 차례로 고른 것으로 돌려준다. */
-async function stubSaveDialog(app: ElectronApplication, answers: string[]): Promise<void> {
+async function stubSaveDialog(
+  app: ElectronApplication,
+  answers: (string | undefined)[]
+): Promise<void> {
   await app.evaluate(({ dialog }, answers) => {
     const asked: string[] = []
     Object.assign(globalThis, { savePaths: asked })
@@ -1886,11 +1901,11 @@ test('접힌 카드도 제목 줄의 복사 버튼을 누르면 마크다운 원
   await expect(markdown(page)).toHaveCount(0)
 
   const copy = card(page, 'a').locator('.copy')
-  const actions = card(page, 'a').locator('.actions')
+  const tools = card(page, 'a').locator('.tools')
   await leavePanel(page)
-  await expect(actions).toBeHidden()
+  await expect(tools).toBeHidden()
   await card(page, 'a').locator('.head').hover()
-  await expect(actions).toBeVisible()
+  await expect(tools).toBeVisible()
   const box = (await copy.boundingBox())!
   expect(await appRegionAt(page, box.x + box.width / 2, box.y + box.height / 2)).not.toBe('drag')
   await copy.click()
@@ -1904,8 +1919,32 @@ test('접힌 카드도 제목 줄의 복사 버튼을 누르면 마크다운 원
   expect(copied.html).toContain('<h1>계획</h1>')
   expect(copied.html).toContain('<strong>굵게</strong>')
   await expect(copy).not.toHaveClass(/done/)
-  // 접은 카드는 누른 뒤에도 접힌 채다.
   await expect(markdown(page)).toHaveCount(0)
+})
+
+test('키보드로 제목 줄에 들어오면 앞에서든 뒤에서든 복사·저장·✕ 버튼에 포커스가 간다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'a', title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'b', title: 'B' })
+  await expect(titles(page)).toHaveText(['B', 'A'])
+  await titles(page).filter({ hasText: 'B' }).click()
+  await expect(card(page, 'b').locator('.markdown')).toHaveCount(0)
+  await leavePanel(page)
+  const tools = card(page, 'b').locator('.tools')
+  await expect(tools).toBeHidden()
+
+  await card(page, 'b').locator('.head').focus()
+  await page.keyboard.press('Tab')
+  await expect(card(page, 'b').locator('.copy')).toBeFocused()
+  await expect(tools).toBeVisible()
+
+  await card(page, 'a').locator('.head').focus()
+  await expect(tools).toBeHidden()
+  await page.keyboard.press('Shift+Tab')
+  await expect(card(page, 'b').locator('.remove')).toBeFocused()
+  await expect(tools).toBeVisible()
 })
 
 test('저장 버튼은 처음엔 다운로드 폴더에서, 그 뒤로는 마지막으로 저장한 디렉토리에서 대화상자를 열어 원문과 원본 바이트를 쓰고, 이미지에는 복사 버튼이 없다', async ({

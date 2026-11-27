@@ -1,8 +1,7 @@
 <script setup lang="ts">
-// Canvas 문서 제목 줄의 복사·저장 버튼. 누른 일이 끝나면 그 버튼이 잠깐 ✓ 로 바뀐다. 실패는 console 에만 남긴다.
 import { Check, Copy, Download } from '@lucide/vue'
 import { onBeforeUnmount, ref } from 'vue'
-import { copyOf, fileOf, type CanvasEntry } from '../canvas/store'
+import { canCopy, copyOf, fileOf, type CanvasEntry } from '../canvas/store'
 
 const DONE_MS = 1500
 
@@ -17,33 +16,34 @@ function show(what: 'copy' | 'save'): void {
   timer = setTimeout(() => (done.value = undefined), DONE_MS)
 }
 
-async function copy(): Promise<void> {
-  const content = copyOf(doc)
-  if (!content) return
+async function act(what: 'copy' | 'save', run: () => Promise<boolean>): Promise<void> {
   try {
-    await window.maru.copyDoc(content.text, content.html)
+    if (await run()) show(what)
   } catch (e) {
-    return console.error('maru: cannot copy the document:', e)
+    console.error(`maru: cannot ${what} the document:`, e)
   }
-  show('copy')
 }
 
-async function save(): Promise<void> {
-  try {
+const copy = () =>
+  act('copy', async () => {
+    const content = await copyOf(doc)
+    if (!content) return false
+    await window.maru.copyDoc(content.text, content.html)
+    return true
+  })
+
+const save = () =>
+  act('save', async () => {
     const file = await fileOf(doc)
-    if (file && (await window.maru.saveDoc(file.name, file.data))) show('save')
-  } catch (e) {
-    console.error('maru: cannot save the document:', e)
-  }
-}
+    return file !== undefined && (await window.maru.saveDoc(file.name, file.data))
+  })
 
 onBeforeUnmount(() => clearTimeout(timer))
 </script>
 
 <template>
-  <!-- 이미지 문서는 복사하지 않는다. 그림 복사는 그림의 확대·축소 막대에 있다. -->
   <button
-    v-if="doc.kind !== 'image'"
+    v-if="canCopy(doc)"
     v-tooltip="'Copy'"
     class="copy"
     :class="{ done: done === 'copy' }"

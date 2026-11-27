@@ -119,7 +119,6 @@ export function canvasPaste(
   }
 }
 
-/** 문서 복사가 클립보드에 실을 형식. `html` 이 있으면 `text/plain` 과 함께 `text/html` 로 싣는다. */
 export function copyFormats(text: unknown, html: unknown): Record<string, string> {
   if (typeof text !== 'string') throw new Error('the copied text must be a string')
   if (html === undefined) return { 'text/plain': text }
@@ -127,29 +126,32 @@ export function copyFormats(text: unknown, html: unknown): Record<string, string
   return { 'text/plain': text, 'text/html': html }
 }
 
-/** 고른 경로를 돌려주고, 취소하면 undefined 를 돌려준다. */
 export type AskSavePath = (defaultPath: string) => Promise<string | undefined>
 
-/**
- * 문서를 저장 대화상자에서 고른 경로에 쓴다. 대화상자는 앱이 뜬 뒤 마지막으로 저장한 디렉토리에서 열고, 처음에는
- * `firstDir` 에서 연다. 저장했으면 true, 취소했으면 false 다.
- */
 export function docSaver(
   firstDir: () => string,
   ask: AskSavePath,
   write: (path: string, data: string | Uint8Array) => Promise<void> = writeFile
 ) {
   let dir: string | undefined
+  let saving = false
   return async (name: unknown, data: unknown): Promise<boolean> => {
     if (typeof name !== 'string' || name === '') throw new Error('the file name must be a string')
     if (typeof data !== 'string' && !(data instanceof Uint8Array)) {
       throw new Error('the saved data must be a string or bytes')
     }
-    const path = await ask(join(dir ?? firstDir(), basename(name)))
-    if (path === undefined) return false
-    await write(path, data)
-    dir = dirname(path)
-    return true
+    // 저장하는 동안 다시 누르면 대화상자를 하나 더 띄우지 않는다.
+    if (saving) return false
+    saving = true
+    try {
+      const path = await ask(join(dir ?? firstDir(), basename(name)))
+      if (path === undefined) return false
+      await write(path, data)
+      dir = dirname(path)
+      return true
+    } finally {
+      saving = false
+    }
   }
 }
 

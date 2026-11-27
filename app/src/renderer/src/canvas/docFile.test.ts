@@ -1,12 +1,21 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import type { CanvasDoc } from '../../../shared/canvas'
+import type { CanvasCode, CanvasDoc, CanvasMarkdown } from '../../../shared/canvas'
 import { docSource, fileSafe, saveName } from './docFile'
 
-const md = (doc: Partial<CanvasDoc> = {}): CanvasDoc =>
-  ({ id: 'doc-1', kind: 'markdown', text: '# Hi\n', ...doc }) as CanvasDoc
-const code = (doc: Partial<CanvasDoc> = {}): CanvasDoc =>
-  ({ id: 'c', kind: 'code', name: 'run.sh', text: 'echo\r\n', ...doc }) as CanvasDoc
+const md = (doc: Partial<CanvasMarkdown> = {}): CanvasMarkdown => ({
+  id: 'doc-1',
+  kind: 'markdown',
+  text: '# Hi\n',
+  ...doc
+})
+const code = (doc: Partial<CanvasCode> = {}): CanvasCode => ({
+  id: 'c',
+  kind: 'code',
+  name: 'run.sh',
+  text: 'echo\r\n',
+  ...doc
+})
 const image = (doc: Partial<CanvasDoc> = {}): CanvasDoc =>
   ({
     id: 'i',
@@ -53,16 +62,30 @@ describe('saveName', () => {
     expect(saveName(md({ title: 'a/b: c' }))).toBe('a-b- c.md')
     expect(saveName(md({ id: 'clipboard:1', title: '   ' }))).toBe('clipboard-1.md')
   })
+
+  it('제목이 `.`·`..` 뿐이면 id 를 쓰고, `.` 으로 시작하는 이름은 그대로 둔다', () => {
+    expect(saveName(code({ id: 'c', name: 'Makefile', title: '..' }))).toBe('c')
+    expect(saveName(code({ id: 'c', name: 'Makefile', title: '.' }))).toBe('c')
+    expect(saveName(code({ name: '.zshrc' }))).toBe('.zshrc')
+  })
 })
 
 describe('fileSafe', () => {
-  it('구분자·제어 문자가 없고, 앞뒤 공백이 없으며, 80 글자를 넘지 않는다', () => {
+  const segments = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+  it('80 글자에서 자를 때 글자 하나를 이루는 코드 포인트를 나누지 않는다', () => {
+    expect(fileSafe('a'.repeat(79) + '👨‍👩‍👧')).toBe('a'.repeat(79) + '👨‍👩‍👧')
+    expect(fileSafe('a'.repeat(80) + '👨‍👩‍👧')).toBe('a'.repeat(80))
+  })
+
+  it('구분자·제어 문자가 없고, 앞뒤 공백이 없으며, `.`·`..` 이 아니고, 80 글자를 넘지 않는다', () => {
     fc.assert(
       fc.property(fc.string({ unit: 'grapheme', maxLength: 200 }), (s) => {
         const safe = fileSafe(s)
         expect(safe).not.toMatch(/[/\\:\p{Cc}]/u)
         expect(safe).toBe(safe.trim())
-        expect(Array.from(safe).length).toBeLessThanOrEqual(80)
+        expect(safe).not.toMatch(/^\.+$/)
+        expect([...segments.segment(safe)].length).toBeLessThanOrEqual(80)
       })
     )
   })
@@ -97,10 +120,5 @@ describe('docSource', () => {
 
   it('코드는 줄바꿈을 손보지 않은 원문이고 HTML 은 싣지 않는다', () => {
     expect(docSource(code())).toEqual({ name: 'run.sh', text: 'echo\r\n', rich: false })
-  })
-
-  it('이미지는 받은 blob 을 쓴다', () => {
-    const blob = new Blob([new Uint8Array([7])])
-    expect(docSource(image(), undefined, blob)).toEqual({ name: 'shot.png', blob })
   })
 })

@@ -15,7 +15,7 @@ defineSlots<{ meta?(): unknown; actions?(): unknown }>()
       <span class="meta"><slot name="meta" /></span>
     </button>
     <span class="tools">
-      <span v-if="$slots.actions" class="actions"><slot name="actions" /></span>
+      <slot name="actions" />
       <button
         v-tooltip="'Remove'"
         class="remove"
@@ -85,7 +85,7 @@ button {
   color: var(--fg);
 }
 
-/* 좁으면 제목이 먼저 줄고, 그다음 메타가 줄어 오른쪽 버튼을 덮지 않는다. 메타 안에서는 시각을 남기고 cell 이름이 준다. */
+/* 좁으면 제목이 먼저 줄고, 그다음 메타가 줄어 오른쪽 버튼을 덮지 않는다. 메타 안에서는 시각이 남고 cell 이름이 먼저 줄어든다. */
 .meta {
   flex: 0 1 auto;
   display: flex;
@@ -98,22 +98,21 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* 버튼은 포인터를 올렸을 때만 나타난다. 평소에는 자리를 차지하지 않아 메타가 오른쪽 끝에 붙고, 나타나면 메타·제목을 왼쪽으로 민다. */
+/* 버튼은 포인터를 올리거나 포커스가 들어왔을 때만 나타나 메타·제목을 왼쪽으로 민다. 안 보이는 버튼이 자리를 차지하면 시각
+   오른쪽이 비어 보이고, 버튼을 메타 위에 겹쳐 띄우면 좁은 폭에서 제목 끝의 말줄임표를 가리기 때문이다. 숨길 때 폭만 0 으로
+   두는 것은 Shift+Tab 으로 뒤에서 들어와도 버튼에 포커스가 가게 하기 위해서다(`display: none` 이면 건너뛴다). */
 .tools {
   flex: none;
-  display: none;
+  display: flex;
   align-items: center;
+  width: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .row:hover .tools,
 .row:focus-within .tools {
-  display: flex;
-}
-
-.actions {
-  display: flex;
-  height: 100%;
+  width: auto;
 }
 
 .remove {
