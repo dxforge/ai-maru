@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { copyPng, diagramPng } from './copyImage'
 import { drawDiagrams, errorLine, hasDiagram, naturalSize, type DiagramCache } from './diagrams'
 import { prepareMarkdown, renderPart } from './markdown'
 import { PINCH_SPAN, WHEEL_SPAN } from './zoom'
@@ -11,6 +12,13 @@ const doc = (text: string): HTMLElement => {
   return el
 }
 const block = (source: string): string => '```mermaid\n' + source + '\n```'
+
+// jsdom 의 canvas 는 그리지 못하므로 PNG 를 만드는 함수는 mock 한다. 만든 PNG 는 e2e(`e2e/canvas.spec.ts`)가 잰다.
+vi.mock('./copyImage', async (original) => ({
+  ...(await original<typeof import('./copyImage')>()),
+  diagramPng: vi.fn(),
+  copyPng: vi.fn()
+}))
 
 // 원문과 밝기를 SVG 에 적어, 어느 블록을 어느 밝기로 그렸는지 보이게 한다. `bad` 로 시작하면 문법 오류다.
 function renderer() {
@@ -24,7 +32,7 @@ function renderer() {
 }
 
 const svgs = (el: Element) =>
-  [...el.querySelectorAll('.diagram svg')].map((s) => [
+  [...el.querySelectorAll('.diagram .zoom-view > svg')].map((s) => [
     s.getAttribute('data-source'),
     s.getAttribute('data-dark')
   ])
@@ -155,7 +163,7 @@ describe('drawDiagrams', () => {
       '<div id=p popover>fake</div><dialog open>modal</dialog>'
     const svg = `<svg width="200" height="100"><foreignObject><div>${label}</div></foreignObject></svg>`
     await drawDiagrams(el, new Map(), false, async () => async () => svg)
-    const view = el.querySelector('.diagram svg')!
+    const view = el.querySelector('.diagram .zoom-view > svg')!
     expect(
       view.querySelector('[popover], [popovertarget], [popovertargetaction], dialog')
     ).toBeNull()
@@ -173,9 +181,23 @@ describe('다이어그램 확대·축소', () => {
     await drawDiagrams(el, cache, false, load)
     const box = el.querySelector<HTMLElement>('.diagram')!
     const svg = box.querySelector<SVGElement>('svg')!
-    const [out, reset, into] = [...box.querySelectorAll<HTMLButtonElement>('.zoom-bar button')]
+    const [out, reset, into, fit, copy] = [
+      ...box.querySelectorAll<HTMLButtonElement>('.zoom-bar button')
+    ]
     const size = () => [svg.style.width, svg.style.height, reset!.textContent]
-    return { el, cache, load, box, svg, out: out!, reset: reset!, into: into!, size }
+    return {
+      el,
+      cache,
+      load,
+      box,
+      svg,
+      out: out!,
+      reset: reset!,
+      into: into!,
+      fit: fit!,
+      copy: copy!,
+      size
+    }
   }
   const wheel = (target: Element, init: WheelEventInit) => {
     const e = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init })
@@ -183,14 +205,16 @@ describe('다이어그램 확대·축소', () => {
     return e
   }
 
-  it('mermaid 가 정한 크기로 넣고, 축소·배율·확대 버튼을 둔다', async () => {
-    const { svg, out, reset, into, size } = await drawn()
+  it('mermaid 가 정한 크기로 넣고, 축소·배율·확대·fit·복사 버튼을 둔다', async () => {
+    const { svg, out, reset, into, fit, copy, size } = await drawn()
     expect(size()).toEqual(['200px', '100px', '100%'])
     expect(svg.style.maxWidth).toBe('none')
-    expect([out, reset, into].map((b) => b.getAttribute('aria-label'))).toEqual([
+    expect([out, reset, into, fit, copy].map((b) => b.getAttribute('aria-label'))).toEqual([
       'Zoom out',
       'Reset zoom',
-      'Zoom in'
+      'Zoom in',
+      'Fit',
+      'Copy image'
     ])
   })
 
@@ -238,10 +262,41 @@ describe('다이어그램 확대·축소', () => {
     const { el, cache, load, into } = await drawn()
     into.click()
     await drawDiagrams(el, cache, true, load)
-    const svg = el.querySelector<SVGElement>('.diagram svg')!
+    const svg = el.querySelector<SVGElement>('.diagram .zoom-view > svg')!
     expect(svg.getAttribute('data-dark')).toBe('true')
     expect(svg.style.width).toBe('220px')
     expect(el.querySelector('.zoom-reset')!.textContent).toBe('110%')
+  })
+
+  it('fit 을 누르면 블록 높이는 맞춘 다이어그램의 높이가 되고, 밝기가 바뀌어 다시 그려도 그 높이를 잇는다', async () => {
+    const { el, cache, load, box, fit, into, size } = await drawn()
+    const view = box.querySelector<HTMLElement>('.zoom-view')!
+    Object.defineProperty(view, 'clientWidth', { value: 300 })
+    fit.click()
+    expect(size()).toEqual(['300px', '150px', '150%'])
+    expect(view.style.height).toBe('150px')
+    into.click()
+    await drawDiagrams(el, cache, true, load)
+    const again = el.querySelector<HTMLElement>('.diagram .zoom-view')!
+    expect(again.querySelector('svg')!.style.width).toBe('350px')
+    expect(again.style.height).toBe('150px')
+  })
+
+  it('복사 버튼은 다이어그램을 100% 크기의 화면 배율 배 PNG 로 만들어 클립보드에 싣는다', async () => {
+    const png = new Blob()
+    vi.mocked(diagramPng).mockResolvedValue(png)
+    vi.mocked(copyPng).mockResolvedValue()
+    const { el, svg, into, copy } = await drawn()
+    el.style.background = 'rgb(1, 2, 3)'
+    into.click()
+    copy.click()
+    await vi.waitFor(() => expect(copyPng).toHaveBeenCalledWith(png))
+    expect(diagramPng).toHaveBeenCalledWith(
+      svg,
+      { width: 200, height: 100 },
+      'rgb(1, 2, 3)',
+      devicePixelRatio
+    )
   })
 
   describe('끌어서 스크롤', () => {
@@ -250,11 +305,11 @@ describe('다이어그램 확대·축소', () => {
       const { box } = await drawn()
       const view = box.querySelector<HTMLElement>('.zoom-view')!
       Object.defineProperties(view, {
-        scrollWidth: { value: overflows ? 400 : 200 },
         clientWidth: { value: 200 },
-        scrollHeight: { value: 100 },
         clientHeight: { value: 100 }
       })
+      view.querySelector('svg')!.getBoundingClientRect = () =>
+        new DOMRect(0, 0, overflows ? 400 : 200, 100)
       view.setPointerCapture = vi.fn()
       return view
     }
@@ -297,7 +352,7 @@ describe('다이어그램 확대·축소', () => {
   it('크기를 알 수 없는 SVG 는 그대로 넣고 버튼을 두지 않는다', async () => {
     const el = doc(block('graph A'))
     await drawDiagrams(el, new Map(), false, async () => async () => '<svg width="100%"></svg>')
-    expect(el.querySelector('.diagram svg')!.getAttribute('style')).toBeNull()
+    expect(el.querySelector('.diagram .zoom-view > svg')!.getAttribute('style')).toBeNull()
     expect(el.querySelector('.zoom-bar')).toBeNull()
   })
 })

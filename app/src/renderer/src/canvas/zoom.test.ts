@@ -1,5 +1,6 @@
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { stepZoom, wheelZoom, ZOOM_STEPS, zoomLabel } from './zoom'
+import { fitScale, stepZoom, wheelZoom, ZOOM_STEPS, zoomLabel } from './zoom'
 
 describe('stepZoom', () => {
   it('단계 위의 배율에서는 이웃 단계로 가고, 끝에서는 그대로다', () => {
@@ -62,4 +63,36 @@ it('zoomLabel 은 배율을 반올림한 백분율로 적는다', () => {
   expect(zoomLabel(1)).toBe('100%')
   expect(zoomLabel(1 / 3)).toBe('33%')
   expect(zoomLabel(2 / 3)).toBe('67%')
+})
+
+describe('fitScale', () => {
+  it('너비와 높이 가운데 더 좁은 쪽에 맞춘다', () => {
+    expect(fitScale({ width: 1000, height: 600 }, { width: 430, height: 800 })).toBe(0.43)
+    expect(fitScale({ width: 1000, height: 2000 }, { width: 430, height: 240 })).toBe(0.12)
+  })
+
+  it('작은 그림은 키우되 500% 를 넘지 않는다', () => {
+    expect(fitScale({ width: 200, height: 100 }, { width: 430, height: 800 })).toBe(2.15)
+    expect(fitScale({ width: 10, height: 10 }, { width: 430, height: 800 })).toBe(5)
+  })
+
+  it('0 이하인 변은 보지 않는다', () => {
+    expect(fitScale({ width: 1000, height: 600 }, { width: 430, height: Infinity })).toBe(0.43)
+    expect(fitScale({ width: 1000, height: 600 }, { width: 430, height: -20 })).toBe(0.43)
+    expect(fitScale({ width: 1000, height: 600 }, { width: 0, height: 0 })).toBe(5)
+  })
+
+  it('맞춘 그림은 room 안에 들어오고, 500% 가 아니면 한 변이 room 에 닿는다', () => {
+    const side = fc.double({ min: 1, max: 10_000, noNaN: true })
+    fc.assert(
+      fc.property(side, side, side, side, (width, height, roomWidth, roomHeight) => {
+        const scale = fitScale({ width, height }, { width: roomWidth, height: roomHeight })
+        const [w, h] = [width * scale, height * scale]
+        const near = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * b
+        expect(w <= roomWidth || near(w, roomWidth)).toBe(true)
+        expect(h <= roomHeight || near(h, roomHeight)).toBe(true)
+        expect(scale === 5 || near(w, roomWidth) || near(h, roomHeight)).toBe(true)
+      })
+    )
+  })
 })

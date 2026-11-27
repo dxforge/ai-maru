@@ -106,6 +106,7 @@ const api = {
   /** 클립보드에 이미지가 있으면 `ptyId` 의 cell 의 Canvas 문서로 넣는다. */
   pasteClipboardToCanvas: (ptyId: string): void =>
     ipcRenderer.send('canvas:paste-clipboard', ptyId),
+  copyImage: (png: Uint8Array): Promise<void> => ipcRenderer.invoke('canvas:copy-image', png),
   setWindowPath: (path: string): void => ipcRenderer.send('window:path', path),
   saveScreen: (screen: ScreenState): void => ipcRenderer.send('screen:state', screen),
   /** 앱이 뜬 뒤 첫 문서만 되살릴 것을 받는다. 다음 문서는 null 을 받아 빈 workspace 로 시작한다. */

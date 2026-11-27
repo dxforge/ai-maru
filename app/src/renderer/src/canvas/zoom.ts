@@ -54,3 +54,15 @@ export function wheelZoom(scale: number, deltaY: number, span: number): number {
 export function zoomLabel(scale: number): string {
   return `${Math.round(scale * 100)}%`
 }
+
+/**
+ * 크기 `size` 인 그림 전체가 `room` 안에 들어오는 배율. 작은 그림은 키우되 가장 큰 단계를 넘지 않는다. `room` 의 한 변이
+ * 0 이하면 그 변은 보지 않는다.
+ */
+export function fitScale(
+  size: { width: number; height: number },
+  room: { width: number; height: number }
+): number {
+  const by = (have: number, need: number): number => (have > 0 ? have / need : Infinity)
+  return Math.min(by(room.width, size.width), by(room.height, size.height), MAX)
+}

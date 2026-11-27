@@ -57,6 +57,12 @@ export function pinBands(n: number, pins: Pins): { top: Band; bottom: Band } {
   }
 }
 
+// `index` 번째 카드의 본문을 읽는 동안 위아래에 붙는 묶음의 최대 높이. 위에는 그 카드와 앞 카드의 제목이, 아래에는
+// 뒤 카드의 제목이 붙는다. 아래 묶음은 뒤 카드가 화면 안에 들면 이보다 낮다.
+export function readingBands(index: number, n: number): { above: number; below: number } {
+  return { above: bandRows(index + 1) * ROW_H, below: bandRows(n - 1 - index) * ROW_H }
+}
+
 // 간 문서의 제목이 그 위 제목들로 채운 위쪽 묶음 바로 아래에 오는 scrollTop.
 export function goToScrollTop(index: number, top: number): number {
   return Math.max(0, top - bandRows(index) * ROW_H)
