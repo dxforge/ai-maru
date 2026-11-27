@@ -8,6 +8,7 @@ import {
   type Named
 } from '../../../shared/names'
 import { CodeBody } from './code'
+import { docSource, type DocSource } from './docFile'
 import { MarkdownBody, prepareMarkdown } from './markdown'
 
 // `at` 은 renderer 가 문서를 받은 시각(ms)이다. 문서를 고쳐 보냈으면 고친 시각이다.
@@ -278,6 +279,7 @@ function release(entry: CanvasEntry): void {
 // 다시 오면 새 entry 라 새로 렌더한다. reactive 한 목록에 넣으면 Vue 가 토큰까지 proxy 로 감싸므로 entry 밖에 둔다.
 const bodies = new WeakMap<CanvasEntry, MarkdownBody>()
 const codeBodies = new WeakMap<CanvasEntry, CodeBody>()
+const sources = new WeakMap<CanvasEntry, DocSource>()
 
 export const CODE_WAIT_MS = 100
 
@@ -287,6 +289,32 @@ export function bodyOf(entry: CanvasEntry): MarkdownBody | undefined {
 
 export function codeBodyOf(entry: CanvasEntry): CodeBody | undefined {
   return codeBodies.get(toRaw(entry))
+}
+
+export function sourceOf(entry: CanvasEntry): DocSource | undefined {
+  return sources.get(toRaw(entry))
+}
+
+/** 클립보드에 실을 것. 마크다운은 원문과 문서 전체를 그린 HTML 이다. 이미지 문서는 복사하지 않으므로 undefined 다. */
+export function copyOf(entry: CanvasEntry): { text: string; html?: string } | undefined {
+  const source = sourceOf(entry)
+  if (!source || !('text' in source)) return undefined
+  const body = source.rich ? bodyOf(entry) : undefined
+  if (!body) return { text: source.text }
+  return {
+    text: source.text,
+    html: Array.from({ length: body.length }, (_, i) => body.html(i)).join('')
+  }
+}
+
+/** 저장 대화상자의 기본 이름과 쓸 내용. */
+export async function fileOf(
+  entry: CanvasEntry
+): Promise<{ name: string; data: string | Uint8Array } | undefined> {
+  const source = sourceOf(entry)
+  if (!source) return undefined
+  const data = 'text' in source ? source.text : new Uint8Array(await source.blob.arrayBuffer())
+  return { name: source.name, data }
 }
 
 const fileName = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
@@ -302,16 +330,28 @@ function toEntry(item: CanvasItem, at: number): CanvasEntry {
     const title = item.title || heading || (item.path && fileName(item.path)) || 'Markdown'
     const entry: CanvasEntry = { id: item.id, kind: 'markdown', title, at, ...owner }
     bodies.set(entry, new MarkdownBody(parts))
+    sources.set(entry, docSource(item, heading))
     return entry
   }
   if (item.kind === 'code') {
     const title = item.title || item.name
     const entry: CanvasEntry = { id: item.id, kind: 'code', title, at, ...owner }
     codeBodies.set(entry, new CodeBody(item.text, item.name, item.line))
+    sources.set(entry, docSource(item))
     return entry
   }
-  const url = URL.createObjectURL(new Blob([item.bytes as BlobPart], { type: item.mime }))
-  return { id: item.id, kind: 'image', title: item.title || item.name, at, url, ...owner }
+  const blob = new Blob([item.bytes as BlobPart], { type: item.mime })
+  const url = URL.createObjectURL(blob)
+  const entry: CanvasEntry = {
+    id: item.id,
+    kind: 'image',
+    title: item.title || item.name,
+    at,
+    url,
+    ...owner
+  }
+  sources.set(entry, docSource(item, undefined, blob))
+  return entry
 }
 
 export function clockTime(at: number): string {

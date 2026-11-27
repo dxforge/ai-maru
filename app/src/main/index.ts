@@ -17,7 +17,15 @@ import {
   shell,
   utilityProcess
 } from 'electron'
-import { canvasPaste, canvasPut, ownerOf, putCanvas, type CellOf } from './canvas'
+import {
+  canvasPaste,
+  canvasPut,
+  copyFormats,
+  docSaver,
+  ownerOf,
+  putCanvas,
+  type CellOf
+} from './canvas'
 import {
   closePaneDialog,
   createQuitPermission,
@@ -971,6 +979,21 @@ function start(): void {
     const blob = new Blob([png as Uint8Array<ArrayBuffer>], { type: 'image/png' })
     return clipboard.write([new ClipboardItem({ 'image/png': blob })])
   })
+  ipcMain.handle('canvas:copy-doc', (_event, text: unknown, html: unknown) =>
+    clipboard.write([new ClipboardItem(copyFormats(text, html))])
+  )
+  const saveDoc = docSaver(
+    () => app.getPath('downloads'),
+    async (defaultPath) => {
+      const win = mainWindow()
+      const options = { defaultPath }
+      const { canceled, filePath } = await (win
+        ? dialog.showSaveDialog(win, options)
+        : dialog.showSaveDialog(options))
+      return canceled || !filePath ? undefined : filePath
+    }
+  )
+  ipcMain.handle('canvas:save-doc', (_event, name: unknown, data: unknown) => saveDoc(name, data))
   ipcMain.handle('link:longest-existing', (_event, groups: unknown, pty: unknown) => {
     if (!Array.isArray(groups) || !groups.every(isPathCandidates) || typeof pty !== 'string') {
       return []

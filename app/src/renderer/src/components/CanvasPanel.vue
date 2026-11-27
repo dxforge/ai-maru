@@ -6,6 +6,7 @@ import CanvasDoc from './CanvasDoc.vue'
 import CanvasViewMenu from './CanvasViewMenu.vue'
 import CardStream from './CardStream.vue'
 import CellName from './CellName.vue'
+import DocActions from './DocActions.vue'
 
 const { canvas, width, resizing } = defineProps<{
   canvas: Canvas
@@ -110,6 +111,7 @@ function onTransition(e: TransitionEvent): void {
           :name="canvas.nameOf(item.cell)"
         />{{ clockTime(item.at) }}</template
       >
+      <template #actions="{ item }"><DocActions :doc="item" /></template>
       <template #body="{ item }"><CanvasDoc :doc="item" /></template>
     </CardStream>
   </aside>

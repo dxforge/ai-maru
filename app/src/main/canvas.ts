@@ -1,21 +1,17 @@
 import { randomUUID } from 'node:crypto'
-import { readFile, stat } from 'node:fs/promises'
-import { basename, extname, isAbsolute, resolve } from 'node:path'
+import { readFile, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import type { BrowserWindow } from 'electron'
-import type { CanvasDoc, CanvasImage, CanvasOwner } from '../shared/canvas'
+import {
+  IMAGE_TYPES,
+  isMermaidPath,
+  mermaidDoc,
+  type CanvasDoc,
+  type CanvasImage,
+  type CanvasOwner
+} from '../shared/canvas'
 import { InvalidParams } from './cli-server'
 import { WINDOW_WAIT_MS, type WindowReady } from './window-ready'
-
-const IMAGE_TYPES: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.avif': 'image/avif',
-  '.bmp': 'image/bmp',
-  '.svg': 'image/svg+xml'
-}
 
 const imageType = (path: string): string | undefined => IMAGE_TYPES[extname(path).toLowerCase()]
 
@@ -54,7 +50,7 @@ export async function fileDoc(path: string, line?: number): Promise<CanvasDoc | 
     const text = withoutBom(await readFile(path, 'utf8'))
     return { id: path, kind: 'markdown', text, path }
   }
-  if (ext === '.mmd' || ext === '.mermaid') {
+  if (isMermaidPath(path)) {
     const text = mermaidDoc(withoutBom(await readFile(path, 'utf8')))
     return { id: path, kind: 'markdown', text, path }
   }
@@ -75,15 +71,6 @@ export async function canvasDocFor(path: string, line?: number): Promise<CanvasD
   const doc = await fileDoc(path, line)
   if (typeof doc === 'string') return null
   return doc.kind === 'markdown' ? { ...doc, title: basename(path) } : doc
-}
-
-// mermaid 파일은 그 원문 하나만 든 mermaid 코드 블록으로 연다. 펜스는 원문에서 가장 길게 이어진 backtick 보다 한 개
-// 길게(최소 3개) 써서, 원문 안에서 블록이 닫히지 않게 한다.
-function mermaidDoc(source: string): string {
-  const longest = (source.match(/`+/g) ?? []).reduce((n, run) => Math.max(n, run.length), 0)
-  const fence = '`'.repeat(Math.max(3, longest + 1))
-  const body = source.endsWith('\n') ? source : `${source}\n`
-  return `${fence}mermaid\n${body}${fence}\n`
 }
 
 /** Electron `clipboard.read()` 의 항목 가운데 쓰는 것. */
@@ -129,6 +116,40 @@ export function canvasPaste(
       const id = `clipboard:${randomUUID()}`
       await put({ id, kind: 'image', name: 'Pasted image', mime: 'image/png', bytes }, pty)
     }
+  }
+}
+
+/** 문서 복사가 클립보드에 실을 형식. `html` 이 있으면 `text/plain` 과 함께 `text/html` 로 싣는다. */
+export function copyFormats(text: unknown, html: unknown): Record<string, string> {
+  if (typeof text !== 'string') throw new Error('the copied text must be a string')
+  if (html === undefined) return { 'text/plain': text }
+  if (typeof html !== 'string') throw new Error('the copied HTML must be a string')
+  return { 'text/plain': text, 'text/html': html }
+}
+
+/** 고른 경로를 돌려주고, 취소하면 undefined 를 돌려준다. */
+export type AskSavePath = (defaultPath: string) => Promise<string | undefined>
+
+/**
+ * 문서를 저장 대화상자에서 고른 경로에 쓴다. 대화상자는 앱이 뜬 뒤 마지막으로 저장한 디렉토리에서 열고, 처음에는
+ * `firstDir` 에서 연다. 저장했으면 true, 취소했으면 false 다.
+ */
+export function docSaver(
+  firstDir: () => string,
+  ask: AskSavePath,
+  write: (path: string, data: string | Uint8Array) => Promise<void> = writeFile
+) {
+  let dir: string | undefined
+  return async (name: unknown, data: unknown): Promise<boolean> => {
+    if (typeof name !== 'string' || name === '') throw new Error('the file name must be a string')
+    if (typeof data !== 'string' && !(data instanceof Uint8Array)) {
+      throw new Error('the saved data must be a string or bytes')
+    }
+    const path = await ask(join(dir ?? firstDir(), basename(name)))
+    if (path === undefined) return false
+    await write(path, data)
+    dir = dirname(path)
+    return true
   }
 }
 

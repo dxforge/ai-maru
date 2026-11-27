@@ -1,8 +1,9 @@
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Locator, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
   activePane,
+  appRegionAt,
   attachFromOutside,
   canvasButton,
   canvasPanel,
@@ -1851,4 +1852,84 @@ test('끄는 도중 Canvas 를 닫으면 끌기가 끝나, 닫힌 뒤의 움직�
   await clickMenu(app, 'toggle-canvas')
   await expect.poll(() => panel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
   expect(await canvasWidth(page)).toBe(before + 50)
+})
+
+/** 저장 대화상자를 띄우지 않고, 받은 기본 경로를 모으고 `answers` 의 경로를 차례로 고른 것으로 돌려준다. */
+async function stubSaveDialog(app: ElectronApplication, answers: string[]): Promise<void> {
+  await app.evaluate(({ dialog }, answers) => {
+    const asked: string[] = []
+    Object.assign(globalThis, { savePaths: asked })
+    dialog.showSaveDialog = (async (...args: unknown[]) => {
+      asked.push((args.at(-1) as { defaultPath: string }).defaultPath)
+      const filePath = answers.shift()
+      return { canceled: filePath === undefined, filePath }
+    }) as typeof dialog.showSaveDialog
+  }, answers)
+}
+
+const savePaths = (app: ElectronApplication) =>
+  app.evaluate(() => (globalThis as unknown as { savePaths: string[] }).savePaths)
+
+test('접힌 카드도 제목 줄의 복사 버튼을 누르면 마크다운 원문과 그린 HTML 을 클립보드에 싣고, 버튼이 잠깐 ✓ 가 된다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const text = '# 계획\n\n- **굵게** 한 항목\n'
+  await putCanvas(app, { id: 'a', kind: 'markdown', text, title: '계획' })
+  await titles(page).filter({ hasText: '계획' }).click()
+  await expect(markdown(page)).toHaveCount(0)
+
+  const copy = card(page, 'a').locator('.copy')
+  const actions = card(page, 'a').locator('.actions')
+  await leavePanel(page)
+  await expect(actions).toHaveCSS('opacity', '0')
+  await card(page, 'a').locator('.head').hover()
+  await expect(actions).toHaveCSS('opacity', '1')
+  const box = (await copy.boundingBox())!
+  expect(await appRegionAt(page, box.x + box.width / 2, box.y + box.height / 2)).not.toBe('drag')
+  await copy.click()
+  await expect(copy).toHaveClass(/done/)
+  const copied = await app.evaluate(async ({ clipboard }) => {
+    const item = (await clipboard.read()).find((i) => i.types.includes('text/html'))
+    const read = async (type: string) => ((await item?.getType(type)) as Blob | undefined)?.text()
+    return { text: await read('text/plain'), html: await read('text/html') }
+  })
+  expect(copied.text).toBe(text)
+  expect(copied.html).toContain('<h1>계획</h1>')
+  expect(copied.html).toContain('<strong>굵게</strong>')
+  await expect(copy).not.toHaveClass(/done/)
+  // 접은 카드는 누른 뒤에도 접힌 채다.
+  await expect(markdown(page)).toHaveCount(0)
+})
+
+test('저장 버튼은 처음엔 다운로드 폴더에서, 그 뒤로는 마지막으로 저장한 디렉토리에서 대화상자를 열어 원문과 원본 바이트를 쓰고, 이미지에는 복사 버튼이 없다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  const downloads = await app.evaluate(({ app }) => app.getPath('downloads'))
+  const md = join(dataDir, '계획 메모.md')
+  const png = join(dataDir, 'shot.svg')
+  await stubSaveDialog(app, [md, png])
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: '# A\r\n본문\r\n', title: '계획 메모' })
+  await putCanvas(app, {
+    id: 'i',
+    kind: 'image',
+    name: 'shot.svg',
+    mime: 'image/svg+xml',
+    svg: svg(40)
+  })
+  await expect(titles(page)).toHaveText(['shot.svg', '계획 메모'])
+  await expect(card(page, 'i').locator('.copy')).toHaveCount(0)
+
+  await card(page, 'a').locator('.head').hover()
+  await card(page, 'a').locator('.save').click()
+  await expect(card(page, 'a').locator('.save')).toHaveClass(/done/)
+  expect(readFileSync(md, 'utf8')).toBe('# A\r\n본문\r\n')
+
+  await card(page, 'i').locator('.head').hover()
+  await card(page, 'i').locator('.save').click()
+  await expect(card(page, 'i').locator('.save')).toHaveClass(/done/)
+  expect(readFileSync(png, 'utf8')).toBe(svg(40))
+  expect(await savePaths(app)).toEqual([join(downloads, '계획 메모.md'), join(dataDir, 'shot.svg')])
 })

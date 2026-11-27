@@ -4,7 +4,7 @@ import FoldChevron from './FoldChevron.vue'
 
 const { title, open } = defineProps<{ title: string; open: boolean }>()
 const emit = defineEmits<{ open: []; remove: [] }>()
-defineSlots<{ meta?(): unknown }>()
+defineSlots<{ meta?(): unknown; actions?(): unknown }>()
 </script>
 
 <template>
@@ -14,6 +14,7 @@ defineSlots<{ meta?(): unknown }>()
       <span class="title">{{ title }}</span>
       <span class="meta"><slot name="meta" /></span>
     </button>
+    <span v-if="$slots.actions" class="actions"><slot name="actions" /></span>
     <button
       v-tooltip="'Remove'"
       class="remove"
@@ -82,11 +83,24 @@ button {
   color: var(--fg);
 }
 
+/* 좁으면 제목이 먼저 줄고, 그다음 메타가 줄어 오른쪽 버튼을 덮지 않는다. 메타 안에서는 시각을 남기고 cell 이름이 준다. */
 .meta {
-  flex: none;
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
   font-size: var(--text-1);
   color: var(--faint);
   font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  flex: none;
+  display: flex;
+  height: 100%;
+  opacity: 0;
 }
 
 .remove {
@@ -98,6 +112,7 @@ button {
   opacity: 0;
 }
 
+.row:hover .actions,
 .row:hover .remove {
   opacity: 1;
 }
