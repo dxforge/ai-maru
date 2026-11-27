@@ -72,8 +72,11 @@ function firstLoose(options: Lexer['options'], lines: string[], lazy: Lazy[]): n
   return i === -1 ? undefined : i
 }
 
-function untilDef(s: string): string {
-  const cut = s.search(DEF_LINE)
+// 정의 첫 줄에서 시작한 문단을 정의 줄 앞과 들여 쓴 줄 앞에서 끊는다. 들여 쓴 줄은 정의 안의 줄이라, 들여쓰기를 뗀 뒤
+// 목록·인용처럼 문단을 끊는 블록이 될 수 있기 때문이다.
+const FIRST_CUT = new RegExp(String.raw`${DEF_LINE.source}|\n(?: {4}|\t)`)
+function untilBlock(s: string): string {
+  const cut = s.search(FIRST_CUT)
   return cut === -1 ? s : s.slice(0, cut + 1)
 }
 
@@ -108,7 +111,7 @@ export const footnotes: MarkedExtension = {
         const first =
           line.trim() && continuesParagraph(line) ? PARAGRAPH.exec(src.slice(pos)) : null
         if (first) {
-          const raw = untilDef(first[0])
+          const raw = untilBlock(first[0])
           lines.push(raw.replace(/\n$/, ''))
           pos += raw.length
         } else {

@@ -513,6 +513,24 @@ describe('각주', () => {
     expect([...item.children].map((c) => c.tagName)).toEqual(['H1', 'P'])
   })
 
+  it('정의 첫 줄 바로 다음의 4칸 들여 쓴 목록·인용·정의는 첫 문단을 끊는다', () => {
+    const item = (text: string): Element => body(text).querySelector('ol.footnotes > li')!
+    const list = item('x[^1]\n\n[^1]: Intro:\n    - one\n    - two')
+    expect([...list.children].map((c) => c.tagName)).toEqual(['P', 'UL', 'P'])
+    expect(list.firstElementChild!.textContent).toBe('Intro:')
+    expect([...list.querySelectorAll('ul > li')].map((li) => li.textContent)).toEqual([
+      'one',
+      'two'
+    ])
+    expect(item('x[^1]\n\n[^1]: Intro:\n\t- tab').querySelector('ul > li')!.textContent).toBe('tab')
+    const quote = item('x[^1]\n\n[^1]: Intro:\n    > q')
+    expect(quote.querySelector('blockquote')!.textContent).toBe('\nq\n')
+    expect(notes(body('x[^1] y[^2]\n\n[^1]: a\n    [^2]: b'))).toEqual(['a ↩︎', 'b ↩︎'])
+    const lazy = item('x[^1]\n\n[^1]: one\n    two\nthree\n    - four\nfive')
+    expect(lazy.firstElementChild!.textContent).toBe('one\ntwo\nthree')
+    expect(lazy.querySelector('ul > li')!.textContent).toBe('four\nfive')
+  })
+
   it('문서 끝의 닫히지 않은 HTML 태그는 각주 목록을 감싸지 않는다', () => {
     const el = body('a[^1]\n\n[^1]: one\n\n<details>\n\nhidden')
     expect(el.querySelector('details ol.footnotes')).toBeNull()
