@@ -311,6 +311,11 @@ onBeforeUnmount(reset)
   scroll-margin-top: calc(var(--pinned-top, 0px) + var(--space-4));
 }
 
+.markdown :deep(sup:has(> a[id*='-fnref-'])),
+.markdown :deep(sup[id*='-fnref-']) {
+  margin-left: var(--space-1);
+}
+
 .markdown :deep(.footnotes) {
   padding-left: var(--space-6);
   color: var(--muted);
