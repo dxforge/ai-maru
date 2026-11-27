@@ -16,7 +16,7 @@ export type ZoomOptions = {
   png: () => Promise<Blob>
 }
 
-const COPIED_MS = 1500
+export const COPIED_MS = 1500
 
 /**
  * `out` 블록에 확대·축소·fit·복사 버튼과 ⌘+휠·핀치 확대·축소를 붙인다. `view` 는 `content` 를 담고 넘치면 스크롤하는

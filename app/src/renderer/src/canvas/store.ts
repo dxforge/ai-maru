@@ -8,6 +8,8 @@ import {
   type Named
 } from '../../../shared/names'
 import { CodeBody } from './code'
+import { docSource, fileName, saveName, type DocSource } from './docFile'
+import { fullHtml } from './fill'
 import { MarkdownBody, prepareMarkdown } from './markdown'
 
 // `at` 은 renderer 가 문서를 받은 시각(ms)이다. 문서를 고쳐 보냈으면 고친 시각이다.
@@ -278,6 +280,7 @@ function release(entry: CanvasEntry): void {
 // 다시 오면 새 entry 라 새로 렌더한다. reactive 한 목록에 넣으면 Vue 가 토큰까지 proxy 로 감싸므로 entry 밖에 둔다.
 const bodies = new WeakMap<CanvasEntry, MarkdownBody>()
 const codeBodies = new WeakMap<CanvasEntry, CodeBody>()
+const sources = new WeakMap<CanvasEntry, DocSource>()
 
 export const CODE_WAIT_MS = 100
 
@@ -289,7 +292,33 @@ export function codeBodyOf(entry: CanvasEntry): CodeBody | undefined {
   return codeBodies.get(toRaw(entry))
 }
 
-const fileName = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
+export function sourceOf(entry: CanvasEntry): DocSource | undefined {
+  return sources.get(toRaw(entry))
+}
+
+/** 이미지 문서는 제목 줄에서 복사하지 않는다. 그림 복사는 확대·축소 막대(`zoomBox.ts`)가 맡는다. */
+export function canCopy(entry: CanvasEntry): boolean {
+  const source = sourceOf(entry)
+  return source !== undefined && 'text' in source
+}
+
+export async function copyOf(
+  entry: CanvasEntry
+): Promise<{ text: string; html?: string } | undefined> {
+  const source = sourceOf(entry)
+  if (!source || !('text' in source)) return undefined
+  const body = source.rich ? bodyOf(entry) : undefined
+  return body ? { text: source.text, html: await fullHtml(body) } : { text: source.text }
+}
+
+export async function fileOf(
+  entry: CanvasEntry
+): Promise<{ name: string; data: string | Uint8Array } | undefined> {
+  const source = sourceOf(entry)
+  if (!source) return undefined
+  const data = 'text' in source ? source.text : new Uint8Array(await source.blob.arrayBuffer())
+  return { name: source.name, data }
+}
 
 function toEntry(item: CanvasItem, at: number): CanvasEntry {
   const owner: CanvasOwner & { key: string } = {
@@ -302,16 +331,28 @@ function toEntry(item: CanvasItem, at: number): CanvasEntry {
     const title = item.title || heading || (item.path && fileName(item.path)) || 'Markdown'
     const entry: CanvasEntry = { id: item.id, kind: 'markdown', title, at, ...owner }
     bodies.set(entry, new MarkdownBody(parts))
+    sources.set(entry, docSource(item, heading))
     return entry
   }
   if (item.kind === 'code') {
     const title = item.title || item.name
     const entry: CanvasEntry = { id: item.id, kind: 'code', title, at, ...owner }
     codeBodies.set(entry, new CodeBody(item.text, item.name, item.line))
+    sources.set(entry, docSource(item))
     return entry
   }
-  const url = URL.createObjectURL(new Blob([item.bytes as BlobPart], { type: item.mime }))
-  return { id: item.id, kind: 'image', title: item.title || item.name, at, url, ...owner }
+  const blob = new Blob([item.bytes as BlobPart], { type: item.mime })
+  const url = URL.createObjectURL(blob)
+  const entry: CanvasEntry = {
+    id: item.id,
+    kind: 'image',
+    title: item.title || item.name,
+    at,
+    url,
+    ...owner
+  }
+  sources.set(entry, { name: saveName(item), blob })
+  return entry
 }
 
 export function clockTime(at: number): string {

@@ -1,8 +1,9 @@
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Locator, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import {
   activePane,
+  appRegionAt,
   attachFromOutside,
   canvasButton,
   canvasPanel,
@@ -44,6 +45,22 @@ const panel = canvasPanel
 const titles = (page: Page) => page.locator('.canvas .cards .title')
 const markdown = (page: Page) => page.locator('.canvas .markdown')
 const card = (page: Page, id: string) => page.locator(`.canvas .card[data-id="${id}"]`)
+
+const nextFrame = (page: Page) =>
+  page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())))
+
+// 포인터를 제목 줄에 올려 버튼을 띄우고, `ARM_MS`(`StreamRow.vue`)가 지나 `.tools` 에 `ready` 클래스가 붙기를
+// 기다린다. 올린 뒤 한 프레임을 기다리는 것은 올리기 전부터 붙어 있던 `ready` 클래스를 보지 않기 위해서다.
+async function showTools(row: Locator): Promise<void> {
+  await row.locator('.head').first().hover()
+  await nextFrame(row.page())
+  await expect(row.locator('.tools').first()).toHaveClass(/ready/)
+}
+
+async function removeButton(row: Locator): Promise<Locator> {
+  await showTools(row)
+  return row.locator('.remove')
+}
 
 test('문서가 없어도 panel bar 의 Canvas 아이콘이 보이고, 아이콘이나 메뉴로 열고 닫으면 아이콘의 눌림 표시와 툴팁이 따라간다', async ({
   launch
@@ -113,7 +130,7 @@ test('새 문서는 펼친 채 맨 위에 쌓이고, 제목 줄과 모두 접기
   await page.locator('.canvas .expand-all').click()
   await expect(markdown(page)).toHaveText(['second', 'first'])
 
-  await card(page, 'b').locator('.remove').click()
+  await (await removeButton(card(page, 'b'))).click()
   await expect(titles(page)).toHaveText(['A'])
 })
 
@@ -1121,7 +1138,18 @@ test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터�
   await typesIntoTerminal()
   await page.locator('.canvas .expand-all').click()
   await typesIntoTerminal()
-  await card(page, 'b').locator('.remove').click()
+  await showTools(card(page, 'a'))
+  await card(page, 'a').locator('.copy').click()
+  await expect(card(page, 'a').locator('.copy')).toHaveClass(/done/)
+  await typesIntoTerminal()
+  // 대화상자를 취소하면 ✓ 가 되지 않는다.
+  await stubSaveDialog(app, [undefined])
+  await showTools(card(page, 'a'))
+  await card(page, 'a').locator('.save').click()
+  await expect.poll(() => savePaths(app)).toHaveLength(1)
+  await typesIntoTerminal()
+  await expect(card(page, 'a').locator('.save')).not.toHaveClass(/done/)
+  await (await removeButton(card(page, 'b'))).click()
   await expect(titles(page)).toHaveText(['A'])
   await typesIntoTerminal()
   await canvasButton(page).click()
@@ -1241,10 +1269,10 @@ test('✕ 위에서 다른 ✕ 로 옮겨도 그 사이에 문서가 끼지 않�
   await settle(page)
   const puts = await countPuts(page)
 
-  await card(page, 'b').locator('.remove').hover()
+  await (await removeButton(card(page, 'b'))).hover()
   await putCanvas(app, { id: 'd', kind: 'markdown', text: 'new', title: 'D' })
   await expect.poll(puts).toBe(1)
-  await card(page, 'a').locator('.remove').hover()
+  await (await removeButton(card(page, 'a'))).hover()
   await page.mouse.down()
   await page.mouse.up()
   await expect(titles(page)).toHaveText(['B'])
@@ -1338,6 +1366,9 @@ test('붙은 제목을 누르면 그 문서로 가서, 그 제목이 위쪽 묶�
   const pinned = page.locator('.canvas .pins.bottom .row[data-id="b"]')
   await expect(pinned).toBeVisible()
   await expect(card(page, 'b').locator('.row')).toHaveClass(/ghost/)
+  await pinned.locator('.head').hover()
+  await expect(pinned.locator('.copy')).toBeVisible()
+  await expect(pinned.locator('.save')).toBeVisible()
   await pinned.locator('.head').click()
 
   await expect(card(page, 'b').locator('.markdown')).toContainText('b line 0')
@@ -1505,7 +1536,7 @@ test('모든 제목이 위에 붙은 채 붙은 제목의 ✕ 를 누르면 그 
 
   const pinnedB = page.locator('.canvas .pins.top .row[data-id="b"]')
   await expect(pinnedB).toBeVisible()
-  await pinnedB.locator('.remove').click()
+  await (await removeButton(pinnedB)).click()
 
   await expect(page.locator('.canvas .card')).toHaveCount(2)
   await expect(page.locator('.canvas .card[data-id="b"]')).toHaveCount(0)
@@ -1717,7 +1748,7 @@ test('두 cell 이 같은 id 로 보낸 문서는 따로 남고, 접기와 ✕ �
 
   await titles(page).filter({ hasText: 'From first' }).click()
   await expect(markdown(page)).toHaveText(['two'])
-  await card(page, 'f').filter({ hasText: 'From second' }).locator('.remove').click()
+  await (await removeButton(card(page, 'f').filter({ hasText: 'From second' }))).click()
   await expect(titles(page)).toHaveText(['From first'])
 })
 
@@ -1851,4 +1882,148 @@ test('끄는 도중 Canvas 를 닫으면 끌기가 끝나, 닫힌 뒤의 움직�
   await clickMenu(app, 'toggle-canvas')
   await expect.poll(() => panel(page).evaluate((el) => el.getAnimations().length)).toBe(0)
   expect(await canvasWidth(page)).toBe(before + 50)
+})
+
+async function stubSaveDialog(
+  app: ElectronApplication,
+  answers: (string | undefined)[]
+): Promise<void> {
+  await app.evaluate(({ dialog }, answers) => {
+    const asked: string[] = []
+    Object.assign(globalThis, { savePaths: asked })
+    dialog.showSaveDialog = (async (...args: unknown[]) => {
+      asked.push((args.at(-1) as { defaultPath: string }).defaultPath)
+      const filePath = answers.shift()
+      return { canceled: filePath === undefined, filePath }
+    }) as typeof dialog.showSaveDialog
+  }, answers)
+}
+
+const savePaths = (app: ElectronApplication) =>
+  app.evaluate(() => (globalThis as unknown as { savePaths: string[] }).savePaths)
+
+test('접힌 카드도 제목 줄의 복사 버튼을 누르면 마크다운 원문과 그린 HTML 을 클립보드에 싣고, 버튼이 잠깐 ✓ 가 된다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  const text = '# 계획\n\n- **굵게** 한 항목\n'
+  await putCanvas(app, { id: 'a', kind: 'markdown', text, title: '계획' })
+  await titles(page).filter({ hasText: '계획' }).click()
+  await expect(markdown(page)).toHaveCount(0)
+
+  const copy = card(page, 'a').locator('.copy')
+  const tools = card(page, 'a').locator('.tools')
+  await leavePanel(page)
+  await expect(tools).toBeHidden()
+  await showTools(card(page, 'a'))
+  await expect(tools).toBeVisible()
+  const box = (await copy.boundingBox())!
+  expect(await appRegionAt(page, box.x + box.width / 2, box.y + box.height / 2)).not.toBe('drag')
+  await copy.click()
+  await expect(copy).toHaveClass(/done/)
+  const copied = await app.evaluate(async ({ clipboard }) => {
+    const item = (await clipboard.read()).find((i) => i.types.includes('text/html'))
+    const read = async (type: string) => ((await item?.getType(type)) as Blob | undefined)?.text()
+    return { text: await read('text/plain'), html: await read('text/html') }
+  })
+  expect(copied.text).toBe(text)
+  expect(copied.html).toContain('<h1>계획</h1>')
+  expect(copied.html).toContain('<strong>굵게</strong>')
+  await expect(copy).not.toHaveClass(/done/)
+  await expect(markdown(page)).toHaveCount(0)
+})
+
+test('키보드로 제목 줄에 들어오면 앞에서든 뒤에서든 복사·저장·✕ 버튼에 포커스가 간다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'a', title: 'A' })
+  await putCanvas(app, { id: 'b', kind: 'markdown', text: 'b', title: 'B' })
+  await expect(titles(page)).toHaveText(['B', 'A'])
+  await titles(page).filter({ hasText: 'B' }).click()
+  await expect(card(page, 'b').locator('.markdown')).toHaveCount(0)
+  await leavePanel(page)
+  const tools = card(page, 'b').locator('.tools')
+  await expect(tools).toBeHidden()
+
+  await card(page, 'b').locator('.head').focus()
+  await page.keyboard.press('Tab')
+  await expect(card(page, 'b').locator('.copy')).toBeFocused()
+  await expect(tools).toBeVisible()
+  // 키보드로 나타난 버튼은 나타난 직후에도 눌린다.
+  await page.keyboard.press('Enter')
+  await expect(card(page, 'b').locator('.copy')).toHaveClass(/done/)
+
+  await card(page, 'a').locator('.head').focus()
+  await expect(tools).toBeHidden()
+  await page.keyboard.press('Shift+Tab')
+  await expect(card(page, 'b').locator('.remove')).toBeFocused()
+  await expect(tools).toBeVisible()
+})
+
+test('저장 버튼은 처음엔 다운로드 폴더에서, 그 뒤로는 마지막으로 저장한 디렉토리에서 대화상자를 열어 원문과 원본 바이트를 쓰고, 이미지에는 복사 버튼이 없다', async ({
+  launch,
+  dataDir
+}) => {
+  const { app, page } = await launch()
+  const downloads = await app.evaluate(({ app }) => app.getPath('downloads'))
+  const md = join(dataDir, '계획 메모.md')
+  const png = join(dataDir, 'shot.svg')
+  await stubSaveDialog(app, [md, png])
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: '# A\r\n본문\r\n', title: '계획 메모' })
+  await putCanvas(app, {
+    id: 'i',
+    kind: 'image',
+    name: 'shot.svg',
+    mime: 'image/svg+xml',
+    svg: svg(40)
+  })
+  await expect(titles(page)).toHaveText(['shot.svg', '계획 메모'])
+  await expect(card(page, 'i').locator('.copy')).toHaveCount(0)
+
+  await showTools(card(page, 'a'))
+  await card(page, 'a').locator('.save').click()
+  await expect(card(page, 'a').locator('.save')).toHaveClass(/done/)
+  expect(readFileSync(md, 'utf8')).toBe('# A\r\n본문\r\n')
+
+  await showTools(card(page, 'i'))
+  await card(page, 'i').locator('.save').click()
+  await expect(card(page, 'i').locator('.save')).toHaveClass(/done/)
+  expect(readFileSync(png, 'utf8')).toBe(svg(40))
+  expect(await savePaths(app)).toEqual([join(downloads, '계획 메모.md'), join(dataDir, 'shot.svg')])
+})
+
+test('포인터가 제목 줄에 들어와 시각이 있던 자리에 ✕ 가 나타난 직후 누르면 무시하고, 잠시 뒤 누르면 문서를 지운다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'a', title: 'A' })
+  const row = card(page, 'a').locator('.row')
+  await row.locator('.head').hover()
+  const box = (await row.locator('.remove').boundingBox())!
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  const under = () =>
+    page.evaluate(
+      ([x, y]) => {
+        const el = document.elementFromPoint(x, y)
+        return el?.closest('.remove') ? 'remove' : el?.closest('.head') ? 'head' : 'other'
+      },
+      [x, y]
+    )
+  await leavePanel(page)
+  await expect(row.locator('.tools')).toBeHidden()
+  expect(await under()).toBe('head')
+
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.up()
+  await nextFrame(page)
+  await expect(card(page, 'a')).toHaveCount(1)
+  expect(await under()).toBe('remove')
+
+  await expect(row.locator('.tools')).toHaveClass(/ready/)
+  await page.mouse.down()
+  await page.mouse.up()
+  await expect(card(page, 'a')).toHaveCount(0)
 })

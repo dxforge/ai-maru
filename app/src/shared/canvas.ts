@@ -23,3 +23,42 @@ export type CanvasDoc = CanvasMarkdown | CanvasImage | CanvasCode
 export type CanvasOwner = { pty?: string; cell?: string }
 
 export type CanvasItem = CanvasDoc & CanvasOwner
+
+const MERMAID_EXTS = ['.mmd', '.mermaid']
+
+export function isMermaidPath(path: string): boolean {
+  const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
+  // `path.extname` 처럼, 이름이 `.mmd` 뿐인 파일은 확장자 없는 숨김 파일로 본다.
+  return MERMAID_EXTS.some((ext) => name.length > ext.length && name.endsWith(ext))
+}
+
+/**
+ * mermaid 파일의 원문을 그 원문 하나만 든 mermaid 코드 블록으로 감싼다. 펜스는 원문에서 가장 길게 이어진 backtick 보다
+ * 한 개 길게(최소 3개) 써서, 원문 안에서 블록이 닫히지 않게 한다.
+ */
+export function mermaidDoc(source: string): string {
+  const longest = (source.match(/`+/g) ?? []).reduce((n, run) => Math.max(n, run.length), 0)
+  const fence = '`'.repeat(Math.max(3, longest + 1))
+  const body = source.endsWith('\n') ? source : `${source}\n`
+  return `${fence}mermaid\n${body}${fence}\n`
+}
+
+/**
+ * `mermaidDoc` 이 감싼 문서에서 원문을 꺼낸다. 끝 줄바꿈이 없던 원문에는 `mermaidDoc` 이 붙인 줄바꿈이 남는다.
+ * `mermaidDoc` 이 감싼 모양이 아니면 받은 그대로 돌려준다.
+ */
+export function mermaidSource(doc: string): string {
+  const m = /^(`{3,})mermaid\n([\s\S]*)\1\n$/.exec(doc)
+  return m ? m[2]! : doc
+}
+
+export const IMAGE_TYPES: Readonly<Record<string, string>> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+  '.svg': 'image/svg+xml'
+}

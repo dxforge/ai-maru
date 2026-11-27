@@ -1,8 +1,8 @@
 <script setup lang="ts" generic="T extends { key: string; id: string; title: string }">
 // `CardStream` 은 패널 하나의 목록과 내용을 한 스크롤에 그린다. 항목을 위에서부터 카드로 쌓고, 제목 줄을 누르면
 // 펼치거나 접는다. 스크롤해서 화면 밖으로 나간 제목은 위쪽 것은 패널 위에, 아래쪽 것은 패널 아래에 붙고, 붙은 제목을
-// 누르면 그 항목으로 간다. 항목이 무엇인지는 모른다 — 쓰는 쪽이 항목과 펼침 상태를 넘기고, 줄의 메타와 본문을 slot
-// 으로 채운다.
+// 누르면 그 항목으로 간다. 항목이 무엇인지는 모른다 — 쓰는 쪽이 항목과 펼침 상태를 넘기고, 줄의 메타·버튼과 본문을
+// slot 으로 채운다.
 // 항목은 `key` 로 구별하고, 펼침 상태·`expand`·`remove` 도 `key` 로 가리킨다. `id` 는 카드·붙은 제목·팝오버 항목의 `data-id` 로만 단다.
 // 새로 들어온 항목과 같은 key 로 새 객체가 온 항목을 잠깐 강조한다. 그래서 쓰는 쪽은 같은 key 의 항목을 내용이
 // 바뀔 때만 새 객체로 넘긴다.
@@ -47,6 +47,7 @@ const emit = defineEmits<{ expand: [key: string, on: boolean]; remove: [key: str
 defineSlots<{
   toolbar?(): unknown
   meta?(props: { item: T }): unknown
+  actions?(props: { item: T }): unknown
   body(props: { item: T }): unknown
 }>()
 
@@ -239,6 +240,7 @@ onBeforeUnmount(() => {
               @remove="emit('remove', item.key)"
             >
               <template #meta><slot name="meta" :item="item" /></template>
+              <template #actions><slot name="actions" :item="item" /></template>
             </StreamRow>
             <div v-if="expanded.has(item.key)" class="body">
               <slot name="body" :item="item" />
@@ -274,6 +276,7 @@ onBeforeUnmount(() => {
           @remove="emit('remove', items[i].key)"
         >
           <template #meta><slot name="meta" :item="items[i]" /></template>
+          <template #actions><slot name="actions" :item="items[i]" /></template>
         </StreamRow>
       </div>
       <Transition name="held">

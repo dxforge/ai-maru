@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fillBody } from './fill'
+import { fillBody, fullHtml } from './fill'
 
 const body = (n: number) => ({ length: n, html: vi.fn((i: number) => `<p>${i}</p>`) })
 const parts = (el: HTMLElement) => [...el.children].slice(1).map((p) => [p.className, p.innerHTML])
@@ -132,5 +132,15 @@ describe('fillBody', () => {
     await vi.waitFor(() => expect(other.childElementCount).toBe(2))
     expect(el.childElementCount).toBe(1)
     expect(b.html).not.toHaveBeenCalled()
+  })
+})
+
+describe('fullHtml', () => {
+  it('묶음을 차례로 모두 잇고, 첫 묶음 뒤로는 묶음마다 다른 task 에 메인 스레드를 내준다', async () => {
+    const b = body(3)
+    const html = fullHtml(b)
+    expect(b.html).toHaveBeenCalledTimes(1)
+    expect(await html).toBe('<p>0</p><p>1</p><p>2</p>')
+    expect(b.html).toHaveBeenCalledTimes(3)
   })
 })

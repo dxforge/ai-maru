@@ -7,6 +7,8 @@ import { Marked } from 'marked'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import {
   canvasDocFor,
+  copyFormats,
+  docSaver,
   fileDoc,
   canvasPaste,
   CODE_MAX_BYTES,
@@ -552,5 +554,96 @@ describe('canvasPaste', () => {
       .catch((e: unknown) => e)
     expect(sent.map(([, item]) => (item as { id: string }).id)).toEqual([after])
     expect(error).toBeInstanceOf(AggregateError)
+  })
+})
+
+describe('copyFormats', () => {
+  it('HTML 이 없으면 text/plain 만, 있으면 text/plain 과 text/html 을 싣는다', () => {
+    expect(copyFormats('# a', undefined)).toEqual({ 'text/plain': '# a' })
+    expect(copyFormats('# a', '<h1>a</h1>')).toEqual({
+      'text/plain': '# a',
+      'text/html': '<h1>a</h1>'
+    })
+  })
+
+  it('글자가 아닌 값은 받지 않는다', () => {
+    expect(() => copyFormats(1, undefined)).toThrow()
+    expect(() => copyFormats('a', 2)).toThrow()
+  })
+})
+
+describe('docSaver', () => {
+  const setup = (answers: (string | undefined)[]) => {
+    const asked: string[] = []
+    const written: [string, string | Uint8Array][] = []
+    const save = docSaver(
+      () => '/Users/me/Downloads',
+      async (path) => {
+        asked.push(path)
+        return answers.shift()
+      },
+      async (path, data) => void written.push([path, data])
+    )
+    return { save, asked, written }
+  }
+
+  it('처음에는 다운로드 폴더에서 열고, 그 뒤로는 마지막으로 저장한 디렉토리에서 연다', async () => {
+    const { save, asked, written } = setup(['/Users/me/notes/a.md', '/Users/me/b.png'])
+    expect(await save('a.md', '# a')).toBe(true)
+    expect(await save('b.png', new Uint8Array([1]))).toBe(true)
+    expect(asked).toEqual(['/Users/me/Downloads/a.md', '/Users/me/notes/b.png'])
+    expect(written).toEqual([
+      ['/Users/me/notes/a.md', '# a'],
+      ['/Users/me/b.png', new Uint8Array([1])]
+    ])
+  })
+
+  it('취소하면 쓰지 않고, 다음 대화상자도 전과 같은 디렉토리에서 연다', async () => {
+    const { save, asked, written } = setup([undefined, '/Users/me/x/c.md'])
+    expect(await save('a.md', '# a')).toBe(false)
+    expect(await save('c.md', '# c')).toBe(true)
+    expect(asked).toEqual(['/Users/me/Downloads/a.md', '/Users/me/Downloads/c.md'])
+    expect(written).toEqual([['/Users/me/x/c.md', '# c']])
+  })
+
+  it('대화상자가 떠 있는 동안 다시 저장하면 대화상자를 더 띄우지 않고 false 다', async () => {
+    let answer!: (path: string | undefined) => void
+    const asked: string[] = []
+    const save = docSaver(
+      () => '/Users/me/Downloads',
+      (path) => (asked.push(path), new Promise((resolve) => (answer = resolve))),
+      async () => {}
+    )
+    const first = save('a.md', '# a')
+    expect(await save('a.md', '# a')).toBe(false)
+    answer('/Users/me/a.md')
+    expect(await first).toBe(true)
+    const third = save('b.md', '# b')
+    answer(undefined)
+    expect(await third).toBe(false)
+    expect(asked).toEqual(['/Users/me/Downloads/a.md', '/Users/me/b.md'])
+  })
+
+  it('쓰다 실패하면 그 디렉토리를 기억하지 않는다', async () => {
+    const asked: string[] = []
+    const save = docSaver(
+      () => '/Users/me/Downloads',
+      async (path) => (asked.push(path), '/Users/me/ro/a.md'),
+      async () => {
+        throw new Error('EACCES')
+      }
+    )
+    await expect(save('a.md', '# a')).rejects.toThrow('EACCES')
+    await expect(save('a.md', '# a')).rejects.toThrow('EACCES')
+    expect(asked).toEqual(['/Users/me/Downloads/a.md', '/Users/me/Downloads/a.md'])
+  })
+
+  it('이름은 파일 이름만 쓰고, 이름·내용이 맞지 않으면 대화상자를 열지 않는다', async () => {
+    const { save, asked } = setup(['/Users/me/a.md'])
+    await save('../../etc/a.md', '# a')
+    expect(asked).toEqual(['/Users/me/Downloads/a.md'])
+    await expect(save('', '# a')).rejects.toThrow()
+    await expect(save('a.md', 3)).rejects.toThrow()
+    expect(asked).toHaveLength(1)
   })
 })

@@ -3,13 +3,16 @@ import { Marked } from 'marked'
 import { describe, expect, it, vi } from 'vitest'
 import type { CanvasItem } from '../../../shared/canvas'
 import { CodeBody } from './code'
+import { MarkdownBody } from './markdown'
 import {
   bodyOf,
   clockTime,
   CODE_WAIT_MS,
   codeBodyOf,
+  copyOf,
   createCanvas,
   docKey,
+  fileOf,
   groupChoices,
   openCells,
   viewKey,
@@ -295,6 +298,67 @@ describe('createCanvas', () => {
     expect(c.open.value).toBe(false)
     c.toggle()
     expect(c.open.value).toBe(true)
+  })
+})
+
+describe('복사·저장할 내용', () => {
+  // 묶음을 HTML 로 만드는 것은 DOM 환경에서 도는 `markdown.test.ts` 가 확인한다. 여기서는 묶음을 모두 잇는지만 확인한다.
+  it('마크다운은 원문과, 나눠 그린 묶음을 모두 이은 HTML 이다', async () => {
+    vi.spyOn(MarkdownBody.prototype, 'html').mockImplementation((i) => `<p>${i}</p>`)
+    const text = `# 제목\n\n${Array.from({ length: 3000 }, (_, i) => `문단 ${i} ${'x'.repeat(50)}`).join('\n\n')}\n`
+    const c = createCanvas()
+    c.put(md('a', text))
+    const entry = docOf(c, 'a')!
+    expect(bodyOf(entry)!.length).toBe(2)
+    expect(await copyOf(entry)).toEqual({ text, html: '<p>0</p><p>1</p>' })
+    expect(await fileOf(entry)).toEqual({ name: '제목.md', data: text })
+    vi.restoreAllMocks()
+  })
+
+  it('코드는 줄바꿈을 손보지 않은 원문만 싣고, 그 원문을 저장한다', async () => {
+    vi.spyOn(CodeBody.prototype, 'highlighted').mockResolvedValue('<span>a</span>')
+    const c = createCanvas()
+    c.put({ id: '/r/a.ts', kind: 'code', name: 'a.ts', text: 'a\r\nb\r\n', path: '/r/a.ts' })
+    await vi.waitFor(() => expect(docOf(c, '/r/a.ts')).toBeDefined())
+    const entry = docOf(c, '/r/a.ts')!
+    expect(await copyOf(entry)).toEqual({ text: 'a\r\nb\r\n' })
+    expect(await fileOf(entry)).toEqual({ name: 'a.ts', data: 'a\r\nb\r\n' })
+    vi.restoreAllMocks()
+  })
+
+  it('mermaid 파일은 펜스를 벗긴 원문만 싣는다', async () => {
+    const c = createCanvas()
+    c.put({
+      id: '/r/f.mmd',
+      kind: 'markdown',
+      text: '```mermaid\ngraph LR\n```\n',
+      path: '/r/f.mmd'
+    })
+    expect(await copyOf(docOf(c, '/r/f.mmd')!)).toEqual({ text: 'graph LR\n' })
+  })
+
+  it('이미지는 복사하지 않고, 받은 바이트를 그대로 저장한다', async () => {
+    const c = createCanvas()
+    c.put({
+      id: 'i',
+      kind: 'image',
+      name: 'Pasted image',
+      mime: 'image/png',
+      bytes: new Uint8Array([1, 2, 3])
+    })
+    const entry = docOf(c, 'i')!
+    expect(await copyOf(entry)).toBeUndefined()
+    expect(await fileOf(entry)).toEqual({
+      name: 'Pasted image.png',
+      data: new Uint8Array([1, 2, 3])
+    })
+  })
+
+  it('같은 id 로 다시 온 문서는 새 내용을 싣는다', async () => {
+    const c = createCanvas()
+    c.put(md('a', 'first'))
+    c.put(md('a', 'second'))
+    await expect(fileOf(docOf(c, 'a')!)).resolves.toMatchObject({ data: 'second' })
   })
 })
 
