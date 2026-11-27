@@ -2,8 +2,7 @@
 import { Check, Copy, Download } from '@lucide/vue'
 import { onBeforeUnmount, ref } from 'vue'
 import { canCopy, copyOf, fileOf, type CanvasEntry } from '../canvas/store'
-
-const DONE_MS = 1500
+import { COPIED_MS } from '../canvas/zoomBox'
 
 const { doc } = defineProps<{ doc: CanvasEntry }>()
 
@@ -13,7 +12,7 @@ let timer: ReturnType<typeof setTimeout> | undefined
 function show(what: 'copy' | 'save'): void {
   clearTimeout(timer)
   done.value = what
-  timer = setTimeout(() => (done.value = undefined), DONE_MS)
+  timer = setTimeout(() => (done.value = undefined), COPIED_MS)
 }
 
 async function act(what: 'copy' | 'save', run: () => Promise<boolean>): Promise<void> {
