@@ -46,6 +46,12 @@ const titles = (page: Page) => page.locator('.canvas .cards .title')
 const markdown = (page: Page) => page.locator('.canvas .markdown')
 const card = (page: Page, id: string) => page.locator(`.canvas .card[data-id="${id}"]`)
 
+/** 제목 줄의 ✕ 는 포인터를 줄에 올려야 나타나므로, 줄의 제목에 먼저 올린 뒤 ✕ 를 돌려준다. */
+async function removeButton(row: Locator): Promise<Locator> {
+  await row.locator('.head').first().hover()
+  return row.locator('.remove')
+}
+
 test('문서가 없어도 panel bar 의 Canvas 아이콘이 보이고, 아이콘이나 메뉴로 열고 닫으면 아이콘의 눌림 표시와 툴팁이 따라간다', async ({
   launch
 }) => {
@@ -114,7 +120,7 @@ test('새 문서는 펼친 채 맨 위에 쌓이고, 제목 줄과 모두 접기
   await page.locator('.canvas .expand-all').click()
   await expect(markdown(page)).toHaveText(['second', 'first'])
 
-  await card(page, 'b').locator('.remove').click()
+  await (await removeButton(card(page, 'b'))).click()
   await expect(titles(page)).toHaveText(['A'])
 })
 
@@ -1122,7 +1128,7 @@ test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터�
   await typesIntoTerminal()
   await page.locator('.canvas .expand-all').click()
   await typesIntoTerminal()
-  await card(page, 'b').locator('.remove').click()
+  await (await removeButton(card(page, 'b'))).click()
   await expect(titles(page)).toHaveText(['A'])
   await typesIntoTerminal()
   await canvasButton(page).click()
@@ -1242,10 +1248,10 @@ test('✕ 위에서 다른 ✕ 로 옮겨도 그 사이에 문서가 끼지 않�
   await settle(page)
   const puts = await countPuts(page)
 
-  await card(page, 'b').locator('.remove').hover()
+  await (await removeButton(card(page, 'b'))).hover()
   await putCanvas(app, { id: 'd', kind: 'markdown', text: 'new', title: 'D' })
   await expect.poll(puts).toBe(1)
-  await card(page, 'a').locator('.remove').hover()
+  await (await removeButton(card(page, 'a'))).hover()
   await page.mouse.down()
   await page.mouse.up()
   await expect(titles(page)).toHaveText(['B'])
@@ -1506,7 +1512,7 @@ test('모든 제목이 위에 붙은 채 붙은 제목의 ✕ 를 누르면 그 
 
   const pinnedB = page.locator('.canvas .pins.top .row[data-id="b"]')
   await expect(pinnedB).toBeVisible()
-  await pinnedB.locator('.remove').click()
+  await (await removeButton(pinnedB)).click()
 
   await expect(page.locator('.canvas .card')).toHaveCount(2)
   await expect(page.locator('.canvas .card[data-id="b"]')).toHaveCount(0)
@@ -1718,7 +1724,7 @@ test('두 cell 이 같은 id 로 보낸 문서는 따로 남고, 접기와 ✕ �
 
   await titles(page).filter({ hasText: 'From first' }).click()
   await expect(markdown(page)).toHaveText(['two'])
-  await card(page, 'f').filter({ hasText: 'From second' }).locator('.remove').click()
+  await (await removeButton(card(page, 'f').filter({ hasText: 'From second' }))).click()
   await expect(titles(page)).toHaveText(['From first'])
 })
 
@@ -1882,9 +1888,9 @@ test('접힌 카드도 제목 줄의 복사 버튼을 누르면 마크다운 원
   const copy = card(page, 'a').locator('.copy')
   const actions = card(page, 'a').locator('.actions')
   await leavePanel(page)
-  await expect(actions).toHaveCSS('opacity', '0')
+  await expect(actions).toBeHidden()
   await card(page, 'a').locator('.head').hover()
-  await expect(actions).toHaveCSS('opacity', '1')
+  await expect(actions).toBeVisible()
   const box = (await copy.boundingBox())!
   expect(await appRegionAt(page, box.x + box.width / 2, box.y + box.height / 2)).not.toBe('drag')
   await copy.click()

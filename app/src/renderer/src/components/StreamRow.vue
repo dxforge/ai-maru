@@ -14,16 +14,18 @@ defineSlots<{ meta?(): unknown; actions?(): unknown }>()
       <span class="title">{{ title }}</span>
       <span class="meta"><slot name="meta" /></span>
     </button>
-    <span v-if="$slots.actions" class="actions"><slot name="actions" /></span>
-    <button
-      v-tooltip="'Remove'"
-      class="remove"
-      aria-label="Remove"
-      @mousedown.prevent
-      @click="emit('remove')"
-    >
-      <X class="text-icon" />
-    </button>
+    <span class="tools">
+      <span v-if="$slots.actions" class="actions"><slot name="actions" /></span>
+      <button
+        v-tooltip="'Remove'"
+        class="remove"
+        aria-label="Remove"
+        @mousedown.prevent
+        @click="emit('remove')"
+      >
+        <X class="text-icon" />
+      </button>
+    </span>
   </div>
 </template>
 
@@ -96,25 +98,31 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-.actions {
+/* 버튼은 포인터를 올렸을 때만 나타난다. 평소에는 자리를 차지하지 않아 메타가 오른쪽 끝에 붙고, 나타나면 메타·제목을 왼쪽으로 민다. */
+.tools {
   flex: none;
+  display: none;
+  align-items: center;
+  height: 100%;
+}
+
+.row:hover .tools,
+.row:focus-within .tools {
+  display: flex;
+}
+
+.actions {
   display: flex;
   height: 100%;
-  opacity: 0;
 }
 
 .remove {
   flex: none;
   width: 18px;
+  height: 100%;
   padding: 0;
   font-size: 11px;
   color: var(--faint);
-  opacity: 0;
-}
-
-.row:hover .actions,
-.row:hover .remove {
-  opacity: 1;
 }
 
 .remove:hover {
