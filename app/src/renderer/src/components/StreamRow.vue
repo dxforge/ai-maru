@@ -1,20 +1,48 @@
 <script setup lang="ts">
 import { X } from '@lucide/vue'
+import { onBeforeUnmount, ref } from 'vue'
 import FoldChevron from './FoldChevron.vue'
 
 const { title, open } = defineProps<{ title: string; open: boolean }>()
 const emit = defineEmits<{ open: []; remove: [] }>()
 defineSlots<{ meta?(): unknown; actions?(): unknown }>()
+
+// 포인터가 줄에 들어와 버튼이 나타난 뒤 `ARM_MS` 동안은 버튼을 눌러도 무시한다. 나타난 버튼이 시각이 있던 자리를
+// 차지해서, 시각을 눌러 접으려고 포인터를 옮겨 바로 누르면 ✕ 가 눌려 문서가 지워지기 때문이다. 키보드 포커스로 나타난
+// 버튼은 막지 않는다. 300ms 는 재어 정한 값이 아니다.
+const ARM_MS = 300
+
+const ready = ref(true)
+let timer: ReturnType<typeof setTimeout> | undefined
+
+function enter(): void {
+  clearTimeout(timer)
+  ready.value = false
+  timer = setTimeout(() => (ready.value = true), ARM_MS)
+}
+
+function leave(): void {
+  clearTimeout(timer)
+  ready.value = true
+}
+
+function guard(e: MouseEvent): void {
+  if (ready.value) return
+  e.stopPropagation()
+  e.preventDefault()
+}
+
+onBeforeUnmount(() => clearTimeout(timer))
 </script>
 
 <template>
-  <div class="row" :class="{ open }">
+  <div class="row" :class="{ open }" @pointerenter="enter" @pointerleave="leave">
     <button class="head" :aria-expanded="open" @mousedown.prevent @click="emit('open')">
       <FoldChevron class="chev" :open="open" />
       <span class="title">{{ title }}</span>
       <span class="meta"><slot name="meta" /></span>
     </button>
-    <span class="tools">
+    <span class="tools" :class="{ ready }" @click.capture="guard">
       <slot name="actions" />
       <button
         v-tooltip="'Remove'"

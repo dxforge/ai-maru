@@ -46,8 +46,19 @@ const titles = (page: Page) => page.locator('.canvas .cards .title')
 const markdown = (page: Page) => page.locator('.canvas .markdown')
 const card = (page: Page, id: string) => page.locator(`.canvas .card[data-id="${id}"]`)
 
-async function removeButton(row: Locator): Promise<Locator> {
+const nextFrame = (page: Page) =>
+  page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())))
+
+// 포인터를 제목 줄에 올려 버튼을 띄우고, `ARM_MS`(`StreamRow.vue`)가 지나 `.tools` 에 `ready` 클래스가 붙기를
+// 기다린다. 올린 뒤 한 프레임을 기다리는 것은 올리기 전부터 붙어 있던 `ready` 클래스를 보지 않기 위해서다.
+async function showTools(row: Locator): Promise<void> {
   await row.locator('.head').first().hover()
+  await nextFrame(row.page())
+  await expect(row.locator('.tools').first()).toHaveClass(/ready/)
+}
+
+async function removeButton(row: Locator): Promise<Locator> {
+  await showTools(row)
   return row.locator('.remove')
 }
 
@@ -1127,13 +1138,13 @@ test('문서가 들어오거나 패널의 버튼을 눌러도 키 입력은 터�
   await typesIntoTerminal()
   await page.locator('.canvas .expand-all').click()
   await typesIntoTerminal()
-  await card(page, 'a').locator('.head').hover()
+  await showTools(card(page, 'a'))
   await card(page, 'a').locator('.copy').click()
   await expect(card(page, 'a').locator('.copy')).toHaveClass(/done/)
   await typesIntoTerminal()
   // 대화상자를 취소하면 ✓ 가 되지 않는다.
   await stubSaveDialog(app, [undefined])
-  await card(page, 'a').locator('.head').hover()
+  await showTools(card(page, 'a'))
   await card(page, 'a').locator('.save').click()
   await expect.poll(() => savePaths(app)).toHaveLength(1)
   await typesIntoTerminal()
@@ -1904,7 +1915,7 @@ test('접힌 카드도 제목 줄의 복사 버튼을 누르면 마크다운 원
   const tools = card(page, 'a').locator('.tools')
   await leavePanel(page)
   await expect(tools).toBeHidden()
-  await card(page, 'a').locator('.head').hover()
+  await showTools(card(page, 'a'))
   await expect(tools).toBeVisible()
   const box = (await copy.boundingBox())!
   expect(await appRegionAt(page, box.x + box.width / 2, box.y + box.height / 2)).not.toBe('drag')
@@ -1939,6 +1950,9 @@ test('키보드로 제목 줄에 들어오면 앞에서든 뒤에서든 복사·
   await page.keyboard.press('Tab')
   await expect(card(page, 'b').locator('.copy')).toBeFocused()
   await expect(tools).toBeVisible()
+  // 키보드로 나타난 버튼은 나타난 직후에도 눌린다.
+  await page.keyboard.press('Enter')
+  await expect(card(page, 'b').locator('.copy')).toHaveClass(/done/)
 
   await card(page, 'a').locator('.head').focus()
   await expect(tools).toBeHidden()
@@ -1967,14 +1981,49 @@ test('저장 버튼은 처음엔 다운로드 폴더에서, 그 뒤로는 마지
   await expect(titles(page)).toHaveText(['shot.svg', '계획 메모'])
   await expect(card(page, 'i').locator('.copy')).toHaveCount(0)
 
-  await card(page, 'a').locator('.head').hover()
+  await showTools(card(page, 'a'))
   await card(page, 'a').locator('.save').click()
   await expect(card(page, 'a').locator('.save')).toHaveClass(/done/)
   expect(readFileSync(md, 'utf8')).toBe('# A\r\n본문\r\n')
 
-  await card(page, 'i').locator('.head').hover()
+  await showTools(card(page, 'i'))
   await card(page, 'i').locator('.save').click()
   await expect(card(page, 'i').locator('.save')).toHaveClass(/done/)
   expect(readFileSync(png, 'utf8')).toBe(svg(40))
   expect(await savePaths(app)).toEqual([join(downloads, '계획 메모.md'), join(dataDir, 'shot.svg')])
+})
+
+test('포인터가 제목 줄에 들어와 시각이 있던 자리에 ✕ 가 나타난 직후 누르면 무시하고, 잠시 뒤 누르면 문서를 지운다', async ({
+  launch
+}) => {
+  const { app, page } = await launch()
+  await putCanvas(app, { id: 'a', kind: 'markdown', text: 'a', title: 'A' })
+  const row = card(page, 'a').locator('.row')
+  await row.locator('.head').hover()
+  const box = (await row.locator('.remove').boundingBox())!
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  const under = () =>
+    page.evaluate(
+      ([x, y]) => {
+        const el = document.elementFromPoint(x, y)
+        return el?.closest('.remove') ? 'remove' : el?.closest('.head') ? 'head' : 'other'
+      },
+      [x, y]
+    )
+  await leavePanel(page)
+  await expect(row.locator('.tools')).toBeHidden()
+  expect(await under()).toBe('head')
+
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.up()
+  await nextFrame(page)
+  await expect(card(page, 'a')).toHaveCount(1)
+  expect(await under()).toBe('remove')
+
+  await expect(row.locator('.tools')).toHaveClass(/ready/)
+  await page.mouse.down()
+  await page.mouse.up()
+  await expect(card(page, 'a')).toHaveCount(0)
 })
